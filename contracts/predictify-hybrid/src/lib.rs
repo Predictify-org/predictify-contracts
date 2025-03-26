@@ -231,7 +231,7 @@ impl PredictifyHybrid {
 
         // Store the result in the market
         market.oracle_result = Some(outcome.clone());
-        
+
         // Update the market in storage
         env.storage().persistent().set(&market_id, &market);
 
