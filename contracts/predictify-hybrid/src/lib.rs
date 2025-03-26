@@ -5,12 +5,14 @@ use soroban_sdk::{
 };
 
 #[contracterror]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Error {
     Unauthorized = 1,
     MarketClosed = 2,
     OracleUnavailable = 3,
     InsufficientStake = 4,
+    MarketAlreadyResolved = 5,
+    InvalidOracleConfig = 6,
 }
 
 #[contracttype]
@@ -19,6 +21,7 @@ pub enum OracleProvider {
     BandProtocol,
     DIA,
     Reflector,
+    Pyth,
 }
 
 #[contracttype]
@@ -42,6 +45,38 @@ pub struct Market {
     pub votes: Map<Address, String>,
     pub total_staked: i128,
     pub dispute_stakes: Map<Address, i128>,
+}
+
+// Placeholder for Pyth oracle interface
+#[contracttype]
+pub struct PythPrice {
+    pub price: i128,
+    pub conf: u64,
+    pub expo: i32,
+    pub publish_time: u64,
+}
+
+trait OracleInterface {
+    fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
+}
+
+struct PythOracle {
+    contract_id: Address,
+}
+
+impl OracleInterface for PythOracle {
+    fn get_price(&self, _env: &Env, _feed_id: &String) -> Result<i128, Error> {
+        // This is a placeholder for the actual Pyth oracle interaction
+        // In a real implementation, we would call the Pyth contract here
+        // For now, we're returning a mock price
+        
+        // Simulate a call to the Pyth oracle
+        // In a real implementation, we would call something like:
+        // let price = pyth_client.get_price(&feed_id.to_string());
+        
+        // Return a simulated price (e.g., $26,000 for BTC/USD)
+        Ok(26_000_00)
+    }
 }
 
 #[contract]
@@ -135,6 +170,73 @@ impl PredictifyHybrid {
 
         // Update the market in storage
         env.storage().persistent().set(&market_id, &market);
+    }
+
+    // Fetch oracle result to determine market outcome
+    pub fn fetch_oracle_result(
+        env: Env,
+        market_id: Symbol,
+        pyth_contract: Address,
+    ) -> String {
+        // Get the market from storage
+        let mut market: Market = env.storage().persistent().get(&market_id).unwrap_or_else(|| {
+            panic!("Market not found");
+        });
+
+        // Check if the market has already been resolved
+        if market.oracle_result.is_some() {
+            panic_with_error!(env, Error::MarketAlreadyResolved);
+        }
+
+        // Check if the market ended (we can only fetch oracle result after market ends)
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            panic_with_error!(env, Error::MarketClosed);
+        }
+
+        // Validate the oracle config
+        if market.oracle_config.provider != OracleProvider::Pyth {
+            panic_with_error!(env, Error::InvalidOracleConfig);
+        }
+
+        // Get the price from the oracle
+        let oracle = PythOracle { contract_id: pyth_contract };
+        let price = match oracle.get_price(&env, &market.oracle_config.feed_id) {
+            Ok(p) => p,
+            Err(e) => panic_with_error!(env, e),
+        };
+
+        // Determine the outcome based on the price and threshold
+        let outcome = if market.oracle_config.comparison == String::from_str(&env, "gt") {
+            if price > market.oracle_config.threshold {
+                String::from_str(&env, "yes")
+            } else {
+                String::from_str(&env, "no")
+            }
+        } else if market.oracle_config.comparison == String::from_str(&env, "lt") {
+            if price < market.oracle_config.threshold {
+                String::from_str(&env, "yes")
+            } else {
+                String::from_str(&env, "no")
+            }
+        } else if market.oracle_config.comparison == String::from_str(&env, "eq") {
+            if price == market.oracle_config.threshold {
+                String::from_str(&env, "yes")
+            } else {
+                String::from_str(&env, "no")
+            }
+        } else {
+            panic_with_error!(env, Error::InvalidOracleConfig);
+        };
+
+        // Store the result in the market
+        market.oracle_result = Some(outcome.clone());
+        
+        // Update the market in storage
+        env.storage().persistent().set(&market_id, &market);
+
+        // Return the outcome
+        outcome
     }
 }
 mod test;

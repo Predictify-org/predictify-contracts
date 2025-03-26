@@ -35,6 +35,7 @@ struct PredictifyTest<'a> {
     admin: Address,
     user: Address,
     market_id: Symbol,
+    pyth_contract: Address,
 }
 
 impl<'a> PredictifyTest<'a> {
@@ -67,6 +68,9 @@ impl<'a> PredictifyTest<'a> {
         // Create market ID
         let market_id = Symbol::new(&env, "test_market");
         
+        // Create a mock Pyth oracle contract
+        let pyth_contract = Address::generate(&env);
+        
         Self {
             env,
             contract_id,
@@ -74,15 +78,16 @@ impl<'a> PredictifyTest<'a> {
             admin,
             user,
             market_id,
+            pyth_contract,
         }
     }
     
     fn create_test_market(&self) {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         
-        // Create oracle config
+        // Create oracle config for Pyth
         let oracle_config = OracleConfig {
-            provider: OracleProvider::BandProtocol,
+            provider: OracleProvider::Pyth,
             feed_id: String::from_str(&self.env, "BTC/USD"),
             threshold: 25_000_00, // $25,000
             comparison: String::from_str(&self.env, "gt"),
@@ -238,5 +243,88 @@ fn test_authentication_required() {
         &test.market_id,
         &String::from_str(&test.env, "yes"),
         &100,
+    );
+}
+
+#[test]
+fn test_fetch_oracle_result() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    
+    // Create contract client
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // Get market to find out its end time
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    
+    // Advance ledger past the end time
+    test.env.ledger().set_timestamp(market.end_time + 1);
+    
+    // Fetch oracle result
+    let result = client.fetch_oracle_result(
+        &test.market_id,
+        &test.pyth_contract,
+    );
+    
+    // Verify the result is "yes" (since our mock returns 26,000 which is > 25,000)
+    assert_eq!(result, String::from_str(&test.env, "yes"));
+    
+    // Verify the result was stored in the market
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    
+    // The oracle result should be set to "yes"
+    assert_eq!(market_after.oracle_result, Some(String::from_str(&test.env, "yes")));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_fetch_oracle_result_market_not_ended() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    
+    // Create contract client
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // Try to fetch oracle result before market ends (should fail with MarketClosed error)
+    client.fetch_oracle_result(
+        &test.market_id,
+        &test.pyth_contract,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_fetch_oracle_result_already_resolved() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    
+    // Create contract client
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // Get market info
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    
+    // Advance ledger past the end time
+    test.env.ledger().set_timestamp(market.end_time + 1);
+    
+    // Fetch oracle result first time
+    let _ = client.fetch_oracle_result(
+        &test.market_id,
+        &test.pyth_contract,
+    );
+    
+    // Try to fetch oracle result again (should fail with MarketAlreadyResolved error)
+    client.fetch_oracle_result(
+        &test.market_id,
+        &test.pyth_contract,
     );
 }
