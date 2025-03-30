@@ -299,5 +299,94 @@ impl PredictifyHybrid {
         // Update the market in storage
         env.storage().persistent().set(&market_id, &market);
     }
+
+
+    // Resolves a market by combining oracle results and community votes
+    pub fn resolve_market(
+        env: Env,
+        market_id: Symbol,
+    ) -> String {
+        // Get the market from storage
+        let mut market: Market = env.storage().persistent().get(&market_id).unwrap_or_else(|| {
+            panic!("Market not found");
+        });
+
+        // Check if the market end time has passed
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            panic_with_error!(env, Error::MarketClosed);
+        }
+
+        // Retrieve the oracle result (or fail if unavailable)
+        let oracle_result = match &market.oracle_result {
+            Some(result) => result.clone(),
+            None => panic_with_error!(env, Error::OracleUnavailable),
+        };
+
+        // Count community votes for each outcome
+        let mut vote_counts: Map<String, u32> = Map::new(&env);
+        for (_, outcome) in market.votes.iter() {
+            let count = vote_counts.get(outcome.clone()).unwrap_or(0);
+            vote_counts.set(outcome.clone(), count + 1);
+        }
+
+        // Find the community consensus (outcome with most votes)
+        let mut community_result = oracle_result.clone(); // Default to oracle result if no votes
+        let mut max_votes = 0;
+        
+        for (outcome, count) in vote_counts.iter() {
+            if count > max_votes {
+                max_votes = count;
+                community_result = outcome.clone();
+            }
+        }
+
+        // Calculate the final result with weights: 70% oracle, 30% community
+        let final_result = if oracle_result == community_result {
+            // If both agree, use that outcome
+            oracle_result
+        } else {
+            // If they disagree, check if community votes are significant
+            let total_votes: u32 = vote_counts.values().fold(0, |acc, count| acc + count);
+            
+            if total_votes == 0 {
+                // No community votes, use oracle result
+                oracle_result
+            } else {
+                // Use integer-based calculation to determine if community consensus is strong
+                // Check if the winning vote has more than 50% of total votes
+                if max_votes * 100 > total_votes * 50 && total_votes >= 5 {
+                    // Apply 70-30 weighting using integer arithmetic
+                    // We'll use a scale of 0-100 for percentage calculation
+                    
+                    // Generate a pseudo-random number by combining timestamp and ledger sequence
+                    let timestamp = env.ledger().timestamp();
+                    let sequence = env.ledger().sequence();
+                    let combined = timestamp as u128 + sequence as u128;
+                    let random_value = (combined % 100) as u32;
+                    
+                    // If random_value is less than 30 (representing 30% weight), 
+                    // choose community result
+                    if random_value < 30 {
+                        community_result
+                    } else {
+                        oracle_result
+                    }
+                } else {
+                    // Not enough community consensus, use oracle result
+                    oracle_result
+                }
+            }
+        };
+
+        // Record the final result in the market
+        market.oracle_result = Some(final_result.clone());
+        
+        // Update the market in storage
+        env.storage().persistent().set(&market_id, &market);
+
+        // Return the final result
+        final_result
+    }
 }
 mod test;
