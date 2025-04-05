@@ -6,6 +6,8 @@ use soroban_sdk::{
     token::{Client as TokenClient, StellarAssetClient},
     vec, Symbol,
 };
+use soroban_sdk::testutils::LedgerInfo;
+use core::string::ToString;
 
 struct TokenTest<'a> {
     token_id: Address,
@@ -327,4 +329,147 @@ fn test_fetch_oracle_result_already_resolved() {
         &test.market_id,
         &test.pyth_contract,
     );
+}
+
+
+
+
+#[test]
+fn test_dispute_result() {
+    // Setup the environment and contracts
+    let env = Env::default();
+    let market_admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    
+    // Setup token contract for stake transfers
+    let token_admin = Address::generate(&env);
+    let token = create_token_contract(&env, &token_admin);
+    
+    // Create contract instance
+    let contract = create_contract_instance(&env, &market_admin);
+    
+    // Register token ID for staking
+    contract.set_token_contract(&token.address);
+    
+    // Mint tokens to user for testing
+    token.mint(&user, &1000_0000000); // 1000 XLM
+    
+    // Create a market
+    let market_id = Symbol::new(&env, "TEST_MARKET");
+    let now = 12345000;
+    let end_time = now + 3600; // Market ends in 1 hour
+    
+    // Set the current time to before market end
+    env.ledger().set(LedgerInfo {
+        timestamp: now,
+        protocol_version: 20,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+    
+    // Create market with initial conditions
+    contract.create_market(
+        &market_admin,
+        &market_id,
+        &"Test Market".to_string(&env),
+        &end_time,
+        &vec![&env, "YES".to_string(&env), "NO".to_string(&env)]
+    );
+    
+    // Test 1: Should fail - Cannot dispute before market ends
+    let result = std::panic::catch_unwind(|| {
+        contract.dispute_result(&user, &market_id, &20_0000000);
+    });
+    assert!(result.is_err(), "Should not allow disputes before market end time");
+    
+    // Fast forward time to after market end
+    env.ledger().set(LedgerInfo {
+        timestamp: end_time + 60, // 1 minute after market end
+        protocol_version: 20,
+        sequence_number: 11,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+    
+    // Test 2: Should fail - Insufficient stake
+    let result = std::panic::catch_unwind(|| {
+        contract.dispute_result(&user, &market_id, &5_0000000); // 5 XLM (less than minimum)
+    });
+    assert!(result.is_err(), "Should not allow disputes with insufficient stake");
+    
+    // Authorize the user for token transfer
+    env.mock_all_auths();
+    
+    // Test 3: Successful dispute with sufficient stake
+    let stake_amount = 20_0000000; // 20 XLM
+    let user_balance_before = token.balance(&user);
+    let contract_balance_before = token.balance(&contract.address);
+    
+    // Record market end time before dispute
+    let market_before = contract.get_market(&market_id);
+    let original_end_time = market_before.end_time;
+    
+    // Submit dispute
+    contract.dispute_result(&user, &market_id, &stake_amount);
+    
+    // Verify token transfer
+    let user_balance_after = token.balance(&user);
+    let contract_balance_after = token.balance(&contract.address);
+    assert_eq!(user_balance_before - stake_amount, user_balance_after, "Incorrect user balance after dispute");
+    assert_eq!(contract_balance_before + stake_amount, contract_balance_after, "Incorrect contract balance after dispute");
+    
+    // Verify market state
+    let market_after = contract.get_market(&market_id);
+    
+    // Verify dispute stake recorded
+    let user_stake = market_after.dispute_stakes.get(user.clone()).unwrap();
+    assert_eq!(user_stake, stake_amount, "Dispute stake not recorded correctly");
+    
+    // Test 4: Verify market extension by 24 hours
+    let expected_new_end_time = (end_time + 60) + (24 * 60 * 60);
+    assert_eq!(market_after.end_time, expected_new_end_time, "Market end time not extended by 24 hours");
+    
+    // Test 5: Add additional stake for the same user
+    let additional_stake = 30_0000000; // 30 XLM
+    contract.dispute_result(&user, &market_id, &additional_stake);
+    
+    // Verify combined stake
+    let market_after_additional_stake = contract.get_market(&market_id);
+    let combined_stake = market_after_additional_stake.dispute_stakes.get(user.clone()).unwrap();
+    assert_eq!(combined_stake, stake_amount + additional_stake, "Combined dispute stake not recorded correctly");
+}
+
+// Helper function to create a token contract
+fn create_token_contract(env: &Env, admin: &Address) -> token::Client {
+    // Deploy the token contract
+    let token_contract = token::Client::new(env, &env.register_contract(None, token::Token {}));
+    
+    // Initialize the token contract
+    token_contract.initialize(
+        admin,
+        &"Test Token".to_string(env),
+        &"TEST".to_string(env),
+        &7,
+    );
+    
+    token_contract
+}
+
+// Helper function to create the prediction market contract
+fn create_contract_instance(env: &Env, admin: &Address) -> Client {
+    // Deploy the prediction market contract
+    let contract_id = env.register_contract(None, PredictionMarket {});
+    let client = Client::new(env, &contract_id);
+    
+    // Initialize the contract
+    client.initialize(admin);
+    
+    client
 }
