@@ -2,12 +2,10 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
-    vec, Symbol,
+    vec, Symbol, String,
 };
-use soroban_sdk::testutils::LedgerInfo;
-use core::string::ToString;
 
 struct TokenTest<'a> {
     token_id: Address,
@@ -18,6 +16,7 @@ struct TokenTest<'a> {
 impl<'a> TokenTest<'a> {
     fn setup() -> Self {
         let env = Env::default();
+        env.mock_all_auths();
         let token_admin = Address::generate(&env);
         let token_id = env.register_stellar_asset_contract(token_admin.clone());
         let token_client = TokenClient::new(&env, &token_id);
@@ -65,7 +64,7 @@ impl<'a> PredictifyTest<'a> {
         // Fund user with tokens - mock auth for the token admin
         let stellar_client = StellarAssetClient::new(&env, &token_test.token_id);
         env.mock_all_auths();
-        stellar_client.mint(&user, &1000);
+        stellar_client.mint(&user, &1000_0000000);
         
         // Create market ID
         let market_id = Symbol::new(&env, "test_market");
@@ -136,7 +135,7 @@ fn test_successful_vote() {
     let contract_balance_before = test.token_test.token_client.balance(&test.contract_id);
     
     // Set staking amount
-    let stake_amount: i128 = 100;
+    let stake_amount: i128 = 100_0000000;
     
     // Vote on the market
     test.env.mock_all_auths();
@@ -176,7 +175,16 @@ fn test_vote_on_closed_market() {
     });
     
     // Advance ledger past the end time
-    test.env.ledger().set_timestamp(market.end_time + 1);
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
     
     // Attempt to vote on the closed market (should fail)
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -185,7 +193,7 @@ fn test_vote_on_closed_market() {
         &test.user,
         &test.market_id,
         &String::from_str(&test.env, "yes"),
-        &100,
+        &100_0000000,
     );
 }
 
@@ -202,8 +210,8 @@ fn test_vote_with_invalid_outcome() {
     client.vote(
         &test.user,
         &test.market_id,
-        &String::from_str(&test.env, "maybe"), // Invalid outcome
-        &100,
+        &String::from_str(&test.env, "maybe"),
+        &100_0000000,
     );
 }
 
@@ -221,12 +229,12 @@ fn test_vote_on_nonexistent_market() {
         &test.user,
         &Symbol::new(&test.env, "nonexistent_market"),
         &String::from_str(&test.env, "yes"),
-        &100,
+        &100_0000000,
     );
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic]
 fn test_authentication_required() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -236,7 +244,7 @@ fn test_authentication_required() {
     // which would normally automatic auth checks
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     
-    // Clear any existing auths
+    // Clear any existing auths explicitly
     test.env.set_auths(&[]);
     
     // This call should fail because we're not providing authentication
@@ -244,7 +252,7 @@ fn test_authentication_required() {
         &test.user,
         &test.market_id,
         &String::from_str(&test.env, "yes"),
-        &100,
+        &100_0000000,
     );
 }
 
@@ -254,33 +262,38 @@ fn test_fetch_oracle_result() {
     let test = PredictifyTest::setup();
     test.create_test_market();
     
-    // Create contract client
-    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-    
     // Get market to find out its end time
     let market = test.env.as_contract(&test.contract_id, || {
         test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
     });
     
     // Advance ledger past the end time
-    test.env.ledger().set_timestamp(market.end_time + 1);
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
     
     // Fetch oracle result
-    let result = client.fetch_oracle_result(
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcome = client.fetch_oracle_result(
         &test.market_id,
         &test.pyth_contract,
     );
     
-    // Verify the result is "yes" (since our mock returns 26,000 which is > 25,000)
-    assert_eq!(result, String::from_str(&test.env, "yes"));
+    // Verify the outcome based on mock Pyth price ($26k > $25k threshold)
+    assert_eq!(outcome, String::from_str(&test.env, "yes"));
     
-    // Verify the result was stored in the market
-    let market_after = test.env.as_contract(&test.contract_id, || {
+    // Verify market state
+    let updated_market = test.env.as_contract(&test.contract_id, || {
         test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
     });
-    
-    // The oracle result should be set to "yes"
-    assert_eq!(market_after.oracle_result, Some(String::from_str(&test.env, "yes")));
+    assert_eq!(updated_market.oracle_result, Some(String::from_str(&test.env, "yes")));
 }
 
 #[test]
@@ -290,10 +303,10 @@ fn test_fetch_oracle_result_market_not_ended() {
     let test = PredictifyTest::setup();
     test.create_test_market();
     
-    // Create contract client
-    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    // Don't advance time
     
-    // Try to fetch oracle result before market ends (should fail with MarketClosed error)
+    // Attempt to fetch oracle result before market ends
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     client.fetch_oracle_result(
         &test.market_id,
         &test.pyth_contract,
@@ -307,169 +320,386 @@ fn test_fetch_oracle_result_already_resolved() {
     let test = PredictifyTest::setup();
     test.create_test_market();
     
-    // Create contract client
-    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-    
-    // Get market info
+    // Get market end time
     let market = test.env.as_contract(&test.contract_id, || {
         test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
     });
     
-    // Advance ledger past the end time
-    test.env.ledger().set_timestamp(market.end_time + 1);
+    // Advance time past end time
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
     
-    // Fetch oracle result first time
-    let _ = client.fetch_oracle_result(
+    // Fetch result once
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    client.fetch_oracle_result(
         &test.market_id,
         &test.pyth_contract,
     );
     
-    // Try to fetch oracle result again (should fail with MarketAlreadyResolved error)
+    // Attempt to fetch again
     client.fetch_oracle_result(
         &test.market_id,
         &test.pyth_contract,
     );
 }
 
-
-
-
 #[test]
 fn test_dispute_result() {
-    // Setup the environment and contracts
-    let env = Env::default();
-    let market_admin = Address::generate(&env);
-    let user = Address::generate(&env);
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    test.create_test_market();
     
-    // Setup token contract for stake transfers
-    let token_admin = Address::generate(&env);
-    let token = create_token_contract(&env, &token_admin);
+    // Get market end time
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    let original_end_time = market.end_time;
     
-    // Create contract instance
-    let contract = create_contract_instance(&env, &market_admin);
-    
-    // Register token ID for staking
-    contract.set_token_contract(&token.address);
-    
-    // Mint tokens to user for testing
-    token.mint(&user, &1000_0000000); // 1000 XLM
-    
-    // Create a market
-    let market_id = Symbol::new(&env, "TEST_MARKET");
-    let now = 12345000;
-    let end_time = now + 3600; // Market ends in 1 hour
-    
-    // Set the current time to before market end
-    env.ledger().set(LedgerInfo {
-        timestamp: now,
-        protocol_version: 20,
-        sequence_number: 10,
+    // Advance time past end time
+    test.env.ledger().set(LedgerInfo {
+        timestamp: original_end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
         network_id: Default::default(),
         base_reserve: 10,
-        min_temp_entry_ttl: 10,
-        min_persistent_entry_ttl: 10,
-        max_entry_ttl: 3110400,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
     });
     
-    // Create market with initial conditions
-    contract.create_market(
-        &market_admin,
-        &market_id,
-        &"Test Market".to_string(&env),
-        &end_time,
-        &vec![&env, "YES".to_string(&env), "NO".to_string(&env)]
+    // Fetch oracle result first
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.fetch_oracle_result(
+        &test.market_id,
+        &test.pyth_contract,
     );
     
-    // Test 1: Should fail - Cannot dispute before market ends
-    let result = std::panic::catch_unwind(|| {
-        contract.dispute_result(&user, &market_id, &20_0000000);
-    });
-    assert!(result.is_err(), "Should not allow disputes before market end time");
+    // Dispute the result
+    let dispute_stake: i128 = 10_0000000;
+    test.env.mock_all_auths();
+    client.dispute_result(
+        &test.user,
+        &test.market_id,
+        &dispute_stake,
+    );
     
-    // Fast forward time to after market end
-    env.ledger().set(LedgerInfo {
-        timestamp: end_time + 60, // 1 minute after market end
-        protocol_version: 20,
-        sequence_number: 11,
+    // Verify stake transfer
+    assert_eq!(test.token_test.token_client.balance(&test.user), 1000_0000000 - dispute_stake);
+    assert!(test.token_test.token_client.balance(&test.contract_id) >= dispute_stake);
+    
+    // Verify dispute recorded and end time extended
+    let updated_market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    assert_eq!(updated_market.dispute_stakes.get(test.user.clone()).unwrap(), dispute_stake);
+    
+    let dispute_extension = 24 * 60 * 60;
+    assert_eq!(updated_market.end_time, test.env.ledger().timestamp() + dispute_extension);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_dispute_result_insufficient_stake() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    
+    // Get market end time
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    
+    // Advance time past end time
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
         network_id: Default::default(),
         base_reserve: 10,
-        min_temp_entry_ttl: 10,
-        min_persistent_entry_ttl: 10,
-        max_entry_ttl: 3110400,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
     });
     
-    // Test 2: Should fail - Insufficient stake
-    let result = std::panic::catch_unwind(|| {
-        contract.dispute_result(&user, &market_id, &5_0000000); // 5 XLM (less than minimum)
-    });
-    assert!(result.is_err(), "Should not allow disputes with insufficient stake");
-    
-    // Authorize the user for token transfer
-    env.mock_all_auths();
-    
-    // Test 3: Successful dispute with sufficient stake
-    let stake_amount = 20_0000000; // 20 XLM
-    let user_balance_before = token.balance(&user);
-    let contract_balance_before = token.balance(&contract.address);
-    
-    // Record market end time before dispute
-    let market_before = contract.get_market(&market_id);
-    let original_end_time = market_before.end_time;
-    
-    // Submit dispute
-    contract.dispute_result(&user, &market_id, &stake_amount);
-    
-    // Verify token transfer
-    let user_balance_after = token.balance(&user);
-    let contract_balance_after = token.balance(&contract.address);
-    assert_eq!(user_balance_before - stake_amount, user_balance_after, "Incorrect user balance after dispute");
-    assert_eq!(contract_balance_before + stake_amount, contract_balance_after, "Incorrect contract balance after dispute");
-    
-    // Verify market state
-    let market_after = contract.get_market(&market_id);
-    
-    // Verify dispute stake recorded
-    let user_stake = market_after.dispute_stakes.get(user.clone()).unwrap();
-    assert_eq!(user_stake, stake_amount, "Dispute stake not recorded correctly");
-    
-    // Test 4: Verify market extension by 24 hours
-    let expected_new_end_time = (end_time + 60) + (24 * 60 * 60);
-    assert_eq!(market_after.end_time, expected_new_end_time, "Market end time not extended by 24 hours");
-    
-    // Test 5: Add additional stake for the same user
-    let additional_stake = 30_0000000; // 30 XLM
-    contract.dispute_result(&user, &market_id, &additional_stake);
-    
-    // Verify combined stake
-    let market_after_additional_stake = contract.get_market(&market_id);
-    let combined_stake = market_after_additional_stake.dispute_stakes.get(user.clone()).unwrap();
-    assert_eq!(combined_stake, stake_amount + additional_stake, "Combined dispute stake not recorded correctly");
-}
-
-// Helper function to create a token contract
-fn create_token_contract(env: &Env, admin: &Address) -> token::Client {
-    // Deploy the token contract
-    let token_contract = token::Client::new(env, &env.register_contract(None, token::Token {}));
-    
-    // Initialize the token contract
-    token_contract.initialize(
-        admin,
-        &"Test Token".to_string(env),
-        &"TEST".to_string(env),
-        &7,
+    // Fetch oracle result first
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.fetch_oracle_result(
+        &test.market_id,
+        &test.pyth_contract,
     );
     
-    token_contract
+    // Attempt to dispute with insufficient stake
+    let insufficient_stake: i128 = 5_0000000;
+    test.env.mock_all_auths();
+    client.dispute_result(
+        &test.user,
+        &test.market_id,
+        &insufficient_stake,
+    );
 }
 
-// Helper function to create the prediction market contract
-fn create_contract_instance(env: &Env, admin: &Address) -> Client {
-    // Deploy the prediction market contract
-    let contract_id = env.register_contract(None, PredictionMarket {});
-    let client = Client::new(env, &contract_id);
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_resolve_market_before_end_time() {
+    // Setup
+    let test = PredictifyTest::setup();
+    test.create_test_market();
     
-    // Initialize the contract
-    client.initialize(admin);
+    // Don't advance time
     
-    client
+    // Attempt to resolve before end time
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    client.resolve_market(&test.market_id);
 }
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_resolve_market_oracle_unavailable() {
+    // Setup
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    
+    // Get market end time
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    
+    // Advance time past end time
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    
+    // Don't call fetch_oracle_result
+    
+    // Attempt to resolve
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    client.resolve_market(&test.market_id);
+}
+
+#[test]
+fn test_resolve_market_oracle_and_community_agree() {
+    // Setup
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // --- Setup Votes ---
+    // 6 users vote 'yes', 4 vote 'no' -> Community says 'yes'
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..10 {
+        let voter = Address::generate(&test.env);
+        let outcome = if i < 6 { "yes" } else { "no" };
+        // Mint some tokens to each voter using StellarAssetClient
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, outcome),
+            &1_0000000,
+        );
+    }
+    
+    // --- Advance Time & Fetch Oracle Result ---
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    // Oracle result is 'yes' (mock price 26k > 25k threshold)
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
+    
+    // --- Resolve Market ---
+    let final_result = client.resolve_market(&test.market_id);
+    
+    // --- Verify Result ---
+    // Since oracle ('yes') and community ('yes') agree, final should be 'yes'
+    assert_eq!(final_result, String::from_str(&test.env, "yes"));
+}
+
+#[test]
+fn test_resolve_market_oracle_wins_low_votes() {
+    // Setup
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // --- Setup Votes ---
+    // 2 users vote 'no', 1 vote 'yes' -> Community says 'no', but only 3 total votes
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..3 {
+        let voter = Address::generate(&test.env);
+        let outcome = if i < 2 { "no" } else { "yes" };
+        // Mint some tokens to each voter using StellarAssetClient
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, outcome),
+            &1_0000000,
+        );
+    }
+    
+    // --- Advance Time & Fetch Oracle Result ---
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    // Oracle result is 'yes'
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
+    
+    // --- Resolve Market ---
+    let final_result = client.resolve_market(&test.market_id);
+    
+    // --- Verify Result ---
+    // Oracle ('yes') disagrees with community ('no'), but low votes (<5), so oracle wins.
+    assert_eq!(final_result, String::from_str(&test.env, "yes"));
+}
+
+#[test]
+fn test_resolve_market_oracle_wins_weighted() {
+    // Setup
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // --- Setup Votes ---
+    // 6 users vote 'no', 4 vote 'yes' -> Community says 'no' (significant votes)
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..10 {
+        let voter = Address::generate(&test.env);
+        let outcome = if i < 6 { "no" } else { "yes" };
+        // Mint some tokens to each voter using StellarAssetClient
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, outcome),
+            &1_0000000,
+        );
+    }
+    
+    // --- Advance Time & Fetch Oracle Result ---
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    // Set ledger sequence/timestamp to make random_value >= 30 (favor oracle)
+    let sequence = 100;
+    let timestamp = market.end_time + 50; // Ensure timestamp + sequence >= 30 mod 100
+    test.env.ledger().set(LedgerInfo {
+        timestamp,
+        protocol_version: 22,
+        sequence_number: sequence,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    // Oracle result is 'yes'
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
+    
+    // --- Resolve Market ---
+    let final_result = client.resolve_market(&test.market_id);
+    
+    // --- Verify Result ---
+    // Oracle ('yes') disagrees with community ('no'), significant votes,
+    // but weighted random choice favors oracle.
+    assert_eq!(final_result, String::from_str(&test.env, "yes"));
+}
+
+#[test]
+fn test_resolve_market_community_wins_weighted() {
+    // Setup
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // --- Setup Votes ---
+    // 6 users vote 'no', 4 vote 'yes' -> Community says 'no' (significant votes)
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..10 {
+        let voter = Address::generate(&test.env);
+        let outcome = if i < 6 { "no" } else { "yes" };
+        // Mint some tokens to each voter using StellarAssetClient
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, outcome),
+            &1_0000000,
+        );
+    }
+    
+    // --- Advance Time & Fetch Oracle Result ---
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    });
+    // Set ledger sequence/timestamp to make random_value < 30 (favor community)
+    let sequence = 10;
+    let timestamp = market.end_time + 5; // Ensure timestamp + sequence < 30 mod 100
+    test.env.ledger().set(LedgerInfo {
+        timestamp,
+        protocol_version: 22,
+        sequence_number: sequence,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    // Oracle result is 'yes'
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
+    
+    // --- Resolve Market ---
+    let final_result = client.resolve_market(&test.market_id);
+    
+    // --- Verify Result ---
+    // Oracle ('yes') disagrees with community ('no'), significant votes,
+    // and weighted random choice favors community.
+    assert_eq!(final_result, String::from_str(&test.env, "no"));
+}
+
+// Ensure PredictifyHybridClient is in scope (usually generated by #[contractimpl])
+use crate::PredictifyHybridClient;

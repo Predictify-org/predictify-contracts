@@ -347,7 +347,7 @@ impl PredictifyHybrid {
             oracle_result
         } else {
             // If they disagree, check if community votes are significant
-            let total_votes: u32 = vote_counts.values().fold(0, |acc, count| acc + count);
+            let total_votes: u32 = vote_counts.values().into_iter().fold(0, |acc, count| acc + count);
             
             if total_votes == 0 {
                 // No community votes, use oracle result
