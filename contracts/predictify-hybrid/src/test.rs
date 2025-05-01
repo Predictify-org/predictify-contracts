@@ -110,15 +110,133 @@ impl<'a> PredictifyTest<'a> {
         
         // Create market
         self.env.mock_all_auths();
+        // client.create_market(
+        //     &self.admin,
+        //     &self.market_id,
+        //     &question,
+        //     &outcomes,
+        //     &end_time,
+        //     &oracle_config,
+        // );
         client.create_market(
-            &self.admin,
-            &self.market_id,
-            &question,
-            &outcomes,
-            &end_time,
-            &oracle_config,
-        );
+        &self.admin,
+        &String::from_str(&self.env, "Will BTC go above $25,000 by December 31?"),
+        &outcomes,
+        &30,
+    );
     }
+}
+
+
+#[test]
+fn test_create_market_successful() {
+    //Setup test environment
+    let test = PredictifyTest::setup();
+    //In a real implementation, you would use the actual token contract ID
+    //let token_id = Address::from_str(&test.env, "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC");
+    //Create contract client
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    //duration_days
+    let duration_days = 30;
+    //Create market outcomes
+        let outcomes = vec![
+            &test.env,
+            String::from_str(&test.env, "yes"),
+            String::from_str(&test.env, "no"),
+        ];
+
+        client.create_market(
+            &test.admin,
+            &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+            &outcomes,
+            &duration_days,
+            //&test.token_test.token_id
+        );
+    // Create market
+    //test.create_test_market();
+    
+    // Verify market creation
+    // let market = test.env.as_contract(&test.contract_id, || {
+    //     test.env.storage().persistent().get::<Symbol, Market>(&test.market_id).unwrap()
+    // });
+    
+    // assert_eq!(market.question, String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"));
+    // assert_eq!(market.outcomes.len(), 2);
+    // assert_eq!(market.end_time, test.env.ledger().timestamp() + 30 * 24 * 60 * 60);
+}
+
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn test_create_market_with_non_admin() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    
+    // Create contract client
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // Attempt to create market with non-admin user
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+
+    //test should panic with none admin user
+    client.create_market(
+        &test.user,
+        &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+        &outcomes,
+        &30,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+fn test_create_market_with_empty_outcome() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    
+    // Create contract client
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // Attempt to create market with empty outcome 
+    // will panic
+    let outcomes = vec![
+        &test.env,
+    ];
+
+    client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+        &outcomes,
+        &30,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+fn test_create_market_with_empty_question() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+    
+    // Create contract client
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // Attempt to create market with non-admin user
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+
+    //test should panic with none admin user
+    client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, ""),
+        &outcomes,
+        &30,
+    );
 }
 
 #[test]
