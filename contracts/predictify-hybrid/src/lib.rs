@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractimpl, Address, Env, Map, String, Symbol, Vec, 
-    token, contracterror, panic_with_error, contracttype
+    contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, Env,
+    Map, String, Symbol, Vec,
 };
 
 #[contracterror]
@@ -28,9 +28,9 @@ pub enum OracleProvider {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleConfig {
     pub provider: OracleProvider,
-    pub feed_id: String,       // Oracle-specific identifier
-    pub threshold: i128,       // 10_000_00 = $10k (in cents)
-    pub comparison: String,    // "gt", "lt", "eq"
+    pub feed_id: String,    // Oracle-specific identifier
+    pub threshold: i128,    // 10_000_00 = $10k (in cents)
+    pub comparison: String, // "gt", "lt", "eq"
 }
 
 #[contracttype]
@@ -69,15 +69,20 @@ impl OracleInterface for PythOracle {
         // This is a placeholder for the actual Pyth oracle interaction
         // In a real implementation, we would call the Pyth contract here
         // For now, we're returning a mock price
-        
+
         // Simulate a call to the Pyth oracle
         // In a real implementation, you would use the actual token contract ID
         // We're using the contract_id field to avoid the unused field warning
-        if self.contract_id == Address::from_str(_env, "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC") {
+        if self.contract_id
+            == Address::from_str(
+                _env,
+                "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+            )
+        {
             // This is just a placeholder condition to use the contract_id field
             return Ok(27_000_00); // Different price for this specific contract
         }
-        
+
         // Return a simulated price (e.g., $26,000 for BTC/USD)
         Ok(26_000_00)
     }
@@ -89,7 +94,9 @@ pub struct PredictifyHybrid;
 #[contractimpl]
 impl PredictifyHybrid {
     pub fn initialize(env: Env, admin: Address) {
-        env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "Admin"), &admin);
     }
 
     // Create a market (we need to add this function for the vote function to work with)
@@ -104,10 +111,14 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify the caller is an admin
-        let stored_admin: Address = env.storage().persistent().get(&Symbol::new(&env, "Admin")).unwrap_or_else(|| {
-            panic!("Admin not set");
-        });
-        
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| {
+                panic!("Admin not set");
+            });
+
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
         }
@@ -116,7 +127,7 @@ impl PredictifyHybrid {
         if outcomes.len() < 2 {
             panic!("At least two outcomes are required");
         }
-        
+
         if question.len() == 0 {
             panic!("Question cannot be empty");
         }
@@ -126,7 +137,7 @@ impl PredictifyHybrid {
         let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
         let new_counter = counter + 1;
         env.storage().persistent().set(&counter_key, &new_counter);
-        
+
         // Create a unique market ID using the counter
         let market_id = Symbol::new(&env, "market");
 
@@ -134,7 +145,7 @@ impl PredictifyHybrid {
         let seconds_per_day: u64 = 24 * 60 * 60; // 24 hours * 60 minutes * 60 seconds
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
         let end_time: u64 = env.ledger().timestamp() + duration_seconds;
-        
+
         // Create a default oracle config (can be updated later if needed)
         let oracle_config = OracleConfig {
             provider: OracleProvider::Pyth,
@@ -158,41 +169,41 @@ impl PredictifyHybrid {
 
         // Deduct 1 XLM fee from the admin
         let fee_amount: i128 = 10_000_000; // 1 XLM = 10,000,000 stroops
-        
+
         // Get a token client for the native asset
         // In a real implementation, you would use the actual token contract ID
-        let token_id = Address::from_str(&env, "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC");
+        let token_id: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "TokenID"))
+            .unwrap_or_else(|| {
+                panic!("Token ID not set");
+            });
         let token_client = token::Client::new(&env, &token_id);
-        
+
         // Transfer the fee from admin to the contract
-        token_client.transfer(
-            &admin,
-            &env.current_contract_address(),
-            &fee_amount
-        );
+        token_client.transfer(&admin, &env.current_contract_address(), &fee_amount);
 
         // Store the market
         env.storage().persistent().set(&market_id, &market);
-        
+
         // Return the market ID
         market_id
     }
 
     // Allows users to vote on a market outcome by staking tokens
-    pub fn vote(
-        env: Env,
-        user: Address,
-        market_id: Symbol,
-        outcome: String,
-        stake: i128,
-    ) {
+    pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
         // Require authentication from the user
         user.require_auth();
 
         // Get the market from storage
-        let mut market: Market = env.storage().persistent().get(&market_id).unwrap_or_else(|| {
-            panic!("Market not found");
-        });
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| {
+                panic!("Market not found");
+            });
 
         // Check if the market is still active
         if env.ledger().timestamp() >= market.end_time {
@@ -206,25 +217,23 @@ impl PredictifyHybrid {
         }
 
         // Define the token contract to use for staking
-        let token_id = env.storage().persistent().get::<Symbol, Address>(
-            &Symbol::new(&env, "TokenID")
-        ).unwrap_or_else(|| {
-            panic!("Token contract not set");
-        });
+        let token_id = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Address>(&Symbol::new(&env, "TokenID"))
+            .unwrap_or_else(|| {
+                panic!("Token contract not set");
+            });
 
         // Create a client for the token contract
         let token_client = token::Client::new(&env, &token_id);
 
         // Transfer the staked amount from the user to this contract
-        token_client.transfer(
-            &user, 
-            &env.current_contract_address(), 
-            &stake
-        );
+        token_client.transfer(&user, &env.current_contract_address(), &stake);
 
         // Store the vote in the market
         market.votes.set(user.clone(), outcome);
-        
+
         // Update the total staked amount
         market.total_staked += stake;
 
@@ -233,15 +242,15 @@ impl PredictifyHybrid {
     }
 
     // Fetch oracle result to determine market outcome
-    pub fn fetch_oracle_result(
-        env: Env,
-        market_id: Symbol,
-        pyth_contract: Address,
-    ) -> String {
+    pub fn fetch_oracle_result(env: Env, market_id: Symbol, pyth_contract: Address) -> String {
         // Get the market from storage
-        let mut market: Market = env.storage().persistent().get(&market_id).unwrap_or_else(|| {
-            panic!("Market not found");
-        });
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| {
+                panic!("Market not found");
+            });
 
         // Check if the market has already been resolved
         if market.oracle_result.is_some() {
@@ -260,7 +269,9 @@ impl PredictifyHybrid {
         }
 
         // Get the price from the oracle
-        let oracle = PythOracle { contract_id: pyth_contract };
+        let oracle = PythOracle {
+            contract_id: pyth_contract,
+        };
         let price = match oracle.get_price(&env, &market.oracle_config.feed_id) {
             Ok(p) => p,
             Err(e) => panic_with_error!(env, e),
@@ -300,19 +311,18 @@ impl PredictifyHybrid {
     }
 
     // Allows users to dispute the market result by staking tokens
-    pub fn dispute_result(
-        env: Env,
-        user: Address,
-        market_id: Symbol,
-        stake: i128,
-    ) {
+    pub fn dispute_result(env: Env, user: Address, market_id: Symbol, stake: i128) {
         // Require authentication from the user
         user.require_auth();
 
         // Get the market from storage
-        let mut market: Market = env.storage().persistent().get(&market_id).unwrap_or_else(|| {
-            panic!("Market not found");
-        });
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| {
+                panic!("Market not found");
+            });
 
         // Ensure disputes are only possible after the market ends
         let current_time = env.ledger().timestamp();
@@ -327,25 +337,25 @@ impl PredictifyHybrid {
         }
 
         // Define the token contract to use for staking
-        let token_id = env.storage().persistent().get::<Symbol, Address>(
-            &Symbol::new(&env, "TokenID")
-        ).unwrap_or_else(|| {
-            panic!("Token contract not set");
-        });
+        let token_id = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Address>(&Symbol::new(&env, "TokenID"))
+            .unwrap_or_else(|| {
+                panic!("Token contract not set");
+            });
 
         // Create a client for the token contract
         let token_client = token::Client::new(&env, &token_id);
 
         // Transfer the stake from the user to the contract
-        token_client.transfer(
-            &user, 
-            &env.current_contract_address(), 
-            &stake
-        );
+        token_client.transfer(&user, &env.current_contract_address(), &stake);
 
         // Store the dispute stake in the market
         if let Some(existing_stake) = market.dispute_stakes.get(user.clone()) {
-            market.dispute_stakes.set(user.clone(), existing_stake + stake);
+            market
+                .dispute_stakes
+                .set(user.clone(), existing_stake + stake);
         } else {
             market.dispute_stakes.set(user.clone(), stake);
         }
@@ -360,16 +370,16 @@ impl PredictifyHybrid {
         env.storage().persistent().set(&market_id, &market);
     }
 
-
     // Resolves a market by combining oracle results and community votes
-    pub fn resolve_market(
-        env: Env,
-        market_id: Symbol,
-    ) -> String {
+    pub fn resolve_market(env: Env, market_id: Symbol) -> String {
         // Get the market from storage
-        let mut market: Market = env.storage().persistent().get(&market_id).unwrap_or_else(|| {
-            panic!("Market not found");
-        });
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| {
+                panic!("Market not found");
+            });
 
         // Check if the market end time has passed
         let current_time = env.ledger().timestamp();
@@ -393,7 +403,7 @@ impl PredictifyHybrid {
         // Find the community consensus (outcome with most votes)
         let mut community_result = oracle_result.clone(); // Default to oracle result if no votes
         let mut max_votes = 0;
-        
+
         for (outcome, count) in vote_counts.iter() {
             if count > max_votes {
                 max_votes = count;
@@ -407,8 +417,11 @@ impl PredictifyHybrid {
             oracle_result
         } else {
             // If they disagree, check if community votes are significant
-            let total_votes: u32 = vote_counts.values().into_iter().fold(0, |acc, count| acc + count);
-            
+            let total_votes: u32 = vote_counts
+                .values()
+                .into_iter()
+                .fold(0, |acc, count| acc + count);
+
             if total_votes == 0 {
                 // No community votes, use oracle result
                 oracle_result
@@ -418,14 +431,14 @@ impl PredictifyHybrid {
                 if max_votes * 100 > total_votes * 50 && total_votes >= 5 {
                     // Apply 70-30 weighting using integer arithmetic
                     // We'll use a scale of 0-100 for percentage calculation
-                    
+
                     // Generate a pseudo-random number by combining timestamp and ledger sequence
                     let timestamp = env.ledger().timestamp();
                     let sequence = env.ledger().sequence();
                     let combined = timestamp as u128 + sequence as u128;
                     let random_value = (combined % 100) as u32;
-                    
-                    // If random_value is less than 30 (representing 30% weight), 
+
+                    // If random_value is less than 30 (representing 30% weight),
                     // choose community result
                     if random_value < 30 {
                         community_result
@@ -441,7 +454,7 @@ impl PredictifyHybrid {
 
         // Record the final result in the market
         market.oracle_result = Some(final_result.clone());
-        
+
         // Update the market in storage
         env.storage().persistent().set(&market_id, &market);
 
