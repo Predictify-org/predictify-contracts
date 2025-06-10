@@ -241,6 +241,11 @@ impl PredictifyHybrid {
             // Calculate user's share (minus 2% fee)
             let user_share = (user_stake * 98) / 100;
             let total_pool = market.total_staked;
+
+            // Ensure winning_total is non-zero
+            if winning_total == 0 {
+                panic_with_error!(env, Error::NothingToClaim);
+            }
             let payout = (user_share * total_pool) / winning_total;
 
             // Get token client
