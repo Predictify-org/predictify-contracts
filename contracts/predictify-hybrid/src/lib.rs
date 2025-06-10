@@ -633,5 +633,24 @@ impl PredictifyHybrid {
         // Return the final result
         final_result
     }
+
+    // Clean up market storage
+    pub fn close_market(env: Env, admin: Address, market_id: Symbol) {
+        admin.require_auth();
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .expect("Admin not set");
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        // Remove market from storage
+        env.storage().persistent().remove(&market_id);
+    }
 }
 mod test;
