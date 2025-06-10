@@ -13,6 +13,8 @@ pub enum Error {
     InsufficientStake = 4,
     MarketAlreadyResolved = 5,
     InvalidOracleConfig = 6,
+    AlreadyClaimed = 7,
+    NothingToClaim = 8,
 }
 
 #[contracttype]
@@ -43,8 +45,11 @@ pub struct Market {
     pub oracle_config: OracleConfig,
     pub oracle_result: Option<String>,
     pub votes: Map<Address, String>,
+    pub stakes: Map<Address, i128>,  // User stakes
+    pub claimed: Map<Address, bool>, // Track claims
     pub total_staked: i128,
     pub dispute_stakes: Map<Address, i128>,
+    pub winning_outcome: Option<String>,
 }
 
 // Placeholder for Pyth oracle interface
@@ -165,6 +170,9 @@ impl PredictifyHybrid {
             votes: Map::new(&env),
             total_staked: 0,
             dispute_stakes: Map::new(&env),
+            stakes: Map::new(&env),
+            claimed: Map::new(&env),
+            winning_outcome: None,
         };
 
         // Deduct 1 XLM fee from the admin
@@ -189,6 +197,68 @@ impl PredictifyHybrid {
 
         // Return the market ID
         market_id
+    }
+
+    // NEW: Distribute winnings to users
+    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
+        user.require_auth();
+
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .expect("Market not found");
+
+        // Check if user has claimed already
+        if market.claimed.get(user.clone()).unwrap_or(false) {
+            panic_with_error!(env, Error::AlreadyClaimed);
+        }
+
+        // Check if market is resolved
+        let winning_outcome = match &market.winning_outcome {
+            Some(outcome) => outcome,
+            None => panic_with_error!(env, Error::MarketAlreadyResolved),
+        };
+
+        // Get user's vote and stake
+        let user_outcome = market
+            .votes
+            .get(user.clone())
+            .unwrap_or_else(|| panic_with_error!(env, Error::NothingToClaim));
+
+        let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
+
+        // Calculate payout if user won
+        if &user_outcome == winning_outcome {
+            // Calculate total winning stakes
+            let mut winning_total = 0;
+            for (voter, outcome) in market.votes.iter() {
+                if &outcome == winning_outcome {
+                    winning_total += market.stakes.get(voter.clone()).unwrap_or(0);
+                }
+            }
+
+            // Calculate user's share (minus 2% fee)
+            let user_share = (user_stake * 98) / 100;
+            let total_pool = market.total_staked;
+            let payout = (user_share * total_pool) / winning_total;
+
+            // Get token client
+            let token_id = env
+                .storage()
+                .persistent()
+                .get(&Symbol::new(&env, "TokenID"))
+                .expect("Token contract not set");
+
+            let token_client = token::Client::new(&env, &token_id);
+
+            // Transfer winnings to user
+            token_client.transfer(&env.current_contract_address(), &user, &payout);
+        }
+
+        // Mark as claimed
+        market.claimed.set(user.clone(), true);
+        env.storage().persistent().set(&market_id, &market);
     }
 
     // Allows users to vote on a market outcome by staking tokens
