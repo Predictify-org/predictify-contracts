@@ -15,6 +15,7 @@ pub enum Error {
     InvalidOracleConfig = 6,
     AlreadyClaimed = 7,
     NothingToClaim = 8,
+    MarketNotResolved = 9,
 }
 
 #[contracttype]
@@ -50,6 +51,7 @@ pub struct Market {
     pub total_staked: i128,
     pub dispute_stakes: Map<Address, i128>,
     pub winning_outcome: Option<String>,
+    pub fee_collected: bool, // Track fee collection
 }
 
 // Placeholder for Pyth oracle interface
@@ -95,6 +97,9 @@ impl OracleInterface for PythOracle {
 
 #[contract]
 pub struct PredictifyHybrid;
+
+const PERCENTAGE_DENOMINATOR: i128 = 100;
+const FEE_PERCENTAGE: i128 = 2; // 2% fee for the platform
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -173,6 +178,7 @@ impl PredictifyHybrid {
             stakes: Map::new(&env),
             claimed: Map::new(&env),
             winning_outcome: None,
+            fee_collected: false, // Initialize fee collection state
         };
 
         // Deduct 1 XLM fee from the admin
@@ -239,7 +245,8 @@ impl PredictifyHybrid {
             }
 
             // Calculate user's share (minus fee percentage)
-            let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE)) / PERCENTAGE_DENOMINATOR;
+            let user_share =
+                (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE)) / PERCENTAGE_DENOMINATOR;
             let total_pool = market.total_staked;
 
             // Ensure winning_total is non-zero
@@ -263,6 +270,53 @@ impl PredictifyHybrid {
 
         // Mark as claimed
         market.claimed.set(user.clone(), true);
+        env.storage().persistent().set(&market_id, &market);
+    }
+
+    // NEW: Collect platform fees
+    pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) {
+        admin.require_auth();
+
+        let market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .expect("Market not found");
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .expect("Admin not set");
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        // Check if fees already collected
+        if market.fee_collected {
+            panic_with_error!(env, Error::AlreadyClaimed);
+        }
+
+        // Calculate 2% fee
+        let fee = (market.total_staked * 2) / 100;
+
+        // Get token client
+        let token_id = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "TokenID"))
+            .expect("Token contract not set");
+
+        let token_client = token::Client::new(&env, &token_id);
+
+        // Transfer fee to admin
+        token_client.transfer(&env.current_contract_address(), &admin, &fee);
+
+        // Update market state
+        let mut market = market;
+        market.fee_collected = true;
         env.storage().persistent().set(&market_id, &market);
     }
 
