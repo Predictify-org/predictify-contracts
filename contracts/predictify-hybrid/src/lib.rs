@@ -217,7 +217,7 @@ impl PredictifyHybrid {
         // Check if market is resolved
         let winning_outcome = match &market.winning_outcome {
             Some(outcome) => outcome,
-            None => panic_with_error!(env, Error::MarketAlreadyResolved),
+            None => panic_with_error!(env, Error::MarketNotResolved),
         };
 
         // Get user's vote and stake
