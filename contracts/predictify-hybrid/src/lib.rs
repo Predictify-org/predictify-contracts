@@ -522,6 +522,17 @@ impl PredictifyHybrid {
             }
         };
 
+        // Calculate winning outcome
+        market.winning_outcome = Some(final_result.clone());
+
+        // Calculate total for winning outcome
+        let mut winning_total = 0;
+        for (user, outcome) in market.votes.iter() {
+            if outcome == final_result {
+                winning_total += market.stakes.get(user.clone()).unwrap_or(0);
+            }
+        }
+
         // Record the final result in the market
         market.oracle_result = Some(final_result.clone());
 
