@@ -238,8 +238,8 @@ impl PredictifyHybrid {
                 }
             }
 
-            // Calculate user's share (minus 2% fee)
-            let user_share = (user_stake * 98) / 100;
+            // Calculate user's share (minus fee percentage)
+            let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE)) / PERCENTAGE_DENOMINATOR;
             let total_pool = market.total_staked;
 
             // Ensure winning_total is non-zero
