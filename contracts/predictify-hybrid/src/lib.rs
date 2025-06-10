@@ -16,6 +16,7 @@ pub enum Error {
     AlreadyClaimed = 7,
     NothingToClaim = 8,
     MarketNotResolved = 9,
+    InvalidOutcome = 10,
 }
 
 #[contracttype]
@@ -317,6 +318,37 @@ impl PredictifyHybrid {
         // Update market state
         let mut market = market;
         market.fee_collected = true;
+        env.storage().persistent().set(&market_id, &market);
+    }
+
+    // Finalize market after disputes
+    pub fn finalize_market(env: Env, admin: Address, market_id: Symbol, outcome: String) {
+        admin.require_auth();
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .expect("Admin not set");
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .expect("Market not found");
+
+        // Validate outcome
+        if !market.outcomes.contains(&outcome) {
+            panic_with_error!(env, Error::InvalidOutcome);
+        }
+
+        // Set final outcome
+        market.winning_outcome = Some(outcome);
         env.storage().persistent().set(&market_id, &market);
     }
 
