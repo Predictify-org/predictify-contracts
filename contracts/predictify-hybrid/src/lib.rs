@@ -135,15 +135,7 @@ impl<'a> ReflectorOracleClient<'a> {
             .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args)
     }
 
-    fn price(&self, asset: ReflectorAsset, timestamp: u64) -> Option<ReflectorPriceData> {
-        let args = vec![
-            self.env,
-            asset.into_val(self.env),
-            timestamp.into_val(self.env),
-        ];
-        self.env
-            .invoke_contract(&self.contract_id, &symbol_short!("price"), args)
-    }
+// Removed the unused `price` method as it is not utilized in the current codebase.
 
     fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
         let args = vec![
