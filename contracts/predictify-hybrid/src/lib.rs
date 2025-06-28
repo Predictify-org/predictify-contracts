@@ -73,26 +73,25 @@ struct PythOracle {
 }
 
 impl OracleInterface for PythOracle {
-    fn get_price(&self, _env: &Env, _feed_id: &String) -> Result<i128, Error> {
+    fn get_price(&self, _env: &Env, feed_id: &String) -> Result<i128, Error> {
         // This is a placeholder for the actual Pyth oracle interaction
         // In a real implementation, we would call the Pyth contract here
-        // For now, we're returning a mock price
-
-        // Simulate a call to the Pyth oracle
-        // In a real implementation, you would use the actual token contract ID
-        // We're using the contract_id field to avoid the unused field warning
-        if self.contract_id
-            == Address::from_str(
-                _env,
-                "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-            )
-        {
-            // This is just a placeholder condition to use the contract_id field
-            return Ok(27_000_00); // Different price for this specific contract
+        // For now, we're returning a mock price based on the feed_id
+        
+        // For simplicity, we'll use a basic approach to determine the asset
+        // In a real implementation, you would parse the feed_id properly
+        
+        // Return different mock prices based on the asset
+        // Since we can't easily parse the String in no_std, we'll use a simple approach
+        if feed_id == &String::from_str(_env, "BTC/USD") {
+            Ok(26_000_00) // $26,000 for BTC
+        } else if feed_id == &String::from_str(_env, "ETH/USD") {
+            Ok(3_200_00)  // $3,200 for ETH
+        } else if feed_id == &String::from_str(_env, "XLM/USD") {
+            Ok(12_00)     // $0.12 for XLM
+        } else {
+            Ok(26_000_00) // Default to BTC price
         }
-
-        // Return a simulated price (e.g., $26,000 for BTC/USD)
-        Ok(26_000_00)
     }
 }
 
