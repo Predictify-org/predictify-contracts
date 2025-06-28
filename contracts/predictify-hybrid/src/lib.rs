@@ -156,6 +156,38 @@ impl<'a> ReflectorOracleClient<'a> {
     }
 }
 
+struct ReflectorOracle {
+    contract_id: Address,
+}
+
+impl OracleInterface for ReflectorOracle {
+    fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
+        // Parse the feed_id to extract asset information
+        // Expected format: "BTC/USD" or "ETH/USD" etc.
+        // For now, we'll use the feed_id directly as the asset symbol
+        
+        // Create asset symbol for Reflector
+        // Since we can't easily parse the String in no_std, we'll use the feed_id directly
+        let base_asset = ReflectorAsset::Other(Symbol::new(env, "BTC")); // Default to BTC for now
+
+        // Create Reflector client
+        let reflector_client = ReflectorOracleClient::new(env, self.contract_id.clone());
+
+        // Try to get the latest price first
+        if let Some(price_data) = reflector_client.lastprice(base_asset.clone()) {
+            return Ok(price_data.price);
+        }
+
+        // If lastprice fails, try TWAP with 1 record
+        if let Some(twap_price) = reflector_client.twap(base_asset, 1) {
+            return Ok(twap_price);
+        }
+
+        // If both fail, return error
+        Err(Error::OracleUnavailable)
+    }
+}
+
 #[contract]
 pub struct PredictifyHybrid;
 
