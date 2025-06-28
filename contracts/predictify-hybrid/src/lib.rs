@@ -119,6 +119,10 @@ pub struct ReflectorConfigData {
     pub period: u64,
     pub resolution: u32,
 }
+struct ReflectorOracleClient<'a> {
+    env: &'a Env,
+    contract_id: Address,
+}
 
 #[contract]
 pub struct PredictifyHybrid;
