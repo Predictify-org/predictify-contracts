@@ -96,6 +96,30 @@ impl OracleInterface for PythOracle {
     }
 }
 
+// Reflector Oracle Contract Types
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReflectorAsset {
+    Stellar(Address),
+    Other(Symbol),
+}
+
+#[contracttype]
+pub struct ReflectorPriceData {
+    pub price: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+pub struct ReflectorConfigData {
+    pub admin: Address,
+    pub assets: Vec<ReflectorAsset>,
+    pub base_asset: ReflectorAsset,
+    pub decimals: u32,
+    pub period: u64,
+    pub resolution: u32,
+}
+
 #[contract]
 pub struct PredictifyHybrid;
 
