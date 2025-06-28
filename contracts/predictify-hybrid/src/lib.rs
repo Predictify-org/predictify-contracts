@@ -124,6 +124,38 @@ struct ReflectorOracleClient<'a> {
     contract_id: Address,
 }
 
+impl<'a> ReflectorOracleClient<'a> {
+    fn new(env: &'a Env, contract_id: Address) -> Self {
+        Self { env, contract_id }
+    }
+
+    fn lastprice(&self, asset: ReflectorAsset) -> Option<ReflectorPriceData> {
+        let args = vec![self.env, asset.into_val(self.env)];
+        self.env
+            .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args)
+    }
+
+    fn price(&self, asset: ReflectorAsset, timestamp: u64) -> Option<ReflectorPriceData> {
+        let args = vec![
+            self.env,
+            asset.into_val(self.env),
+            timestamp.into_val(self.env),
+        ];
+        self.env
+            .invoke_contract(&self.contract_id, &symbol_short!("price"), args)
+    }
+
+    fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
+        let args = vec![
+            self.env,
+            asset.into_val(self.env),
+            records.into_val(self.env),
+        ];
+        self.env
+            .invoke_contract(&self.contract_id, &symbol_short!("twap"), args)
+    }
+}
+
 #[contract]
 pub struct PredictifyHybrid;
 
