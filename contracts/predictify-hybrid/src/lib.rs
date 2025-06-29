@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, Env,
-    Map, String, Symbol, Vec, symbol_short, vec, IntoVal
+    Map, String, Symbol, Vec, symbol_short, vec, IntoVal,
 };
 
 #[contracterror]
@@ -118,6 +118,8 @@ pub struct ReflectorConfigData {
     pub period: u64,
     pub resolution: u32,
 }
+
+// Reflector Oracle Client
 struct ReflectorOracleClient<'a> {
     env: &'a Env,
     contract_id: Address,
@@ -134,7 +136,15 @@ impl<'a> ReflectorOracleClient<'a> {
             .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args)
     }
 
-// Removed the unused `price` method as it is not utilized in the current codebase.
+    fn price(&self, asset: ReflectorAsset, timestamp: u64) -> Option<ReflectorPriceData> {
+        let args = vec![
+            self.env,
+            asset.into_val(self.env),
+            timestamp.into_val(self.env),
+        ];
+        self.env
+            .invoke_contract(&self.contract_id, &symbol_short!("price"), args)
+    }
 
     fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
         let args = vec![
@@ -200,7 +210,7 @@ impl PredictifyHybrid {
         question: String,
         outcomes: Vec<String>,
         duration_days: u32,
-        oracle_config: OracleConfig,
+        oracle_config: OracleConfig, // Add oracle config parameter
     ) -> Symbol {
         // Authenticate that the caller is the admin
         admin.require_auth();
@@ -241,21 +251,13 @@ impl PredictifyHybrid {
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
         let end_time: u64 = env.ledger().timestamp() + duration_seconds;
 
-        // Create a default oracle config (can be updated later if needed)
-        let oracle_config = OracleConfig {
-            provider: OracleProvider::Pyth,
-            feed_id: String::from_str(&env, ""),
-            threshold: 0,
-            comparison: String::from_str(&env, "eq"),
-        };
-
         // Create a new market
         let market = Market {
             admin: admin.clone(),
             question,
             outcomes,
             end_time,
-            oracle_config,
+            oracle_config, // Use the provided oracle config
             oracle_result: None,
             votes: Map::new(&env),
             total_staked: 0,
@@ -479,6 +481,9 @@ impl PredictifyHybrid {
         // Store the vote in the market
         market.votes.set(user.clone(), outcome);
 
+        // Store the user's stake
+        market.stakes.set(user.clone(), stake);
+
         // Update the total staked amount
         market.total_staked += stake;
 
@@ -487,7 +492,7 @@ impl PredictifyHybrid {
     }
 
     // Fetch oracle result to determine market outcome
-    pub fn fetch_oracle_result(env: Env, market_id: Symbol, pyth_contract: Address) -> String {
+    pub fn fetch_oracle_result(env: Env, market_id: Symbol, oracle_contract: Address) -> String {
         // Get the market from storage
         let mut market: Market = env
             .storage()
@@ -508,18 +513,29 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::MarketClosed);
         }
 
-        // Validate the oracle config
-        if market.oracle_config.provider != OracleProvider::Pyth {
-            panic_with_error!(env, Error::InvalidOracleConfig);
-        }
-
-        // Get the price from the oracle
-        let oracle = PythOracle {
-            contract_id: pyth_contract,
-        };
-        let price = match oracle.get_price(&env, &market.oracle_config.feed_id) {
-            Ok(p) => p,
-            Err(e) => panic_with_error!(env, e),
+        // Get the price from the appropriate oracle based on provider
+        let price = match market.oracle_config.provider {
+            OracleProvider::Pyth => {
+                let oracle = PythOracle {
+                    contract_id: oracle_contract,
+                };
+                match oracle.get_price(&env, &market.oracle_config.feed_id) {
+                    Ok(p) => p,
+                    Err(e) => panic_with_error!(env, e),
+                }
+            }
+            OracleProvider::Reflector => {
+                let oracle = ReflectorOracle {
+                    contract_id: oracle_contract,
+                };
+                match oracle.get_price(&env, &market.oracle_config.feed_id) {
+                    Ok(p) => p,
+                    Err(e) => panic_with_error!(env, e),
+                }
+            }
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                panic_with_error!(env, Error::InvalidOracleConfig);
+            }
         };
 
         // Determine the outcome based on the price and threshold
@@ -701,10 +717,10 @@ impl PredictifyHybrid {
         market.winning_outcome = Some(final_result.clone());
 
         // Calculate total for winning outcome
-        let mut winning_total = 0;
+        let mut _winning_total = 0;
         for (user, outcome) in market.votes.iter() {
             if outcome == final_result {
-                winning_total += market.stakes.get(user.clone()).unwrap_or(0);
+                _winning_total += market.stakes.get(user.clone()).unwrap_or(0);
             }
         }
 
@@ -760,50 +776,50 @@ impl PredictifyHybrid {
         Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
     }
 
-        // Helper function to create a market with Pyth oracle
-        pub fn create_pyth_market(
-            env: Env,
-            admin: Address,
-            question: String,
-            outcomes: Vec<String>,
-            duration_days: u32,
-            feed_id: String,
-            threshold: i128,
-            comparison: String,
-        ) -> Symbol {
-            // Create Pyth oracle configuration
-            let oracle_config = OracleConfig {
-                provider: OracleProvider::Pyth,
-                feed_id,
-                threshold,
-                comparison,
-            };
-    
-            // Call the main create_market function
-            Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
-        }
+    // Helper function to create a market with Pyth oracle
+    pub fn create_pyth_market(
+        env: Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        feed_id: String,
+        threshold: i128,
+        comparison: String,
+    ) -> Symbol {
+        // Create Pyth oracle configuration
+        let oracle_config = OracleConfig {
+            provider: OracleProvider::Pyth,
+            feed_id,
+            threshold,
+            comparison,
+        };
 
-        // Helper function to create a market with Reflector oracle for specific assets
-        pub fn create_reflector_asset_market(
-            env: Env,
-            admin: Address,
-            question: String,
-            outcomes: Vec<String>,
-            duration_days: u32,
-            asset_symbol: String,  // e.g., "BTC", "ETH", "XLM"
-            threshold: i128,
-            comparison: String,
-        ) -> Symbol {
-            // Create Reflector oracle configuration
-            let oracle_config = OracleConfig {
-                provider: OracleProvider::Reflector,
-                feed_id: asset_symbol, // Use asset symbol as feed_id
-                threshold,
-                comparison,
-            };
-    
-            // Call the main create_market function
-            Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
-        }
+        // Call the main create_market function
+        Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+    }
+
+    // Helper function to create a market with Reflector oracle for specific assets
+    pub fn create_reflector_asset_market(
+        env: Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        asset_symbol: String,  // e.g., "BTC", "ETH", "XLM"
+        threshold: i128,
+        comparison: String,
+    ) -> Symbol {
+        // Create Reflector oracle configuration
+        let oracle_config = OracleConfig {
+            provider: OracleProvider::Reflector,
+            feed_id: asset_symbol, // Use asset symbol as feed_id
+            threshold,
+            comparison,
+        };
+
+        // Call the main create_market function
+        Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+    }
 }
 mod test;
