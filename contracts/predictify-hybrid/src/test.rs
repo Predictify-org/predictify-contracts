@@ -2,9 +2,7 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
-    token::{Client as TokenClient, StellarAssetClient},
-    vec, String, Symbol,
+    log, testutils::{Address as _, Ledger, LedgerInfo}, token::{Client as TokenClient, StellarAssetClient}, vec, String, Symbol
 };
 
 struct TokenTest<'a> {
@@ -86,14 +84,6 @@ impl<'a> PredictifyTest<'a> {
     fn create_test_market(&self) {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
 
-        // Create oracle config for Pyth
-        let oracle_config = OracleConfig {
-            provider: OracleProvider::Pyth,
-            feed_id: String::from_str(&self.env, "BTC/USD"),
-            threshold: 25_000_00, // $25,000
-            comparison: String::from_str(&self.env, "gt"),
-        };
-
         // Create market outcomes
         let outcomes = vec![
             &self.env,
@@ -101,29 +91,24 @@ impl<'a> PredictifyTest<'a> {
             String::from_str(&self.env, "no"),
         ];
 
-        // Create market question
-        let question = String::from_str(&self.env, "Will BTC go above $25,000 by December 31?");
-
-        // Set end time to 30 days from now
-        let current_time = self.env.ledger().timestamp();
-        let end_time = current_time + 30 * 24 * 60 * 60; // 30 days in seconds
-
         // Create market
         self.env.mock_all_auths();
-        // client.create_market(
-        //     &self.admin,
-        //     &self.market_id,
-        //     &question,
-        //     &outcomes,
-        //     &end_time,
-        //     &oracle_config,
-        // );
         client.create_market(
             &self.admin,
             &String::from_str(&self.env, "Will BTC go above $25,000 by December 31?"),
             &outcomes,
             &30,
+            &self.create_default_oracle_config(),
         );
+    }
+
+    fn create_default_oracle_config(&self) -> OracleConfig {
+        OracleConfig {
+            provider: OracleProvider::Pyth,
+            feed_id: String::from_str(&self.env, "BTC/USD"),
+            threshold: 2500000,
+            comparison: String::from_str(&self.env, "gt"),
+        }
     }
 }
 
@@ -151,6 +136,7 @@ fn test_create_market_successful() {
         &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
         &outcomes,
         &duration_days,
+        &test.create_default_oracle_config(),
     );
 
     // Verify market creation
@@ -195,6 +181,7 @@ fn test_create_market_with_non_admin() {
         &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
         &outcomes,
         &30,
+        &test.create_default_oracle_config(),
     );
 }
 
@@ -216,6 +203,7 @@ fn test_create_market_with_empty_outcome() {
         &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
         &outcomes,
         &30,
+        &test.create_default_oracle_config(),
     );
 }
 
@@ -241,6 +229,7 @@ fn test_create_market_with_empty_question() {
         &String::from_str(&test.env, ""),
         &outcomes,
         &30,
+        &test.create_default_oracle_config(),
     );
 }
 
@@ -268,6 +257,7 @@ fn test_successful_vote() {
         &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
         &outcomes,
         &duration_days,
+        &test.create_default_oracle_config(),
     );
 
     // Check initial balance
@@ -337,6 +327,7 @@ fn test_vote_on_closed_market() {
         &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
         &outcomes,
         &duration_days,
+        &test.create_default_oracle_config(),
     );
 
     // Get market to find out its end time
@@ -396,6 +387,7 @@ fn test_vote_with_invalid_outcome() {
         &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
         &outcomes,
         &duration_days,
+        &test.create_default_oracle_config(),
     );
     // Attempt to vote with an invalid outcome
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -481,7 +473,7 @@ fn test_fetch_oracle_result() {
     let outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
 
     // Verify the outcome based on mock Pyth price ($26k > $25k threshold)
-    assert_eq!(outcome, String::from_str(&test.env, "no"));
+    assert_eq!(outcome, String::from_str(&test.env, "yes"));
 
     // Verify market state
     let updated_market = test.env.as_contract(&test.contract_id, || {
@@ -493,7 +485,7 @@ fn test_fetch_oracle_result() {
     });
     assert_eq!(
         updated_market.oracle_result,
-        Some(String::from_str(&test.env, "no"))
+        Some(String::from_str(&test.env, "yes"))
     );
 }
 
@@ -747,7 +739,7 @@ fn test_resolve_market_oracle_and_community_agree() {
     });
     // Oracle result is 'yes' (mock price 26k > 25k threshold)
     let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
-    assert_eq!(oracle_outcome, String::from_str(&test.env, "no"));
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
     let final_result = client.resolve_market(&test.market_id);
@@ -801,14 +793,14 @@ fn test_resolve_market_oracle_wins_low_votes() {
     });
     // Oracle result is 'yes'
     let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
-    assert_eq!(oracle_outcome, String::from_str(&test.env, "no"));
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
     let final_result = client.resolve_market(&test.market_id);
 
     // --- Verify Result ---
     // Oracle ('yes') disagrees with community ('no'), but low votes (<5), so oracle wins.
-    assert_eq!(final_result, String::from_str(&test.env, "no"));
+    assert_eq!(final_result, String::from_str(&test.env, "yes"));
 }
 
 #[test]
@@ -858,7 +850,7 @@ fn test_resolve_market_oracle_wins_weighted() {
     });
     // Oracle result is 'yes'
     let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
-    assert_eq!(oracle_outcome, String::from_str(&test.env, "no"));
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
     let final_result = client.resolve_market(&test.market_id);
@@ -866,7 +858,7 @@ fn test_resolve_market_oracle_wins_weighted() {
     // --- Verify Result ---
     // Oracle ('yes') disagrees with community ('no'), significant votes,
     // but weighted random choice favors oracle.
-    assert_eq!(final_result, String::from_str(&test.env, "no"));
+    assert_eq!(final_result, String::from_str(&test.env, "yes"));
 }
 
 #[test]
@@ -916,7 +908,7 @@ fn test_resolve_market_community_wins_weighted() {
     });
     // Oracle result is 'yes'
     let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
-    assert_eq!(oracle_outcome, String::from_str(&test.env, "no"));
+    assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
     let final_result = client.resolve_market(&test.market_id);
@@ -927,6 +919,7 @@ fn test_resolve_market_community_wins_weighted() {
     assert_eq!(final_result, String::from_str(&test.env, "no"));
 }
 
+#[test]
 fn test_reflector_oracle_get_price_success() {
     // Setup test environment
     let test = PredictifyTest::setup();
