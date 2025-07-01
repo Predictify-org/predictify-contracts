@@ -162,7 +162,7 @@ struct ReflectorOracle {
 }
 
 impl OracleInterface for ReflectorOracle {
-    fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
+    fn get_price(&self, env: &Env, _feed_id: &String) -> Result<i128, Error> {
         // Parse the feed_id to extract asset information
         // Expected format: "BTC/USD" or "ETH/USD" etc.
         // For now, we'll use the feed_id directly as the asset symbol
