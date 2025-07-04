@@ -1,139 +1,202 @@
-# Soroban Project
+# Predictify Contracts Mainnet Deployment Guide
 
-This repository contains smart contracts built for the Stellar Soroban platform, organized as a Rust workspace. It includes both example and advanced contracts, with a focus on prediction markets and oracle integration.
-
----
-
-## Project Structure
-
-```text
-.
-├── contracts
-│   ├── hello-world
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   ├── Cargo.toml
-│   │   └── Makefile
-│   └── predictify-hybrid
-│       ├── src
-│       │   ├── lib.rs
-│       │   └── test.rs
-│       ├── Cargo.toml
-│       ├── Makefile
-│       └── README.md
-├── Cargo.toml
-└── README.md
-```
-
-- New Soroban contracts can be added in the `contracts` directory, each in their own subdirectory with its own `Cargo.toml`.
-- All contracts share dependencies via the top-level workspace `Cargo.toml`.
+> **Platform:** Stellar Soroban Mainnet  
+> **Audience:** Developers, DevOps, and maintainers deploying Predictify contracts to production
 
 ---
 
-## Contracts Overview
+## 📋 Table of Contents
+1. [Project Summary](#project-summary)  
+2. [Prerequisites](#prerequisites)  
+3. [Configuration for Mainnet](#configuration-for-mainnet)  
+4. [Deployment Instructions](#deployment-instructions)  
+5. [Oracle Setup](#oracle-setup)  
+6. [Testing Deployment](#testing-deployment)  
+7. [Monitoring and Alerts](#monitoring-and-alerts)  
+8. [Security Checklist](#security-checklist)  
+9. [Rollback Procedures](#rollback-procedures)  
+10. [Maintenance Procedures](#maintenance-procedures)
 
-### 1. hello-world
-A minimal example contract for Soroban, demonstrating basic contract structure and testing.
+---
 
-**Functionality:**
-- Exposes a single function `hello(to: String) -> Vec<String>` that returns a greeting message.
-- Includes a simple test in `test.rs`.
+## 🧠 Project Summary
+This repository contains smart contracts for Stellar's Soroban platform, organized in a Rust workspace. Key components include:
 
-**Example:**
-```rust
-let words = client.hello(&String::from_str(&env, "Dev"));
-// Returns: ["Hello", "Dev"]
-```
+- `hello-world`: A basic example contract for testing and structure reference.
+- `predictify-hybrid`: A hybrid prediction market with oracle integration (Reflector, Pyth), staking, dispute resolution, and community voting.
 
-**Build & Test:**
+---
+
+## 🛠️ Prerequisites
+- [Rust](https://www.rust-lang.org/tools/install)
+- [Soroban CLI](https://github.com/stellar/soroban-tools)
+- Stellar-funded deployer account (mainnet)
+- Admin account (preferably multisig-secured)
+
+Install tools:
 ```bash
-cd contracts/hello-world
-make build   # Build the contract
-make test    # Run tests
+rustup update
+cargo install --locked --version 20.0.0 soroban-cli
 ```
 
 ---
 
-### 2. predictify-hybrid
-A hybrid prediction market contract that integrates with real oracles (notably the Reflector Oracle) and supports community voting for market resolution. This contract is suitable for real-world prediction markets on Stellar.
+## ⚙️ Configuration for Mainnet
 
-**Key Features:**
-- Real-time price feeds from the Reflector oracle contract
-- Hybrid resolution: combines oracle data with community voting
-- Multiple oracle support (Reflector, Pyth, and more)
-- Dispute and staking system
-- Fee structure (2% platform fee + creation fee)
-- Security: authentication, authorization, input validation, and reentrancy protection
-
-**Main Functions:**
-- `initialize(admin: Address)`
-- `create_reflector_market(...)` and `create_reflector_asset_market(...)`
-- `create_pyth_market(...)`
-- `fetch_oracle_result(market_id, oracle_contract)`
-- `vote(user, market_id, outcome, stake)`
-- `resolve_market(market_id)`
-- `claim_winnings(user, market_id)`
-
-**Example Usage:**
-```javascript
-// Create a BTC price prediction market using Reflector oracle
-const marketId = await predictifyClient.create_reflector_market(
-    adminAddress,
-    "Will BTC price be above $50,000 by December 31, 2024?",
-    ["yes", "no"],
-    30, // days
-    "BTC",
-    5000000, // $50,000 in cents
-    "gt"
-);
-
-// Users vote
-await predictifyClient.vote(userAddress, marketId, "yes", 1000000000); // 100 XLM stake
-
-// Fetch oracle result and resolve
-const oracleResult = await predictifyClient.fetch_oracle_result(marketId, REFLECTOR_CONTRACT);
-const finalResult = await predictifyClient.resolve_market(marketId);
+Add Stellar mainnet config:
+```bash
+soroban config network add mainnet \
+  --rpc-url https://rpc.mainnet.stellar.org:443 \
+  --network-passphrase "Public Global Stellar Network ; September 2015"
 ```
 
-**Build & Test:**
+Create a `.env.mainnet` file:
+```env
+NETWORK=mainnet
+DEPLOYER_SECRET_KEY="SB..."
+ADMIN_ADDRESS="GB..."
+ORACLE_CONTRACT="..."
+```
+
+---
+
+## 🚀 Deployment Instructions
+
+### Build Contracts
 ```bash
 cd contracts/predictify-hybrid
-make build   # Build the contract
-make test    # Run tests
+make build
 ```
 
-**Deployment:**
+### Deploy to Mainnet
 ```bash
-cargo build --target wasm32-unknown-unknown --release
-soroban contract deploy --wasm target/wasm32-unknown-unknown/release/predictify_hybrid.wasm
-soroban contract invoke --id <contract_id> -- initialize --admin <admin_address>
+soroban contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/predictify_hybrid.wasm \
+  --network $NETWORK \
+  --source $DEPLOYER_SECRET_KEY
 ```
 
-**Troubleshooting:**
-- Ensure the Reflector oracle contract is accessible and the asset symbol is supported.
-- Check network connectivity to the Stellar network.
-- Review contract logs for oracle call errors.
-
----
-
-## Workspace Build & Test
-
-From the project root, you can build and test all contracts:
-
+### Initialize Contract
 ```bash
-cargo build --workspace
-cargo test --workspace
+soroban contract invoke \
+  --id <contract_id> \
+  --fn initialize \
+  --network $NETWORK \
+  --source $DEPLOYER_SECRET_KEY \
+  --arg admin=$ADMIN_ADDRESS
+```
+
+Record and store the contract ID securely.
+
+---
+
+## 🔮 Oracle Setup
+
+### Oracle Options
+- Primary support: Reflector Oracle
+- Others: Pyth or custom signed payloads
+
+### Setup Steps
+1. Deploy the oracle contract (if required).
+2. Ensure oracle contract ID is stored in the main contract via admin call.
+3. Off-chain oracle should:
+   - Sign market outcomes
+   - Submit results via `fetch_oracle_result()` or similar entrypoints
+
+Oracle JSON Payload Example:
+```json
+{
+  "market_id": "001",
+  "result": "yes",
+  "timestamp": "2025-07-04T12:00:00Z"
+}
 ```
 
 ---
 
-## Resources
-- [Soroban Documentation](https://developers.stellar.org/docs/build/smart-contracts/overview)
-- [Soroban Examples](https://github.com/stellar/soroban-examples)
-- [Reflector Oracle](https://github.com/reflector-labs/reflector-oracle)
+## 🧪 Testing Deployment
+
+### Unit and Integration Tests
+```bash
+make test
+```
+
+### Dry-Run on Futurenet
+```bash
+soroban config network use futurenet
+soroban contract deploy ...
+```
+
+### Post-Mainnet Checks
+- Use `soroban contract inspect` to verify deployment
+- Validate end-to-end market creation, voting, oracle submission, and claiming
 
 ---
+
+## 📊 Monitoring and Alerts
+
+### Tools:
+- [Stellar Expert](https://stellar.expert/explorer/public)
+- Custom CLI scripts to watch tx status
+- Error tracking via logs + alerting via Slack/Discord/Webhooks
+
+### Metrics to Monitor:
+- Oracle submission frequency and failures
+- Market volume anomalies
+- Dispute activations and unresolved markets
+
+---
+
+## 🔐 Security Checklist
+
+### ✅ Account Security
+- [ ] Admin/deployer keys stored in hardware wallets or secure key vaults
+- [ ] Avoid deploying from hot wallets or CLI-stored keys
+- [ ] Multisig setup for critical contract ownership (if supported)
+
+### ✅ Smart Contract Safeguards
+- [ ] All admin functions require `require_auth(admin)`
+- [ ] Oracle IDs must be validated against allowlist
+- [ ] Reentrancy protected via Soroban execution model
+- [ ] Input sanitization for all string, numeric, and enum arguments
+- [ ] Dispute logic isolated from oracle resolution path
+- [ ] `initialize()` callable once only; enforce init guard
+
+### ✅ Network and Deployment
+- [ ] Contract ID recorded and versioned
+- [ ] Use Soroban’s `--network` config to prevent misdeployments
+- [ ] Securely store and manage all `.env` files
+- [ ] Validate deployed WASM checksum matches build artifact
+
+---
+
+## 🔁 Rollback Procedures
+- Use pausable logic if available (e.g., freeze all markets via admin call)
+- Deploy new contract instance if bug is unpatchable
+- Migrate state via admin oracles (if implemented)
+- Revoke oracle privileges for breached sources
+
+---
+
+## 🛠️ Maintenance Procedures
+- Monitor oracle reliability and submission cadence
+- Add/remove oracles via controlled admin processes
+- Periodically test and patch contracts via redeployments
+- Log usage metrics for governance and market integrity
+- Respond to disputes in <48 hours using automated + manual review
+
+---
+
+## 📎 Suggested Enhancements
+- GitHub Actions for CI + testnet deploy
+- Soroban integration test suite with mocked oracles
+- Publish deployed contract IDs in README
+- Oracle dashboard or visual monitor tool (Grafana, etc.)
+
+---
+
+For deployment support or technical questions, please open an issue or contact the Predictify core team.
 
 ## License
 This project is open source and available under the MIT License.
+
