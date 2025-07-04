@@ -2,42 +2,41 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo}, token::{Client as TokenClient, StellarAssetClient}, vec, String, Symbol
+    testutils::{Address as _, Ledger, LedgerInfo}, token::{self, StellarAssetClient}, vec, String, Symbol
 };
 
-struct TokenTest<'a> {
+struct TokenTest {
     token_id: Address,
-    token_client: TokenClient<'a>,
     env: Env,
 }
 
-impl<'a> TokenTest<'a> {
+impl TokenTest {
     fn setup() -> Self {
         let env = Env::default();
         env.mock_all_auths();
         let token_admin = Address::generate(&env);
-        let token_id = env.register_stellar_asset_contract(token_admin.clone());
-        let token_client = TokenClient::new(&env, &token_id);
+        // register_stellar_asset_contract_v2 returns StellarAssetContract
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_contract.address();
 
         Self {
-            token_id,
-            token_client,
+            token_id: token_address,
             env,
         }
     }
 }
 
-struct PredictifyTest<'a> {
+struct PredictifyTest {
     env: Env,
     contract_id: Address,
-    token_test: TokenTest<'a>,
+    token_test: TokenTest,
     admin: Address,
     user: Address,
     market_id: Symbol,
     pyth_contract: Address,
 }
 
-impl<'a> PredictifyTest<'a> {
+impl PredictifyTest {
     fn setup() -> Self {
         let token_test = TokenTest::setup();
         let env = token_test.env.clone();
@@ -46,8 +45,8 @@ impl<'a> PredictifyTest<'a> {
         let admin = Address::generate(&env);
         let user = Address::generate(&env);
 
-        // Initialize contract
-        let contract_id = env.register_contract(None, PredictifyHybrid);
+        // Initialize contract - register takes the contract type directly
+        let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
         client.initialize(&admin);
 
@@ -261,8 +260,9 @@ fn test_successful_vote() {
     );
 
     // Check initial balance
-    let user_balance_before = test.token_test.token_client.balance(&test.user);
-    let contract_balance_before = test.token_test.token_client.balance(&test.contract_id);
+    let token_client = token::Client::new(&test.env, &test.token_test.token_id);
+    let user_balance_before = token_client.balance(&test.user);
+    let contract_balance_before = token_client.balance(&test.contract_id);
 
     // Set staking amount
     let stake_amount: i128 = 100_0000000;
@@ -277,8 +277,8 @@ fn test_successful_vote() {
     );
 
     // Verify token transfer
-    let user_balance_after = test.token_test.token_client.balance(&test.user);
-    let contract_balance_after = test.token_test.token_client.balance(&test.contract_id);
+    let user_balance_after = token_client.balance(&test.user);
+    let contract_balance_after = token_client.balance(&test.contract_id);
 
     assert_eq!(user_balance_before - stake_amount, user_balance_after);
     assert_eq!(
@@ -578,11 +578,12 @@ fn test_dispute_result() {
     client.dispute_result(&test.user, &test.market_id, &dispute_stake);
 
     // Verify stake transfer
+    let token_client = token::Client::new(&test.env, &test.token_test.token_id);
     assert_eq!(
-        test.token_test.token_client.balance(&test.user),
+        token_client.balance(&test.user),
         1000_0000000 - dispute_stake
     );
-    assert!(test.token_test.token_client.balance(&test.contract_id) >= dispute_stake);
+    assert!(token_client.balance(&test.contract_id) >= dispute_stake);
 
     // Verify dispute recorded and end time extended
     let updated_market = test.env.as_contract(&test.contract_id, || {

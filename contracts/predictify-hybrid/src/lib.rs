@@ -17,6 +17,11 @@ pub enum Error {
     NothingToClaim = 8,
     MarketNotResolved = 9,
     InvalidOutcome = 10,
+    PythContractError = 11,
+    PythPriceStale = 12,
+    PythFeedNotFound = 13,
+    PythInvalidResponse = 14,
+    PythConfidenceTooLow = 15,
 }
 
 #[contracttype]
@@ -55,9 +60,18 @@ pub struct Market {
     pub fee_collected: bool, // Track fee collection
 }
 
-// Placeholder for Pyth oracle interface
+// Pyth oracle interface and data structures
 #[contracttype]
 pub struct PythPrice {
+    pub price: i128,
+    pub conf: u64,
+    pub expo: i32,
+    pub publish_time: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PythPriceInfo {
     pub price: i128,
     pub conf: u64,
     pub expo: i32,
@@ -68,29 +82,217 @@ trait OracleInterface {
     fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
 }
 
+// Pyth Oracle Client for real contract integration
+struct PythOracleClient<'a> {
+    env: &'a Env,
+    #[allow(dead_code)]
+    contract_id: Address,
+}
+
+impl<'a> PythOracleClient<'a> {
+    fn new(env: &'a Env, contract_id: Address) -> Self {
+        Self { env, contract_id }
+    }
+
+    /// Get the latest price for a given feed ID from Pyth contract
+    fn get_latest_price(&self, feed_id: String) -> Result<PythPriceInfo, Error> {
+        // For now, we'll simulate the contract call since we don't have a real Pyth contract
+        // In a real implementation, this would make an actual contract call:
+        // 
+        // let feed_bytes = self.convert_feed_id_to_bytes32(feed_id.clone())?;
+        // let args = (feed_bytes,);
+        // let result: PythPriceInfo = self.env
+        //     .invoke_contract(&self.contract_id, &symbol_short!("get_price"), args);
+        
+        // Simulate price response for demo purposes
+        let simulated_price_info = self.simulate_pyth_response(feed_id.clone())?;
+        
+        // Validate the price data
+        self.validate_price_data(&simulated_price_info)?;
+        Ok(simulated_price_info)
+    }
+
+    /// Validate that a Pyth feed ID is properly formatted
+    fn validate_pyth_feed(&self, feed_id: String) -> Result<(), Error> {
+        // Check if feed_id is not empty
+        if feed_id.len() == 0 {
+            return Err(Error::PythFeedNotFound);
+        }
+        
+        // For Pyth, feed IDs are typically hex strings representing 32-byte identifiers
+        // We'll do basic validation here
+        if feed_id.len() < 3 {  // At least "0x" + some hex chars
+            return Err(Error::PythFeedNotFound);
+        }
+        
+        Ok(())
+    }
+
+    /// Parse and validate Pyth price response
+    fn parse_pyth_price_response(&self, price_info: &PythPriceInfo) -> Result<i128, Error> {
+        // Check if price is positive (Pyth can return negative prices for some assets)
+        if price_info.price <= 0 {
+            return Err(Error::PythInvalidResponse);
+        }
+
+        // Check price staleness (prices older than 60 seconds are considered stale)
+        let current_time = self.env.ledger().timestamp();
+        let max_age = 60; // 60 seconds
+        
+        if current_time > price_info.publish_time + max_age {
+            return Err(Error::PythPriceStale);
+        }
+
+        // Apply exponential scaling to convert to our expected format (2 decimal places)
+        // Pyth prices come with an exponent, we need to adjust to our standard format
+        let adjusted_price = if price_info.expo >= 0 {
+            price_info.price * (10_i128.pow(price_info.expo as u32))
+        } else {
+            price_info.price / (10_i128.pow((-price_info.expo) as u32))
+        };
+
+        // Convert to our standard format (price in cents, so $100.00 = 10000)
+        // Assuming Pyth gives us prices in dollars with various decimal places
+        let final_price = adjusted_price * 100; // Convert to cents
+
+        Ok(final_price)
+    }
+
+    /// Handle various Pyth-specific errors
+    fn handle_pyth_errors(&self, error: Error) -> Error {
+        match error {
+            Error::PythContractError => Error::OracleUnavailable,
+            Error::PythPriceStale => Error::OracleUnavailable,
+            Error::PythFeedNotFound => Error::InvalidOracleConfig,
+            Error::PythInvalidResponse => Error::OracleUnavailable,
+            Error::PythConfidenceTooLow => Error::OracleUnavailable,
+            _ => error,
+        }
+    }
+
+    /// Get confidence interval for Pyth price feed
+    #[allow(dead_code)]
+    fn get_pyth_confidence_interval(&self, feed_id: String) -> Result<u64, Error> {
+        let price_info = self.get_latest_price(feed_id)?;
+        
+        // Check if confidence is within acceptable range
+        // Confidence represents the standard deviation of the price
+        let max_confidence_pct = 5; // 5% maximum confidence interval
+        let confidence_pct = (price_info.conf * 100) / (price_info.price as u64);
+        
+        if confidence_pct > max_confidence_pct {
+            return Err(Error::PythConfidenceTooLow);
+        }
+        
+        Ok(price_info.conf)
+    }
+
+    /// Convert feed ID string to bytes32 format expected by Pyth
+    #[allow(dead_code)]
+    fn convert_feed_id_to_bytes32(&self, feed_id: String) -> Result<[u8; 32], Error> {
+        // For simplicity, we'll create a basic mapping
+        // In a real implementation, you would use actual Pyth feed IDs
+        let mut bytes = [0u8; 32];
+        
+        // Create a simple hash-like conversion for demo purposes
+        if feed_id == String::from_str(self.env, "BTC/USD") {
+            // Real BTC/USD feed ID would be something like:
+            // 0xe62df6c8b4c85fe1b67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43
+            bytes[0] = 0xe6;
+            bytes[1] = 0x2d;
+            bytes[31] = 0x43;
+        } else if feed_id == String::from_str(self.env, "ETH/USD") {
+            // Real ETH/USD feed ID would be different
+            bytes[0] = 0xff;
+            bytes[1] = 0x61;
+            bytes[31] = 0x32;
+        } else if feed_id == String::from_str(self.env, "XLM/USD") {
+            // Real XLM/USD feed ID would be different
+            bytes[0] = 0xaa;
+            bytes[1] = 0x55;
+            bytes[31] = 0x99;
+        } else {
+            return Err(Error::PythFeedNotFound);
+        }
+        
+        Ok(bytes)
+    }
+
+    /// Validate price data quality and freshness
+    fn validate_price_data(&self, price_info: &PythPriceInfo) -> Result<(), Error> {
+        // Check publish time is not in the future
+        let current_time = self.env.ledger().timestamp();
+        if price_info.publish_time > current_time {
+            return Err(Error::PythInvalidResponse);
+        }
+
+        // Check price is reasonable (not zero or negative)
+        if price_info.price <= 0 {
+            return Err(Error::PythInvalidResponse);
+        }
+
+        // Check confidence is not unreasonably high
+        if price_info.conf > (price_info.price as u64) {
+            return Err(Error::PythConfidenceTooLow);
+        }
+
+        Ok(())
+    }
+
+    /// Simulate Pyth response for demonstration (replace with real contract call)
+    fn simulate_pyth_response(&self, feed_id: String) -> Result<PythPriceInfo, Error> {
+        let current_time = self.env.ledger().timestamp();
+        
+        // Simulate realistic Pyth price data
+        if feed_id == String::from_str(self.env, "BTC/USD") {
+            Ok(PythPriceInfo {
+                price: 2600000, // $26,000 in Pyth format (usually with -2 exponent)
+                conf: 5000,     // $50 confidence
+                expo: -2,       // 2 decimal places
+                publish_time: current_time - 5, // 5 seconds ago
+            })
+        } else if feed_id == String::from_str(self.env, "ETH/USD") {
+            Ok(PythPriceInfo {
+                price: 320000,  // $3,200 in Pyth format
+                conf: 2000,     // $20 confidence
+                expo: -2,       // 2 decimal places
+                publish_time: current_time - 3, // 3 seconds ago
+            })
+        } else if feed_id == String::from_str(self.env, "XLM/USD") {
+            Ok(PythPriceInfo {
+                price: 12,      // $0.12 in Pyth format
+                conf: 1,        // $0.01 confidence
+                expo: -2,       // 2 decimal places
+                publish_time: current_time - 2, // 2 seconds ago
+            })
+        } else {
+            Err(Error::PythFeedNotFound)
+        }
+    }
+}
+
 struct PythOracle {
     contract_id: Address,
 }
 
 impl OracleInterface for PythOracle {
-    fn get_price(&self, _env: &Env, feed_id: &String) -> Result<i128, Error> {
-        // This is a placeholder for the actual Pyth oracle interaction
-        // In a real implementation, we would call the Pyth contract here
-        // For now, we're returning a mock price based on the feed_id
-        
-        // For simplicity, we'll use a basic approach to determine the asset
-        // In a real implementation, you would parse the feed_id properly
-        
-        // Return different mock prices based on the asset
-        // Since we can't easily parse the String in no_std, we'll use a simple approach
-        if feed_id == &String::from_str(_env, "BTC/USD") {
-            Ok(26_000_00) // $26,000 for BTC
-        } else if feed_id == &String::from_str(_env, "ETH/USD") {
-            Ok(3_200_00)  // $3,200 for ETH
-        } else if feed_id == &String::from_str(_env, "XLM/USD") {
-            Ok(12_00)     // $0.12 for XLM
-        } else {
-            Ok(26_000_00) // Default to BTC price
+    fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
+        // Create Pyth client
+        let pyth_client = PythOracleClient::new(env, self.contract_id.clone());
+
+        // Validate the feed ID
+        pyth_client.validate_pyth_feed(feed_id.clone())?;
+
+        // Get the latest price from Pyth
+        match pyth_client.get_latest_price(feed_id.clone()) {
+            Ok(price_info) => {
+                // Parse and return the price
+                match pyth_client.parse_pyth_price_response(&price_info) {
+                    Ok(price) => Ok(price),
+                    Err(e) => Err(pyth_client.handle_pyth_errors(e)),
+                }
+            }
+            Err(e) => Err(pyth_client.handle_pyth_errors(e)),
         }
     }
 }
@@ -136,6 +338,7 @@ impl<'a> ReflectorOracleClient<'a> {
             .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args)
     }
 
+    #[allow(dead_code)]
     fn price(&self, asset: ReflectorAsset, timestamp: u64) -> Option<ReflectorPriceData> {
         let args = vec![
             self.env,
