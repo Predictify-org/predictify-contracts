@@ -377,11 +377,12 @@ impl OracleUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_pyth_oracle_creation() {
         let env = Env::default();
-        let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let contract_id = Address::generate(&env);
         let oracle = PythOracle::new(contract_id.clone());
         
         assert_eq!(oracle.contract_id(), contract_id);
@@ -391,7 +392,7 @@ mod tests {
     #[test]
     fn test_reflector_oracle_creation() {
         let env = Env::default();
-        let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let contract_id = Address::generate(&env);
         let oracle = ReflectorOracle::new(contract_id.clone());
         
         assert_eq!(oracle.contract_id(), contract_id);
@@ -401,7 +402,7 @@ mod tests {
     #[test]
     fn test_oracle_factory() {
         let env = Env::default();
-        let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let contract_id = Address::generate(&env);
         
         // Test Pyth oracle creation
         let pyth_oracle = OracleFactory::create_oracle(OracleProvider::Pyth, contract_id.clone());
