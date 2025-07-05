@@ -1,10 +1,10 @@
 use crate::{
-    errors::{Error, ErrorCategory},
-    markets::{MarketAnalytics, MarketCreator, MarketStateManager, MarketUtils, MarketValidator},
-    types::{Market, OracleConfig, OracleProvider},
+    errors::Error,
+    markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
+    types::Market,
 };
 use soroban_sdk::{
-    contracttype, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec,
+    contracttype, Address, Env, Map, String, Symbol, Vec,
 };
 
 // ===== CONSTANTS =====
@@ -233,7 +233,7 @@ impl VotingValidator {
 
     /// Validate market state for claim
     pub fn validate_market_for_claim(
-        env: &Env,
+        _env: &Env,
         market: &Market,
         user: &Address,
     ) -> Result<(), Error> {
@@ -330,7 +330,7 @@ impl VotingUtils {
 
     /// Calculate user's payout
     pub fn calculate_user_payout(
-        env: &Env,
+        _env: &Env,
         market: &Market,
         user: &Address,
     ) -> Result<i128, Error> {
@@ -529,7 +529,8 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{vec, testutils::Address as _};
+    use crate::types::{OracleConfig, OracleProvider};
 
     #[test]
     fn test_voting_validator_authentication() {

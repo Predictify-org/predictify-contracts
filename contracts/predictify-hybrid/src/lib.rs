@@ -1,75 +1,29 @@
 #![no_std]
+
+// Module declarations
+mod errors;
+mod types;
+mod markets;
+mod voting;
+mod oracles;
+mod disputes;
+
+// Re-export commonly used items
+pub use errors::Error;
+pub use types::*;
+
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, Env,
+    contract, contractimpl, contracttype, panic_with_error, token, Address, Env,
     Map, String, Symbol, Vec, symbol_short, vec, IntoVal,
 };
 
-#[contracterror]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Error {
-    Unauthorized = 1,
-    MarketClosed = 2,
-    OracleUnavailable = 3,
-    InsufficientStake = 4,
-    MarketAlreadyResolved = 5,
-    InvalidOracleConfig = 6,
-    AlreadyClaimed = 7,
-    NothingToClaim = 8,
-    MarketNotResolved = 9,
-    InvalidOutcome = 10,
-    PythContractError = 11,
-    PythPriceStale = 12,
-    PythFeedNotFound = 13,
-    PythInvalidResponse = 14,
-    PythConfidenceTooLow = 15,
-    InvalidOracleFeed = 16,
-}
+// Import from disputes module - currently unused but available for future implementation
+// use disputes::{DisputeManager, DisputeValidator, DisputeUtils, DisputeAnalytics};
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OracleProvider {
-    BandProtocol,
-    DIA,
-    Reflector,
-    Pyth,
-}
+// Types are now imported from the types module
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OracleConfig {
-    pub provider: OracleProvider,
-    pub feed_id: String,    // Oracle-specific identifier
-    pub threshold: i128,    // 10_000_00 = $10k (in cents)
-    pub comparison: String, // "gt", "lt", "eq"
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Market {
-    pub admin: Address,
-    pub question: String,
-    pub outcomes: Vec<String>,
-    pub end_time: u64,
-    pub oracle_config: OracleConfig,
-    pub oracle_result: Option<String>,
-    pub votes: Map<Address, String>,
-    pub stakes: Map<Address, i128>,  // User stakes
-    pub claimed: Map<Address, bool>, // Track claims
-    pub total_staked: i128,
-    pub dispute_stakes: Map<Address, i128>,
-    pub winning_outcome: Option<String>,
-    pub fee_collected: bool, // Track fee collection
-}
-
-// Pyth oracle interface and data structures
-#[contracttype]
-pub struct PythPrice {
-    pub price: i128,
-    pub conf: u64,
-    pub expo: i32,
-    pub publish_time: u64,
-}
-
+// Pyth types are now imported from the types module
+// We still need PythPriceInfo for internal use
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PythPriceInfo {
@@ -304,29 +258,7 @@ impl OracleInterface for PythOracle {
     }
 }
 
-// Reflector Oracle Contract Types
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReflectorAsset {
-    Stellar(Address),
-    Other(Symbol),
-}
-
-#[contracttype]
-pub struct ReflectorPriceData {
-    pub price: i128,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-pub struct ReflectorConfigData {
-    pub admin: Address,
-    pub assets: Vec<ReflectorAsset>,
-    pub base_asset: ReflectorAsset,
-    pub decimals: u32,
-    pub period: u64,
-    pub resolution: u32,
-}
+// Reflector types are now imported from the types module
 
 // Reflector Oracle Client
 struct ReflectorOracleClient<'a> {
