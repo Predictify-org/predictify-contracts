@@ -8,50 +8,9 @@ use soroban_sdk::{
 pub mod errors;
 use errors::Error;
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OracleProvider {
-    BandProtocol,
-    DIA,
-    Reflector,
-    Pyth,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OracleConfig {
-    pub provider: OracleProvider,
-    pub feed_id: String,    // Oracle-specific identifier
-    pub threshold: i128,    // 10_000_00 = $10k (in cents)
-    pub comparison: String, // "gt", "lt", "eq"
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Market {
-    pub admin: Address,
-    pub question: String,
-    pub outcomes: Vec<String>,
-    pub end_time: u64,
-    pub oracle_config: OracleConfig,
-    pub oracle_result: Option<String>,
-    pub votes: Map<Address, String>,
-    pub stakes: Map<Address, i128>,  // User stakes
-    pub claimed: Map<Address, bool>, // Track claims
-    pub total_staked: i128,
-    pub dispute_stakes: Map<Address, i128>,
-    pub winning_outcome: Option<String>,
-    pub fee_collected: bool, // Track fee collection
-}
-
-// Placeholder for Pyth oracle interface
-#[contracttype]
-pub struct PythPrice {
-    pub price: i128,
-    pub conf: u64,
-    pub expo: i32,
-    pub publish_time: u64,
-}
+// Types module
+pub mod types;
+use types::*;
 
 trait OracleInterface {
     fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
@@ -84,29 +43,7 @@ impl OracleInterface for PythOracle {
     }
 }
 
-// Reflector Oracle Contract Types
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReflectorAsset {
-    Stellar(Address),
-    Other(Symbol),
-}
 
-#[contracttype]
-pub struct ReflectorPriceData {
-    pub price: i128,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-pub struct ReflectorConfigData {
-    pub admin: Address,
-    pub assets: Vec<ReflectorAsset>,
-    pub base_asset: ReflectorAsset,
-    pub decimals: u32,
-    pub period: u64,
-    pub resolution: u32,
-}
 
 // Reflector Oracle Client
 struct ReflectorOracleClient<'a> {
@@ -236,22 +173,15 @@ impl PredictifyHybrid {
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
         let end_time: u64 = env.ledger().timestamp() + duration_seconds;
 
-        // Create a new market
-        let market = Market {
-            admin: admin.clone(),
+        // Create a new market using the types module
+        let market = Market::new(
+            &env,
+            admin.clone(),
             question,
             outcomes,
             end_time,
-            oracle_config, // Use the provided oracle config
-            oracle_result: None,
-            votes: Map::new(&env),
-            total_staked: 0,
-            dispute_stakes: Map::new(&env),
-            stakes: Map::new(&env),
-            claimed: Map::new(&env),
-            winning_outcome: None,
-            fee_collected: false, // Initialize fee collection state
-        };
+            oracle_config,
+        );
 
         // Deduct 1 XLM fee from the admin
         let fee_amount: i128 = 10_000_000; // 1 XLM = 10,000,000 stroops
