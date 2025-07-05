@@ -25,7 +25,8 @@ use disputes::DisputeManager;
 
 // Extension management module
 pub mod extensions;
-use extensions::{ExtensionManager, ExtensionValidator, ExtensionUtils, ExtensionStats};
+use extensions::{ExtensionManager, ExtensionValidator, ExtensionUtils};
+use types::ExtensionStats;
 
 #[contract]
 pub struct PredictifyHybrid;
