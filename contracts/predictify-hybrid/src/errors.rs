@@ -51,6 +51,16 @@ pub enum Error {
     OraclePriceOutOfRange = 33,
     /// Oracle comparison operation failed
     OracleComparisonFailed = 34,
+    /// Pyth contract error
+    PythContractError = 35,
+    /// Pyth price is stale
+    PythPriceStale = 36,
+    /// Pyth feed not found
+    PythFeedNotFound = 37,
+    /// Pyth invalid response
+    PythInvalidResponse = 38,
+    /// Pyth confidence too low
+    PythConfidenceTooLow = 39,
     
     // ===== VALIDATION ERRORS (51-70) =====
     /// Invalid outcome specified for voting or resolution
@@ -121,7 +131,9 @@ impl Error {
             
             // Oracle errors
             Error::OracleUnavailable | Error::InvalidOracleConfig | Error::OracleDataStale |
-            Error::InvalidOracleFeed | Error::OraclePriceOutOfRange | Error::OracleComparisonFailed => ErrorCategory::Oracle,
+            Error::InvalidOracleFeed | Error::OraclePriceOutOfRange | Error::OracleComparisonFailed |
+            Error::PythContractError | Error::PythPriceStale | Error::PythFeedNotFound |
+            Error::PythInvalidResponse | Error::PythConfidenceTooLow => ErrorCategory::Oracle,
             
             // Validation errors
             Error::InvalidOutcome | Error::InsufficientStake | Error::InvalidInput |
@@ -160,6 +172,11 @@ impl Error {
             Error::InvalidOracleFeed => "Oracle feed ID is invalid or not found",
             Error::OraclePriceOutOfRange => "Oracle price is outside acceptable range",
             Error::OracleComparisonFailed => "Oracle comparison operation failed",
+            Error::PythContractError => "Pyth contract error occurred",
+            Error::PythPriceStale => "Pyth price data is stale",
+            Error::PythFeedNotFound => "Pyth feed not found",
+            Error::PythInvalidResponse => "Pyth returned invalid response",
+            Error::PythConfidenceTooLow => "Pyth price confidence is too low",
             
             // Validation errors
             Error::InvalidOutcome => "Invalid outcome specified for voting or resolution",
@@ -208,6 +225,11 @@ impl Error {
             Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
             Error::OraclePriceOutOfRange => "ORACLE_PRICE_OUT_OF_RANGE",
             Error::OracleComparisonFailed => "ORACLE_COMPARISON_FAILED",
+            Error::PythContractError => "PYTH_CONTRACT_ERROR",
+            Error::PythPriceStale => "PYTH_PRICE_STALE",
+            Error::PythFeedNotFound => "PYTH_FEED_NOT_FOUND",
+            Error::PythInvalidResponse => "PYTH_INVALID_RESPONSE",
+            Error::PythConfidenceTooLow => "PYTH_CONFIDENCE_TOO_LOW",
             Error::InvalidInput => "INVALID_INPUT",
             Error::InvalidQuestion => "INVALID_QUESTION",
             Error::InvalidOutcomes => "INVALID_OUTCOMES",
@@ -392,7 +414,7 @@ pub mod debug {
     }
     
     /// Create a detailed error report
-    pub fn create_error_report(env: &Env, error: Error, context: &ErrorContext) -> String {
+    pub fn create_error_report(env: &Env, error: Error, _context: &ErrorContext) -> String {
         // In no_std environment, we can't use format! macro
         // For now, return a simple error message
         String::from_str(env, &error.message())

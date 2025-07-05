@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contracttype, Address, Env, Map, String, Symbol, Vec, vec,
+    contracttype, Address, Env, Map, String, Symbol, Vec,
 };
 
 /// Comprehensive type system for Predictify Hybrid contract
@@ -393,8 +393,8 @@ impl ReflectorAsset {
     /// Get the asset identifier as a string
     pub fn to_string(&self, env: &Env) -> String {
         match self {
-            ReflectorAsset::Stellar(addr) => String::from_str(env, "stellar_asset"),
-            ReflectorAsset::Other(symbol) => String::from_str(env, "other_asset"),
+            ReflectorAsset::Stellar(_addr) => String::from_str(env, "stellar_asset"),
+            ReflectorAsset::Other(_symbol) => String::from_str(env, "other_asset"),
         }
     }
     
@@ -767,7 +767,7 @@ pub mod conversion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{vec, testutils::Address as _};
     
     #[test]
     fn test_oracle_provider() {
