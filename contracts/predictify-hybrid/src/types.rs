@@ -177,6 +177,64 @@ pub struct Market {
     pub winning_outcome: Option<String>,
     /// Whether fees have been collected
     pub fee_collected: bool,
+    /// Market extension history
+    pub extension_history: Vec<MarketExtension>,
+    /// Total extension days applied
+    pub total_extension_days: u32,
+    /// Maximum allowed extension days
+    pub max_extension_days: u32,
+}
+
+/// Market extension record
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketExtension {
+    /// Extension timestamp
+    pub timestamp: u64,
+    /// Additional days requested
+    pub additional_days: u32,
+    /// Admin who requested the extension
+    pub admin: Address,
+    /// Extension reason/justification
+    pub reason: String,
+    /// Extension fee paid
+    pub fee_paid: i128,
+}
+
+impl MarketExtension {
+    /// Create a new market extension record
+    pub fn new(
+        env: &Env,
+        additional_days: u32,
+        admin: Address,
+        reason: String,
+        fee_paid: i128,
+    ) -> Self {
+        Self {
+            timestamp: env.ledger().timestamp(),
+            additional_days,
+            admin,
+            reason,
+            fee_paid,
+        }
+    }
+    
+    /// Validate extension parameters
+    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+        if self.additional_days == 0 {
+            return Err(crate::errors::Error::InvalidExtensionDays);
+        }
+        
+        if self.additional_days > 30 {
+            return Err(crate::errors::Error::ExtensionDaysExceeded);
+        }
+        
+        if self.reason.is_empty() {
+            return Err(crate::errors::Error::InvalidExtensionReason);
+        }
+        
+        Ok(())
+    }
 }
 
 impl Market {
@@ -203,6 +261,9 @@ impl Market {
             dispute_stakes: Map::new(env),
             winning_outcome: None,
             fee_collected: false,
+            extension_history: vec![env],
+            total_extension_days: 0,
+            max_extension_days: 30, // Default maximum extension days
         }
     }
     
@@ -325,6 +386,22 @@ impl Market {
         
         Ok(())
     }
+}
+
+/// Extension statistics
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionStats {
+    /// Total number of extensions made
+    pub total_extensions: u32,
+    /// Total extension days applied
+    pub total_extension_days: u32,
+    /// Maximum allowed extension days
+    pub max_extension_days: u32,
+    /// Whether market can still be extended
+    pub can_extend: bool,
+    /// Extension fee per day
+    pub extension_fee_per_day: i128,
 }
 
 // ===== PRICE TYPES =====
