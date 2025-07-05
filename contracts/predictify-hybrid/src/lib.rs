@@ -12,108 +12,9 @@ use errors::Error;
 pub mod types;
 use types::*;
 
-trait OracleInterface {
-    fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
-}
-
-struct PythOracle {
-    contract_id: Address,
-}
-
-impl OracleInterface for PythOracle {
-    fn get_price(&self, _env: &Env, feed_id: &String) -> Result<i128, Error> {
-        // This is a placeholder for the actual Pyth oracle interaction
-        // In a real implementation, we would call the Pyth contract here
-        // For now, we're returning a mock price based on the feed_id
-        
-        // For simplicity, we'll use a basic approach to determine the asset
-        // In a real implementation, you would parse the feed_id properly
-        
-        // Return different mock prices based on the asset
-        // Since we can't easily parse the String in no_std, we'll use a simple approach
-        if feed_id == &String::from_str(_env, "BTC/USD") {
-            Ok(26_000_00) // $26,000 for BTC
-        } else if feed_id == &String::from_str(_env, "ETH/USD") {
-            Ok(3_200_00)  // $3,200 for ETH
-        } else if feed_id == &String::from_str(_env, "XLM/USD") {
-            Ok(12_00)     // $0.12 for XLM
-        } else {
-            Ok(26_000_00) // Default to BTC price
-        }
-    }
-}
-
-
-
-// Reflector Oracle Client
-struct ReflectorOracleClient<'a> {
-    env: &'a Env,
-    contract_id: Address,
-}
-
-impl<'a> ReflectorOracleClient<'a> {
-    fn new(env: &'a Env, contract_id: Address) -> Self {
-        Self { env, contract_id }
-    }
-
-    fn lastprice(&self, asset: ReflectorAsset) -> Option<ReflectorPriceData> {
-        let args = vec![self.env, asset.into_val(self.env)];
-        self.env
-            .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args)
-    }
-
-    fn price(&self, asset: ReflectorAsset, timestamp: u64) -> Option<ReflectorPriceData> {
-        let args = vec![
-            self.env,
-            asset.into_val(self.env),
-            timestamp.into_val(self.env),
-        ];
-        self.env
-            .invoke_contract(&self.contract_id, &symbol_short!("price"), args)
-    }
-
-    fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
-        let args = vec![
-            self.env,
-            asset.into_val(self.env),
-            records.into_val(self.env),
-        ];
-        self.env
-            .invoke_contract(&self.contract_id, &symbol_short!("twap"), args)
-    }
-}
-
-struct ReflectorOracle {
-    contract_id: Address,
-}
-
-impl OracleInterface for ReflectorOracle {
-    fn get_price(&self, env: &Env, _feed_id: &String) -> Result<i128, Error> {
-        // Parse the feed_id to extract asset information
-        // Expected format: "BTC/USD" or "ETH/USD" etc.
-        // For now, we'll use the feed_id directly as the asset symbol
-        
-        // Create asset symbol for Reflector
-        // Since we can't easily parse the String in no_std, we'll use the feed_id directly
-        let base_asset = ReflectorAsset::Other(Symbol::new(env, "BTC")); // Default to BTC for now
-
-        // Create Reflector client
-        let reflector_client = ReflectorOracleClient::new(env, self.contract_id.clone());
-
-        // Try to get the latest price first
-        if let Some(price_data) = reflector_client.lastprice(base_asset.clone()) {
-            return Ok(price_data.price);
-        }
-
-        // If lastprice fails, try TWAP with 1 record
-        if let Some(twap_price) = reflector_client.twap(base_asset, 1) {
-            return Ok(twap_price);
-        }
-
-        // If both fail, return error
-        Err(Error::OracleUnavailable)
-    }
-}
+// Oracle management module
+pub mod oracles;
+use oracles::{OracleInterface, OracleFactory, OracleUtils, OracleInstance};
 
 #[contract]
 pub struct PredictifyHybrid;
@@ -418,52 +319,26 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::MarketClosed);
         }
 
-        // Get the price from the appropriate oracle based on provider
-        let price = match market.oracle_config.provider {
-            OracleProvider::Pyth => {
-                let oracle = PythOracle {
-                    contract_id: oracle_contract,
-                };
-                match oracle.get_price(&env, &market.oracle_config.feed_id) {
-                    Ok(p) => p,
-                    Err(e) => panic_with_error!(env, e),
-                }
-            }
-            OracleProvider::Reflector => {
-                let oracle = ReflectorOracle {
-                    contract_id: oracle_contract,
-                };
-                match oracle.get_price(&env, &market.oracle_config.feed_id) {
-                    Ok(p) => p,
-                    Err(e) => panic_with_error!(env, e),
-                }
-            }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
-                panic_with_error!(env, Error::InvalidOracleConfig);
-            }
+        // Get the price from the appropriate oracle using the factory pattern
+        let oracle = match OracleFactory::create_oracle(market.oracle_config.provider.clone(), oracle_contract) {
+            Ok(oracle) => oracle,
+            Err(e) => panic_with_error!(env, e),
+        };
+        
+        let price = match oracle.get_price(&env, &market.oracle_config.feed_id) {
+            Ok(p) => p,
+            Err(e) => panic_with_error!(env, e),
         };
 
-        // Determine the outcome based on the price and threshold
-        let outcome = if market.oracle_config.comparison == String::from_str(&env, "gt") {
-            if price > market.oracle_config.threshold {
-                String::from_str(&env, "yes")
-            } else {
-                String::from_str(&env, "no")
-            }
-        } else if market.oracle_config.comparison == String::from_str(&env, "lt") {
-            if price < market.oracle_config.threshold {
-                String::from_str(&env, "yes")
-            } else {
-                String::from_str(&env, "no")
-            }
-        } else if market.oracle_config.comparison == String::from_str(&env, "eq") {
-            if price == market.oracle_config.threshold {
-                String::from_str(&env, "yes")
-            } else {
-                String::from_str(&env, "no")
-            }
-        } else {
-            panic_with_error!(env, Error::InvalidOracleConfig);
+        // Determine the outcome based on the price and threshold using OracleUtils
+        let outcome = match OracleUtils::determine_outcome(
+            price,
+            market.oracle_config.threshold,
+            &market.oracle_config.comparison,
+            &env,
+        ) {
+            Ok(result) => result,
+            Err(e) => panic_with_error!(env, e),
         };
 
         // Store the result in the market
