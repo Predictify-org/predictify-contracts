@@ -1,13 +1,9 @@
-#![allow(dead_code)]
-
 use crate::{
-    errors::Error,
-    markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
-    types::Market,
+    errors::{Error, ErrorCategory},
+    markets::{MarketAnalytics, MarketCreator, MarketStateManager, MarketUtils, MarketValidator},
+    types::{Market, OracleConfig, OracleProvider},
 };
-use soroban_sdk::{
-    contracttype, Address, Env, Map, String, Symbol, Vec,
-};
+use soroban_sdk::{contracttype, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== CONSTANTS =====
 
@@ -116,11 +112,7 @@ impl VotingManager {
     }
 
     /// Process winnings claim for a user
-    pub fn process_claim(
-        env: &Env,
-        user: Address,
-        market_id: Symbol,
-    ) -> Result<i128, Error> {
+    pub fn process_claim(env: &Env, user: Address, market_id: Symbol) -> Result<i128, Error> {
         // Require authentication from the user
         user.require_auth();
 
@@ -144,14 +136,10 @@ impl VotingManager {
     }
 
     /// Collect platform fees from a market
-    pub fn collect_fees(
-        env: &Env,
-        admin: Address,
-        market_id: Symbol,
-    ) -> Result<i128, Error> {
+    pub fn collect_fees(env: &Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
         // Require authentication from the admin
         admin.require_auth();
-        
+
         // Validate admin permissions
         VotingValidator::validate_admin_authentication(env, &admin)?;
 
@@ -235,7 +223,7 @@ impl VotingValidator {
 
     /// Validate market state for claim
     pub fn validate_market_for_claim(
-        _env: &Env,
+        env: &Env,
         market: &Market,
         user: &Address,
     ) -> Result<(), Error> {
@@ -332,7 +320,7 @@ impl VotingUtils {
 
     /// Calculate user's payout
     pub fn calculate_user_payout(
-        _env: &Env,
+        env: &Env,
         market: &Market,
         user: &Address,
     ) -> Result<i128, Error> {
@@ -448,7 +436,8 @@ impl VotingAnalytics {
             total_squared_stakes += stake * stake;
         }
 
-        let concentration = (total_squared_stakes as f64) / ((market.total_staked * market.total_staked) as f64);
+        let concentration =
+            (total_squared_stakes as f64) / ((market.total_staked * market.total_staked) as f64);
         concentration.min(1.0)
     }
 
@@ -531,14 +520,13 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{vec, testutils::Address as _};
-    use crate::types::{OracleConfig, OracleProvider};
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_voting_validator_authentication() {
         let env = Env::default();
         let user = Address::generate(&env);
-        
+
         // Should not panic for valid user
         assert!(VotingValidator::validate_user_authentication(&user).is_ok());
     }
@@ -547,7 +535,7 @@ mod tests {
     fn test_voting_validator_stake_validation() {
         // Valid stake
         assert!(VotingValidator::validate_dispute_stake(MIN_DISPUTE_STAKE).is_ok());
-        
+
         // Invalid stake
         assert!(VotingValidator::validate_dispute_stake(MIN_DISPUTE_STAKE - 1).is_err());
     }
@@ -559,7 +547,11 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+            vec![
+                &env,
+                String::from_str(&env, "yes"),
+                String::from_str(&env, "no"),
+            ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Pyth,
@@ -581,7 +573,11 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+            vec![
+                &env,
+                String::from_str(&env, "yes"),
+                String::from_str(&env, "no"),
+            ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Pyth,
@@ -594,7 +590,7 @@ mod tests {
         // Add some test votes
         let user1 = Address::generate(&env);
         let user2 = Address::generate(&env);
-        
+
         market.add_vote(user1, String::from_str(&env, "yes"), 1000);
         market.add_vote(user2, String::from_str(&env, "no"), 2000);
 
@@ -609,7 +605,11 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+            vec![
+                &env,
+                String::from_str(&env, "yes"),
+                String::from_str(&env, "no"),
+            ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Pyth,
@@ -633,17 +633,12 @@ mod tests {
     fn test_testing_utilities() {
         let env = Env::default();
         let user = Address::generate(&env);
-        
-        let vote = testing::create_test_vote(
-            &env,
-            user,
-            String::from_str(&env, "yes"),
-            1000,
-        );
+
+        let vote = testing::create_test_vote(&env, user, String::from_str(&env, "yes"), 1000);
 
         assert!(testing::validate_vote_structure(&vote).is_ok());
-        
+
         let stats = testing::create_test_voting_stats(&env);
         assert!(testing::validate_voting_stats(&stats).is_ok());
     }
-} 
+}
