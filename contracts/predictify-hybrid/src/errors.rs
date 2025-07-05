@@ -39,6 +39,16 @@ pub enum Error {
     MarketExpired = 12,
     /// Market is still active and cannot be resolved
     MarketStillActive = 13,
+    /// Market extension is not allowed
+    MarketExtensionNotAllowed = 14,
+    /// Market extension days exceeded limit
+    ExtensionDaysExceeded = 15,
+    /// Invalid extension days provided
+    InvalidExtensionDays = 16,
+    /// Invalid extension reason provided
+    InvalidExtensionReason = 17,
+    /// Market extension fee insufficient
+    ExtensionFeeInsufficient = 18,
     
     // ===== ORACLE ERRORS (31-50) =====
     /// Oracle service is unavailable or not responding
@@ -129,7 +139,9 @@ impl Error {
             
             // Market errors
             Error::MarketClosed | Error::MarketAlreadyResolved | Error::MarketNotResolved |
-            Error::MarketNotFound | Error::MarketExpired | Error::MarketStillActive => ErrorCategory::Market,
+            Error::MarketNotFound | Error::MarketExpired | Error::MarketStillActive |
+            Error::MarketExtensionNotAllowed | Error::ExtensionDaysExceeded | Error::InvalidExtensionDays |
+            Error::InvalidExtensionReason | Error::ExtensionFeeInsufficient => ErrorCategory::Market,
             
             // Oracle errors
             Error::OracleUnavailable | Error::InvalidOracleConfig | Error::OracleDataStale |
@@ -166,6 +178,11 @@ impl Error {
             Error::MarketNotFound => "Market does not exist",
             Error::MarketExpired => "Market has expired",
             Error::MarketStillActive => "Market is still active and cannot be resolved",
+            Error::MarketExtensionNotAllowed => "Market extension is not allowed",
+            Error::ExtensionDaysExceeded => "Market extension days exceeded limit",
+            Error::InvalidExtensionDays => "Invalid extension days provided",
+            Error::InvalidExtensionReason => "Invalid extension reason provided",
+            Error::ExtensionFeeInsufficient => "Market extension fee insufficient",
             
             // Oracle errors
             Error::OracleUnavailable => "Oracle service is unavailable or not responding",
@@ -217,6 +234,11 @@ impl Error {
             Error::MarketAlreadyResolved => "MARKET_ALREADY_RESOLVED",
             Error::InvalidOracleConfig => "INVALID_ORACLE_CONFIG",
             Error::AlreadyClaimed => "ALREADY_CLAIMED",
+            Error::MarketExtensionNotAllowed => "MARKET_EXTENSION_NOT_ALLOWED",
+            Error::ExtensionDaysExceeded => "EXTENSION_DAYS_EXCEEDED",
+            Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
+            Error::InvalidExtensionReason => "INVALID_EXTENSION_REASON",
+            Error::ExtensionFeeInsufficient => "EXTENSION_FEE_INSUFFICIENT",
             Error::NothingToClaim => "NOTHING_TO_CLAIM",
             Error::MarketNotResolved => "MARKET_NOT_RESOLVED",
             Error::InvalidOutcome => "INVALID_OUTCOME",
