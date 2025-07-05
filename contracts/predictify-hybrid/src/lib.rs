@@ -22,6 +22,7 @@ pub enum Error {
     PythFeedNotFound = 13,
     PythInvalidResponse = 14,
     PythConfidenceTooLow = 15,
+    InvalidOracleFeed = 16,
 }
 
 #[contracttype]
@@ -271,7 +272,7 @@ impl<'a> PythOracleClient<'a> {
     }
 }
 
-struct PythOracle {
+pub struct PythOracle {
     contract_id: Address,
 }
 
@@ -360,7 +361,7 @@ impl<'a> ReflectorOracleClient<'a> {
     }
 }
 
-struct ReflectorOracle {
+pub struct ReflectorOracle {
     contract_id: Address,
 }
 
