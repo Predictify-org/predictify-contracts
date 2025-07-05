@@ -16,6 +16,10 @@ use types::*;
 pub mod oracles;
 use oracles::{OracleInterface, OracleFactory, OracleUtils, OracleInstance};
 
+// Market management module
+pub mod markets;
+use markets::{MarketCreator, MarketValidator, MarketStateManager, MarketAnalytics, MarketUtils};
+
 #[contract]
 pub struct PredictifyHybrid;
 
@@ -30,14 +34,14 @@ impl PredictifyHybrid {
             .set(&Symbol::new(&env, "Admin"), &admin);
     }
 
-    // Create a market (we need to add this function for the vote function to work with)
+    // Create a market using the markets module
     pub fn create_market(
         env: Env,
         admin: Address,
         question: String,
         outcomes: Vec<String>,
         duration_days: u32,
-        oracle_config: OracleConfig, // Add oracle config parameter
+        oracle_config: OracleConfig,
     ) -> Symbol {
         // Authenticate that the caller is the admin
         admin.require_auth();
@@ -54,76 +58,32 @@ impl PredictifyHybrid {
         // Use error helper for admin validation
         errors::helpers::require_admin(&env, &admin, &stored_admin);
 
-        // Use error helper for market parameter validation
-        errors::helpers::require_valid_market_params(&env, &question, &outcomes, duration_days);
-
-        // Use error helper for oracle config validation
-        errors::helpers::require_valid_oracle_config(&env, &oracle_config);
-
-        // Generate a unique market ID using timestamp and a counter
-        let counter_key = Symbol::new(&env, "MarketCounter");
-        let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
-        let new_counter = counter + 1;
-        env.storage().persistent().set(&counter_key, &new_counter);
-
-        // Create a unique market ID using the counter
-        let market_id = Symbol::new(&env, "market");
-
-        // Calculate end time based on duration_days (convert days to seconds)
-        let seconds_per_day: u64 = 24 * 60 * 60; // 24 hours * 60 minutes * 60 seconds
-        let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
-        let end_time: u64 = env.ledger().timestamp() + duration_seconds;
-
-        // Create a new market using the types module
-        let market = Market::new(
-            &env,
-            admin.clone(),
-            question,
-            outcomes,
-            end_time,
-            oracle_config,
-        );
-
-        // Deduct 1 XLM fee from the admin
-        let fee_amount: i128 = 10_000_000; // 1 XLM = 10,000,000 stroops
-
-        // Get a token client for the native asset
-        // In a real implementation, you would use the actual token contract ID
-        let token_id: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "TokenID"))
-            .unwrap_or_else(|| {
-                panic!("Token ID not set");
-            });
-        let token_client = token::Client::new(&env, &token_id);
-
-        // Transfer the fee from admin to the contract
-        token_client.transfer(&admin, &env.current_contract_address(), &fee_amount);
-
-        // Store the market
-        env.storage().persistent().set(&market_id, &market);
-
-        // Return the market ID
-        market_id
+        // Use the markets module to create the market
+        match MarketCreator::create_market(&env, admin, question, outcomes, duration_days, oracle_config) {
+            Ok(market_id) => market_id,
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
-    // NEW: Distribute winnings to users
+    // Distribute winnings to users
     pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
         user.require_auth();
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .expect("Market not found");
+        let mut market = match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => market,
+            Err(e) => panic_with_error!(env, e),
+        };
 
-        // Use error helper for claim validation
+        // Check if user has already claimed
         let claimed = market.claimed.get(user.clone()).unwrap_or(false);
-        errors::helpers::require_not_claimed(&env, claimed);
+        if claimed {
+            panic_with_error!(env, Error::AlreadyClaimed);
+        }
 
-        // Use error helper for market resolution check
-        errors::helpers::require_market_resolved(&env, &Some(market.clone()));
+        // Check if market is resolved
+        if market.winning_outcome.is_none() {
+            panic_with_error!(env, Error::MarketNotResolved);
+        }
 
         // Get winning outcome
         let winning_outcome = market.winning_outcome.as_ref().unwrap();
@@ -138,52 +98,41 @@ impl PredictifyHybrid {
 
         // Calculate payout if user won
         if &user_outcome == winning_outcome {
-            // Calculate total winning stakes
-            let mut winning_total = 0;
-            for (voter, outcome) in market.votes.iter() {
-                if &outcome == winning_outcome {
-                    winning_total += market.stakes.get(voter.clone()).unwrap_or(0);
-                }
-            }
+            // Calculate winning statistics
+            let winning_stats = MarketAnalytics::calculate_winning_stats(&market, winning_outcome);
+            
+            // Calculate payout
+            let payout = match MarketUtils::calculate_payout(
+                user_stake,
+                winning_stats.winning_total,
+                winning_stats.total_pool,
+                FEE_PERCENTAGE,
+            ) {
+                Ok(payout) => payout,
+                Err(e) => panic_with_error!(env, e),
+            };
 
-            // Calculate user's share (minus fee percentage)
-            let user_share =
-                (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE)) / PERCENTAGE_DENOMINATOR;
-            let total_pool = market.total_staked;
-
-            // Ensure winning_total is non-zero
-            if winning_total == 0 {
-                panic_with_error!(env, Error::NothingToClaim);
-            }
-            let payout = (user_share * total_pool) / winning_total;
-
-            // Get token client
-            let token_id = env
-                .storage()
-                .persistent()
-                .get(&Symbol::new(&env, "TokenID"))
-                .expect("Token contract not set");
-
-            let token_client = token::Client::new(&env, &token_id);
-
-            // Transfer winnings to user
+            // Get token client and transfer winnings
+            let token_client = match MarketUtils::get_token_client(&env) {
+                Ok(client) => client,
+                Err(e) => panic_with_error!(env, e),
+            };
             token_client.transfer(&env.current_contract_address(), &user, &payout);
         }
 
         // Mark as claimed
-        market.claimed.set(user.clone(), true);
-        env.storage().persistent().set(&market_id, &market);
+        MarketStateManager::mark_claimed(&mut market, user);
+        MarketStateManager::update_market(&env, &market_id, &market);
     }
 
-    // NEW: Collect platform fees
+    // Collect platform fees
     pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) {
         admin.require_auth();
 
-        let market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .expect("Market not found");
+        let mut market = match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => market,
+            Err(e) => panic_with_error!(env, e),
+        };
 
         // Verify admin
         let stored_admin: Address = env
@@ -203,22 +152,16 @@ impl PredictifyHybrid {
         // Calculate 2% fee
         let fee = (market.total_staked * 2) / 100;
 
-        // Get token client
-        let token_id = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "TokenID"))
-            .expect("Token contract not set");
-
-        let token_client = token::Client::new(&env, &token_id);
-
-        // Transfer fee to admin
+        // Get token client and transfer fee
+        let token_client = match MarketUtils::get_token_client(&env) {
+            Ok(client) => client,
+            Err(e) => panic_with_error!(env, e),
+        };
         token_client.transfer(&env.current_contract_address(), &admin, &fee);
 
         // Update market state
-        let mut market = market;
-        market.fee_collected = true;
-        env.storage().persistent().set(&market_id, &market);
+        MarketStateManager::mark_fees_collected(&mut market);
+        MarketStateManager::update_market(&env, &market_id, &market);
     }
 
     // Finalize market after disputes
@@ -255,46 +198,36 @@ impl PredictifyHybrid {
         user.require_auth();
 
         // Get the market from storage
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic!("Market not found");
-            });
+        let mut market = match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => market,
+            Err(e) => panic_with_error!(env, e),
+        };
 
-        // Use error helper for market state validation
-        errors::helpers::require_market_open(&env, &Some(market.clone()));
+        // Validate market state for voting
+        if let Err(e) = MarketValidator::validate_market_for_voting(&env, &market) {
+            panic_with_error!(env, e);
+        }
 
-        // Use error helper for outcome validation
-        errors::helpers::require_valid_outcome(&env, &outcome, &market.outcomes);
+        // Validate outcome
+        if let Err(e) = MarketValidator::validate_outcome(&env, &outcome, &market.outcomes) {
+            panic_with_error!(env, e);
+        }
 
-        // Define the token contract to use for staking
-        let token_id = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Address>(&Symbol::new(&env, "TokenID"))
-            .unwrap_or_else(|| {
-                panic!("Token contract not set");
-            });
+        // Validate stake
+        if let Err(e) = MarketValidator::validate_stake(stake, 1_000_000) { // 0.1 XLM minimum
+            panic_with_error!(env, e);
+        }
 
-        // Create a client for the token contract
-        let token_client = token::Client::new(&env, &token_id);
-
-        // Transfer the staked amount from the user to this contract
+        // Get token client and transfer stake
+        let token_client = match MarketUtils::get_token_client(&env) {
+            Ok(client) => client,
+            Err(e) => panic_with_error!(env, e),
+        };
         token_client.transfer(&user, &env.current_contract_address(), &stake);
 
-        // Store the vote in the market
-        market.votes.set(user.clone(), outcome);
-
-        // Store the user's stake
-        market.stakes.set(user.clone(), stake);
-
-        // Update the total staked amount
-        market.total_staked += stake;
-
-        // Update the market in storage
-        env.storage().persistent().set(&market_id, &market);
+        // Add vote using market state manager
+        MarketStateManager::add_vote(&mut market, user, outcome, stake);
+        MarketStateManager::update_market(&env, &market_id, &market);
     }
 
     // Fetch oracle result to determine market outcome
@@ -357,156 +290,70 @@ impl PredictifyHybrid {
         user.require_auth();
 
         // Get the market from storage
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic!("Market not found");
-            });
+        let mut market = match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => market,
+            Err(e) => panic_with_error!(env, e),
+        };
 
         // Ensure disputes are only possible after the market ends
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
-            panic!("Cannot dispute before market ends");
-        }
-
-        // Use error helper for stake validation
-        let min_stake: i128 = 10_0000000; // 10 XLM (in stroops, 1 XLM = 10^7 stroops)
-        errors::helpers::require_sufficient_stake(&env, stake, min_stake);
-
-        // Define the token contract to use for staking
-        let token_id = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Address>(&Symbol::new(&env, "TokenID"))
-            .unwrap_or_else(|| {
-                panic!("Token contract not set");
-            });
-
-        // Create a client for the token contract
-        let token_client = token::Client::new(&env, &token_id);
-
-        // Transfer the stake from the user to the contract
-        token_client.transfer(&user, &env.current_contract_address(), &stake);
-
-        // Store the dispute stake in the market
-        if let Some(existing_stake) = market.dispute_stakes.get(user.clone()) {
-            market
-                .dispute_stakes
-                .set(user.clone(), existing_stake + stake);
-        } else {
-            market.dispute_stakes.set(user.clone(), stake);
-        }
-
-        // Extend the market end time by 24 hours during a dispute (if not already extended)
-        let dispute_extension = 24 * 60 * 60; // 24 hours in seconds
-        if market.end_time < current_time + dispute_extension {
-            market.end_time = current_time + dispute_extension;
-        }
-
-        // Update the market in storage
-        env.storage().persistent().set(&market_id, &market);
-    }
-
-    // Resolves a market by combining oracle results and community votes
-    pub fn resolve_market(env: Env, market_id: Symbol) -> String {
-        // Get the market from storage
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic!("Market not found");
-            });
-
-        // Check if the market end time has passed
         let current_time = env.ledger().timestamp();
         if current_time < market.end_time {
             panic_with_error!(env, Error::MarketClosed);
         }
 
-        // Retrieve the oracle result (or fail if unavailable)
+        // Validate stake
+        let min_stake: i128 = 10_000_000; // 10 XLM minimum
+        if let Err(e) = MarketValidator::validate_stake(stake, min_stake) {
+            panic_with_error!(env, e);
+        }
+
+        // Get token client and transfer stake
+        let token_client = match MarketUtils::get_token_client(&env) {
+            Ok(client) => client,
+            Err(e) => panic_with_error!(env, e),
+        };
+        token_client.transfer(&user, &env.current_contract_address(), &stake);
+
+        // Add dispute stake
+        MarketStateManager::add_dispute_stake(&mut market, user, stake);
+
+        // Extend market end time for disputes
+        MarketStateManager::extend_for_dispute(&mut market, &env, 24);
+
+        // Update the market in storage
+        MarketStateManager::update_market(&env, &market_id, &market);
+    }
+
+    // Resolves a market by combining oracle results and community votes
+    pub fn resolve_market(env: Env, market_id: Symbol) -> String {
+        // Get the market from storage
+        let mut market = match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => market,
+            Err(e) => panic_with_error!(env, e),
+        };
+
+        // Validate market for resolution
+        if let Err(e) = MarketValidator::validate_market_for_resolution(&env, &market) {
+            panic_with_error!(env, e);
+        }
+
+        // Retrieve the oracle result
         let oracle_result = match &market.oracle_result {
             Some(result) => result.clone(),
             None => panic_with_error!(env, Error::OracleUnavailable),
         };
 
-        // Count community votes for each outcome
-        let mut vote_counts: Map<String, u32> = Map::new(&env);
-        for (_, outcome) in market.votes.iter() {
-            let count = vote_counts.get(outcome.clone()).unwrap_or(0);
-            vote_counts.set(outcome.clone(), count + 1);
-        }
+        // Calculate community consensus
+        let community_consensus = MarketAnalytics::calculate_community_consensus(&market);
 
-        // Find the community consensus (outcome with most votes)
-        let mut community_result = oracle_result.clone(); // Default to oracle result if no votes
-        let mut max_votes = 0;
+        // Determine final result using hybrid algorithm
+        let final_result = MarketUtils::determine_final_result(&env, &oracle_result, &community_consensus);
 
-        for (outcome, count) in vote_counts.iter() {
-            if count > max_votes {
-                max_votes = count;
-                community_result = outcome.clone();
-            }
-        }
-
-        // Calculate the final result with weights: 70% oracle, 30% community
-        let final_result = if oracle_result == community_result {
-            // If both agree, use that outcome
-            oracle_result
-        } else {
-            // If they disagree, check if community votes are significant
-            let total_votes: u32 = vote_counts
-                .values()
-                .into_iter()
-                .fold(0, |acc, count| acc + count);
-
-            if total_votes == 0 {
-                // No community votes, use oracle result
-                oracle_result
-            } else {
-                // Use integer-based calculation to determine if community consensus is strong
-                // Check if the winning vote has more than 50% of total votes
-                if max_votes * 100 > total_votes * 50 && total_votes >= 5 {
-                    // Apply 70-30 weighting using integer arithmetic
-                    // We'll use a scale of 0-100 for percentage calculation
-
-                    // Generate a pseudo-random number by combining timestamp and ledger sequence
-                    let timestamp = env.ledger().timestamp();
-                    let sequence = env.ledger().sequence();
-                    let combined = timestamp as u128 + sequence as u128;
-                    let random_value = (combined % 100) as u32;
-
-                    // If random_value is less than 30 (representing 30% weight),
-                    // choose community result
-                    if random_value < 30 {
-                        community_result
-                    } else {
-                        oracle_result
-                    }
-                } else {
-                    // Not enough community consensus, use oracle result
-                    oracle_result
-                }
-            }
-        };
-
-        // Calculate winning outcome
-        market.winning_outcome = Some(final_result.clone());
-
-        // Calculate total for winning outcome
-        let mut _winning_total = 0;
-        for (user, outcome) in market.votes.iter() {
-            if outcome == final_result {
-                _winning_total += market.stakes.get(user.clone()).unwrap_or(0);
-            }
-        }
-
-        // Record the final result in the market
-        market.oracle_result = Some(final_result.clone());
+        // Set winning outcome
+        MarketStateManager::set_winning_outcome(&mut market, final_result.clone());
 
         // Update the market in storage
-        env.storage().persistent().set(&market_id, &market);
+        MarketStateManager::update_market(&env, &market_id, &market);
 
         // Return the final result
         final_result
@@ -527,7 +374,7 @@ impl PredictifyHybrid {
         errors::helpers::require_admin(&env, &admin, &stored_admin);
 
         // Remove market from storage
-        env.storage().persistent().remove(&market_id);
+        MarketStateManager::remove_market(&env, &market_id);
     }
 
     // Helper function to create a market with Reflector oracle
@@ -541,16 +388,10 @@ impl PredictifyHybrid {
         threshold: i128,
         comparison: String,
     ) -> Symbol {
-        // Create Reflector oracle configuration
-        let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
-            feed_id: asset_symbol, // Use asset symbol as feed_id
-            threshold,
-            comparison,
-        };
-
-        // Call the main create_market function
-        Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+        match MarketCreator::create_reflector_market(&env, admin, question, outcomes, duration_days, asset_symbol, threshold, comparison) {
+            Ok(market_id) => market_id,
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
     // Helper function to create a market with Pyth oracle
@@ -564,16 +405,10 @@ impl PredictifyHybrid {
         threshold: i128,
         comparison: String,
     ) -> Symbol {
-        // Create Pyth oracle configuration
-        let oracle_config = OracleConfig {
-            provider: OracleProvider::Pyth,
-            feed_id,
-            threshold,
-            comparison,
-        };
-
-        // Call the main create_market function
-        Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+        match MarketCreator::create_pyth_market(&env, admin, question, outcomes, duration_days, feed_id, threshold, comparison) {
+            Ok(market_id) => market_id,
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
     // Helper function to create a market with Reflector oracle for specific assets
@@ -587,16 +422,10 @@ impl PredictifyHybrid {
         threshold: i128,
         comparison: String,
     ) -> Symbol {
-        // Create Reflector oracle configuration
-        let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
-            feed_id: asset_symbol, // Use asset symbol as feed_id
-            threshold,
-            comparison,
-        };
-
-        // Call the main create_market function
-        Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+        match MarketCreator::create_reflector_asset_market(&env, admin, question, outcomes, duration_days, asset_symbol, threshold, comparison) {
+            Ok(market_id) => market_id,
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 }
 mod test;
