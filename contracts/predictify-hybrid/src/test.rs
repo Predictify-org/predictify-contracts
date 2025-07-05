@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use crate::oracles::ReflectorOracle;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo}, token::{self, StellarAssetClient}, vec, String, Symbol
 };
@@ -930,9 +931,7 @@ fn test_reflector_oracle_get_price_success() {
     let mock_reflector_contract = Address::generate(&test.env);
     
     // Create ReflectorOracle instance
-    let reflector_oracle = ReflectorOracle {
-        contract_id: mock_reflector_contract.clone(),
-    };
+    let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
     
     // Test get_price function with mock Reflector contract
     // This should panic because the mock contract doesn't exist
@@ -953,9 +952,7 @@ fn test_reflector_oracle_get_price_with_different_assets() {
     let mock_reflector_contract = Address::generate(&test.env);
     
     // Create ReflectorOracle instance
-    let reflector_oracle = ReflectorOracle {
-        contract_id: mock_reflector_contract.clone(),
-    };
+    let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
     
     // Test different asset feed IDs with mock Reflector oracle
     // This should panic because the mock contract doesn't exist
@@ -1051,9 +1048,7 @@ fn test_reflector_oracle_error_handling() {
     
     // Create ReflectorOracle with an invalid contract address to test error handling
     let invalid_contract = Address::generate(&test.env);
-    let reflector_oracle = ReflectorOracle {
-        contract_id: invalid_contract,
-    };
+    let reflector_oracle = ReflectorOracle::new(invalid_contract);
     
     // Test get_price with invalid contract - should panic because contract doesn't exist
     let feed_id = String::from_str(&test.env, "BTC/USD");
@@ -1071,9 +1066,7 @@ fn test_reflector_oracle_fallback_mechanism() {
     
     // Use a mock contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
-    let reflector_oracle = ReflectorOracle {
-        contract_id: mock_reflector_contract.clone(),
-    };
+    let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
     
     // Test that the fallback mechanism works
     // This should panic because the mock contract doesn't exist
@@ -1092,9 +1085,7 @@ fn test_reflector_oracle_with_empty_feed_id() {
     
     // Use a mock contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
-    let reflector_oracle = ReflectorOracle {
-        contract_id: mock_reflector_contract.clone(),
-    };
+    let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
     
     // Test with empty feed_id - should still work with default asset
     // This should panic because the mock contract doesn't exist
@@ -1113,9 +1104,7 @@ fn test_reflector_oracle_performance() {
     
     // Use a mock contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
-    let reflector_oracle = ReflectorOracle {
-        contract_id: mock_reflector_contract.clone(),
-    };
+    let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
     
     // Test multiple price requests to check performance
     // This should panic because the mock contract doesn't exist
