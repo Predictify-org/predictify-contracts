@@ -150,7 +150,7 @@ impl ExtensionValidator {
         }
         
         // Check number of extensions limit
-        if market.extension_history.len() >= MAX_TOTAL_EXTENSIONS as usize {
+        if market.extension_history.len() >= (MAX_TOTAL_EXTENSIONS as usize) {
             return Err(Error::MarketExtensionNotAllowed);
         }
         
