@@ -185,7 +185,7 @@ fn test_create_market_with_non_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+#[should_panic(expected = "Error(Contract, #53)")]
 fn test_create_market_with_empty_outcome() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -207,7 +207,7 @@ fn test_create_market_with_empty_outcome() {
 }
 
 #[test]
-#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+#[should_panic(expected = "Error(Contract, #52)")]
 fn test_create_market_with_empty_question() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -363,7 +363,7 @@ fn test_vote_on_closed_market() {
 }
 
 #[test]
-#[should_panic(expected = "Invalid outcome")]
+#[should_panic(expected = "Error(Contract, #10)")]
 fn test_vote_with_invalid_outcome() {
     //Setup test environment
     let test = PredictifyTest::setup();
