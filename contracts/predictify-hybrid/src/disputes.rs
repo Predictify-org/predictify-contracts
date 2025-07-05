@@ -1,6 +1,6 @@
 use crate::{
     errors::Error,
-    markets::{MarketStateManager, MarketValidator},
+    markets::{MarketStateManager},
     types::Market,
     voting::{VotingUtils, MIN_DISPUTE_STAKE, DISPUTE_EXTENSION_HOURS},
 };
@@ -196,7 +196,7 @@ impl DisputeValidator {
     }
 
     /// Validate market state for resolution
-    pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
+    pub fn validate_market_for_resolution(_env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market is already resolved
         if market.winning_outcome.is_some() {
             return Err(Error::MarketAlreadyResolved);
@@ -227,7 +227,7 @@ impl DisputeValidator {
 
     /// Validate dispute parameters
     pub fn validate_dispute_parameters(
-        env: &Env,
+        _env: &Env,
         user: &Address,
         market: &Market,
         stake: i128,
@@ -283,7 +283,7 @@ impl DisputeUtils {
     }
 
     /// Extend market for dispute period
-    pub fn extend_market_for_dispute(market: &mut Market, env: &Env) -> Result<(), Error> {
+    pub fn extend_market_for_dispute(market: &mut Market, _env: &Env) -> Result<(), Error> {
         let extension_seconds = (DISPUTE_EXTENSION_HOURS as u64) * 3600;
         market.end_time += extension_seconds;
         Ok(())
@@ -472,7 +472,7 @@ impl DisputeAnalytics {
     }
 
     /// Get top disputers by stake amount
-    pub fn get_top_disputers(env: &Env, market: &Market, limit: usize) -> Vec<(Address, i128)> {
+    pub fn get_top_disputers(env: &Env, market: &Market, _limit: usize) -> Vec<(Address, i128)> {
         let mut disputers: Vec<(Address, i128)> = Vec::new(env);
         
         for (user, stake) in market.dispute_stakes.iter() {
@@ -609,7 +609,7 @@ mod tests {
         assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
 
         // Set market as ended
-        market.end_time = env.ledger().timestamp() - 1;
+        market.end_time = env.ledger().timestamp().saturating_sub(1);
         
         // No oracle result - should fail
         assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
@@ -625,7 +625,7 @@ mod tests {
     fn test_dispute_validator_stake_validation() {
         let env = Env::default();
         let user = Address::generate(&env);
-        let mut market = create_test_market(&env, env.ledger().timestamp() - 1);
+        let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
         market.oracle_result = Some(String::from_str(&env, "yes"));
 
         // Valid stake
