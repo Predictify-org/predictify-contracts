@@ -23,6 +23,10 @@ use oracles::{OracleFactory, OracleInterface};
 // Import from disputes module
 use disputes::DisputeManager;
 
+// Extension management module
+pub mod extensions;
+use extensions::{ExtensionManager, ExtensionValidator, ExtensionUtils, ExtensionStats};
+
 #[contract]
 pub struct PredictifyHybrid;
 
@@ -690,6 +694,125 @@ impl PredictifyHybrid {
 
         // Call the main create_market function
         Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+    }
+
+    // ===== MARKET EXTENSION FUNCTIONS =====
+
+    /// Extend market duration with validation and fee handling
+    pub fn extend_market_duration(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        additional_days: u32,
+        reason: String,
+    ) {
+        admin.require_auth();
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .expect("Admin not set");
+
+        // Use error helper for admin validation
+        errors::helpers::require_admin(&env, &admin, &stored_admin);
+
+        match ExtensionManager::extend_market_duration(&env, admin, market_id, additional_days, reason) {
+            Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Validate extension conditions for a market
+    pub fn validate_extension_conditions(
+        env: Env,
+        market_id: Symbol,
+        additional_days: u32,
+    ) -> bool {
+        match ExtensionValidator::validate_extension_conditions(&env, &market_id, additional_days) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Check extension limits for a market
+    pub fn check_extension_limits(
+        env: Env,
+        market_id: Symbol,
+        additional_days: u32,
+    ) -> bool {
+        match ExtensionValidator::check_extension_limits(&env, &market_id, additional_days) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Emit extension event for monitoring
+    pub fn emit_extension_event(
+        env: Env,
+        market_id: Symbol,
+        additional_days: u32,
+        admin: Address,
+    ) {
+        ExtensionUtils::emit_extension_event(&env, &market_id, additional_days, &admin);
+    }
+
+    /// Get market extension history
+    pub fn get_market_extension_history(
+        env: Env,
+        market_id: Symbol,
+    ) -> Vec<types::MarketExtension> {
+        match ExtensionManager::get_market_extension_history(&env, market_id) {
+            Ok(history) => history,
+            Err(_) => vec![&env],
+        }
+    }
+
+    /// Check if admin can extend market
+    pub fn can_extend_market(
+        env: Env,
+        market_id: Symbol,
+        admin: Address,
+    ) -> bool {
+        match ExtensionManager::can_extend_market(&env, market_id, admin) {
+            Ok(can_extend) => can_extend,
+            Err(_) => false,
+        }
+    }
+
+    /// Handle extension fees
+    pub fn handle_extension_fees(
+        env: Env,
+        market_id: Symbol,
+        additional_days: u32,
+    ) -> i128 {
+        match ExtensionUtils::handle_extension_fees(&env, &market_id, additional_days) {
+            Ok(fee_amount) => fee_amount,
+            Err(_) => 0,
+        }
+    }
+
+    /// Get extension statistics for a market
+    pub fn get_extension_stats(
+        env: Env,
+        market_id: Symbol,
+    ) -> ExtensionStats {
+        match ExtensionManager::get_extension_stats(&env, market_id) {
+            Ok(stats) => stats,
+            Err(_) => ExtensionStats {
+                total_extensions: 0,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                can_extend: false,
+                extension_fee_per_day: 100_000_000,
+            },
+        }
+    }
+
+    /// Calculate extension fee for given days
+    pub fn calculate_extension_fee(additional_days: u32) -> i128 {
+        ExtensionManager::calculate_extension_fee(additional_days)
     }
 }
 mod test;
