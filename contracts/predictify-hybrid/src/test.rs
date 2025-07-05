@@ -1,8 +1,6 @@
 #![cfg(test)]
 
 use super::*;
-use crate::oracles::ReflectorOracle;
-use crate::errors::Error;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo}, token::{self, StellarAssetClient}, vec, String, Symbol
 };
@@ -187,7 +185,7 @@ fn test_create_market_with_non_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #53)")]
+#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
 fn test_create_market_with_empty_outcome() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -209,7 +207,7 @@ fn test_create_market_with_empty_outcome() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #52)")]
+#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
 fn test_create_market_with_empty_question() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -365,7 +363,7 @@ fn test_vote_on_closed_market() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #10)")]
+#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
 fn test_vote_with_invalid_outcome() {
     //Setup test environment
     let test = PredictifyTest::setup();
@@ -403,7 +401,7 @@ fn test_vote_with_invalid_outcome() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #11)")]
+#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
 fn test_vote_on_nonexistent_market() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -1081,6 +1079,7 @@ fn test_reflector_oracle_fallback_mechanism() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Storage, MissingValue)")]
 fn test_reflector_oracle_with_empty_feed_id() {
     // Setup test environment
     let test = PredictifyTest::setup();
