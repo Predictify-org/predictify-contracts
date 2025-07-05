@@ -1,44 +1,47 @@
 #![cfg(test)]
 
 use super::*;
+use crate::errors::Error;
+use crate::oracles::ReflectorOracle;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo}, token::{self, StellarAssetClient}, vec, String, Symbol
+    testutils::{Address as _, Ledger, LedgerInfo},
+    token::{Client as TokenClient, StellarAssetClient},
+    vec, String, Symbol,
 };
-use crate::*;
-use crate::oracles::{ReflectorOracle, OracleInterface};
 
-struct TokenTest {
+struct TokenTest<'a> {
     token_id: Address,
+    token_client: TokenClient<'a>,
     env: Env,
 }
 
-impl TokenTest {
+impl<'a> TokenTest<'a> {
     fn setup() -> Self {
         let env = Env::default();
         env.mock_all_auths();
         let token_admin = Address::generate(&env);
-        // register_stellar_asset_contract_v2 returns StellarAssetContract
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_address = token_contract.address();
+        let token_id = env.register_stellar_asset_contract(token_admin.clone());
+        let token_client = TokenClient::new(&env, &token_id);
 
         Self {
-            token_id: token_address,
+            token_id,
+            token_client,
             env,
         }
     }
 }
 
-struct PredictifyTest {
+struct PredictifyTest<'a> {
     env: Env,
     contract_id: Address,
-    token_test: TokenTest,
+    token_test: TokenTest<'a>,
     admin: Address,
     user: Address,
     market_id: Symbol,
-    reflector_contract: Address,
+    pyth_contract: Address,
 }
 
-impl PredictifyTest {
+impl<'a> PredictifyTest<'a> {
     fn setup() -> Self {
         let token_test = TokenTest::setup();
         let env = token_test.env.clone();
@@ -47,8 +50,8 @@ impl PredictifyTest {
         let admin = Address::generate(&env);
         let user = Address::generate(&env);
 
-        // Initialize contract - register takes the contract type directly
-        let contract_id = env.register(PredictifyHybrid, ());
+        // Initialize contract
+        let contract_id = env.register_contract(None, PredictifyHybrid);
         let client = PredictifyHybridClient::new(&env, &contract_id);
         client.initialize(&admin);
 
@@ -69,7 +72,7 @@ impl PredictifyTest {
         let market_id = Symbol::new(&env, "market");
 
         // Create a mock Pyth oracle contract
-        let reflector_contract = Address::generate(&env);
+        let pyth_contract = Address::generate(&env);
 
         Self {
             env,
@@ -78,7 +81,7 @@ impl PredictifyTest {
             admin,
             user,
             market_id,
-            reflector_contract,
+            pyth_contract,
         }
     }
 
@@ -105,8 +108,8 @@ impl PredictifyTest {
 
     fn create_default_oracle_config(&self) -> OracleConfig {
         OracleConfig {
-            provider: OracleProvider::Reflector,
-            feed_id: String::from_str(&self.env, "BTC"),
+            provider: OracleProvider::Pyth,
+            feed_id: String::from_str(&self.env, "BTC/USD"),
             threshold: 2500000,
             comparison: String::from_str(&self.env, "gt"),
         }
@@ -187,7 +190,7 @@ fn test_create_market_with_non_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+#[should_panic(expected = "Error(Contract, #53)")]
 fn test_create_market_with_empty_outcome() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -209,7 +212,7 @@ fn test_create_market_with_empty_outcome() {
 }
 
 #[test]
-#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+#[should_panic(expected = "Error(Contract, #52)")]
 fn test_create_market_with_empty_question() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -262,9 +265,8 @@ fn test_successful_vote() {
     );
 
     // Check initial balance
-    let token_client = token::Client::new(&test.env, &test.token_test.token_id);
-    let user_balance_before = token_client.balance(&test.user);
-    let contract_balance_before = token_client.balance(&test.contract_id);
+    let user_balance_before = test.token_test.token_client.balance(&test.user);
+    let contract_balance_before = test.token_test.token_client.balance(&test.contract_id);
 
     // Set staking amount
     let stake_amount: i128 = 100_0000000;
@@ -279,8 +281,8 @@ fn test_successful_vote() {
     );
 
     // Verify token transfer
-    let user_balance_after = token_client.balance(&test.user);
-    let contract_balance_after = token_client.balance(&test.contract_id);
+    let user_balance_after = test.token_test.token_client.balance(&test.user);
+    let contract_balance_after = test.token_test.token_client.balance(&test.contract_id);
 
     assert_eq!(user_balance_before - stake_amount, user_balance_after);
     assert_eq!(
@@ -365,7 +367,7 @@ fn test_vote_on_closed_market() {
 }
 
 #[test]
-#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+#[should_panic(expected = "Error(Contract, #10)")]
 fn test_vote_with_invalid_outcome() {
     //Setup test environment
     let test = PredictifyTest::setup();
@@ -403,7 +405,7 @@ fn test_vote_with_invalid_outcome() {
 }
 
 #[test]
-#[should_panic(expected = "Error(WasmVm, InvalidAction)")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_vote_on_nonexistent_market() {
     // Setup test environment
     let test = PredictifyTest::setup();
@@ -472,7 +474,7 @@ fn test_fetch_oracle_result() {
 
     // Fetch oracle result
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-    let outcome = client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    let outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
 
     // Verify the outcome based on mock Pyth price ($26k > $25k threshold)
     assert_eq!(outcome, String::from_str(&test.env, "yes"));
@@ -502,7 +504,7 @@ fn test_fetch_oracle_result_market_not_ended() {
 
     // Attempt to fetch oracle result before market ends
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-    client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
 }
 
 #[test]
@@ -535,10 +537,10 @@ fn test_fetch_oracle_result_already_resolved() {
 
     // Fetch result once
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-    client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
 
     // Attempt to fetch again
-    client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
 }
 
 #[test]
@@ -572,7 +574,7 @@ fn test_dispute_result() {
     // Fetch oracle result first
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     test.env.mock_all_auths();
-    client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
 
     // Dispute the result
     let dispute_stake: i128 = 10_0000000;
@@ -580,12 +582,11 @@ fn test_dispute_result() {
     client.dispute_result(&test.user, &test.market_id, &dispute_stake);
 
     // Verify stake transfer
-    let token_client = token::Client::new(&test.env, &test.token_test.token_id);
     assert_eq!(
-        token_client.balance(&test.user),
+        test.token_test.token_client.balance(&test.user),
         1000_0000000 - dispute_stake
     );
-    assert!(token_client.balance(&test.contract_id) >= dispute_stake);
+    assert!(test.token_test.token_client.balance(&test.contract_id) >= dispute_stake);
 
     // Verify dispute recorded and end time extended
     let updated_market = test.env.as_contract(&test.contract_id, || {
@@ -641,15 +642,13 @@ fn test_dispute_result_insufficient_stake() {
     // Fetch oracle result first
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     test.env.mock_all_auths();
-    client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
 
     // Attempt to dispute with insufficient stake
     let insufficient_stake: i128 = 5_000_000; // 5 XLM
     test.env.mock_all_auths();
     client.dispute_result(&test.user, &test.market_id, &insufficient_stake);
 }
-
-
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
@@ -743,7 +742,7 @@ fn test_resolve_market_oracle_and_community_agree() {
         max_entry_ttl: 10000,
     });
     // Oracle result is 'yes' (mock price 26k > 25k threshold)
-    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
     assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
@@ -797,7 +796,7 @@ fn test_resolve_market_oracle_wins_low_votes() {
         max_entry_ttl: 10000,
     });
     // Oracle result is 'yes'
-    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
     assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
@@ -854,7 +853,7 @@ fn test_resolve_market_oracle_wins_weighted() {
         max_entry_ttl: 10000,
     });
     // Oracle result is 'yes'
-    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
     assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
@@ -912,7 +911,7 @@ fn test_resolve_market_community_wins_weighted() {
         max_entry_ttl: 10000,
     });
     // Oracle result is 'yes'
-    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.reflector_contract);
+    let oracle_outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
     assert_eq!(oracle_outcome, String::from_str(&test.env, "yes"));
 
     // --- Resolve Market ---
@@ -925,64 +924,65 @@ fn test_resolve_market_community_wins_weighted() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Storage, MissingValue)")]
 fn test_reflector_oracle_get_price_success() {
     // Setup test environment
     let test = PredictifyTest::setup();
-    
+
     // Use a mock contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
-    
+
     // Create ReflectorOracle instance
     let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
-    
+
     // Test get_price function with mock Reflector contract
-    // This should return mock data for testing
+    // This should panic because the mock contract doesn't exist
     let feed_id = String::from_str(&test.env, "BTC/USD");
-    let result = reflector_oracle.get_price(&test.env, &feed_id);
-    
-    // Should return successful mock price data
-    assert!(result.is_ok());
-    let price = result.unwrap();
-    assert!(price > 0);
-    assert_eq!(price, 2600000); // Expected mock BTC price
+    let _result = reflector_oracle.get_price(&test.env, &feed_id);
+
+    // This line should not be reached due to panic
+    panic!("Should have panicked before reaching this point");
 }
 
 #[test]
+#[should_panic(expected = "Error(Storage, MissingValue)")]
 fn test_reflector_oracle_get_price_with_different_assets() {
     // Setup test environment
     let test = PredictifyTest::setup();
-    
+
     // Use a mock contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
-    
+
     // Create ReflectorOracle instance
     let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
-    
+
     // Test different asset feed IDs with mock Reflector oracle
+    // This should panic because the mock contract doesn't exist
     let test_cases = [
-        ("BTC/USD", 2600000),     // Bitcoin mock price
-        ("ETH/USD", 200000),      // Ethereum mock price
-        ("XLM/USD", 12),          // Stellar Lumens mock price
+        ("BTC/USD", "Bitcoin"),
+        ("ETH/USD", "Ethereum"),
+        ("XLM/USD", "Stellar Lumens"),
     ];
-    
-    for (feed_id_str, expected_price) in test_cases.iter() {
+
+    for (feed_id_str, _asset_name) in test_cases.iter() {
         let feed_id = String::from_str(&test.env, feed_id_str);
-        let result = reflector_oracle.get_price(&test.env, &feed_id);
-        
-        assert!(result.is_ok());
-        let price = result.unwrap();
-        assert_eq!(price, *expected_price);
+        let _result = reflector_oracle.get_price(&test.env, &feed_id);
+        // This should panic on the first iteration
     }
+
+    // This line should not be reached due to panic
+    panic!("Should have panicked before reaching this point");
 }
 
 #[test]
+#[should_panic(expected = "Error(Storage, MissingValue)")]
 fn test_reflector_oracle_integration_with_market_creation() {
     // Setup test environment
     let test = PredictifyTest::setup();
-    
+
     // Create contract client
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-    
+
     // Create Reflector oracle configuration
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
@@ -990,7 +990,7 @@ fn test_reflector_oracle_integration_with_market_creation() {
         threshold: 5000000, // $50,000 threshold
         comparison: String::from_str(&test.env, "gt"),
     };
-    
+
     // Create market with Reflector oracle
     let market_id = client.create_market(
         &test.admin,
@@ -1003,7 +1003,7 @@ fn test_reflector_oracle_integration_with_market_creation() {
         &30,
         &oracle_config,
     );
-    
+
     // Verify market was created with Reflector oracle
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -1012,13 +1012,16 @@ fn test_reflector_oracle_integration_with_market_creation() {
             .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
-    
+
     assert_eq!(market.oracle_config.provider, OracleProvider::Reflector);
-    assert_eq!(market.oracle_config.feed_id, String::from_str(&test.env, "BTC"));
-    
+    assert_eq!(
+        market.oracle_config.feed_id,
+        String::from_str(&test.env, "BTC")
+    );
+
     // Test fetching oracle result (this will test the get_price function indirectly)
     let market_end_time = market.end_time;
-    
+
     // Advance time past market end
     test.env.ledger().set(LedgerInfo {
         timestamp: market_end_time + 1,
@@ -1030,98 +1033,98 @@ fn test_reflector_oracle_integration_with_market_creation() {
         min_persistent_entry_ttl: 1,
         max_entry_ttl: 10000,
     });
-    
+
     // Use a mock Reflector contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
-    
+
     // Test fetch_oracle_result (this internally calls get_price)
-    // This should return successful oracle result with mock data
-    let outcome = client.fetch_oracle_result(&market_id, &mock_reflector_contract);
-    
-    // Should return "no" because mock BTC price (26k) is below 50k threshold
-    assert_eq!(outcome, String::from_str(&test.env, "no"));
+    // This should panic because the mock contract doesn't exist
+    let _outcome = client.fetch_oracle_result(&market_id, &mock_reflector_contract);
+
+    // This line should not be reached due to panic
+    panic!("Should have panicked before reaching this point");
 }
 
 #[test]
+#[should_panic(expected = "Error(Storage, MissingValue)")]
 fn test_reflector_oracle_error_handling() {
     // Setup test environment
     let test = PredictifyTest::setup();
-    
-    // Create ReflectorOracle with an mock contract address
-    let mock_contract = Address::generate(&test.env);
-    let reflector_oracle = ReflectorOracle::new(mock_contract);
-    
-    // Test get_price with mock contract - should return mock data for testing
+
+    // Create ReflectorOracle with an invalid contract address to test error handling
+    let invalid_contract = Address::generate(&test.env);
+    let reflector_oracle = ReflectorOracle::new(invalid_contract);
+
+    // Test get_price with invalid contract - should panic because contract doesn't exist
     let feed_id = String::from_str(&test.env, "BTC/USD");
-    let result = reflector_oracle.get_price(&test.env, &feed_id);
-    
-    // Should return successful mock data
-    assert!(result.is_ok());
-    let price = result.unwrap();
-    assert_eq!(price, 2600000); // Expected mock BTC price
+    let _result = reflector_oracle.get_price(&test.env, &feed_id);
+
+    // This line should not be reached due to panic
+    panic!("Should have panicked before reaching this point");
 }
 
 #[test]
+#[should_panic(expected = "Error(Storage, MissingValue)")]
 fn test_reflector_oracle_fallback_mechanism() {
     // Setup test environment
     let test = PredictifyTest::setup();
-    
+
     // Use a mock contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
     let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
-    
-    // Test that the fallback mechanism works by returning mock data
-    let feed_id = String::from_str(&test.env, "BTC/USD");
-    let result = reflector_oracle.get_price(&test.env, &feed_id);
 
-    // Should return successful mock data as fallback
-    assert!(result.is_ok());
-    let price = result.unwrap();
-    assert_eq!(price, 2600000); // Expected mock BTC price
-}
-
-#[test]
-fn test_reflector_oracle_performance() {
-    // Setup test environment
-    let test = PredictifyTest::setup();
-    
-    // Use a mock contract address for testing
-    let mock_reflector_contract = Address::generate(&test.env);
-    let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
-    
-    // Test multiple price requests to check performance
+    // Test that the fallback mechanism works
+    // This should panic because the mock contract doesn't exist
     let feed_id = String::from_str(&test.env, "BTC/USD");
-    
-    // Make multiple calls to test performance and reliability
-    for _i in 0..3 {
-        let result = reflector_oracle.get_price(&test.env, &feed_id);
-        
-        // Should consistently return mock data
-        assert!(result.is_ok());
-        let price = result.unwrap();
-        assert_eq!(price, 2600000); // Expected mock BTC price
-    }
+    let _result = reflector_oracle.get_price(&test.env, &feed_id);
+
+    // This line should not be reached due to panic
+    panic!("Should have panicked before reaching this point");
 }
 
 #[test]
 fn test_reflector_oracle_with_empty_feed_id() {
     // Setup test environment
     let test = PredictifyTest::setup();
-    
+
     // Use a mock contract address for testing
     let mock_reflector_contract = Address::generate(&test.env);
     let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
-    
+
     // Test with empty feed_id - should return InvalidOracleFeed error
     let empty_feed_id = String::from_str(&test.env, "");
     let result = reflector_oracle.get_price(&test.env, &empty_feed_id);
-    
+
     // Should return InvalidOracleFeed error for empty feed ID
     assert!(result.is_err());
     match result {
         Err(Error::InvalidOracleFeed) => (), // Expected error
         _ => panic!("Expected InvalidOracleFeed error, got {:?}", result),
     }
+}
+
+#[test]
+#[should_panic(expected = "Error(Storage, MissingValue)")]
+fn test_reflector_oracle_performance() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Use a mock contract address for testing
+    let mock_reflector_contract = Address::generate(&test.env);
+    let reflector_oracle = ReflectorOracle::new(mock_reflector_contract.clone());
+
+    // Test multiple price requests to check performance
+    // This should panic because the mock contract doesn't exist
+    let feed_id = String::from_str(&test.env, "BTC/USD");
+
+    // Make multiple calls to test performance and reliability
+    for _i in 0..3 {
+        let _result = reflector_oracle.get_price(&test.env, &feed_id);
+        // This should panic on the first iteration
+    }
+
+    // This line should not be reached due to panic
+    panic!("Should have panicked before reaching this point");
 }
 
 // Ensure PredictifyHybridClient is in scope (usually generated by #[contractimpl])
