@@ -2172,3 +2172,192 @@ fn test_resolution_performance() {
     let analytics = client.get_resolution_analytics();
     assert_eq!(analytics.total_resolutions, 1);
 }
+
+// ===== CONFIGURATION MANAGEMENT TESTS =====
+
+#[test]
+fn test_configuration_initialization() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Test initialization with development config
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+
+    // Verify configuration was stored
+    let config = client.get_contract_config();
+    assert_eq!(config.network.environment, crate::config::Environment::Development);
+    assert_eq!(config.fees.platform_fee_percentage, crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE);
+}
+
+#[test]
+fn test_configuration_environment_specific() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Test mainnet configuration
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Mainnet);
+
+    // Verify mainnet-specific values
+    let config = client.get_contract_config();
+    assert_eq!(config.network.environment, crate::config::Environment::Mainnet);
+    assert_eq!(config.fees.platform_fee_percentage, 3); // Higher for mainnet
+    assert_eq!(config.fees.creation_fee, 15_000_000); // Higher for mainnet
+}
+
+#[test]
+fn test_configuration_update() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Initialize with development config
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+
+    // Create custom configuration
+    let mut custom_config = client.get_contract_config();
+    custom_config.fees.platform_fee_percentage = 5;
+    custom_config.fees.creation_fee = 20_000_000;
+
+    // Update configuration
+    test.env.mock_all_auths();
+    let updated_config = client.update_contract_config(&test.admin, &custom_config);
+
+    // Verify updates
+    assert_eq!(updated_config.fees.platform_fee_percentage, 5);
+    assert_eq!(updated_config.fees.creation_fee, 20_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn test_configuration_update_unauthorized() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Initialize with development config
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+
+    // Try to update with non-admin user
+    let custom_config = client.get_contract_config();
+    test.env.mock_all_auths();
+    client.update_contract_config(&test.user, &custom_config);
+}
+
+#[test]
+fn test_configuration_reset() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Initialize with development config
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+
+    // Reset to defaults
+    test.env.mock_all_auths();
+    let reset_config = client.reset_config_to_defaults(&test.admin);
+
+    // Verify reset values
+    assert_eq!(reset_config.fees.platform_fee_percentage, crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE);
+    assert_eq!(reset_config.fees.creation_fee, crate::config::DEFAULT_MARKET_CREATION_FEE);
+}
+
+#[test]
+fn test_configuration_validation() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Initialize with valid config
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+
+    // Test validation
+    let is_valid = client.validate_configuration();
+    assert!(is_valid);
+}
+
+#[test]
+fn test_configuration_summary() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Initialize with development config
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+
+    // Get configuration summary
+    let summary = client.get_config_summary();
+    assert!(summary.to_string().contains("development"));
+    assert!(summary.to_string().contains("2%")); // Default fee percentage
+}
+
+#[test]
+fn test_fees_enabled_check() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Initialize with development config
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+
+    // Check if fees are enabled
+    let fees_enabled = client.fees_enabled();
+    assert!(fees_enabled);
+}
+
+#[test]
+fn test_environment_detection() {
+    // Setup test environment
+    let test = PredictifyTest::setup();
+
+    // Test different environments
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+
+    // Development environment
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Development);
+    let env = client.get_environment();
+    assert_eq!(env, crate::config::Environment::Development);
+
+    // Testnet environment
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Testnet);
+    let env = client.get_environment();
+    assert_eq!(env, crate::config::Environment::Testnet);
+
+    // Mainnet environment
+    client.initialize_with_config(&test.admin, &crate::config::Environment::Mainnet);
+    let env = client.get_environment();
+    assert_eq!(env, crate::config::Environment::Mainnet);
+}
+
+#[test]
+fn test_configuration_constants() {
+    // Test that constants are properly defined
+    assert_eq!(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE, 2);
+    assert_eq!(crate::config::DEFAULT_MARKET_CREATION_FEE, 10_000_000);
+    assert_eq!(crate::config::MIN_FEE_AMOUNT, 1_000_000);
+    assert_eq!(crate::config::MAX_FEE_AMOUNT, 1_000_000_000);
+    assert_eq!(crate::config::FEE_COLLECTION_THRESHOLD, 100_000_000);
+
+    assert_eq!(crate::config::MIN_VOTE_STAKE, 1_000_000);
+    assert_eq!(crate::config::MIN_DISPUTE_STAKE, 10_000_000);
+    assert_eq!(crate::config::DISPUTE_EXTENSION_HOURS, 24);
+
+    assert_eq!(crate::config::MAX_MARKET_DURATION_DAYS, 365);
+    assert_eq!(crate::config::MIN_MARKET_DURATION_DAYS, 1);
+    assert_eq!(crate::config::MAX_MARKET_OUTCOMES, 10);
+    assert_eq!(crate::config::MIN_MARKET_OUTCOMES, 2);
+
+    assert_eq!(crate::config::MAX_EXTENSION_DAYS, 30);
+    assert_eq!(crate::config::MIN_EXTENSION_DAYS, 1);
+    assert_eq!(crate::config::EXTENSION_FEE_PER_DAY, 100_000_000);
+}
