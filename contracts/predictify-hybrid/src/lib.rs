@@ -42,6 +42,10 @@ use resolution::{OracleResolutionManager, MarketResolutionManager, MarketResolut
 pub mod config;
 use config::{ConfigManager, ConfigValidator, ConfigUtils, ContractConfig, Environment};
 
+// Utility functions module
+pub mod utils;
+use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, ConversionUtils, CommonUtils, TestingUtils};
+
 pub mod resolution;
 
 #[contract]
