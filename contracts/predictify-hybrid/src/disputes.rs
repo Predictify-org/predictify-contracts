@@ -754,14 +754,14 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) -> Result<(), Error> {
-        let key = Symbol::new(env, &format!("dispute_fees_{}", dispute_id));
+        let key = symbol_short!("dispute_fee");
         env.storage().persistent().set(&key, distribution);
         Ok(())
     }
 
     /// Get dispute fee distribution
     pub fn get_dispute_fee_distribution(env: &Env, dispute_id: &Symbol) -> Result<DisputeFeeDistribution, Error> {
-        let key = Symbol::new(env, &format!("dispute_fees_{}", dispute_id));
+        let key = symbol_short!("dispute_fee");
         env.storage()
             .persistent()
             .get(&key)
@@ -782,14 +782,14 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         escalation: &DisputeEscalation,
     ) -> Result<(), Error> {
-        let key = Symbol::new(env, &format!("dispute_escalation_{}", dispute_id));
+        let key = symbol_short!("dispute_esc");
         env.storage().persistent().set(&key, escalation);
         Ok(())
     }
 
     /// Get dispute escalation
     pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
-        let key = Symbol::new(env, &format!("dispute_escalation_{}", dispute_id));
+        let key = symbol_short!("dispute_esc");
         env.storage().persistent().get(&key)
     }
 
@@ -797,7 +797,7 @@ impl DisputeUtils {
     pub fn emit_dispute_vote_event(env: &Env, dispute_id: &Symbol, user: &Address, vote: bool, stake: i128) {
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
-        let event_key = Symbol::new(env, &format!("dispute_vote_event_{}", dispute_id));
+        let event_key = symbol_short!("vote_event");
         let event_data = (user.clone(), vote, stake, env.ledger().timestamp());
         env.storage().persistent().set(&event_key, &event_data);
     }
@@ -806,7 +806,7 @@ impl DisputeUtils {
     pub fn emit_fee_distribution_event(env: &Env, dispute_id: &Symbol, distribution: &DisputeFeeDistribution) {
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
-        let event_key = Symbol::new(env, &format!("dispute_fee_event_{}", dispute_id));
+        let event_key = symbol_short!("fee_event");
         env.storage().persistent().set(&event_key, distribution);
     }
 
@@ -819,7 +819,7 @@ impl DisputeUtils {
     ) {
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
-        let event_key = Symbol::new(env, &format!("dispute_escalation_event_{}", dispute_id));
+        let event_key = symbol_short!("esc_event");
         let event_data = (user.clone(), escalation.escalation_level, env.ledger().timestamp());
         env.storage().persistent().set(&event_key, &event_data);
     }
