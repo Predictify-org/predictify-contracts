@@ -553,7 +553,7 @@ impl PredictifyHybrid {
     }
 
     /// Validate dispute resolution conditions
-    pub fn validate_dispute_resolution_conditions(env: Env, dispute_id: Symbol) -> bool {
+    pub fn validate_dispute_resolution(env: Env, dispute_id: Symbol) -> bool {
         match DisputeManager::validate_dispute_resolution_conditions(&env, dispute_id) {
             Ok(valid) => valid,
             Err(_) => false,
