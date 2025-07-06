@@ -33,6 +33,10 @@ pub mod extensions;
 use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
 use types::ExtensionStats;
 
+// Fee management module
+pub mod fees;
+use fees::{FeeManager, FeeCalculator, FeeValidator, FeeUtils, FeeTracker, FeeConfigManager};
+
 #[contract]
 pub struct PredictifyHybrid;
 
@@ -73,13 +77,19 @@ impl PredictifyHybrid {
         // Use the markets module to create the market
         match MarketCreator::create_market(
             &env,
-            admin,
+            admin.clone(),
             question,
             outcomes,
             duration_days,
             oracle_config,
         ) {
-            Ok(market_id) => market_id,
+            Ok(market_id) => {
+                // Process creation fee using the fee management system
+                match FeeManager::process_creation_fee(&env, &admin) {
+                    Ok(_) => market_id,
+                    Err(e) => panic_with_error!(env, e),
+                }
+            }
             Err(e) => panic_with_error!(env, e),
         }
     }
@@ -94,8 +104,40 @@ impl PredictifyHybrid {
 
     // Collect platform fees
     pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) {
-        match VotingManager::collect_fees(&env, admin, market_id) {
+        match FeeManager::collect_fees(&env, admin, market_id) {
             Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // Get fee analytics
+    pub fn get_fee_analytics(env: Env) -> fees::FeeAnalytics {
+        match FeeManager::get_fee_analytics(&env) {
+            Ok(analytics) => analytics,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // Update fee configuration (admin only)
+    pub fn update_fee_config(env: Env, admin: Address, new_config: fees::FeeConfig) -> fees::FeeConfig {
+        match FeeManager::update_fee_config(&env, admin, new_config) {
+            Ok(config) => config,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // Get current fee configuration
+    pub fn get_fee_config(env: Env) -> fees::FeeConfig {
+        match FeeManager::get_fee_config(&env) {
+            Ok(config) => config,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // Validate market fees
+    pub fn validate_market_fees(env: Env, market_id: Symbol) -> fees::FeeValidationResult {
+        match FeeManager::validate_market_fees(&env, &market_id) {
+            Ok(result) => result,
             Err(e) => panic_with_error!(env, e),
         }
     }
