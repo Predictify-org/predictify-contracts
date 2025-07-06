@@ -61,6 +61,38 @@ pub struct PayoutData {
     pub payout_amount: i128,
 }
 
+/// Represents dispute threshold data
+#[contracttype]
+pub struct DisputeThreshold {
+    pub market_id: Symbol,
+    pub base_threshold: i128,
+    pub adjusted_threshold: i128,
+    pub market_size_factor: i128,
+    pub activity_factor: i128,
+    pub complexity_factor: i128,
+    pub timestamp: u64,
+}
+
+/// Represents threshold adjustment factors
+#[contracttype]
+pub struct ThresholdAdjustmentFactors {
+    pub market_size_factor: i128,
+    pub activity_factor: i128,
+    pub complexity_factor: i128,
+    pub total_adjustment: i128,
+}
+
+/// Represents threshold history entry
+#[contracttype]
+pub struct ThresholdHistoryEntry {
+    pub market_id: Symbol,
+    pub old_threshold: i128,
+    pub new_threshold: i128,
+    pub adjustment_reason: String,
+    pub adjusted_by: Address,
+    pub timestamp: u64,
+}
+
 // ===== VOTING MANAGER =====
 
 /// Main voting manager for handling all voting operations
