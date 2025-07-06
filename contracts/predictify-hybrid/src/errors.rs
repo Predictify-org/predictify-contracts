@@ -81,6 +81,8 @@ pub enum Error {
     OraclePriceOutOfRange = 33,
     /// Oracle comparison operation failed
     OracleComparisonFailed = 34,
+    /// Admin not set
+    AdminNotSet = 50,
 
     // ===== VALIDATION ERRORS (51-70) =====
     /// Invalid outcome specified for voting or resolution
@@ -199,7 +201,8 @@ impl Error {
             Error::InternalError
             | Error::StorageError
             | Error::ArithmeticError
-            | Error::InvalidState => ErrorCategory::System,
+            | Error::InvalidState
+            | Error::AdminNotSet => ErrorCategory::System,
         }
     }
 
@@ -266,6 +269,7 @@ impl Error {
             Error::StorageError => "Storage operation failed",
             Error::ArithmeticError => "Arithmetic overflow or underflow occurred",
             Error::InvalidState => "Invalid contract state",
+            Error::AdminNotSet => "Admin not set in contract",
         }
     }
 
@@ -319,6 +323,7 @@ impl Error {
             Error::StorageError => "STORAGE_ERROR",
             Error::ArithmeticError => "ARITHMETIC_ERROR",
             Error::InvalidState => "INVALID_STATE",
+            Error::AdminNotSet => "ADMIN_NOT_SET",
         }
     }
 
