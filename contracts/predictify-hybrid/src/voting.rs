@@ -180,29 +180,11 @@ impl VotingManager {
         Ok(payout)
     }
 
-    /// Collect platform fees from a market
+    /// Collect platform fees from a market (moved to fees module)
+    /// This function is deprecated and should use FeeManager::collect_fees instead
     pub fn collect_fees(env: &Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
-        // Require authentication from the admin
-        admin.require_auth();
-
-        // Validate admin permissions
-        VotingValidator::validate_admin_authentication(env, &admin)?;
-
-        // Get and validate market
-        let mut market = MarketStateManager::get_market(env, &market_id)?;
-        VotingValidator::validate_market_for_fee_collection(&market)?;
-
-        // Calculate fee amount
-        let fee_amount = VotingUtils::calculate_fee_amount(&market)?;
-
-        // Transfer fees to admin
-        VotingUtils::transfer_fees(env, &admin, fee_amount)?;
-
-        // Mark fees as collected
-        MarketStateManager::mark_fees_collected(&mut market);
-        MarketStateManager::update_market(env, &market_id, &market);
-
-        Ok(fee_amount)
+        // Delegate to the fees module
+        crate::fees::FeeManager::collect_fees(env, admin, market_id)
     }
 
     /// Calculate dynamic dispute threshold for a market
@@ -675,11 +657,11 @@ impl VotingUtils {
         Ok(())
     }
 
-    /// Transfer fees to admin
+    /// Transfer fees to admin (moved to fees module)
+    /// This function is deprecated and should use FeeUtils::transfer_fees_to_admin instead
     pub fn transfer_fees(env: &Env, admin: &Address, amount: i128) -> Result<(), Error> {
-        let token_client = MarketUtils::get_token_client(env)?;
-        token_client.transfer(&env.current_contract_address(), admin, &amount);
-        Ok(())
+        // Delegate to the fees module
+        crate::fees::FeeUtils::transfer_fees_to_admin(env, admin, amount)
     }
 
     /// Calculate user's payout
@@ -719,10 +701,11 @@ impl VotingUtils {
         Ok(payout)
     }
 
-    /// Calculate fee amount for a market
+    /// Calculate fee amount for a market (moved to fees module)
+    /// This function is deprecated and should use FeeCalculator::calculate_platform_fee instead
     pub fn calculate_fee_amount(market: &Market) -> Result<i128, Error> {
-        let fee = (market.total_staked * FEE_PERCENTAGE) / 100;
-        Ok(fee)
+        // Delegate to the fees module
+        crate::fees::FeeCalculator::calculate_platform_fee(market)
     }
 
     /// Get voting statistics for a market
