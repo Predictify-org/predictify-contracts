@@ -14,21 +14,23 @@ use crate::types::Market;
 /// - Fee safety checks and validation
 
 // ===== FEE CONSTANTS =====
+// Note: These constants are now managed by the config module
+// Use ConfigManager::get_fee_config() to get current values
 
 /// Platform fee percentage (2%)
-pub const PLATFORM_FEE_PERCENTAGE: i128 = 2;
+pub const PLATFORM_FEE_PERCENTAGE: i128 = crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE;
 
 /// Market creation fee (1 XLM = 10,000,000 stroops)
-pub const MARKET_CREATION_FEE: i128 = 10_000_000;
+pub const MARKET_CREATION_FEE: i128 = crate::config::DEFAULT_MARKET_CREATION_FEE;
 
 /// Minimum fee amount (0.1 XLM)
-pub const MIN_FEE_AMOUNT: i128 = 1_000_000;
+pub const MIN_FEE_AMOUNT: i128 = crate::config::MIN_FEE_AMOUNT;
 
 /// Maximum fee amount (100 XLM)
-pub const MAX_FEE_AMOUNT: i128 = 1_000_000_000;
+pub const MAX_FEE_AMOUNT: i128 = crate::config::MAX_FEE_AMOUNT;
 
 /// Fee collection threshold (minimum amount before fees can be collected)
-pub const FEE_COLLECTION_THRESHOLD: i128 = 100_000_000; // 10 XLM
+pub const FEE_COLLECTION_THRESHOLD: i128 = crate::config::FEE_COLLECTION_THRESHOLD; // 10 XLM
 
 // ===== FEE TYPES =====
 
