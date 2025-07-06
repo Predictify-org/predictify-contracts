@@ -162,7 +162,11 @@ impl Error {
             | Error::DisputeEscalationNotAllowed
             | Error::DisputeVotingPeriodExpired
             | Error::DisputeAlreadyVoted
-            | Error::DisputeFeeDistributionFailed => ErrorCategory::Market,
+            | Error::DisputeFeeDistributionFailed
+            | Error::InvalidDisputeThreshold
+            | Error::ThresholdAdjustmentNotAllowed
+            | Error::ThresholdExceedsMaximum
+            | Error::ThresholdBelowMinimum => ErrorCategory::Market,
 
             // Oracle errors
             Error::OracleUnavailable
@@ -225,6 +229,10 @@ impl Error {
             Error::DisputeVotingPeriodExpired => "Dispute voting period expired",
             Error::DisputeAlreadyVoted => "Dispute already voted on",
             Error::DisputeFeeDistributionFailed => "Dispute fee distribution failed",
+            Error::InvalidDisputeThreshold => "Invalid dispute threshold",
+            Error::ThresholdAdjustmentNotAllowed => "Threshold adjustment not allowed",
+            Error::ThresholdExceedsMaximum => "Threshold exceeds maximum limit",
+            Error::ThresholdBelowMinimum => "Threshold below minimum limit",
 
             // Oracle errors
             Error::OracleUnavailable => "Oracle service is unavailable or not responding",
