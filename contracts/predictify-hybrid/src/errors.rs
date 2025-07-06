@@ -59,6 +59,14 @@ pub enum Error {
     DisputeAlreadyVoted = 23,
     /// Dispute fee distribution failed
     DisputeFeeDistributionFailed = 24,
+    /// Invalid dispute threshold
+    InvalidDisputeThreshold = 25,
+    /// Threshold adjustment not allowed
+    ThresholdAdjustmentNotAllowed = 26,
+    /// Threshold exceeds maximum limit
+    ThresholdExceedsMaximum = 27,
+    /// Threshold below minimum limit
+    ThresholdBelowMinimum = 28,
 
     // ===== ORACLE ERRORS (31-50) =====
     /// Oracle service is unavailable or not responding
