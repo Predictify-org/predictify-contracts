@@ -49,6 +49,63 @@ pub struct DisputeResolution {
     pub resolution_timestamp: u64,
 }
 
+/// Represents a dispute vote
+#[contracttype]
+pub struct DisputeVote {
+    pub user: Address,
+    pub dispute_id: Symbol,
+    pub vote: bool, // true for support, false for against
+    pub stake: i128,
+    pub timestamp: u64,
+    pub reason: Option<String>,
+}
+
+/// Represents dispute voting data
+#[contracttype]
+pub struct DisputeVoting {
+    pub dispute_id: Symbol,
+    pub voting_start: u64,
+    pub voting_end: u64,
+    pub total_votes: u32,
+    pub support_votes: u32,
+    pub against_votes: u32,
+    pub total_support_stake: i128,
+    pub total_against_stake: i128,
+    pub status: DisputeVotingStatus,
+}
+
+/// Represents dispute voting status
+#[contracttype]
+pub enum DisputeVotingStatus {
+    Active,
+    Completed,
+    Expired,
+    Cancelled,
+}
+
+/// Represents dispute escalation data
+#[contracttype]
+pub struct DisputeEscalation {
+    pub dispute_id: Symbol,
+    pub escalated_by: Address,
+    pub escalation_reason: String,
+    pub escalation_timestamp: u64,
+    pub escalation_level: u32,
+    pub requires_admin_review: bool,
+}
+
+/// Represents dispute fee distribution data
+#[contracttype]
+pub struct DisputeFeeDistribution {
+    pub dispute_id: Symbol,
+    pub total_fees: i128,
+    pub winner_stake: i128,
+    pub loser_stake: i128,
+    pub winner_addresses: Vec<Address>,
+    pub distribution_timestamp: u64,
+    pub fees_distributed: bool,
+}
+
 // ===== DISPUTE MANAGER =====
 
 /// Main dispute manager for handling all dispute operations
