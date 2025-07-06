@@ -1,8 +1,14 @@
-use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
+
+#![allow(dead_code)]
+
+use soroban_sdk::{
+    token, Address, Env, Map, String, Symbol, Vec, vec,
+};
 
 use crate::errors::Error;
-use crate::oracles::{OracleFactory, OracleUtils};
 use crate::types::*;
+// Oracle imports removed - not currently used
+
 
 /// Market management system for Predictify Hybrid contract
 ///
@@ -133,7 +139,7 @@ pub struct MarketValidator;
 impl MarketValidator {
     /// Validate market creation parameters
     pub fn validate_market_params(
-        env: &Env,
+        _env: &Env,
         question: &String,
         outcomes: &Vec<String>,
         duration_days: u32,
@@ -198,11 +204,9 @@ impl MarketValidator {
     }
 
     /// Validate outcome for a market
-    pub fn validate_outcome(
-        env: &Env,
-        outcome: &String,
-        market_outcomes: &Vec<String>,
-    ) -> Result<(), Error> {
+
+    pub fn validate_outcome(_env: &Env, outcome: &String, market_outcomes: &Vec<String>) -> Result<(), Error> {
+
         for valid_outcome in market_outcomes.iter() {
             if *outcome == valid_outcome {
                 return Ok(());
