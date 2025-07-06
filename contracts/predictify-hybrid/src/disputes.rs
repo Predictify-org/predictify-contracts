@@ -459,7 +459,7 @@ impl DisputeValidator {
         }
 
         // Check if voting is still active
-        if voting_data.status != DisputeVotingStatus::Active {
+        if !matches!(voting_data.status, DisputeVotingStatus::Active) {
             return Err(Error::DisputeVotingNotAllowed);
         }
 
