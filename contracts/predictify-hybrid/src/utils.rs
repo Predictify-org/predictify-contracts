@@ -289,8 +289,8 @@ impl NumericUtils {
         let mut sum = 0;
         let mut weight_sum = 0;
         for i in 0..values.len() {
-            let v = if let Some(v) = values.get(i) { *v } else { 0 };
-            let w = if let Some(w) = weights.get(i) { *w } else { 0 };
+            let v = values[i];
+            let w = weights[i];
             sum += v * w;
             weight_sum += w;
         }
