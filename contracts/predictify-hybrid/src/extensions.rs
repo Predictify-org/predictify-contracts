@@ -13,11 +13,13 @@ use crate::types::*;
 /// - Extension analytics and reporting
 
 // ===== EXTENSION CONSTANTS =====
+// Note: These constants are now managed by the config module
+// Use ConfigManager::get_extension_config() to get current values
 
-const MAX_EXTENSION_DAYS: u32 = 30;
-const MIN_EXTENSION_DAYS: u32 = 1;
-const EXTENSION_FEE_PER_DAY: i128 = 100_000_000; // 1 XLM per day in stroops
-const MAX_TOTAL_EXTENSIONS: u32 = 3;
+const MAX_EXTENSION_DAYS: u32 = crate::config::MAX_EXTENSION_DAYS;
+const MIN_EXTENSION_DAYS: u32 = crate::config::MIN_EXTENSION_DAYS;
+const EXTENSION_FEE_PER_DAY: i128 = crate::config::EXTENSION_FEE_PER_DAY; // 1 XLM per day in stroops
+const MAX_TOTAL_EXTENSIONS: u32 = crate::config::MAX_TOTAL_EXTENSIONS;
 
 // ===== EXTENSION MANAGEMENT =====
 
