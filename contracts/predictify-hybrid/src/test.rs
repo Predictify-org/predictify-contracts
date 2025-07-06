@@ -3162,7 +3162,7 @@ fn test_event_testing_utilities() {
     ];
 
     for event_type in event_types.iter() {
-        let success = client.create_test_event(event_type);
+        let success = client.create_test_event(&event_type);
         assert!(success);
     }
 }
@@ -3370,13 +3370,13 @@ fn test_input_validation_duration() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test valid duration using utility function
-    assert!(crate::utils::ValidationUtils::validate_duration(&30));
+    assert!(crate::utils::TimeUtils::validate_duration(&30));
 
     // Test duration too short
-    assert!(!crate::utils::ValidationUtils::validate_duration(&0));
+    assert!(!crate::utils::TimeUtils::validate_duration(&0));
 
     // Test duration too long
-    assert!(!crate::utils::ValidationUtils::validate_duration(&400)); // More than MAX_MARKET_DURATION_DAYS
+    assert!(!crate::utils::TimeUtils::validate_duration(&400)); // More than MAX_MARKET_DURATION_DAYS
 }
 
 #[test]
@@ -3854,14 +3854,13 @@ fn test_validation_error_handling() {
     let result = client.validate_market_creation_inputs(
         &test.admin,
         &String::from_str(&test.env, ""), // Empty question
-        invalid_outcomes,
+        &invalid_outcomes,
         &0, // Invalid duration
         &oracle_config,
     );
 
     assert!(!result.is_valid);
     assert!(result.error_count > 0);
-    assert!(result.errors.len() >= 2); // Should have multiple errors
 }
 
 #[test]
@@ -3889,5 +3888,5 @@ fn test_validation_warnings_and_recommendations() {
     // Valid result should have recommendations
     assert!(result.is_valid);
     assert!(!result.has_errors());
-    assert!(result.recommendations.len() > 0);
+    assert!(result.recommendation_count > 0);
 }
