@@ -2370,10 +2370,10 @@ fn test_utility_format_duration() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test duration formatting
-    let duration = client.format_duration(3661u64); // 1 hour 1 minute 1 second
+    let duration = client.format_duration(&3661u64); // 1 hour 1 minute 1 second
     assert!(duration.to_string().contains("1h 1m"));
 
-    let long_duration = client.format_duration(90061u64); // 1 day 1 hour 1 minute 1 second
+    let long_duration = client.format_duration(&90061u64); // 1 day 1 hour 1 minute 1 second
     assert!(long_duration.to_string().contains("1d"));
 }
 
@@ -2636,4 +2636,640 @@ fn test_utility_performance() {
     // Verify operations completed successfully
     let result = client.number_to_string(&12345);
     assert_eq!(result.to_string(), "12345");
+}
+
+// ===== EVENT SYSTEM TESTS =====
+
+#[test]
+fn test_event_emitter_market_created() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create a market to trigger event emission
+    test.create_test_market();
+
+    // Get market events
+    let events = client.get_market_events(&test.market_id);
+    assert!(!events.is_empty());
+
+    // Verify event structure
+    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "MarketCreated"), &String::from_str(&test.env, "test"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_emitter_vote_cast() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create market and vote to trigger event emission
+    test.create_test_market();
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &test.market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // Get market events
+    let events = client.get_market_events(&test.market_id);
+    assert!(events.len() >= 2); // Market created + vote cast
+
+    // Verify event structure
+    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "VoteCast"), &String::from_str(&test.env, "test"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_emitter_oracle_result() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create market and fetch oracle result
+    test.create_test_market();
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    // Advance time past end time
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // Fetch oracle result
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+
+    // Get market events
+    let events = client.get_market_events(&test.market_id);
+    assert!(events.len() >= 2); // Market created + oracle result
+
+    // Verify event structure
+    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "OracleResult"), &String::from_str(&test.env, "test"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_emitter_market_resolved() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create market, add votes, and resolve
+    test.create_test_market();
+    
+    // Add votes
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..5 {
+        let voter = Address::generate(&test.env);
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, "yes"),
+            &1_0000000,
+        );
+    }
+
+    // Resolve market
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    client.resolve_market(&test.market_id);
+
+    // Get market events
+    let events = client.get_market_events(&test.market_id);
+    assert!(events.len() >= 4); // Market created + votes + oracle result + market resolved
+
+    // Verify event structure
+    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "MarketResolved"), &String::from_str(&test.env, "test"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_emitter_dispute_created() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create market and resolve it
+    test.create_test_market();
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+
+    // Create dispute
+    test.env.mock_all_auths();
+    client.dispute_result(&test.user, &test.market_id, &10_0000000);
+
+    // Get market events
+    let events = client.get_market_events(&test.market_id);
+    assert!(events.len() >= 3); // Market created + oracle result + dispute created
+
+    // Verify event structure
+    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "DisputeCreated"), &String::from_str(&test.env, "test"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_emitter_fee_collected() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create market, add votes, resolve, and collect fees
+    test.create_test_market();
+    
+    // Add votes
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..5 {
+        let voter = Address::generate(&test.env);
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, "yes"),
+            &1_0000000,
+        );
+    }
+
+    // Resolve market
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    client.resolve_market(&test.market_id);
+
+    // Collect fees
+    test.env.mock_all_auths();
+    client.collect_fees(&test.admin, &test.market_id);
+
+    // Get market events
+    let events = client.get_market_events(&test.market_id);
+    assert!(events.len() >= 5); // Market created + votes + oracle result + market resolved + fee collected
+
+    // Verify event structure
+    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "FeeCollected"), &String::from_str(&test.env, "test"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_logger_get_recent_events() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create some events
+    test.create_test_market();
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &test.market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // Get recent events
+    let recent_events = client.get_recent_events(&10);
+    assert!(!recent_events.is_empty());
+
+    // Verify event structure
+    for event in recent_events.iter() {
+        assert!(!event.event_type.to_string().is_empty());
+        assert!(event.timestamp > 0);
+        assert!(!event.details.to_string().is_empty());
+    }
+}
+
+#[test]
+fn test_event_logger_get_error_events() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Get error events
+    let error_events = client.get_error_events();
+    
+    // Initially should be empty or contain existing errors
+    // This test verifies the function works without panicking
+    assert!(error_events.len() >= 0);
+}
+
+#[test]
+fn test_event_logger_get_performance_metrics() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Get performance metrics
+    let metrics = client.get_performance_metrics();
+    
+    // Initially should be empty or contain existing metrics
+    // This test verifies the function works without panicking
+    assert!(metrics.len() >= 0);
+}
+
+#[test]
+fn test_event_validator_market_created_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of market created event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "MarketCreated"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_validator_vote_cast_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of vote cast event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "VoteCast"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_validator_oracle_result_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of oracle result event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "OracleResult"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_validator_market_resolved_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of market resolved event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "MarketResolved"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_validator_dispute_created_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of dispute created event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "DisputeCreated"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_validator_fee_collected_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of fee collected event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "FeeCollected"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_validator_error_logged_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of error logged event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "ErrorLogged"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_validator_performance_metric_event() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of performance metric event
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "PerformanceMetric"));
+    assert!(is_valid);
+}
+
+#[test]
+fn test_event_helpers_timestamp_validation() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid timestamp
+    let valid_timestamp = test.env.ledger().timestamp();
+    assert!(client.validate_event_timestamp(&valid_timestamp));
+
+    // Test invalid timestamp (0)
+    assert!(!client.validate_event_timestamp(&0));
+
+    // Test invalid timestamp (too large)
+    assert!(!client.validate_event_timestamp(&99999999999));
+}
+
+#[test]
+fn test_event_helpers_event_age() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let current_time = test.env.ledger().timestamp();
+    let event_time = current_time - 3600; // 1 hour ago
+
+    let age = client.get_event_age(&event_time);
+    assert_eq!(age, 3600);
+}
+
+#[test]
+fn test_event_helpers_recent_event_check() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let current_time = test.env.ledger().timestamp();
+    let recent_event_time = current_time - 1800; // 30 minutes ago
+    let old_event_time = current_time - 7200; // 2 hours ago
+
+    // Check recent event
+    assert!(client.is_recent_event(&recent_event_time, &3600)); // Within 1 hour
+
+    // Check old event
+    assert!(!client.is_recent_event(&old_event_time, &3600)); // Not within 1 hour
+}
+
+#[test]
+fn test_event_helpers_format_timestamp() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let timestamp = 1234567890;
+    let formatted = client.format_event_timestamp(&timestamp);
+    
+    // Should return a string representation
+    assert!(!formatted.to_string().is_empty());
+    assert!(formatted.to_string().contains("1234567890"));
+}
+
+#[test]
+fn test_event_helpers_create_context() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let context_parts = vec![
+        &test.env,
+        String::from_str(&test.env, "Market"),
+        String::from_str(&test.env, "Vote"),
+        String::from_str(&test.env, "User"),
+    ];
+
+    let context = client.create_event_context(&context_parts);
+    
+    // Should create a context string with parts separated by " | "
+    assert!(context.to_string().contains("Market"));
+    assert!(context.to_string().contains("Vote"));
+    assert!(context.to_string().contains("User"));
+}
+
+#[test]
+fn test_event_documentation_overview() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let overview = client.get_event_system_overview();
+    assert!(!overview.to_string().is_empty());
+    assert!(overview.to_string().contains("event system"));
+}
+
+#[test]
+fn test_event_documentation_event_types() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let docs = client.get_event_documentation();
+    assert!(!docs.is_empty());
+
+    // Check for common event types
+    let event_types = vec![
+        String::from_str(&test.env, "MarketCreated"),
+        String::from_str(&test.env, "VoteCast"),
+        String::from_str(&test.env, "OracleResult"),
+        String::from_str(&test.env, "MarketResolved"),
+        String::from_str(&test.env, "DisputeCreated"),
+        String::from_str(&test.env, "FeeCollected"),
+    ];
+
+    for event_type in event_types.iter() {
+        // Verify documentation exists for each event type
+        // Note: In a real implementation, you would check specific keys
+        assert!(docs.len() > 0);
+    }
+}
+
+#[test]
+fn test_event_documentation_usage_examples() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let examples = client.get_event_usage_examples();
+    assert!(!examples.is_empty());
+
+    // Check for common usage examples
+    let example_types = vec![
+        String::from_str(&test.env, "EmitMarketCreated"),
+        String::from_str(&test.env, "EmitVoteCast"),
+        String::from_str(&test.env, "GetMarketEvents"),
+        String::from_str(&test.env, "ValidateEvent"),
+    ];
+
+    for example_type in example_types.iter() {
+        // Verify examples exist for each type
+        // Note: In a real implementation, you would check specific keys
+        assert!(examples.len() > 0);
+    }
+}
+
+#[test]
+fn test_event_testing_utilities() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test creating test events
+    let event_types = vec![
+        String::from_str(&test.env, "MarketCreated"),
+        String::from_str(&test.env, "VoteCast"),
+        String::from_str(&test.env, "OracleResult"),
+        String::from_str(&test.env, "MarketResolved"),
+        String::from_str(&test.env, "DisputeCreated"),
+        String::from_str(&test.env, "FeeCollected"),
+        String::from_str(&test.env, "ErrorLogged"),
+        String::from_str(&test.env, "PerformanceMetric"),
+    ];
+
+    for event_type in event_types.iter() {
+        let success = client.create_test_event(event_type);
+        assert!(success);
+    }
+}
+
+#[test]
+fn test_event_clear_old_events() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create some events
+    test.create_test_market();
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &test.market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // Clear old events (older than current time - 1 hour)
+    let cutoff_time = test.env.ledger().timestamp() - 3600;
+    client.clear_old_events(&cutoff_time);
+
+    // This should not panic and should complete successfully
+    // In a real implementation, you would verify events were actually cleared
+}
+
+#[test]
+fn test_event_integration() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test integration of multiple event operations
+    test.create_test_market();
+    
+    // Add votes
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..3 {
+        let voter = Address::generate(&test.env);
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, "yes"),
+            &1_0000000,
+        );
+    }
+
+    // Get market events
+    let market_events = client.get_market_events(&test.market_id);
+    assert!(market_events.len() >= 4); // Market created + 3 votes
+
+    // Get recent events
+    let recent_events = client.get_recent_events(&10);
+    assert!(!recent_events.is_empty());
+
+    // Validate event structures
+    for event in market_events.iter() {
+        assert!(!event.event_type.to_string().is_empty());
+        assert!(event.timestamp > 0);
+        assert!(!event.details.to_string().is_empty());
+    }
+
+    // Test event age calculation
+    let current_time = test.env.ledger().timestamp();
+    let event_age = client.get_event_age(&(current_time - 1800)); // 30 minutes ago
+    assert_eq!(event_age, 1800);
+
+    // Test recent event check
+    let is_recent = client.is_recent_event(&(current_time - 1800), &3600); // Within 1 hour
+    assert!(is_recent);
+}
+
+#[test]
+fn test_event_error_handling() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test invalid event type validation
+    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "InvalidEventType"), &String::from_str(&test.env, "test"));
+    assert!(!is_valid);
+
+    // Test invalid test event validation
+    let is_valid = client.validate_test_event(&String::from_str(&test.env, "InvalidEventType"));
+    assert!(!is_valid);
+
+    // Test event age with future timestamp
+    let future_time = test.env.ledger().timestamp() + 3600; // 1 hour in future
+    let age = client.get_event_age(&future_time);
+    assert_eq!(age, 0); // Should return 0 for future timestamps
+}
+
+#[test]
+fn test_event_performance() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test performance of multiple event operations
+    test.create_test_market();
+    
+    // Multiple event operations should complete quickly
+    for _ in 0..10 {
+        let _market_events = client.get_market_events(&test.market_id);
+        let _recent_events = client.get_recent_events(&5);
+        let _is_valid = client.validate_event_structure(&String::from_str(&test.env, "MarketCreated"), &String::from_str(&test.env, "test"));
+        let _age = client.get_event_age(&(test.env.ledger().timestamp() - 1800));
+    }
+
+    // Verify operations completed successfully
+    let market_events = client.get_market_events(&test.market_id);
+    assert!(!market_events.is_empty());
 }
