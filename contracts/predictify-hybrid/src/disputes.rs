@@ -485,7 +485,7 @@ impl DisputeValidator {
 
     /// Validate voting is completed
     pub fn validate_voting_completed(voting_data: &DisputeVoting) -> Result<(), Error> {
-        if voting_data.status != DisputeVotingStatus::Completed {
+        if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
             return Err(Error::DisputeResolutionConditionsNotMet);
         }
 
@@ -500,7 +500,7 @@ impl DisputeValidator {
         // Check if dispute voting exists and is completed
         let voting_data = DisputeUtils::get_dispute_voting(env, dispute_id)?;
         
-        if voting_data.status != DisputeVotingStatus::Completed {
+        if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
             return Err(Error::DisputeResolutionConditionsNotMet);
         }
 
