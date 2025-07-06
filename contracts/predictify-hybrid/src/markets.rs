@@ -1,4 +1,4 @@
-use soroban_sdk::{token, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::oracles::{OracleFactory, OracleUtils};
@@ -517,6 +517,7 @@ pub struct UserStats {
 
 /// Community consensus statistics
 #[derive(Clone, Debug)]
+#[contracttype]
 pub struct CommunityConsensus {
     pub outcome: String,
     pub votes: u32,
