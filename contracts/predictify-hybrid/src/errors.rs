@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use soroban_sdk::{contracterror, panic_with_error, Env, String};
 
 /// Comprehensive error management system for Predictify Hybrid contract

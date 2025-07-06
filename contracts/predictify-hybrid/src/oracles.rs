@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use soroban_sdk::{
     Address, Env, String, Symbol, symbol_short, vec, IntoVal,
 };
