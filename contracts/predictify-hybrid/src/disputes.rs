@@ -51,6 +51,7 @@ pub struct DisputeResolution {
 
 /// Represents a dispute vote
 #[contracttype]
+#[derive(Clone)]
 pub struct DisputeVote {
     pub user: Address,
     pub dispute_id: Symbol,
