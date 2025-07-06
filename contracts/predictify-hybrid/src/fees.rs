@@ -500,7 +500,7 @@ impl FeeTracker {
         amount: i128,
     ) -> Result<(), Error> {
         // Record creation fee in analytics
-        let creation_key = symbol_short!("creat_fees");
+        let creation_key = symbol_short!("creat_fee");
         let current_total: i128 = env
             .storage()
             .persistent()
@@ -521,7 +521,7 @@ impl FeeTracker {
         config: &FeeConfig,
     ) -> Result<(), Error> {
         // Store configuration change timestamp
-        let config_key = symbol_short!("config_time");
+        let config_key = symbol_short!("cfg_time");
         env.storage()
             .persistent()
             .set(&config_key, &env.ledger().timestamp());
@@ -541,7 +541,7 @@ impl FeeTracker {
 
     /// Get total fees collected
     pub fn get_total_fees_collected(env: &Env) -> Result<i128, Error> {
-        let total_key = symbol_short!("total_fees");
+        let total_key = symbol_short!("tot_fees");
         Ok(env
             .storage()
             .persistent()
@@ -558,14 +558,14 @@ pub struct FeeConfigManager;
 impl FeeConfigManager {
     /// Store fee configuration
     pub fn store_fee_config(env: &Env, config: &FeeConfig) -> Result<(), Error> {
-        let config_key = symbol_short!("fee_config");
+        let config_key = symbol_short!("fee_cfg");
         env.storage().persistent().set(&config_key, config);
         Ok(())
     }
 
     /// Get fee configuration
     pub fn get_fee_config(env: &Env) -> Result<FeeConfig, Error> {
-        let config_key = symbol_short!("fee_config");
+        let config_key = symbol_short!("fee_cfg");
         Ok(env
             .storage()
             .persistent()
