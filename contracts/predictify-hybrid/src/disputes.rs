@@ -1055,6 +1055,7 @@ mod tests {
                 2500000,
                 String::from_str(env, "gt"),
             ),
+            crate::types::MarketState::Active,
         )
     }
 
