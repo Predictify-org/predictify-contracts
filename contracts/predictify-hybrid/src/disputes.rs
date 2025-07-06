@@ -798,7 +798,7 @@ impl DisputeUtils {
     pub fn emit_dispute_vote_event(env: &Env, dispute_id: &Symbol, user: &Address, vote: bool, stake: i128) {
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
-        let event_key = symbol_short!("vote_event");
+        let event_key = symbol_short!("vote_evt");
         let event_data = (user.clone(), vote, stake, env.ledger().timestamp());
         env.storage().persistent().set(&event_key, &event_data);
     }
