@@ -8,6 +8,8 @@ use soroban_sdk::{
     token::{Client as TokenClient, StellarAssetClient},
     vec, String, Symbol,
 };
+extern crate alloc;
+use alloc::string::ToString;
 
 struct TokenTest<'a> {
     token_id: Address,
@@ -1451,7 +1453,7 @@ fn test_fee_utils_get_fee_eligibility() {
     // Market not resolved
     let (eligible, reason) = crate::fees::FeeUtils::get_fee_eligibility(&market);
     assert!(!eligible);
-    assert!(reason.contains("not resolved"));
+    assert!(reason.to_string().contains("not resolved"));
 
     // Set winning outcome
     market.winning_outcome = Some(String::from_str(&test.env, "yes"));
@@ -1460,13 +1462,13 @@ fn test_fee_utils_get_fee_eligibility() {
     market.total_staked = crate::fees::FEE_COLLECTION_THRESHOLD - 1;
     let (eligible, reason) = crate::fees::FeeUtils::get_fee_eligibility(&market);
     assert!(!eligible);
-    assert!(reason.contains("Insufficient stakes"));
+    assert!(reason.to_string().contains("Insufficient stakes"));
 
     // Sufficient stakes
     market.total_staked = crate::fees::FEE_COLLECTION_THRESHOLD;
     let (eligible, reason) = crate::fees::FeeUtils::get_fee_eligibility(&market);
     assert!(eligible);
-    assert!(reason.contains("Eligible"));
+    assert!(reason.to_string().contains("Eligible"));
 }
 
 #[test]
