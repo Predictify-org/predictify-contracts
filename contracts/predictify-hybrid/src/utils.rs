@@ -289,8 +289,8 @@ impl NumericUtils {
         let mut sum = 0;
         let mut weight_sum = 0;
         for i in 0..values.len() {
-            let v = values[i];
-            let w = weights[i];
+            let v = values.get_unchecked(i);
+            let w = weights.get_unchecked(i);
             sum += v * w;
             weight_sum += w;
         }
