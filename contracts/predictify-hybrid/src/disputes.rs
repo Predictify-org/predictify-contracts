@@ -685,7 +685,7 @@ impl DisputeUtils {
 
     /// Get dispute voting data
     pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
-        let key = symbol_short!("dispute_voting");
+        let key = symbol_short!("dispute_v");
         env.storage()
             .persistent()
             .get(&key)
@@ -694,14 +694,14 @@ impl DisputeUtils {
 
     /// Store dispute voting data
     pub fn store_dispute_voting(env: &Env, dispute_id: &Symbol, voting: &DisputeVoting) -> Result<(), Error> {
-        let key = symbol_short!("dispute_vote");
+        let key = symbol_short!("dispute_v");
         env.storage().persistent().set(&key, voting);
         Ok(())
     }
 
     /// Store dispute vote
     pub fn store_dispute_vote(env: &Env, dispute_id: &Symbol, vote: &DisputeVote) -> Result<(), Error> {
-        let key = symbol_short!("dispute_vote");
+        let key = symbol_short!("vote");
         env.storage().persistent().set(&key, vote);
         Ok(())
     }
