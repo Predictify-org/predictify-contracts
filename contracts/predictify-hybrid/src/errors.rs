@@ -148,7 +148,13 @@ impl Error {
             | Error::ExtensionDaysExceeded
             | Error::InvalidExtensionDays
             | Error::InvalidExtensionReason
-            | Error::ExtensionFeeInsufficient => ErrorCategory::Market,
+            | Error::ExtensionFeeInsufficient
+            | Error::DisputeVotingNotAllowed
+            | Error::DisputeResolutionConditionsNotMet
+            | Error::DisputeEscalationNotAllowed
+            | Error::DisputeVotingPeriodExpired
+            | Error::DisputeAlreadyVoted
+            | Error::DisputeFeeDistributionFailed => ErrorCategory::Market,
 
             // Oracle errors
             Error::OracleUnavailable
@@ -205,6 +211,12 @@ impl Error {
             Error::InvalidExtensionDays => "Invalid extension days provided",
             Error::InvalidExtensionReason => "Invalid extension reason provided",
             Error::ExtensionFeeInsufficient => "Market extension fee insufficient",
+            Error::DisputeVotingNotAllowed => "Dispute voting not allowed",
+            Error::DisputeResolutionConditionsNotMet => "Dispute resolution conditions not met",
+            Error::DisputeEscalationNotAllowed => "Dispute escalation not allowed",
+            Error::DisputeVotingPeriodExpired => "Dispute voting period expired",
+            Error::DisputeAlreadyVoted => "Dispute already voted on",
+            Error::DisputeFeeDistributionFailed => "Dispute fee distribution failed",
 
             // Oracle errors
             Error::OracleUnavailable => "Oracle service is unavailable or not responding",
