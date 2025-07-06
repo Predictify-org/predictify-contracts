@@ -84,6 +84,7 @@ pub struct ThresholdAdjustmentFactors {
 
 /// Represents threshold history entry
 #[contracttype]
+#[derive(Clone)]
 pub struct ThresholdHistoryEntry {
     pub market_id: Symbol,
     pub old_threshold: i128,
