@@ -1,4 +1,5 @@
 #![no_std]
+extern crate alloc;
 use soroban_sdk::{
     contract, contractimpl, contracttype, panic_with_error, symbol_short, token, vec, Address, Env,
     IntoVal, Map, String, Symbol, Vec,
@@ -936,9 +937,11 @@ impl PredictifyHybrid {
     /// Get time utilities
     pub fn get_time_utilities(env: Env) -> String {
         let current_time = env.ledger().timestamp();
-        let formatted_time = ConversionUtils::u64_to_string(&env, current_time);
-        String::from_str(&env, &format!("Current time: {}, Days to seconds: {}", 
-            formatted_time.to_string(), TimeUtils::days_to_seconds(1)))
+        let mut s = alloc::string::String::new();
+        s.push_str("Current time: ");
+        s.push_str(&current_time.to_string());
+        s.push_str(", Days to seconds: 86400");
+        String::from_str(&env, &s)
     }
 }
 mod test;
