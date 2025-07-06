@@ -392,14 +392,14 @@ impl ThresholdUtils {
         market_id: &Symbol,
         threshold: &DisputeThreshold,
     ) -> Result<(), Error> {
-        let key = symbol_short!("dispute_th");
+        let key = symbol_short!("dispute_t");
         env.storage().persistent().set(&key, threshold);
         Ok(())
     }
 
     /// Get dispute threshold
     pub fn get_dispute_threshold(env: &Env, market_id: &Symbol) -> Result<DisputeThreshold, Error> {
-        let key = symbol_short!("dispute_th");
+        let key = symbol_short!("dispute_t");
         env.storage()
             .persistent()
             .get(&key)
