@@ -1451,7 +1451,7 @@ fn test_fee_utils_get_fee_eligibility() {
     // Market not resolved
     let (eligible, reason) = crate::fees::FeeUtils::get_fee_eligibility(&market);
     assert!(!eligible);
-    assert!(reason.to_string().contains("not resolved"));
+    assert!(reason.contains("not resolved"));
 
     // Set winning outcome
     market.winning_outcome = Some(String::from_str(&test.env, "yes"));
@@ -1460,13 +1460,13 @@ fn test_fee_utils_get_fee_eligibility() {
     market.total_staked = crate::fees::FEE_COLLECTION_THRESHOLD - 1;
     let (eligible, reason) = crate::fees::FeeUtils::get_fee_eligibility(&market);
     assert!(!eligible);
-    assert!(reason.to_string().contains("Insufficient stakes"));
+    assert!(reason.contains("Insufficient stakes"));
 
     // Sufficient stakes
     market.total_staked = crate::fees::FEE_COLLECTION_THRESHOLD;
     let (eligible, reason) = crate::fees::FeeUtils::get_fee_eligibility(&market);
     assert!(eligible);
-    assert!(reason.to_string().contains("Eligible"));
+    assert!(reason.contains("Eligible"));
 }
 
 #[test]
