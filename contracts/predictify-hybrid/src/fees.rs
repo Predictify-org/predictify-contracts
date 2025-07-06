@@ -500,7 +500,7 @@ impl FeeTracker {
         amount: i128,
     ) -> Result<(), Error> {
         // Record creation fee in analytics
-        let creation_key = symbol_short!("creation_fees");
+        let creation_key = symbol_short!("creat_fees");
         let current_total: i128 = env
             .storage()
             .persistent()
