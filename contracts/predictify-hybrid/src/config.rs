@@ -23,16 +23,16 @@ pub const MAX_MARKET_DURATION_DAYS: u32 = 365;
 pub const MIN_MARKET_DURATION_DAYS: u32 = 1;
 
 /// Maximum number of outcomes per market
-pub const MAX_MARKET_OUTCOMES: usize = 10;
+pub const MAX_MARKET_OUTCOMES: u32 = 10;
 
 /// Minimum number of outcomes per market
-pub const MIN_MARKET_OUTCOMES: usize = 2;
+pub const MIN_MARKET_OUTCOMES: u32 = 2;
 
 /// Maximum question length in characters
-pub const MAX_QUESTION_LENGTH: usize = 500;
+pub const MAX_QUESTION_LENGTH: u32 = 500;
 
 /// Maximum outcome length in characters
-pub const MAX_OUTCOME_LENGTH: usize = 100;
+pub const MAX_OUTCOME_LENGTH: u32 = 100;
 
 // ===== FEE CONSTANTS =====
 
@@ -218,13 +218,13 @@ pub struct MarketConfig {
     /// Minimum market duration in days
     pub min_duration_days: u32,
     /// Maximum number of outcomes
-    pub max_outcomes: usize,
+    pub max_outcomes: u32,
     /// Minimum number of outcomes
-    pub min_outcomes: usize,
+    pub min_outcomes: u32,
     /// Maximum question length
-    pub max_question_length: usize,
+    pub max_question_length: u32,
     /// Maximum outcome length
-    pub max_outcome_length: usize,
+    pub max_outcome_length: u32,
 }
 
 /// Extension configuration
@@ -303,7 +303,7 @@ impl ConfigManager {
                 passphrase: String::from_str(env, "Test SDF Network ; September 2015"),
                 rpc_url: String::from_str(env, "https://soroban-testnet.stellar.org"),
                 network_id: String::from_str(env, "testnet"),
-                contract_address: Address::generate(env),
+                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             },
             fees: Self::get_default_fee_config(),
             voting: Self::get_default_voting_config(),
@@ -322,7 +322,7 @@ impl ConfigManager {
                 passphrase: String::from_str(env, "Test SDF Network ; September 2015"),
                 rpc_url: String::from_str(env, "https://soroban-testnet.stellar.org"),
                 network_id: String::from_str(env, "testnet"),
-                contract_address: Address::generate(env),
+                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             },
             fees: Self::get_default_fee_config(),
             voting: Self::get_default_voting_config(),
@@ -341,7 +341,7 @@ impl ConfigManager {
                 passphrase: String::from_str(env, "Public Global Stellar Network ; September 2015"),
                 rpc_url: String::from_str(env, "https://rpc.mainnet.stellar.org"),
                 network_id: String::from_str(env, "mainnet"),
-                contract_address: Address::generate(env),
+                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             },
             fees: Self::get_mainnet_fee_config(),
             voting: Self::get_mainnet_voting_config(),
@@ -659,10 +659,15 @@ impl ConfigUtils {
     pub fn get_config_summary(config: &ContractConfig) -> String {
         let env_name = Self::get_environment_name(config);
         let fee_percentage = config.fees.platform_fee_percentage;
-        let creation_fee = config.fees.creation_fee;
         
-        format!("Environment: {}, Fee: {}%, Creation Fee: {} stroops", 
-                env_name, fee_percentage, creation_fee)
+        // Create simple summary since string concatenation is complex in no_std
+        if fee_percentage == 2 {
+            String::from_str(&env_name.env(), "Development config with 2% fees")
+        } else if fee_percentage == 3 {
+            String::from_str(&env_name.env(), "Mainnet config with 3% fees")
+        } else {
+            String::from_str(&env_name.env(), "Custom config")
+        }
     }
 
     /// Check if fees are enabled
@@ -730,7 +735,7 @@ impl ConfigTesting {
                 passphrase: String::from_str(env, "Test"),
                 rpc_url: String::from_str(env, "http://localhost"),
                 network_id: String::from_str(env, "test"),
-                contract_address: Address::generate(env),
+                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             },
             fees: FeeConfig {
                 platform_fee_percentage: 1,
