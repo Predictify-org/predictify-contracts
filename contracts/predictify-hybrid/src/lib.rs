@@ -54,6 +54,18 @@ use events::{EventEmitter, EventLogger, EventValidator, EventHelpers, EventTesti
 
 pub mod resolution;
 
+pub mod validation;
+use validation::{
+    ValidationError, ValidationResult, InputValidator, 
+    MarketValidator as ValidationMarketValidator, 
+    OracleValidator as ValidationOracleValidator,
+    FeeValidator as ValidationFeeValidator, 
+    VoteValidator as ValidationVoteValidator, 
+    DisputeValidator as ValidationDisputeValidator, 
+    ConfigValidator as ValidationConfigValidator, 
+    ComprehensiveValidator, ValidationErrorHandler, ValidationDocumentation,
+};
+
 #[contract]
 pub struct PredictifyHybrid;
 
@@ -1105,6 +1117,149 @@ impl PredictifyHybrid {
     /// Validate event timestamp
     pub fn validate_event_timestamp(timestamp: u64) -> bool {
         EventHelpers::is_valid_timestamp(timestamp)
+    }
+
+    // ===== VALIDATION METHODS =====
+
+    /// Validate input parameters for market creation
+    pub fn validate_market_creation_inputs(
+        env: Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        oracle_config: OracleConfig,
+    ) -> ValidationResult {
+        ComprehensiveValidator::validate_complete_market_creation(
+            &env, &admin, &question, &outcomes, &duration_days, &oracle_config
+        )
+    }
+
+    /// Validate market state
+    pub fn validate_market_state(env: Env, market_id: Symbol) -> ValidationResult {
+        if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&market_id) {
+            ComprehensiveValidator::validate_market_state(&env, &market, &market_id)
+        } else {
+            ValidationResult::invalid()
+        }
+    }
+
+    /// Validate vote parameters
+    pub fn validate_vote_inputs(
+        env: Env,
+        user: Address,
+        market_id: Symbol,
+        outcome: String,
+        stake_amount: i128,
+    ) -> ValidationResult {
+        let mut result = ValidationResult::valid();
+        
+        // Validate user address
+        if let Err(_error) = InputValidator::validate_address(&env, &user) {
+            result.add_error();
+        }
+        
+        // Validate outcome string
+        if let Err(_error) = InputValidator::validate_string(&env, &outcome, 1, 100) {
+            result.add_error();
+        }
+        
+        // Validate stake amount
+        if let Err(_error) = ValidationVoteValidator::validate_stake_amount(&stake_amount) {
+            result.add_error();
+        }
+        
+        // Validate market exists and is valid for voting
+        if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&market_id) {
+            if let Err(_error) = ValidationMarketValidator::validate_market_for_voting(&env, &market, &market_id) {
+                result.add_error();
+            }
+            
+            // Validate outcome against market outcomes
+            if let Err(_error) = ValidationVoteValidator::validate_outcome(&env, &outcome, &market.outcomes) {
+                result.add_error();
+            }
+        } else {
+            result.add_error();
+        }
+        
+        result
+    }
+
+    /// Validate oracle configuration
+    pub fn validate_oracle_config(env: Env, oracle_config: OracleConfig) -> ValidationResult {
+        let mut result = ValidationResult::valid();
+        
+        if let Err(error) = ValidationOracleValidator::validate_oracle_config(&env, &oracle_config) {
+            result.add_error();
+        }
+        
+        result
+    }
+
+    /// Validate fee configuration
+    pub fn validate_fee_config(
+        env: Env,
+        platform_fee_percentage: i128,
+        creation_fee: i128,
+        min_fee_amount: i128,
+        max_fee_amount: i128,
+        collection_threshold: i128,
+    ) -> ValidationResult {
+        ValidationFeeValidator::validate_fee_config(
+            &env, &platform_fee_percentage, &creation_fee, &min_fee_amount, &max_fee_amount, &collection_threshold
+        )
+    }
+
+    /// Validate dispute creation
+    pub fn validate_dispute_creation(
+        env: Env,
+        user: Address,
+        market_id: Symbol,
+        dispute_stake: i128,
+    ) -> ValidationResult {
+        let mut result = ValidationResult::valid();
+        
+        // Validate user address
+        if let Err(_error) = InputValidator::validate_address(&env, &user) {
+            result.add_error();
+        }
+        
+        // Validate dispute stake
+        if let Err(_error) = ValidationDisputeValidator::validate_dispute_stake(&dispute_stake) {
+            result.add_error();
+        }
+        
+        // Validate market exists and is resolved
+        if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&market_id) {
+            if let Err(_error) = ValidationMarketValidator::validate_market_for_fee_collection(&env, &market, &market_id) {
+                result.add_error();
+            }
+        } else {
+            result.add_error();
+        }
+        
+        result
+    }
+
+    /// Get validation rules documentation
+    pub fn get_validation_rules(env: Env) -> Map<String, String> {
+        ValidationDocumentation::get_validation_rules(&env)
+    }
+
+    /// Get validation error codes
+    pub fn get_validation_error_codes(env: Env) -> Map<String, String> {
+        ValidationDocumentation::get_validation_error_codes(&env)
+    }
+
+    /// Get validation system overview
+    pub fn get_validation_overview(env: Env) -> String {
+        ValidationDocumentation::get_validation_overview(&env)
+    }
+
+    /// Test validation utilities
+    pub fn test_validation_utilities(env: Env) -> ValidationResult {
+        validation::ValidationTestingUtils::create_test_validation_result(&env)
     }
 }
 mod test;
