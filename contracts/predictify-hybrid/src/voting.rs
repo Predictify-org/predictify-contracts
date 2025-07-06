@@ -449,7 +449,7 @@ impl ThresholdUtils {
         env: &Env,
         market_id: &Symbol,
     ) -> Result<Vec<ThresholdHistoryEntry>, Error> {
-        let key = symbol_short!("th_history");
+        let key = symbol_short!("th_hist");
         let history: Vec<ThresholdHistoryEntry> = env.storage()
             .persistent()
             .get(&key)
