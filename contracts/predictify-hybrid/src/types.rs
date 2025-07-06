@@ -17,40 +17,46 @@ use soroban_sdk::{
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OracleProvider {
-    /// Band Protocol oracle
+    /// Band Protocol oracle (not supported on Stellar)
     BandProtocol,
-    /// DIA oracle
+    /// DIA oracle (not supported on Stellar)
     DIA,
-    /// Reflector oracle (Stellar-based)
+    /// Reflector oracle (primary oracle for Stellar Network)
     Reflector,
-    /// Pyth Network oracle
+    /// Pyth Network oracle (not supported on Stellar)
     Pyth,
 }
 
 impl OracleProvider {
-    /// Get a human-readable name for the oracle provider
+    /// Get the human-readable name of the oracle provider
     pub fn name(&self) -> &'static str {
         match self {
             OracleProvider::BandProtocol => "Band Protocol",
             OracleProvider::DIA => "DIA",
             OracleProvider::Reflector => "Reflector",
-            OracleProvider::Pyth => "Pyth Network",
+            OracleProvider::Pyth => "Pyth Network (Not Available on Stellar)",
         }
     }
     
-    /// Check if the oracle provider is supported
+    /// Check if the oracle provider is supported on Stellar Network
     pub fn is_supported(&self) -> bool {
-        matches!(self, OracleProvider::Pyth | OracleProvider::Reflector)
+        // Only Reflector is currently supported on Stellar
+        matches!(self, OracleProvider::Reflector)
     }
     
     /// Get the default feed ID format for this provider
     pub fn default_feed_format(&self) -> &'static str {
         match self {
             OracleProvider::BandProtocol => "BTC/USD",
-            OracleProvider::DIA => "BTC/USD",
+            OracleProvider::DIA => "BTC/USD", 
             OracleProvider::Reflector => "BTC",
-            OracleProvider::Pyth => "BTC/USD",
+            OracleProvider::Pyth => "BTC/USD (Not Available)",
         }
+    }
+    
+    /// Get the recommended oracle provider for Stellar
+    pub fn recommended() -> Self {
+        OracleProvider::Reflector
     }
 }
 
@@ -772,24 +778,37 @@ mod tests {
     #[test]
     fn test_oracle_provider() {
         let provider = OracleProvider::Pyth;
-        assert_eq!(provider.name(), "Pyth Network");
-        assert!(provider.is_supported());
-        assert_eq!(provider.default_feed_format(), "BTC/USD");
+        assert_eq!(provider.name(), "Pyth Network (Not Available on Stellar)");
+        assert!(!provider.is_supported());
+        assert_eq!(provider.default_feed_format(), "BTC/USD (Not Available)");
     }
     
     #[test]
     fn test_oracle_config() {
         let env = soroban_sdk::Env::default();
-        let config = OracleConfig::new(
+        
+        // Test with supported Reflector oracle
+        let reflector_config = OracleConfig::new(
+            OracleProvider::Reflector,
+            String::from_str(&env, "BTC"),
+            2500000,
+            String::from_str(&env, "gt"),
+        );
+        
+        assert!(reflector_config.validate(&env).is_ok());
+        assert!(reflector_config.is_supported());
+        assert!(reflector_config.is_greater_than(&env));
+        
+        // Test with unsupported Pyth oracle
+        let pyth_config = OracleConfig::new(
             OracleProvider::Pyth,
             String::from_str(&env, "BTC/USD"),
             2500000,
             String::from_str(&env, "gt"),
         );
         
-        assert!(config.validate(&env).is_ok());
-        assert!(config.is_supported());
-        assert!(config.is_greater_than(&env));
+        assert!(pyth_config.validate(&env).is_err()); // Should fail validation
+        assert!(!pyth_config.is_supported());         // Should not be supported
     }
     
     #[test]
@@ -801,9 +820,11 @@ mod tests {
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
         ];
+        
+        // Use supported Reflector oracle
         let oracle_config = OracleConfig::new(
-            OracleProvider::Pyth,
-            String::from_str(&env, "BTC/USD"),
+            OracleProvider::Reflector,
+            String::from_str(&env, "BTC"),
             2500000,
             String::from_str(&env, "gt"),
         );
@@ -841,9 +862,11 @@ mod tests {
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
         ];
+        
+        // Use supported Reflector oracle
         let oracle_config = OracleConfig::new(
-            OracleProvider::Pyth,
-            String::from_str(&env, "BTC/USD"),
+            OracleProvider::Reflector,
+            String::from_str(&env, "BTC"),
             2500000,
             String::from_str(&env, "gt"),
         );
@@ -876,7 +899,12 @@ mod tests {
     
     #[test]
     fn test_validation_helpers() {
-        assert!(validation::validate_oracle_provider(&OracleProvider::Pyth).is_ok());
+        // Test with supported provider (Reflector)
+        assert!(validation::validate_oracle_provider(&OracleProvider::Reflector).is_ok());
+        
+        // Test with unsupported provider (Pyth) 
+        assert!(validation::validate_oracle_provider(&OracleProvider::Pyth).is_err());
+        
         assert!(validation::validate_price(2500000).is_ok());
         assert!(validation::validate_stake(1000000, 500000).is_ok());
         assert!(validation::validate_duration(30).is_ok());
@@ -889,8 +917,16 @@ mod tests {
             Some(OracleProvider::Pyth)
         );
         assert_eq!(
+            conversion::string_to_oracle_provider("reflector"),
+            Some(OracleProvider::Reflector)
+        );
+        assert_eq!(
             conversion::oracle_provider_to_string(&OracleProvider::Pyth),
-            "Pyth Network"
+            "Pyth Network (Not Available on Stellar)"
+        );
+        assert_eq!(
+            conversion::oracle_provider_to_string(&OracleProvider::Reflector),
+            "Reflector"
         );
     }
 } 
