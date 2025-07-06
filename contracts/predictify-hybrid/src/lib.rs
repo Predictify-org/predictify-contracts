@@ -477,5 +477,87 @@ impl PredictifyHybrid {
     pub fn calculate_extension_fee(additional_days: u32) -> i128 {
         ExtensionManager::calculate_extension_fee(additional_days)
     }
+
+    // ===== DISPUTE RESOLUTION FUNCTIONS =====
+
+    /// Vote on a dispute
+    pub fn vote_on_dispute(
+        env: Env,
+        user: Address,
+        market_id: Symbol,
+        dispute_id: Symbol,
+        vote: bool,
+        stake: i128,
+        reason: Option<String>,
+    ) {
+        user.require_auth();
+
+        match DisputeManager::vote_on_dispute(&env, user, market_id, dispute_id, vote, stake, reason) {
+            Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Calculate dispute outcome based on voting
+    pub fn calculate_dispute_outcome(env: Env, dispute_id: Symbol) -> bool {
+        match DisputeManager::calculate_dispute_outcome(&env, dispute_id) {
+            Ok(outcome) => outcome,
+            Err(_) => false,
+        }
+    }
+
+    /// Distribute dispute fees to winners
+    pub fn distribute_dispute_fees(env: Env, dispute_id: Symbol) -> disputes::DisputeFeeDistribution {
+        match DisputeManager::distribute_dispute_fees(&env, dispute_id) {
+            Ok(distribution) => distribution,
+            Err(_) => disputes::DisputeFeeDistribution {
+                dispute_id: symbol_short!("error"),
+                total_fees: 0,
+                winner_stake: 0,
+                loser_stake: 0,
+                winner_addresses: vec![&env],
+                distribution_timestamp: 0,
+                fees_distributed: false,
+            },
+        }
+    }
+
+    /// Escalate a dispute
+    pub fn escalate_dispute(
+        env: Env,
+        user: Address,
+        dispute_id: Symbol,
+        reason: String,
+    ) -> disputes::DisputeEscalation {
+        user.require_auth();
+
+        match DisputeManager::escalate_dispute(&env, user, dispute_id, reason) {
+            Ok(escalation) => escalation,
+            Err(_) => disputes::DisputeEscalation {
+                dispute_id: symbol_short!("error"),
+                escalated_by: Address::random(&env),
+                escalation_reason: String::from_str(&env, "Error"),
+                escalation_timestamp: 0,
+                escalation_level: 0,
+                requires_admin_review: false,
+            },
+        }
+    }
+
+    /// Get dispute votes
+    pub fn get_dispute_votes(env: Env, dispute_id: Symbol) -> Vec<disputes::DisputeVote> {
+        match DisputeManager::get_dispute_votes(&env, dispute_id) {
+            Ok(votes) => votes,
+            Err(_) => vec![&env],
+        }
+    }
+
+    /// Validate dispute resolution conditions
+    pub fn validate_dispute_resolution_conditions(env: Env, dispute_id: Symbol) -> bool {
+        match DisputeManager::validate_dispute_resolution_conditions(&env, dispute_id) {
+            Ok(valid) => valid,
+            Err(_) => false,
+        }
+    }
 }
 mod test;
