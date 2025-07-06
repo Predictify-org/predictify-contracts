@@ -754,14 +754,14 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) -> Result<(), Error> {
-        let key = symbol_short!("dispute_fee");
+        let key = symbol_short!("dispute_f");
         env.storage().persistent().set(&key, distribution);
         Ok(())
     }
 
     /// Get dispute fee distribution
     pub fn get_dispute_fee_distribution(env: &Env, dispute_id: &Symbol) -> Result<DisputeFeeDistribution, Error> {
-        let key = symbol_short!("dispute_fee");
+        let key = symbol_short!("dispute_f");
         env.storage()
             .persistent()
             .get(&key)
@@ -782,14 +782,14 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         escalation: &DisputeEscalation,
     ) -> Result<(), Error> {
-        let key = symbol_short!("dispute_esc");
+        let key = symbol_short!("dispute_e");
         env.storage().persistent().set(&key, escalation);
         Ok(())
     }
 
     /// Get dispute escalation
     pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
-        let key = symbol_short!("dispute_esc");
+        let key = symbol_short!("dispute_e");
         env.storage().persistent().get(&key)
     }
 
