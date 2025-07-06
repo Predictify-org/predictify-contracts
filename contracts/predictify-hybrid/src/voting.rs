@@ -203,6 +203,88 @@ impl VotingManager {
 
         Ok(fee_amount)
     }
+
+    /// Calculate dynamic dispute threshold for a market
+    pub fn calculate_dispute_threshold(env: &Env, market_id: Symbol) -> Result<DisputeThreshold, Error> {
+        let market = MarketStateManager::get_market(env, &market_id)?;
+        
+        // Get adjustment factors
+        let factors = ThresholdUtils::get_threshold_adjustment_factors(env, &market_id)?;
+        
+        // Calculate adjusted threshold
+        let adjusted_threshold = ThresholdUtils::calculate_adjusted_threshold(
+            BASE_DISPUTE_THRESHOLD,
+            &factors,
+        )?;
+        
+        // Create threshold data
+        let threshold = DisputeThreshold {
+            market_id: market_id.clone(),
+            base_threshold: BASE_DISPUTE_THRESHOLD,
+            adjusted_threshold,
+            market_size_factor: factors.market_size_factor,
+            activity_factor: factors.activity_factor,
+            complexity_factor: factors.complexity_factor,
+            timestamp: env.ledger().timestamp(),
+        };
+        
+        // Store threshold data
+        ThresholdUtils::store_dispute_threshold(env, &market_id, &threshold)?;
+        
+        Ok(threshold)
+    }
+
+    /// Update dispute threshold for a market (admin only)
+    pub fn update_dispute_thresholds(
+        env: &Env,
+        admin: Address,
+        market_id: Symbol,
+        new_threshold: i128,
+        reason: String,
+    ) -> Result<DisputeThreshold, Error> {
+        // Require authentication from the admin
+        admin.require_auth();
+
+        // Validate admin permissions
+        VotingValidator::validate_admin_authentication(env, &admin)?;
+
+        // Validate new threshold
+        ThresholdValidator::validate_threshold_limits(new_threshold)?;
+
+        // Get current threshold
+        let current_threshold = ThresholdUtils::get_dispute_threshold(env, &market_id)?;
+
+        // Create new threshold data
+        let new_threshold_data = DisputeThreshold {
+            market_id: market_id.clone(),
+            base_threshold: new_threshold,
+            adjusted_threshold: new_threshold,
+            market_size_factor: 0,
+            activity_factor: 0,
+            complexity_factor: 0,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        // Store new threshold
+        ThresholdUtils::store_dispute_threshold(env, &market_id, &new_threshold_data)?;
+
+        // Add to history
+        ThresholdUtils::add_threshold_history_entry(
+            env,
+            &market_id,
+            current_threshold.adjusted_threshold,
+            new_threshold,
+            reason,
+            &admin,
+        )?;
+
+        Ok(new_threshold_data)
+    }
+
+    /// Get threshold history for a market
+    pub fn get_threshold_history(env: &Env, market_id: Symbol) -> Result<Vec<ThresholdHistoryEntry>, Error> {
+        ThresholdUtils::get_threshold_history(env, &market_id)
+    }
 }
 
 // ===== VOTING VALIDATOR =====
