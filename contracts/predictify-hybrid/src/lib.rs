@@ -36,7 +36,7 @@ use types::ExtensionStats;
 // Fee management module
 pub mod fees;
 use fees::{FeeManager, FeeCalculator, FeeValidator, FeeUtils, FeeTracker, FeeConfigManager};
-use resolution::{OracleResolutionManager, MarketResolutionManager};
+use resolution::{OracleResolutionManager, MarketResolutionManager, MarketResolutionAnalytics, OracleResolutionAnalytics, ResolutionUtils};
 
 pub mod resolution;
 
@@ -190,6 +190,114 @@ impl PredictifyHybrid {
         match DisputeManager::resolve_dispute(&env, market_id, admin) {
             Ok(resolution) => resolution.final_outcome,
             Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // ===== RESOLUTION SYSTEM METHODS =====
+
+    // Get oracle resolution for a market
+    pub fn get_oracle_resolution(env: Env, market_id: Symbol) -> Option<resolution::OracleResolution> {
+        match OracleResolutionManager::get_oracle_resolution(&env, &market_id) {
+            Ok(resolution) => resolution,
+            Err(_) => None,
+        }
+    }
+
+    // Get market resolution for a market
+    pub fn get_market_resolution(env: Env, market_id: Symbol) -> Option<resolution::MarketResolution> {
+        match MarketResolutionManager::get_market_resolution(&env, &market_id) {
+            Ok(resolution) => resolution,
+            Err(_) => None,
+        }
+    }
+
+    // Get resolution analytics
+    pub fn get_resolution_analytics(env: Env) -> resolution::ResolutionAnalytics {
+        match resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env) {
+            Ok(analytics) => analytics,
+            Err(_) => resolution::ResolutionAnalytics::default(),
+        }
+    }
+
+    // Get oracle statistics
+    pub fn get_oracle_stats(env: Env) -> resolution::OracleStats {
+        match resolution::OracleResolutionAnalytics::get_oracle_stats(&env) {
+            Ok(stats) => stats,
+            Err(_) => resolution::OracleStats::default(),
+        }
+    }
+
+    // Validate resolution for a market
+    pub fn validate_resolution(env: Env, market_id: Symbol) -> resolution::ResolutionValidation {
+        let mut validation = resolution::ResolutionValidation {
+            is_valid: true,
+            errors: vec![&env],
+            warnings: vec![&env],
+            recommendations: vec![&env],
+        };
+
+        // Get market
+        let market = match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => market,
+            Err(_) => {
+                validation.is_valid = false;
+                validation.errors.push_back(String::from_str(&env, "Market not found"));
+                return validation;
+            }
+        };
+
+        // Check resolution state
+        let state = resolution::ResolutionUtils::get_resolution_state(&env, &market);
+        let (eligible, reason) = resolution::ResolutionUtils::get_resolution_eligibility(&env, &market);
+
+        if !eligible {
+            validation.is_valid = false;
+            validation.errors.push_back(reason);
+        }
+
+        // Add recommendations based on state
+        match state {
+            resolution::ResolutionState::Active => {
+                validation.recommendations.push_back(String::from_str(&env, "Market is active, wait for end time"));
+            }
+            resolution::ResolutionState::OracleResolved => {
+                validation.recommendations.push_back(String::from_str(&env, "Oracle resolved, ready for market resolution"));
+            }
+            resolution::ResolutionState::MarketResolved => {
+                validation.recommendations.push_back(String::from_str(&env, "Market already resolved"));
+            }
+            resolution::ResolutionState::Disputed => {
+                validation.recommendations.push_back(String::from_str(&env, "Resolution disputed, consider admin override"));
+            }
+            resolution::ResolutionState::Finalized => {
+                validation.recommendations.push_back(String::from_str(&env, "Resolution finalized"));
+            }
+        }
+
+        validation
+    }
+
+    // Get resolution state for a market
+    pub fn get_resolution_state(env: Env, market_id: Symbol) -> resolution::ResolutionState {
+        match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => resolution::ResolutionUtils::get_resolution_state(&env, &market),
+            Err(_) => resolution::ResolutionState::Active,
+        }
+    }
+
+    // Check if market can be resolved
+    pub fn can_resolve_market(env: Env, market_id: Symbol) -> bool {
+        match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => resolution::ResolutionUtils::can_resolve_market(&env, &market),
+            Err(_) => false,
+        }
+    }
+
+    // Calculate resolution time for a market
+    pub fn calculate_resolution_time(env: Env, market_id: Symbol) -> u64 {
+        match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => resolution::ResolutionUtils::calculate_resolution_time(&env, &market),
+            Err(_) => 0,
         }
     }
 
