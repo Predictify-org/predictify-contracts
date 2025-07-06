@@ -565,5 +565,92 @@ impl PredictifyHybrid {
             Err(_) => false,
         }
     }
+
+    // ===== DYNAMIC THRESHOLD FUNCTIONS =====
+
+    /// Calculate dynamic dispute threshold for a market
+    pub fn calculate_dispute_threshold(env: Env, market_id: Symbol) -> voting::DisputeThreshold {
+        match VotingManager::calculate_dispute_threshold(&env, market_id) {
+            Ok(threshold) => threshold,
+            Err(_) => voting::DisputeThreshold {
+                market_id: symbol_short!("error"),
+                base_threshold: 10_000_000,
+                adjusted_threshold: 10_000_000,
+                market_size_factor: 0,
+                activity_factor: 0,
+                complexity_factor: 0,
+                timestamp: 0,
+            },
+        }
+    }
+
+    /// Adjust threshold by market size
+    pub fn adjust_threshold_by_market_size(env: Env, market_id: Symbol, base_threshold: i128) -> i128 {
+        match voting::ThresholdUtils::adjust_threshold_by_market_size(&env, &market_id, base_threshold) {
+            Ok(adjustment) => adjustment,
+            Err(_) => 0,
+        }
+    }
+
+    /// Modify threshold by activity level
+    pub fn modify_threshold_by_activity(env: Env, market_id: Symbol, activity_level: u32) -> i128 {
+        match voting::ThresholdUtils::modify_threshold_by_activity(&env, &market_id, activity_level) {
+            Ok(adjustment) => adjustment,
+            Err(_) => 0,
+        }
+    }
+
+    /// Validate dispute threshold
+    pub fn validate_dispute_threshold(threshold: i128, market_id: Symbol) -> bool {
+        match voting::ThresholdUtils::validate_dispute_threshold(threshold, &market_id) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Get threshold adjustment factors
+    pub fn get_threshold_adjustment_factors(env: Env, market_id: Symbol) -> voting::ThresholdAdjustmentFactors {
+        match voting::ThresholdUtils::get_threshold_adjustment_factors(&env, &market_id) {
+            Ok(factors) => factors,
+            Err(_) => voting::ThresholdAdjustmentFactors {
+                market_size_factor: 0,
+                activity_factor: 0,
+                complexity_factor: 0,
+                total_adjustment: 0,
+            },
+        }
+    }
+
+    /// Update dispute thresholds (admin only)
+    pub fn update_dispute_thresholds(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        new_threshold: i128,
+        reason: String,
+    ) -> voting::DisputeThreshold {
+        admin.require_auth();
+
+        match VotingManager::update_dispute_thresholds(&env, admin, market_id, new_threshold, reason) {
+            Ok(threshold) => threshold,
+            Err(_) => voting::DisputeThreshold {
+                market_id: symbol_short!("error"),
+                base_threshold: 10_000_000,
+                adjusted_threshold: 10_000_000,
+                market_size_factor: 0,
+                activity_factor: 0,
+                complexity_factor: 0,
+                timestamp: 0,
+            },
+        }
+    }
+
+    /// Get threshold history for a market
+    pub fn get_threshold_history(env: Env, market_id: Symbol) -> Vec<voting::ThresholdHistoryEntry> {
+        match VotingManager::get_threshold_history(&env, market_id) {
+            Ok(history) => history,
+            Err(_) => vec![&env],
+        }
+    }
 }
 mod test;
