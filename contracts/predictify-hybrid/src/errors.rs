@@ -127,6 +127,10 @@ pub enum Error {
     ArithmeticError = 93,
     /// Invalid contract state
     InvalidState = 94,
+    /// Configuration not found in storage
+    ConfigurationNotFound = 95,
+    /// Invalid fee configuration
+    InvalidFeeConfig = 96,
 }
 
 /// Error categories for better organization and handling
@@ -202,7 +206,9 @@ impl Error {
             | Error::StorageError
             | Error::ArithmeticError
             | Error::InvalidState
-            | Error::AdminNotSet => ErrorCategory::System,
+            | Error::AdminNotSet
+            | Error::ConfigurationNotFound
+            | Error::InvalidFeeConfig => ErrorCategory::System,
         }
     }
 
@@ -270,6 +276,8 @@ impl Error {
             Error::ArithmeticError => "Arithmetic overflow or underflow occurred",
             Error::InvalidState => "Invalid contract state",
             Error::AdminNotSet => "Admin not set in contract",
+            Error::ConfigurationNotFound => "Configuration not found in storage",
+            Error::InvalidFeeConfig => "Invalid fee configuration provided",
         }
     }
 
@@ -324,6 +332,8 @@ impl Error {
             Error::ArithmeticError => "ARITHMETIC_ERROR",
             Error::InvalidState => "INVALID_STATE",
             Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::ConfigurationNotFound => "CONFIGURATION_NOT_FOUND",
+            Error::InvalidFeeConfig => "INVALID_FEE_CONFIG",
         }
     }
 
