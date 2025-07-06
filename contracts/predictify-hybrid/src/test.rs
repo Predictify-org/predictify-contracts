@@ -1721,3 +1721,461 @@ fn test_testing_utilities() {
     assert_eq!(breakdown.fee_amount, 20_000_000);
     assert_eq!(breakdown.user_payout_amount, 980_000_000);
 }
+
+// ===== RESOLUTION SYSTEM TESTS =====
+
+#[test]
+fn test_oracle_resolution_manager_fetch_result() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    // Get market end time
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    // Advance time past end time
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // Fetch oracle result
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcome = client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+
+    // Verify the outcome
+    assert_eq!(outcome, String::from_str(&test.env, "yes"));
+
+    // Test get_oracle_resolution
+    let oracle_resolution = client.get_oracle_resolution(&test.market_id);
+    assert!(oracle_resolution.is_some());
+}
+
+#[test]
+fn test_market_resolution_manager_resolve_market() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    // Add some votes
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..5 {
+        let voter = Address::generate(&test.env);
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, "yes"),
+            &1_0000000,
+        );
+    }
+
+    // Get market end time and advance time
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // Fetch oracle result first
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+
+    // Resolve market
+    let final_result = client.resolve_market(&test.market_id);
+    assert_eq!(final_result, String::from_str(&test.env, "yes"));
+
+    // Test get_market_resolution
+    let market_resolution = client.get_market_resolution(&test.market_id);
+    assert!(market_resolution.is_some());
+}
+
+#[test]
+fn test_resolution_validation() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation before market ends
+    let validation = client.validate_resolution(&test.market_id);
+    assert!(!validation.is_valid);
+    assert!(!validation.errors.is_empty());
+
+    // Test validation after market ends but before oracle resolution
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    let validation = client.validate_resolution(&test.market_id);
+    assert!(validation.is_valid);
+    assert!(!validation.recommendations.is_empty());
+}
+
+#[test]
+fn test_resolution_state_management() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test initial state
+    let state = client.get_resolution_state(&test.market_id);
+    assert_eq!(state, crate::resolution::ResolutionState::Active);
+
+    // Test can_resolve_market
+    let can_resolve = client.can_resolve_market(&test.market_id);
+    assert!(!can_resolve);
+
+    // Test after market ends
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    let can_resolve = client.can_resolve_market(&test.market_id);
+    assert!(!can_resolve); // Still can't resolve without oracle result
+
+    // Test after oracle resolution
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    let state = client.get_resolution_state(&test.market_id);
+    assert_eq!(state, crate::resolution::ResolutionState::OracleResolved);
+
+    let can_resolve = client.can_resolve_market(&test.market_id);
+    assert!(can_resolve);
+
+    // Test after market resolution
+    client.resolve_market(&test.market_id);
+    let state = client.get_resolution_state(&test.market_id);
+    assert_eq!(state, crate::resolution::ResolutionState::MarketResolved);
+}
+
+#[test]
+fn test_resolution_analytics() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test initial analytics
+    let analytics = client.get_resolution_analytics();
+    assert_eq!(analytics.total_resolutions, 0);
+
+    // Test oracle stats
+    let oracle_stats = client.get_oracle_stats();
+    assert_eq!(oracle_stats.total_resolutions, 0);
+
+    // Resolve a market
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    client.resolve_market(&test.market_id);
+
+    // Test updated analytics
+    let analytics = client.get_resolution_analytics();
+    assert_eq!(analytics.total_resolutions, 1);
+}
+
+#[test]
+fn test_resolution_time_calculation() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test resolution time before market ends
+    let resolution_time = client.calculate_resolution_time(&test.market_id);
+    assert_eq!(resolution_time, 0);
+
+    // Test resolution time after market ends
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    let advance_time = 3600; // 1 hour
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + advance_time,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    let resolution_time = client.calculate_resolution_time(&test.market_id);
+    assert_eq!(resolution_time, advance_time);
+}
+
+#[test]
+fn test_resolution_method_determination() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Add votes to create different scenarios
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    
+    // Scenario 1: Oracle and community agree
+    for i in 0..6 {
+        let voter = Address::generate(&test.env);
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, "yes"),
+            &1_0000000,
+        );
+    }
+
+    for i in 0..4 {
+        let voter = Address::generate(&test.env);
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, "no"),
+            &1_0000000,
+        );
+    }
+
+    // Resolve market
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    let final_result = client.resolve_market(&test.market_id);
+
+    // Verify resolution method
+    let market_resolution = client.get_market_resolution(&test.market_id);
+    assert!(market_resolution.is_some());
+    
+    let resolution = market_resolution.unwrap();
+    assert_eq!(resolution.final_outcome, String::from_str(&test.env, "yes"));
+    assert!(resolution.confidence_score > 0);
+}
+
+#[test]
+fn test_resolution_error_handling() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test resolution of non-existent market
+    let non_existent_market = Symbol::new(&test.env, "non_existent");
+    
+    // These should not panic but return None or default values
+    let oracle_resolution = client.get_oracle_resolution(&non_existent_market);
+    assert!(oracle_resolution.is_none());
+
+    let market_resolution = client.get_market_resolution(&non_existent_market);
+    assert!(market_resolution.is_none());
+
+    let state = client.get_resolution_state(&non_existent_market);
+    assert_eq!(state, crate::resolution::ResolutionState::Active);
+
+    let can_resolve = client.can_resolve_market(&non_existent_market);
+    assert!(!can_resolve);
+
+    let resolution_time = client.calculate_resolution_time(&non_existent_market);
+    assert_eq!(resolution_time, 0);
+}
+
+#[test]
+fn test_resolution_with_disputes() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Add votes and resolve market
+    test.env.mock_all_auths();
+    let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    for i in 0..5 {
+        let voter = Address::generate(&test.env);
+        token_sac_client.mint(&voter, &10_0000000);
+        client.vote(
+            &voter,
+            &test.market_id,
+            &String::from_str(&test.env, "yes"),
+            &1_0000000,
+        );
+    }
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    client.resolve_market(&test.market_id);
+
+    // Add dispute
+    let dispute_stake: i128 = 10_0000000;
+    test.env.mock_all_auths();
+    client.dispute_result(&test.user, &test.market_id, &dispute_stake);
+
+    // Test resolution state with dispute
+    let state = client.get_resolution_state(&test.market_id);
+    assert_eq!(state, crate::resolution::ResolutionState::Disputed);
+
+    // Test validation with dispute
+    let validation = client.validate_resolution(&test.market_id);
+    assert!(validation.is_valid);
+    assert!(!validation.recommendations.is_empty());
+}
+
+#[test]
+fn test_resolution_performance() {
+    let test = PredictifyTest::setup();
+    test.create_test_market();
+
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test multiple resolution operations
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // Multiple oracle resolution calls should be fast
+    let start_time = std::time::Instant::now();
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    let oracle_time = start_time.elapsed();
+
+    // Multiple market resolution calls should be fast
+    let start_time = std::time::Instant::now();
+    client.resolve_market(&test.market_id);
+    let market_time = start_time.elapsed();
+
+    // Multiple analytics calls should be fast
+    let start_time = std::time::Instant::now();
+    client.get_resolution_analytics();
+    let analytics_time = start_time.elapsed();
+
+    // Verify reasonable performance (these are just sanity checks)
+    assert!(oracle_time.as_millis() < 1000);
+    assert!(market_time.as_millis() < 1000);
+    assert!(analytics_time.as_millis() < 1000);
+}
