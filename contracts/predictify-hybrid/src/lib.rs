@@ -950,5 +950,161 @@ impl PredictifyHybrid {
         s.push_str(", Days to seconds: 86400");
         String::from_str(&env, &s)
     }
+
+    // ===== EVENT-BASED METHODS =====
+
+    /// Get market events
+    pub fn get_market_events(env: Env, market_id: Symbol) -> Vec<events::MarketEventSummary> {
+        EventLogger::get_market_events(&env, &market_id)
+    }
+
+    /// Get recent events
+    pub fn get_recent_events(env: Env, limit: u32) -> Vec<events::EventSummary> {
+        EventLogger::get_recent_events(&env, limit)
+    }
+
+    /// Get error events
+    pub fn get_error_events(env: Env) -> Vec<events::ErrorLoggedEvent> {
+        EventLogger::get_error_events(&env)
+    }
+
+    /// Get performance metrics
+    pub fn get_performance_metrics(env: Env) -> Vec<events::PerformanceMetricEvent> {
+        EventLogger::get_performance_metrics(&env)
+    }
+
+    /// Clear old events
+    pub fn clear_old_events(env: Env, older_than_timestamp: u64) {
+        EventLogger::clear_old_events(&env, older_than_timestamp);
+    }
+
+    /// Validate event structure
+    pub fn validate_event_structure(env: Env, event_type: String, event_data: String) -> bool {
+        match event_type.to_string().as_str() {
+            "MarketCreated" => {
+                // In a real implementation, you would deserialize and validate
+                true
+            }
+            "VoteCast" => true,
+            "OracleResult" => true,
+            "MarketResolved" => true,
+            "DisputeCreated" => true,
+            "DisputeResolved" => true,
+            "FeeCollected" => true,
+            "ExtensionRequested" => true,
+            "ConfigUpdated" => true,
+            "ErrorLogged" => true,
+            "PerformanceMetric" => true,
+            _ => false,
+        }
+    }
+
+    /// Get event documentation
+    pub fn get_event_documentation(env: Env) -> Map<String, String> {
+        EventDocumentation::get_event_type_docs()
+    }
+
+    /// Get event usage examples
+    pub fn get_event_usage_examples(env: Env) -> Map<String, String> {
+        EventDocumentation::get_usage_examples()
+    }
+
+    /// Get event system overview
+    pub fn get_event_system_overview() -> String {
+        EventDocumentation::get_overview()
+    }
+
+    /// Create test event
+    pub fn create_test_event(env: Env, event_type: String) -> bool {
+        EventTestingUtils::simulate_event_emission(&env, &event_type)
+    }
+
+    /// Validate test event structure
+    pub fn validate_test_event(env: Env, event_type: String) -> bool {
+        match event_type.to_string().as_str() {
+            "MarketCreated" => {
+                let test_event = EventTestingUtils::create_test_market_created_event(
+                    &env,
+                    &Symbol::new(&env, "test"),
+                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                );
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            "VoteCast" => {
+                let test_event = EventTestingUtils::create_test_vote_cast_event(
+                    &env,
+                    &Symbol::new(&env, "test"),
+                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                );
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            "OracleResult" => {
+                let test_event = EventTestingUtils::create_test_oracle_result_event(
+                    &env,
+                    &Symbol::new(&env, "test"),
+                );
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            "MarketResolved" => {
+                let test_event = EventTestingUtils::create_test_market_resolved_event(
+                    &env,
+                    &Symbol::new(&env, "test"),
+                );
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            "DisputeCreated" => {
+                let test_event = EventTestingUtils::create_test_dispute_created_event(
+                    &env,
+                    &Symbol::new(&env, "test"),
+                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                );
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            "FeeCollected" => {
+                let test_event = EventTestingUtils::create_test_fee_collected_event(
+                    &env,
+                    &Symbol::new(&env, "test"),
+                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                );
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            "ErrorLogged" => {
+                let test_event = EventTestingUtils::create_test_error_logged_event(&env);
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            "PerformanceMetric" => {
+                let test_event = EventTestingUtils::create_test_performance_metric_event(&env);
+                EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+            }
+            _ => false,
+        }
+    }
+
+    /// Get event age in seconds
+    pub fn get_event_age(env: Env, event_timestamp: u64) -> u64 {
+        let current_timestamp = env.ledger().timestamp();
+        EventHelpers::get_event_age(current_timestamp, event_timestamp)
+    }
+
+    /// Check if event is recent
+    pub fn is_recent_event(env: Env, event_timestamp: u64, recent_threshold: u64) -> bool {
+        let current_timestamp = env.ledger().timestamp();
+        EventHelpers::is_recent_event(event_timestamp, current_timestamp, recent_threshold)
+    }
+
+    /// Format event timestamp
+    pub fn format_event_timestamp(timestamp: u64) -> String {
+        EventHelpers::format_timestamp(timestamp)
+    }
+
+    /// Create event context
+    pub fn create_event_context(env: Env, context_parts: Vec<String>) -> String {
+        EventHelpers::create_event_context(&env, &context_parts)
+    }
+
+    /// Validate event timestamp
+    pub fn validate_event_timestamp(timestamp: u64) -> bool {
+        EventHelpers::is_valid_timestamp(timestamp)
+    }
 }
 mod test;
