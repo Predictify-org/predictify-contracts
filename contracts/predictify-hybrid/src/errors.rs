@@ -47,6 +47,18 @@ pub enum Error {
     InvalidExtensionReason = 17,
     /// Market extension fee insufficient
     ExtensionFeeInsufficient = 18,
+    /// Dispute voting not allowed
+    DisputeVotingNotAllowed = 19,
+    /// Dispute resolution conditions not met
+    DisputeResolutionConditionsNotMet = 20,
+    /// Dispute escalation not allowed
+    DisputeEscalationNotAllowed = 21,
+    /// Dispute voting period expired
+    DisputeVotingPeriodExpired = 22,
+    /// Dispute already voted on
+    DisputeAlreadyVoted = 23,
+    /// Dispute fee distribution failed
+    DisputeFeeDistributionFailed = 24,
 
     // ===== ORACLE ERRORS (31-50) =====
     /// Oracle service is unavailable or not responding
