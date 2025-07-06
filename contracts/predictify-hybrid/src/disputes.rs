@@ -227,6 +227,125 @@ impl DisputeManager {
         let market = MarketStateManager::get_market(env, &market_id)?;
         Ok(DisputeUtils::get_user_dispute_stake(&market, &user))
     }
+
+    /// Vote on a dispute
+    pub fn vote_on_dispute(
+        env: &Env,
+        user: Address,
+        market_id: Symbol,
+        dispute_id: Symbol,
+        vote: bool,
+        stake: i128,
+        reason: Option<String>,
+    ) -> Result<(), Error> {
+        // Require authentication from the user
+        user.require_auth();
+
+        // Validate dispute voting conditions
+        DisputeValidator::validate_dispute_voting_conditions(env, &market_id, &dispute_id)?;
+
+        // Validate user hasn't already voted
+        DisputeValidator::validate_user_hasnt_voted(env, &user, &dispute_id)?;
+
+        // Process stake transfer
+        VotingUtils::transfer_stake(env, &user, stake)?;
+
+        // Create dispute vote
+        let dispute_vote = DisputeVote {
+            user: user.clone(),
+            dispute_id: dispute_id.clone(),
+            vote,
+            stake,
+            timestamp: env.ledger().timestamp(),
+            reason,
+        };
+
+        // Add vote to dispute voting
+        DisputeUtils::add_vote_to_dispute(env, &dispute_id, dispute_vote)?;
+
+        // Emit dispute vote event
+        DisputeUtils::emit_dispute_vote_event(env, &dispute_id, &user, vote, stake);
+
+        Ok(())
+    }
+
+    /// Calculate dispute outcome based on voting
+    pub fn calculate_dispute_outcome(env: &Env, dispute_id: Symbol) -> Result<bool, Error> {
+        // Get dispute voting data
+        let voting_data = DisputeUtils::get_dispute_voting(env, &dispute_id)?;
+
+        // Validate voting is completed
+        DisputeValidator::validate_voting_completed(&voting_data)?;
+
+        // Calculate outcome based on stake-weighted voting
+        let outcome = DisputeUtils::calculate_stake_weighted_outcome(&voting_data);
+
+        Ok(outcome)
+    }
+
+    /// Distribute dispute fees to winners
+    pub fn distribute_dispute_fees(env: &Env, dispute_id: Symbol) -> Result<DisputeFeeDistribution, Error> {
+        // Validate dispute resolution conditions
+        DisputeValidator::validate_dispute_resolution_conditions(env, &dispute_id)?;
+
+        // Calculate dispute outcome
+        let outcome = Self::calculate_dispute_outcome(env, dispute_id.clone())?;
+
+        // Get dispute voting data
+        let voting_data = DisputeUtils::get_dispute_voting(env, &dispute_id)?;
+
+        // Distribute fees based on outcome
+        let fee_distribution = DisputeUtils::distribute_fees_based_on_outcome(
+            env, &dispute_id, &voting_data, outcome,
+        )?;
+
+        // Emit fee distribution event
+        DisputeUtils::emit_fee_distribution_event(env, &dispute_id, &fee_distribution);
+
+        Ok(fee_distribution)
+    }
+
+    /// Escalate a dispute
+    pub fn escalate_dispute(
+        env: &Env,
+        user: Address,
+        dispute_id: Symbol,
+        reason: String,
+    ) -> Result<DisputeEscalation, Error> {
+        // Require authentication from the user
+        user.require_auth();
+
+        // Validate escalation conditions
+        DisputeValidator::validate_dispute_escalation_conditions(env, &user, &dispute_id)?;
+
+        // Create escalation record
+        let escalation = DisputeEscalation {
+            dispute_id: dispute_id.clone(),
+            escalated_by: user.clone(),
+            escalation_reason: reason,
+            escalation_timestamp: env.ledger().timestamp(),
+            escalation_level: 1, // Start at level 1
+            requires_admin_review: true,
+        };
+
+        // Store escalation
+        DisputeUtils::store_dispute_escalation(env, &dispute_id, &escalation)?;
+
+        // Emit escalation event
+        DisputeUtils::emit_dispute_escalation_event(env, &dispute_id, &user, &escalation);
+
+        Ok(escalation)
+    }
+
+    /// Get dispute votes
+    pub fn get_dispute_votes(env: &Env, dispute_id: Symbol) -> Result<Vec<DisputeVote>, Error> {
+        DisputeUtils::get_dispute_votes(env, &dispute_id)
+    }
+
+    /// Validate dispute resolution conditions
+    pub fn validate_dispute_resolution_conditions(env: &Env, dispute_id: Symbol) -> Result<bool, Error> {
+        DisputeValidator::validate_dispute_resolution_conditions(env, &dispute_id)
+    }
 }
 
 // ===== DISPUTE VALIDATOR =====
