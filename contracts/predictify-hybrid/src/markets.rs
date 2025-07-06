@@ -50,8 +50,8 @@ impl MarketCreator {
             oracle_config,
         );
 
-        // Process market creation fee
-        MarketUtils::process_creation_fee(env, &admin)?;
+        // Market creation fee is now handled by the fees module
+        // FeeManager::process_creation_fee(env, &admin)?;
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
@@ -417,20 +417,11 @@ impl MarketUtils {
         env.ledger().timestamp() + duration_seconds
     }
 
-    /// Process market creation fee
+    /// Process market creation fee (moved to fees module)
+    /// This function is deprecated and should use FeeManager::process_creation_fee instead
     pub fn process_creation_fee(env: &Env, admin: &Address) -> Result<(), Error> {
-        let fee_amount: i128 = 10_000_000; // 1 XLM = 10,000,000 stroops
-
-        let token_id: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "TokenID"))
-            .ok_or(Error::InvalidState)?;
-
-        let token_client = token::Client::new(env, &token_id);
-        token_client.transfer(admin, &env.current_contract_address(), &fee_amount);
-
-        Ok(())
+        // Delegate to the fees module
+        crate::fees::FeeManager::process_creation_fee(env, admin)
     }
 
     /// Get token client for market operations
