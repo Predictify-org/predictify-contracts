@@ -479,7 +479,7 @@ impl FeeTracker {
         env.storage().persistent().set(&history_key, &history);
 
         // Update total fees collected
-        let total_key = symbol_short!("total_fees");
+        let total_key = symbol_short!("tot_fees");
         let current_total: i128 = env
             .storage()
             .persistent()
