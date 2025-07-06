@@ -400,7 +400,7 @@ impl ThresholdUtils {
     /// Get dispute threshold
     pub fn get_dispute_threshold(env: &Env, market_id: &Symbol) -> Result<DisputeThreshold, Error> {
         let key = symbol_short!("dispute_t");
-        env.storage()
+        Ok(env.storage()
             .persistent()
             .get(&key)
             .unwrap_or(DisputeThreshold {
@@ -411,7 +411,7 @@ impl ThresholdUtils {
                 activity_factor: 0,
                 complexity_factor: 0,
                 timestamp: env.ledger().timestamp(),
-            })
+            }))
     }
 
     /// Add threshold history entry
@@ -631,6 +631,22 @@ impl VotingValidator {
     /// Validate dispute stake
     pub fn validate_dispute_stake(stake: i128) -> Result<(), Error> {
         if stake < MIN_DISPUTE_STAKE {
+            return Err(Error::InsufficientStake);
+        }
+
+        Ok(())
+    }
+
+    /// Validate dispute stake with dynamic threshold
+    pub fn validate_dispute_stake_with_threshold(
+        env: &Env,
+        stake: i128,
+        market_id: &Symbol,
+    ) -> Result<(), Error> {
+        // Get dynamic threshold for the market
+        let threshold = ThresholdUtils::get_dispute_threshold(env, market_id)?;
+        
+        if stake < threshold.adjusted_threshold {
             return Err(Error::InsufficientStake);
         }
 
