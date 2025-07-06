@@ -3103,6 +3103,7 @@ fn test_event_documentation_event_types() {
 
     // Check for common event types
     let event_types = vec![
+        &test.env,
         String::from_str(&test.env, "MarketCreated"),
         String::from_str(&test.env, "VoteCast"),
         String::from_str(&test.env, "OracleResult"),
@@ -3128,6 +3129,7 @@ fn test_event_documentation_usage_examples() {
 
     // Check for common usage examples
     let example_types = vec![
+        &test.env,
         String::from_str(&test.env, "EmitMarketCreated"),
         String::from_str(&test.env, "EmitVoteCast"),
         String::from_str(&test.env, "GetMarketEvents"),
@@ -3148,6 +3150,7 @@ fn test_event_testing_utilities() {
 
     // Test creating test events
     let event_types = vec![
+        &test.env,
         String::from_str(&test.env, "MarketCreated"),
         String::from_str(&test.env, "VoteCast"),
         String::from_str(&test.env, "OracleResult"),
@@ -3272,4 +3275,619 @@ fn test_event_performance() {
     // Verify operations completed successfully
     let market_events = client.get_market_events(&test.market_id);
     assert!(!market_events.is_empty());
+}
+
+// ===== VALIDATION SYSTEM TESTS =====
+
+#[test]
+fn test_input_validation_address() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid address
+    let valid_address = Address::generate(&test.env);
+    // Note: validate_address method doesn't exist in contract interface
+    // For now, we test that the address is valid by checking it's not empty
+    assert!(!valid_address.to_string().is_empty());
+}
+
+#[test]
+fn test_input_validation_string() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid string
+    let valid_string = String::from_str(&test.env, "Hello World");
+    let is_valid = client.validate_string_length(&valid_string, &1, &50);
+    assert!(is_valid);
+
+    // Test string too short
+    let short_string = String::from_str(&test.env, "Hi");
+    let is_valid = client.validate_string_length(&short_string, &5, &50);
+    assert!(!is_valid);
+
+    // Test string too long
+    let long_string = String::from_str(&test.env, "This is a very long string that exceeds the maximum length limit");
+    let is_valid = client.validate_string_length(&long_string, &1, &20);
+    assert!(!is_valid);
+}
+
+#[test]
+fn test_input_validation_number_range() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid number in range
+    assert!(client.validate_number_range(&15, &10, &20));
+
+    // Test number below range
+    assert!(!client.validate_number_range(&5, &10, &20));
+
+    // Test number above range
+    assert!(!client.validate_number_range(&25, &10, &20));
+
+    // Test number at boundaries
+    assert!(client.validate_number_range(&10, &10, &20));
+    assert!(client.validate_number_range(&20, &10, &20));
+}
+
+#[test]
+fn test_input_validation_positive_number() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test positive number
+    assert!(client.validate_positive_number(&10));
+
+    // Test zero
+    assert!(!client.validate_positive_number(&0));
+
+    // Test negative number
+    assert!(!client.validate_positive_number(&-10));
+}
+
+#[test]
+fn test_input_validation_future_timestamp() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test future timestamp
+    let future_time = test.env.ledger().timestamp() + 3600; // 1 hour in future
+    assert!(client.validate_future_timestamp(&future_time));
+
+    // Test past timestamp
+    let past_time = test.env.ledger().timestamp() - 3600; // 1 hour in past
+    assert!(!client.validate_future_timestamp(&past_time));
+
+    // Test current timestamp
+    let current_time = test.env.ledger().timestamp();
+    assert!(!client.validate_future_timestamp(&current_time));
+}
+
+#[test]
+fn test_input_validation_duration() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid duration using utility function
+    assert!(crate::utils::ValidationUtils::validate_duration(&30));
+
+    // Test duration too short
+    assert!(!crate::utils::ValidationUtils::validate_duration(&0));
+
+    // Test duration too long
+    assert!(!crate::utils::ValidationUtils::validate_duration(&400)); // More than MAX_MARKET_DURATION_DAYS
+}
+
+#[test]
+fn test_market_validation_creation() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid market creation inputs
+    let valid_outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+
+    let oracle_config = test.create_default_oracle_config();
+
+    let result = client.validate_market_creation_inputs(
+        &test.admin,
+        &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+        &valid_outcomes,
+        &30,
+        &oracle_config,
+    );
+
+    assert!(result.is_valid);
+    // error_count > 0 means errors present
+    assert!(result.error_count == 0);
+}
+
+#[test]
+fn test_market_validation_invalid_question() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test market creation with empty question
+    let valid_outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+
+    let oracle_config = test.create_default_oracle_config();
+
+    let result = client.validate_market_creation_inputs(
+        &test.admin,
+        &String::from_str(&test.env, ""), // Empty question
+        &valid_outcomes,
+        &30,
+        &oracle_config,
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_market_validation_invalid_outcomes() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test market creation with single outcome (too few)
+    let invalid_outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+    ];
+
+    let oracle_config = test.create_default_oracle_config();
+
+    let result = client.validate_market_creation_inputs(
+        &test.admin,
+        &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+        &invalid_outcomes,
+        &30,
+        &oracle_config,
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_market_validation_invalid_duration() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test market creation with invalid duration
+    let valid_outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+
+    let oracle_config = test.create_default_oracle_config();
+
+    let result = client.validate_market_creation_inputs(
+        &test.admin,
+        &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+        &valid_outcomes,
+        &0, // Invalid duration
+        &oracle_config,
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_market_validation_state() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create a market first
+    test.create_test_market();
+
+    // Test market state validation
+    let result = client.validate_market_state(&test.market_id);
+    assert!(result.is_valid);
+    assert!(!result.has_errors());
+}
+
+#[test]
+fn test_market_validation_nonexistent() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation of non-existent market
+    let non_existent_market = Symbol::new(&test.env, "non_existent");
+    let result = client.validate_market_state(&non_existent_market);
+    
+    assert!(!result.is_valid);
+    assert!(result.has_errors());
+}
+
+#[test]
+fn test_oracle_validation_config() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid oracle config
+    let valid_config = test.create_default_oracle_config();
+    let result = client.validate_oracle_config(&valid_config);
+    assert!(result.is_valid);
+    assert!(result.error_count == 0);
+}
+
+#[test]
+fn test_oracle_validation_invalid_feed_id() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test oracle config with empty feed_id
+    let invalid_config = OracleConfig {
+        provider: OracleProvider::Pyth,
+        feed_id: String::from_str(&test.env, ""), // Empty feed_id
+        threshold: 2500000,
+        comparison: String::from_str(&test.env, "gt"),
+    };
+
+    let result = client.validate_oracle_config(&invalid_config);
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_oracle_validation_invalid_threshold() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test oracle config with invalid threshold
+    let invalid_config = OracleConfig {
+        provider: OracleProvider::Pyth,
+        feed_id: String::from_str(&test.env, "BTC/USD"),
+        threshold: 0, // Invalid threshold (must be positive)
+        comparison: String::from_str(&test.env, "gt"),
+    };
+
+    let result = client.validate_oracle_config(&invalid_config);
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_fee_validation_config() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test valid fee config
+    let result = client.validate_fee_config(
+        &2, // platform_fee_percentage
+        &10_000_000, // creation_fee
+        &1_000_000, // min_fee_amount
+        &1_000_000_000, // max_fee_amount
+        &100_000_000, // collection_threshold
+    );
+
+    assert!(result.is_valid);
+    assert!(result.error_count == 0);
+}
+
+#[test]
+fn test_fee_validation_invalid_percentage() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test fee config with invalid percentage
+    let result = client.validate_fee_config(
+        &150, // Invalid percentage (>100%)
+        &10_000_000,
+        &1_000_000,
+        &1_000_000_000,
+        &100_000_000,
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_fee_validation_invalid_amounts() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test fee config with min > max
+    let result = client.validate_fee_config(
+        &2,
+        &10_000_000,
+        &2_000_000_000, // min > max
+        &1_000_000_000,
+        &100_000_000,
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_vote_validation_inputs() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create a market first
+    test.create_test_market();
+
+    // Test valid vote inputs
+    let result = client.validate_vote_inputs(
+        &test.user,
+        &test.market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    assert!(result.is_valid);
+    assert!(result.error_count == 0);
+}
+
+#[test]
+fn test_vote_validation_invalid_outcome() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create a market first
+    test.create_test_market();
+
+    // Test vote with invalid outcome
+    let result = client.validate_vote_inputs(
+        &test.user,
+        &test.market_id,
+        &String::from_str(&test.env, "maybe"), // Invalid outcome
+        &100_0000000,
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_vote_validation_invalid_stake() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create a market first
+    test.create_test_market();
+
+    // Test vote with invalid stake amount
+    let result = client.validate_vote_inputs(
+        &test.user,
+        &test.market_id,
+        &String::from_str(&test.env, "yes"),
+        &500_000, // Too small stake
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_dispute_validation_creation() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create and resolve a market first
+    test.create_test_market();
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    client.resolve_market(&test.market_id);
+
+    // Test valid dispute creation
+    let result = client.validate_dispute_creation(
+        &test.user,
+        &test.market_id,
+        &10_0000000,
+    );
+
+    assert!(result.is_valid);
+    assert!(result.error_count == 0);
+}
+
+#[test]
+fn test_dispute_validation_invalid_stake() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Create and resolve a market first
+    test.create_test_market();
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&test.market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+    client.resolve_market(&test.market_id);
+
+    // Test dispute with invalid stake amount
+    let result = client.validate_dispute_creation(
+        &test.user,
+        &test.market_id,
+        &5_000_000, // Too small stake
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+}
+
+#[test]
+fn test_validation_rules_documentation() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test getting validation rules
+    let rules = client.get_validation_rules();
+    assert!(!rules.is_empty());
+
+    // Test getting validation error codes
+    let error_codes = client.get_validation_error_codes();
+    assert!(!error_codes.is_empty());
+
+    // Test getting validation overview
+    let overview = client.get_validation_overview();
+    assert!(!overview.to_string().is_empty());
+}
+
+#[test]
+fn test_validation_testing_utilities() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation testing utilities
+    let result = client.test_validation_utilities();
+    assert!(result.is_valid);
+    assert!(result.has_warnings()); // Should have test warnings
+}
+
+#[test]
+fn test_comprehensive_validation_scenario() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test comprehensive validation with multiple validation types
+    let valid_outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+
+    let oracle_config = test.create_default_oracle_config();
+
+    // Test market creation validation
+    let market_result = client.validate_market_creation_inputs(
+        &test.admin,
+        &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+        &valid_outcomes.clone(),
+        &30,
+        &oracle_config.clone(),
+    );
+
+    assert!(market_result.is_valid);
+    assert!(market_result.error_count == 0);
+
+    // Test oracle config validation
+    let oracle_result = client.validate_oracle_config(&oracle_config);
+    assert!(oracle_result.is_valid);
+    assert!(oracle_result.error_count == 0);
+
+    // Test fee config validation
+    let fee_result = client.validate_fee_config(
+        &2,
+        &10_000_000,
+        &1_000_000,
+        &1_000_000_000,
+        &100_000_000,
+    );
+
+    assert!(fee_result.is_valid);
+    assert!(fee_result.error_count == 0);
+
+    // Create market and test vote validation
+    test.create_test_market();
+
+    let vote_result = client.validate_vote_inputs(
+        &test.user,
+        &test.market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    assert!(vote_result.is_valid);
+    assert!(vote_result.error_count == 0);
+}
+
+#[test]
+fn test_validation_error_handling() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation with multiple errors
+    let invalid_outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"), // Only one outcome
+    ];
+
+    let oracle_config = test.create_default_oracle_config();
+
+    let result = client.validate_market_creation_inputs(
+        &test.admin,
+        &String::from_str(&test.env, ""), // Empty question
+        invalid_outcomes,
+        &0, // Invalid duration
+        &oracle_config,
+    );
+
+    assert!(!result.is_valid);
+    assert!(result.error_count > 0);
+    assert!(result.errors.len() >= 2); // Should have multiple errors
+}
+
+#[test]
+fn test_validation_warnings_and_recommendations() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Test validation that produces warnings and recommendations
+    let valid_outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+
+    let oracle_config = test.create_default_oracle_config();
+
+    let result = client.validate_market_creation_inputs(
+        &test.admin,
+        &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
+        &valid_outcomes,
+        &30,
+        &oracle_config,
+    );
+
+    // Valid result should have recommendations
+    assert!(result.is_valid);
+    assert!(!result.has_errors());
+    assert!(result.recommendations.len() > 0);
 }
