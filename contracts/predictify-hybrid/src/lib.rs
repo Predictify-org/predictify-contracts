@@ -38,12 +38,14 @@ pub mod fees;
 use fees::{FeeManager, FeeCalculator, FeeValidator, FeeUtils, FeeTracker, FeeConfigManager};
 use resolution::{OracleResolutionManager, MarketResolutionManager, MarketResolutionAnalytics, OracleResolutionAnalytics, ResolutionUtils};
 
+// Configuration management module
+pub mod config;
+use config::{ConfigManager, ConfigValidator, ConfigUtils, ContractConfig, Environment};
+
 pub mod resolution;
 
 #[contract]
 pub struct PredictifyHybrid;
-
-const PERCENTAGE_DENOMINATOR: i128 = 100;
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -707,6 +709,116 @@ impl PredictifyHybrid {
             Ok(history) => history,
             Err(_) => vec![&env],
         }
+    }
+
+    // ===== CONFIGURATION MANAGEMENT METHODS =====
+
+    /// Initialize contract with configuration
+    pub fn initialize_with_config(env: Env, admin: Address, environment: Environment) {
+        // Set admin
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "Admin"), &admin);
+
+        // Initialize configuration based on environment
+        let config = match environment {
+            Environment::Development => ConfigManager::get_development_config(&env),
+            Environment::Testnet => ConfigManager::get_testnet_config(&env),
+            Environment::Mainnet => ConfigManager::get_mainnet_config(&env),
+            Environment::Custom => ConfigManager::get_development_config(&env), // Default to development for custom
+        };
+
+        // Store configuration
+        match ConfigManager::store_config(&env, &config) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Get current contract configuration
+    pub fn get_contract_config(env: Env) -> ContractConfig {
+        match ConfigManager::get_config(&env) {
+            Ok(config) => config,
+            Err(_) => ConfigManager::get_development_config(&env), // Return default if not found
+        }
+    }
+
+    /// Update contract configuration (admin only)
+    pub fn update_contract_config(env: Env, admin: Address, new_config: ContractConfig) -> ContractConfig {
+        // Verify admin permissions
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic!("Admin not set"));
+
+        errors::helpers::require_admin(&env, &admin, &stored_admin);
+
+        // Validate new configuration
+        match ConfigValidator::validate_contract_config(&new_config) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
+        // Store updated configuration
+        match ConfigManager::update_config(&env, &new_config) {
+            Ok(_) => new_config,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Reset configuration to defaults
+    pub fn reset_config_to_defaults(env: Env, admin: Address) -> ContractConfig {
+        // Verify admin permissions
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic!("Admin not set"));
+
+        errors::helpers::require_admin(&env, &admin, &stored_admin);
+
+        // Reset to defaults
+        match ConfigManager::reset_to_defaults(&env) {
+            Ok(config) => config,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Get configuration summary
+    pub fn get_config_summary(env: Env) -> String {
+        let config = match ConfigManager::get_config(&env) {
+            Ok(config) => config,
+            Err(_) => ConfigManager::get_development_config(&env),
+        };
+        ConfigUtils::get_config_summary(&config)
+    }
+
+    /// Check if fees are enabled
+    pub fn fees_enabled(env: Env) -> bool {
+        let config = match ConfigManager::get_config(&env) {
+            Ok(config) => config,
+            Err(_) => ConfigManager::get_development_config(&env),
+        };
+        ConfigUtils::fees_enabled(&config)
+    }
+
+    /// Get environment type
+    pub fn get_environment(env: Env) -> Environment {
+        let config = match ConfigManager::get_config(&env) {
+            Ok(config) => config,
+            Err(_) => ConfigManager::get_development_config(&env),
+        };
+        config.network.environment
+    }
+
+    /// Validate configuration
+    pub fn validate_configuration(env: Env) -> bool {
+        let config = match ConfigManager::get_config(&env) {
+            Ok(config) => config,
+            Err(_) => return false,
+        };
+        ConfigValidator::validate_contract_config(&config).is_ok()
     }
 }
 mod test;
