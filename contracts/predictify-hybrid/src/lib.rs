@@ -48,6 +48,10 @@ use config::{ConfigManager, ConfigValidator, ConfigUtils, ContractConfig, Enviro
 pub mod utils;
 use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, ConversionUtils, CommonUtils, TestingUtils};
 
+// Event system module
+pub mod events;
+use events::{EventEmitter, EventLogger, EventValidator, EventHelpers, EventTestingUtils, EventDocumentation};
+
 pub mod resolution;
 
 #[contract]
