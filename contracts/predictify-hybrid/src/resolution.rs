@@ -48,6 +48,7 @@ pub struct OracleResolution {
 
 /// Market resolution result
 #[derive(Clone, Debug)]
+#[contracttype]
 pub struct MarketResolution {
     pub market_id: Symbol,
     pub final_outcome: String,
