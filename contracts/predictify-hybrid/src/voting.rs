@@ -432,7 +432,7 @@ impl ThresholdUtils {
             timestamp: env.ledger().timestamp(),
         };
 
-        let key = symbol_short!("th_history");
+        let key = symbol_short!("th_hist");
         let mut history: Vec<ThresholdHistoryEntry> = env.storage()
             .persistent()
             .get(&key)
