@@ -535,7 +535,7 @@ impl PredictifyHybrid {
             Ok(escalation) => escalation,
             Err(_) => disputes::DisputeEscalation {
                 dispute_id: symbol_short!("error"),
-                escalated_by: Address::random(&env),
+                escalated_by: Address::from_contract_id(&env.current_contract_id()),
                 escalation_reason: String::from_str(&env, "Error"),
                 escalation_timestamp: 0,
                 escalation_level: 0,
