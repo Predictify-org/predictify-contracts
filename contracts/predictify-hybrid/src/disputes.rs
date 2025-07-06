@@ -658,6 +658,171 @@ impl DisputeUtils {
 
         (total_disputes as f64) / (total_staked as f64)
     }
+
+    /// Add vote to dispute
+    pub fn add_vote_to_dispute(env: &Env, dispute_id: &Symbol, vote: DisputeVote) -> Result<(), Error> {
+        // Get current voting data
+        let mut voting_data = Self::get_dispute_voting(env, dispute_id)?;
+        
+        // Update voting statistics
+        voting_data.total_votes += 1;
+        if vote.vote {
+            voting_data.support_votes += 1;
+            voting_data.total_support_stake += vote.stake;
+        } else {
+            voting_data.against_votes += 1;
+            voting_data.total_against_stake += vote.stake;
+        }
+
+        // Store updated voting data
+        Self::store_dispute_voting(env, dispute_id, &voting_data)?;
+
+        // Store the vote
+        Self::store_dispute_vote(env, dispute_id, &vote)?;
+
+        Ok(())
+    }
+
+    /// Get dispute voting data
+    pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
+        let key = Symbol::new(env, &format!("dispute_voting_{}", dispute_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InvalidInput)
+    }
+
+    /// Store dispute voting data
+    pub fn store_dispute_voting(env: &Env, dispute_id: &Symbol, voting: &DisputeVoting) -> Result<(), Error> {
+        let key = Symbol::new(env, &format!("dispute_voting_{}", dispute_id));
+        env.storage().persistent().set(&key, voting);
+        Ok(())
+    }
+
+    /// Store dispute vote
+    pub fn store_dispute_vote(env: &Env, dispute_id: &Symbol, vote: &DisputeVote) -> Result<(), Error> {
+        let key = Symbol::new(env, &format!("dispute_vote_{}_{}", dispute_id, vote.user));
+        env.storage().persistent().set(&key, vote);
+        Ok(())
+    }
+
+    /// Get dispute votes
+    pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
+        // This is a simplified implementation - in a real system you'd need to track all votes
+        let mut votes = Vec::new(env);
+        
+        // For now, return empty vector - in practice you'd iterate through stored votes
+        Ok(votes)
+    }
+
+    /// Calculate stake-weighted outcome
+    pub fn calculate_stake_weighted_outcome(voting_data: &DisputeVoting) -> bool {
+        voting_data.total_support_stake > voting_data.total_against_stake
+    }
+
+    /// Distribute fees based on outcome
+    pub fn distribute_fees_based_on_outcome(
+        env: &Env,
+        dispute_id: &Symbol,
+        voting_data: &DisputeVoting,
+        outcome: bool,
+    ) -> Result<DisputeFeeDistribution, Error> {
+        let total_fees = voting_data.total_support_stake + voting_data.total_against_stake;
+        let winner_stake = if outcome { voting_data.total_support_stake } else { voting_data.total_against_stake };
+        let loser_stake = if outcome { voting_data.total_against_stake } else { voting_data.total_support_stake };
+
+        // Create fee distribution record
+        let fee_distribution = DisputeFeeDistribution {
+            dispute_id: dispute_id.clone(),
+            total_fees,
+            winner_stake,
+            loser_stake,
+            winner_addresses: Vec::new(env), // Would be populated with actual winner addresses
+            distribution_timestamp: env.ledger().timestamp(),
+            fees_distributed: true,
+        };
+
+        // Store fee distribution
+        Self::store_dispute_fee_distribution(env, dispute_id, &fee_distribution)?;
+
+        Ok(fee_distribution)
+    }
+
+    /// Store dispute fee distribution
+    pub fn store_dispute_fee_distribution(
+        env: &Env,
+        dispute_id: &Symbol,
+        distribution: &DisputeFeeDistribution,
+    ) -> Result<(), Error> {
+        let key = Symbol::new(env, &format!("dispute_fees_{}", dispute_id));
+        env.storage().persistent().set(&key, distribution);
+        Ok(())
+    }
+
+    /// Get dispute fee distribution
+    pub fn get_dispute_fee_distribution(env: &Env, dispute_id: &Symbol) -> Result<DisputeFeeDistribution, Error> {
+        let key = Symbol::new(env, &format!("dispute_fees_{}", dispute_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(DisputeFeeDistribution {
+                dispute_id: dispute_id.clone(),
+                total_fees: 0,
+                winner_stake: 0,
+                loser_stake: 0,
+                winner_addresses: Vec::new(env),
+                distribution_timestamp: 0,
+                fees_distributed: false,
+            })
+    }
+
+    /// Store dispute escalation
+    pub fn store_dispute_escalation(
+        env: &Env,
+        dispute_id: &Symbol,
+        escalation: &DisputeEscalation,
+    ) -> Result<(), Error> {
+        let key = Symbol::new(env, &format!("dispute_escalation_{}", dispute_id));
+        env.storage().persistent().set(&key, escalation);
+        Ok(())
+    }
+
+    /// Get dispute escalation
+    pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
+        let key = Symbol::new(env, &format!("dispute_escalation_{}", dispute_id));
+        env.storage().persistent().get(&key)
+    }
+
+    /// Emit dispute vote event
+    pub fn emit_dispute_vote_event(env: &Env, dispute_id: &Symbol, user: &Address, vote: bool, stake: i128) {
+        // In a real implementation, this would emit an event
+        // For now, we'll just store it in persistent storage
+        let event_key = Symbol::new(env, &format!("dispute_vote_event_{}", dispute_id));
+        let event_data = (user.clone(), vote, stake, env.ledger().timestamp());
+        env.storage().persistent().set(&event_key, &event_data);
+    }
+
+    /// Emit fee distribution event
+    pub fn emit_fee_distribution_event(env: &Env, dispute_id: &Symbol, distribution: &DisputeFeeDistribution) {
+        // In a real implementation, this would emit an event
+        // For now, we'll just store it in persistent storage
+        let event_key = Symbol::new(env, &format!("dispute_fee_event_{}", dispute_id));
+        env.storage().persistent().set(&event_key, distribution);
+    }
+
+    /// Emit dispute escalation event
+    pub fn emit_dispute_escalation_event(
+        env: &Env,
+        dispute_id: &Symbol,
+        user: &Address,
+        escalation: &DisputeEscalation,
+    ) {
+        // In a real implementation, this would emit an event
+        // For now, we'll just store it in persistent storage
+        let event_key = Symbol::new(env, &format!("dispute_escalation_event_{}", dispute_id));
+        let event_data = (user.clone(), escalation.escalation_level, env.ledger().timestamp());
+        env.storage().persistent().set(&event_key, &event_data);
+    }
 }
 
 // ===== DISPUTE ANALYTICS =====
