@@ -763,7 +763,7 @@ impl DisputeUtils {
     /// Get dispute fee distribution
     pub fn get_dispute_fee_distribution(env: &Env, dispute_id: &Symbol) -> Result<DisputeFeeDistribution, Error> {
         let key = symbol_short!("dispute_f");
-        env.storage()
+        Ok(env.storage()
             .persistent()
             .get(&key)
             .unwrap_or(DisputeFeeDistribution {
@@ -774,7 +774,7 @@ impl DisputeUtils {
                 winner_addresses: Vec::new(env),
                 distribution_timestamp: 0,
                 fees_distributed: false,
-            })
+            }))
     }
 
     /// Store dispute escalation
