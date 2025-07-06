@@ -1,4 +1,5 @@
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, vec, symbol_short, Address, Env, Map, String, Symbol, Vec};
+use alloc::string::ToString;
 
 use crate::errors::Error;
 
@@ -232,7 +233,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("market_created"), &event);
+        Self::store_event(env, &symbol_short!("mkt_crt"), &event);
     }
 
     /// Emit vote cast event
@@ -251,7 +252,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("vote_cast"), &event);
+        Self::store_event(env, &symbol_short!("vote"), &event);
     }
 
     /// Emit oracle result event
@@ -276,7 +277,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("oracle_result"), &event);
+        Self::store_event(env, &symbol_short!("oracle_rs"), &event);
     }
 
     /// Emit market resolved event
@@ -299,7 +300,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("market_resolved"), &event);
+        Self::store_event(env, &symbol_short!("mkt_res"), &event);
     }
 
     /// Emit dispute created event
@@ -318,7 +319,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("dispute_created"), &event);
+        Self::store_event(env, &symbol_short!("dispt_crt"), &event);
     }
 
     /// Emit dispute resolved event
@@ -339,7 +340,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("dispute_resolved"), &event);
+        Self::store_event(env, &symbol_short!("dispt_res"), &event);
     }
 
     /// Emit fee collected event
@@ -358,7 +359,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("fee_collected"), &event);
+        Self::store_event(env, &symbol_short!("fee_col"), &event);
     }
 
     /// Emit extension requested event
@@ -379,7 +380,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("extension_requested"), &event);
+        Self::store_event(env, &symbol_short!("ext_req"), &event);
     }
 
     /// Emit configuration updated event
@@ -398,7 +399,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("config_updated"), &event);
+        Self::store_event(env, &symbol_short!("cfg_upd"), &event);
     }
 
     /// Emit error logged event
@@ -419,7 +420,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("error_logged"), &event);
+        Self::store_event(env, &symbol_short!("err_log"), &event);
     }
 
     /// Emit performance metric event
@@ -438,16 +439,14 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("performance_metric"), &event);
+        Self::store_event(env, &symbol_short!("perf_met"), &event);
     }
 
     /// Store event in persistent storage
     fn store_event<T>(env: &Env, event_key: &Symbol, event_data: &T)
     where
-        T: Clone,
+        T: Clone + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
-        // In a real Soroban implementation, this would use env.events().publish()
-        // For now, we store in persistent storage as a placeholder
         env.storage().persistent().set(event_key, event_data);
     }
 }
@@ -461,11 +460,11 @@ impl EventLogger {
     /// Get all events of a specific type
     pub fn get_events<T>(env: &Env, event_type: &Symbol) -> Vec<T>
     where
-        T: Clone,
+        T: Clone + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val> + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
         match env.storage().persistent().get::<Symbol, T>(event_type) {
-            Some(event) => vec![env, event],
-            None => vec![env],
+            Some(event) => Vec::from_array(env, [event]),
+            None => Vec::new(env),
         }
     }
 
@@ -474,7 +473,7 @@ impl EventLogger {
         let mut events = Vec::new(env);
 
         // Get market created events
-        if let Some(event) = env.storage().persistent().get::<Symbol, MarketCreatedEvent>(&symbol_short!("market_created")) {
+        if let Some(event) = env.storage().persistent().get::<Symbol, MarketCreatedEvent>(&symbol_short!("mkt_crt")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketCreated"),
@@ -485,7 +484,7 @@ impl EventLogger {
         }
 
         // Get vote cast events
-        if let Some(event) = env.storage().persistent().get::<Symbol, VoteCastEvent>(&symbol_short!("vote_cast")) {
+        if let Some(event) = env.storage().persistent().get::<Symbol, VoteCastEvent>(&symbol_short!("vote")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "VoteCast"),
@@ -496,7 +495,7 @@ impl EventLogger {
         }
 
         // Get oracle result events
-        if let Some(event) = env.storage().persistent().get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_result")) {
+        if let Some(event) = env.storage().persistent().get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_rs")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "OracleResult"),
@@ -507,7 +506,7 @@ impl EventLogger {
         }
 
         // Get market resolved events
-        if let Some(event) = env.storage().persistent().get::<Symbol, MarketResolvedEvent>(&symbol_short!("market_resolved")) {
+        if let Some(event) = env.storage().persistent().get::<Symbol, MarketResolvedEvent>(&symbol_short!("mkt_res")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketResolved"),
@@ -528,17 +527,17 @@ impl EventLogger {
         // In a real system, you would maintain an event log with timestamps
         let event_types = vec![
             env,
-            symbol_short!("market_created"),
-            symbol_short!("vote_cast"),
-            symbol_short!("oracle_result"),
-            symbol_short!("market_resolved"),
-            symbol_short!("dispute_created"),
-            symbol_short!("dispute_resolved"),
-            symbol_short!("fee_collected"),
-            symbol_short!("extension_requested"),
-            symbol_short!("config_updated"),
-            symbol_short!("error_logged"),
-            symbol_short!("performance_metric"),
+            symbol_short!("mkt_crt"),
+            symbol_short!("vote"),
+            symbol_short!("oracle_rs"),
+            symbol_short!("mkt_res"),
+            symbol_short!("dispt_crt"),
+            symbol_short!("dispt_res"),
+            symbol_short!("fee_col"),
+            symbol_short!("ext_req"),
+            symbol_short!("cfg_upd"),
+            symbol_short!("err_log"),
+            symbol_short!("perf_met"),
         ];
 
         let mut count = 0;
@@ -550,7 +549,7 @@ impl EventLogger {
             // Check if event exists and add to summary
             if env.storage().persistent().has(&event_type) {
                 events.push_back(EventSummary {
-                    event_type: event_type.to_string(),
+                    event_type: String::from_str(env, &event_type.to_string()),
                     timestamp: env.ledger().timestamp(),
                     details: String::from_str(env, "Event occurred"),
                 });
@@ -563,29 +562,29 @@ impl EventLogger {
 
     /// Get error events
     pub fn get_error_events(env: &Env) -> Vec<ErrorLoggedEvent> {
-        Self::get_events(env, &symbol_short!("error_logged"))
+        Self::get_events(env, &symbol_short!("err_log"))
     }
 
     /// Get performance metrics
     pub fn get_performance_metrics(env: &Env) -> Vec<PerformanceMetricEvent> {
-        Self::get_events(env, &symbol_short!("performance_metric"))
+        Self::get_events(env, &symbol_short!("perf_met"))
     }
 
     /// Clear old events (cleanup utility)
     pub fn clear_old_events(env: &Env, older_than_timestamp: u64) {
         let event_types = vec![
             env,
-            symbol_short!("market_created"),
-            symbol_short!("vote_cast"),
-            symbol_short!("oracle_result"),
-            symbol_short!("market_resolved"),
-            symbol_short!("dispute_created"),
-            symbol_short!("dispute_resolved"),
-            symbol_short!("fee_collected"),
-            symbol_short!("extension_requested"),
-            symbol_short!("config_updated"),
-            symbol_short!("error_logged"),
-            symbol_short!("performance_metric"),
+            symbol_short!("mkt_crt"),
+            symbol_short!("vote"),
+            symbol_short!("oracle_rs"),
+            symbol_short!("mkt_res"),
+            symbol_short!("dispt_crt"),
+            symbol_short!("dispt_res"),
+            symbol_short!("fee_col"),
+            symbol_short!("ext_req"),
+            symbol_short!("cfg_upd"),
+            symbol_short!("err_log"),
+            symbol_short!("perf_met"),
         ];
 
         for event_type in event_types.iter() {
@@ -797,7 +796,7 @@ impl EventHelpers {
     /// Get event type from symbol
     pub fn get_event_type_from_symbol(symbol: &Symbol) -> String {
         let env = Env::default();
-        symbol.to_string()
+        String::from_str(&env, &symbol.to_string())
     }
 
     /// Create event context string
@@ -805,9 +804,11 @@ impl EventHelpers {
         let mut context = String::from_str(env, "");
         for (i, part) in context_parts.iter().enumerate() {
             if i > 0 {
-                context.push_back(&String::from_str(env, " | "));
+                let separator = String::from_str(env, " | ");
+                context = String::from_str(env, &(context.to_string() + &separator.to_string() + &part.to_string()));
+            } else {
+                context = part.clone();
             }
-            context.push_back(part);
         }
         context
     }
@@ -961,7 +962,7 @@ impl EventTestingUtils {
     }
 
     /// Validate test event structure
-    pub fn validate_test_event_structure<T>(event: &T) -> Result<(), Error>
+    pub fn validate_test_event_structure<T>(_event: &T) -> Result<(), Error>
     where
         T: Clone,
     {
@@ -973,7 +974,7 @@ impl EventTestingUtils {
     /// Simulate event emission
     pub fn simulate_event_emission(env: &Env, event_type: &String) -> bool {
         // Simulate successful event emission
-        let event_key = Symbol::new(env, event_type);
+        let event_key = Symbol::new(env, &event_type.to_string());
         env.storage().persistent().set(&event_key, &String::from_str(env, "test"));
         true
     }
