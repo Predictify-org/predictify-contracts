@@ -4,6 +4,7 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, panic_with_error, symbol_short, token, vec, Address, Env,
     IntoVal, Map, String, Symbol, Vec,
 };
+use alloc::string::ToString;
 
 // Error management module
 pub mod errors;
@@ -545,9 +546,9 @@ impl PredictifyHybrid {
         let base_fee = 100_000_000; // 10 XLM base fee
         let fee_per_day = 10_000_000; // 1 XLM per day
         NumericUtils::clamp(
-            base_fee + (fee_per_day * additional_days as i128),
-            100_000_000, // Minimum fee
-            1_000_000_000 // Maximum fee
+            &(base_fee + (fee_per_day * additional_days as i128)),
+            &100_000_000, // Minimum fee
+            &1_000_000_000 // Maximum fee
         )
     }
 
@@ -839,103 +840,105 @@ impl PredictifyHybrid {
     // ===== UTILITY-BASED METHODS =====
 
     /// Format duration in human-readable format
-    pub fn format_duration(env: Env, seconds: u64) -> String {
+    pub fn format_duration(seconds: u64) -> String {
         TimeUtils::format_duration(seconds)
     }
 
     /// Calculate percentage with custom denominator
-    pub fn calculate_percentage(part: i128, total: i128, denominator: i128) -> i128 {
-        NumericUtils::calculate_percentage_with_denominator(part, total, denominator)
+    pub fn calculate_percentage(percentage: i128, value: i128, denominator: i128) -> i128 {
+        NumericUtils::calculate_percentage(&percentage, &value, &denominator)
     }
 
     /// Validate string length
-    pub fn validate_string_length(env: Env, s: String, min_length: u32, max_length: u32) -> bool {
-        StringUtils::validate_string_length(&s, min_length as usize, max_length as usize).is_ok()
+    pub fn validate_string_length(s: String, min_length: u32, max_length: u32) -> bool {
+        StringUtils::validate_string_length(&s, min_length, max_length).is_ok()
     }
 
-    /// Sanitize string input
-    pub fn sanitize_string(env: Env, s: String) -> String {
+    /// Sanitize string
+    pub fn sanitize_string(s: String) -> String {
         StringUtils::sanitize_string(&s)
     }
 
     /// Convert number to string
-    pub fn number_to_string(env: Env, value: i128) -> String {
-        ConversionUtils::i128_to_string(&env, value)
+    pub fn number_to_string(value: i128) -> String {
+        let env = Env::default();
+        NumericUtils::i128_to_string(&env, &value)
     }
 
     /// Convert string to number
-    pub fn string_to_number(env: Env, s: String) -> Result<i128, Error> {
-        ConversionUtils::string_to_i128(&s)
+    pub fn string_to_number(s: String) -> i128 {
+        NumericUtils::string_to_i128(&s)
     }
 
-    /// Generate unique identifier
-    pub fn generate_unique_id(env: Env, prefix: String) -> String {
-        CommonUtils::generate_unique_id(&env, &prefix.to_string())
+    /// Generate unique ID
+    pub fn generate_unique_id(prefix: String) -> String {
+        let env = Env::default();
+        CommonUtils::generate_unique_id(&env, &prefix)
     }
 
-    /// Check if addresses are equal
-    pub fn addresses_equal(env: Env, a: Address, b: Address) -> bool {
+    /// Compare addresses for equality
+    pub fn addresses_equal(a: Address, b: Address) -> bool {
         CommonUtils::addresses_equal(&a, &b)
     }
 
-    /// Check if strings are equal (case-insensitive)
-    pub fn strings_equal_ignore_case(env: Env, a: String, b: String) -> bool {
+    /// Compare strings ignoring case
+    pub fn strings_equal_ignore_case(a: String, b: String) -> bool {
         CommonUtils::strings_equal_ignore_case(&a, &b)
     }
 
     /// Calculate weighted average
-    pub fn calculate_weighted_average(env: Env, values: Vec<i128>, weights: Vec<i128>) -> i128 {
-        NumericUtils::calculate_weighted_average(&values, &weights)
+    pub fn calculate_weighted_average(values: Vec<i128>, weights: Vec<i128>) -> i128 {
+        CommonUtils::calculate_weighted_average(&values, &weights)
     }
 
     /// Calculate simple interest
-    pub fn calculate_simple_interest(principal: i128, rate_percentage: i128, periods: u32) -> i128 {
-        NumericUtils::calculate_simple_interest(principal, rate_percentage, periods)
+    pub fn calculate_simple_interest(principal: i128, rate: i128, periods: i128) -> i128 {
+        CommonUtils::calculate_simple_interest(&principal, &rate, &periods)
     }
 
-    /// Round number to nearest multiple
+    /// Round to nearest multiple
     pub fn round_to_nearest(value: i128, multiple: i128) -> i128 {
-        NumericUtils::round_to_nearest(value, multiple)
+        NumericUtils::round_to_nearest(&value, &multiple)
     }
 
     /// Clamp value between min and max
     pub fn clamp_value(value: i128, min: i128, max: i128) -> i128 {
-        NumericUtils::clamp(value, min, max)
+        NumericUtils::clamp(&value, &min, &max)
     }
 
     /// Check if value is within range
     pub fn is_within_range(value: i128, min: i128, max: i128) -> bool {
-        NumericUtils::is_within_range(value, min, max)
+        NumericUtils::is_within_range(&value, &min, &max)
     }
 
     /// Calculate absolute difference
     pub fn abs_difference(a: i128, b: i128) -> i128 {
-        NumericUtils::abs_difference(a, b)
+        NumericUtils::abs_difference(&a, &b)
     }
 
-    /// Calculate square root (integer approximation)
+    /// Calculate square root
     pub fn sqrt(value: i128) -> i128 {
-        NumericUtils::sqrt(value)
+        NumericUtils::sqrt(&value)
     }
 
     /// Validate positive number
     pub fn validate_positive_number(value: i128) -> bool {
-        ValidationUtils::validate_positive_number(value).is_ok()
+        ValidationUtils::validate_positive_number(&value)
     }
 
     /// Validate number range
     pub fn validate_number_range(value: i128, min: i128, max: i128) -> bool {
-        ValidationUtils::validate_number_range(value, min, max).is_ok()
+        ValidationUtils::validate_number_range(&value, &min, &max)
     }
 
     /// Validate future timestamp
-    pub fn validate_future_timestamp(env: Env, timestamp: u64) -> bool {
-        let current_time = env.ledger().timestamp();
-        ValidationUtils::validate_future_timestamp(timestamp, current_time).is_ok()
+    pub fn validate_future_timestamp(timestamp: u64) -> bool {
+        ValidationUtils::validate_future_timestamp(&timestamp)
     }
 
-    /// Get time utilities
-    pub fn get_time_utilities(env: Env) -> String {
+    /// Get time utilities information
+    pub fn get_time_utilities() -> String {
+        let env = Env::default();
         let current_time = env.ledger().timestamp();
         let mut s = alloc::string::String::new();
         s.push_str("Current time: ");
