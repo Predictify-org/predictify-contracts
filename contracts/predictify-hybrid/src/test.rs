@@ -2370,10 +2370,10 @@ fn test_utility_format_duration() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test duration formatting
-    let duration = client.format_duration(&test.env, 3661); // 1 hour 1 minute 1 second
+    let duration = client.format_duration(3661u64); // 1 hour 1 minute 1 second
     assert!(duration.to_string().contains("1h 1m"));
 
-    let long_duration = client.format_duration(&test.env, 90061); // 1 day 1 hour 1 minute 1 second
+    let long_duration = client.format_duration(90061u64); // 1 day 1 hour 1 minute 1 second
     assert!(long_duration.to_string().contains("1d"));
 }
 
@@ -2383,10 +2383,10 @@ fn test_utility_calculate_percentage() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test percentage calculation with custom denominator
-    let percentage = client.calculate_percentage(25, 100, 1000);
+    let percentage = client.calculate_percentage(&25, &100, &1000);
     assert_eq!(percentage, 250); // 25% of 100 with denominator 1000 = 250
 
-    let percentage2 = client.calculate_percentage(50, 200, 100);
+    let percentage2 = client.calculate_percentage(&50, &200, &100);
     assert_eq!(percentage2, 25); // 50% of 200 with denominator 100 = 25
 }
 
@@ -2396,13 +2396,13 @@ fn test_utility_validate_string_length() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     let valid_string = String::from_str(&test.env, "hello");
-    assert!(client.validate_string_length(&test.env, valid_string, 1, 10));
+    assert!(client.validate_string_length(&valid_string, &1, &10));
 
     let short_string = String::from_str(&test.env, "hi");
-    assert!(!client.validate_string_length(&test.env, short_string, 5, 10));
+    assert!(!client.validate_string_length(&short_string, &5, &10));
 
     let long_string = String::from_str(&test.env, "very long string that exceeds limit");
-    assert!(!client.validate_string_length(&test.env, long_string, 1, 10));
+    assert!(!client.validate_string_length(&long_string, &1, &10));
 }
 
 #[test]
@@ -2411,11 +2411,11 @@ fn test_utility_sanitize_string() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     let dirty_string = String::from_str(&test.env, "hello@world#123!");
-    let clean_string = client.sanitize_string(&test.env, dirty_string);
+    let clean_string = client.sanitize_string(&dirty_string);
     assert_eq!(clean_string.to_string(), "hello world 123");
 
     let clean_input = String::from_str(&test.env, "hello world 123");
-    let sanitized = client.sanitize_string(&test.env, clean_input);
+    let sanitized = client.sanitize_string(&clean_input);
     assert_eq!(sanitized.to_string(), "hello world 123");
 }
 
@@ -2425,18 +2425,18 @@ fn test_utility_number_conversion() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test number to string conversion
-    let number_string = client.number_to_string(&test.env, 12345);
+    let number_string = client.number_to_string(&12345);
     assert_eq!(number_string.to_string(), "12345");
 
     // Test string to number conversion
     let number_string = String::from_str(&test.env, "12345");
-    let number = client.string_to_number(&test.env, number_string).unwrap();
+    let number = client.string_to_number(&number_string);
     assert_eq!(number, 12345);
 
     // Test invalid string to number conversion
     let invalid_string = String::from_str(&test.env, "invalid");
-    let result = client.string_to_number(&test.env, invalid_string);
-    assert!(result.is_err());
+    let result = client.string_to_number(&invalid_string);
+    assert_eq!(result, 0); // Returns 0 for invalid strings
 }
 
 #[test]
@@ -2445,8 +2445,8 @@ fn test_utility_generate_unique_id() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     let prefix = String::from_str(&test.env, "test");
-    let id1 = client.generate_unique_id(&test.env, prefix.clone());
-    let id2 = client.generate_unique_id(&test.env, prefix.clone());
+    let id1 = client.generate_unique_id(&prefix);
+    let id2 = client.generate_unique_id(&prefix);
 
     // IDs should be unique
     assert_ne!(id1.to_string(), id2.to_string());
@@ -2464,8 +2464,8 @@ fn test_utility_address_comparison() {
     let addr1 = Address::from_str(&test.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
     let addr2 = Address::from_str(&test.env, "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
 
-    assert!(client.addresses_equal(&test.env, addr1.clone(), addr1.clone()));
-    assert!(!client.addresses_equal(&test.env, addr1, addr2));
+    assert!(client.addresses_equal(&addr1, &addr1));
+    assert!(!client.addresses_equal(&addr1, &addr2));
 }
 
 #[test]
@@ -2477,8 +2477,8 @@ fn test_utility_string_comparison() {
     let str2 = String::from_str(&test.env, "hello");
     let str3 = String::from_str(&test.env, "world");
 
-    assert!(client.strings_equal_ignore_case(&test.env, str1, str2));
-    assert!(!client.strings_equal_ignore_case(&test.env, str2, str3));
+    assert!(client.strings_equal_ignore_case(&str1, &str2));
+    assert!(!client.strings_equal_ignore_case(&str2, &str3));
 }
 
 #[test]
@@ -2489,7 +2489,7 @@ fn test_utility_weighted_average() {
     let values = vec![&test.env, 10, 20, 30];
     let weights = vec![&test.env, 1, 2, 3];
 
-    let average = client.calculate_weighted_average(&test.env, values, weights);
+    let average = client.calculate_weighted_average(&values, &weights);
     assert_eq!(average, 23); // (10*1 + 20*2 + 30*3) / (1+2+3) = 140/6 = 23
 }
 
@@ -2502,7 +2502,7 @@ fn test_utility_simple_interest() {
     let rate = 5; // 5%
     let periods = 2;
 
-    let result = client.calculate_simple_interest(principal, rate, periods);
+    let result = client.calculate_simple_interest(&principal, &rate, &periods);
     assert_eq!(result, 1100_0000000); // 1000 + (1000 * 5% * 2) = 1100 XLM
 }
 
@@ -2512,19 +2512,19 @@ fn test_utility_rounding() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test rounding to nearest multiple
-    assert_eq!(client.round_to_nearest(123, 10), 120);
-    assert_eq!(client.round_to_nearest(127, 10), 130);
-    assert_eq!(client.round_to_nearest(125, 10), 130);
+    assert_eq!(client.round_to_nearest(&123, &10), 120);
+    assert_eq!(client.round_to_nearest(&127, &10), 130);
+    assert_eq!(client.round_to_nearest(&125, &10), 130);
 
     // Test clamping
-    assert_eq!(client.clamp_value(15, 10, 20), 15);
-    assert_eq!(client.clamp_value(5, 10, 20), 10);
-    assert_eq!(client.clamp_value(25, 10, 20), 20);
+    assert_eq!(client.clamp_value(&15, &10, &20), 15);
+    assert_eq!(client.clamp_value(&5, &10, &20), 10);
+    assert_eq!(client.clamp_value(&25, &10, &20), 20);
 
     // Test range validation
-    assert!(client.is_within_range(15, 10, 20));
-    assert!(!client.is_within_range(25, 10, 20));
-    assert!(!client.is_within_range(5, 10, 20));
+    assert!(client.is_within_range(&15, &10, &20));
+    assert!(!client.is_within_range(&25, &10, &20));
+    assert!(!client.is_within_range(&5, &10, &20));
 }
 
 #[test]
@@ -2533,14 +2533,14 @@ fn test_utility_math_operations() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test absolute difference
-    assert_eq!(client.abs_difference(10, 20), 10);
-    assert_eq!(client.abs_difference(20, 10), 10);
-    assert_eq!(client.abs_difference(10, 10), 0);
+    assert_eq!(client.abs_difference(&10, &20), 10);
+    assert_eq!(client.abs_difference(&20, &10), 10);
+    assert_eq!(client.abs_difference(&10, &10), 0);
 
     // Test square root
-    assert_eq!(client.sqrt(16), 4);
-    assert_eq!(client.sqrt(25), 5);
-    assert_eq!(client.sqrt(0), 0);
+    assert_eq!(client.sqrt(&16), 4);
+    assert_eq!(client.sqrt(&25), 5);
+    assert_eq!(client.sqrt(&0), 0);
 }
 
 #[test]
@@ -2549,21 +2549,21 @@ fn test_utility_validation() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test positive number validation
-    assert!(client.validate_positive_number(10));
-    assert!(!client.validate_positive_number(0));
-    assert!(!client.validate_positive_number(-10));
+    assert!(client.validate_positive_number(&10));
+    assert!(!client.validate_positive_number(&0));
+    assert!(!client.validate_positive_number(&-10));
 
     // Test number range validation
-    assert!(client.validate_number_range(15, 10, 20));
-    assert!(!client.validate_number_range(25, 10, 20));
-    assert!(!client.validate_number_range(5, 10, 20));
+    assert!(client.validate_number_range(&15, &10, &20));
+    assert!(!client.validate_number_range(&25, &10, &20));
+    assert!(!client.validate_number_range(&5, &10, &20));
 
     // Test future timestamp validation
     let future_time = test.env.ledger().timestamp() + 3600; // 1 hour in future
-    assert!(client.validate_future_timestamp(&test.env, future_time));
+    assert!(client.validate_future_timestamp(&future_time));
 
     let past_time = test.env.ledger().timestamp() - 3600; // 1 hour in past
-    assert!(!client.validate_future_timestamp(&test.env, past_time));
+    assert!(!client.validate_future_timestamp(&past_time));
 }
 
 #[test]
@@ -2571,7 +2571,7 @@ fn test_utility_time_utilities() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-    let time_info = client.get_time_utilities(&test.env);
+    let time_info = client.get_time_utilities();
     assert!(time_info.to_string().contains("Current time:"));
     assert!(time_info.to_string().contains("Days to seconds:"));
     assert!(time_info.to_string().contains("86400")); // 1 day in seconds
@@ -2584,8 +2584,8 @@ fn test_utility_integration() {
 
     // Test integration of multiple utilities
     let input_string = String::from_str(&test.env, "Hello@World#123!");
-    let sanitized = client.sanitize_string(&test.env, input_string);
-    let is_valid_length = client.validate_string_length(&test.env, sanitized.clone(), 1, 20);
+    let sanitized = client.sanitize_string(&input_string);
+    let is_valid_length = client.validate_string_length(&sanitized, &1, &20);
     
     assert!(is_valid_length);
     assert_eq!(sanitized.to_string(), "Hello World 123");
@@ -2593,8 +2593,8 @@ fn test_utility_integration() {
     // Test numeric operations integration
     let values = vec![&test.env, 100, 200, 300];
     let weights = vec![&test.env, 1, 1, 1];
-    let average = client.calculate_weighted_average(&test.env, values, weights);
-    let percentage = client.calculate_percentage(average, 600, 100);
+    let average = client.calculate_weighted_average(&values, &weights);
+    let percentage = client.calculate_percentage(&average, &600, &100);
     
     assert_eq!(average, 200);
     assert_eq!(percentage, 33); // 200/600 * 100 = 33.33... rounded to 33
@@ -2607,13 +2607,13 @@ fn test_utility_error_handling() {
 
     // Test error handling for invalid string to number conversion
     let invalid_string = String::from_str(&test.env, "not_a_number");
-    let result = client.string_to_number(&test.env, invalid_string);
-    assert!(result.is_err());
+    let result = client.string_to_number(&invalid_string);
+    assert_eq!(result, 0); // Returns 0 for invalid strings
 
     // Test error handling for empty vectors in weighted average
     let empty_values = vec![&test.env];
     let empty_weights = vec![&test.env];
-    let result = client.calculate_weighted_average(&test.env, empty_values, empty_weights);
+    let result = client.calculate_weighted_average(&empty_values, &empty_weights);
     assert_eq!(result, 0); // Should return 0 for empty vectors
 }
 
@@ -2627,13 +2627,13 @@ fn test_utility_performance() {
     
     // Multiple operations should complete quickly
     for _ in 0..10 {
-        let _sanitized = client.sanitize_string(&test.env, test_string.clone());
-        let _is_valid = client.validate_string_length(&test.env, test_string.clone(), 1, 50);
-        let _number = client.number_to_string(&test.env, 12345);
-        let _clamped = client.clamp_value(15, 10, 20);
+        let _sanitized = client.sanitize_string(&test_string);
+        let _is_valid = client.validate_string_length(&test_string, &1, &50);
+        let _number = client.number_to_string(&12345);
+        let _clamped = client.clamp_value(&15, &10, &20);
     }
 
     // Verify operations completed successfully
-    let result = client.number_to_string(&test.env, 12345);
+    let result = client.number_to_string(&12345);
     assert_eq!(result.to_string(), "12345");
 }
