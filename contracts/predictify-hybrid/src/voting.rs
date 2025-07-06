@@ -6,30 +6,32 @@ use crate::{
 use soroban_sdk::{contracttype, panic_with_error, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== CONSTANTS =====
+// Note: These constants are now managed by the config module
+// Use ConfigManager::get_voting_config() to get current values
 
 /// Minimum stake amount for voting (0.1 XLM)
-pub const MIN_VOTE_STAKE: i128 = 1_000_000;
+pub const MIN_VOTE_STAKE: i128 = crate::config::MIN_VOTE_STAKE;
 
 /// Minimum stake amount for disputes (10 XLM)
-pub const MIN_DISPUTE_STAKE: i128 = 10_000_000;
+pub const MIN_DISPUTE_STAKE: i128 = crate::config::MIN_DISPUTE_STAKE;
 
 /// Maximum dispute threshold (100 XLM)
-pub const MAX_DISPUTE_THRESHOLD: i128 = 100_000_000;
+pub const MAX_DISPUTE_THRESHOLD: i128 = crate::config::MAX_DISPUTE_THRESHOLD;
 
 /// Base dispute threshold (10 XLM)
-pub const BASE_DISPUTE_THRESHOLD: i128 = 10_000_000;
+pub const BASE_DISPUTE_THRESHOLD: i128 = crate::config::BASE_DISPUTE_THRESHOLD;
 
 /// Market size threshold for large markets (1000 XLM)
-pub const LARGE_MARKET_THRESHOLD: i128 = 1_000_000_000;
+pub const LARGE_MARKET_THRESHOLD: i128 = crate::config::LARGE_MARKET_THRESHOLD;
 
 /// Activity level threshold for high activity (100 votes)
-pub const HIGH_ACTIVITY_THRESHOLD: u32 = 100;
+pub const HIGH_ACTIVITY_THRESHOLD: u32 = crate::config::HIGH_ACTIVITY_THRESHOLD;
 
 /// Platform fee percentage (2%)
-pub const FEE_PERCENTAGE: i128 = 2;
+pub const FEE_PERCENTAGE: i128 = crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE;
 
 /// Dispute extension period in hours
-pub const DISPUTE_EXTENSION_HOURS: u32 = 24;
+pub const DISPUTE_EXTENSION_HOURS: u32 = crate::config::DISPUTE_EXTENSION_HOURS;
 
 // ===== VOTING STRUCTURES =====
 
