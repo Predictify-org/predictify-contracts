@@ -168,65 +168,9 @@ pub struct Market {
     pub winning_outcome: Option<String>,
     /// Whether fees have been collected
     pub fee_collected: bool,
-    /// Market extension history
-    pub extension_history: Vec<MarketExtension>,
-    /// Total extension days applied
-    pub total_extension_days: u32,
-    /// Maximum allowed extension days
-    pub max_extension_days: u32,
 }
 
-/// Market extension record
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MarketExtension {
-    /// Extension timestamp
-    pub timestamp: u64,
-    /// Additional days requested
-    pub additional_days: u32,
-    /// Admin who requested the extension
-    pub admin: Address,
-    /// Extension reason/justification
-    pub reason: String,
-    /// Extension fee paid
-    pub fee_paid: i128,
-}
-
-impl MarketExtension {
-    /// Create a new market extension record
-    pub fn new(
-        env: &Env,
-        additional_days: u32,
-        admin: Address,
-        reason: String,
-        fee_paid: i128,
-    ) -> Self {
-        Self {
-            timestamp: env.ledger().timestamp(),
-            additional_days,
-            admin,
-            reason,
-            fee_paid,
-        }
-    }
-
-    /// Validate extension parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
-        if self.additional_days == 0 {
-            return Err(crate::errors::Error::InvalidExtensionDays);
-        }
-
-        if self.additional_days > 30 {
-            return Err(crate::errors::Error::ExtensionDaysExceeded);
-        }
-
-        if self.reason.is_empty() {
-            return Err(crate::errors::Error::InvalidExtensionReason);
-        }
-
-        Ok(())
-    }
-}
+// Market extension functionality temporarily disabled
 
 impl Market {
     /// Create a new market
@@ -252,9 +196,6 @@ impl Market {
             dispute_stakes: Map::new(env),
             winning_outcome: None,
             fee_collected: false,
-            extension_history: vec![env],
-            total_extension_days: 0,
-            max_extension_days: 30, // Default maximum extension days
         }
     }
 
@@ -379,21 +320,7 @@ impl Market {
     }
 }
 
-/// Extension statistics
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExtensionStats {
-    /// Total number of extensions made
-    pub total_extensions: u32,
-    /// Total extension days applied
-    pub total_extension_days: u32,
-    /// Maximum allowed extension days
-    pub max_extension_days: u32,
-    /// Whether market can still be extended
-    pub can_extend: bool,
-    /// Extension fee per day
-    pub extension_fee_per_day: i128,
-}
+// Extension statistics functionality temporarily disabled
 
 // ===== PRICE TYPES =====
 
@@ -511,9 +438,9 @@ impl ReflectorPriceData {
     }
 
     /// Validate the price data
-    pub fn validate(&self) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self) -> Result<(), crate::Error> {
         if self.price <= 0 {
-            return Err(crate::errors::Error::OraclePriceOutOfRange);
+            return Err(crate::Error::OraclePriceOutOfRange);
         }
 
         Ok(())
@@ -794,17 +721,17 @@ pub mod validation {
     }
 
     /// Validate stake amount
-    pub fn validate_stake(stake: i128, min_stake: i128) -> Result<(), crate::errors::Error> {
+    pub fn validate_stake(stake: i128, min_stake: i128) -> Result<(), crate::Error> {
         if stake < min_stake {
-            return Err(crate::errors::Error::InsufficientStake);
+            return Err(crate::Error::InsufficientStake);
         }
         Ok(())
     }
 
     /// Validate market duration
-    pub fn validate_duration(duration_days: u32) -> Result<(), crate::errors::Error> {
+    pub fn validate_duration(duration_days: u32) -> Result<(), crate::Error> {
         if duration_days == 0 || duration_days > 365 {
-            return Err(crate::errors::Error::InvalidDuration);
+            return Err(crate::Error::InvalidDuration);
         }
         Ok(())
     }
@@ -831,12 +758,12 @@ pub mod conversion {
     }
 
     /// Convert comparison string to validation
-    pub fn validate_comparison(comparison: &String, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate_comparison(comparison: &String, env: &Env) -> Result<(), crate::Error> {
         if comparison != &String::from_str(env, "gt")
             && comparison != &String::from_str(env, "lt")
             && comparison != &String::from_str(env, "eq")
         {
-            return Err(crate::errors::Error::InvalidComparison);
+            return Err(crate::Error::InvalidComparison);
         }
         Ok(())
     }
