@@ -4,7 +4,7 @@ use crate::{
     types::Market,
     voting::{VotingUtils, DISPUTE_EXTENSION_HOURS, MIN_DISPUTE_STAKE},
 };
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
 // ===== DISPUTE STRUCTURES =====
 
@@ -685,7 +685,7 @@ impl DisputeUtils {
 
     /// Get dispute voting data
     pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
-        let key = Symbol::new(env, &format!("dispute_voting_{}", dispute_id));
+        let key = symbol_short!("dispute_voting");
         env.storage()
             .persistent()
             .get(&key)
