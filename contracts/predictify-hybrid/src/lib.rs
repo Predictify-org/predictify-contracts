@@ -533,13 +533,19 @@ impl PredictifyHybrid {
 
         match DisputeManager::escalate_dispute(&env, user, dispute_id, reason) {
             Ok(escalation) => escalation,
-            Err(_) => disputes::DisputeEscalation {
-                dispute_id: symbol_short!("error"),
-                escalated_by: Address::from_contract_id(&env.current_contract_id()),
-                escalation_reason: String::from_str(&env, "Error"),
-                escalation_timestamp: 0,
-                escalation_level: 0,
-                requires_admin_review: false,
+            Err(_) => {
+                let default_address = env.storage()
+                    .persistent()
+                    .get(&Symbol::new(&env, "Admin"))
+                    .unwrap_or_else(|| panic!("Admin not set"));
+                disputes::DisputeEscalation {
+                    dispute_id: symbol_short!("error"),
+                    escalated_by: default_address,
+                    escalation_reason: String::from_str(&env, "Error"),
+                    escalation_timestamp: 0,
+                    escalation_level: 0,
+                    requires_admin_review: false,
+                }
             },
         }
     }
