@@ -893,12 +893,12 @@ mod tests {
                 String::from_str(&env, "no"),
             ],
             env.ledger().timestamp() + 86400,
-            OracleConfig::new(
-                OracleProvider::Pyth,
-                String::from_str(&env, "BTC/USD"),
-                2500000,
-                String::from_str(&env, "gt"),
-            ),
+            OracleConfig {
+                provider: OracleProvider::Pyth,
+                feed_id: String::from_str(&env, "BTC/USD"),
+                threshold: 2500000,
+                comparison: String::from_str(&env, "gt"),
+            },
         );
         market.total_staked = 10000;
 
@@ -919,12 +919,12 @@ mod tests {
                 String::from_str(&env, "no"),
             ],
             env.ledger().timestamp() + 86400,
-            OracleConfig::new(
-                OracleProvider::Pyth,
-                String::from_str(&env, "BTC/USD"),
-                2500000,
-                String::from_str(&env, "gt"),
-            ),
+            OracleConfig {
+                provider: OracleProvider::Pyth,
+                feed_id: String::from_str(&env, "BTC/USD"),
+                threshold: 2500000,
+                comparison: String::from_str(&env, "gt"),
+            },
         );
 
         // Add some test votes
@@ -951,12 +951,12 @@ mod tests {
                 String::from_str(&env, "no"),
             ],
             env.ledger().timestamp() + 86400,
-            OracleConfig::new(
-                OracleProvider::Pyth,
-                String::from_str(&env, "BTC/USD"),
-                2500000,
-                String::from_str(&env, "gt"),
-            ),
+            OracleConfig {
+                provider: OracleProvider::Pyth,
+                feed_id: String::from_str(&env, "BTC/USD"),
+                threshold: 2500000,
+                comparison: String::from_str(&env, "gt"),
+            },
         );
 
         let user = Address::generate(&env);
