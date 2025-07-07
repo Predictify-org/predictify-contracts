@@ -374,7 +374,7 @@ impl ThresholdUtils {
     /// Store dispute threshold
     pub fn store_dispute_threshold(
         env: &Env,
-        market_id: &Symbol,
+        _market_id: &Symbol,
         threshold: &DisputeThreshold,
     ) -> Result<(), Error> {
         let key = symbol_short!("dispute_t");
@@ -656,7 +656,7 @@ impl VotingUtils {
 
     /// Calculate user's payout
     pub fn calculate_user_payout(
-        env: &Env,
+        _env: &Env,
         market: &Market,
         user: &Address,
     ) -> Result<i128, Error> {
