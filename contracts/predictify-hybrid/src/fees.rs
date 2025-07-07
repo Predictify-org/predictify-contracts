@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, symbol_short, token, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::markets::{MarketStateManager, MarketUtils};
