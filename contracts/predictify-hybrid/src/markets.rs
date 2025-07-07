@@ -1,10 +1,7 @@
-#![allow(dead_code)]
-
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::types::*;
-// Oracle imports removed - not currently used
 
 /// Market management system for Predictify Hybrid contract
 ///
@@ -22,29 +19,22 @@ pub struct MarketCreator;
 
 impl MarketCreator {
     /// Create a new market with full configuration
-    pub fn create_market(
-        env: &Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        oracle_config: OracleConfig,
-    ) -> Result<Symbol, Error> {
+    pub fn create_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, oracle_config: OracleConfig) -> Result<Symbol, Error> {
         // Validate market parameters
-        MarketValidator::validate_market_params(env, &question, &outcomes, duration_days)?;
+        MarketValidator::validate_market_params(_env, &question, &outcomes, duration_days)?;
 
         // Validate oracle configuration
-        MarketValidator::validate_oracle_config(env, &oracle_config)?;
+        MarketValidator::validate_oracle_config(_env, &oracle_config)?;
 
         // Generate unique market ID
-        let market_id = MarketUtils::generate_market_id(env);
+        let market_id = MarketUtils::generate_market_id(_env);
 
         // Calculate end time
-        let end_time = MarketUtils::calculate_end_time(env, duration_days);
+        let end_time = MarketUtils::calculate_end_time(_env, duration_days);
 
         // Create market instance
         let market = Market::new(
-            env,
+            _env,
             admin.clone(),
             question,
             outcomes,
@@ -53,25 +43,16 @@ impl MarketCreator {
         );
 
         // Market creation fee is now handled by the fees module
-        // FeeManager::process_creation_fee(env, &admin)?;
+        // FeeManager::process_creation_fee(_env, &admin)?;
 
         // Store market
-        env.storage().persistent().set(&market_id, &market);
+        _env.storage().persistent().set(&market_id, &market);
 
         Ok(market_id)
     }
 
     /// Create a market with Reflector oracle
-    pub fn create_reflector_market(
-        env: &Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        asset_symbol: String,
-        threshold: i128,
-        comparison: String,
-    ) -> Result<Symbol, Error> {
+    pub fn create_reflector_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, asset_symbol: String, threshold: i128, comparison: String) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Reflector,
             feed_id: asset_symbol,
@@ -79,20 +60,11 @@ impl MarketCreator {
             comparison,
         };
 
-        Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+        Self::create_market(_env, admin, question, outcomes, duration_days, oracle_config)
     }
 
     /// Create a market with Pyth oracle
-    pub fn create_pyth_market(
-        env: &Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        feed_id: String,
-        threshold: i128,
-        comparison: String,
-    ) -> Result<Symbol, Error> {
+    pub fn create_pyth_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, feed_id: String, threshold: i128, comparison: String) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Pyth,
             feed_id,
@@ -100,30 +72,12 @@ impl MarketCreator {
             comparison,
         };
 
-        Self::create_market(env, admin, question, outcomes, duration_days, oracle_config)
+        Self::create_market(_env, admin, question, outcomes, duration_days, oracle_config)
     }
 
     /// Create a market with Reflector oracle for specific assets
-    pub fn create_reflector_asset_market(
-        env: &Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        asset_symbol: String,
-        threshold: i128,
-        comparison: String,
-    ) -> Result<Symbol, Error> {
-        Self::create_reflector_market(
-            env,
-            admin,
-            question,
-            outcomes,
-            duration_days,
-            asset_symbol,
-            threshold,
-            comparison,
-        )
+    pub fn create_reflector_asset_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, asset_symbol: String, threshold: i128, comparison: String) -> Result<Symbol, Error> {
+        Self::create_reflector_market(_env, admin, question, outcomes, duration_days, asset_symbol, threshold, comparison)
     }
 }
 
@@ -134,12 +88,7 @@ pub struct MarketValidator;
 
 impl MarketValidator {
     /// Validate market creation parameters
-    pub fn validate_market_params(
-        _env: &Env,
-        question: &String,
-        outcomes: &Vec<String>,
-        duration_days: u32,
-    ) -> Result<(), Error> {
+    pub fn validate_market_params(_env: &Env, question: &String, outcomes: &Vec<String>, duration_days: u32) -> Result<(), Error> {
         // Validate question is not empty
         if question.is_empty() {
             return Err(Error::InvalidQuestion);
@@ -165,13 +114,13 @@ impl MarketValidator {
     }
 
     /// Validate oracle configuration
-    pub fn validate_oracle_config(env: &Env, oracle_config: &OracleConfig) -> Result<(), Error> {
-        oracle_config.validate(env)
+    pub fn validate_oracle_config(_env: &Env, oracle_config: &OracleConfig) -> Result<(), Error> {
+        oracle_config.validate(_env)
     }
 
     /// Validate market state for voting
-    pub fn validate_market_for_voting(env: &Env, market: &Market) -> Result<(), Error> {
-        let current_time = env.ledger().timestamp();
+    pub fn validate_market_for_voting(_env: &Env, market: &Market) -> Result<(), Error> {
+        let current_time = _env.ledger().timestamp();
 
         if current_time >= market.end_time {
             return Err(Error::MarketClosed);
@@ -185,8 +134,8 @@ impl MarketValidator {
     }
 
     /// Validate market state for resolution
-    pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
-        let current_time = env.ledger().timestamp();
+    pub fn validate_market_for_resolution(_env: &Env, market: &Market) -> Result<(), Error> {
+        let current_time = _env.ledger().timestamp();
 
         if current_time < market.end_time {
             return Err(Error::MarketClosed);
@@ -200,12 +149,7 @@ impl MarketValidator {
     }
 
     /// Validate outcome for a market
-
-    pub fn validate_outcome(
-        _env: &Env,
-        outcome: &String,
-        market_outcomes: &Vec<String>,
-    ) -> Result<(), Error> {
+    pub fn validate_outcome(_env: &Env, outcome: &String, market_outcomes: &Vec<String>) -> Result<(), Error> {
         for valid_outcome in market_outcomes.iter() {
             if *outcome == valid_outcome {
                 return Ok(());
@@ -236,21 +180,21 @@ pub struct MarketStateManager;
 
 impl MarketStateManager {
     /// Get market from storage
-    pub fn get_market(env: &Env, market_id: &Symbol) -> Result<Market, Error> {
-        env.storage()
+    pub fn get_market(_env: &Env, market_id: &Symbol) -> Result<Market, Error> {
+        _env.storage()
             .persistent()
             .get(market_id)
             .ok_or(Error::MarketNotFound)
     }
 
     /// Update market in storage
-    pub fn update_market(env: &Env, market_id: &Symbol, market: &Market) {
-        env.storage().persistent().set(market_id, market);
+    pub fn update_market(_env: &Env, market_id: &Symbol, market: &Market) {
+        _env.storage().persistent().set(market_id, market);
     }
 
     /// Remove market from storage
-    pub fn remove_market(env: &Env, market_id: &Symbol) {
-        env.storage().persistent().remove(market_id);
+    pub fn remove_market(_env: &Env, market_id: &Symbol) {
+        _env.storage().persistent().remove(market_id);
     }
 
     /// Add vote to market
@@ -287,8 +231,8 @@ impl MarketStateManager {
     }
 
     /// Extend market end time for disputes
-    pub fn extend_for_dispute(market: &mut Market, env: &Env, extension_hours: u64) {
-        let current_time = env.ledger().timestamp();
+    pub fn extend_for_dispute(market: &mut Market, _env: &Env, extension_hours: u64) {
+        let current_time = _env.ledger().timestamp();
         let extension_seconds = extension_hours * 60 * 60;
 
         if market.end_time < current_time + extension_seconds {
@@ -395,13 +339,6 @@ impl MarketAnalytics {
             percentage: consensus_percentage,
         }
     }
-    
-    /// Calculate basic analytics for a market
-    pub fn calculate_basic_analytics(market: &Market) -> MarketAnalytics {
-        // This is a placeholder implementation
-        // In a real implementation, you would calculate comprehensive analytics
-        MarketAnalytics
-    }
 }
 
 // ===== MARKET UTILITIES =====
@@ -411,38 +348,38 @@ pub struct MarketUtils;
 
 impl MarketUtils {
     /// Generate unique market ID
-    pub fn generate_market_id(env: &Env) -> Symbol {
-        let counter_key = Symbol::new(env, "MarketCounter");
-        let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+    pub fn generate_market_id(_env: &Env) -> Symbol {
+        let counter_key = Symbol::new(_env, "MarketCounter");
+        let counter: u32 = _env.storage().persistent().get(&counter_key).unwrap_or(0);
         let new_counter = counter + 1;
-        env.storage().persistent().set(&counter_key, &new_counter);
+        _env.storage().persistent().set(&counter_key, &new_counter);
 
-        Symbol::new(env, "market")
+        Symbol::new(_env, "market")
     }
 
     /// Calculate market end time
-    pub fn calculate_end_time(env: &Env, duration_days: u32) -> u64 {
+    pub fn calculate_end_time(_env: &Env, duration_days: u32) -> u64 {
         let seconds_per_day: u64 = 24 * 60 * 60;
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
-        env.ledger().timestamp() + duration_seconds
+        _env.ledger().timestamp() + duration_seconds
     }
 
     /// Process market creation fee (moved to fees module)
     /// This function is deprecated and should use FeeManager::process_creation_fee instead
-    pub fn process_creation_fee(env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn process_creation_fee(_env: &Env, admin: &Address) -> Result<(), Error> {
         // Delegate to the fees module
-        crate::fees::FeeManager::process_creation_fee(env, admin)
+        crate::fees::FeeManager::process_creation_fee(_env, admin)
     }
 
     /// Get token client for market operations
-    pub fn get_token_client(env: &Env) -> Result<token::Client, Error> {
-        let token_id: Address = env
+    pub fn get_token_client(_env: &Env) -> Result<token::Client, Error> {
+        let token_id: Address = _env
             .storage()
             .persistent()
-            .get(&Symbol::new(env, "TokenID"))
+            .get(&Symbol::new(_env, "TokenID"))
             .ok_or(Error::InvalidState)?;
 
-        Ok(token::Client::new(env, &token_id))
+        Ok(token::Client::new(_env, &token_id))
     }
 
     /// Calculate payout for winning user
@@ -464,7 +401,7 @@ impl MarketUtils {
 
     /// Determine final market result using hybrid algorithm
     pub fn determine_final_result(
-        env: &Env,
+        _env: &Env,
         oracle_result: &String,
         community_consensus: &CommunityConsensus,
     ) -> String {
@@ -475,8 +412,8 @@ impl MarketUtils {
             // If they disagree, check if community consensus is strong
             if community_consensus.percentage > 50 && community_consensus.total_votes >= 5 {
                 // Apply 70-30 weighting using pseudo-random selection
-                let timestamp = env.ledger().timestamp();
-                let sequence = env.ledger().sequence();
+                let timestamp = _env.ledger().timestamp();
+                let sequence = _env.ledger().sequence();
                 let combined = timestamp as u128 + sequence as u128;
                 let random_value = (combined % 100) as u32;
 
@@ -498,7 +435,6 @@ impl MarketUtils {
 // ===== MARKET STATISTICS TYPES =====
 
 /// Market statistics
-#[contracttype]
 #[derive(Clone, Debug)]
 pub struct MarketStats {
     pub total_votes: u32,
@@ -543,77 +479,69 @@ pub struct MarketTestHelpers;
 
 impl MarketTestHelpers {
     /// Create a test market configuration
-    pub fn create_test_market_config(env: &Env) -> MarketCreationParams {
+    pub fn create_test_market_config(_env: &Env) -> MarketCreationParams {
         MarketCreationParams::new(
             Address::from_str(
-                env,
+                _env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             ),
-            String::from_str(env, "Will BTC go above $25,000 by December 31?"),
+            String::from_str(_env, "Will BTC go above $25,000 by December 31?"),
             vec![
-                env,
-                String::from_str(env, "yes"),
-                String::from_str(env, "no"),
+                _env,
+                String::from_str(_env, "yes"),
+                String::from_str(_env, "no"),
             ],
             30,
             OracleConfig::new(
                 OracleProvider::Pyth,
-                String::from_str(env, "BTC/USD"),
+                String::from_str(_env, "BTC/USD"),
                 25_000_00,
-                String::from_str(env, "gt"),
+                String::from_str(_env, "gt"),
             ),
-            1_000_000, // Creation fee: 1 XLM
         )
     }
 
     /// Create a test market
-    pub fn create_test_market(env: &Env) -> Result<Symbol, Error> {
-        let config = Self::create_test_market_config(env);
+    pub fn create_test_market(_env: &Env) -> Result<Symbol, Error> {
+        let config = Self::create_test_market_config(_env);
 
-        MarketCreator::create_market(
-            env,
-            config.admin,
-            config.question,
-            config.outcomes,
-            config.duration_days,
-            config.oracle_config,
-        )
+        MarketCreator::create_market(_env, config.admin, config.question, config.outcomes, config.duration_days, config.oracle_config)
     }
 
     /// Add test vote to market
     pub fn add_test_vote(
-        env: &Env,
+        _env: &Env,
         market_id: &Symbol,
         user: Address,
         outcome: String,
         stake: i128,
     ) -> Result<(), Error> {
-        let mut market = MarketStateManager::get_market(env, market_id)?;
+        let mut market = MarketStateManager::get_market(_env, market_id)?;
 
-        MarketValidator::validate_market_for_voting(env, &market)?;
-        MarketValidator::validate_outcome(env, &outcome, &market.outcomes)?;
+        MarketValidator::validate_market_for_voting(_env, &market)?;
+        MarketValidator::validate_outcome(_env, &outcome, &market.outcomes)?;
         MarketValidator::validate_stake(stake, 1_000_000)?; // 0.1 XLM minimum
 
         // Transfer stake
-        let token_client = MarketUtils::get_token_client(env)?;
-        token_client.transfer(&user, &env.current_contract_address(), &stake);
+        let token_client = MarketUtils::get_token_client(_env)?;
+        token_client.transfer(&user, &_env.current_contract_address(), &stake);
 
         // Add vote
         MarketStateManager::add_vote(&mut market, user, outcome, stake);
-        MarketStateManager::update_market(env, market_id, &market);
+        MarketStateManager::update_market(_env, market_id, &market);
 
         Ok(())
     }
 
     /// Simulate market resolution
     pub fn simulate_market_resolution(
-        env: &Env,
+        _env: &Env,
         market_id: &Symbol,
         oracle_result: String,
     ) -> Result<String, Error> {
-        let mut market = MarketStateManager::get_market(env, market_id)?;
+        let mut market = MarketStateManager::get_market(_env, market_id)?;
 
-        MarketValidator::validate_market_for_resolution(env, &market)?;
+        MarketValidator::validate_market_for_resolution(_env, &market)?;
 
         // Set oracle result
         MarketStateManager::set_oracle_result(&mut market, oracle_result.clone());
@@ -623,11 +551,11 @@ impl MarketTestHelpers {
 
         // Determine final result
         let final_result =
-            MarketUtils::determine_final_result(env, &oracle_result, &community_consensus);
+            MarketUtils::determine_final_result(_env, &oracle_result, &community_consensus);
 
         // Set winning outcome
         MarketStateManager::set_winning_outcome(&mut market, final_result.clone());
-        MarketStateManager::update_market(env, market_id, &market);
+        MarketStateManager::update_market(_env, market_id, &market);
 
         Ok(final_result)
     }
