@@ -152,9 +152,7 @@ impl OracleResolutionManager {
     }
 
     /// Get oracle resolution for a market
-    pub fn get_oracle_resolution(env: &Env, market_id: &Symbol) -> Result<Option<OracleResolution>, Error> {
-        // For now, return None since we don't store complex types in storage
-        // In a real implementation, you would store this in a more sophisticated way
+    pub fn get_oracle_resolution(_env: &Env, _market_id: &Symbol) -> Result<Option<OracleResolution>, Error> {
         Ok(None)
     }
 
@@ -275,9 +273,7 @@ impl MarketResolutionManager {
     }
 
     /// Get market resolution
-    pub fn get_market_resolution(env: &Env, market_id: &Symbol) -> Result<Option<MarketResolution>, Error> {
-        // For now, return None since we don't store complex types in storage
-        // In a real implementation, you would store this in a more sophisticated way
+    pub fn get_market_resolution(_env: &Env, _market_id: &Symbol) -> Result<Option<MarketResolution>, Error> {
         Ok(None)
     }
 
@@ -427,8 +423,7 @@ impl OracleResolutionAnalytics {
     }
 
     /// Get oracle resolution statistics
-    pub fn get_oracle_stats(env: &Env) -> Result<OracleStats, Error> {
-        // For now, return default stats since we don't store complex types
+    pub fn get_oracle_stats(_env: &Env) -> Result<OracleStats, Error> {
         Ok(OracleStats::default())
     }
 }
@@ -480,8 +475,7 @@ impl MarketResolutionAnalytics {
     }
 
     /// Calculate resolution analytics
-    pub fn calculate_resolution_analytics(env: &Env) -> Result<ResolutionAnalytics, Error> {
-        // For now, return default analytics since we don't store complex types
+    pub fn calculate_resolution_analytics(_env: &Env) -> Result<ResolutionAnalytics, Error> {
         Ok(ResolutionAnalytics::default())
     }
 
