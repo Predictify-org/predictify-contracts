@@ -446,7 +446,7 @@ impl AdminFunctions {
         AdminAccessControl::validate_admin_for_action(env, admin, "finalize_market")?;
 
         // Finalize market using resolution manager
-        let resolution = MarketResolutionManager::finalize_market(env, admin, market_id, outcome)?;
+        let _resolution = MarketResolutionManager::finalize_market(env, admin, market_id, outcome)?;
 
         // Emit market finalized event
         EventEmitter::emit_market_finalized(env, market_id, admin, outcome);
@@ -549,7 +549,7 @@ pub struct AdminValidator;
 
 impl AdminValidator {
     /// Validate admin address
-    pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn validate_admin_address(_env: &Env, admin: &Address) -> Result<(), Error> {
         // Check if address is valid
         if admin.to_string().is_empty() {
             return Err(Error::InvalidInput);
@@ -648,7 +648,7 @@ impl AdminActionLogger {
     }
 
     /// Get admin actions
-    pub fn get_admin_actions(env: &Env, limit: u32) -> Result<Vec<AdminAction>, Error> {
+    pub fn get_admin_actions(env: &Env, _limit: u32) -> Result<Vec<AdminAction>, Error> {
         // For now, return empty vector since we don't have a way to iterate over storage
         // In a real implementation, you would store actions in a more sophisticated way
         Ok(Vec::new(env))
@@ -657,8 +657,8 @@ impl AdminActionLogger {
     /// Get admin actions for specific admin
     pub fn get_admin_actions_for_admin(
         env: &Env,
-        admin: &Address,
-        limit: u32,
+        _admin: &Address,
+        _limit: u32,
     ) -> Result<Vec<AdminAction>, Error> {
         // For now, return empty vector
         Ok(Vec::new(env))
@@ -670,7 +670,7 @@ impl AdminActionLogger {
 /// Admin analytics
 impl AdminAnalytics {
     /// Calculate admin analytics
-    pub fn calculate_admin_analytics(env: &Env) -> Result<AdminAnalytics, Error> {
+    pub fn calculate_admin_analytics(_env: &Env) -> Result<AdminAnalytics, Error> {
         // For now, return default analytics since we don't store complex types
         Ok(AdminAnalytics::default())
     }
