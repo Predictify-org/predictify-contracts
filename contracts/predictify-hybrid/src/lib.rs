@@ -45,11 +45,11 @@ use disputes::{DisputeManager};
 
 /// Market resolution and analytics module
 pub mod resolution;
-use resolution::{OracleResolutionManager, MarketResolutionManager, MarketResolutionAnalytics, OracleResolutionAnalytics, ResolutionUtils};
+use resolution::{OracleResolutionManager, MarketResolutionManager};
 
 /// Fee calculation and management module
 pub mod fees;
-use fees::{FeeManager, FeeCalculator, FeeValidator, FeeUtils, FeeTracker, FeeConfigManager};
+use fees::{FeeManager};
 
 /// Configuration management module
 pub mod config;
