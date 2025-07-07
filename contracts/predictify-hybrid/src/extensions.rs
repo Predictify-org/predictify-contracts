@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, symbol_short, token, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::types::*;
@@ -187,13 +187,13 @@ impl ExtensionUtils {
     /// Handle extension fees
     pub fn handle_extension_fees(
         env: &Env,
-        market_id: &Symbol,
+        _market_id: &Symbol,
         additional_days: u32,
     ) -> Result<i128, Error> {
         let fee_amount = ExtensionManager::calculate_extension_fee(additional_days);
 
         // Get token client for fee collection
-        let token_client = MarketUtils::get_token_client(env)?;
+        let _token_client = MarketUtils::get_token_client(env)?;
 
         // Transfer fees from admin to contract
         // Note: In a real implementation, you would need to handle the actual token transfer
