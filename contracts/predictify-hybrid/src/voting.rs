@@ -2,6 +2,7 @@ use crate::{
     errors::Error,
     markets::{MarketStateManager, MarketValidator, MarketUtils, MarketAnalytics},
     types::Market,
+    config::{OracleConfig, OracleProvider},
 };
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
