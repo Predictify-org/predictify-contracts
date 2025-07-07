@@ -83,16 +83,16 @@ impl OracleConfig {
     }
 
     /// Validate the oracle configuration
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, _env: &Env) -> Result<(), crate::errors::Error> {
         // Validate threshold
         if self.threshold <= 0 {
             return Err(crate::errors::Error::InvalidThreshold);
         }
 
         // Validate comparison operator
-        if self.comparison != String::from_str(env, "gt")
-            && self.comparison != String::from_str(env, "lt")
-            && self.comparison != String::from_str(env, "eq")
+        if self.comparison != String::from_str(_env, "gt")
+            && self.comparison != String::from_str(_env, "lt")
+            && self.comparison != String::from_str(_env, "eq")
         {
             return Err(crate::errors::Error::InvalidComparison);
         }
