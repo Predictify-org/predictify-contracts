@@ -29,7 +29,6 @@ use types::*;
 
 /// Oracle integration and management module
 pub mod oracles;
-use oracles::{OracleInterface};
 
 /// Market creation and state management module
 pub mod markets;
@@ -37,11 +36,11 @@ use markets::{MarketCreator, MarketStateManager};
 
 /// Voting system and consensus module
 pub mod voting;
-use voting::{VotingManager};
+use voting::VotingManager;
 
 /// Dispute resolution and escalation module
 pub mod disputes;
-use disputes::{DisputeManager};
+use disputes::DisputeManager;
 
 /// Market resolution and analytics module
 pub mod resolution;
@@ -49,11 +48,11 @@ use resolution::{OracleResolutionManager, MarketResolutionManager};
 
 /// Fee calculation and management module
 pub mod fees;
-use fees::{FeeManager};
+use fees::FeeManager;
 
 /// Configuration management module
 pub mod config;
-use config::{ConfigManager, ConfigValidator, ConfigUtils, ContractConfig, Environment};
+use config::{ConfigManager, ConfigUtils, ConfigValidator, ContractConfig, Environment};
 
 /// Utility functions and helpers module
 pub mod utils;
@@ -61,11 +60,11 @@ use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, CommonUtils};
 
 /// Event logging and monitoring module
 pub mod events;
-use events::{EventEmitter, EventLogger, EventHelpers, EventTestingUtils, EventDocumentation};
+use events::{EventLogger, EventHelpers, EventTestingUtils, EventDocumentation};
 
 /// Admin controls and functions module
 pub mod admin;
-use admin::{AdminInitializer, AdminFunctions, AdminAccessControl};
+use admin::{AdminInitializer, AdminFunctions};
 
 /// Market extensions and modifications module
 pub mod extensions;
@@ -74,13 +73,12 @@ use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
 /// Input validation and security module
 pub mod validation;
 use validation::{
-    ValidationError, ValidationResult, InputValidator, 
+    ValidationResult, InputValidator, 
     MarketValidator as ValidationMarketValidator, 
     OracleValidator as ValidationOracleValidator,
     FeeValidator as ValidationFeeValidator, 
     VoteValidator as ValidationVoteValidator, 
     DisputeValidator as ValidationDisputeValidator, 
-    ConfigValidator as ValidationConfigValidator, 
     ComprehensiveValidator, ValidationDocumentation,
 };
 
@@ -118,7 +116,7 @@ impl PredictifyHybrid {
             });
 
         // Use error helper for admin validation
-        errors::helpers::require_admin(&env, &admin, &stored_admin);
+        let _ = errors::helpers::require_admin(&env, &admin, &stored_admin);
 
         // Use the markets module to create the market
         match MarketCreator::create_market(
@@ -942,7 +940,7 @@ impl PredictifyHybrid {
     }
 
     /// Validate event structure
-    pub fn validate_event_structure(env: Env, event_type: String, event_data: String) -> bool {
+    pub fn validate_event_structure(_env: Env, event_type: String, _event_data: String) -> bool {
         match event_type.to_string().as_str() {
             "MarketCreated" => {
                 // In a real implementation, you would deserialize and validate
@@ -963,12 +961,12 @@ impl PredictifyHybrid {
     }
 
     /// Get event documentation
-    pub fn get_event_documentation(env: Env) -> Map<String, String> {
+    pub fn get_event_documentation(_env: Env) -> Map<String, String> {
         EventDocumentation::get_event_type_docs()
     }
 
     /// Get event usage examples
-    pub fn get_event_usage_examples(env: Env) -> Map<String, String> {
+    pub fn get_event_usage_examples(_env: Env) -> Map<String, String> {
         EventDocumentation::get_usage_examples()
     }
 
@@ -1141,7 +1139,7 @@ impl PredictifyHybrid {
     pub fn validate_oracle_config(env: Env, oracle_config: OracleConfig) -> ValidationResult {
         let mut result = ValidationResult::valid();
         
-        if let Err(error) = ValidationOracleValidator::validate_oracle_config(&env, &oracle_config) {
+        if let Err(_error) = ValidationOracleValidator::validate_oracle_config(&env, &oracle_config) {
             result.add_error();
         }
         
