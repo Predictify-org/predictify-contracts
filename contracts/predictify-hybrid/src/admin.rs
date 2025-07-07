@@ -274,12 +274,20 @@ impl AdminRoleManager {
         role: AdminRole,
         assigned_by: &Address,
     ) -> Result<(), Error> {
-        // Validate assigner permissions
-        AdminAccessControl::validate_permission(
-            env,
-            assigned_by,
-            &AdminPermission::EmergencyActions,
-        )?;
+        // Create admin-specific storage key using admin address as suffix
+        let key = Symbol::new(env, &admin.to_string());
+        
+        // Check if this is the first admin role assignment (bootstrapping)
+        if !env.storage().persistent().has(&key) {
+            // No admin role assigned yet, allow bootstrapping without permission check
+        } else {
+            // Validate assigner permissions for subsequent assignments
+            AdminAccessControl::validate_permission(
+                env,
+                assigned_by,
+                &AdminPermission::EmergencyActions,
+            )?;
+        }
 
         // Create role assignment
         let assignment = AdminRoleAssignment {
@@ -292,7 +300,6 @@ impl AdminRoleManager {
         };
 
         // Store role assignment
-        let key = Symbol::new(env, "admin_role");
         env.storage().persistent().set(&key, &assignment);
 
         // Emit role assignment event
@@ -302,8 +309,10 @@ impl AdminRoleManager {
     }
 
     /// Get admin role
-    pub fn get_admin_role(env: &Env, _admin: &Address) -> Result<AdminRole, Error> {
-        let key = Symbol::new(env, "admin_role");
+    pub fn get_admin_role(env: &Env, admin: &Address) -> Result<AdminRole, Error> {
+        // Create admin-specific storage key using admin address as suffix
+        let key = Symbol::new(env, &admin.to_string());
+        
         let assignment: AdminRoleAssignment = env
             .storage()
             .persistent()
@@ -386,7 +395,9 @@ impl AdminRoleManager {
             &AdminPermission::EmergencyActions,
         )?;
 
-        let key = Symbol::new(env, "admin_role");
+        // Create admin-specific storage key using admin address as suffix
+        let key = Symbol::new(env, &admin.to_string());
+        
         let mut assignment: AdminRoleAssignment = env
             .storage()
             .persistent()
