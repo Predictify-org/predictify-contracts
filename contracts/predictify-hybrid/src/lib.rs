@@ -81,7 +81,7 @@ use validation::{
     VoteValidator as ValidationVoteValidator, 
     DisputeValidator as ValidationDisputeValidator, 
     ConfigValidator as ValidationConfigValidator, 
-    ComprehensiveValidator,
+    ComprehensiveValidator, ValidationDocumentation,
 };
 
 #[contract]
