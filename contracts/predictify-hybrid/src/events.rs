@@ -776,7 +776,7 @@ impl EventLogger {
     }
 
     /// Clear old events (cleanup utility)
-    pub fn clear_old_events(env: &Env, older_than_timestamp: u64) {
+    pub fn clear_old_events(env: &Env, _older_than_timestamp: u64) {
         let event_types = vec![
             env,
             symbol_short!("mkt_crt"),
