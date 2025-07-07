@@ -631,7 +631,7 @@ impl PredictifyHybrid {
 
     /// Get dispute votes
     pub fn get_dispute_votes(env: Env, dispute_id: Symbol) -> Vec<disputes::DisputeVote> {
-        match DisputeManager::get_dispute_votes(&env, dispute_id) {
+        match DisputeManager::get_dispute_votes(&env, &dispute_id) {
             Ok(votes) => votes,
             Err(_) => vec![&env],
         }
