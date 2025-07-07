@@ -1,8 +1,12 @@
 extern crate alloc;
+
+use soroban_sdk::{contracttype, vec, symbol_short, Address, Env, Map, String, Symbol, Vec};
 use alloc::string::ToString;
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use alloc::format;
 
 use crate::errors::Error;
+use crate::Environment;
+use crate::admin::AdminRole;
 
 /// Comprehensive event system for Predictify Hybrid contract
 ///
@@ -207,6 +211,98 @@ pub struct PerformanceMetricEvent {
     /// Context
     pub context: String,
     /// Metric timestamp
+    pub timestamp: u64,
+}
+
+/// Admin action event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminActionEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Action performed
+    pub action: String,
+    /// Target of action
+    pub target: Option<String>,
+    /// Action timestamp
+    pub timestamp: u64,
+    /// Action success status
+    pub success: bool,
+}
+
+/// Admin role event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRoleEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Role assigned
+    pub role: String,
+    /// Assigned by
+    pub assigned_by: Address,
+    /// Assignment timestamp
+    pub timestamp: u64,
+}
+
+/// Admin permission event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminPermissionEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Permission checked
+    pub permission: String,
+    /// Access granted
+    pub granted: bool,
+    /// Check timestamp
+    pub timestamp: u64,
+}
+
+/// Market closed event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketClosedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Admin who closed it
+    pub admin: Address,
+    /// Close timestamp
+    pub timestamp: u64,
+}
+
+/// Market finalized event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketFinalizedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Admin who finalized it
+    pub admin: Address,
+    /// Final outcome
+    pub outcome: String,
+    /// Finalization timestamp
+    pub timestamp: u64,
+}
+
+/// Admin initialized event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminInitializedEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Initialization timestamp
+    pub timestamp: u64,
+}
+
+/// Config initialized event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfigInitializedEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Environment
+    pub environment: String,
+    /// Initialization timestamp
     pub timestamp: u64,
 }
 
@@ -443,6 +539,114 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("perf_met"), &event);
     }
 
+    /// Emit admin action logged event
+    pub fn emit_admin_action_logged(
+        env: &Env,
+        admin: &Address,
+        action: &str,
+        success: &bool,
+    ) {
+        let event = AdminActionEvent {
+            admin: admin.clone(),
+            action: String::from_str(env, action),
+            target: None,
+            timestamp: env.ledger().timestamp(),
+            success: *success,
+        };
+
+        Self::store_event(env, &symbol_short!("adm_act"), &event);
+    }
+
+    /// Emit admin initialized event
+    pub fn emit_admin_initialized(env: &Env, admin: &Address) {
+        let event = AdminInitializedEvent {
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("adm_init"), &event);
+    }
+
+    /// Emit config initialized event
+    pub fn emit_config_initialized(
+        env: &Env,
+        admin: &Address,
+        environment: &Environment,
+    ) {
+        let event = ConfigInitializedEvent {
+            admin: admin.clone(),
+            environment: String::from_str(env, &format!("{:?}", environment)),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("cfg_init"), &event);
+    }
+
+    /// Emit admin role assigned event
+    pub fn emit_admin_role_assigned(
+        env: &Env,
+        admin: &Address,
+        role: &AdminRole,
+        assigned_by: &Address,
+    ) {
+        let event = AdminRoleEvent {
+            admin: admin.clone(),
+            role: String::from_str(env, &format!("{:?}", role)),
+            assigned_by: assigned_by.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("adm_role"), &event);
+    }
+
+    /// Emit admin role deactivated event
+    pub fn emit_admin_role_deactivated(
+        env: &Env,
+        admin: &Address,
+        deactivated_by: &Address,
+    ) {
+        let event = AdminRoleEvent {
+            admin: admin.clone(),
+            role: String::from_str(env, "deactivated"),
+            assigned_by: deactivated_by.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("adm_deact"), &event);
+    }
+
+    /// Emit market closed event
+    pub fn emit_market_closed(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+    ) {
+        let event = MarketClosedEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_close"), &event);
+    }
+
+    /// Emit market finalized event
+    pub fn emit_market_finalized(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        outcome: &String,
+    ) {
+        let event = MarketFinalizedEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            outcome: outcome.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_final"), &event);
+    }
+
     /// Store event in persistent storage
     fn store_event<T>(env: &Env, event_key: &Symbol, event_data: &T)
     where
@@ -461,9 +665,7 @@ impl EventLogger {
     /// Get all events of a specific type
     pub fn get_events<T>(env: &Env, event_type: &Symbol) -> Vec<T>
     where
-        T: Clone
-            + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val>
-            + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
+        T: Clone + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val> + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
         match env.storage().persistent().get::<Symbol, T>(event_type) {
             Some(event) => Vec::from_array(env, [event]),
@@ -476,11 +678,7 @@ impl EventLogger {
         let mut events = Vec::new(env);
 
         // Get market created events
-        if let Some(event) = env
-            .storage()
-            .persistent()
-            .get::<Symbol, MarketCreatedEvent>(&symbol_short!("mkt_crt"))
-        {
+        if let Some(event) = env.storage().persistent().get::<Symbol, MarketCreatedEvent>(&symbol_short!("mkt_crt")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketCreated"),
@@ -491,11 +689,7 @@ impl EventLogger {
         }
 
         // Get vote cast events
-        if let Some(event) = env
-            .storage()
-            .persistent()
-            .get::<Symbol, VoteCastEvent>(&symbol_short!("vote"))
-        {
+        if let Some(event) = env.storage().persistent().get::<Symbol, VoteCastEvent>(&symbol_short!("vote")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "VoteCast"),
@@ -506,11 +700,7 @@ impl EventLogger {
         }
 
         // Get oracle result events
-        if let Some(event) = env
-            .storage()
-            .persistent()
-            .get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_rs"))
-        {
+        if let Some(event) = env.storage().persistent().get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_rs")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "OracleResult"),
@@ -521,11 +711,7 @@ impl EventLogger {
         }
 
         // Get market resolved events
-        if let Some(event) = env
-            .storage()
-            .persistent()
-            .get::<Symbol, MarketResolvedEvent>(&symbol_short!("mkt_res"))
-        {
+        if let Some(event) = env.storage().persistent().get::<Symbol, MarketResolvedEvent>(&symbol_short!("mkt_res")) {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketResolved"),
@@ -738,9 +924,7 @@ impl EventValidator {
     }
 
     /// Validate extension requested event
-    pub fn validate_extension_requested_event(
-        event: &ExtensionRequestedEvent,
-    ) -> Result<(), Error> {
+    pub fn validate_extension_requested_event(event: &ExtensionRequestedEvent) -> Result<(), Error> {
         if event.market_id.to_string().is_empty() {
             return Err(Error::InvalidInput);
         }
@@ -826,10 +1010,7 @@ impl EventHelpers {
         for (i, part) in context_parts.iter().enumerate() {
             if i > 0 {
                 let separator = String::from_str(env, " | ");
-                context = String::from_str(
-                    env,
-                    &(context.to_string() + &separator.to_string() + &part.to_string()),
-                );
+                context = String::from_str(env, &(context.to_string() + &separator.to_string() + &part.to_string()));
             } else {
                 context = part.clone();
             }
@@ -853,11 +1034,7 @@ impl EventHelpers {
     }
 
     /// Check if event is recent (within specified seconds)
-    pub fn is_recent_event(
-        event_timestamp: u64,
-        current_timestamp: u64,
-        recent_threshold: u64,
-    ) -> bool {
+    pub fn is_recent_event(event_timestamp: u64, current_timestamp: u64, recent_threshold: u64) -> bool {
         Self::get_event_age(current_timestamp, event_timestamp) <= recent_threshold
     }
 }
@@ -904,7 +1081,10 @@ impl EventTestingUtils {
     }
 
     /// Create test oracle result event
-    pub fn create_test_oracle_result_event(env: &Env, market_id: &Symbol) -> OracleResultEvent {
+    pub fn create_test_oracle_result_event(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> OracleResultEvent {
         OracleResultEvent {
             market_id: market_id.clone(),
             result: String::from_str(env, "yes"),
@@ -918,7 +1098,10 @@ impl EventTestingUtils {
     }
 
     /// Create test market resolved event
-    pub fn create_test_market_resolved_event(env: &Env, market_id: &Symbol) -> MarketResolvedEvent {
+    pub fn create_test_market_resolved_event(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> MarketResolvedEvent {
         MarketResolvedEvent {
             market_id: market_id.clone(),
             final_outcome: String::from_str(env, "yes"),
@@ -997,9 +1180,7 @@ impl EventTestingUtils {
     pub fn simulate_event_emission(env: &Env, event_type: &String) -> bool {
         // Simulate successful event emission
         let event_key = Symbol::new(env, &event_type.to_string());
-        env.storage()
-            .persistent()
-            .set(&event_key, &String::from_str(env, "test"));
+        env.storage().persistent().set(&event_key, &String::from_str(env, "test"));
         true
     }
 }
@@ -1113,10 +1294,7 @@ impl EventDocumentation {
         );
         examples.set(
             String::from_str(&env, "EmitVoteCast"),
-            String::from_str(
-                &env,
-                "EventEmitter::emit_vote_cast(env, market_id, voter, outcome, stake)",
-            ),
+            String::from_str(&env, "EventEmitter::emit_vote_cast(env, market_id, voter, outcome, stake)"),
         );
         examples.set(
             String::from_str(&env, "GetMarketEvents"),
@@ -1124,12 +1302,9 @@ impl EventDocumentation {
         );
         examples.set(
             String::from_str(&env, "ValidateEvent"),
-            String::from_str(
-                &env,
-                "EventValidator::validate_market_created_event(&event)",
-            ),
+            String::from_str(&env, "EventValidator::validate_market_created_event(&event)"),
         );
 
         examples
     }
-}
+} 
