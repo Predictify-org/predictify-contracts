@@ -274,8 +274,8 @@ impl AdminRoleManager {
         role: AdminRole,
         assigned_by: &Address,
     ) -> Result<(), Error> {
-        // Create admin-specific storage key using admin address as suffix
-        let key = Symbol::new(env, &admin.to_string());
+        // Use a simple fixed key for admin role storage
+        let key = Symbol::new(env, "admin_role");
         
         // Check if this is the first admin role assignment (bootstrapping)
         if !env.storage().persistent().has(&key) {
@@ -309,9 +309,9 @@ impl AdminRoleManager {
     }
 
     /// Get admin role
-    pub fn get_admin_role(env: &Env, admin: &Address) -> Result<AdminRole, Error> {
-        // Create admin-specific storage key using admin address as suffix
-        let key = Symbol::new(env, &admin.to_string());
+    pub fn get_admin_role(env: &Env, _admin: &Address) -> Result<AdminRole, Error> {
+        // Use a simple fixed key for admin role storage
+        let key = Symbol::new(env, "admin_role");
         
         let assignment: AdminRoleAssignment = env
             .storage()
@@ -395,8 +395,8 @@ impl AdminRoleManager {
             &AdminPermission::EmergencyActions,
         )?;
 
-        // Create admin-specific storage key using admin address as suffix
-        let key = Symbol::new(env, &admin.to_string());
+        // Use a simple fixed key for admin role storage
+        let key = Symbol::new(env, "admin_role");
         
         let mut assignment: AdminRoleAssignment = env
             .storage()
