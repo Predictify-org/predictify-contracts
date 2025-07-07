@@ -69,7 +69,7 @@ use admin::{AdminInitializer, AdminFunctions, AdminAccessControl};
 
 /// Market extensions and modifications module
 pub mod extensions;
-use extensions::{ExtensionManager};
+use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
 
 /// Input validation and security module
 pub mod validation;
