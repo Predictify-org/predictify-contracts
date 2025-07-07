@@ -1,4 +1,5 @@
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::vec;
 
 use crate::errors::Error;
 use crate::markets::{MarketAnalytics, MarketStateManager, MarketUtils, CommunityConsensus};
@@ -730,5 +731,39 @@ mod tests {
 
         let market_resolution = ResolutionTesting::create_test_market_resolution(&env, &market_id);
         assert!(ResolutionTesting::validate_resolution_structure(&market_resolution).is_ok());
+    }
+
+
+    #[test]
+    fn test_resolution_method_determination() {
+        let env = Env::default();
+        
+        // Create test data
+        let community_consensus = CommunityConsensus {
+            outcome: String::from_str(&env, "yes"),
+            votes: 75,
+            total_votes: 100,
+            percentage: 75,
+        };
+
+        // Test hybrid resolution
+        let method = MarketResolutionAnalytics::determine_resolution_method(
+            &String::from_str(&env, "yes"),
+            &community_consensus,
+        );
+        assert!(matches!(method, ResolutionMethod::Hybrid));
+
+        // Test oracle-only resolution
+        let low_consensus = CommunityConsensus {
+            outcome: String::from_str(&env, "yes"),
+            votes: 60,
+            total_votes: 100,
+            percentage: 60,
+        };
+        let method = MarketResolutionAnalytics::determine_resolution_method(
+            &String::from_str(&env, "yes"),
+            &low_consensus,
+        );
+        assert!(matches!(method, ResolutionMethod::OracleOnly));
     }
 } 
