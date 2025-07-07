@@ -710,7 +710,7 @@ impl DisputeUtils {
     /// Get dispute votes
     pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
         // This is a simplified implementation - in a real system you'd need to track all votes
-        let mut votes = Vec::new(env);
+        let votes = Vec::new(env);
         
         // For now, return empty vector - in practice you'd iterate through stored votes
         Ok(votes)
