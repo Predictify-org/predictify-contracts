@@ -794,38 +794,35 @@ mod tests {
     }
 
     #[test]
-    fn test_resolution_performance() {
-        let test = PredictifyTest::setup();
-        test.create_test_market();
+    fn test_resolution_method_determination() {
+        let env = Env::default();
+        
+        // Create test data
+        let community_consensus = CommunityConsensus {
+            outcome: String::from_str(&env, "yes"),
+            votes: 75,
+            total_votes: 100,
+            percentage: 75,
+        };
 
-        let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+        // Test hybrid resolution
+        let method = MarketResolutionAnalytics::determine_resolution_method(
+            &String::from_str(&env, "yes"),
+            &community_consensus,
+        );
+        assert!(matches!(method, ResolutionMethod::Hybrid));
 
-        // Test multiple resolution operations
-        let market = test.env.as_contract(&test.contract_id, || {
-            test.env
-                .storage()
-                .persistent()
-                .get::<Symbol, Market>(&test.market_id)
-                .unwrap()
-        });
-
-        test.env.ledger().set(LedgerInfo {
-            timestamp: market.end_time + 1,
-            protocol_version: 22,
-            sequence_number: test.env.ledger().sequence(),
-            network_id: Default::default(),
-            base_reserve: 10,
-            min_temp_entry_ttl: 1,
-            min_persistent_entry_ttl: 1,
-            max_entry_ttl: 10000,
-        });
-
-        // Multiple oracle resolution calls
-        client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
-        // Multiple market resolution calls
-        client.resolve_market(&test.market_id);
-        // Multiple analytics calls
-        client.get_resolution_analytics();
-        // No performance assertions (no std::time)
+        // Test oracle-only resolution
+        let low_consensus = CommunityConsensus {
+            outcome: String::from_str(&env, "yes"),
+            votes: 60,
+            total_votes: 100,
+            percentage: 60,
+        };
+        let method = MarketResolutionAnalytics::determine_resolution_method(
+            &String::from_str(&env, "yes"),
+            &low_consensus,
+        );
+        assert!(matches!(method, ResolutionMethod::OracleOnly));
     }
 }
