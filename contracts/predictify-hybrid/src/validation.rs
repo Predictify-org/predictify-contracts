@@ -1,13 +1,14 @@
 #![allow(unused_variables)]
 
-extern crate alloc;
+use soroban_sdk::{
+    contracttype, vec, Address, Env, Map, String, Symbol, Vec,
+};
 use crate::{
-    config,
     errors::Error,
     types::{Market, OracleConfig, OracleProvider},
+    config,
+    alloc::string::ToString,
 };
-use alloc::string::ToString;
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
 
@@ -136,19 +137,19 @@ impl InputValidator {
         max_length: u32,
     ) -> Result<(), ValidationError> {
         let length = value.len() as u32;
-
+        
         if length < min_length {
             return Err(ValidationError::InvalidString);
         }
-
+        
         if length > max_length {
             return Err(ValidationError::InvalidString);
         }
-
+        
         if value.is_empty() {
             return Err(ValidationError::InvalidString);
         }
-
+        
         Ok(())
     }
 
@@ -161,11 +162,11 @@ impl InputValidator {
         if *value < *min {
             return Err(ValidationError::InvalidNumber);
         }
-
+        
         if *value > *max {
             return Err(ValidationError::InvalidNumber);
         }
-
+        
         Ok(())
     }
 
@@ -174,18 +175,18 @@ impl InputValidator {
         if *value <= 0 {
             return Err(ValidationError::InvalidNumber);
         }
-
+        
         Ok(())
     }
 
     /// Validate timestamp (must be in the future)
     pub fn validate_future_timestamp(env: &Env, timestamp: &u64) -> Result<(), ValidationError> {
         let current_time = env.ledger().timestamp();
-
+        
         if *timestamp <= current_time {
             return Err(ValidationError::InvalidTimestamp);
         }
-
+        
         Ok(())
     }
 
@@ -194,11 +195,11 @@ impl InputValidator {
         if *duration_days < config::MIN_MARKET_DURATION_DAYS {
             return Err(ValidationError::InvalidDuration);
         }
-
+        
         if *duration_days > config::MAX_MARKET_DURATION_DAYS {
             return Err(ValidationError::InvalidDuration);
         }
-
+        
         Ok(())
     }
 }
@@ -219,32 +220,32 @@ impl MarketValidator {
         oracle_config: &OracleConfig,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
-
+        
         // Validate admin address
         if let Err(_) = InputValidator::validate_address(env, admin) {
             result.add_error();
         }
-
+        
         // Validate question
         if let Err(_) = InputValidator::validate_string(env, question, 1, 500) {
             result.add_error();
         }
-
+        
         // Validate outcomes
         if let Err(_) = Self::validate_outcomes(env, outcomes) {
             result.add_error();
         }
-
+        
         // Validate duration
         if let Err(_) = InputValidator::validate_duration(duration_days) {
             result.add_error();
         }
-
+        
         // Validate oracle config
         if let Err(_) = OracleValidator::validate_oracle_config(env, oracle_config) {
             result.add_error();
         }
-
+        
         result
     }
 
@@ -253,18 +254,18 @@ impl MarketValidator {
         if outcomes.len() < config::MIN_MARKET_OUTCOMES {
             return Err(ValidationError::InvalidOutcome);
         }
-
+        
         if outcomes.len() > config::MAX_MARKET_OUTCOMES {
             return Err(ValidationError::InvalidOutcome);
         }
-
+        
         // Validate each outcome
         for outcome in outcomes.iter() {
             if let Err(_) = InputValidator::validate_string(env, &outcome, 1, 100) {
                 return Err(ValidationError::InvalidOutcome);
             }
         }
-
+        
         // Check for duplicate outcomes
         let mut seen = Vec::new(env);
         for outcome in outcomes.iter() {
@@ -273,7 +274,7 @@ impl MarketValidator {
             }
             seen.push_back(outcome.clone());
         }
-
+        
         Ok(())
     }
 
@@ -287,18 +288,18 @@ impl MarketValidator {
         if market.question.to_string().is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Check if market is still active
         let current_time = env.ledger().timestamp();
         if current_time >= market.end_time {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Check if market is already resolved
         if market.winning_outcome.is_some() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         Ok(())
     }
 
@@ -312,23 +313,23 @@ impl MarketValidator {
         if market.question.to_string().is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Check if market has ended
         let current_time = env.ledger().timestamp();
         if current_time < market.end_time {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Check if market is already resolved
         if market.winning_outcome.is_some() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Check if oracle result is available
         if market.oracle_result.is_none() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         Ok(())
     }
 
@@ -342,22 +343,22 @@ impl MarketValidator {
         if market.question.to_string().is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Check if market is resolved
         if market.winning_outcome.is_none() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Check if fees are already collected
         if market.fee_collected {
             return Err(ValidationError::InvalidFee);
         }
-
+        
         // Check if there are sufficient stakes
         if market.total_staked < config::FEE_COLLECTION_THRESHOLD {
             return Err(ValidationError::InvalidFee);
         }
-
+        
         Ok(())
     }
 }
@@ -377,17 +378,17 @@ impl OracleValidator {
         if let Err(_) = InputValidator::validate_string(env, &oracle_config.feed_id, 1, 50) {
             return Err(ValidationError::InvalidOracle);
         }
-
+        
         // Validate threshold
         if let Err(_) = InputValidator::validate_positive_number(&oracle_config.threshold) {
             return Err(ValidationError::InvalidOracle);
         }
-
+        
         // Validate comparison operator
         if let Err(_) = Self::validate_comparison_operator(env, &oracle_config.comparison) {
             return Err(ValidationError::InvalidOracle);
         }
-
+        
         Ok(())
     }
 
@@ -405,11 +406,11 @@ impl OracleValidator {
             String::from_str(env, "eq"),
             String::from_str(env, "ne"),
         ];
-
+        
         if !valid_operators.contains(comparison) {
             return Err(ValidationError::InvalidOracle);
         }
-
+        
         Ok(())
     }
 
@@ -433,12 +434,12 @@ impl OracleValidator {
         if oracle_result.to_string().is_empty() {
             return Err(ValidationError::InvalidOracle);
         }
-
+        
         // Check if oracle result matches one of the market outcomes
         if !market_outcomes.contains(oracle_result) {
             return Err(ValidationError::InvalidOracle);
         }
-
+        
         Ok(())
     }
 }
@@ -454,15 +455,15 @@ impl FeeValidator {
         if let Err(_) = InputValidator::validate_positive_number(amount) {
             return Err(ValidationError::InvalidFee);
         }
-
+        
         if *amount < config::MIN_FEE_AMOUNT {
             return Err(ValidationError::InvalidFee);
         }
-
+        
         if *amount > config::MAX_FEE_AMOUNT {
             return Err(ValidationError::InvalidFee);
         }
-
+        
         Ok(())
     }
 
@@ -471,11 +472,11 @@ impl FeeValidator {
         if let Err(_) = InputValidator::validate_positive_number(percentage) {
             return Err(ValidationError::InvalidFee);
         }
-
+        
         if *percentage > 100 {
             return Err(ValidationError::InvalidFee);
         }
-
+        
         Ok(())
     }
 
@@ -489,37 +490,37 @@ impl FeeValidator {
         collection_threshold: &i128,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
-
+        
         // Validate platform fee percentage
         if let Err(_) = Self::validate_fee_percentage(platform_fee_percentage) {
             result.add_error();
         }
-
+        
         // Validate creation fee
         if let Err(_) = Self::validate_fee_amount(creation_fee) {
             result.add_error();
         }
-
+        
         // Validate min fee amount
         if let Err(_) = Self::validate_fee_amount(min_fee_amount) {
             result.add_error();
         }
-
+        
         // Validate max fee amount
         if let Err(_) = Self::validate_fee_amount(max_fee_amount) {
             result.add_error();
         }
-
+        
         // Validate collection threshold
         if let Err(_) = InputValidator::validate_positive_number(collection_threshold) {
             result.add_error();
         }
-
+        
         // Validate min <= max
         if *min_fee_amount > *max_fee_amount {
             result.add_error();
         }
-
+        
         result
     }
 }
@@ -543,27 +544,27 @@ impl VoteValidator {
         if let Err(_) = InputValidator::validate_address(env, user) {
             return Err(ValidationError::InvalidVote);
         }
-
+        
         // Validate market for voting
         if let Err(_) = MarketValidator::validate_market_for_voting(env, market, market_id) {
             return Err(ValidationError::InvalidVote);
         }
-
+        
         // Validate outcome
         if let Err(_) = Self::validate_outcome(env, outcome, &market.outcomes) {
             return Err(ValidationError::InvalidVote);
         }
-
+        
         // Validate stake amount
         if let Err(_) = Self::validate_stake_amount(stake_amount) {
             return Err(ValidationError::InvalidVote);
         }
-
+        
         // Check if user has already voted
         if market.votes.contains_key(user.clone()) {
             return Err(ValidationError::InvalidVote);
         }
-
+        
         Ok(())
     }
 
@@ -576,11 +577,11 @@ impl VoteValidator {
         if outcome.to_string().is_empty() {
             return Err(ValidationError::InvalidOutcome);
         }
-
+        
         if !market_outcomes.contains(outcome) {
             return Err(ValidationError::InvalidOutcome);
         }
-
+        
         Ok(())
     }
 
@@ -589,11 +590,11 @@ impl VoteValidator {
         if let Err(_) = InputValidator::validate_positive_number(stake_amount) {
             return Err(ValidationError::InvalidStake);
         }
-
+        
         if *stake_amount < config::MIN_VOTE_STAKE {
             return Err(ValidationError::InvalidStake);
         }
-
+        
         Ok(())
     }
 }
@@ -616,26 +617,26 @@ impl DisputeValidator {
         if let Err(_) = InputValidator::validate_address(env, user) {
             return Err(ValidationError::InvalidDispute);
         }
-
+        
         // Validate market exists and is resolved
         if market.question.to_string().is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         if market.winning_outcome.is_none() {
             return Err(ValidationError::InvalidMarket);
         }
-
+        
         // Validate dispute stake
         if let Err(_) = Self::validate_dispute_stake(dispute_stake) {
             return Err(ValidationError::InvalidDispute);
         }
-
+        
         // Check if user has already disputed
         if market.dispute_stakes.contains_key(user.clone()) {
             return Err(ValidationError::InvalidDispute);
         }
-
+        
         Ok(())
     }
 
@@ -644,11 +645,11 @@ impl DisputeValidator {
         if let Err(_) = InputValidator::validate_positive_number(stake_amount) {
             return Err(ValidationError::InvalidStake);
         }
-
+        
         if *stake_amount < config::MIN_DISPUTE_STAKE {
             return Err(ValidationError::InvalidStake);
         }
-
+        
         Ok(())
     }
 }
@@ -669,12 +670,12 @@ impl ConfigValidator {
         if let Err(_) = InputValidator::validate_address(env, admin) {
             return Err(ValidationError::InvalidConfig);
         }
-
+        
         // Validate token address
         if let Err(_) = InputValidator::validate_address(env, token_id) {
             return Err(ValidationError::InvalidConfig);
         }
-
+        
         Ok(())
     }
 
@@ -708,37 +709,32 @@ impl ComprehensiveValidator {
         oracle_config: &OracleConfig,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
-
+        
         // Input validation
         let input_result = Self::validate_inputs(env, admin, question, outcomes, duration_days);
         if !input_result.is_valid {
             result.add_error();
         }
-
+        
         // Market validation
         let market_result = MarketValidator::validate_market_creation(
-            env,
-            admin,
-            question,
-            outcomes,
-            duration_days,
-            oracle_config,
+            env, admin, question, outcomes, duration_days, oracle_config
         );
         if !market_result.is_valid {
             result.add_error();
         }
-
+        
         // Oracle validation
         if let Err(_) = OracleValidator::validate_oracle_config(env, oracle_config) {
             result.add_error();
         }
-
+        
         // Add recommendations
         if result.is_valid {
             result.add_recommendation();
             result.add_recommendation();
         }
-
+        
         result
     }
 
@@ -751,27 +747,27 @@ impl ComprehensiveValidator {
         duration_days: &u32,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
-
+        
         // Validate admin
         if let Err(_) = InputValidator::validate_address(env, admin) {
             result.add_error();
         }
-
+        
         // Validate question
         if let Err(_) = InputValidator::validate_string(env, question, 1, 500) {
             result.add_error();
         }
-
+        
         // Validate outcomes
         if let Err(_) = MarketValidator::validate_outcomes(env, outcomes) {
             result.add_error();
         }
-
+        
         // Validate duration
         if let Err(_) = InputValidator::validate_duration(duration_days) {
             result.add_error();
         }
-
+        
         result
     }
 
@@ -782,39 +778,39 @@ impl ComprehensiveValidator {
         market_id: &Symbol,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
-
+        
         // Basic market validation
         if market.question.to_string().is_empty() {
             result.add_error();
             return result;
         }
-
+        
         // Check market timing
         let current_time = env.ledger().timestamp();
         if current_time >= market.end_time {
             result.add_warning();
         }
-
+        
         // Check market resolution
         if market.winning_outcome.is_some() {
             result.add_warning();
         }
-
+        
         // Check oracle result
         if market.oracle_result.is_some() {
             result.add_warning();
         }
-
+        
         // Check fee collection
         if market.fee_collected {
             result.add_warning();
         }
-
+        
         // Add recommendations
         if market.total_staked < config::FEE_COLLECTION_THRESHOLD {
             result.add_recommendation();
         }
-
+        
         result
     }
 }
@@ -848,10 +844,7 @@ impl ValidationTestingUtils {
     pub fn create_test_market(env: &Env) -> Market {
         Market::new(
             env,
-            Address::from_str(
-                env,
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-            ),
+            Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             String::from_str(env, "Test Market"),
             vec![
                 env,
@@ -913,69 +906,60 @@ pub struct ValidationDocumentation;
 impl ValidationDocumentation {
     /// Get validation system overview
     pub fn get_validation_overview(env: &Env) -> String {
-        String::from_str(
-            env,
-            "Comprehensive validation system for Predictify Hybrid contract",
-        )
+        String::from_str(env, "Comprehensive validation system for Predictify Hybrid contract")
     }
 
     /// Get validation rules documentation
     pub fn get_validation_rules(env: &Env) -> Map<String, String> {
         let mut rules = Map::new(env);
-
+        
         rules.set(
             String::from_str(env, "market_creation"),
             String::from_str(env, "Market creation requires valid admin, question, outcomes, duration, and oracle config")
         );
-
+        
         rules.set(
             String::from_str(env, "voting"),
-            String::from_str(
-                env,
-                "Voting requires valid user, market, outcome, and stake amount",
-            ),
+            String::from_str(env, "Voting requires valid user, market, outcome, and stake amount")
         );
-
+        
         rules.set(
             String::from_str(env, "oracle"),
             String::from_str(env, "Oracle config requires valid provider, feed_id, threshold, and comparison operator")
         );
-
+        
         rules.set(
             String::from_str(env, "fees"),
-            String::from_str(
-                env,
-                "Fees must be within configured min/max ranges and percentages",
-            ),
+            String::from_str(env, "Fees must be within configured min/max ranges and percentages")
         );
-
+        
         rules
     }
 
     /// Get validation error codes
     pub fn get_validation_error_codes(env: &Env) -> Map<String, String> {
         let mut codes = Map::new(env);
-
+        
         codes.set(
             String::from_str(env, "InvalidInput"),
-            String::from_str(env, "General input validation error"),
+            String::from_str(env, "General input validation error")
         );
-
+        
         codes.set(
             String::from_str(env, "InvalidMarket"),
-            String::from_str(env, "Market-specific validation error"),
+            String::from_str(env, "Market-specific validation error")
         );
-
+        
         codes.set(
             String::from_str(env, "InvalidOracle"),
-            String::from_str(env, "Oracle-specific validation error"),
+            String::from_str(env, "Oracle-specific validation error")
         );
-
+        
         codes.set(
             String::from_str(env, "InvalidFee"),
-            String::from_str(env, "Fee-specific validation error"),
+            String::from_str(env, "Fee-specific validation error")
         );
-
+        
         codes
     }
-}
+} 
