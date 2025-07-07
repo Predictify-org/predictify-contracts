@@ -1,63 +1,77 @@
 #![no_std]
 extern crate alloc;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, panic_with_error, symbol_short, token, vec, Address, Env,
-    IntoVal, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec, symbol_short,
 };
 use alloc::string::ToString;
 
-// Error management module
+// ===== MODULE ORGANIZATION =====
+// Predictify Hybrid Contract - Organized Module Structure
+// 
+// This contract provides a comprehensive prediction market system with:
+// - Oracle integration for automated market resolution
+// - Community voting and consensus mechanisms
+// - Dispute resolution and escalation systems
+// - Fee management and analytics
+// - Admin controls and configuration management
+// - Event logging and monitoring
+// - Validation and security systems
+
+// ===== MODULE DECLARATIONS =====
+
+/// Error handling and management module
 pub mod errors;
 use errors::Error;
 
-// Types module
+/// Core data types and structures module
 pub mod types;
 use types::*;
 
-// Oracle management module
+/// Oracle integration and management module
 pub mod oracles;
 use oracles::{OracleFactory, OracleInstance, OracleInterface, OracleUtils};
 
-// Market management module
+/// Market creation and state management module
 pub mod markets;
 use markets::{MarketAnalytics, MarketCreator, MarketStateManager, MarketUtils, MarketValidator};
 
-// Voting management module
+/// Voting system and consensus module
 pub mod voting;
 use voting::{VotingAnalytics, VotingManager, VotingUtils, VotingValidator};
 
-// Dispute management module
+/// Dispute resolution and escalation module
 pub mod disputes;
 use disputes::{DisputeAnalytics, DisputeManager, DisputeUtils, DisputeValidator};
 
-// Extension management module
-pub mod extensions;
-use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
-use types::ExtensionStats;
-
-// Fee management module
-pub mod fees;
-use fees::{FeeManager, FeeCalculator, FeeValidator, FeeUtils, FeeTracker, FeeConfigManager};
+/// Market resolution and analytics module
+pub mod resolution;
 use resolution::{OracleResolutionManager, MarketResolutionManager, MarketResolutionAnalytics, OracleResolutionAnalytics, ResolutionUtils};
 
-// Configuration management module
+/// Fee calculation and management module
+pub mod fees;
+use fees::{FeeManager, FeeCalculator, FeeValidator, FeeUtils, FeeTracker, FeeConfigManager};
+
+/// Configuration management module
 pub mod config;
 use config::{ConfigManager, ConfigValidator, ConfigUtils, ContractConfig, Environment};
 
-// Utility functions module
+/// Utility functions and helpers module
 pub mod utils;
 use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, ConversionUtils, CommonUtils, TestingUtils};
 
-// Event system module
+/// Event logging and monitoring module
 pub mod events;
 use events::{EventEmitter, EventLogger, EventValidator, EventHelpers, EventTestingUtils, EventDocumentation};
 
-// Admin management module
+/// Admin controls and functions module
 pub mod admin;
 use admin::{AdminInitializer, AdminAccessControl, AdminFunctions, AdminRoleManager, AdminUtils};
 
-pub mod resolution;
+/// Market extensions and modifications module
+pub mod extensions;
+use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
 
+/// Input validation and security module
 pub mod validation;
 use validation::{
     ValidationError, ValidationResult, InputValidator, 
