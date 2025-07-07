@@ -61,7 +61,7 @@ use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, CommonUtils};
 
 /// Event logging and monitoring module
 pub mod events;
-use events::{EventEmitter, EventLogger, EventHelpers};
+use events::{EventEmitter, EventLogger, EventHelpers, EventTestingUtils, EventDocumentation};
 
 /// Admin controls and functions module
 pub mod admin;
