@@ -380,7 +380,7 @@ impl ConversionUtils {
     }
 
     /// Convert string to address
-    pub fn string_to_address(env: &Env, s: &String) -> Address {
+    pub fn string_to_address(_env: &Env, s: &String) -> Address {
         Address::from_string(s)
     }
 
