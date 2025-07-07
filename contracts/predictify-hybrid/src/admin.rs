@@ -825,7 +825,7 @@ impl Default for AdminAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+    use soroban_sdk::testutils::{Address as _,};
 
     #[test]
     fn test_admin_initializer_initialize() {
@@ -886,7 +886,7 @@ mod tests {
     fn test_admin_functions_close_market() {
         let env = Env::default();
         let admin = Address::generate(&env);
-        let market_id = Symbol::new(&env, "test_market");
+        let _market_id = Symbol::new(&env, "test_market");
 
         // Initialize admin
         AdminInitializer::initialize(&env, &admin).unwrap();
