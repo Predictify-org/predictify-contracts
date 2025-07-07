@@ -1,15 +1,13 @@
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 use alloc::string::ToString;
-use alloc::format;
 
 use crate::errors::Error;
-use crate::events::{EventEmitter, AdminActionEvent, AdminRoleEvent, AdminPermissionEvent, MarketClosedEvent, MarketFinalizedEvent, AdminInitializedEvent, ConfigInitializedEvent};
-use crate::markets::{MarketStateManager, MarketValidator};
+use crate::markets::MarketStateManager;
 use crate::fees::{FeeManager, FeeConfig};
 use crate::config::{ConfigManager, ContractConfig, Environment, ConfigUtils};
 use crate::resolution::MarketResolutionManager;
 use crate::extensions::ExtensionManager;
-use crate::types::*;
+use crate::events::EventEmitter;
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -304,7 +302,7 @@ impl AdminRoleManager {
     }
 
     /// Get admin role
-    pub fn get_admin_role(env: &Env, admin: &Address) -> Result<AdminRole, Error> {
+    pub fn get_admin_role(env: &Env, _admin: &Address) -> Result<AdminRole, Error> {
         let key = Symbol::new(env, "admin_role");
         let assignment: AdminRoleAssignment = env
             .storage()
@@ -321,7 +319,7 @@ impl AdminRoleManager {
 
     /// Check if admin has permission
     pub fn has_permission(
-        env: &Env,
+        _env: &Env,
         role: &AdminRole,
         permission: &AdminPermission,
     ) -> Result<bool, Error> {
@@ -421,7 +419,7 @@ impl AdminFunctions {
         AdminAccessControl::validate_admin_for_action(env, admin, "close_market")?;
 
         // Get market
-        let market = MarketStateManager::get_market(env, market_id)?;
+        let _market = MarketStateManager::get_market(env, market_id)?;
 
         // Close market
         MarketStateManager::remove_market(env, market_id);
