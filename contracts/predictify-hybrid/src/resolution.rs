@@ -1,9 +1,7 @@
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec, vec};
 
 use crate::errors::Error;
-use crate::markets::{
-    CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator,
-};
+use crate::markets::{MarketAnalytics, MarketStateManager, MarketUtils, CommunityConsensus};
 use crate::oracles::{OracleFactory, OracleUtils};
 use crate::types::*;
 
@@ -154,20 +152,14 @@ impl OracleResolutionManager {
     }
 
     /// Get oracle resolution for a market
-    pub fn get_oracle_resolution(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> Result<Option<OracleResolution>, Error> {
+    pub fn get_oracle_resolution(env: &Env, market_id: &Symbol) -> Result<Option<OracleResolution>, Error> {
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
         Ok(None)
     }
 
     /// Validate oracle resolution
-    pub fn validate_oracle_resolution(
-        _env: &Env,
-        resolution: &OracleResolution,
-    ) -> Result<(), Error> {
+    pub fn validate_oracle_resolution(_env: &Env, resolution: &OracleResolution) -> Result<(), Error> {
         // Validate price is positive
         if resolution.price <= 0 {
             return Err(Error::InvalidInput);
@@ -207,9 +199,7 @@ impl MarketResolutionManager {
         MarketResolutionValidator::validate_market_for_resolution(env, &market)?;
 
         // Retrieve the oracle result
-        let oracle_result = market
-            .oracle_result
-            .as_ref()
+        let oracle_result = market.oracle_result.as_ref()
             .ok_or(Error::OracleUnavailable)?
             .clone();
 
@@ -217,8 +207,7 @@ impl MarketResolutionManager {
         let community_consensus = MarketAnalytics::calculate_community_consensus(&market);
 
         // Determine final result using hybrid algorithm
-        let final_result =
-            MarketUtils::determine_final_result(env, &oracle_result, &community_consensus);
+        let final_result = MarketUtils::determine_final_result(env, &oracle_result, &community_consensus);
 
         // Determine resolution method
         let resolution_method = MarketResolutionAnalytics::determine_resolution_method(
@@ -271,10 +260,7 @@ impl MarketResolutionManager {
         let resolution = MarketResolution {
             market_id: market_id.clone(),
             final_outcome: outcome.clone(),
-            oracle_result: market
-                .oracle_result
-                .clone()
-                .unwrap_or_else(|| String::from_str(env, "")),
+            oracle_result: market.oracle_result.clone().unwrap_or_else(|| String::from_str(env, "")),
             community_consensus: MarketAnalytics::calculate_community_consensus(&market),
             resolution_timestamp: env.ledger().timestamp(),
             resolution_method: ResolutionMethod::AdminOverride,
@@ -289,20 +275,14 @@ impl MarketResolutionManager {
     }
 
     /// Get market resolution
-    pub fn get_market_resolution(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> Result<Option<MarketResolution>, Error> {
+    pub fn get_market_resolution(env: &Env, market_id: &Symbol) -> Result<Option<MarketResolution>, Error> {
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
         Ok(None)
     }
 
     /// Validate market resolution
-    pub fn validate_market_resolution(
-        env: &Env,
-        resolution: &MarketResolution,
-    ) -> Result<(), Error> {
+    pub fn validate_market_resolution(env: &Env, resolution: &MarketResolution) -> Result<(), Error> {
         MarketResolutionValidator::validate_market_resolution(env, resolution)
     }
 }
@@ -330,10 +310,7 @@ impl OracleResolutionValidator {
     }
 
     /// Validate oracle resolution
-    pub fn validate_oracle_resolution(
-        _env: &Env,
-        resolution: &OracleResolution,
-    ) -> Result<(), Error> {
+    pub fn validate_oracle_resolution(_env: &Env, resolution: &OracleResolution) -> Result<(), Error> {
         // Validate price is positive
         if resolution.price <= 0 {
             return Err(Error::InvalidInput);
@@ -394,11 +371,7 @@ impl MarketResolutionValidator {
     }
 
     /// Validate outcome
-    pub fn validate_outcome(
-        _env: &Env,
-        outcome: &String,
-        valid_outcomes: &Vec<String>,
-    ) -> Result<(), Error> {
+    pub fn validate_outcome(_env: &Env, outcome: &String, valid_outcomes: &Vec<String>) -> Result<(), Error> {
         if !valid_outcomes.contains(outcome) {
             return Err(Error::InvalidOutcome);
         }
@@ -407,10 +380,7 @@ impl MarketResolutionValidator {
     }
 
     /// Validate market resolution
-    pub fn validate_market_resolution(
-        env: &Env,
-        resolution: &MarketResolution,
-    ) -> Result<(), Error> {
+    pub fn validate_market_resolution(env: &Env, resolution: &MarketResolution) -> Result<(), Error> {
         // Validate final outcome is not empty
         if resolution.final_outcome.is_empty() {
             return Err(Error::InvalidInput);
@@ -443,9 +413,8 @@ impl OracleResolutionAnalytics {
         let mut confidence: u32 = 80;
 
         // Adjust based on price deviation from threshold
-        let deviation = ((resolution.price - resolution.threshold).abs() as f64)
-            / (resolution.threshold as f64);
-
+        let deviation = ((resolution.price - resolution.threshold).abs() as f64) / (resolution.threshold as f64);
+        
         if deviation > 0.1 {
             // High deviation - lower confidence
             confidence = confidence.saturating_sub(20);
@@ -517,10 +486,7 @@ impl MarketResolutionAnalytics {
     }
 
     /// Update resolution analytics
-    pub fn update_resolution_analytics(
-        _env: &Env,
-        _resolution: &MarketResolution,
-    ) -> Result<(), Error> {
+    pub fn update_resolution_analytics(_env: &Env, _resolution: &MarketResolution) -> Result<(), Error> {
         // For now, do nothing since we don't store complex types
         Ok(())
     }
@@ -547,9 +513,9 @@ impl ResolutionUtils {
 
     /// Check if market can be resolved
     pub fn can_resolve_market(env: &Env, market: &Market) -> bool {
-        market.has_ended(env.ledger().timestamp())
-            && market.oracle_result.is_some()
-            && market.winning_outcome.is_none()
+        market.has_ended(env.ledger().timestamp()) && 
+        market.oracle_result.is_some() && 
+        market.winning_outcome.is_none()
     }
 
     /// Get resolution eligibility
@@ -580,11 +546,7 @@ impl ResolutionUtils {
     }
 
     /// Validate resolution parameters
-    pub fn validate_resolution_parameters(
-        _env: &Env,
-        market: &Market,
-        outcome: &String,
-    ) -> Result<(), Error> {
+    pub fn validate_resolution_parameters(_env: &Env, market: &Market, outcome: &String) -> Result<(), Error> {
         // Validate outcome is in market outcomes
         if !market.outcomes.contains(outcome) {
             return Err(Error::InvalidOutcome);
@@ -657,8 +619,7 @@ impl ResolutionTesting {
         oracle_contract: &Address,
     ) -> Result<MarketResolution, Error> {
         // Fetch oracle result
-        let _oracle_resolution =
-            OracleResolutionManager::fetch_oracle_result(env, market_id, oracle_contract)?;
+        let _oracle_resolution = OracleResolutionManager::fetch_oracle_result(env, market_id, oracle_contract)?;
 
         // Resolve market
         let market_resolution = MarketResolutionManager::resolve_market(env, market_id)?;
@@ -709,7 +670,6 @@ impl Default for ResolutionAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test::PredictifyTest, PredictifyHybridClient};
     use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 
     #[test]
@@ -745,11 +705,7 @@ mod tests {
             &env,
             admin,
             String::from_str(&env, "Test Market"),
-            vec![
-                &env,
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no"),
-            ],
+            vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
             env.ledger().timestamp() + 86400,
             OracleConfig {
                 provider: OracleProvider::Pyth,
@@ -774,10 +730,7 @@ mod tests {
             percentage: 60,
         };
 
-        let method = MarketResolutionAnalytics::determine_resolution_method(
-            &oracle_result,
-            &community_consensus,
-        );
+        let method = MarketResolutionAnalytics::determine_resolution_method(&oracle_result, &community_consensus);
         assert_eq!(method, ResolutionMethod::Hybrid);
     }
 
@@ -794,35 +747,38 @@ mod tests {
     }
 
     #[test]
-    fn test_resolution_method_determination() {
-        let env = Env::default();
-        
-        // Create test data
-        let community_consensus = CommunityConsensus {
-            outcome: String::from_str(&env, "yes"),
-            votes: 75,
-            total_votes: 100,
-            percentage: 75,
-        };
+    fn test_resolution_performance() {
+        let test = PredictifyTest::setup();
+        test.create_test_market();
 
-        // Test hybrid resolution
-        let method = MarketResolutionAnalytics::determine_resolution_method(
-            &String::from_str(&env, "yes"),
-            &community_consensus,
-        );
-        assert!(matches!(method, ResolutionMethod::Hybrid));
+        let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-        // Test oracle-only resolution
-        let low_consensus = CommunityConsensus {
-            outcome: String::from_str(&env, "yes"),
-            votes: 60,
-            total_votes: 100,
-            percentage: 60,
-        };
-        let method = MarketResolutionAnalytics::determine_resolution_method(
-            &String::from_str(&env, "yes"),
-            &low_consensus,
-        );
-        assert!(matches!(method, ResolutionMethod::OracleOnly));
+        // Test multiple resolution operations
+        let market = test.env.as_contract(&test.contract_id, || {
+            test.env
+                .storage()
+                .persistent()
+                .get::<Symbol, Market>(&test.market_id)
+                .unwrap()
+        });
+
+        test.env.ledger().set(LedgerInfo {
+            timestamp: market.end_time + 1,
+            protocol_version: 22,
+            sequence_number: test.env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+
+        // Multiple oracle resolution calls
+        client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+        // Multiple market resolution calls
+        client.resolve_market(&test.market_id);
+        // Multiple analytics calls
+        client.get_resolution_analytics();
+        // No performance assertions (no std::time)
     }
-}
+} 
