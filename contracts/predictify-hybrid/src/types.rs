@@ -1,4 +1,5 @@
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
+use crate::errors::Error;
 
 /// Comprehensive type system for Predictify Hybrid contract
 ///
@@ -83,10 +84,10 @@ impl OracleConfig {
     }
 
     /// Validate the oracle configuration
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, env: &Env) -> Result<(), Error> {
         // Validate threshold
         if self.threshold <= 0 {
-            return Err(crate::errors::Error::InvalidThreshold);
+            return Err(Error::InvalidThreshold);
         }
 
         // Validate comparison operator
@@ -94,17 +95,17 @@ impl OracleConfig {
             && self.comparison != String::from_str(env, "lt")
             && self.comparison != String::from_str(env, "eq")
         {
-            return Err(crate::errors::Error::InvalidComparison);
+            return Err(Error::InvalidInput);
         }
 
         // Validate feed_id is not empty
         if self.feed_id.is_empty() {
-            return Err(crate::errors::Error::InvalidOracleFeed);
+            return Err(Error::InvalidOracleFeed);
         }
 
         // Validate provider is supported
         if !self.provider.is_supported() {
-            return Err(crate::errors::Error::InvalidOracleConfig);
+            return Err(Error::InvalidConfig);
         }
 
         Ok(())
@@ -211,17 +212,17 @@ impl MarketExtension {
     }
 
     /// Validate extension parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, _env: &Env) -> Result<(), Error> {
         if self.additional_days == 0 {
-            return Err(crate::errors::Error::InvalidExtensionDays);
+            return Err(Error::InvalidInput);
         }
 
         if self.additional_days > 30 {
-            return Err(crate::errors::Error::ExtensionDaysExceeded);
+            return Err(Error::InvalidInput);
         }
 
         if self.reason.is_empty() {
-            return Err(crate::errors::Error::InvalidExtensionReason);
+            return Err(Error::InvalidInput);
         }
 
         Ok(())
@@ -356,15 +357,15 @@ impl Market {
     }
 
     /// Validate market parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, env: &Env) -> Result<(), Error> {
         // Validate question
         if self.question.is_empty() {
-            return Err(crate::errors::Error::InvalidQuestion);
+            return Err(Error::InvalidInput);
         }
 
         // Validate outcomes
         if self.outcomes.len() < 2 {
-            return Err(crate::errors::Error::InvalidOutcomes);
+            return Err(Error::InvalidOutcome);
         }
 
         // Validate oracle config
@@ -372,7 +373,7 @@ impl Market {
 
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
-            return Err(crate::errors::Error::InvalidDuration);
+            return Err(Error::InvalidInput);
         }
 
         Ok(())
@@ -432,13 +433,13 @@ impl PythPrice {
     }
 
     /// Validate the price data
-    pub fn validate(&self) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self) -> Result<(), Error> {
         if self.price <= 0 {
-            return Err(crate::errors::Error::OraclePriceOutOfRange);
+            return Err(Error::OraclePriceOutOfRange);
         }
 
         if self.conf == 0 {
-            return Err(crate::errors::Error::OracleDataStale);
+            return Err(Error::OracleDataStale);
         }
 
         Ok(())
@@ -469,8 +470,8 @@ impl ReflectorAsset {
     /// Get the asset identifier as a string
     pub fn to_string(&self, env: &Env) -> String {
         match self {
-            ReflectorAsset::Stellar(addr) => String::from_str(env, "stellar_asset"),
-            ReflectorAsset::Other(symbol) => String::from_str(env, "other_asset"),
+            ReflectorAsset::Stellar(_addr) => String::from_str(env, "stellar_asset"),
+            ReflectorAsset::Other(_symbol) => String::from_str(env, "other_asset"),
         }
     }
 
@@ -511,9 +512,9 @@ impl ReflectorPriceData {
     }
 
     /// Validate the price data
-    pub fn validate(&self) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self) -> Result<(), Error> {
         if self.price <= 0 {
-            return Err(crate::errors::Error::OraclePriceOutOfRange);
+            return Err(Error::OraclePriceOutOfRange);
         }
 
         Ok(())
@@ -563,21 +564,21 @@ impl ReflectorConfigData {
     }
 
     /// Validate the configuration
-    pub fn validate(&self) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self) -> Result<(), Error> {
         if self.assets.is_empty() {
-            return Err(crate::errors::Error::InvalidOracleConfig);
+            return Err(Error::InvalidConfig);
         }
 
         if self.decimals == 0 {
-            return Err(crate::errors::Error::InvalidOracleConfig);
+            return Err(Error::InvalidConfig);
         }
 
         if self.period == 0 {
-            return Err(crate::errors::Error::InvalidOracleConfig);
+            return Err(Error::InvalidConfig);
         }
 
         if self.resolution == 0 {
-            return Err(crate::errors::Error::InvalidOracleConfig);
+            return Err(Error::InvalidConfig);
         }
 
         Ok(())
@@ -615,20 +616,20 @@ impl MarketCreationParams {
     }
 
     /// Validate all parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, env: &Env) -> Result<(), Error> {
         // Validate question
         if self.question.is_empty() {
-            return Err(crate::errors::Error::InvalidQuestion);
+            return Err(Error::InvalidInput);
         }
 
         // Validate outcomes
         if self.outcomes.len() < 2 {
-            return Err(crate::errors::Error::InvalidOutcomes);
+            return Err(Error::InvalidOutcome);
         }
 
         // Validate duration
         if self.duration_days == 0 || self.duration_days > 365 {
-            return Err(crate::errors::Error::InvalidDuration);
+            return Err(Error::InvalidInput);
         }
 
         // Validate oracle config
@@ -664,20 +665,20 @@ impl VoteParams {
     }
 
     /// Validate vote parameters
-    pub fn validate(&self, _env: &Env, market: &Market) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, _env: &Env, market: &Market) -> Result<(), Error> {
         // Validate outcome
         if !market.outcomes.contains(&self.outcome) {
-            return Err(crate::errors::Error::InvalidOutcome);
+            return Err(Error::InvalidOutcome);
         }
 
         // Validate stake
         if self.stake <= 0 {
-            return Err(crate::errors::Error::InsufficientStake);
+            return Err(Error::InsufficientStake);
         }
 
         // Check if user already voted
         if market.get_user_vote(&self.user).is_some() {
-            return Err(crate::errors::Error::AlreadyVoted);
+            return Err(Error::AlreadyVoted);
         }
 
         Ok(())
@@ -778,33 +779,33 @@ pub mod validation {
     use super::*;
 
     /// Validate oracle provider
-    pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), crate::errors::Error> {
+    pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), Error> {
         if !provider.is_supported() {
-            return Err(crate::errors::Error::InvalidOracleConfig);
+            return Err(Error::InvalidConfig);
         }
         Ok(())
     }
 
     /// Validate price data
-    pub fn validate_price(price: i128) -> Result<(), crate::errors::Error> {
+    pub fn validate_price(price: i128) -> Result<(), Error> {
         if price <= 0 {
-            return Err(crate::errors::Error::OraclePriceOutOfRange);
+            return Err(Error::OraclePriceOutOfRange);
         }
         Ok(())
     }
 
     /// Validate stake amount
-    pub fn validate_stake(stake: i128, min_stake: i128) -> Result<(), crate::errors::Error> {
+    pub fn validate_stake(stake: i128, min_stake: i128) -> Result<(), Error> {
         if stake < min_stake {
-            return Err(crate::errors::Error::InsufficientStake);
+            return Err(Error::InsufficientStake);
         }
         Ok(())
     }
 
     /// Validate market duration
-    pub fn validate_duration(duration_days: u32) -> Result<(), crate::errors::Error> {
+    pub fn validate_duration(duration_days: u32) -> Result<(), Error> {
         if duration_days == 0 || duration_days > 365 {
-            return Err(crate::errors::Error::InvalidDuration);
+            return Err(Error::InvalidInput);
         }
         Ok(())
     }
@@ -831,12 +832,12 @@ pub mod conversion {
     }
 
     /// Convert comparison string to validation
-    pub fn validate_comparison(comparison: &String, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate_comparison(comparison: &String, env: &Env) -> Result<(), Error> {
         if comparison != &String::from_str(env, "gt")
             && comparison != &String::from_str(env, "lt")
             && comparison != &String::from_str(env, "eq")
         {
-            return Err(crate::errors::Error::InvalidComparison);
+            return Err(Error::InvalidInput);
         }
         Ok(())
     }

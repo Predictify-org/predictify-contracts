@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
 use crate::errors::Error;
 
@@ -504,19 +504,19 @@ impl ConfigValidator {
         if config.platform_fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
             || config.platform_fee_percentage > MAX_PLATFORM_FEE_PERCENTAGE
         {
-            return Err(Error::InvalidFeeConfig);
+            return Err(Error::InvalidConfig);
         }
 
         if config.min_fee_amount > config.max_fee_amount {
-            return Err(Error::InvalidFeeConfig);
+            return Err(Error::InvalidConfig);
         }
 
         if config.creation_fee < config.min_fee_amount || config.creation_fee > config.max_fee_amount {
-            return Err(Error::InvalidFeeConfig);
+            return Err(Error::InvalidConfig);
         }
 
         if config.collection_threshold <= 0 {
-            return Err(Error::InvalidFeeConfig);
+            return Err(Error::InvalidConfig);
         }
 
         Ok(())

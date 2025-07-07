@@ -253,7 +253,7 @@ impl OracleFactory {
                 let oracle = ReflectorOracle::new(contract_id);
                 Ok(OracleInstance::Reflector(oracle))
             }
-            OracleProvider::BandProtocol | OracleProvider::DIA => Err(Error::InvalidOracleConfig),
+            OracleProvider::BandProtocol | OracleProvider::DIA => Err(Error::InvalidConfig),
         }
     }
 
@@ -333,7 +333,7 @@ impl OracleUtils {
         } else if comparison == &String::from_str(env, "eq") {
             Ok(price == threshold)
         } else {
-            Err(Error::InvalidComparison)
+            Err(Error::InvalidInput)
         }
     }
 

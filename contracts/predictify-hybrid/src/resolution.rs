@@ -1,9 +1,11 @@
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
-use crate::markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator, CommunityConsensus};
-use crate::oracles::{OracleFactory, OracleUtils};
-use crate::types::*;
+use crate::{
+    errors::Error,
+    markets::{MarketAnalytics, MarketStateManager, MarketUtils, CommunityConsensus},
+    oracles::{OracleFactory, OracleUtils},
+    types::{Market, OracleProvider},
+};
 
 /// Resolution management system for Predictify Hybrid contract
 ///
@@ -152,7 +154,7 @@ impl OracleResolutionManager {
     }
 
     /// Get oracle resolution for a market
-    pub fn get_oracle_resolution(env: &Env, market_id: &Symbol) -> Result<Option<OracleResolution>, Error> {
+    pub fn get_oracle_resolution(_env: &Env, _market_id: &Symbol) -> Result<Option<OracleResolution>, Error> {
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
         Ok(None)
@@ -275,7 +277,7 @@ impl MarketResolutionManager {
     }
 
     /// Get market resolution
-    pub fn get_market_resolution(env: &Env, market_id: &Symbol) -> Result<Option<MarketResolution>, Error> {
+    pub fn get_market_resolution(_env: &Env, _market_id: &Symbol) -> Result<Option<MarketResolution>, Error> {
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
         Ok(None)
@@ -427,7 +429,7 @@ impl OracleResolutionAnalytics {
     }
 
     /// Get oracle resolution statistics
-    pub fn get_oracle_stats(env: &Env) -> Result<OracleStats, Error> {
+    pub fn get_oracle_stats(_env: &Env) -> Result<OracleStats, Error> {
         // For now, return default stats since we don't store complex types
         Ok(OracleStats::default())
     }
@@ -459,7 +461,7 @@ impl MarketResolutionAnalytics {
 
     /// Calculate confidence score
     pub fn calculate_confidence_score(
-        oracle_result: &String,
+        _oracle_result: &String,
         community_consensus: &CommunityConsensus,
         method: &ResolutionMethod,
     ) -> u32 {
@@ -480,7 +482,7 @@ impl MarketResolutionAnalytics {
     }
 
     /// Calculate resolution analytics
-    pub fn calculate_resolution_analytics(env: &Env) -> Result<ResolutionAnalytics, Error> {
+    pub fn calculate_resolution_analytics(_env: &Env) -> Result<ResolutionAnalytics, Error> {
         // For now, return default analytics since we don't store complex types
         Ok(ResolutionAnalytics::default())
     }

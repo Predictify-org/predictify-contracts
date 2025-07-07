@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 
 use soroban_sdk::{
-    contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec,
+    contracttype, vec, Address, Env, Map, String, Symbol, Vec,
 };
 use crate::{
     errors::Error,
@@ -39,19 +39,19 @@ impl ValidationError {
         match self {
             ValidationError::InvalidInput => Error::InvalidInput,
             ValidationError::InvalidMarket => Error::MarketNotFound,
-            ValidationError::InvalidOracle => Error::InvalidOracleConfig,
-            ValidationError::InvalidFee => Error::InvalidFeeConfig,
+            ValidationError::InvalidOracle => Error::InvalidConfig,
+            ValidationError::InvalidFee => Error::InvalidConfig,
             ValidationError::InvalidVote => Error::AlreadyVoted,
             ValidationError::InvalidDispute => Error::AlreadyDisputed,
             ValidationError::InvalidAddress => Error::Unauthorized,
-            ValidationError::InvalidString => Error::InvalidQuestion,
+            ValidationError::InvalidString => Error::InvalidInput,
             ValidationError::InvalidNumber => Error::InvalidThreshold,
-            ValidationError::InvalidTimestamp => Error::InvalidDuration,
-            ValidationError::InvalidDuration => Error::InvalidDuration,
+            ValidationError::InvalidTimestamp => Error::InvalidInput,
+            ValidationError::InvalidDuration => Error::InvalidInput,
             ValidationError::InvalidOutcome => Error::InvalidOutcome,
             ValidationError::InvalidStake => Error::InsufficientStake,
             ValidationError::InvalidThreshold => Error::InvalidThreshold,
-            ValidationError::InvalidConfig => Error::InvalidOracleConfig,
+            ValidationError::InvalidConfig => Error::InvalidConfig,
         }
     }
 }
@@ -193,11 +193,11 @@ impl InputValidator {
     /// Validate duration range
     pub fn validate_duration(duration_days: &u32) -> Result<(), ValidationError> {
         if *duration_days < config::MIN_MARKET_DURATION_DAYS {
-            return Err(ValidationError::InvalidDuration);
+            return Err(ValidationError::InvalidInput);
         }
         
         if *duration_days > config::MAX_MARKET_DURATION_DAYS {
-            return Err(ValidationError::InvalidDuration);
+            return Err(ValidationError::InvalidInput);
         }
         
         Ok(())
@@ -307,7 +307,7 @@ impl MarketValidator {
     pub fn validate_market_for_resolution(
         env: &Env,
         market: &Market,
-        market_id: &Symbol,
+        _market_id: &Symbol,
     ) -> Result<(), ValidationError> {
         // Check if market exists
         if market.question.to_string().is_empty() {
@@ -335,9 +335,9 @@ impl MarketValidator {
 
     /// Validate market for fee collection
     pub fn validate_market_for_fee_collection(
-        env: &Env,
+        _env: &Env,
         market: &Market,
-        market_id: &Symbol,
+        _market_id: &Symbol,
     ) -> Result<(), ValidationError> {
         // Check if market exists
         if market.question.to_string().is_empty() {
@@ -586,12 +586,12 @@ impl VoteValidator {
     }
 
     /// Validate stake amount
-    pub fn validate_stake_amount(stake_amount: &i128) -> Result<(), ValidationError> {
-        if let Err(_) = InputValidator::validate_positive_number(stake_amount) {
+    pub fn validate_stake_amount(_stake_amount: &i128) -> Result<(), ValidationError> {
+        if let Err(_) = InputValidator::validate_positive_number(_stake_amount) {
             return Err(ValidationError::InvalidStake);
         }
         
-        if *stake_amount < config::MIN_VOTE_STAKE {
+        if *_stake_amount < config::MIN_VOTE_STAKE {
             return Err(ValidationError::InvalidStake);
         }
         
@@ -775,7 +775,7 @@ impl ComprehensiveValidator {
     pub fn validate_market_state(
         env: &Env,
         market: &Market,
-        market_id: &Symbol,
+        _market_id: &Symbol,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
         

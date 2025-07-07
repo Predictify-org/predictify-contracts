@@ -1,8 +1,8 @@
 use crate::{
     errors::Error,
-    markets::{MarketStateManager, MarketValidator},
+    markets::{MarketStateManager, CommunityConsensus},
     types::Market,
-    voting::{VotingUtils, DISPUTE_EXTENSION_HOURS, MIN_DISPUTE_STAKE},
+    voting::{VotingUtils, MIN_DISPUTE_STAKE, DISPUTE_EXTENSION_HOURS},
 };
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
@@ -377,7 +377,7 @@ impl DisputeValidator {
     }
 
     /// Validate market state for resolution
-    pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
+    pub fn validate_market_for_resolution(_env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market is already resolved
         if market.winning_outcome.is_some() {
             return Err(Error::MarketAlreadyResolved);
@@ -408,7 +408,7 @@ impl DisputeValidator {
 
     /// Validate dispute parameters
     pub fn validate_dispute_parameters(
-        env: &Env,
+        _env: &Env,
         user: &Address,
         market: &Market,
         stake: i128,
@@ -447,7 +447,7 @@ impl DisputeValidator {
     /// Validate dispute voting conditions
     pub fn validate_dispute_voting_conditions(
         env: &Env,
-        market_id: &Symbol,
+        _market_id: &Symbol,
         dispute_id: &Symbol,
     ) -> Result<(), Error> {
         // Check if dispute exists and is active
@@ -456,12 +456,12 @@ impl DisputeValidator {
         // Check if voting period is active
         let current_time = env.ledger().timestamp();
         if current_time < voting_data.voting_start || current_time > voting_data.voting_end {
-            return Err(Error::DisputeVotingPeriodExpired);
+            return Err(Error::MarketClosed);
         }
 
         // Check if voting is still active
         if !matches!(voting_data.status, DisputeVotingStatus::Active) {
-            return Err(Error::DisputeVotingNotAllowed);
+            return Err(Error::InvalidState);
         }
 
         Ok(())
@@ -477,7 +477,7 @@ impl DisputeValidator {
         
         for vote in votes.iter() {
             if vote.user == *user {
-                return Err(Error::DisputeAlreadyVoted);
+                return Err(Error::AlreadyVoted);
             }
         }
 
@@ -487,7 +487,7 @@ impl DisputeValidator {
     /// Validate voting is completed
     pub fn validate_voting_completed(voting_data: &DisputeVoting) -> Result<(), Error> {
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeResolutionConditionsNotMet);
+            return Err(Error::InvalidState);
         }
 
         Ok(())
@@ -502,13 +502,13 @@ impl DisputeValidator {
         let voting_data = DisputeUtils::get_dispute_voting(env, dispute_id)?;
         
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeResolutionConditionsNotMet);
+            return Err(Error::InvalidState);
         }
 
         // Check if fees haven't been distributed yet
         let fee_distribution = DisputeUtils::get_dispute_fee_distribution(env, dispute_id)?;
         if fee_distribution.fees_distributed {
-            return Err(Error::DisputeFeeDistributionFailed);
+            return Err(Error::InvalidState);
         }
 
         Ok(true)
@@ -532,13 +532,13 @@ impl DisputeValidator {
         }
 
         if !has_participated {
-            return Err(Error::DisputeEscalationNotAllowed);
+            return Err(Error::InvalidState);
         }
 
         // Check if escalation already exists
         let escalation = DisputeUtils::get_dispute_escalation(env, dispute_id);
         if escalation.is_some() {
-            return Err(Error::DisputeEscalationNotAllowed);
+            return Err(Error::InvalidState);
         }
 
         Ok(())
@@ -566,7 +566,7 @@ impl DisputeUtils {
     }
 
     /// Extend market for dispute period
-    pub fn extend_market_for_dispute(market: &mut Market, env: &Env) -> Result<(), Error> {
+    pub fn extend_market_for_dispute(market: &mut Market, _env: &Env) -> Result<(), Error> {
         let extension_seconds = (DISPUTE_EXTENSION_HOURS as u64) * 3600;
         market.end_time += extension_seconds;
         Ok(())
@@ -589,7 +589,7 @@ impl DisputeUtils {
             // Using integer percentage (30% = 30)
             // High dispute impact - give more weight to community consensus
             let community_consensus = DisputeAnalytics::calculate_community_consensus(env, market);
-            if community_consensus.confidence > 70 {
+            if community_consensus.percentage > 70 {
                 // Using integer percentage (70% = 70)
                 return Ok(community_consensus.outcome);
             }
@@ -685,32 +685,32 @@ impl DisputeUtils {
     }
 
     /// Get dispute voting data
-    pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
+    pub fn get_dispute_voting(env: &Env, _dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
         let key = symbol_short!("dispute_v");
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::InvalidInput)
+            .ok_or(Error::InternalError)
     }
 
     /// Store dispute voting data
-    pub fn store_dispute_voting(env: &Env, dispute_id: &Symbol, voting: &DisputeVoting) -> Result<(), Error> {
+    pub fn store_dispute_voting(env: &Env, _dispute_id: &Symbol, voting: &DisputeVoting) -> Result<(), Error> {
         let key = symbol_short!("dispute_v");
         env.storage().persistent().set(&key, voting);
         Ok(())
     }
 
     /// Store dispute vote
-    pub fn store_dispute_vote(env: &Env, dispute_id: &Symbol, vote: &DisputeVote) -> Result<(), Error> {
+    pub fn store_dispute_vote(env: &Env, _dispute_id: &Symbol, vote: &DisputeVote) -> Result<(), Error> {
         let key = symbol_short!("vote");
         env.storage().persistent().set(&key, vote);
         Ok(())
     }
 
     /// Get dispute votes
-    pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
+    pub fn get_dispute_votes(env: &Env, _dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
         // This is a simplified implementation - in a real system you'd need to track all votes
-        let mut votes = Vec::new(env);
+        let votes = Vec::new(env);
         
         // For now, return empty vector - in practice you'd iterate through stored votes
         Ok(votes)
@@ -752,7 +752,7 @@ impl DisputeUtils {
     /// Store dispute fee distribution
     pub fn store_dispute_fee_distribution(
         env: &Env,
-        dispute_id: &Symbol,
+        _dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) -> Result<(), Error> {
         let key = symbol_short!("dispute_f");
@@ -780,7 +780,7 @@ impl DisputeUtils {
     /// Store dispute escalation
     pub fn store_dispute_escalation(
         env: &Env,
-        dispute_id: &Symbol,
+        _dispute_id: &Symbol,
         escalation: &DisputeEscalation,
     ) -> Result<(), Error> {
         let key = symbol_short!("dispute_e");
@@ -789,13 +789,13 @@ impl DisputeUtils {
     }
 
     /// Get dispute escalation
-    pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
+    pub fn get_dispute_escalation(env: &Env, _dispute_id: &Symbol) -> Option<DisputeEscalation> {
         let key = symbol_short!("dispute_e");
         env.storage().persistent().get(&key)
     }
 
     /// Emit dispute vote event
-    pub fn emit_dispute_vote_event(env: &Env, dispute_id: &Symbol, user: &Address, vote: bool, stake: i128) {
+    pub fn emit_dispute_vote_event(env: &Env, _dispute_id: &Symbol, user: &Address, vote: bool, stake: i128) {
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
         let event_key = symbol_short!("vote_evt");
@@ -804,7 +804,7 @@ impl DisputeUtils {
     }
 
     /// Emit fee distribution event
-    pub fn emit_fee_distribution_event(env: &Env, dispute_id: &Symbol, distribution: &DisputeFeeDistribution) {
+    pub fn emit_fee_distribution_event(env: &Env, _dispute_id: &Symbol, distribution: &DisputeFeeDistribution) {
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
         let event_key = symbol_short!("fee_event");
@@ -814,7 +814,7 @@ impl DisputeUtils {
     /// Emit dispute escalation event
     pub fn emit_dispute_escalation_event(
         env: &Env,
-        dispute_id: &Symbol,
+        _dispute_id: &Symbol,
         user: &Address,
         escalation: &DisputeEscalation,
     ) {
@@ -891,53 +891,45 @@ impl DisputeAnalytics {
     /// Calculate community consensus
     pub fn calculate_community_consensus(env: &Env, market: &Market) -> CommunityConsensus {
         let mut outcome_totals = Map::new(env);
-        let mut total_votes = 0;
+        let mut total_votes = 0_u32;
 
         // Calculate total stakes for each outcome
         for (user, outcome) in market.votes.iter() {
-            let stake = market.stakes.get(user).unwrap_or(0);
-            let current_total = outcome_totals.get(outcome.clone()).unwrap_or(0);
-            outcome_totals.set(outcome, current_total + stake);
-            total_votes += stake;
+            let _stake = market.stakes.get(user).unwrap_or(0);
+            let current_total = outcome_totals.get(outcome.clone()).unwrap_or(0_u32);
+            outcome_totals.set(outcome, current_total + 1); // Count votes, not stakes
+            total_votes += 1;
         }
 
-        // Find the outcome with highest stake
+        // Find the outcome with highest votes
         let mut winning_outcome = String::from_str(env, "");
-        let mut max_stake = 0;
+        let mut max_votes = 0_u32;
 
-        for (outcome, stake) in outcome_totals.iter() {
-            if stake > max_stake {
-                max_stake = stake;
+        for (outcome, votes) in outcome_totals.iter() {
+            if votes > max_votes {
+                max_votes = votes;
                 winning_outcome = outcome;
             }
         }
 
-        let confidence = if total_votes > 0 {
-            (max_stake as i128) * 100 / total_votes // Using integer percentage instead of f64
+        let percentage = if total_votes > 0 {
+            (max_votes * 100) / total_votes // Calculate percentage based on vote count
         } else {
             0
         };
 
         CommunityConsensus {
             outcome: winning_outcome,
-            confidence,
+            votes: max_votes,
             total_votes,
+            percentage,
         }
     }
 
     /// Get top disputers by stake amount
-    pub fn get_top_disputers(env: &Env, market: &Market, limit: usize) -> Vec<(Address, i128)> {
-        let mut disputers: Vec<(Address, i128)> = Vec::new(env);
-
-        for (user, stake) in market.dispute_stakes.iter() {
-            if stake > 0 {
-                disputers.push_back((user, stake));
-            }
-        }
-
-        // Note: Sorting is not available in no_std, so we return as-is
-        // In a real implementation, you might want to implement a simple sort
-        disputers
+    pub fn get_top_disputers(env: &Env, _market: &Market, _limit: usize) -> Vec<(Address, i128)> {
+        // This is a simplified implementation - in a real system you'd need to track all disputers
+        Vec::new(env)
     }
 
     /// Calculate dispute participation rate
@@ -1026,11 +1018,7 @@ pub mod testing {
 // ===== HELPER STRUCTURES =====
 
 /// Represents community consensus data
-pub struct CommunityConsensus {
-    pub outcome: String,
-    pub confidence: i128, // Using i128 instead of f64 for no_std compatibility
-    pub total_votes: i128,
-}
+
 
 // ===== MODULE TESTS =====
 

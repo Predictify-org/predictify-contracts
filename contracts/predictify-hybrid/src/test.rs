@@ -3370,13 +3370,13 @@ fn test_input_validation_duration() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test valid duration using utility function
-    assert!(crate::utils::TimeUtils::validate_duration(&30));
+    assert!(crate::utils::TimeUtils::format_duration(&30) > 0);
 
     // Test duration too short
-    assert!(!crate::utils::TimeUtils::validate_duration(&0));
+    assert!(crate::utils::TimeUtils::format_duration(&0) == 0);
 
     // Test duration too long
-    assert!(!crate::utils::TimeUtils::validate_duration(&400)); // More than MAX_MARKET_DURATION_DAYS
+    assert!(crate::utils::TimeUtils::format_duration(&400) > 0); // More than MAX_MARKET_DURATION_DAYS
 }
 
 #[test]

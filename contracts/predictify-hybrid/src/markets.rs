@@ -1,8 +1,9 @@
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
-use crate::oracles::{OracleFactory, OracleUtils};
-use crate::types::*;
+use crate::{
+    errors::Error,
+    types::{Market, OracleConfig, OracleProvider, MarketCreationParams},
+};
 
 /// Market management system for Predictify Hybrid contract
 ///
@@ -133,30 +134,30 @@ pub struct MarketValidator;
 impl MarketValidator {
     /// Validate market creation parameters
     pub fn validate_market_params(
-        env: &Env,
+        _env: &Env,
         question: &String,
         outcomes: &Vec<String>,
         duration_days: u32,
     ) -> Result<(), Error> {
         // Validate question is not empty
         if question.is_empty() {
-            return Err(Error::InvalidQuestion);
+            return Err(Error::InvalidInput);
         }
 
         // Validate outcomes
         if outcomes.len() < 2 {
-            return Err(Error::InvalidOutcomes);
+            return Err(Error::InvalidOutcome);
         }
 
         for outcome in outcomes.iter() {
             if outcome.is_empty() {
-                return Err(Error::InvalidOutcomes);
+                return Err(Error::InvalidOutcome);
             }
         }
 
         // Validate duration
         if duration_days == 0 || duration_days > 365 {
-            return Err(Error::InvalidDuration);
+            return Err(Error::InvalidInput);
         }
 
         Ok(())
@@ -199,7 +200,7 @@ impl MarketValidator {
 
     /// Validate outcome for a market
     pub fn validate_outcome(
-        env: &Env,
+        _env: &Env,
         outcome: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), Error> {
@@ -540,7 +541,7 @@ impl MarketTestHelpers {
             ),
             String::from_str(env, "Will BTC go above $25,000 by December 31?"),
             vec![
-                env,
+                &env,
                 String::from_str(env, "yes"),
                 String::from_str(env, "no"),
             ],

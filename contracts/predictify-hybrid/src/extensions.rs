@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, symbol_short, token, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::types::*;
@@ -120,11 +120,11 @@ impl ExtensionValidator {
     ) -> Result<(), Error> {
         // Validate additional days
         if additional_days < MIN_EXTENSION_DAYS {
-            return Err(Error::InvalidExtensionDays);
+            return Err(Error::InvalidInput);
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
-            return Err(Error::ExtensionDaysExceeded);
+            return Err(Error::InvalidInput);
         }
 
         // Get market and validate state
@@ -154,12 +154,12 @@ impl ExtensionValidator {
 
         // Check total extension days limit
         if market.total_extension_days + additional_days > market.max_extension_days {
-            return Err(Error::ExtensionDaysExceeded);
+            return Err(Error::InvalidInput);
         }
 
         // Check number of extensions limit
         if (market.extension_history.len() as usize) >= (MAX_TOTAL_EXTENSIONS as usize) {
-            return Err(Error::MarketExtensionNotAllowed);
+            return Err(Error::InvalidState);
         }
 
         Ok(())
@@ -187,20 +187,20 @@ impl ExtensionUtils {
     /// Handle extension fees
     pub fn handle_extension_fees(
         env: &Env,
-        market_id: &Symbol,
+        _market_id: &Symbol,
         additional_days: u32,
     ) -> Result<i128, Error> {
         let fee_amount = ExtensionManager::calculate_extension_fee(additional_days);
 
         // Get token client for fee collection
-        let token_client = MarketUtils::get_token_client(env)?;
+        let _token_client = MarketUtils::get_token_client(env)?;
 
         // Transfer fees from admin to contract
         // Note: In a real implementation, you would need to handle the actual token transfer
         // For now, we'll just validate the fee amount
 
         if fee_amount <= 0 {
-            return Err(Error::ExtensionFeeInsufficient);
+            return Err(Error::InsufficientStake);
         }
 
         Ok(fee_amount)
@@ -310,13 +310,13 @@ mod tests {
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
                 .unwrap_err(),
-            Error::InvalidExtensionDays
+            Error::InvalidInput
         );
 
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
                 .unwrap_err(),
-            Error::ExtensionDaysExceeded
+            Error::InvalidInput
         );
     }
 
