@@ -65,7 +65,7 @@ use events::{EventEmitter, EventLogger, EventHelpers, EventTestingUtils, EventDo
 
 /// Admin controls and functions module
 pub mod admin;
-use admin::{AdminInitializer, AdminFunctions};
+use admin::{AdminInitializer, AdminFunctions, AdminAccessControl};
 
 /// Market extensions and modifications module
 pub mod extensions;
