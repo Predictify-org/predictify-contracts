@@ -211,7 +211,7 @@ impl MarketExtension {
     }
 
     /// Validate extension parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, _env: &Env) -> Result<(), crate::errors::Error> {
         if self.additional_days == 0 {
             return Err(crate::errors::Error::InvalidExtensionDays);
         }
