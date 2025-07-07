@@ -434,27 +434,19 @@ pub struct MarketResolutionAnalytics;
 impl MarketResolutionAnalytics {
     /// Determine resolution method
     pub fn determine_resolution_method(
-        oracle_result: &String,
+        _oracle_result: &String,
         community_consensus: &CommunityConsensus,
     ) -> ResolutionMethod {
-        if oracle_result == &community_consensus.outcome {
-            if community_consensus.percentage > 70 {
-                ResolutionMethod::Hybrid
-            } else {
-                ResolutionMethod::OracleOnly
-            }
+        if community_consensus.percentage > 70 {
+            ResolutionMethod::Hybrid
         } else {
-            if community_consensus.percentage > 80 && community_consensus.total_votes >= 10 {
-                ResolutionMethod::CommunityOnly
-            } else {
-                ResolutionMethod::OracleOnly
-            }
+            ResolutionMethod::OracleOnly
         }
     }
 
     /// Calculate confidence score
     pub fn calculate_confidence_score(
-        oracle_result: &String,
+        _oracle_result: &String,
         community_consensus: &CommunityConsensus,
         method: &ResolutionMethod,
     ) -> u32 {
