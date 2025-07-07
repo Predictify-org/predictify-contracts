@@ -377,7 +377,7 @@ impl DisputeValidator {
     }
 
     /// Validate market state for resolution
-    pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
+    pub fn validate_market_for_resolution(_env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market is already resolved
         if market.winning_outcome.is_some() {
             return Err(Error::MarketAlreadyResolved);
