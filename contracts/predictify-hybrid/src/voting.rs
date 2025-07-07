@@ -583,7 +583,7 @@ impl VotingValidator {
 
     /// Validate vote parameters
     pub fn validate_vote_parameters(
-        _env: &Env,
+        env: &Env,
         outcome: &String,
         valid_outcomes: &Vec<String>,
         stake: i128,
@@ -612,7 +612,7 @@ impl VotingValidator {
 
     /// Validate dispute stake with dynamic threshold
     pub fn validate_dispute_stake_with_threshold(
-        _env: &Env,
+        env: &Env,
         stake: i128,
         market_id: &Symbol,
     ) -> Result<(), Error> {
