@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+wee_alloc = "0.4.5"
 
 
 [dev-dependencies]
