@@ -3,6 +3,7 @@
 use super::*;
 use crate::errors::Error;
 use crate::oracles::ReflectorOracle;
+use crate::oracles::OracleInterface;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
