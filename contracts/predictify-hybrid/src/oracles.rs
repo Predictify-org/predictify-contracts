@@ -1,10 +1,6 @@
-
 #![allow(dead_code)]
 
-use soroban_sdk::{
-    Address, Env, String, Symbol, symbol_short, vec, IntoVal,
-};
-
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, IntoVal, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::types::*;
@@ -16,7 +12,7 @@ use crate::types::*;
 /// - Reflector oracle implementation (primary oracle for Stellar Network)
 /// - Oracle factory pattern for creating oracle instances
 /// - Oracle utilities for price comparison and outcome determination
-/// 
+///
 /// Note: Pyth Network is not available on Stellar, so Reflector is the primary oracle provider.
 
 // ===== ORACLE INTERFACE =====
@@ -36,21 +32,61 @@ pub trait OracleInterface {
     fn is_healthy(&self, env: &Env) -> Result<bool, Error>;
 }
 
-// ===== PYTH ORACLE PLACEHOLDER =====
+// ===== PYTH ORACLE IMPLEMENTATION =====
 
-/// Pyth Network oracle placeholder (NOT AVAILABLE ON STELLAR)
-/// 
-/// Note: Pyth Network does not currently support Stellar blockchain.
-/// This implementation returns an error for all operations.
-#[derive(Debug)]
+/// Pyth Network oracle implementation
+///
+/// **Important**: Pyth Network does not currently support Stellar blockchain.
+/// This implementation is designed to be future-proof and follows Rust best practices.
+/// When Pyth becomes available on Stellar, this implementation can be easily updated
+/// to use the actual Pyth price feeds.
+///
+/// For now, this implementation returns appropriate errors to indicate that Pyth
+/// is not available on Stellar.
+#[derive(Debug, Clone)]
 pub struct PythOracle {
     contract_id: Address,
+    feed_configurations: Vec<PythFeedConfig>,
+}
+
+/// Pyth feed configuration
+#[contracttype]
+#[derive(Debug, Clone)]
+pub struct PythFeedConfig {
+    pub feed_id: String,
+    pub asset_symbol: String,
+    pub decimals: u32,
+    pub is_active: bool,
 }
 
 impl PythOracle {
-    /// Create a new Pyth oracle instance (will always fail on Stellar)
+    /// Create a new Pyth oracle instance
+    ///
+    /// # Arguments
+    /// * `contract_id` - The contract address for the Pyth oracle
+    ///
+    /// # Returns
+    /// A new PythOracle instance configured for the given contract
     pub fn new(contract_id: Address) -> Self {
-        Self { contract_id }
+        Self {
+            contract_id,
+            feed_configurations: Vec::new(&soroban_sdk::Env::default()),
+        }
+    }
+
+    /// Create a new Pyth oracle with pre-configured feeds
+    ///
+    /// # Arguments
+    /// * `contract_id` - The contract address for the Pyth oracle
+    /// * `feed_configs` - Vector of feed configurations
+    ///
+    /// # Returns
+    /// A new PythOracle instance with configured feeds
+    pub fn with_feeds(contract_id: Address, feed_configs: Vec<PythFeedConfig>) -> Self {
+        Self {
+            contract_id,
+            feed_configurations: feed_configs,
+        }
     }
 
     /// Get the Pyth oracle contract ID
@@ -58,35 +94,210 @@ impl PythOracle {
         self.contract_id.clone()
     }
 
+    /// Add a new feed configuration
+    ///
+    /// # Arguments
+    /// * `feed_config` - Configuration for the new feed
+    pub fn add_feed_config(&mut self, feed_config: PythFeedConfig) {
+        self.feed_configurations.push_back(feed_config);
+    }
+
+    /// Get feed configuration by feed ID
+    ///
+    /// # Arguments
+    /// * `feed_id` - The feed ID to search for
+    ///
+    /// # Returns
+    /// Optional feed configuration if found
+    pub fn get_feed_config(&self, feed_id: &String) -> Option<PythFeedConfig> {
+        for config in self.feed_configurations.iter() {
+            if config.feed_id == *feed_id {
+                return Some(config.clone());
+            }
+        }
+        None
+    }
+
+    /// Validate feed ID format
+    ///
+    /// # Arguments
+    /// * `feed_id` - The feed ID to validate
+    ///
+    /// # Returns
+    /// True if the feed ID format is valid
+    pub fn validate_feed_id(&self, feed_id: &String) -> bool {
+        // Pyth feed IDs are typically hex strings
+        !feed_id.is_empty() && feed_id.len() >= 8
+    }
+
+    /// Get supported asset symbols
+    ///
+    /// # Returns
+    /// Vector of supported asset symbols
+    pub fn get_supported_assets(&self) -> Vec<String> {
+        let mut assets = Vec::new(&soroban_sdk::Env::default());
+        for config in self.feed_configurations.iter() {
+            if config.is_active {
+                assets.push_back(config.asset_symbol.clone());
+            }
+        }
+        assets
+    }
+
+    /// Check if a feed is configured and active
+    ///
+    /// # Arguments
+    /// * `feed_id` - The feed ID to check
+    ///
+    /// # Returns
+    /// True if the feed is configured and active
+    pub fn is_feed_active(&self, feed_id: &String) -> bool {
+        if let Some(config) = self.get_feed_config(feed_id) {
+            config.is_active
+        } else {
+            false
+        }
+    }
+
+    /// Get the number of configured feeds
+    ///
+    /// # Returns
+    /// Number of configured feeds
+    pub fn get_feed_count(&self) -> u32 {
+        self.feed_configurations.len() as u32
+    }
+
+    /// Convert raw price to scaled price based on feed configuration
+    ///
+    /// # Arguments
+    /// * `raw_price` - Raw price from oracle
+    /// * `feed_config` - Feed configuration containing decimals
+    ///
+    /// # Returns
+    /// Scaled price in the contract's expected format
+    pub fn scale_price(&self, raw_price: i128, feed_config: &PythFeedConfig) -> i128 {
+        // Convert from Pyth price format to contract format
+        // This is a placeholder implementation
+        if feed_config.decimals > 0 {
+            raw_price / (10_i128.pow(feed_config.decimals as u32))
+        } else {
+            raw_price
+        }
+    }
+
+    /// Get price with retry logic (future implementation)
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `feed_id` - Feed ID to get price for
+    /// * `max_retries` - Maximum number of retry attempts
+    ///
+    /// # Returns
+    /// Result containing the price or error
+    pub fn get_price_with_retry(
+        &self,
+        env: &Env,
+        feed_id: &String,
+        max_retries: u32,
+    ) -> Result<i128, Error> {
+        for attempt in 0..max_retries {
+            match self.get_price(env, feed_id) {
+                Ok(price) => return Ok(price),
+                Err(e) => {
+                    if attempt == max_retries - 1 {
+                        return Err(e);
+                    }
+                    // In a real implementation, we would wait before retrying
+                }
+            }
+        }
+        Err(Error::OracleUnavailable)
+    }
 }
 
 impl OracleInterface for PythOracle {
-    fn get_price(&self, _env: &Env, _feed_id: &String) -> Result<i128, Error> {
-        // Pyth Network is not available on Stellar
-        Err(Error::InvalidOracleConfig)
+    /// Get the current price for a given feed ID
+    ///
+    /// **Note**: This function returns an error because Pyth Network is not
+    /// available on Stellar. When Pyth becomes available, this implementation
+    /// should be updated to make actual oracle calls.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `feed_id` - The feed ID to get price for
+    ///
+    /// # Returns
+    /// Error indicating Pyth is not available on Stellar
+    fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
+        // Validate feed ID format
+        if !self.validate_feed_id(feed_id) {
+            return Err(Error::InvalidOracleFeed);
+        }
 
+        // Check if feed is configured
+        if !self.is_feed_active(feed_id) {
+            return Err(Error::InvalidOracleFeed);
+        }
+
+        // Log the attempt for debugging
+        env.events().publish(
+            (Symbol::new(env, "pyth_price_request"),),
+            (feed_id.clone(), env.ledger().timestamp()),
+        );
+
+        // Pyth Network is not available on Stellar
+        // This error should be handled by the calling code to fallback to Reflector
+        Err(Error::OracleUnavailable)
     }
 
+    /// Get the oracle provider type
+    ///
+    /// # Returns
+    /// OracleProvider::Pyth
     fn provider(&self) -> OracleProvider {
         OracleProvider::Pyth
     }
 
+    /// Get the oracle contract ID
+    ///
+    /// # Returns
+    /// The contract address for this oracle
     fn contract_id(&self) -> Address {
         self.contract_id.clone()
     }
 
-    
-    fn is_healthy(&self, _env: &Env) -> Result<bool, Error> {
-        // Pyth Network is not available on Stellar
-        Ok(false)
+    /// Check if the oracle is healthy and available
+    ///
+    /// **Note**: This function returns false because Pyth Network is not
+    /// available on Stellar. When Pyth becomes available, this implementation
+    /// should be updated to perform actual health checks.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    ///
+    /// # Returns
+    /// Always returns false for Stellar (Pyth not available)
+    fn is_healthy(&self, env: &Env) -> Result<bool, Error> {
+        // Log the health check for debugging
+        env.events().publish(
+            (Symbol::new(env, "pyth_health_check"),),
+            (self.contract_id.clone(), env.ledger().timestamp()),
+        );
 
+        // Pyth Network is not available on Stellar
+        // In a real implementation, this would check:
+        // - Oracle contract responsiveness
+        // - Latest price timestamp freshness
+        // - Feed availability
+        // - Network connectivity
+        Ok(false)
     }
 }
 
 // ===== REFLECTOR ORACLE CLIENT =====
 
 /// Client for interacting with Reflector oracle contract
-/// 
+///
 /// Reflector is the primary oracle provider for the Stellar Network,
 /// providing real-time price feeds with high reliability and security.
 pub struct ReflectorOracleClient<'a> {
@@ -140,7 +351,7 @@ impl<'a> ReflectorOracleClient<'a> {
 // ===== REFLECTOR ORACLE IMPLEMENTATION =====
 
 /// Reflector oracle implementation for Stellar Network
-/// 
+///
 /// This is the primary oracle provider for Stellar, offering:
 /// - Real-time price feeds for major cryptocurrencies
 /// - TWAP (Time-Weighted Average Price) calculations
@@ -163,23 +374,29 @@ impl ReflectorOracle {
     }
 
     /// Parse feed ID to extract asset information
-    /// 
+    ///
     /// Converts feed IDs like "BTC/USD", "ETH/USD", "XLM/USD" to Reflector asset types
     pub fn parse_feed_id(&self, env: &Env, feed_id: &String) -> Result<ReflectorAsset, Error> {
         if feed_id.is_empty() {
             return Err(Error::InvalidOracleFeed);
         }
 
-        
         // Extract the base asset from the feed ID
         // For simplicity, we'll check for common patterns
-        if feed_id == &String::from_str(env, "BTC/USD") || feed_id == &String::from_str(env, "BTC") {
+        if feed_id == &String::from_str(env, "BTC/USD") || feed_id == &String::from_str(env, "BTC")
+        {
             Ok(ReflectorAsset::Other(Symbol::new(env, "BTC")))
-        } else if feed_id == &String::from_str(env, "ETH/USD") || feed_id == &String::from_str(env, "ETH") {
+        } else if feed_id == &String::from_str(env, "ETH/USD")
+            || feed_id == &String::from_str(env, "ETH")
+        {
             Ok(ReflectorAsset::Other(Symbol::new(env, "ETH")))
-        } else if feed_id == &String::from_str(env, "XLM/USD") || feed_id == &String::from_str(env, "XLM") {
+        } else if feed_id == &String::from_str(env, "XLM/USD")
+            || feed_id == &String::from_str(env, "XLM")
+        {
             Ok(ReflectorAsset::Other(Symbol::new(env, "XLM")))
-        } else if feed_id == &String::from_str(env, "USDC/USD") || feed_id == &String::from_str(env, "USDC") {
+        } else if feed_id == &String::from_str(env, "USDC/USD")
+            || feed_id == &String::from_str(env, "USDC")
+        {
             Ok(ReflectorAsset::Other(Symbol::new(env, "USDC")))
         } else {
             // Default to treating the feed_id as the asset symbol
@@ -193,36 +410,40 @@ impl ReflectorOracle {
             Ok(ReflectorAsset::Other(asset_symbol))
         }
     }
-    
+
     /// Get price from Reflector oracle with fallback mechanisms
     pub fn get_reflector_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         // Parse the feed_id to extract asset information
         let _base_asset = self.parse_feed_id(env, feed_id)?;
-        
+
         // For now, return mock data for testing
         // In a production environment, this would call the real Reflector oracle contract
         // TODO: Implement real oracle contract calls when deployed to mainnet
         self.get_mock_price_for_testing(env, feed_id)
     }
-    
+
     /// Get mock price data for testing purposes
-    /// 
+    ///
     /// This is called when the real oracle contract is not available,
     /// typically in testing environments with mock contracts
     fn get_mock_price_for_testing(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         // Return mock prices for testing
         // These prices are designed to work with the test threshold of 2500000 (25k)
-        if feed_id == &String::from_str(env, "BTC") || feed_id == &String::from_str(env, "BTC/USD") {
+        if feed_id == &String::from_str(env, "BTC") || feed_id == &String::from_str(env, "BTC/USD")
+        {
             Ok(2600000) // $26k - above the $25k threshold in tests
-        } else if feed_id == &String::from_str(env, "ETH") || feed_id == &String::from_str(env, "ETH/USD") {
+        } else if feed_id == &String::from_str(env, "ETH")
+            || feed_id == &String::from_str(env, "ETH/USD")
+        {
             Ok(200000) // $2k - reasonable ETH price
-        } else if feed_id == &String::from_str(env, "XLM") || feed_id == &String::from_str(env, "XLM/USD") {
+        } else if feed_id == &String::from_str(env, "XLM")
+            || feed_id == &String::from_str(env, "XLM/USD")
+        {
             Ok(12) // $0.12 - reasonable XLM price
         } else {
             // Default to BTC price for unknown assets
             Ok(2600000)
         }
-
     }
 
     /// Check if the Reflector oracle is healthy
@@ -253,14 +474,14 @@ impl OracleInterface for ReflectorOracle {
 // ===== ORACLE FACTORY =====
 
 /// Factory for creating oracle instances
-/// 
+///
 /// Primary focus on Reflector oracle for Stellar Network.
 /// Pyth is marked as unsupported since it's not available on Stellar.
 pub struct OracleFactory;
 
 impl OracleFactory {
     /// Create a Pyth oracle instance (NOT SUPPORTED ON STELLAR)
-    /// 
+    ///
     /// This will create a placeholder that returns errors for all operations
     /// since Pyth Network does not support Stellar blockchain.
     pub fn create_pyth_oracle(contract_id: Address) -> PythOracle {
@@ -268,27 +489,43 @@ impl OracleFactory {
     }
 
     /// Create a Reflector oracle instance (RECOMMENDED FOR STELLAR)
-    /// 
+    ///
     /// Reflector is the primary oracle provider for Stellar Network
     pub fn create_reflector_oracle(contract_id: Address) -> ReflectorOracle {
         ReflectorOracle::new(contract_id)
     }
 
     /// Create an oracle instance based on provider and contract ID
+    ///
+    /// # Arguments
+    /// * `provider` - The oracle provider type
+    /// * `contract_id` - The contract address for the oracle
+    ///
+    /// # Returns
+    /// Result containing the oracle instance or error
+    ///
+    /// # Notes
+    /// - Pyth oracle will be created but will return errors when used on Stellar
+    /// - Reflector oracle is the recommended choice for Stellar
+    /// - Other providers are not supported
     pub fn create_oracle(
         provider: OracleProvider,
         contract_id: Address,
     ) -> Result<OracleInstance, Error> {
         match provider {
             OracleProvider::Pyth => {
-                // Pyth is not supported on Stellar
-                Err(Error::InvalidOracleConfig)
+                // Create Pyth oracle (will return errors when used on Stellar)
+                let oracle = PythOracle::new(contract_id);
+                Ok(OracleInstance::Pyth(oracle))
             }
             OracleProvider::Reflector => {
                 let oracle = ReflectorOracle::new(contract_id);
                 Ok(OracleInstance::Reflector(oracle))
             }
-            OracleProvider::BandProtocol | OracleProvider::DIA => Err(Error::InvalidOracleConfig),
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                // These providers are not supported on Stellar
+                Err(Error::InvalidOracleConfig)
+            }
         }
     }
 
@@ -300,7 +537,6 @@ impl OracleFactory {
         Self::create_oracle(oracle_config.provider.clone(), contract_id)
     }
 
-    
     /// Check if a provider is supported on Stellar
 
     pub fn is_provider_supported(provider: &OracleProvider) -> bool {
@@ -309,21 +545,127 @@ impl OracleFactory {
             OracleProvider::Pyth | OracleProvider::BandProtocol | OracleProvider::DIA => false,
         }
     }
-    
+
     /// Get the recommended oracle provider for Stellar
     pub fn get_recommended_provider() -> OracleProvider {
         OracleProvider::Reflector
+    }
+
+    /// Create a Pyth oracle with pre-configured feeds
+    ///
+    /// # Arguments
+    /// * `contract_id` - The contract address for the oracle
+    /// * `feed_configs` - Vector of feed configurations
+    ///
+    /// # Returns
+    /// A new PythOracle instance with configured feeds
+    ///
+    /// # Notes
+    /// This oracle will return errors when used on Stellar since Pyth is not available
+    pub fn create_pyth_oracle_with_feeds(
+        contract_id: Address,
+        feed_configs: Vec<PythFeedConfig>,
+    ) -> PythOracle {
+        PythOracle::with_feeds(contract_id, feed_configs)
+    }
+
+    /// Create a hybrid oracle setup with fallback
+    ///
+    /// # Arguments
+    /// * `primary_provider` - The primary oracle provider
+    /// * `primary_contract` - The primary oracle contract address
+    /// * `fallback_provider` - The fallback oracle provider
+    /// * `fallback_contract` - The fallback oracle contract address
+    ///
+    /// # Returns
+    /// Result containing the primary oracle instance
+    ///
+    /// # Notes
+    /// On Stellar, Reflector should be the primary and Pyth should be avoided
+    pub fn create_hybrid_oracle(
+        primary_provider: OracleProvider,
+        primary_contract: Address,
+        _fallback_provider: OracleProvider,
+        _fallback_contract: Address,
+    ) -> Result<OracleInstance, Error> {
+        // For now, just return the primary oracle
+        // In a future implementation, this could store fallback information
+        Self::create_oracle(primary_provider, primary_contract)
+    }
+
+    /// Get default feed configurations for common assets
+    ///
+    /// # Returns
+    /// Vector of default feed configurations for major cryptocurrencies
+    pub fn get_default_feed_configs() -> Vec<PythFeedConfig> {
+        let mut configs = Vec::new(&soroban_sdk::Env::default());
+
+        // Add common cryptocurrency feeds
+        configs.push_back(PythFeedConfig {
+            feed_id: String::from_str(&soroban_sdk::Env::default(), "BTC/USD"),
+            asset_symbol: String::from_str(&soroban_sdk::Env::default(), "BTC"),
+            decimals: 8,
+            is_active: true,
+        });
+
+        configs.push_back(PythFeedConfig {
+            feed_id: String::from_str(&soroban_sdk::Env::default(), "ETH/USD"),
+            asset_symbol: String::from_str(&soroban_sdk::Env::default(), "ETH"),
+            decimals: 8,
+            is_active: true,
+        });
+
+        configs.push_back(PythFeedConfig {
+            feed_id: String::from_str(&soroban_sdk::Env::default(), "XLM/USD"),
+            asset_symbol: String::from_str(&soroban_sdk::Env::default(), "XLM"),
+            decimals: 7,
+            is_active: true,
+        });
+
+        configs.push_back(PythFeedConfig {
+            feed_id: String::from_str(&soroban_sdk::Env::default(), "USDC/USD"),
+            asset_symbol: String::from_str(&soroban_sdk::Env::default(), "USDC"),
+            decimals: 6,
+            is_active: true,
+        });
+
+        configs
+    }
+
+    /// Validate oracle configuration for Stellar compatibility
+    ///
+    /// # Arguments
+    /// * `oracle_config` - The oracle configuration to validate
+    ///
+    /// # Returns
+    /// Result indicating if the configuration is valid for Stellar
+    pub fn validate_stellar_compatibility(oracle_config: &OracleConfig) -> Result<(), Error> {
+        match oracle_config.provider {
+            OracleProvider::Reflector => {
+                // Reflector is fully supported
+                Ok(())
+            }
+            OracleProvider::Pyth => {
+                // Pyth is not supported on Stellar, but we'll allow it for future compatibility
+                // The implementation will return errors when used
+                Ok(())
+            }
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                // These providers are not supported on Stellar
+                Err(Error::InvalidOracleConfig)
+            }
+        }
     }
 }
 
 // ===== ORACLE INSTANCE ENUM =====
 
 /// Enum to hold different oracle implementations
-/// 
+///
 /// Currently only Reflector is fully supported on Stellar
 #[derive(Debug)]
 pub enum OracleInstance {
-    Pyth(PythOracle),      // Placeholder - not supported on Stellar
+    Pyth(PythOracle),           // Placeholder - not supported on Stellar
     Reflector(ReflectorOracle), // Primary oracle for Stellar
 }
 
@@ -448,12 +790,10 @@ mod tests {
         let env = Env::default();
         let contract_id = Address::generate(&env);
 
-        
         // Test Pyth oracle creation (should fail)
         let pyth_oracle = OracleFactory::create_oracle(OracleProvider::Pyth, contract_id.clone());
         assert!(pyth_oracle.is_err());
         assert_eq!(pyth_oracle.unwrap_err(), Error::InvalidOracleConfig);
-        
 
         // Test Reflector oracle creation
         let reflector_oracle =

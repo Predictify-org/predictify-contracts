@@ -45,17 +45,18 @@ impl TokenTest {
     }
 }
 
-struct PredictifyTest {
-    env: Env,
-    contract_id: Address,
-    token_test: TokenTest,
-    admin: Address,
-    user: Address,
-    market_id: Symbol,
+pub struct PredictifyTest {
+    pub env: Env,
+    pub contract_id: Address,
+    pub token_test: TokenTest,
+    pub admin: Address,
+    pub user: Address,
+    pub market_id: Symbol,
+    pub pyth_contract: Address,
 }
 
 impl PredictifyTest {
-    fn setup() -> Self {
+    pub fn setup() -> Self {
         let token_test = TokenTest::setup();
         let env = token_test.env.clone();
 
@@ -84,6 +85,9 @@ impl PredictifyTest {
         // Create market ID
         let market_id = Symbol::new(&env, "market");
 
+        // Create pyth contract address (mock)
+        let pyth_contract = Address::generate(&env);
+
         Self {
             env,
             contract_id,
@@ -91,10 +95,11 @@ impl PredictifyTest {
             admin,
             user,
             market_id,
+            pyth_contract,
         }
     }
 
-    fn create_test_market(&self) {
+    pub fn create_test_market(&self) {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
 
         // Create market outcomes
@@ -166,7 +171,7 @@ fn test_create_market_successful() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #100)")]  // Unauthorized = 100
+#[should_panic(expected = "Error(Contract, #100)")] // Unauthorized = 100
 fn test_create_market_with_non_admin() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -191,7 +196,7 @@ fn test_create_market_with_non_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #301)")]  // InvalidOutcomes = 301
+#[should_panic(expected = "Error(Contract, #301)")] // InvalidOutcomes = 301
 fn test_create_market_with_empty_outcome() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -212,7 +217,7 @@ fn test_create_market_with_empty_outcome() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #300)")]  // InvalidQuestion = 300
+#[should_panic(expected = "Error(Contract, #300)")] // InvalidQuestion = 300
 fn test_create_market_with_empty_question() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -263,7 +268,7 @@ fn test_successful_vote() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #102)")]  // MarketClosed = 102
+#[should_panic(expected = "Error(Contract, #102)")] // MarketClosed = 102
 fn test_vote_on_closed_market() {
     let test = PredictifyTest::setup();
     test.create_test_market();
@@ -299,7 +304,7 @@ fn test_vote_on_closed_market() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #108)")]  // InvalidOutcome = 108
+#[should_panic(expected = "Error(Contract, #108)")] // InvalidOutcome = 108
 fn test_vote_with_invalid_outcome() {
     let test = PredictifyTest::setup();
     test.create_test_market();
@@ -315,7 +320,7 @@ fn test_vote_with_invalid_outcome() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #101)")]  // MarketNotFound = 101
+#[should_panic(expected = "Error(Contract, #101)")] // MarketNotFound = 101
 fn test_vote_on_nonexistent_market() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -331,7 +336,7 @@ fn test_vote_on_nonexistent_market() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Auth, InvalidAction)")]  // SDK authentication error
+#[should_panic(expected = "Error(Auth, InvalidAction)")] // SDK authentication error
 fn test_authentication_required() {
     let test = PredictifyTest::setup();
     test.create_test_market();

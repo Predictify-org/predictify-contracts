@@ -1,21 +1,26 @@
 #![no_std]
 
-// Module declarations - only core modules enabled
+// Module declarations - all modules enabled
+mod config;
+mod disputes;
 mod errors;
+mod events;
+mod extensions;
+mod fees;
+mod markets;
+mod oracles;
+mod resolution;
 mod types;
-// Advanced modules temporarily disabled
-// mod markets;
-// mod voting; 
-// mod oracles;
-// mod disputes;
+mod utils;
+mod validation;
+mod voting;
 
 // Re-export commonly used items
 pub use errors::Error;
 pub use types::*;
 
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env,
-    Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, token, Address, Env, Map, String, Symbol, Vec,
 };
 
 #[contract]
@@ -94,6 +99,9 @@ impl PredictifyHybrid {
             claimed: Map::new(&env),
             winning_outcome: None,
             fee_collected: false,
+            total_extension_days: 0,
+            max_extension_days: 30,
+            extension_history: Vec::new(&env),
         };
 
         // Store the market
@@ -180,7 +188,7 @@ impl PredictifyHybrid {
             }
 
             if winning_total > 0 {
-                let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE)) 
+                let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE))
                     / PERCENTAGE_DENOMINATOR;
                 let total_pool = market.total_staked;
                 let payout = (user_share * total_pool) / winning_total;
@@ -201,7 +209,7 @@ impl PredictifyHybrid {
     }
 
     // Manually resolve a market (admin only)
-    pub fn resolve_market(env: Env, admin: Address, market_id: Symbol, winning_outcome: String) {
+    pub fn resolve_market_manual(env: Env, admin: Address, market_id: Symbol, winning_outcome: String) {
         admin.require_auth();
 
         // Verify admin
@@ -239,6 +247,56 @@ impl PredictifyHybrid {
         // Set winning outcome
         market.winning_outcome = Some(winning_outcome);
         env.storage().persistent().set(&market_id, &market);
+    }
+    
+    /// Fetch oracle result for a market
+    pub fn fetch_oracle_result(
+        env: Env,
+        market_id: Symbol,
+        oracle_contract: Address,
+    ) -> Result<String, Error> {
+        // Get the market from storage
+        let market = env.storage().persistent().get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+        
+        // Validate market state
+        if market.oracle_result.is_some() {
+            return Err(Error::MarketAlreadyResolved);
+        }
+        
+        // Check if market has ended
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            return Err(Error::MarketClosed);
+        }
+        
+        // Get oracle result using the resolution module
+        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id, &oracle_contract)?;
+        
+        Ok(oracle_resolution.oracle_result)
+    }
+    
+    /// Resolve a market automatically using oracle and community consensus
+    pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
+        // Use the resolution module to resolve the market
+        let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
+        Ok(())
+    }
+    
+    /// Get resolution analytics
+    pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
+        resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
+    }
+    
+    /// Get market analytics
+    pub fn get_market_analytics(env: Env, market_id: Symbol) -> Result<markets::MarketStats, Error> {
+        let market = env.storage().persistent().get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+        
+        // Calculate market statistics
+        let stats = markets::MarketAnalytics::get_market_stats(&market);
+        
+        Ok(stats)
     }
 }
 

@@ -1,5 +1,6 @@
-use soroban_sdk::{contracttype, vec, symbol_short, Address, Env, Map, String, Symbol, Vec};
+extern crate alloc;
 use alloc::string::ToString;
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 
@@ -460,7 +461,9 @@ impl EventLogger {
     /// Get all events of a specific type
     pub fn get_events<T>(env: &Env, event_type: &Symbol) -> Vec<T>
     where
-        T: Clone + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val> + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
+        T: Clone
+            + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val>
+            + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
         match env.storage().persistent().get::<Symbol, T>(event_type) {
             Some(event) => Vec::from_array(env, [event]),
@@ -473,7 +476,11 @@ impl EventLogger {
         let mut events = Vec::new(env);
 
         // Get market created events
-        if let Some(event) = env.storage().persistent().get::<Symbol, MarketCreatedEvent>(&symbol_short!("mkt_crt")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, MarketCreatedEvent>(&symbol_short!("mkt_crt"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketCreated"),
@@ -484,7 +491,11 @@ impl EventLogger {
         }
 
         // Get vote cast events
-        if let Some(event) = env.storage().persistent().get::<Symbol, VoteCastEvent>(&symbol_short!("vote")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, VoteCastEvent>(&symbol_short!("vote"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "VoteCast"),
@@ -495,7 +506,11 @@ impl EventLogger {
         }
 
         // Get oracle result events
-        if let Some(event) = env.storage().persistent().get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_rs")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_rs"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "OracleResult"),
@@ -506,7 +521,11 @@ impl EventLogger {
         }
 
         // Get market resolved events
-        if let Some(event) = env.storage().persistent().get::<Symbol, MarketResolvedEvent>(&symbol_short!("mkt_res")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, MarketResolvedEvent>(&symbol_short!("mkt_res"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketResolved"),
@@ -719,7 +738,9 @@ impl EventValidator {
     }
 
     /// Validate extension requested event
-    pub fn validate_extension_requested_event(event: &ExtensionRequestedEvent) -> Result<(), Error> {
+    pub fn validate_extension_requested_event(
+        event: &ExtensionRequestedEvent,
+    ) -> Result<(), Error> {
         if event.market_id.to_string().is_empty() {
             return Err(Error::InvalidInput);
         }
@@ -805,7 +826,10 @@ impl EventHelpers {
         for (i, part) in context_parts.iter().enumerate() {
             if i > 0 {
                 let separator = String::from_str(env, " | ");
-                context = String::from_str(env, &(context.to_string() + &separator.to_string() + &part.to_string()));
+                context = String::from_str(
+                    env,
+                    &(context.to_string() + &separator.to_string() + &part.to_string()),
+                );
             } else {
                 context = part.clone();
             }
@@ -829,7 +853,11 @@ impl EventHelpers {
     }
 
     /// Check if event is recent (within specified seconds)
-    pub fn is_recent_event(event_timestamp: u64, current_timestamp: u64, recent_threshold: u64) -> bool {
+    pub fn is_recent_event(
+        event_timestamp: u64,
+        current_timestamp: u64,
+        recent_threshold: u64,
+    ) -> bool {
         Self::get_event_age(current_timestamp, event_timestamp) <= recent_threshold
     }
 }
@@ -876,10 +904,7 @@ impl EventTestingUtils {
     }
 
     /// Create test oracle result event
-    pub fn create_test_oracle_result_event(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> OracleResultEvent {
+    pub fn create_test_oracle_result_event(env: &Env, market_id: &Symbol) -> OracleResultEvent {
         OracleResultEvent {
             market_id: market_id.clone(),
             result: String::from_str(env, "yes"),
@@ -893,10 +918,7 @@ impl EventTestingUtils {
     }
 
     /// Create test market resolved event
-    pub fn create_test_market_resolved_event(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> MarketResolvedEvent {
+    pub fn create_test_market_resolved_event(env: &Env, market_id: &Symbol) -> MarketResolvedEvent {
         MarketResolvedEvent {
             market_id: market_id.clone(),
             final_outcome: String::from_str(env, "yes"),
@@ -975,7 +997,9 @@ impl EventTestingUtils {
     pub fn simulate_event_emission(env: &Env, event_type: &String) -> bool {
         // Simulate successful event emission
         let event_key = Symbol::new(env, &event_type.to_string());
-        env.storage().persistent().set(&event_key, &String::from_str(env, "test"));
+        env.storage()
+            .persistent()
+            .set(&event_key, &String::from_str(env, "test"));
         true
     }
 }
@@ -1089,7 +1113,10 @@ impl EventDocumentation {
         );
         examples.set(
             String::from_str(&env, "EmitVoteCast"),
-            String::from_str(&env, "EventEmitter::emit_vote_cast(env, market_id, voter, outcome, stake)"),
+            String::from_str(
+                &env,
+                "EventEmitter::emit_vote_cast(env, market_id, voter, outcome, stake)",
+            ),
         );
         examples.set(
             String::from_str(&env, "GetMarketEvents"),
@@ -1097,9 +1124,12 @@ impl EventDocumentation {
         );
         examples.set(
             String::from_str(&env, "ValidateEvent"),
-            String::from_str(&env, "EventValidator::validate_market_created_event(&event)"),
+            String::from_str(
+                &env,
+                "EventValidator::validate_market_created_event(&event)",
+            ),
         );
 
         examples
     }
-} 
+}

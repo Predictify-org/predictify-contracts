@@ -46,6 +46,48 @@ pub enum Error {
     InvalidThreshold = 303,
     /// Invalid comparison operator
     InvalidComparison = 304,
+
+    // ===== ADDITIONAL ERRORS =====
+    /// Invalid state
+    InvalidState = 400,
+    /// Invalid input
+    InvalidInput = 401,
+    /// Invalid fee configuration
+    InvalidFeeConfig = 402,
+    /// Configuration not found
+    ConfigurationNotFound = 403,
+    /// Already disputed
+    AlreadyDisputed = 404,
+    /// Dispute voting period expired
+    DisputeVotingPeriodExpired = 405,
+    /// Dispute voting not allowed
+    DisputeVotingNotAllowed = 406,
+    /// Already voted in dispute
+    DisputeAlreadyVoted = 407,
+    /// Dispute resolution conditions not met
+    DisputeResolutionConditionsNotMet = 408,
+    /// Dispute fee distribution failed
+    DisputeFeeDistributionFailed = 409,
+    /// Dispute escalation not allowed
+    DisputeEscalationNotAllowed = 410,
+    /// Threshold below minimum
+    ThresholdBelowMinimum = 411,
+    /// Threshold exceeds maximum
+    ThresholdExceedsMaximum = 412,
+    /// Fee already collected
+    FeeAlreadyCollected = 413,
+    /// Invalid oracle feed
+    InvalidOracleFeed = 414,
+    /// No fees to collect
+    NoFeesToCollect = 415,
+    /// Invalid extension days
+    InvalidExtensionDays = 416,
+    /// Extension days exceeded
+    ExtensionDaysExceeded = 417,
+    /// Market extension not allowed
+    MarketExtensionNotAllowed = 418,
+    /// Extension fee insufficient
+    ExtensionFeeInsufficient = 419,
 }
 
 impl Error {
@@ -69,6 +111,26 @@ impl Error {
             Error::InvalidDuration => "Invalid duration specified",
             Error::InvalidThreshold => "Invalid threshold value",
             Error::InvalidComparison => "Invalid comparison operator",
+            Error::InvalidState => "Invalid state",
+            Error::InvalidInput => "Invalid input",
+            Error::InvalidFeeConfig => "Invalid fee configuration",
+            Error::ConfigurationNotFound => "Configuration not found",
+            Error::AlreadyDisputed => "Already disputed",
+            Error::DisputeVotingPeriodExpired => "Dispute voting period expired",
+            Error::DisputeVotingNotAllowed => "Dispute voting not allowed",
+            Error::DisputeAlreadyVoted => "Already voted in dispute",
+            Error::DisputeResolutionConditionsNotMet => "Dispute resolution conditions not met",
+            Error::DisputeFeeDistributionFailed => "Dispute fee distribution failed",
+            Error::DisputeEscalationNotAllowed => "Dispute escalation not allowed",
+            Error::ThresholdBelowMinimum => "Threshold below minimum",
+            Error::ThresholdExceedsMaximum => "Threshold exceeds maximum",
+            Error::FeeAlreadyCollected => "Fee already collected",
+            Error::InvalidOracleFeed => "Invalid oracle feed",
+            Error::NoFeesToCollect => "No fees to collect",
+            Error::InvalidExtensionDays => "Invalid extension days",
+            Error::ExtensionDaysExceeded => "Extension days exceeded",
+            Error::MarketExtensionNotAllowed => "Market extension not allowed",
+            Error::ExtensionFeeInsufficient => "Extension fee insufficient",
         }
     }
 
@@ -92,6 +154,26 @@ impl Error {
             Error::InvalidDuration => "INVALID_DURATION",
             Error::InvalidThreshold => "INVALID_THRESHOLD",
             Error::InvalidComparison => "INVALID_COMPARISON",
+            Error::InvalidState => "INVALID_STATE",
+            Error::InvalidInput => "INVALID_INPUT",
+            Error::InvalidFeeConfig => "INVALID_FEE_CONFIG",
+            Error::ConfigurationNotFound => "CONFIGURATION_NOT_FOUND",
+            Error::AlreadyDisputed => "ALREADY_DISPUTED",
+            Error::DisputeVotingPeriodExpired => "DISPUTE_VOTING_PERIOD_EXPIRED",
+            Error::DisputeVotingNotAllowed => "DISPUTE_VOTING_NOT_ALLOWED",
+            Error::DisputeAlreadyVoted => "DISPUTE_ALREADY_VOTED",
+            Error::DisputeResolutionConditionsNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
+            Error::DisputeFeeDistributionFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
+            Error::DisputeEscalationNotAllowed => "DISPUTE_ESCALATION_NOT_ALLOWED",
+            Error::ThresholdBelowMinimum => "THRESHOLD_BELOW_MINIMUM",
+            Error::ThresholdExceedsMaximum => "THRESHOLD_EXCEEDS_MAXIMUM",
+            Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
+            Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
+            Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
+            Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
+            Error::ExtensionDaysExceeded => "EXTENSION_DAYS_EXCEEDED",
+            Error::MarketExtensionNotAllowed => "MARKET_EXTENSION_NOT_ALLOWED",
+            Error::ExtensionFeeInsufficient => "EXTENSION_FEE_INSUFFICIENT",
         }
     }
 }

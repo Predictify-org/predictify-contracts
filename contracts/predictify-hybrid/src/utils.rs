@@ -1,7 +1,7 @@
 extern crate alloc;
 
-use soroban_sdk::{Address, Env, Map, String, Symbol, Vec};
 use alloc::string::ToString;
+use soroban_sdk::{Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 
@@ -194,7 +194,11 @@ impl StringUtils {
     }
 
     /// Validate string length
-    pub fn validate_string_length(s: &String, min_length: u32, max_length: u32) -> Result<(), Error> {
+    pub fn validate_string_length(
+        s: &String,
+        min_length: u32,
+        max_length: u32,
+    ) -> Result<(), Error> {
         let len = s.to_string().len() as u32;
         if len < min_length || len > max_length {
             Err(Error::InvalidInput)
@@ -526,7 +530,10 @@ impl TestingUtils {
 
     /// Generate test address
     pub fn generate_test_address(env: &Env) -> Address {
-        Address::from_string(&String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"))
+        Address::from_string(&String::from_str(
+            env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ))
     }
 
     /// Generate test symbol
@@ -547,8 +554,14 @@ impl TestingUtils {
     /// Create test map
     pub fn create_test_map(env: &Env) -> Map<String, String> {
         let mut map = Map::new(env);
-        map.set(String::from_str(env, "key1"), String::from_str(env, "value1"));
-        map.set(String::from_str(env, "key2"), String::from_str(env, "value2"));
+        map.set(
+            String::from_str(env, "key1"),
+            String::from_str(env, "value1"),
+        );
+        map.set(
+            String::from_str(env, "key2"),
+            String::from_str(env, "value2"),
+        );
         map
     }
 
@@ -560,4 +573,4 @@ impl TestingUtils {
         vec.push_back(String::from_str(env, "item3"));
         vec
     }
-} 
+}

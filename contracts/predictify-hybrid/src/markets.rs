@@ -1,8 +1,10 @@
+#![allow(dead_code)]
+
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::oracles::{OracleFactory, OracleUtils};
 use crate::types::*;
+// Oracle imports removed - not currently used
 
 /// Market management system for Predictify Hybrid contract
 ///
@@ -133,7 +135,7 @@ pub struct MarketValidator;
 impl MarketValidator {
     /// Validate market creation parameters
     pub fn validate_market_params(
-        env: &Env,
+        _env: &Env,
         question: &String,
         outcomes: &Vec<String>,
         duration_days: u32,
@@ -198,8 +200,9 @@ impl MarketValidator {
     }
 
     /// Validate outcome for a market
+
     pub fn validate_outcome(
-        env: &Env,
+        _env: &Env,
         outcome: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), Error> {
@@ -392,6 +395,13 @@ impl MarketAnalytics {
             percentage: consensus_percentage,
         }
     }
+    
+    /// Calculate basic analytics for a market
+    pub fn calculate_basic_analytics(market: &Market) -> MarketAnalytics {
+        // This is a placeholder implementation
+        // In a real implementation, you would calculate comprehensive analytics
+        MarketAnalytics
+    }
 }
 
 // ===== MARKET UTILITIES =====
@@ -488,6 +498,7 @@ impl MarketUtils {
 // ===== MARKET STATISTICS TYPES =====
 
 /// Market statistics
+#[contracttype]
 #[derive(Clone, Debug)]
 pub struct MarketStats {
     pub total_votes: u32,
@@ -551,6 +562,7 @@ impl MarketTestHelpers {
                 25_000_00,
                 String::from_str(env, "gt"),
             ),
+            1_000_000, // Creation fee: 1 XLM
         )
     }
 
