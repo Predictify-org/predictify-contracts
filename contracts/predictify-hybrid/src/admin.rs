@@ -119,11 +119,9 @@ impl AdminInitializer {
         AdminValidator::validate_admin_address(env, admin)?;
 
         // Store admin in persistent storage
-        env.as_contract(&env.current_contract_address(), || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(env, "Admin"), admin);
-        });
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, "Admin"), admin);
 
         // Set default admin role
         AdminRoleManager::assign_role(
@@ -213,12 +211,11 @@ impl AdminAccessControl {
         admin.require_auth();
 
         // Validate admin exists
-        let stored_admin: Address = env.as_contract(&env.current_contract_address(), || {
-            env.storage()
-                .persistent()
-                .get(&Symbol::new(env, "Admin"))
-                .ok_or(Error::AdminNotSet)
-        })?;
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)?;
 
         if admin != &stored_admin {
             return Err(Error::Unauthorized);
@@ -282,11 +279,7 @@ impl AdminRoleManager {
         let key = Symbol::new(env, "admin_role");
         
         // Check if this is the first admin role assignment (bootstrapping)
-        let has_existing_role = env.as_contract(&env.current_contract_address(), || {
-            env.storage().persistent().has(&key)
-        });
-        
-        if !has_existing_role {
+        if !env.storage().persistent().has(&key) {
             // No admin role assigned yet, allow bootstrapping without permission check
         } else {
             // Validate assigner permissions for subsequent assignments
@@ -308,9 +301,7 @@ impl AdminRoleManager {
         };
 
         // Store role assignment
-        env.as_contract(&env.current_contract_address(), || {
-            env.storage().persistent().set(&key, &assignment);
-        });
+        env.storage().persistent().set(&key, &assignment);
 
         // Emit role assignment event
         let events_role = match role {
@@ -330,12 +321,11 @@ impl AdminRoleManager {
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
         
-        let assignment: AdminRoleAssignment = env.as_contract(&env.current_contract_address(), || {
-            env.storage()
-                .persistent()
-                .get(&key)
-                .ok_or(Error::Unauthorized)
-        })?;
+        let assignment: AdminRoleAssignment = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::Unauthorized)?;
 
         if !assignment.is_active {
             return Err(Error::Unauthorized);
@@ -415,17 +405,14 @@ impl AdminRoleManager {
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
         
-        let mut assignment: AdminRoleAssignment = env.as_contract(&env.current_contract_address(), || {
-            env.storage()
-                .persistent()
-                .get(&key)
-                .ok_or(Error::Unauthorized)
-        })?;
+        let mut assignment: AdminRoleAssignment = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::Unauthorized)?;
 
         assignment.is_active = false;
-        env.as_contract(&env.current_contract_address(), || {
-            env.storage().persistent().set(&key, &assignment);
-        });
+        env.storage().persistent().set(&key, &assignment);
 
         // Emit role deactivation event
         EventEmitter::emit_admin_role_deactivated(env, admin, deactivated_by);
@@ -588,11 +575,10 @@ impl AdminValidator {
 
     /// Validate contract not already initialized
     pub fn validate_contract_not_initialized(env: &Env) -> Result<(), Error> {
-        let admin_exists = env.as_contract(&env.current_contract_address(), || {
-            env.storage()
-                .persistent()
-                .has(&Symbol::new(env, "Admin"))
-        });
+        let admin_exists = env
+            .storage()
+            .persistent()
+            .has(&Symbol::new(env, "Admin"));
 
         if admin_exists {
             return Err(Error::InvalidState);
@@ -668,9 +654,7 @@ impl AdminActionLogger {
 
         // Store action in persistent storage
         let action_key = Symbol::new(env, "admin_action");
-        env.as_contract(&env.current_contract_address(), || {
-            env.storage().persistent().set(&action_key, &admin_action);
-        });
+        env.storage().persistent().set(&action_key, &admin_action);
 
         // Emit admin action event
         EventEmitter::emit_admin_action_logged(env, admin, action, &success);
