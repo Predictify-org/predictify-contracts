@@ -701,7 +701,7 @@ impl DisputeUtils {
 
     /// Get dispute voting data
     pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
-        let key = symbol_short!("dispute_v");
+        let key = (symbol_short!("dispute_v"), dispute_id.clone());
         env.storage()
             .persistent()
             .get(&key)
@@ -714,7 +714,7 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         voting: &DisputeVoting,
     ) -> Result<(), Error> {
-        let key = symbol_short!("dispute_v");
+        let key = (symbol_short!("dispute_v"), dispute_id.clone());
         env.storage().persistent().set(&key, voting);
         Ok(())
     }
@@ -725,7 +725,7 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         vote: &DisputeVote,
     ) -> Result<(), Error> {
-        let key = symbol_short!("vote");
+        let key = (symbol_short!("vote"), dispute_id.clone(), vote.user.clone());
         env.storage().persistent().set(&key, vote);
         Ok(())
     }
@@ -733,9 +733,13 @@ impl DisputeUtils {
     /// Get dispute votes
     pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
         // This is a simplified implementation - in a real system you'd need to track all votes
-        let mut votes = Vec::new(env);
-
-        // For now, return empty vector - in practice you'd iterate through stored votes
+        let votes = Vec::new(env);
+        
+        // Get the voting data to access stored votes
+        let voting_data = Self::get_dispute_voting(env, dispute_id)?;
+        
+        // In a real implementation, you would iterate through stored vote keys
+        // For now, return empty vector as this would require tracking vote keys separately
         Ok(votes)
     }
 
@@ -786,7 +790,7 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) -> Result<(), Error> {
-        let key = symbol_short!("dispute_f");
+        let key = (symbol_short!("dispute_f"), dispute_id.clone());
         env.storage().persistent().set(&key, distribution);
         Ok(())
     }
@@ -796,7 +800,7 @@ impl DisputeUtils {
         env: &Env,
         dispute_id: &Symbol,
     ) -> Result<DisputeFeeDistribution, Error> {
-        let key = symbol_short!("dispute_f");
+        let key = (symbol_short!("dispute_f"), dispute_id.clone());
         Ok(env
             .storage()
             .persistent()
@@ -818,14 +822,14 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         escalation: &DisputeEscalation,
     ) -> Result<(), Error> {
-        let key = symbol_short!("dispute_e");
+        let key = (symbol_short!("dispute_e"), dispute_id.clone());
         env.storage().persistent().set(&key, escalation);
         Ok(())
     }
 
     /// Get dispute escalation
     pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
-        let key = symbol_short!("dispute_e");
+        let key = (symbol_short!("dispute_e"), dispute_id.clone());
         env.storage().persistent().get(&key)
     }
 
