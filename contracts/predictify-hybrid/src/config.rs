@@ -919,9 +919,9 @@ mod tests {
 
         // Test environment creation
         let dev_env = Environment::Development;
-        let testnet_env = Environment::Testnet;
+        let _testnet_env = Environment::Testnet;
         let mainnet_env = Environment::Mainnet;
-        let custom_env = Environment::Custom;
+        let _custom_env = Environment::Custom;
 
         // Test environment comparison
         assert_eq!(dev_env, Environment::Development);

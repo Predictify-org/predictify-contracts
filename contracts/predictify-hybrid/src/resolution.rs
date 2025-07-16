@@ -712,7 +712,7 @@ mod tests {
     fn test_oracle_resolution_manager_fetch_result() {
         let env = Env::default();
         let market_id = Symbol::new(&env, "test_market");
-        let oracle_contract = Address::generate(&env);
+        let _oracle_contract = Address::generate(&env);
 
         // This test would require a mock oracle setup
         // For now, we'll test the validation logic
@@ -741,7 +741,7 @@ mod tests {
             &env,
             admin,
             String::from_str(&env, "Test Market"),
-            vec![
+            soroban_sdk::vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
@@ -753,6 +753,7 @@ mod tests {
                 threshold: 2500000,
                 comparison: String::from_str(&env, "gt"),
             },
+            MarketState::Active,
         );
 
         let state = ResolutionUtils::get_resolution_state(&env, &market);

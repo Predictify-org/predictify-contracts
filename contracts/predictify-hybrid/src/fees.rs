@@ -747,7 +747,7 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![
+            soroban_sdk::vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
@@ -759,6 +759,7 @@ mod tests {
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
+            crate::types::MarketState::Active,
         );
 
         // Set total staked
@@ -806,7 +807,7 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![
+            soroban_sdk::vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
@@ -818,6 +819,7 @@ mod tests {
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
+            crate::types::MarketState::Active,
         );
 
         // Market not resolved
