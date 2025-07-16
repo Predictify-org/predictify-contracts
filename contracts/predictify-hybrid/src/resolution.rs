@@ -233,7 +233,7 @@ impl MarketResolutionManager {
         };
 
         // Set winning outcome
-        MarketStateManager::set_winning_outcome(&mut market, final_result.clone());
+        MarketStateManager::set_winning_outcome(&mut market, final_result.clone(), Some(market_id));
         MarketStateManager::update_market(env, market_id, &market);
 
         Ok(resolution)
@@ -267,7 +267,7 @@ impl MarketResolutionManager {
         };
 
         // Set final outcome
-        MarketStateManager::set_winning_outcome(&mut market, outcome.clone());
+        MarketStateManager::set_winning_outcome(&mut market, outcome.clone(), Some(market_id));
         MarketStateManager::update_market(env, market_id, &market);
 
         Ok(resolution)

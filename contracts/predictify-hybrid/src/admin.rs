@@ -304,7 +304,14 @@ impl AdminRoleManager {
         env.storage().persistent().set(&key, &assignment);
 
         // Emit role assignment event
-        EventEmitter::emit_admin_role_assigned(env, admin, &role, assigned_by);
+        let events_role = match role {
+            AdminRole::SuperAdmin => crate::events::AdminRole::Owner,
+            AdminRole::MarketAdmin => crate::events::AdminRole::Admin,
+            AdminRole::ConfigAdmin => crate::events::AdminRole::Admin,
+            AdminRole::FeeAdmin => crate::events::AdminRole::Admin,
+            AdminRole::ReadOnlyAdmin => crate::events::AdminRole::Moderator,
+        };
+        EventEmitter::emit_admin_role_assigned(env, admin, &events_role, assigned_by);
 
         Ok(())
     }

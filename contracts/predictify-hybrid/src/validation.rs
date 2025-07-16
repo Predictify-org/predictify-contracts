@@ -847,6 +847,7 @@ impl ValidationTestingUtils {
                 threshold: 2500000,
                 comparison: String::from_str(env, "gt"),
             },
+            crate::types::MarketState::Active,
         )
     }
 

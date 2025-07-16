@@ -153,6 +153,7 @@ impl StringUtils {
         } else {
             String::from_str(env, "")
         }
+        String::from_str(&env, &result)
     }
 
     /// Check if string contains substring
