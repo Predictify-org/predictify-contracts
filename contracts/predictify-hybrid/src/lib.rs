@@ -1,47 +1,47 @@
 #![no_std]
+
+
+// Module declarations - all modules enabled
+mod admin;
+mod config;
+mod disputes;
+mod errors;
+mod events;
+mod extensions;
+mod fees;
+mod markets;
+mod oracles;
+mod resolution;
+mod types;
+mod utils;
+mod validation;
+mod voting;
+
+// Re-export commonly used items
+pub use errors::Error;
+pub use types::*;
+use admin::AdminInitializer;
+
 use soroban_sdk::{
-    contract, contractimpl, contracttype, panic_with_error, token, Address, Env,
-    Map, String, Symbol, Vec, symbol_short, vec, IntoVal,
+    contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
 };
-
-// Error management module
-pub mod errors;
-use errors::Error;
-
-// Types module
-pub mod types;
-use types::*;
-
-// Oracle management module
-pub mod oracles;
-use oracles::{OracleInterface, OracleFactory, OracleUtils, OracleInstance};
-
-// Market management module
-pub mod markets;
-use markets::{MarketCreator, MarketValidator, MarketStateManager, MarketAnalytics, MarketUtils};
-
-// Voting management module
-pub mod voting;
-use voting::{VotingManager, VotingValidator, VotingUtils, VotingAnalytics};
-
-// Dispute management module
-pub mod disputes;
-use disputes::{DisputeManager, DisputeValidator, DisputeUtils, DisputeAnalytics};
 
 #[contract]
 pub struct PredictifyHybrid;
 
 const PERCENTAGE_DENOMINATOR: i128 = 100;
+const FEE_PERCENTAGE: i128 = 2; // 2% fee for the platform
 
 #[contractimpl]
 impl PredictifyHybrid {
     pub fn initialize(env: Env, admin: Address) {
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(&env, "Admin"), &admin);
+        match AdminInitializer::initialize(&env, &admin) {
+            Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
-    // Create a market using the markets module
+    // Create a market
     pub fn create_market(
         env: Env,
         admin: Address,
@@ -62,272 +62,262 @@ impl PredictifyHybrid {
                 panic!("Admin not set");
             });
 
-        // Use error helper for admin validation
-        errors::helpers::require_admin(&env, &admin, &stored_admin);
 
-        // Use the markets module to create the market
-        match MarketCreator::create_market(&env, admin, question, outcomes, duration_days, oracle_config) {
-            Ok(market_id) => market_id,
-            Err(e) => panic_with_error!(env, e),
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+
         }
-    }
 
-    // Distribute winnings to users
-    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
-        match VotingManager::process_claim(&env, user, market_id) {
-            Ok(_) => (), // Success
-            Err(e) => panic_with_error!(env, e),
+        // Validate inputs
+        if outcomes.len() < 2 {
+            panic_with_error!(env, Error::InvalidOutcomes);
         }
-    }
 
-    // Collect platform fees
-    pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) {
-        match VotingManager::collect_fees(&env, admin, market_id) {
-            Ok(_) => (), // Success
-            Err(e) => panic_with_error!(env, e),
+        if question.len() == 0 {
+            panic_with_error!(env, Error::InvalidQuestion);
         }
-    }
 
-    // Finalize market after disputes
-    pub fn finalize_market(env: Env, admin: Address, market_id: Symbol, outcome: String) {
-        admin.require_auth();
+        // Generate a unique market ID
+        let counter_key = Symbol::new(&env, "MarketCounter");
+        let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+        let new_counter = counter + 1;
+        env.storage().persistent().set(&counter_key, &new_counter);
 
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .expect("Admin not set");
+        let market_id = Symbol::new(&env, "market");
 
-        // Use error helper for admin validation
-        errors::helpers::require_admin(&env, &admin, &stored_admin);
+        // Calculate end time
+        let seconds_per_day: u64 = 24 * 60 * 60;
+        let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
+        let end_time: u64 = env.ledger().timestamp() + duration_seconds;
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .expect("Market not found");
 
-        // Use error helper for outcome validation
-        errors::helpers::require_valid_outcome(&env, &outcome, &market.outcomes);
+        // Create a new market
+        let market = Market {
+            admin: admin.clone(),
+            question,
+            outcomes,
+            end_time,
+            oracle_config,
+            oracle_result: None,
+            votes: Map::new(&env),
+            total_staked: 0,
+            dispute_stakes: Map::new(&env),
+            stakes: Map::new(&env),
+            claimed: Map::new(&env),
+            winning_outcome: None,
+            fee_collected: false,
+            state: MarketState::Active,
+            total_extension_days: 0,
+            max_extension_days: 30,
+            extension_history: Vec::new(&env),
+        };
 
-        // Set final outcome
-        market.winning_outcome = Some(outcome);
+        // Store the market
         env.storage().persistent().set(&market_id, &market);
+
+        market_id
     }
+
 
     // Allows users to vote on a market outcome by staking tokens
     pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
-        match VotingManager::process_vote(&env, user, market_id, outcome, stake) {
-            Ok(_) => (), // Success
-            Err(e) => panic_with_error!(env, e),
-        }
-    }
+        user.require_auth();
 
-    // Fetch oracle result to determine market outcome
-    pub fn fetch_oracle_result(env: Env, market_id: Symbol, oracle_contract: Address) -> String {
-        // Get the market from storage
         let mut market: Market = env
             .storage()
             .persistent()
             .get(&market_id)
             .unwrap_or_else(|| {
-                panic!("Market not found");
+                panic_with_error!(env, Error::MarketNotFound);
             });
 
-        // Check if the market has already been resolved
-        if market.oracle_result.is_some() {
-            panic_with_error!(env, Error::MarketAlreadyResolved);
-        }
 
-        // Check if the market ended (we can only fetch oracle result after market ends)
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
+        // Check if the market is still active
+        if env.ledger().timestamp() >= market.end_time {
             panic_with_error!(env, Error::MarketClosed);
         }
 
-        // Get the price from the appropriate oracle using the factory pattern
-        let oracle = match OracleFactory::create_oracle(market.oracle_config.provider.clone(), oracle_contract) {
-            Ok(oracle) => oracle,
-            Err(e) => panic_with_error!(env, e),
-        };
-        
-        let price = match oracle.get_price(&env, &market.oracle_config.feed_id) {
-            Ok(p) => p,
-            Err(e) => panic_with_error!(env, e),
-        };
+        // Validate outcome
+        let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
+        if !outcome_exists {
+            panic_with_error!(env, Error::InvalidOutcome);
+        }
 
-        // Determine the outcome based on the price and threshold using OracleUtils
-        let outcome = match OracleUtils::determine_outcome(
-            price,
-            market.oracle_config.threshold,
-            &market.oracle_config.comparison,
-            &env,
-        ) {
-            Ok(result) => result,
-            Err(e) => panic_with_error!(env, e),
-        };
+        // Check if user already voted
+        if market.votes.get(user.clone()).is_some() {
+            panic_with_error!(env, Error::AlreadyVoted);
+        }
 
-        // Store the result in the market
-        market.oracle_result = Some(outcome.clone());
+        // Store the vote and stake
+        market.votes.set(user.clone(), outcome);
+        market.stakes.set(user.clone(), stake);
+        market.total_staked += stake;
 
-        // Update the market in storage
         env.storage().persistent().set(&market_id, &market);
-
-        // Return the outcome
-        outcome
     }
 
-    // Allows users to dispute the market result by staking tokens
-    pub fn dispute_result(env: Env, user: Address, market_id: Symbol, stake: i128) {
-        match DisputeManager::process_dispute(&env, user, market_id, stake, None) {
-            Ok(_) => (), // Success
-            Err(e) => panic_with_error!(env, e),
+    // Claim winnings
+    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
+        user.require_auth();
+
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| {
+                panic_with_error!(env, Error::MarketNotFound);
+            });
+
+        // Check if user has claimed already
+        if market.claimed.get(user.clone()).unwrap_or(false) {
+            panic_with_error!(env, Error::AlreadyClaimed);
         }
-    }
 
-    // Resolves a market by combining oracle results and community votes
-    pub fn resolve_market(env: Env, market_id: Symbol) -> String {
-        // Get the market from storage
-        let mut market = match MarketStateManager::get_market(&env, &market_id) {
-            Ok(market) => market,
-            Err(e) => panic_with_error!(env, e),
+        // Check if market is resolved
+        let winning_outcome = match &market.winning_outcome {
+            Some(outcome) => outcome,
+            None => panic_with_error!(env, Error::MarketNotResolved),
         };
 
-        // Validate market for resolution
-        if let Err(e) = MarketValidator::validate_market_for_resolution(&env, &market) {
-            panic_with_error!(env, e);
+        // Get user's vote
+        let user_outcome = market
+            .votes
+            .get(user.clone())
+            .unwrap_or_else(|| panic_with_error!(env, Error::NothingToClaim));
+
+        let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
+
+        // Calculate payout if user won
+        if &user_outcome == winning_outcome {
+            // Calculate total winning stakes
+            let mut winning_total = 0;
+            for (voter, outcome) in market.votes.iter() {
+                if &outcome == winning_outcome {
+                    winning_total += market.stakes.get(voter.clone()).unwrap_or(0);
+                }
+
+            }
+
+
+            if winning_total > 0 {
+                let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE))
+                    / PERCENTAGE_DENOMINATOR;
+                let total_pool = market.total_staked;
+                let _payout = (user_share * total_pool) / winning_total;
+
+                // In a real implementation, transfer tokens here
+                // For now, we just mark as claimed
+            }
         }
 
-        // Retrieve the oracle result
-        let oracle_result = match &market.oracle_result {
-            Some(result) => result.clone(),
-            None => panic_with_error!(env, Error::OracleUnavailable),
-        };
-
-        // Calculate community consensus
-        let community_consensus = MarketAnalytics::calculate_community_consensus(&market);
-
-        // Determine final result using hybrid algorithm
-        let final_result = MarketUtils::determine_final_result(&env, &oracle_result, &community_consensus);
-
-        // Set winning outcome
-        MarketStateManager::set_winning_outcome(&mut market, final_result.clone(), Some(&market_id));
-
-        // Update the market in storage
-        MarketStateManager::update_market(&env, &market_id, &market);
-
-        // Return the final result
-        final_result
+        // Mark as claimed
+        market.claimed.set(user.clone(), true);
+        env.storage().persistent().set(&market_id, &market);
     }
 
-    // Resolve a dispute and determine final market outcome
-    pub fn resolve_dispute(env: Env, admin: Address, market_id: Symbol) -> String {
-        match DisputeManager::resolve_dispute(&env, market_id, admin) {
-            Ok(resolution) => resolution.final_outcome,
-            Err(e) => panic_with_error!(env, e),
-        }
+    // Get market information
+    pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
+        env.storage().persistent().get(&market_id)
     }
 
-    // Get dispute statistics for a market
-    pub fn get_dispute_stats(env: Env, market_id: Symbol) -> disputes::DisputeStats {
-        match DisputeManager::get_dispute_stats(&env, market_id) {
-            Ok(stats) => stats,
-            Err(e) => panic_with_error!(env, e),
-        }
-    }
-
-    // Get all disputes for a market
-    pub fn get_market_disputes(env: Env, market_id: Symbol) -> Vec<disputes::Dispute> {
-        match DisputeManager::get_market_disputes(&env, market_id) {
-            Ok(disputes) => disputes,
-            Err(e) => panic_with_error!(env, e),
-        }
-    }
-
-    // Check if user has disputed a market
-    pub fn has_user_disputed(env: Env, market_id: Symbol, user: Address) -> bool {
-        match DisputeManager::has_user_disputed(&env, market_id, user) {
-            Ok(has_disputed) => has_disputed,
-            Err(_) => false,
-        }
-    }
-
-    // Get user's dispute stake for a market
-    pub fn get_user_dispute_stake(env: Env, market_id: Symbol, user: Address) -> i128 {
-        match DisputeManager::get_user_dispute_stake(&env, market_id, user) {
-            Ok(stake) => stake,
-            Err(_) => 0,
-        }
-    }
-
-    // Clean up market storage
-    pub fn close_market(env: Env, admin: Address, market_id: Symbol) {
+    // Manually resolve a market (admin only)
+    pub fn resolve_market_manual(env: Env, admin: Address, market_id: Symbol, winning_outcome: String) {
         admin.require_auth();
+
 
         // Verify admin
         let stored_admin: Address = env
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "Admin"))
-            .expect("Admin not set");
+            .unwrap_or_else(|| {
+                panic_with_error!(env, Error::Unauthorized);
+            });
 
-        // Use error helper for admin validation
-        errors::helpers::require_admin(&env, &admin, &stored_admin);
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
 
-        // Remove market from storage
-        MarketStateManager::remove_market(&env, &market_id);
-    }
-
-    // Helper function to create a market with Reflector oracle
-    pub fn create_reflector_market(
-        env: Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        asset_symbol: String,
-        threshold: i128,
-        comparison: String,
-    ) -> Symbol {
-        match MarketCreator::create_reflector_market(&env, admin, question, outcomes, duration_days, asset_symbol, threshold, comparison) {
-            Ok(market_id) => market_id,
-            Err(e) => panic_with_error!(env, e),
         }
-    }
 
-    // Helper function to create a market with Pyth oracle
-    pub fn create_pyth_market(
-        env: Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        feed_id: String,
-        threshold: i128,
-        comparison: String,
-    ) -> Symbol {
-        match MarketCreator::create_pyth_market(&env, admin, question, outcomes, duration_days, feed_id, threshold, comparison) {
-            Ok(market_id) => market_id,
-            Err(e) => panic_with_error!(env, e),
-        }
-    }
 
-    // Helper function to create a market with Reflector oracle for specific assets
-    pub fn create_reflector_asset_market(
-        env: Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        asset_symbol: String,  // e.g., "BTC", "ETH", "XLM"
-        threshold: i128,
-        comparison: String,
-    ) -> Symbol {
-        match MarketCreator::create_reflector_asset_market(&env, admin, question, outcomes, duration_days, asset_symbol, threshold, comparison) {
-            Ok(market_id) => market_id,
-            Err(e) => panic_with_error!(env, e),
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| {
+                panic_with_error!(env, Error::MarketNotFound);
+            });
+
+        // Check if market has ended
+        if env.ledger().timestamp() < market.end_time {
+            panic_with_error!(env, Error::MarketClosed);
         }
+
+
+        // Validate winning outcome
+        let outcome_exists = market.outcomes.iter().any(|o| o == winning_outcome);
+        if !outcome_exists {
+            panic_with_error!(env, Error::InvalidOutcome);
+        }
+
+
+
+        // Set winning outcome
+        market.winning_outcome = Some(winning_outcome);
+        env.storage().persistent().set(&market_id, &market);
+    }
+    
+    /// Fetch oracle result for a market
+    pub fn fetch_oracle_result(
+        env: Env,
+        market_id: Symbol,
+        oracle_contract: Address,
+    ) -> Result<String, Error> {
+        // Get the market from storage
+        let market = env.storage().persistent().get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+        
+        // Validate market state
+        if market.oracle_result.is_some() {
+            return Err(Error::MarketAlreadyResolved);
+        }
+        
+
+        // Check if market has ended
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            return Err(Error::MarketClosed);
+
+        }
+        
+        // Get oracle result using the resolution module
+        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id, &oracle_contract)?;
+        
+        Ok(oracle_resolution.oracle_result)
+    }
+    
+    /// Resolve a market automatically using oracle and community consensus
+    pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
+        // Use the resolution module to resolve the market
+        let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
+        Ok(())
+    }
+    
+    /// Get resolution analytics
+    pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
+        resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
+    }
+    
+    /// Get market analytics
+    pub fn get_market_analytics(env: Env, market_id: Symbol) -> Result<markets::MarketStats, Error> {
+        let market = env.storage().persistent().get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+        
+        // Calculate market statistics
+        let stats = markets::MarketAnalytics::get_market_stats(&market);
+        
+        Ok(stats)
     }
 }
+
 mod test;

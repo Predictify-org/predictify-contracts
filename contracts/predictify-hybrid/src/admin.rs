@@ -1,3 +1,4 @@
+extern crate alloc;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 use alloc::string::ToString;
 
