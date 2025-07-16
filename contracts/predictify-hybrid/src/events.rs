@@ -979,8 +979,8 @@ impl EventHelpers {
         let mut context = String::from_str(env, "");
         for (i, part) in context_parts.iter().enumerate() {
             if i > 0 {
-                let separator = String::from_str(env, " | ");
-                let context_str = String::from_str(env, "");
+                let _separator = String::from_str(env, " | ");
+                let _context_str = String::from_str(env, "");
                 context = String::from_str(env, "");
             } else {
                 context = part.clone();
@@ -1147,7 +1147,7 @@ impl EventTestingUtils {
     }
 
     /// Simulate event emission
-    pub fn simulate_event_emission(env: &Env, event_type: &String) -> bool {
+    pub fn simulate_event_emission(env: &Env, _event_type: &String) -> bool {
         // Simulate successful event emission
 
         let event_key = Symbol::new(env, "event");

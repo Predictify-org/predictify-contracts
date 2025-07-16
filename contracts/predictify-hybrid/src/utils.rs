@@ -111,7 +111,7 @@ pub struct StringUtils;
 impl StringUtils {
     /// Convert string to uppercase
     pub fn to_uppercase(s: &String) -> String {
-        let env = Env::default();
+        let _env = Env::default();
         // Can't convert soroban_sdk::String to std::string::String
         // Return original string as placeholder
         s.clone()
@@ -119,7 +119,7 @@ impl StringUtils {
 
     /// Convert string to lowercase
     pub fn to_lowercase(s: &String) -> String {
-        let env = Env::default();
+        let _env = Env::default();
         // Can't convert soroban_sdk::String to std::string::String
         // Return original string as placeholder
         s.clone()
@@ -127,22 +127,22 @@ impl StringUtils {
 
     /// Trim whitespace from string
     pub fn trim(s: &String) -> String {
-        let env = Env::default();
+        let _env = Env::default();
         // Can't convert soroban_sdk::String to std::string::String
         // Return original string as placeholder
         s.clone()
     }
 
     /// Truncate string to specified length
-    pub fn truncate(s: &String, max_length: u32) -> String {
-        let env = Env::default();
+    pub fn truncate(s: &String, _max_length: u32) -> String {
+        let _env = Env::default();
         // Can't convert soroban_sdk::String to std::string::String
         // Return original string as placeholder
         s.clone()
     }
 
     /// Split string by delimiter
-    pub fn split(s: &String, delimiter: &str) -> Vec<String> {
+    pub fn split(s: &String, _delimiter: &str) -> Vec<String> {
         let env = Env::default();
         // Can't convert soroban_sdk::String to std::string::String
         // Return vector with original string as placeholder
@@ -155,7 +155,7 @@ impl StringUtils {
     pub fn join(strings: &Vec<String>, delimiter: &str) -> String {
         let env = Env::default();
         let mut result = alloc::string::String::new();
-        for (i, s) in strings.iter().enumerate() {
+        for (i, _s) in strings.iter().enumerate() {
             if i > 0 {
                 result.push_str(delimiter);
             }
@@ -166,29 +166,29 @@ impl StringUtils {
     }
 
     /// Check if string contains substring
-    pub fn contains(s: &String, substring: &str) -> bool {
+    pub fn contains(_s: &String, _substring: &str) -> bool {
         // Can't convert soroban_sdk::String to std::string::String
         // Return false as placeholder
         false
     }
 
     /// Check if string starts with prefix
-    pub fn starts_with(s: &String, prefix: &str) -> bool {
+    pub fn starts_with(_s: &String, _prefix: &str) -> bool {
         // Can't convert soroban_sdk::String to std::string::String
         // Return false as placeholder
         false
     }
 
     /// Check if string ends with suffix
-    pub fn ends_with(s: &String, suffix: &str) -> bool {
+    pub fn ends_with(_s: &String, _suffix: &str) -> bool {
         // Can't convert soroban_sdk::String to std::string::String
         // Return false as placeholder
         false
     }
 
     /// Replace substring in string
-    pub fn replace(s: &String, old: &str, new: &str) -> String {
-        let env = Env::default();
+    pub fn replace(s: &String, _old: &str, _new: &str) -> String {
+        let _env = Env::default();
         // Can't convert soroban_sdk::String to std::string::String
         // Return original string as placeholder
         s.clone()
@@ -212,7 +212,7 @@ impl StringUtils {
 
     /// Sanitize string (remove special characters)
     pub fn sanitize_string(s: &String) -> String {
-        let env = Env::default();
+        let _env = Env::default();
         // Can't convert soroban_sdk::String to std::string::String
         // Return original string as placeholder
         s.clone()
@@ -314,7 +314,7 @@ impl NumericUtils {
     }
 
     /// Convert string to number
-    pub fn string_to_i128(s: &String) -> i128 {
+    pub fn string_to_i128(_s: &String) -> i128 {
         // Can't convert soroban_sdk::String to std::string::String
         // Return 0 as placeholder
         0
@@ -350,7 +350,7 @@ impl ValidationUtils {
     }
 
     /// Validate email format (basic)
-    pub fn validate_email(email: &String) -> bool {
+    pub fn validate_email(_email: &String) -> bool {
         // Can't convert soroban_sdk::String to std::string::String
         // Return false as placeholder
         false
