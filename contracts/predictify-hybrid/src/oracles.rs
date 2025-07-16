@@ -512,18 +512,18 @@ impl OracleFactory {
         provider: OracleProvider,
         contract_id: Address,
     ) -> Result<OracleInstance, Error> {
+        // Check if provider is supported on Stellar
+        if !Self::is_provider_supported(&provider) {
+            return Err(Error::InvalidOracleConfig);
+        }
+        
         match provider {
-            OracleProvider::Pyth => {
-                // Create Pyth oracle (will return errors when used on Stellar)
-                let oracle = PythOracle::new(contract_id);
-                Ok(OracleInstance::Pyth(oracle))
-            }
             OracleProvider::Reflector => {
                 let oracle = ReflectorOracle::new(contract_id);
                 Ok(OracleInstance::Reflector(oracle))
             }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
-                // These providers are not supported on Stellar
+            _ => {
+                // All other providers should be caught by is_provider_supported check above
                 Err(Error::InvalidOracleConfig)
             }
         }

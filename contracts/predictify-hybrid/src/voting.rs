@@ -919,7 +919,7 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![
+            soroban_sdk::vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
@@ -946,7 +946,7 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![
+            soroban_sdk::vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
@@ -979,7 +979,7 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            vec![
+            soroban_sdk::vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),

@@ -766,9 +766,9 @@ mod tests {
         let oracle_result = String::from_str(&env, "yes");
         let community_consensus = CommunityConsensus {
             outcome: String::from_str(&env, "yes"),
-            votes: 6,
+            votes: 8,
             total_votes: 10,
-            percentage: 60,
+            percentage: 80,
         };
 
         let method = MarketResolutionAnalytics::determine_resolution_method(

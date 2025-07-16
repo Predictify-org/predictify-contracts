@@ -298,17 +298,20 @@ pub struct FeeValidator;
 impl FeeValidator {
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Address = env
+        let stored_admin: Option<Address> = env
             .storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .expect("Admin not set");
+            .get(&Symbol::new(env, "Admin"));
 
-        if admin != &stored_admin {
-            return Err(Error::Unauthorized);
+        match stored_admin {
+            Some(stored_admin) => {
+                if admin != &stored_admin {
+                    return Err(Error::Unauthorized);
+                }
+                Ok(())
+            }
+            None => Err(Error::Unauthorized),
         }
-
-        Ok(())
     }
 
     /// Validate market for fee collection
