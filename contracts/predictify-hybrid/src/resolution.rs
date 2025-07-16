@@ -158,8 +158,8 @@ impl OracleResolutionManager {
     /// Get oracle resolution for a market
 
     pub fn get_oracle_resolution(
-        env: &Env,
-        market_id: &Symbol,
+        _env: &Env,
+        _market_id: &Symbol,
     ) -> Result<Option<OracleResolution>, Error> {
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
@@ -169,7 +169,7 @@ impl OracleResolutionManager {
 
     /// Validate oracle resolution
     pub fn validate_oracle_resolution(
-        env: &Env,
+        _env: &Env,
         resolution: &OracleResolution,
     ) -> Result<(), Error> {
         // Validate price is positive
@@ -295,8 +295,8 @@ impl MarketResolutionManager {
     /// Get market resolution
 
     pub fn get_market_resolution(
-        env: &Env,
-        market_id: &Symbol,
+        _env: &Env,
+        _market_id: &Symbol,
     ) -> Result<Option<MarketResolution>, Error> {
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
@@ -337,7 +337,7 @@ impl OracleResolutionValidator {
 
     /// Validate oracle resolution
     pub fn validate_oracle_resolution(
-        env: &Env,
+        _env: &Env,
         resolution: &OracleResolution,
     ) -> Result<(), Error> {
         // Validate price is positive
@@ -401,7 +401,7 @@ impl MarketResolutionValidator {
 
     /// Validate outcome
     pub fn validate_outcome(
-        env: &Env,
+        _env: &Env,
         outcome: &String,
         valid_outcomes: &Vec<String>,
     ) -> Result<(), Error> {
@@ -514,7 +514,7 @@ impl MarketResolutionAnalytics {
 
     /// Update resolution analytics
     pub fn update_resolution_analytics(
-        env: &Env,
+        _env: &Env,
         _resolution: &MarketResolution,
     ) -> Result<(), Error> {
         // For now, do nothing since we don't store complex types
@@ -577,7 +577,7 @@ impl ResolutionUtils {
 
     /// Validate resolution parameters
     pub fn validate_resolution_parameters(
-        env: &Env,
+        _env: &Env,
         market: &Market,
         outcome: &String,
     ) -> Result<(), Error> {
