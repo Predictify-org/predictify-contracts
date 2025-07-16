@@ -1,6 +1,6 @@
 extern crate alloc;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
-use alloc::string::ToString;
+// use alloc::string::ToString; // Unused import
 
 use crate::errors::Error;
 use crate::markets::MarketStateManager;
@@ -567,7 +567,7 @@ pub struct AdminValidator;
 
 impl AdminValidator {
     /// Validate admin address
-    pub fn validate_admin_address(_env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn validate_admin_address(_env: &Env, _admin: &Address) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Address to string
         // This is a limitation of the current Soroban SDK
         Ok(())

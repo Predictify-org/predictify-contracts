@@ -870,7 +870,7 @@ impl EventValidator {
     }
 
     /// Validate oracle result event
-    pub fn validate_oracle_result_event(event: &OracleResultEvent) -> Result<(), Error> {
+    pub fn validate_oracle_result_event(_event: &OracleResultEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         Ok(())
@@ -931,14 +931,14 @@ impl EventValidator {
     }
 
     /// Validate error logged event
-    pub fn validate_error_logged_event(event: &ErrorLoggedEvent) -> Result<(), Error> {
+    pub fn validate_error_logged_event(_event: &ErrorLoggedEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         Ok(())
     }
 
     /// Validate performance metric event
-    pub fn validate_performance_metric_event(event: &PerformanceMetricEvent) -> Result<(), Error> {
+    pub fn validate_performance_metric_event(_event: &PerformanceMetricEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         Ok(())
@@ -961,14 +961,14 @@ impl EventHelpers {
     }
 
     /// Format event timestamp for display
-    pub fn format_timestamp(env: &Env, timestamp: u64) -> String {
+    pub fn format_timestamp(env: &Env, _timestamp: u64) -> String {
         // For now, return a placeholder since we can't easily convert to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "timestamp")
     }
 
     /// Get event type from symbol
-    pub fn get_event_type_from_symbol(env: &Env, symbol: &Symbol) -> String {
+    pub fn get_event_type_from_symbol(env: &Env, _symbol: &Symbol) -> String {
         // For now, return a placeholder since we can't easily convert Symbol to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "symbol")

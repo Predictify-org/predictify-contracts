@@ -201,7 +201,7 @@ impl VotingManager {
         env: &Env,
         market_id: Symbol,
     ) -> Result<DisputeThreshold, Error> {
-        let market = MarketStateManager::get_market(env, &market_id)?;
+        let _market = MarketStateManager::get_market(env, &market_id)?;
 
 
         // Get adjustment factors
@@ -355,7 +355,7 @@ impl ThresholdUtils {
         activity_level: u32,
     ) -> Result<i128, Error> {
 
-        let market = MarketStateManager::get_market(env, market_id)?;
+        let _market = MarketStateManager::get_market(env, market_id)?;
 
 
         // For high activity markets, increase threshold

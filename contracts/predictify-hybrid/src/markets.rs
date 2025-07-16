@@ -219,7 +219,7 @@ impl MarketStateManager {
     }
 
     /// Add vote to market
-    pub fn add_vote(market: &mut Market, user: Address, outcome: String, stake: i128, market_id: Option<&Symbol>) {
+    pub fn add_vote(market: &mut Market, user: Address, outcome: String, stake: i128, _market_id: Option<&Symbol>) {
         MarketStateLogic::check_function_access_for_state("vote", market.state).unwrap();
         market.votes.set(user.clone(), outcome);
         market.stakes.set(user.clone(), stake);
@@ -395,7 +395,7 @@ impl MarketAnalytics {
     }
     
     /// Calculate basic analytics for a market
-    pub fn calculate_basic_analytics(market: &Market) -> MarketAnalytics {
+    pub fn calculate_basic_analytics(_market: &Market) -> MarketAnalytics {
         // This is a placeholder implementation
         // In a real implementation, you would calculate comprehensive analytics
         MarketAnalytics

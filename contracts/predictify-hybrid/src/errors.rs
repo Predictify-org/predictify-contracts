@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracterror, Env};
+use soroban_sdk::contracterror;
 
 /// Essential error codes for Predictify Hybrid contract
 #[contracterror]
