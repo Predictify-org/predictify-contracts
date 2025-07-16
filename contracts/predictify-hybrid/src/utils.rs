@@ -357,7 +357,7 @@ impl ValidationUtils {
     }
 
     /// Validate URL format (basic)
-    pub fn validate_url(url: &String) -> bool {
+    pub fn validate_url(_url: &String) -> bool {
         // Can't convert soroban_sdk::String to std::string::String
         // Return false as placeholder
         false
