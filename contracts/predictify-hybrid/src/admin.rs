@@ -119,9 +119,11 @@ impl AdminInitializer {
         AdminValidator::validate_admin_address(env, admin)?;
 
         // Store admin in persistent storage
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(env, "Admin"), admin);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(env, "Admin"), admin);
+        });
 
         // Set default admin role
         AdminRoleManager::assign_role(
@@ -211,11 +213,12 @@ impl AdminAccessControl {
         admin.require_auth();
 
         // Validate admin exists
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .ok_or(Error::AdminNotSet)?;
+        let stored_admin: Address = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(env, "Admin"))
+                .ok_or(Error::AdminNotSet)
+        })?;
 
         if admin != &stored_admin {
             return Err(Error::Unauthorized);
@@ -279,7 +282,11 @@ impl AdminRoleManager {
         let key = Symbol::new(env, "admin_role");
         
         // Check if this is the first admin role assignment (bootstrapping)
-        if !env.storage().persistent().has(&key) {
+        let has_existing_role = env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().has(&key)
+        });
+        
+        if !has_existing_role {
             // No admin role assigned yet, allow bootstrapping without permission check
         } else {
             // Validate assigner permissions for subsequent assignments
@@ -301,7 +308,9 @@ impl AdminRoleManager {
         };
 
         // Store role assignment
-        env.storage().persistent().set(&key, &assignment);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().set(&key, &assignment);
+        });
 
         // Emit role assignment event
         let events_role = match role {
@@ -321,11 +330,12 @@ impl AdminRoleManager {
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
         
-        let assignment: AdminRoleAssignment = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(Error::Unauthorized)?;
+        let assignment: AdminRoleAssignment = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&key)
+                .ok_or(Error::Unauthorized)
+        })?;
 
         if !assignment.is_active {
             return Err(Error::Unauthorized);
@@ -405,14 +415,17 @@ impl AdminRoleManager {
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
         
-        let mut assignment: AdminRoleAssignment = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(Error::Unauthorized)?;
+        let mut assignment: AdminRoleAssignment = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&key)
+                .ok_or(Error::Unauthorized)
+        })?;
 
         assignment.is_active = false;
-        env.storage().persistent().set(&key, &assignment);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().set(&key, &assignment);
+        });
 
         // Emit role deactivation event
         EventEmitter::emit_admin_role_deactivated(env, admin, deactivated_by);
@@ -575,10 +588,11 @@ impl AdminValidator {
 
     /// Validate contract not already initialized
     pub fn validate_contract_not_initialized(env: &Env) -> Result<(), Error> {
-        let admin_exists = env
-            .storage()
-            .persistent()
-            .has(&Symbol::new(env, "Admin"));
+        let admin_exists = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .has(&Symbol::new(env, "Admin"))
+        });
 
         if admin_exists {
             return Err(Error::InvalidState);
@@ -654,7 +668,9 @@ impl AdminActionLogger {
 
         // Store action in persistent storage
         let action_key = Symbol::new(env, "admin_action");
-        env.storage().persistent().set(&action_key, &admin_action);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().set(&action_key, &admin_action);
+        });
 
         // Emit admin action event
         EventEmitter::emit_admin_action_logged(env, admin, action, &success);
@@ -844,88 +860,102 @@ mod tests {
     #[test]
     fn test_admin_initializer_initialize() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
 
         // Test initialization
-        assert!(AdminInitializer::initialize(&env, &admin).is_ok());
+        env.as_contract(&contract_id, || {
+            assert!(AdminInitializer::initialize(&env, &admin).is_ok());
 
-        // Verify admin is stored
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap();
-        assert_eq!(stored_admin, admin);
+            // Verify admin is stored
+            let stored_admin: Address = env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "Admin"))
+                .unwrap();
+            assert_eq!(stored_admin, admin);
+        });
     }
 
     #[test]
     fn test_admin_access_control_validate_permission() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
 
-        // Initialize admin
-        AdminInitializer::initialize(&env, &admin).unwrap();
+        env.as_contract(&contract_id, || {
+            // Initialize admin
+            AdminInitializer::initialize(&env, &admin).unwrap();
 
-        // Test permission validation
-        assert!(AdminAccessControl::validate_permission(
-            &env,
-            &admin,
-            &AdminPermission::CreateMarket
-        ).is_ok());
+            // Test permission validation
+            assert!(AdminAccessControl::validate_permission(
+                &env,
+                &admin,
+                &AdminPermission::CreateMarket
+            ).is_ok());
+        });
     }
 
     #[test]
     fn test_admin_role_manager_assign_role() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
         let new_admin = Address::generate(&env);
 
-        // Initialize admin
-        AdminInitializer::initialize(&env, &admin).unwrap();
+        env.as_contract(&contract_id, || {
+            // Initialize admin
+            AdminInitializer::initialize(&env, &admin).unwrap();
 
-        // Assign role
-        assert!(AdminRoleManager::assign_role(
-            &env,
-            &new_admin,
-            AdminRole::MarketAdmin,
-            &admin
-        ).is_ok());
+            // Assign role
+            assert!(AdminRoleManager::assign_role(
+                &env,
+                &new_admin,
+                AdminRole::MarketAdmin,
+                &admin
+            ).is_ok());
 
-        // Verify role assignment
-        let role = AdminRoleManager::get_admin_role(&env, &new_admin).unwrap();
-        assert_eq!(role, AdminRole::MarketAdmin);
+            // Verify role assignment
+            let role = AdminRoleManager::get_admin_role(&env, &new_admin).unwrap();
+            assert_eq!(role, AdminRole::MarketAdmin);
+        });
     }
 
     #[test]
     fn test_admin_functions_close_market() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
         let _market_id = Symbol::new(&env, "test_market");
 
-        // Initialize admin
-        AdminInitializer::initialize(&env, &admin).unwrap();
+        env.as_contract(&contract_id, || {
+            // Initialize admin
+            AdminInitializer::initialize(&env, &admin).unwrap();
 
-        // Test close market (would need a real market setup)
-        // For now, just test the validation
-        assert!(AdminAccessControl::validate_admin_for_action(
-            &env,
-            &admin,
-            "close_market"
-        ).is_ok());
+            // Test close market (would need a real market setup)
+            // For now, just test the validation
+            assert!(AdminAccessControl::validate_admin_for_action(
+                &env,
+                &admin,
+                "close_market"
+            ).is_ok());
+        });
     }
 
     #[test]
     fn test_admin_utils_is_admin() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
         let non_admin = Address::generate(&env);
 
-        // Initialize admin
-        AdminInitializer::initialize(&env, &admin).unwrap();
+        env.as_contract(&contract_id, || {
+            // Initialize admin
+            AdminInitializer::initialize(&env, &admin).unwrap();
 
-        // Test admin check
-        assert!(AdminUtils::is_admin(&env, &admin));
-        assert!(!AdminUtils::is_admin(&env, &non_admin));
+            // Test admin check
+            assert!(AdminUtils::is_admin(&env, &admin));
+            assert!(!AdminUtils::is_admin(&env, &non_admin));
+        });
     }
 
     #[test]

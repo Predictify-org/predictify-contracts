@@ -407,26 +407,29 @@ impl ThresholdUtils {
         threshold: &DisputeThreshold,
     ) -> Result<(), Error> {
         let key = symbol_short!("dispute_t");
-        env.storage().persistent().set(&key, threshold);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().set(&key, threshold);
+        });
         Ok(())
     }
 
     /// Get dispute threshold
     pub fn get_dispute_threshold(env: &Env, market_id: &Symbol) -> Result<DisputeThreshold, Error> {
         let key = symbol_short!("dispute_t");
-        Ok(env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(DisputeThreshold {
-                market_id: market_id.clone(),
-                base_threshold: BASE_DISPUTE_THRESHOLD,
-                adjusted_threshold: BASE_DISPUTE_THRESHOLD,
-                market_size_factor: 0,
-                activity_factor: 0,
-                complexity_factor: 0,
-                timestamp: env.ledger().timestamp(),
-            }))
+        Ok(env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&key)
+                .unwrap_or(DisputeThreshold {
+                    market_id: market_id.clone(),
+                    base_threshold: BASE_DISPUTE_THRESHOLD,
+                    adjusted_threshold: BASE_DISPUTE_THRESHOLD,
+                    market_size_factor: 0,
+                    activity_factor: 0,
+                    complexity_factor: 0,
+                    timestamp: env.ledger().timestamp(),
+                })
+        }))
     }
 
     /// Add threshold history entry
@@ -448,11 +451,14 @@ impl ThresholdUtils {
         };
 
         let key = symbol_short!("th_hist");
-        let mut history: Vec<ThresholdHistoryEntry> =
-            env.storage().persistent().get(&key).unwrap_or(vec![env]);
+        let mut history: Vec<ThresholdHistoryEntry> = env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().get(&key).unwrap_or(vec![env])
+        });
 
         history.push_back(entry);
-        env.storage().persistent().set(&key, &history);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().set(&key, &history);
+        });
 
         Ok(())
     }
@@ -463,8 +469,9 @@ impl ThresholdUtils {
         market_id: &Symbol,
     ) -> Result<Vec<ThresholdHistoryEntry>, Error> {
         let key = symbol_short!("th_hist");
-        let history: Vec<ThresholdHistoryEntry> =
-            env.storage().persistent().get(&key).unwrap_or(vec![env]);
+        let history: Vec<ThresholdHistoryEntry> = env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().get(&key).unwrap_or(vec![env])
+        });
 
         // Filter by market_id
         let mut filtered_history = vec![env];
@@ -534,11 +541,12 @@ impl VotingValidator {
 
     /// Validate admin authentication and permissions
     pub fn validate_admin_authentication(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .expect("Admin not set");
+        let stored_admin: Address = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(env, "Admin"))
+                .expect("Admin not set")
+        });
 
         if admin != &stored_admin {
             return Err(Error::Unauthorized);
@@ -933,10 +941,10 @@ mod tests {
             ),
             crate::types::MarketState::Active
         );
-        market.total_staked = 10000;
+        market.total_staked = 100_000_000; // 10 XLM
 
         let fee = VotingUtils::calculate_fee_amount(&market).unwrap();
-        assert_eq!(fee, 200); // 2% of 10000
+        assert_eq!(fee, 2_000_000); // 2% of 100_000_000 = 2_000_000 (0.2 XLM)
     }
 
     #[test]

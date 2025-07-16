@@ -386,11 +386,12 @@ impl MarketResolutionValidator {
 
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .unwrap_or_else(|| panic!("Admin not set"));
+        let stored_admin: Address = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(env, "Admin"))
+                .unwrap_or_else(|| panic!("Admin not set"))
+        });
 
         if admin != &stored_admin {
             return Err(Error::Unauthorized);

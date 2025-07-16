@@ -298,10 +298,11 @@ pub struct FeeValidator;
 impl FeeValidator {
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"));
+        let stored_admin: Option<Address> = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(env, "Admin"))
+        });
 
         match stored_admin {
             Some(stored_admin) => {
@@ -492,22 +493,29 @@ impl FeeTracker {
 
         // Store in fee collection history
         let history_key = symbol_short!("fee_hist");
-        let mut history: Vec<FeeCollection> = env
-            .storage()
-            .persistent()
-            .get(&history_key)
-            .unwrap_or(vec![env]);
+        let mut history: Vec<FeeCollection> = env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&history_key)
+                .unwrap_or(vec![env])
+        });
 
         history.push_back(collection);
-        env.storage().persistent().set(&history_key, &history);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().set(&history_key, &history);
+        });
 
         // Update total fees collected
         let total_key = symbol_short!("tot_fees");
-        let current_total: i128 = env.storage().persistent().get(&total_key).unwrap_or(0);
+        let current_total: i128 = env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().get(&total_key).unwrap_or(0)
+        });
 
-        env.storage()
-            .persistent()
-            .set(&total_key, &(current_total + amount));
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .set(&total_key, &(current_total + amount));
+        });
 
         Ok(())
     }
@@ -518,11 +526,15 @@ impl FeeTracker {
 
         // Record creation fee in analytics
         let creation_key = symbol_short!("creat_fee");
-        let current_total: i128 = env.storage().persistent().get(&creation_key).unwrap_or(0);
+        let current_total: i128 = env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().get(&creation_key).unwrap_or(0)
+        });
 
-        env.storage()
-            .persistent()
-            .set(&creation_key, &(current_total + amount));
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .set(&creation_key, &(current_total + amount));
+        });
 
         Ok(())
     }
@@ -535,9 +547,11 @@ impl FeeTracker {
     ) -> Result<(), Error> {
         // Store configuration change timestamp
         let config_key = symbol_short!("cfg_time");
-        env.storage()
-            .persistent()
-            .set(&config_key, &env.ledger().timestamp());
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .set(&config_key, &env.ledger().timestamp());
+        });
 
         Ok(())
     }
@@ -545,17 +559,20 @@ impl FeeTracker {
     /// Get fee collection history
     pub fn get_fee_history(env: &Env) -> Result<Vec<FeeCollection>, Error> {
         let history_key = symbol_short!("fee_hist");
-        Ok(env
-            .storage()
-            .persistent()
-            .get(&history_key)
-            .unwrap_or(vec![env]))
+        Ok(env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&history_key)
+                .unwrap_or(vec![env])
+        }))
     }
 
     /// Get total fees collected
     pub fn get_total_fees_collected(env: &Env) -> Result<i128, Error> {
         let total_key = symbol_short!("tot_fees");
-        Ok(env.storage().persistent().get(&total_key).unwrap_or(0))
+        Ok(env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().get(&total_key).unwrap_or(0)
+        }))
     }
 }
 
@@ -568,25 +585,28 @@ impl FeeConfigManager {
     /// Store fee configuration
     pub fn store_fee_config(env: &Env, config: &FeeConfig) -> Result<(), Error> {
         let config_key = symbol_short!("fee_cfg");
-        env.storage().persistent().set(&config_key, config);
+        env.as_contract(&env.current_contract_address(), || {
+            env.storage().persistent().set(&config_key, config);
+        });
         Ok(())
     }
 
     /// Get fee configuration
     pub fn get_fee_config(env: &Env) -> Result<FeeConfig, Error> {
         let config_key = symbol_short!("fee_cfg");
-        Ok(env
-            .storage()
-            .persistent()
-            .get(&config_key)
-            .unwrap_or(FeeConfig {
-                platform_fee_percentage: PLATFORM_FEE_PERCENTAGE,
-                creation_fee: MARKET_CREATION_FEE,
-                min_fee_amount: MIN_FEE_AMOUNT,
-                max_fee_amount: MAX_FEE_AMOUNT,
-                collection_threshold: FEE_COLLECTION_THRESHOLD,
-                fees_enabled: true,
-            }))
+        Ok(env.as_contract(&env.current_contract_address(), || {
+            env.storage()
+                .persistent()
+                .get(&config_key)
+                .unwrap_or(FeeConfig {
+                    platform_fee_percentage: PLATFORM_FEE_PERCENTAGE,
+                    creation_fee: MARKET_CREATION_FEE,
+                    min_fee_amount: MIN_FEE_AMOUNT,
+                    max_fee_amount: MAX_FEE_AMOUNT,
+                    collection_threshold: FEE_COLLECTION_THRESHOLD,
+                    fees_enabled: true,
+                })
+        }))
     }
 
     /// Reset fee configuration to defaults
@@ -776,19 +796,22 @@ mod tests {
     #[test]
     fn test_fee_validator_admin_permissions() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
 
-        // Set admin in storage
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(&env, "Admin"), &admin);
+        env.as_contract(&contract_id, || {
+            // Set admin in storage
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
 
-        // Valid admin
-        assert!(FeeValidator::validate_admin_permissions(&env, &admin).is_ok());
+            // Valid admin
+            assert!(FeeValidator::validate_admin_permissions(&env, &admin).is_ok());
 
-        // Invalid admin
-        let invalid_admin = Address::generate(&env);
-        assert!(FeeValidator::validate_admin_permissions(&env, &invalid_admin).is_err());
+            // Invalid admin
+            let invalid_admin = Address::generate(&env);
+            assert!(FeeValidator::validate_admin_permissions(&env, &invalid_admin).is_err());
+        });
     }
 
     #[test]
@@ -847,24 +870,30 @@ mod tests {
     #[test]
     fn test_fee_config_manager() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let config = testing::create_test_fee_config();
 
-        // Store and retrieve config
-        FeeConfigManager::store_fee_config(&env, &config).unwrap();
-        let retrieved_config = FeeConfigManager::get_fee_config(&env).unwrap();
+        env.as_contract(&contract_id, || {
+            // Store and retrieve config
+            FeeConfigManager::store_fee_config(&env, &config).unwrap();
+            let retrieved_config = FeeConfigManager::get_fee_config(&env).unwrap();
 
-        assert_eq!(config, retrieved_config);
+            assert_eq!(config, retrieved_config);
+        });
     }
 
     #[test]
     fn test_fee_analytics_calculation() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
 
-        // Test with no fee history
-        let analytics = FeeAnalytics::calculate_analytics(&env).unwrap();
-        assert_eq!(analytics.total_fees_collected, 0);
-        assert_eq!(analytics.markets_with_fees, 0);
-        assert_eq!(analytics.average_fee_per_market, 0);
+        env.as_contract(&contract_id, || {
+            // Test with no fee history
+            let analytics = FeeAnalytics::calculate_analytics(&env).unwrap();
+            assert_eq!(analytics.total_fees_collected, 0);
+            assert_eq!(analytics.markets_with_fees, 0);
+            assert_eq!(analytics.average_fee_per_market, 0);
+        });
     }
 
     #[test]
