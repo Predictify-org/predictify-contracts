@@ -1,7 +1,9 @@
 extern crate alloc;
 
+use alloc::string::ToString; // Only for primitive types, not soroban_sdk::String
+
 use soroban_sdk::{Address, Env, Map, String, Symbol, Vec};
-use alloc::string::ToString;
+
 
 use crate::errors::Error;
 
@@ -108,93 +110,111 @@ pub struct StringUtils;
 
 impl StringUtils {
     /// Convert string to uppercase
-    pub fn to_uppercase(env: &Env, s: &String) -> String {
-        // For now, return the original string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+    pub fn to_uppercase(s: &String) -> String {
+        let env = Env::default();
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return original string as placeholder
         s.clone()
     }
 
     /// Convert string to lowercase
-    pub fn to_lowercase(env: &Env, s: &String) -> String {
-        // For now, return the original string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+    pub fn to_lowercase(s: &String) -> String {
+        let env = Env::default();
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return original string as placeholder
         s.clone()
     }
 
     /// Trim whitespace from string
-    pub fn trim(env: &Env, s: &String) -> String {
-        // For now, return the original string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+    pub fn trim(s: &String) -> String {
+        let env = Env::default();
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return original string as placeholder
         s.clone()
     }
 
     /// Truncate string to specified length
-    pub fn truncate(env: &Env, s: &String, max_length: u32) -> String {
-        // For now, return the original string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+    pub fn truncate(s: &String, max_length: u32) -> String {
+        let env = Env::default();
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return original string as placeholder
         s.clone()
     }
 
     /// Split string by delimiter
-    pub fn split(env: &Env, s: &String, delimiter: &str) -> Vec<String> {
-        // For now, return a vector with the original string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
-        let mut result = Vec::new(env);
+    pub fn split(s: &String, delimiter: &str) -> Vec<String> {
+        let env = Env::default();
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return vector with original string as placeholder
+        let mut result = Vec::new(&env);
         result.push_back(s.clone());
         result
     }
 
     /// Join strings with delimiter
-    pub fn join(env: &Env, strings: &Vec<String>, delimiter: &str) -> String {
-        // For now, return the first string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
-        if strings.len() > 0 {
-            strings.get_unchecked(0).clone()
-        } else {
-            String::from_str(env, "")
+    pub fn join(strings: &Vec<String>, delimiter: &str) -> String {
+        let env = Env::default();
+        let mut result = alloc::string::String::new();
+        for (i, s) in strings.iter().enumerate() {
+            if i > 0 {
+                result.push_str(delimiter);
+            }
+            // Can't convert soroban_sdk::String to std::string::String
+            // Skip string conversion
         }
         String::from_str(&env, &result)
     }
 
     /// Check if string contains substring
     pub fn contains(s: &String, substring: &str) -> bool {
-        // For now, return false since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return false as placeholder
         false
     }
 
     /// Check if string starts with prefix
     pub fn starts_with(s: &String, prefix: &str) -> bool {
-        // For now, return false since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return false as placeholder
         false
     }
 
     /// Check if string ends with suffix
     pub fn ends_with(s: &String, suffix: &str) -> bool {
-        // For now, return false since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return false as placeholder
         false
     }
 
     /// Replace substring in string
-    pub fn replace(env: &Env, s: &String, old: &str, new: &str) -> String {
-        // For now, return the original string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+    pub fn replace(s: &String, old: &str, new: &str) -> String {
+        let env = Env::default();
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return original string as placeholder
         s.clone()
     }
 
     /// Validate string length
-    pub fn validate_string_length(s: &String, min_length: u32, max_length: u32) -> Result<(), Error> {
-        // For now, return Ok since we can't easily get the length of Soroban String
-        // This is a limitation of the current Soroban SDK
-        Ok(())
+
+    pub fn validate_string_length(
+        s: &String,
+        min_length: u32,
+        max_length: u32,
+    ) -> Result<(), Error> {
+        let len = s.len() as u32;
+
+        if len < min_length || len > max_length {
+            Err(Error::InvalidInput)
+        } else {
+            Ok(())
+        }
     }
 
-    /// Sanitize string by removing special characters
-    pub fn sanitize_string(env: &Env, s: &String) -> String {
-        // For now, return the original string since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+    /// Sanitize string (remove special characters)
+    pub fn sanitize_string(s: &String) -> String {
+        let env = Env::default();
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return original string as placeholder
         s.clone()
     }
 
@@ -295,8 +315,8 @@ impl NumericUtils {
 
     /// Convert string to number
     pub fn string_to_i128(s: &String) -> i128 {
-        // For now, return 0 since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return 0 as placeholder
         0
     }
 }
@@ -331,16 +351,16 @@ impl ValidationUtils {
 
     /// Validate email format (basic)
     pub fn validate_email(email: &String) -> bool {
-        // For now, return true since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
-        true
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return false as placeholder
+        false
     }
 
     /// Validate URL format (basic)
     pub fn validate_url(url: &String) -> bool {
-        // For now, return true since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
-        true
+        // Can't convert soroban_sdk::String to std::string::String
+        // Return false as placeholder
+        false
     }
 }
 
@@ -487,7 +507,10 @@ impl TestingUtils {
 
     /// Generate test address
     pub fn generate_test_address(env: &Env) -> Address {
-        Address::from_string(&String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"))
+        Address::from_string(&String::from_str(
+            env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ))
     }
 
     /// Generate test symbol
@@ -508,7 +531,16 @@ impl TestingUtils {
     /// Create test map
     pub fn create_test_map(env: &Env) -> Map<String, String> {
         let mut map = Map::new(env);
-        map.set(String::from_str(env, "key"), String::from_str(env, "value"));
+
+        map.set(
+            String::from_str(env, "key1"),
+            String::from_str(env, "value1"),
+        );
+        map.set(
+            String::from_str(env, "key2"),
+            String::from_str(env, "value2"),
+        );
+
         map
     }
 
@@ -518,4 +550,4 @@ impl TestingUtils {
         vec.push_back(String::from_str(env, "test"));
         vec
     }
-} 
+}

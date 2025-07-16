@@ -8,7 +8,7 @@ use crate::{
     errors::Error,
     types::{Market, OracleConfig, OracleProvider},
 };
-use alloc::string::ToString;
+// use alloc::string::ToString; // Removed to fix Display/ToString trait errors
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
@@ -287,7 +287,7 @@ impl MarketValidator {
     ) -> Result<(), ValidationError> {
 
         // Check if market exists
-        if market.question.to_string().is_empty() {
+        if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
 
@@ -314,7 +314,7 @@ impl MarketValidator {
     ) -> Result<(), ValidationError> {
 
         // Check if market exists
-        if market.question.to_string().is_empty() {
+        if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
 
@@ -346,7 +346,7 @@ impl MarketValidator {
     ) -> Result<(), ValidationError> {
 
         // Check if market exists
-        if market.question.to_string().is_empty() {
+        if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
 
@@ -439,7 +439,7 @@ impl OracleValidator {
     ) -> Result<(), ValidationError> {
 
         // Check if oracle result is empty
-        if oracle_result.to_string().is_empty() {
+        if oracle_result.is_empty() {
             return Err(ValidationError::InvalidOracle);
         }
 
@@ -584,7 +584,7 @@ impl VoteValidator {
         market_outcomes: &Vec<String>,
     ) -> Result<(), ValidationError> {
 
-        if outcome.to_string().is_empty() {
+        if outcome.is_empty() {
             return Err(ValidationError::InvalidOutcome);
         }
 
@@ -631,7 +631,7 @@ impl DisputeValidator {
 
 
         // Validate market exists and is resolved
-        if market.question.to_string().is_empty() {
+        if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
 
@@ -798,7 +798,7 @@ impl ComprehensiveValidator {
         let mut result = ValidationResult::valid();
 
         // Basic market validation
-        if market.question.to_string().is_empty() {
+        if market.question.is_empty() {
             result.add_error();
             return result;
         }
