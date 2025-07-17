@@ -317,7 +317,7 @@ impl AdminRoleManager {
     }
 
     /// Get admin role
-    pub fn get_admin_role(env: &Env, _admin: &Address) -> Result<AdminRole, Error> {
+    pub fn get_admin_role(env: &Env, admin: &Address) -> Result<AdminRole, Error> {
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
         
@@ -328,6 +328,11 @@ impl AdminRoleManager {
             .ok_or(Error::Unauthorized)?;
 
         if !assignment.is_active {
+            return Err(Error::Unauthorized);
+        }
+
+        // Check if the passed address matches the admin address in the assignment
+        if admin != &assignment.admin {
             return Err(Error::Unauthorized);
         }
 
@@ -916,12 +921,12 @@ mod tests {
             AdminInitializer::initialize(&env, &admin).unwrap();
 
             // Test close market (would need a real market setup)
-            // For now, just test the validation
-            assert!(AdminAccessControl::validate_admin_for_action(
-                &env,
-                &admin,
-                "close_market"
-            ).is_ok());
+            // For now, just test the permission mapping and validation without auth
+            let permission = AdminAccessControl::map_action_to_permission("close_market").unwrap();
+            assert_eq!(permission, AdminPermission::CloseMarket);
+            
+            // Test that the admin has the required permission
+            assert!(AdminAccessControl::validate_permission(&env, &admin, &permission).is_ok());
         });
     }
 
