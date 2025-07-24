@@ -303,7 +303,10 @@ impl ConfigManager {
                 passphrase: String::from_str(env, "Test SDF Network ; September 2015"),
                 rpc_url: String::from_str(env, "https://soroban-testnet.stellar.org"),
                 network_id: String::from_str(env, "testnet"),
-                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                contract_address: Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
             },
             fees: Self::get_default_fee_config(),
             voting: Self::get_default_voting_config(),
@@ -322,7 +325,10 @@ impl ConfigManager {
                 passphrase: String::from_str(env, "Test SDF Network ; September 2015"),
                 rpc_url: String::from_str(env, "https://soroban-testnet.stellar.org"),
                 network_id: String::from_str(env, "testnet"),
-                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                contract_address: Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
             },
             fees: Self::get_default_fee_config(),
             voting: Self::get_default_voting_config(),
@@ -341,7 +347,10 @@ impl ConfigManager {
                 passphrase: String::from_str(env, "Public Global Stellar Network ; September 2015"),
                 rpc_url: String::from_str(env, "https://rpc.mainnet.stellar.org"),
                 network_id: String::from_str(env, "mainnet"),
-                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                contract_address: Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
             },
             fees: Self::get_mainnet_fee_config(),
             voting: Self::get_mainnet_voting_config(),
@@ -367,10 +376,10 @@ impl ConfigManager {
     /// Get mainnet fee configuration (higher fees)
     pub fn get_mainnet_fee_config() -> FeeConfig {
         FeeConfig {
-            platform_fee_percentage: 3, // 3% for mainnet
-            creation_fee: 15_000_000,    // 1.5 XLM for mainnet
-            min_fee_amount: 2_000_000,   // 0.2 XLM for mainnet
-            max_fee_amount: 2_000_000_000, // 200 XLM for mainnet
+            platform_fee_percentage: 3,        // 3% for mainnet
+            creation_fee: 15_000_000,          // 1.5 XLM for mainnet
+            min_fee_amount: 2_000_000,         // 0.2 XLM for mainnet
+            max_fee_amount: 2_000_000_000,     // 200 XLM for mainnet
             collection_threshold: 200_000_000, // 20 XLM for mainnet
             fees_enabled: true,
         }
@@ -392,13 +401,13 @@ impl ConfigManager {
     /// Get mainnet voting configuration (higher stakes)
     pub fn get_mainnet_voting_config() -> VotingConfig {
         VotingConfig {
-            min_vote_stake: 2_000_000,      // 0.2 XLM for mainnet
-            min_dispute_stake: 20_000_000,  // 2 XLM for mainnet
-            max_dispute_threshold: 200_000_000, // 20 XLM for mainnet
-            base_dispute_threshold: 20_000_000, // 2 XLM for mainnet
+            min_vote_stake: 2_000_000,             // 0.2 XLM for mainnet
+            min_dispute_stake: 20_000_000,         // 2 XLM for mainnet
+            max_dispute_threshold: 200_000_000,    // 20 XLM for mainnet
+            base_dispute_threshold: 20_000_000,    // 2 XLM for mainnet
             large_market_threshold: 2_000_000_000, // 200 XLM for mainnet
-            high_activity_threshold: 200,   // 200 votes for mainnet
-            dispute_extension_hours: 48,    // 48 hours for mainnet
+            high_activity_threshold: 200,          // 200 votes for mainnet
+            dispute_extension_hours: 48,           // 48 hours for mainnet
         }
     }
 
@@ -448,8 +457,8 @@ impl ConfigManager {
     pub fn get_mainnet_oracle_config() -> OracleConfig {
         OracleConfig {
             max_price_age: 1800, // 30 minutes for mainnet
-            retry_attempts: 5,    // More retries for mainnet
-            timeout_seconds: 60,  // Longer timeout for mainnet
+            retry_attempts: 5,   // More retries for mainnet
+            timeout_seconds: 60, // Longer timeout for mainnet
         }
     }
 
@@ -511,7 +520,9 @@ impl ConfigValidator {
             return Err(Error::InvalidFeeConfig);
         }
 
-        if config.creation_fee < config.min_fee_amount || config.creation_fee > config.max_fee_amount {
+        if config.creation_fee < config.min_fee_amount
+            || config.creation_fee > config.max_fee_amount
+        {
             return Err(Error::InvalidFeeConfig);
         }
 
@@ -648,7 +659,9 @@ impl ConfigUtils {
     /// Get environment name as string
     pub fn get_environment_name(config: &ContractConfig) -> String {
         match config.network.environment {
-            Environment::Development => String::from_str(&config.network.passphrase.env(), "development"),
+            Environment::Development => {
+                String::from_str(&config.network.passphrase.env(), "development")
+            }
             Environment::Testnet => String::from_str(&config.network.passphrase.env(), "testnet"),
             Environment::Mainnet => String::from_str(&config.network.passphrase.env(), "mainnet"),
             Environment::Custom => String::from_str(&config.network.passphrase.env(), "custom"),
@@ -659,7 +672,7 @@ impl ConfigUtils {
     pub fn get_config_summary(config: &ContractConfig) -> String {
         let env_name = Self::get_environment_name(config);
         let fee_percentage = config.fees.platform_fee_percentage;
-        
+
         // Create simple summary since string concatenation is complex in no_std
         if fee_percentage == 2 {
             String::from_str(&env_name.env(), "Development config with 2% fees")
@@ -735,7 +748,10 @@ impl ConfigTesting {
                 passphrase: String::from_str(env, "Test"),
                 rpc_url: String::from_str(env, "http://localhost"),
                 network_id: String::from_str(env, "test"),
-                contract_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                contract_address: Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
             },
             fees: FeeConfig {
                 platform_fee_percentage: 1,
@@ -789,7 +805,6 @@ impl ConfigTesting {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_config_manager_default_configs() {
@@ -798,7 +813,10 @@ mod tests {
         // Test development config
         let dev_config = ConfigManager::get_development_config(&env);
         assert_eq!(dev_config.network.environment, Environment::Development);
-        assert_eq!(dev_config.fees.platform_fee_percentage, DEFAULT_PLATFORM_FEE_PERCENTAGE);
+        assert_eq!(
+            dev_config.fees.platform_fee_percentage,
+            DEFAULT_PLATFORM_FEE_PERCENTAGE
+        );
 
         // Test testnet config
         let testnet_config = ConfigManager::get_testnet_config(&env);
@@ -845,8 +863,14 @@ mod tests {
         assert!(ConfigUtils::fees_enabled(&mainnet_config));
 
         // Test configuration access
-        assert_eq!(ConfigUtils::get_fee_config(&dev_config).platform_fee_percentage, 2);
-        assert_eq!(ConfigUtils::get_fee_config(&mainnet_config).platform_fee_percentage, 3);
+        assert_eq!(
+            ConfigUtils::get_fee_config(&dev_config).platform_fee_percentage,
+            2
+        );
+        assert_eq!(
+            ConfigUtils::get_fee_config(&mainnet_config).platform_fee_percentage,
+            3
+        );
     }
 
     #[test]
@@ -857,11 +881,17 @@ mod tests {
         // Test storage and retrieval
         assert!(ConfigManager::store_config(&env, &config).is_ok());
         let retrieved_config = ConfigManager::get_config(&env).unwrap();
-        assert_eq!(retrieved_config.fees.platform_fee_percentage, config.fees.platform_fee_percentage);
+        assert_eq!(
+            retrieved_config.fees.platform_fee_percentage,
+            config.fees.platform_fee_percentage
+        );
 
         // Test reset to defaults
         let reset_config = ConfigManager::reset_to_defaults(&env).unwrap();
-        assert_eq!(reset_config.fees.platform_fee_percentage, DEFAULT_PLATFORM_FEE_PERCENTAGE);
+        assert_eq!(
+            reset_config.fees.platform_fee_percentage,
+            DEFAULT_PLATFORM_FEE_PERCENTAGE
+        );
     }
 
     #[test]
@@ -885,12 +915,12 @@ mod tests {
     #[test]
     fn test_environment_enum() {
         let env = Env::default();
-        
+
         // Test environment creation
         let dev_env = Environment::Development;
-        let testnet_env = Environment::Testnet;
+        let _testnet_env = Environment::Testnet;
         let mainnet_env = Environment::Mainnet;
-        let custom_env = Environment::Custom;
+        let _custom_env = Environment::Custom;
 
         // Test environment comparison
         assert_eq!(dev_env, Environment::Development);
@@ -936,4 +966,4 @@ mod tests {
         assert_eq!(ORACLE_RETRY_ATTEMPTS, 3);
         assert_eq!(ORACLE_TIMEOUT_SECONDS, 30);
     }
-} 
+}

@@ -1,12 +1,10 @@
 extern crate alloc;
-
-use soroban_sdk::{contracttype, vec, symbol_short, Address, Env, Map, String, Symbol, Vec};
-use alloc::string::ToString;
 use alloc::format;
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
+use crate::admin::AdminRole;
 use crate::errors::Error;
 use crate::Environment;
-use crate::admin::AdminRole;
 
 /// Comprehensive event system for Predictify Hybrid contract
 ///
@@ -540,12 +538,7 @@ impl EventEmitter {
     }
 
     /// Emit admin action logged event
-    pub fn emit_admin_action_logged(
-        env: &Env,
-        admin: &Address,
-        action: &str,
-        success: &bool,
-    ) {
+    pub fn emit_admin_action_logged(env: &Env, admin: &Address, action: &str, success: &bool) {
         let event = AdminActionEvent {
             admin: admin.clone(),
             action: String::from_str(env, action),
@@ -568,11 +561,7 @@ impl EventEmitter {
     }
 
     /// Emit config initialized event
-    pub fn emit_config_initialized(
-        env: &Env,
-        admin: &Address,
-        environment: &Environment,
-    ) {
+    pub fn emit_config_initialized(env: &Env, admin: &Address, environment: &Environment) {
         let event = ConfigInitializedEvent {
             admin: admin.clone(),
             environment: String::from_str(env, &format!("{:?}", environment)),
@@ -600,11 +589,7 @@ impl EventEmitter {
     }
 
     /// Emit admin role deactivated event
-    pub fn emit_admin_role_deactivated(
-        env: &Env,
-        admin: &Address,
-        deactivated_by: &Address,
-    ) {
+    pub fn emit_admin_role_deactivated(env: &Env, admin: &Address, deactivated_by: &Address) {
         let event = AdminRoleEvent {
             admin: admin.clone(),
             role: String::from_str(env, "deactivated"),
@@ -616,11 +601,7 @@ impl EventEmitter {
     }
 
     /// Emit market closed event
-    pub fn emit_market_closed(
-        env: &Env,
-        market_id: &Symbol,
-        admin: &Address,
-    ) {
+    pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
         let event = MarketClosedEvent {
             market_id: market_id.clone(),
             admin: admin.clone(),
@@ -631,12 +612,7 @@ impl EventEmitter {
     }
 
     /// Emit market finalized event
-    pub fn emit_market_finalized(
-        env: &Env,
-        market_id: &Symbol,
-        admin: &Address,
-        outcome: &String,
-    ) {
+    pub fn emit_market_finalized(env: &Env, market_id: &Symbol, admin: &Address, outcome: &String) {
         let event = MarketFinalizedEvent {
             market_id: market_id.clone(),
             admin: admin.clone(),
@@ -665,7 +641,9 @@ impl EventLogger {
     /// Get all events of a specific type
     pub fn get_events<T>(env: &Env, event_type: &Symbol) -> Vec<T>
     where
-        T: Clone + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val> + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
+        T: Clone
+            + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val>
+            + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
         match env.storage().persistent().get::<Symbol, T>(event_type) {
             Some(event) => Vec::from_array(env, [event]),
@@ -678,7 +656,11 @@ impl EventLogger {
         let mut events = Vec::new(env);
 
         // Get market created events
-        if let Some(event) = env.storage().persistent().get::<Symbol, MarketCreatedEvent>(&symbol_short!("mkt_crt")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, MarketCreatedEvent>(&symbol_short!("mkt_crt"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketCreated"),
@@ -689,7 +671,11 @@ impl EventLogger {
         }
 
         // Get vote cast events
-        if let Some(event) = env.storage().persistent().get::<Symbol, VoteCastEvent>(&symbol_short!("vote")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, VoteCastEvent>(&symbol_short!("vote"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "VoteCast"),
@@ -700,7 +686,11 @@ impl EventLogger {
         }
 
         // Get oracle result events
-        if let Some(event) = env.storage().persistent().get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_rs")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, OracleResultEvent>(&symbol_short!("oracle_rs"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "OracleResult"),
@@ -711,7 +701,11 @@ impl EventLogger {
         }
 
         // Get market resolved events
-        if let Some(event) = env.storage().persistent().get::<Symbol, MarketResolvedEvent>(&symbol_short!("mkt_res")) {
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, MarketResolvedEvent>(&symbol_short!("mkt_res"))
+        {
             if event.market_id == *market_id {
                 events.push_back(MarketEventSummary {
                     event_type: String::from_str(env, "MarketResolved"),
@@ -836,7 +830,7 @@ impl EventValidator {
     }
 
     /// Validate oracle result event
-    pub fn validate_oracle_result_event(event: &OracleResultEvent) -> Result<(), Error> {
+    pub fn validate_oracle_result_event(_event: &OracleResultEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         Ok(())
@@ -876,7 +870,9 @@ impl EventValidator {
     }
 
     /// Validate extension requested event
-    pub fn validate_extension_requested_event(event: &ExtensionRequestedEvent) -> Result<(), Error> {
+    pub fn validate_extension_requested_event(
+        event: &ExtensionRequestedEvent,
+    ) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         if event.additional_days == 0 {
@@ -891,14 +887,14 @@ impl EventValidator {
     }
 
     /// Validate error logged event
-    pub fn validate_error_logged_event(event: &ErrorLoggedEvent) -> Result<(), Error> {
+    pub fn validate_error_logged_event(_event: &ErrorLoggedEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         Ok(())
     }
 
     /// Validate performance metric event
-    pub fn validate_performance_metric_event(event: &PerformanceMetricEvent) -> Result<(), Error> {
+    pub fn validate_performance_metric_event(_event: &PerformanceMetricEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         Ok(())
@@ -921,21 +917,21 @@ impl EventHelpers {
     }
 
     /// Format event timestamp for display
-    pub fn format_timestamp(env: &Env, timestamp: u64) -> String {
+    pub fn format_timestamp(env: &Env, _timestamp: u64) -> String {
         // For now, return a placeholder since we can't easily convert to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "timestamp")
     }
 
     /// Get event type from symbol
-    pub fn get_event_type_from_symbol(env: &Env, symbol: &Symbol) -> String {
+    pub fn get_event_type_from_symbol(env: &Env, _symbol: &Symbol) -> String {
         // For now, return a placeholder since we can't easily convert Symbol to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "symbol")
     }
 
     /// Create event context string
-    pub fn create_event_context(env: &Env, context_parts: &Vec<String>) -> String {
+    pub fn create_event_context(env: &Env, _context_parts: &Vec<String>) -> String {
         // For now, return a placeholder since we can't easily convert Soroban String
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "context")
@@ -957,7 +953,11 @@ impl EventHelpers {
     }
 
     /// Check if event is recent (within specified seconds)
-    pub fn is_recent_event(event_timestamp: u64, current_timestamp: u64, recent_threshold: u64) -> bool {
+    pub fn is_recent_event(
+        event_timestamp: u64,
+        current_timestamp: u64,
+        recent_threshold: u64,
+    ) -> bool {
         Self::get_event_age(current_timestamp, event_timestamp) <= recent_threshold
     }
 }
@@ -1004,10 +1004,7 @@ impl EventTestingUtils {
     }
 
     /// Create test oracle result event
-    pub fn create_test_oracle_result_event(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> OracleResultEvent {
+    pub fn create_test_oracle_result_event(env: &Env, market_id: &Symbol) -> OracleResultEvent {
         OracleResultEvent {
             market_id: market_id.clone(),
             result: String::from_str(env, "yes"),
@@ -1021,10 +1018,7 @@ impl EventTestingUtils {
     }
 
     /// Create test market resolved event
-    pub fn create_test_market_resolved_event(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> MarketResolvedEvent {
+    pub fn create_test_market_resolved_event(env: &Env, market_id: &Symbol) -> MarketResolvedEvent {
         MarketResolvedEvent {
             market_id: market_id.clone(),
             final_outcome: String::from_str(env, "yes"),
@@ -1100,12 +1094,14 @@ impl EventTestingUtils {
     }
 
     /// Simulate event emission
-    pub fn simulate_event_emission(env: &Env, event_type: &String) -> bool {
+    pub fn simulate_event_emission(env: &Env, _event_type: &String) -> bool {
         // Simulate successful event emission
         // For now, use a default symbol since we can't easily convert Soroban String
         // This is a limitation of the current Soroban SDK
         let event_key = Symbol::new(env, "event");
-        env.storage().persistent().set(&event_key, &String::from_str(env, "test"));
+        env.storage()
+            .persistent()
+            .set(&event_key, &String::from_str(env, "test"));
         true
     }
 }
@@ -1216,7 +1212,10 @@ impl EventDocumentation {
         );
         examples.set(
             String::from_str(env, "EmitVoteCast"),
-            String::from_str(env, "EventEmitter::emit_vote_cast(env, market_id, voter, outcome, stake)"),
+            String::from_str(
+                env,
+                "EventEmitter::emit_vote_cast(env, market_id, voter, outcome, stake)",
+            ),
         );
         examples.set(
             String::from_str(env, "GetMarketEvents"),
@@ -1229,4 +1228,4 @@ impl EventDocumentation {
 
         examples
     }
-} 
+}

@@ -1,13 +1,14 @@
 #![no_std]
 extern crate alloc;
-use soroban_sdk::{
-    contract, contractimpl, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec, symbol_short,
-};
 use alloc::string::ToString;
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, symbol_short, vec, Address, Env, Map, String, Symbol,
+    Vec,
+};
 
 // ===== MODULE ORGANIZATION =====
 // Predictify Hybrid Contract - Organized Module Structure
-// 
+//
 // This contract provides a comprehensive prediction market system with:
 // - Oracle integration for automated market resolution
 // - Community voting and consensus mechanisms
@@ -36,19 +37,19 @@ use markets::{MarketCreator, MarketStateManager};
 
 /// Voting system and consensus module
 pub mod voting;
-use voting::{VotingManager};
+use voting::VotingManager;
 
 /// Dispute resolution and escalation module
 pub mod disputes;
-use disputes::{DisputeManager};
+use disputes::DisputeManager;
 
 /// Market resolution and analytics module
 pub mod resolution;
-use resolution::{OracleResolutionManager, MarketResolutionManager};
+use resolution::{MarketResolutionManager, OracleResolutionManager};
 
 /// Fee calculation and management module
 pub mod fees;
-use fees::{FeeManager};
+use fees::FeeManager;
 
 /// Configuration management module
 pub mod config;
@@ -56,15 +57,15 @@ use config::{ConfigManager, ConfigUtils, ConfigValidator, ContractConfig, Enviro
 
 /// Utility functions and helpers module
 pub mod utils;
-use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, CommonUtils};
+use utils::{CommonUtils, NumericUtils, StringUtils, TimeUtils, ValidationUtils};
 
 /// Event logging and monitoring module
 pub mod events;
-use events::{EventLogger, EventHelpers, EventTestingUtils, EventDocumentation};
+use events::{EventDocumentation, EventHelpers, EventLogger, EventTestingUtils};
 
 /// Admin controls and functions module
 pub mod admin;
-use admin::{AdminInitializer, AdminFunctions};
+use admin::{AdminFunctions, AdminInitializer};
 
 /// Market extensions and modifications module
 pub mod extensions;
@@ -73,13 +74,10 @@ use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
 /// Input validation and security module
 pub mod validation;
 use validation::{
-    ValidationResult, InputValidator, 
-    MarketValidator as ValidationMarketValidator, 
-    OracleValidator as ValidationOracleValidator,
-    FeeValidator as ValidationFeeValidator, 
-    VoteValidator as ValidationVoteValidator, 
-    DisputeValidator as ValidationDisputeValidator, 
-    ComprehensiveValidator, ValidationDocumentation,
+    ComprehensiveValidator, DisputeValidator as ValidationDisputeValidator,
+    FeeValidator as ValidationFeeValidator, InputValidator,
+    MarketValidator as ValidationMarketValidator, OracleValidator as ValidationOracleValidator,
+    ValidationDocumentation, ValidationResult, VoteValidator as ValidationVoteValidator,
 };
 
 #[contract]
@@ -163,7 +161,11 @@ impl PredictifyHybrid {
     }
 
     // Update fee configuration (admin only)
-    pub fn update_fee_config(env: Env, admin: Address, new_config: fees::FeeConfig) -> fees::FeeConfig {
+    pub fn update_fee_config(
+        env: Env,
+        admin: Address,
+        new_config: fees::FeeConfig,
+    ) -> fees::FeeConfig {
         match AdminFunctions::update_fee_config(&env, &admin, &new_config) {
             Ok(config) => config,
             Err(e) => panic_with_error!(env, e),
@@ -204,7 +206,11 @@ impl PredictifyHybrid {
 
     // Fetch oracle result to determine market outcome
     pub fn fetch_oracle_result(env: Env, market_id: Symbol, oracle_contract: Address) -> String {
-        match resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id, &oracle_contract) {
+        match resolution::OracleResolutionManager::fetch_oracle_result(
+            &env,
+            &market_id,
+            &oracle_contract,
+        ) {
             Ok(resolution) => resolution.oracle_result,
             Err(e) => panic_with_error!(env, e),
         }
@@ -237,7 +243,10 @@ impl PredictifyHybrid {
     // ===== RESOLUTION SYSTEM METHODS =====
 
     // Get oracle resolution for a market
-    pub fn get_oracle_resolution(env: Env, market_id: Symbol) -> Option<resolution::OracleResolution> {
+    pub fn get_oracle_resolution(
+        env: Env,
+        market_id: Symbol,
+    ) -> Option<resolution::OracleResolution> {
         match OracleResolutionManager::get_oracle_resolution(&env, &market_id) {
             Ok(resolution) => resolution,
             Err(_) => None,
@@ -245,7 +254,10 @@ impl PredictifyHybrid {
     }
 
     // Get market resolution for a market
-    pub fn get_market_resolution(env: Env, market_id: Symbol) -> Option<resolution::MarketResolution> {
+    pub fn get_market_resolution(
+        env: Env,
+        market_id: Symbol,
+    ) -> Option<resolution::MarketResolution> {
         match MarketResolutionManager::get_market_resolution(&env, &market_id) {
             Ok(resolution) => resolution,
             Err(_) => None,
@@ -282,17 +294,18 @@ impl PredictifyHybrid {
             Ok(market) => market,
             Err(_) => {
                 validation.is_valid = false;
-                validation.errors.push_back(String::from_str(&env, "Market not found"));
+                validation
+                    .errors
+                    .push_back(String::from_str(&env, "Market not found"));
                 return validation;
             }
         };
 
         // Check resolution state
         let state = resolution::ResolutionUtils::get_resolution_state(&env, &market);
-        let (eligible, reason) = resolution::ResolutionUtils::get_resolution_eligibility(&env, &market);
+        let (eligible, reason) =
+            resolution::ResolutionUtils::get_resolution_eligibility(&env, &market);
 
-        // Set winning outcome
-        MarketStateManager::set_winning_outcome(&mut market, final_result.clone(), Some(&market_id));
         if !eligible {
             validation.is_valid = false;
             validation.errors.push_back(reason);
@@ -301,19 +314,32 @@ impl PredictifyHybrid {
         // Add recommendations based on state
         match state {
             resolution::ResolutionState::Active => {
-                validation.recommendations.push_back(String::from_str(&env, "Market is active, wait for end time"));
+                validation.recommendations.push_back(String::from_str(
+                    &env,
+                    "Market is active, wait for end time",
+                ));
             }
             resolution::ResolutionState::OracleResolved => {
-                validation.recommendations.push_back(String::from_str(&env, "Oracle resolved, ready for market resolution"));
+                validation.recommendations.push_back(String::from_str(
+                    &env,
+                    "Oracle resolved, ready for market resolution",
+                ));
             }
             resolution::ResolutionState::MarketResolved => {
-                validation.recommendations.push_back(String::from_str(&env, "Market already resolved"));
+                validation
+                    .recommendations
+                    .push_back(String::from_str(&env, "Market already resolved"));
             }
             resolution::ResolutionState::Disputed => {
-                validation.recommendations.push_back(String::from_str(&env, "Resolution disputed, consider admin override"));
+                validation.recommendations.push_back(String::from_str(
+                    &env,
+                    "Resolution disputed, consider admin override",
+                ));
             }
             resolution::ResolutionState::Finalized => {
-                validation.recommendations.push_back(String::from_str(&env, "Resolution finalized"));
+                validation
+                    .recommendations
+                    .push_back(String::from_str(&env, "Resolution finalized"));
             }
         }
 
@@ -342,7 +368,7 @@ impl PredictifyHybrid {
             Ok(market) => {
                 let current_time = env.ledger().timestamp();
                 TimeUtils::time_difference(current_time, market.end_time)
-            },
+            }
             Err(_) => 0,
         }
     }
@@ -475,7 +501,13 @@ impl PredictifyHybrid {
         additional_days: u32,
         reason: String,
     ) {
-        match AdminFunctions::extend_market_duration(&env, &admin, &market_id, additional_days, &reason) {
+        match AdminFunctions::extend_market_duration(
+            &env,
+            &admin,
+            &market_id,
+            additional_days,
+            &reason,
+        ) {
             Ok(_) => (), // Success
             Err(e) => panic_with_error!(env, e),
         }
@@ -554,8 +586,8 @@ impl PredictifyHybrid {
         let fee_per_day = 10_000_000; // 1 XLM per day
         NumericUtils::clamp(
             &(base_fee + (fee_per_day * additional_days as i128)),
-            &100_000_000, // Minimum fee
-            &1_000_000_000 // Maximum fee
+            &100_000_000,   // Minimum fee
+            &1_000_000_000, // Maximum fee
         )
     }
 
@@ -573,7 +605,9 @@ impl PredictifyHybrid {
     ) {
         user.require_auth();
 
-        match DisputeManager::vote_on_dispute(&env, user, market_id, dispute_id, vote, stake, reason) {
+        match DisputeManager::vote_on_dispute(
+            &env, user, market_id, dispute_id, vote, stake, reason,
+        ) {
             Ok(_) => (), // Success
             Err(e) => panic_with_error!(env, e),
         }
@@ -588,7 +622,10 @@ impl PredictifyHybrid {
     }
 
     /// Distribute dispute fees to winners
-    pub fn distribute_dispute_fees(env: Env, dispute_id: Symbol) -> disputes::DisputeFeeDistribution {
+    pub fn distribute_dispute_fees(
+        env: Env,
+        dispute_id: Symbol,
+    ) -> disputes::DisputeFeeDistribution {
         match DisputeManager::distribute_dispute_fees(&env, dispute_id) {
             Ok(distribution) => distribution,
             Err(_) => disputes::DisputeFeeDistribution {
@@ -615,7 +652,8 @@ impl PredictifyHybrid {
         match DisputeManager::escalate_dispute(&env, user, dispute_id, reason) {
             Ok(escalation) => escalation,
             Err(_) => {
-                let default_address = env.storage()
+                let default_address = env
+                    .storage()
                     .persistent()
                     .get(&Symbol::new(&env, "Admin"))
                     .unwrap_or_else(|| panic!("Admin not set"));
@@ -627,7 +665,7 @@ impl PredictifyHybrid {
                     escalation_level: 0,
                     requires_admin_review: false,
                 }
-            },
+            }
         }
     }
 
@@ -666,8 +704,16 @@ impl PredictifyHybrid {
     }
 
     /// Adjust threshold by market size
-    pub fn adjust_threshold_by_market_size(env: Env, market_id: Symbol, base_threshold: i128) -> i128 {
-        match voting::ThresholdUtils::adjust_threshold_by_market_size(&env, &market_id, base_threshold) {
+    pub fn adjust_threshold_by_market_size(
+        env: Env,
+        market_id: Symbol,
+        base_threshold: i128,
+    ) -> i128 {
+        match voting::ThresholdUtils::adjust_threshold_by_market_size(
+            &env,
+            &market_id,
+            base_threshold,
+        ) {
             Ok(adjustment) => adjustment,
             Err(_) => 0,
         }
@@ -675,7 +721,8 @@ impl PredictifyHybrid {
 
     /// Modify threshold by activity level
     pub fn modify_threshold_by_activity(env: Env, market_id: Symbol, activity_level: u32) -> i128 {
-        match voting::ThresholdUtils::modify_threshold_by_activity(&env, &market_id, activity_level) {
+        match voting::ThresholdUtils::modify_threshold_by_activity(&env, &market_id, activity_level)
+        {
             Ok(adjustment) => adjustment,
             Err(_) => 0,
         }
@@ -690,7 +737,10 @@ impl PredictifyHybrid {
     }
 
     /// Get threshold adjustment factors
-    pub fn get_threshold_adjustment_factors(env: Env, market_id: Symbol) -> voting::ThresholdAdjustmentFactors {
+    pub fn get_threshold_adjustment_factors(
+        env: Env,
+        market_id: Symbol,
+    ) -> voting::ThresholdAdjustmentFactors {
         match voting::ThresholdUtils::get_threshold_adjustment_factors(&env, &market_id) {
             Ok(factors) => factors,
             Err(_) => voting::ThresholdAdjustmentFactors {
@@ -712,7 +762,13 @@ impl PredictifyHybrid {
     ) -> voting::DisputeThreshold {
         admin.require_auth();
 
-        match VotingManager::update_dispute_thresholds(&env, admin, market_id, new_threshold, reason) {
+        match VotingManager::update_dispute_thresholds(
+            &env,
+            admin,
+            market_id,
+            new_threshold,
+            reason,
+        ) {
             Ok(threshold) => threshold,
             Err(_) => voting::DisputeThreshold {
                 market_id: symbol_short!("error"),
@@ -727,7 +783,10 @@ impl PredictifyHybrid {
     }
 
     /// Get threshold history for a market
-    pub fn get_threshold_history(env: Env, market_id: Symbol) -> Vec<voting::ThresholdHistoryEntry> {
+    pub fn get_threshold_history(
+        env: Env,
+        market_id: Symbol,
+    ) -> Vec<voting::ThresholdHistoryEntry> {
         match VotingManager::get_threshold_history(&env, market_id) {
             Ok(history) => history,
             Err(_) => vec![&env],
@@ -753,7 +812,11 @@ impl PredictifyHybrid {
     }
 
     /// Update contract configuration (admin only)
-    pub fn update_contract_config(env: Env, admin: Address, new_config: ContractConfig) -> Result<(), Error> {
+    pub fn update_contract_config(
+        env: Env,
+        admin: Address,
+        new_config: ContractConfig,
+    ) -> Result<(), Error> {
         match AdminFunctions::update_contract_config(&env, &admin, &new_config) {
             Ok(_) => Ok(()),
             Err(e) => Err(e),
@@ -822,8 +885,8 @@ impl PredictifyHybrid {
     }
 
     /// Sanitize string
-    pub fn sanitize_string(env: Env, s: String) -> String {
-        StringUtils::sanitize_string(&env, &s)
+    pub fn sanitize_string(_env: Env, s: String) -> String {
+        StringUtils::sanitize_string(&s)
     }
 
     /// Convert number to string
@@ -986,7 +1049,10 @@ impl PredictifyHybrid {
                 let test_event = EventTestingUtils::create_test_market_created_event(
                     &env,
                     &Symbol::new(&env, "test"),
-                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    &Address::from_str(
+                        &env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ),
                 );
                 EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
             }
@@ -994,7 +1060,10 @@ impl PredictifyHybrid {
                 let test_event = EventTestingUtils::create_test_vote_cast_event(
                     &env,
                     &Symbol::new(&env, "test"),
-                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    &Address::from_str(
+                        &env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ),
                 );
                 EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
             }
@@ -1016,7 +1085,10 @@ impl PredictifyHybrid {
                 let test_event = EventTestingUtils::create_test_dispute_created_event(
                     &env,
                     &Symbol::new(&env, "test"),
-                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    &Address::from_str(
+                        &env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ),
                 );
                 EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
             }
@@ -1024,7 +1096,10 @@ impl PredictifyHybrid {
                 let test_event = EventTestingUtils::create_test_fee_collected_event(
                     &env,
                     &Symbol::new(&env, "test"),
-                    &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    &Address::from_str(
+                        &env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ),
                 );
                 EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
             }
@@ -1079,7 +1154,12 @@ impl PredictifyHybrid {
         oracle_config: OracleConfig,
     ) -> ValidationResult {
         ComprehensiveValidator::validate_complete_market_creation(
-            &env, &admin, &question, &outcomes, &duration_days, &oracle_config
+            &env,
+            &admin,
+            &question,
+            &outcomes,
+            &duration_days,
+            &oracle_config,
         )
     }
 
@@ -1101,47 +1181,52 @@ impl PredictifyHybrid {
         stake_amount: i128,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
-        
+
         // Validate user address
         if let Err(_error) = InputValidator::validate_address(&env, &user) {
             result.add_error();
         }
-        
+
         // Validate outcome string
         if let Err(_error) = InputValidator::validate_string(&env, &outcome, 1, 100) {
             result.add_error();
         }
-        
+
         // Validate stake amount
         if let Err(_error) = ValidationVoteValidator::validate_stake_amount(&stake_amount) {
             result.add_error();
         }
-        
+
         // Validate market exists and is valid for voting
         if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&market_id) {
-            if let Err(_error) = ValidationMarketValidator::validate_market_for_voting(&env, &market, &market_id) {
+            if let Err(_error) =
+                ValidationMarketValidator::validate_market_for_voting(&env, &market, &market_id)
+            {
                 result.add_error();
             }
-            
+
             // Validate outcome against market outcomes
-            if let Err(_error) = ValidationVoteValidator::validate_outcome(&env, &outcome, &market.outcomes) {
+            if let Err(_error) =
+                ValidationVoteValidator::validate_outcome(&env, &outcome, &market.outcomes)
+            {
                 result.add_error();
             }
         } else {
             result.add_error();
         }
-        
+
         result
     }
 
     /// Validate oracle configuration
     pub fn validate_oracle_config(env: Env, oracle_config: OracleConfig) -> ValidationResult {
         let mut result = ValidationResult::valid();
-        
-        if let Err(_error) = ValidationOracleValidator::validate_oracle_config(&env, &oracle_config) {
+
+        if let Err(_error) = ValidationOracleValidator::validate_oracle_config(&env, &oracle_config)
+        {
             result.add_error();
         }
-        
+
         result
     }
 
@@ -1155,7 +1240,12 @@ impl PredictifyHybrid {
         collection_threshold: i128,
     ) -> ValidationResult {
         ValidationFeeValidator::validate_fee_config(
-            &env, &platform_fee_percentage, &creation_fee, &min_fee_amount, &max_fee_amount, &collection_threshold
+            &env,
+            &platform_fee_percentage,
+            &creation_fee,
+            &min_fee_amount,
+            &max_fee_amount,
+            &collection_threshold,
         )
     }
 
@@ -1167,26 +1257,28 @@ impl PredictifyHybrid {
         dispute_stake: i128,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
-        
+
         // Validate user address
         if let Err(_error) = InputValidator::validate_address(&env, &user) {
             result.add_error();
         }
-        
+
         // Validate dispute stake
         if let Err(_error) = ValidationDisputeValidator::validate_dispute_stake(&dispute_stake) {
             result.add_error();
         }
-        
+
         // Validate market exists and is resolved
         if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&market_id) {
-            if let Err(_error) = ValidationMarketValidator::validate_market_for_fee_collection(&env, &market, &market_id) {
+            if let Err(_error) = ValidationMarketValidator::validate_market_for_fee_collection(
+                &env, &market, &market_id,
+            ) {
                 result.add_error();
             }
         } else {
             result.add_error();
         }
-        
+
         result
     }
 

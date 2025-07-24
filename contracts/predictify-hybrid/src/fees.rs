@@ -145,7 +145,7 @@ impl FeeManager {
         FeeTracker::record_fee_collection(env, &market_id, fee_amount, &admin)?;
 
         // Mark fees as collected
-        MarketStateManager::mark_fees_collected(&mut market);
+        MarketStateManager::mark_fees_collected(&mut market, Some(&market_id));
         MarketStateManager::update_market(env, &market_id, &market);
 
         Ok(fee_amount)
@@ -203,7 +203,10 @@ impl FeeManager {
     }
 
     /// Validate fee calculation for a market
-    pub fn validate_market_fees(env: &Env, market_id: &Symbol) -> Result<FeeValidationResult, Error> {
+    pub fn validate_market_fees(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Result<FeeValidationResult, Error> {
         let market = MarketStateManager::get_market(env, market_id)?;
         FeeValidator::validate_market_fees(&market)
     }
@@ -222,7 +225,7 @@ impl FeeCalculator {
         }
 
         let fee_amount = (market.total_staked * PLATFORM_FEE_PERCENTAGE) / 100;
-        
+
         if fee_amount < MIN_FEE_AMOUNT {
             return Err(Error::InsufficientStake);
         }
@@ -266,7 +269,7 @@ impl FeeCalculator {
     /// Calculate dynamic fee based on market characteristics
     pub fn calculate_dynamic_fee(market: &Market) -> Result<i128, Error> {
         let base_fee = Self::calculate_platform_fee(market)?;
-        
+
         // Adjust fee based on market size
         let size_multiplier = if market.total_staked > 1_000_000_000 {
             80 // 20% reduction for large markets
@@ -277,7 +280,7 @@ impl FeeCalculator {
         };
 
         let adjusted_fee = (base_fee * size_multiplier) / 100;
-        
+
         // Ensure minimum fee
         if adjusted_fee < MIN_FEE_AMOUNT {
             Ok(MIN_FEE_AMOUNT)
@@ -382,7 +385,10 @@ impl FeeValidator {
 
         // Check if market has sufficient stakes
         if market.total_staked < FEE_COLLECTION_THRESHOLD {
-            errors.push_back(String::from_str(&Env::default(), "Insufficient stakes for fee collection"));
+            errors.push_back(String::from_str(
+                &Env::default(),
+                "Insufficient stakes for fee collection",
+            ));
             is_valid = false;
         }
 
@@ -425,26 +431,38 @@ impl FeeUtils {
 
     /// Check if fees can be collected for a market
     pub fn can_collect_fees(market: &Market) -> bool {
-        market.winning_outcome.is_some() 
-            && !market.fee_collected 
+        market.winning_outcome.is_some()
+            && !market.fee_collected
             && market.total_staked >= FEE_COLLECTION_THRESHOLD
     }
 
     /// Get fee collection eligibility for a market
     pub fn get_fee_eligibility(market: &Market) -> (bool, String) {
         if market.winning_outcome.is_none() {
-            return (false, String::from_str(&Env::default(), "Market not resolved"));
+            return (
+                false,
+                String::from_str(&Env::default(), "Market not resolved"),
+            );
         }
 
         if market.fee_collected {
-            return (false, String::from_str(&Env::default(), "Fees already collected"));
+            return (
+                false,
+                String::from_str(&Env::default(), "Fees already collected"),
+            );
         }
 
         if market.total_staked < FEE_COLLECTION_THRESHOLD {
-            return (false, String::from_str(&Env::default(), "Insufficient stakes"));
+            return (
+                false,
+                String::from_str(&Env::default(), "Insufficient stakes"),
+            );
         }
 
-        (true, String::from_str(&Env::default(), "Eligible for fee collection"))
+        (
+            true,
+            String::from_str(&Env::default(), "Eligible for fee collection"),
+        )
     }
 }
 
@@ -482,11 +500,7 @@ impl FeeTracker {
 
         // Update total fees collected
         let total_key = symbol_short!("tot_fees");
-        let current_total: i128 = env
-            .storage()
-            .persistent()
-            .get(&total_key)
-            .unwrap_or(0);
+        let current_total: i128 = env.storage().persistent().get(&total_key).unwrap_or(0);
 
         env.storage()
             .persistent()
@@ -496,18 +510,10 @@ impl FeeTracker {
     }
 
     /// Record creation fee
-    pub fn record_creation_fee(
-        env: &Env,
-        _admin: &Address,
-        amount: i128,
-    ) -> Result<(), Error> {
+    pub fn record_creation_fee(env: &Env, _admin: &Address, amount: i128) -> Result<(), Error> {
         // Record creation fee in analytics
         let creation_key = symbol_short!("creat_fee");
-        let current_total: i128 = env
-            .storage()
-            .persistent()
-            .get(&creation_key)
-            .unwrap_or(0);
+        let current_total: i128 = env.storage().persistent().get(&creation_key).unwrap_or(0);
 
         env.storage()
             .persistent()
@@ -544,11 +550,7 @@ impl FeeTracker {
     /// Get total fees collected
     pub fn get_total_fees_collected(env: &Env) -> Result<i128, Error> {
         let total_key = symbol_short!("tot_fees");
-        Ok(env
-            .storage()
-            .persistent()
-            .get(&total_key)
-            .unwrap_or(0))
+        Ok(env.storage().persistent().get(&total_key).unwrap_or(0))
     }
 }
 
@@ -634,8 +636,12 @@ impl FeeAnalytics {
     /// Calculate fee efficiency (fees collected vs potential)
     pub fn calculate_fee_efficiency(market: &Market) -> Result<f64, Error> {
         let potential_fee = FeeCalculator::calculate_platform_fee(market)?;
-        let actual_fee = if market.fee_collected { potential_fee } else { 0 };
-        
+        let actual_fee = if market.fee_collected {
+            potential_fee
+        } else {
+            0
+        };
+
         if potential_fee == 0 {
             return Ok(0.0);
         }
@@ -649,7 +655,6 @@ impl FeeAnalytics {
 #[cfg(test)]
 pub mod testing {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
 
     /// Create a test fee configuration
     pub fn create_test_fee_config() -> FeeConfig {
@@ -745,12 +750,13 @@ mod tests {
                 String::from_str(&env, "no"),
             ],
             env.ledger().timestamp() + 86400,
-            crate::types::OracleConfig::new(
+            crate::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
                 String::from_str(&env, "BTC/USD"),
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
+            crate::MarketState::Active,
         );
 
         // Set total staked
@@ -810,6 +816,7 @@ mod tests {
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
+            crate::MarketState::Active,
         );
 
         // Market not resolved
@@ -846,7 +853,7 @@ mod tests {
     #[test]
     fn test_fee_analytics_calculation() {
         let env = Env::default();
-        
+
         // Test with no fee history
         let analytics = FeeAnalytics::calculate_analytics(&env).unwrap();
         assert_eq!(analytics.total_fees_collected, 0);
@@ -870,4 +877,4 @@ mod tests {
         );
         assert!(testing::validate_fee_collection_structure(&collection).is_ok());
     }
-} 
+}

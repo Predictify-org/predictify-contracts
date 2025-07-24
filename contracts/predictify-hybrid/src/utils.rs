@@ -1,8 +1,8 @@
 extern crate alloc;
 
-use soroban_sdk::{Address, Env, Map, String, Symbol, Vec};
 use alloc::string::ToString;
 use core::str;
+use soroban_sdk::{Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 
@@ -164,6 +164,7 @@ impl StringUtils {
             let rust_string = s.to_string();
             result.push_str(&rust_string);
         }
+        String::from_str(&env, &result)
     }
 
     /// Check if string contains substring
@@ -193,7 +194,11 @@ impl StringUtils {
     }
 
     /// Validate string length
-    pub fn validate_string_length(s: &String, min_length: u32, max_length: u32) -> Result<(), Error> {
+    pub fn validate_string_length(
+        s: &String,
+        min_length: u32,
+        max_length: u32,
+    ) -> Result<(), Error> {
         let rust_string = s.to_string();
         let len = rust_string.len() as u32;
         if len < min_length || len > max_length {
@@ -207,12 +212,15 @@ impl StringUtils {
     pub fn sanitize_string(s: &String) -> String {
         let env = Env::default();
         let rust_string = s.to_string();
-        let sanitized: alloc::string::String = rust_string.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+        let sanitized: alloc::string::String = rust_string
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect();
         String::from_str(&env, &sanitized)
     }
 
     /// Generate random string
-    pub fn generate_random_string(env: &Env, length: u32) -> String {
+    pub fn generate_random_string(env: &Env, _length: u32) -> String {
         // For now, return a placeholder since we can't easily generate random strings
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "random")
@@ -300,7 +308,7 @@ impl NumericUtils {
     }
 
     /// Convert number to string
-    pub fn i128_to_string(env: &Env, value: &i128) -> String {
+    pub fn i128_to_string(env: &Env, _value: &i128) -> String {
         // For now, return a placeholder since we can't easily convert to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "0")
@@ -361,7 +369,7 @@ pub struct ConversionUtils;
 
 impl ConversionUtils {
     /// Convert address to string
-    pub fn address_to_string(env: &Env, address: &Address) -> String {
+    pub fn address_to_string(env: &Env, _address: &Address) -> String {
         // For now, return a placeholder since we can't easily convert Address to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "address")
@@ -373,28 +381,28 @@ impl ConversionUtils {
     }
 
     /// Convert symbol to string
-    pub fn symbol_to_string(env: &Env, symbol: &Symbol) -> String {
+    pub fn symbol_to_string(env: &Env, _symbol: &Symbol) -> String {
         // For now, return a placeholder since we can't easily convert Symbol to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "symbol")
     }
 
     /// Convert string to symbol
-    pub fn string_to_symbol(env: &Env, s: &String) -> Symbol {
+    pub fn string_to_symbol(env: &Env, _s: &String) -> Symbol {
         // For now, return a default symbol since we can't easily convert Soroban String
         // This is a limitation of the current Soroban SDK
         Symbol::new(env, "default")
     }
 
     /// Convert map to string representation
-    pub fn map_to_string(env: &Env, map: &Map<String, String>) -> String {
+    pub fn map_to_string(env: &Env, _map: &Map<String, String>) -> String {
         // For now, return a placeholder since we can't easily convert Soroban String
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "{}")
     }
 
     /// Convert vec to string representation
-    pub fn vec_to_string(env: &Env, vec: &Vec<String>) -> String {
+    pub fn vec_to_string(env: &Env, _vec: &Vec<String>) -> String {
         // For now, return a placeholder since we can't easily convert Soroban String
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "[]")
@@ -434,9 +442,9 @@ pub struct CommonUtils;
 
 impl CommonUtils {
     /// Generate unique ID
-    pub fn generate_unique_id(env: &Env, prefix: &String) -> String {
-        let timestamp = env.ledger().timestamp();
-        let sequence = env.ledger().sequence();
+    pub fn generate_unique_id(env: &Env, _prefix: &String) -> String {
+        let _timestamp = env.ledger().timestamp();
+        let _sequence = env.ledger().sequence();
         // For now, return a simple ID since we can't easily convert Soroban String
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "id")
@@ -448,7 +456,7 @@ impl CommonUtils {
     }
 
     /// Compare two strings ignoring case
-    pub fn strings_equal_ignore_case(a: &String, b: &String) -> bool {
+    pub fn strings_equal_ignore_case(_a: &String, _b: &String) -> bool {
         // For now, return true since we can't easily convert Soroban String
         // This is a limitation of the current Soroban SDK
         true
@@ -465,7 +473,7 @@ impl CommonUtils {
     }
 
     /// Format number with commas
-    pub fn format_number_with_commas(env: &Env, number: &i128) -> String {
+    pub fn format_number_with_commas(env: &Env, _number: &i128) -> String {
         // For now, return a placeholder since we can't easily convert to string
         // This is a limitation of the current Soroban SDK
         String::from_str(env, "0")
@@ -497,7 +505,10 @@ impl TestingUtils {
 
     /// Generate test address
     pub fn generate_test_address(env: &Env) -> Address {
-        Address::from_string(&String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"))
+        Address::from_string(&String::from_str(
+            env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ))
     }
 
     /// Generate test symbol
@@ -528,4 +539,4 @@ impl TestingUtils {
         vec.push_back(String::from_str(env, "test"));
         vec
     }
-} 
+}

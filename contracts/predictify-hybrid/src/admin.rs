@@ -1,13 +1,12 @@
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
-use alloc::string::ToString;
 
+use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
 use crate::errors::Error;
-use crate::markets::MarketStateManager;
-use crate::fees::{FeeManager, FeeConfig};
-use crate::config::{ConfigManager, ContractConfig, Environment, ConfigUtils};
-use crate::resolution::MarketResolutionManager;
-use crate::extensions::ExtensionManager;
 use crate::events::EventEmitter;
+use crate::extensions::ExtensionManager;
+use crate::fees::{FeeConfig, FeeManager};
+use crate::markets::MarketStateManager;
+use crate::resolution::MarketResolutionManager;
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -123,26 +122,13 @@ impl AdminInitializer {
             .set(&Symbol::new(env, "Admin"), admin);
 
         // Set default admin role
-        AdminRoleManager::assign_role(
-            env,
-            admin,
-            AdminRole::SuperAdmin,
-            admin,
-        )?;
+        AdminRoleManager::assign_role(env, admin, AdminRole::SuperAdmin, admin)?;
 
         // Emit admin initialization event
         EventEmitter::emit_admin_initialized(env, admin);
 
         // Log admin action
-        AdminActionLogger::log_action(
-            env,
-            admin,
-            "initialize",
-            None,
-            Map::new(env),
-            true,
-            None,
-        )?;
+        AdminActionLogger::log_action(env, admin, "initialize", None, Map::new(env), true, None)?;
 
         Ok(())
     }
@@ -171,10 +157,7 @@ impl AdminInitializer {
     }
 
     /// Validate initialization parameters
-    pub fn validate_initialization_params(
-        env: &Env,
-        admin: &Address,
-    ) -> Result<(), Error> {
+    pub fn validate_initialization_params(env: &Env, admin: &Address) -> Result<(), Error> {
         AdminValidator::validate_admin_address(env, admin)?;
         AdminValidator::validate_contract_not_initialized(env)?;
         Ok(())
@@ -276,7 +259,7 @@ impl AdminRoleManager {
     ) -> Result<(), Error> {
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
-        
+
         // Check if this is the first admin role assignment (bootstrapping)
         if !env.storage().persistent().has(&key) {
             // No admin role assigned yet, allow bootstrapping without permission check
@@ -312,7 +295,7 @@ impl AdminRoleManager {
     pub fn get_admin_role(env: &Env, _admin: &Address) -> Result<AdminRole, Error> {
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
-        
+
         let assignment: AdminRoleAssignment = env
             .storage()
             .persistent()
@@ -374,10 +357,7 @@ impl AdminRoleManager {
                 AdminPermission::CollectFees,
                 AdminPermission::ViewAnalytics,
             ],
-            AdminRole::ReadOnlyAdmin => vec![
-                env,
-                AdminPermission::ViewAnalytics,
-            ],
+            AdminRole::ReadOnlyAdmin => vec![env, AdminPermission::ViewAnalytics],
         }
     }
 
@@ -396,7 +376,7 @@ impl AdminRoleManager {
 
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
-        
+
         let mut assignment: AdminRoleAssignment = env
             .storage()
             .persistent()
@@ -420,11 +400,7 @@ pub struct AdminFunctions;
 
 impl AdminFunctions {
     /// Close market (admin only)
-    pub fn close_market(
-        env: &Env,
-        admin: &Address,
-        market_id: &Symbol,
-    ) -> Result<(), Error> {
+    pub fn close_market(env: &Env, admin: &Address, market_id: &Symbol) -> Result<(), Error> {
         // Validate admin permissions
         AdminAccessControl::validate_admin_for_action(env, admin, "close_market")?;
 
@@ -439,7 +415,10 @@ impl AdminFunctions {
 
         // Log admin action
         let mut params = Map::new(env);
-        params.set(String::from_str(env, "market_id"), String::from_str(env, "market_id"));
+        params.set(
+            String::from_str(env, "market_id"),
+            String::from_str(env, "market_id"),
+        );
         AdminActionLogger::log_action(env, admin, "close_market", None, params, true, None)?;
 
         Ok(())
@@ -463,9 +442,20 @@ impl AdminFunctions {
 
         // Log admin action
         let mut params = Map::new(env);
-        params.set(String::from_str(env, "market_id"), String::from_str(env, "market_id"));
+        params.set(
+            String::from_str(env, "market_id"),
+            String::from_str(env, "market_id"),
+        );
         params.set(String::from_str(env, "outcome"), outcome.clone());
-        AdminActionLogger::log_action(env, admin, "finalize_market", Some(String::from_str(env, "market_id")), params, true, None)?;
+        AdminActionLogger::log_action(
+            env,
+            admin,
+            "finalize_market",
+            Some(String::from_str(env, "market_id")),
+            params,
+            true,
+            None,
+        )?;
 
         Ok(())
     }
@@ -482,14 +472,34 @@ impl AdminFunctions {
         AdminAccessControl::validate_admin_for_action(env, admin, "extend_market")?;
 
         // Extend market using extension manager
-        ExtensionManager::extend_market_duration(env, admin.clone(), market_id.clone(), additional_days, reason.clone())?;
+        ExtensionManager::extend_market_duration(
+            env,
+            admin.clone(),
+            market_id.clone(),
+            additional_days,
+            reason.clone(),
+        )?;
 
         // Log admin action
         let mut params = Map::new(env);
-        params.set(String::from_str(env, "market_id"), String::from_str(env, "market_id"));
-        params.set(String::from_str(env, "additional_days"), String::from_str(env, "additional_days"));
+        params.set(
+            String::from_str(env, "market_id"),
+            String::from_str(env, "market_id"),
+        );
+        params.set(
+            String::from_str(env, "additional_days"),
+            String::from_str(env, "additional_days"),
+        );
         params.set(String::from_str(env, "reason"), reason.clone());
-        AdminActionLogger::log_action(env, admin, "extend_market", Some(String::from_str(env, "market_id")), params, true, None)?;
+        AdminActionLogger::log_action(
+            env,
+            admin,
+            "extend_market",
+            Some(String::from_str(env, "market_id")),
+            params,
+            true,
+            None,
+        )?;
 
         Ok(())
     }
@@ -508,8 +518,14 @@ impl AdminFunctions {
 
         // Log admin action
         let mut params = Map::new(env);
-        params.set(String::from_str(env, "platform_fee"), String::from_str(env, "platform_fee"));
-        params.set(String::from_str(env, "creation_fee"), String::from_str(env, "creation_fee"));
+        params.set(
+            String::from_str(env, "platform_fee"),
+            String::from_str(env, "platform_fee"),
+        );
+        params.set(
+            String::from_str(env, "creation_fee"),
+            String::from_str(env, "creation_fee"),
+        );
         AdminActionLogger::log_action(env, admin, "update_fees", None, params, true, None)?;
 
         Ok(updated_config)
@@ -535,10 +551,7 @@ impl AdminFunctions {
     }
 
     /// Reset configuration to defaults
-    pub fn reset_config_to_defaults(
-        env: &Env,
-        admin: &Address,
-    ) -> Result<ContractConfig, Error> {
+    pub fn reset_config_to_defaults(env: &Env, admin: &Address) -> Result<ContractConfig, Error> {
         // Validate admin permissions
         AdminAccessControl::validate_admin_for_action(env, admin, "reset_config")?;
 
@@ -559,7 +572,7 @@ pub struct AdminValidator;
 
 impl AdminValidator {
     /// Validate admin address
-    pub fn validate_admin_address(_env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn validate_admin_address(_env: &Env, _admin: &Address) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Address to string
         // This is a limitation of the current Soroban SDK
         Ok(())
@@ -567,10 +580,7 @@ impl AdminValidator {
 
     /// Validate contract not already initialized
     pub fn validate_contract_not_initialized(env: &Env) -> Result<(), Error> {
-        let admin_exists = env
-            .storage()
-            .persistent()
-            .has(&Symbol::new(env, "Admin"));
+        let admin_exists = env.storage().persistent().has(&Symbol::new(env, "Admin"));
 
         if admin_exists {
             return Err(Error::InvalidState);
@@ -587,25 +597,30 @@ impl AdminValidator {
     ) -> Result<(), Error> {
         match action {
             "close_market" => {
-                let market_id = parameters.get(String::from_str(env, "market_id"))
+                let market_id = parameters
+                    .get(String::from_str(env, "market_id"))
                     .ok_or(Error::InvalidInput)?;
                 if market_id.is_empty() {
                     return Err(Error::InvalidInput);
                 }
             }
             "finalize_market" => {
-                let market_id = parameters.get(String::from_str(env, "market_id"))
+                let market_id = parameters
+                    .get(String::from_str(env, "market_id"))
                     .ok_or(Error::InvalidInput)?;
-                let outcome = parameters.get(String::from_str(env, "outcome"))
+                let outcome = parameters
+                    .get(String::from_str(env, "outcome"))
                     .ok_or(Error::InvalidInput)?;
                 if market_id.is_empty() || outcome.is_empty() {
                     return Err(Error::InvalidInput);
                 }
             }
             "extend_market" => {
-                let market_id = parameters.get(String::from_str(env, "market_id"))
+                let market_id = parameters
+                    .get(String::from_str(env, "market_id"))
                     .ok_or(Error::InvalidInput)?;
-                let additional_days = parameters.get(String::from_str(env, "additional_days"))
+                let additional_days = parameters
+                    .get(String::from_str(env, "additional_days"))
                     .ok_or(Error::InvalidInput)?;
                 if market_id.is_empty() || additional_days.is_empty() {
                     return Err(Error::InvalidInput);
@@ -721,25 +736,51 @@ impl AdminUtils {
             AdminRole::MarketAdmin => String::from_str(&soroban_sdk::Env::default(), "MarketAdmin"),
             AdminRole::ConfigAdmin => String::from_str(&soroban_sdk::Env::default(), "ConfigAdmin"),
             AdminRole::FeeAdmin => String::from_str(&soroban_sdk::Env::default(), "FeeAdmin"),
-            AdminRole::ReadOnlyAdmin => String::from_str(&soroban_sdk::Env::default(), "ReadOnlyAdmin"),
+            AdminRole::ReadOnlyAdmin => {
+                String::from_str(&soroban_sdk::Env::default(), "ReadOnlyAdmin")
+            }
         }
     }
 
     /// Get permission name
     pub fn get_permission_name(permission: &AdminPermission) -> String {
         match permission {
-            AdminPermission::Initialize => String::from_str(&soroban_sdk::Env::default(), "Initialize"),
-            AdminPermission::CreateMarket => String::from_str(&soroban_sdk::Env::default(), "CreateMarket"),
-            AdminPermission::CloseMarket => String::from_str(&soroban_sdk::Env::default(), "CloseMarket"),
-            AdminPermission::FinalizeMarket => String::from_str(&soroban_sdk::Env::default(), "FinalizeMarket"),
-            AdminPermission::ExtendMarket => String::from_str(&soroban_sdk::Env::default(), "ExtendMarket"),
-            AdminPermission::UpdateFees => String::from_str(&soroban_sdk::Env::default(), "UpdateFees"),
-            AdminPermission::UpdateConfig => String::from_str(&soroban_sdk::Env::default(), "UpdateConfig"),
-            AdminPermission::ResetConfig => String::from_str(&soroban_sdk::Env::default(), "ResetConfig"),
-            AdminPermission::CollectFees => String::from_str(&soroban_sdk::Env::default(), "CollectFees"),
-            AdminPermission::ManageDisputes => String::from_str(&soroban_sdk::Env::default(), "ManageDisputes"),
-            AdminPermission::ViewAnalytics => String::from_str(&soroban_sdk::Env::default(), "ViewAnalytics"),
-            AdminPermission::EmergencyActions => String::from_str(&soroban_sdk::Env::default(), "EmergencyActions"),
+            AdminPermission::Initialize => {
+                String::from_str(&soroban_sdk::Env::default(), "Initialize")
+            }
+            AdminPermission::CreateMarket => {
+                String::from_str(&soroban_sdk::Env::default(), "CreateMarket")
+            }
+            AdminPermission::CloseMarket => {
+                String::from_str(&soroban_sdk::Env::default(), "CloseMarket")
+            }
+            AdminPermission::FinalizeMarket => {
+                String::from_str(&soroban_sdk::Env::default(), "FinalizeMarket")
+            }
+            AdminPermission::ExtendMarket => {
+                String::from_str(&soroban_sdk::Env::default(), "ExtendMarket")
+            }
+            AdminPermission::UpdateFees => {
+                String::from_str(&soroban_sdk::Env::default(), "UpdateFees")
+            }
+            AdminPermission::UpdateConfig => {
+                String::from_str(&soroban_sdk::Env::default(), "UpdateConfig")
+            }
+            AdminPermission::ResetConfig => {
+                String::from_str(&soroban_sdk::Env::default(), "ResetConfig")
+            }
+            AdminPermission::CollectFees => {
+                String::from_str(&soroban_sdk::Env::default(), "CollectFees")
+            }
+            AdminPermission::ManageDisputes => {
+                String::from_str(&soroban_sdk::Env::default(), "ManageDisputes")
+            }
+            AdminPermission::ViewAnalytics => {
+                String::from_str(&soroban_sdk::Env::default(), "ViewAnalytics")
+            }
+            AdminPermission::EmergencyActions => {
+                String::from_str(&soroban_sdk::Env::default(), "EmergencyActions")
+            }
         }
     }
 }
@@ -789,11 +830,7 @@ impl AdminTesting {
     }
 
     /// Simulate admin action
-    pub fn simulate_admin_action(
-        env: &Env,
-        admin: &Address,
-        action: &str,
-    ) -> Result<(), Error> {
+    pub fn simulate_admin_action(env: &Env, admin: &Address, action: &str) -> Result<(), Error> {
         // Log test action
         AdminActionLogger::log_action(
             env,
@@ -832,7 +869,7 @@ impl Default for AdminAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{Address as _,};
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_admin_initializer_initialize() {
@@ -864,7 +901,8 @@ mod tests {
             &env,
             &admin,
             &AdminPermission::CreateMarket
-        ).is_ok());
+        )
+        .is_ok());
     }
 
     #[test]
@@ -877,12 +915,9 @@ mod tests {
         AdminInitializer::initialize(&env, &admin).unwrap();
 
         // Assign role
-        assert!(AdminRoleManager::assign_role(
-            &env,
-            &new_admin,
-            AdminRole::MarketAdmin,
-            &admin
-        ).is_ok());
+        assert!(
+            AdminRoleManager::assign_role(&env, &new_admin, AdminRole::MarketAdmin, &admin).is_ok()
+        );
 
         // Verify role assignment
         let role = AdminRoleManager::get_admin_role(&env, &new_admin).unwrap();
@@ -900,11 +935,9 @@ mod tests {
 
         // Test close market (would need a real market setup)
         // For now, just test the validation
-        assert!(AdminAccessControl::validate_admin_for_action(
-            &env,
-            &admin,
-            "close_market"
-        ).is_ok());
+        assert!(
+            AdminAccessControl::validate_admin_for_action(&env, &admin, "close_market").is_ok()
+        );
     }
 
     #[test]
@@ -933,4 +966,4 @@ mod tests {
         assert_eq!(role_assignment.role, AdminRole::MarketAdmin);
         assert!(role_assignment.is_active);
     }
-} 
+}

@@ -228,7 +228,6 @@ impl MarketExtension {
 
         Ok(())
     }
-
 }
 
 impl Market {
@@ -260,7 +259,6 @@ impl Market {
             extension_history: vec![env],
             total_extension_days: 0,
             max_extension_days: 30, // Default maximum extension days
-
         }
     }
 
@@ -712,7 +710,7 @@ pub enum MarketState {
 
 impl MarketState {
     /// Get state from market (legacy, for migration)
-    pub fn from_market(market: &Market, current_time: u64) -> Self {
+    pub fn from_market(market: &Market, _current_time: u64) -> Self {
         market.state
     }
 
@@ -723,7 +721,13 @@ impl MarketState {
 
     /// Check if market has ended
     pub fn has_ended(&self) -> bool {
-        matches!(self, MarketState::Ended | MarketState::Resolved | MarketState::Closed | MarketState::Cancelled)
+        matches!(
+            self,
+            MarketState::Ended
+                | MarketState::Resolved
+                | MarketState::Closed
+                | MarketState::Cancelled
+        )
     }
 
     /// Check if market is resolved

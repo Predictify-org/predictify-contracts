@@ -293,12 +293,12 @@ use crate::markets::{MarketStateManager, MarketUtils};
 mod tests {
     use super::*;
     use crate::types::ExtensionStats;
-    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_extension_validation() {
         let env = Env::default();
-        let admin = Address::generate(&env);
+        let _admin = Address::generate(&env);
 
         // Test valid extension days
         assert!(
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_extension_stats() {
-        let env = Env::default();
+        let _env = Env::default();
         let stats = ExtensionStats {
             total_extensions: 2,
             total_extension_days: 10,

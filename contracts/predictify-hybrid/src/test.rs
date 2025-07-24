@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::errors::Error;
-use crate::oracles::ReflectorOracle;
 use crate::oracles::OracleInterface;
+use crate::oracles::ReflectorOracle;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
@@ -1151,7 +1151,7 @@ fn test_fee_manager_collect_fees() {
     // Add some votes to create stakes
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     test.env.mock_all_auths();
-    
+
     // Add votes to create stakes
     let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
     for i in 0..5 {
@@ -1218,7 +1218,7 @@ fn test_fee_manager_collect_fees_already_collected() {
     // Add votes and resolve market (same as above)
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     test.env.mock_all_auths();
-    
+
     let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
     for i in 0..5 {
         let voter = Address::generate(&test.env);
@@ -1290,6 +1290,7 @@ fn test_fee_calculator_platform_fee() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     // Set total staked
@@ -1306,8 +1307,13 @@ fn test_fee_calculator_user_payout_after_fees() {
     let winning_total = 5_000_000_000; // 500 XLM
     let total_pool = 10_000_000_000; // 1000 XLM
 
-    let payout = crate::fees::FeeCalculator::calculate_user_payout_after_fees(user_stake, winning_total, total_pool).unwrap();
-    
+    let payout = crate::fees::FeeCalculator::calculate_user_payout_after_fees(
+        user_stake,
+        winning_total,
+        total_pool,
+    )
+    .unwrap();
+
     // Expected: (100 * 500 / 1000) * 0.98 = 49 XLM
     assert_eq!(payout, 49_000_000_000);
 }
@@ -1327,14 +1333,18 @@ fn test_fee_calculator_fee_breakdown() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     market.total_staked = 1_000_000_000; // 100 XLM
 
     let breakdown = crate::fees::FeeCalculator::calculate_fee_breakdown(&market).unwrap();
-    
+
     assert_eq!(breakdown.total_staked, 1_000_000_000);
-    assert_eq!(breakdown.fee_percentage, crate::fees::PLATFORM_FEE_PERCENTAGE);
+    assert_eq!(
+        breakdown.fee_percentage,
+        crate::fees::PLATFORM_FEE_PERCENTAGE
+    );
     assert_eq!(breakdown.fee_amount, 20_000_000); // 2 XLM
     assert_eq!(breakdown.platform_fee, 20_000_000);
     assert_eq!(breakdown.user_payout_amount, 980_000_000); // 98 XLM
@@ -1347,7 +1357,8 @@ fn test_fee_validator_admin_permissions() {
 
     // Set admin in storage
     test.env.as_contract(&test.contract_id, || {
-        test.env.storage()
+        test.env
+            .storage()
             .persistent()
             .set(&Symbol::new(&test.env, "Admin"), &admin);
     });
@@ -1357,7 +1368,9 @@ fn test_fee_validator_admin_permissions() {
 
     // Invalid admin
     let invalid_admin = Address::generate(&test.env);
-    assert!(crate::fees::FeeValidator::validate_admin_permissions(&test.env, &invalid_admin).is_err());
+    assert!(
+        crate::fees::FeeValidator::validate_admin_permissions(&test.env, &invalid_admin).is_err()
+    );
 }
 
 #[test]
@@ -1366,10 +1379,14 @@ fn test_fee_validator_fee_amount() {
     assert!(crate::fees::FeeValidator::validate_fee_amount(crate::fees::MIN_FEE_AMOUNT).is_ok());
 
     // Invalid fee amount (too small)
-    assert!(crate::fees::FeeValidator::validate_fee_amount(crate::fees::MIN_FEE_AMOUNT - 1).is_err());
+    assert!(
+        crate::fees::FeeValidator::validate_fee_amount(crate::fees::MIN_FEE_AMOUNT - 1).is_err()
+    );
 
     // Invalid fee amount (too large)
-    assert!(crate::fees::FeeValidator::validate_fee_amount(crate::fees::MAX_FEE_AMOUNT + 1).is_err());
+    assert!(
+        crate::fees::FeeValidator::validate_fee_amount(crate::fees::MAX_FEE_AMOUNT + 1).is_err()
+    );
 }
 
 #[test]
@@ -1386,6 +1403,7 @@ fn test_fee_validator_market_for_fee_collection() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     // Market not resolved
@@ -1421,6 +1439,7 @@ fn test_fee_utils_can_collect_fees() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     // Market not resolved
@@ -1456,6 +1475,7 @@ fn test_fee_utils_get_fee_eligibility() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     // Market not resolved
@@ -1501,21 +1521,30 @@ fn test_fee_config_manager() {
 #[test]
 fn test_fee_config_manager_reset_to_defaults() {
     let test = PredictifyTest::setup();
-    
+
     let default_config = crate::fees::FeeConfigManager::reset_to_defaults(&test.env).unwrap();
-    
-    assert_eq!(default_config.platform_fee_percentage, crate::fees::PLATFORM_FEE_PERCENTAGE);
-    assert_eq!(default_config.creation_fee, crate::fees::MARKET_CREATION_FEE);
+
+    assert_eq!(
+        default_config.platform_fee_percentage,
+        crate::fees::PLATFORM_FEE_PERCENTAGE
+    );
+    assert_eq!(
+        default_config.creation_fee,
+        crate::fees::MARKET_CREATION_FEE
+    );
     assert_eq!(default_config.min_fee_amount, crate::fees::MIN_FEE_AMOUNT);
     assert_eq!(default_config.max_fee_amount, crate::fees::MAX_FEE_AMOUNT);
-    assert_eq!(default_config.collection_threshold, crate::fees::FEE_COLLECTION_THRESHOLD);
+    assert_eq!(
+        default_config.collection_threshold,
+        crate::fees::FEE_COLLECTION_THRESHOLD
+    );
     assert!(default_config.fees_enabled);
 }
 
 #[test]
 fn test_fee_analytics_calculation() {
     let test = PredictifyTest::setup();
-    
+
     // Test with no fee history
     let analytics = crate::fees::FeeAnalytics::calculate_analytics(&test.env).unwrap();
     assert_eq!(analytics.total_fees_collected, 0);
@@ -1537,6 +1566,7 @@ fn test_fee_analytics_market_fee_stats() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     market.total_staked = 1_000_000_000; // 100 XLM
@@ -1560,6 +1590,7 @@ fn test_fee_analytics_fee_efficiency() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     market.total_staked = 1_000_000_000; // 100 XLM
@@ -1577,10 +1608,10 @@ fn test_fee_analytics_fee_efficiency() {
 #[test]
 fn test_fee_manager_process_creation_fee() {
     let test = PredictifyTest::setup();
-    
+
     // Process creation fee
     crate::fees::FeeManager::process_creation_fee(&test.env, &test.admin).unwrap();
-    
+
     // Verify fee was transferred (check contract balance increased)
     let contract_balance = test.token_test.token_client.balance(&test.contract_id);
     assert_eq!(contract_balance, crate::fees::MARKET_CREATION_FEE);
@@ -1589,7 +1620,7 @@ fn test_fee_manager_process_creation_fee() {
 #[test]
 fn test_fee_manager_get_fee_analytics() {
     let test = PredictifyTest::setup();
-    
+
     let analytics = crate::fees::FeeManager::get_fee_analytics(&test.env).unwrap();
     assert_eq!(analytics.total_fees_collected, 0);
     assert_eq!(analytics.markets_with_fees, 0);
@@ -1598,7 +1629,7 @@ fn test_fee_manager_get_fee_analytics() {
 #[test]
 fn test_fee_manager_update_fee_config() {
     let test = PredictifyTest::setup();
-    
+
     let new_config = crate::fees::FeeConfig {
         platform_fee_percentage: 3,
         creation_fee: 15_000_000,
@@ -1610,21 +1641,30 @@ fn test_fee_manager_update_fee_config() {
 
     // Set admin in storage
     test.env.as_contract(&test.contract_id, || {
-        test.env.storage()
+        test.env
+            .storage()
             .persistent()
             .set(&Symbol::new(&test.env, "Admin"), &test.admin);
     });
 
-    let updated_config = crate::fees::FeeManager::update_fee_config(&test.env, test.admin.clone(), new_config.clone()).unwrap();
+    let updated_config = crate::fees::FeeManager::update_fee_config(
+        &test.env,
+        test.admin.clone(),
+        new_config.clone(),
+    )
+    .unwrap();
     assert_eq!(updated_config, new_config);
 }
 
 #[test]
 fn test_fee_manager_get_fee_config() {
     let test = PredictifyTest::setup();
-    
+
     let config = crate::fees::FeeManager::get_fee_config(&test.env).unwrap();
-    assert_eq!(config.platform_fee_percentage, crate::fees::PLATFORM_FEE_PERCENTAGE);
+    assert_eq!(
+        config.platform_fee_percentage,
+        crate::fees::PLATFORM_FEE_PERCENTAGE
+    );
     assert_eq!(config.creation_fee, crate::fees::MARKET_CREATION_FEE);
     assert!(config.fees_enabled);
 }
@@ -1633,7 +1673,7 @@ fn test_fee_manager_get_fee_config() {
 fn test_fee_manager_validate_market_fees() {
     let test = PredictifyTest::setup();
     test.create_test_market();
-    
+
     let result = crate::fees::FeeManager::validate_market_fees(&test.env, &test.market_id).unwrap();
     assert!(!result.is_valid);
     assert!(!result.errors.is_empty());
@@ -1653,6 +1693,7 @@ fn test_fee_calculator_dynamic_fee() {
         ],
         test.env.ledger().timestamp() + 86400,
         test.create_default_oracle_config(),
+        MarketState::Active,
     );
 
     // Small market (no adjustment)
@@ -1778,7 +1819,7 @@ fn test_market_resolution_manager_resolve_market() {
     // Add some votes
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     test.env.mock_all_auths();
-    
+
     let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
     for i in 0..5 {
         let voter = Address::generate(&test.env);
@@ -2001,7 +2042,7 @@ fn test_resolution_method_determination() {
     // Add votes to create different scenarios
     test.env.mock_all_auths();
     let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
-    
+
     // Scenario 1: Oracle and community agree
     for i in 0..6 {
         let voter = Address::generate(&test.env);
@@ -2051,7 +2092,7 @@ fn test_resolution_method_determination() {
     // Verify resolution method
     let market_resolution = client.get_market_resolution(&test.market_id);
     assert!(market_resolution.is_some());
-    
+
     let resolution = market_resolution.unwrap();
     assert_eq!(resolution.final_outcome, String::from_str(&test.env, "yes"));
     assert!(resolution.confidence_score > 0);
@@ -2064,7 +2105,7 @@ fn test_resolution_error_handling() {
 
     // Test resolution of non-existent market
     let non_existent_market = Symbol::new(&test.env, "non_existent");
-    
+
     // These should not panic but return None or default values
     let oracle_resolution = client.get_oracle_resolution(&non_existent_market);
     assert!(oracle_resolution.is_none());
@@ -2195,8 +2236,14 @@ fn test_configuration_initialization() {
 
     // Verify configuration was stored
     let config = client.get_contract_config();
-    assert_eq!(config.network.environment, crate::config::Environment::Development);
-    assert_eq!(config.fees.platform_fee_percentage, crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE);
+    assert_eq!(
+        config.network.environment,
+        crate::config::Environment::Development
+    );
+    assert_eq!(
+        config.fees.platform_fee_percentage,
+        crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE
+    );
 }
 
 #[test]
@@ -2211,7 +2258,10 @@ fn test_configuration_environment_specific() {
 
     // Verify mainnet-specific values
     let config = client.get_contract_config();
-    assert_eq!(config.network.environment, crate::config::Environment::Mainnet);
+    assert_eq!(
+        config.network.environment,
+        crate::config::Environment::Mainnet
+    );
     assert_eq!(config.fees.platform_fee_percentage, 3); // Higher for mainnet
     assert_eq!(config.fees.creation_fee, 15_000_000); // Higher for mainnet
 }
@@ -2458,7 +2508,7 @@ fn test_utility_generate_unique_id() {
 
     // IDs should be unique
     assert_ne!(id1.to_string(), id2.to_string());
-    
+
     // IDs should contain the prefix
     assert!(id1.to_string().contains("test"));
     assert!(id2.to_string().contains("test"));
@@ -2469,8 +2519,14 @@ fn test_utility_address_comparison() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-    let addr1 = Address::from_str(&test.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
-    let addr2 = Address::from_str(&test.env, "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    let addr1 = Address::from_str(
+        &test.env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    let addr2 = Address::from_str(
+        &test.env,
+        "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    );
 
     assert!(client.addresses_equal(&addr1, &addr1));
     assert!(!client.addresses_equal(&addr1, &addr2));
@@ -2594,7 +2650,7 @@ fn test_utility_integration() {
     let input_string = String::from_str(&test.env, "Hello@World#123!");
     let sanitized = client.sanitize_string(&input_string);
     let is_valid_length = client.validate_string_length(&sanitized, &1, &20);
-    
+
     assert!(is_valid_length);
     assert_eq!(sanitized.to_string(), "Hello World 123");
 
@@ -2603,7 +2659,7 @@ fn test_utility_integration() {
     let weights = vec![&test.env, 1, 1, 1];
     let average = client.calculate_weighted_average(&values, &weights);
     let percentage = client.calculate_percentage(&average, &600, &100);
-    
+
     assert_eq!(average, 200);
     assert_eq!(percentage, 33); // 200/600 * 100 = 33.33... rounded to 33
 }
@@ -2632,7 +2688,7 @@ fn test_utility_performance() {
 
     // Test performance of multiple utility operations
     let test_string = String::from_str(&test.env, "performance_test_string");
-    
+
     // Multiple operations should complete quickly
     for _ in 0..10 {
         let _sanitized = client.sanitize_string(&test_string);
@@ -2661,7 +2717,10 @@ fn test_event_emitter_market_created() {
     assert!(!events.is_empty());
 
     // Verify event structure
-    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "MarketCreated"), &String::from_str(&test.env, "test"));
+    let is_valid = client.validate_event_structure(
+        &String::from_str(&test.env, "MarketCreated"),
+        &String::from_str(&test.env, "test"),
+    );
     assert!(is_valid);
 }
 
@@ -2685,7 +2744,10 @@ fn test_event_emitter_vote_cast() {
     assert!(events.len() >= 2); // Market created + vote cast
 
     // Verify event structure
-    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "VoteCast"), &String::from_str(&test.env, "test"));
+    let is_valid = client.validate_event_structure(
+        &String::from_str(&test.env, "VoteCast"),
+        &String::from_str(&test.env, "test"),
+    );
     assert!(is_valid);
 }
 
@@ -2724,7 +2786,10 @@ fn test_event_emitter_oracle_result() {
     assert!(events.len() >= 2); // Market created + oracle result
 
     // Verify event structure
-    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "OracleResult"), &String::from_str(&test.env, "test"));
+    let is_valid = client.validate_event_structure(
+        &String::from_str(&test.env, "OracleResult"),
+        &String::from_str(&test.env, "test"),
+    );
     assert!(is_valid);
 }
 
@@ -2735,7 +2800,7 @@ fn test_event_emitter_market_resolved() {
 
     // Create market, add votes, and resolve
     test.create_test_market();
-    
+
     // Add votes
     test.env.mock_all_auths();
     let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
@@ -2778,7 +2843,10 @@ fn test_event_emitter_market_resolved() {
     assert!(events.len() >= 4); // Market created + votes + oracle result + market resolved
 
     // Verify event structure
-    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "MarketResolved"), &String::from_str(&test.env, "test"));
+    let is_valid = client.validate_event_structure(
+        &String::from_str(&test.env, "MarketResolved"),
+        &String::from_str(&test.env, "test"),
+    );
     assert!(is_valid);
 }
 
@@ -2819,7 +2887,10 @@ fn test_event_emitter_dispute_created() {
     assert!(events.len() >= 3); // Market created + oracle result + dispute created
 
     // Verify event structure
-    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "DisputeCreated"), &String::from_str(&test.env, "test"));
+    let is_valid = client.validate_event_structure(
+        &String::from_str(&test.env, "DisputeCreated"),
+        &String::from_str(&test.env, "test"),
+    );
     assert!(is_valid);
 }
 
@@ -2830,7 +2901,7 @@ fn test_event_emitter_fee_collected() {
 
     // Create market, add votes, resolve, and collect fees
     test.create_test_market();
-    
+
     // Add votes
     test.env.mock_all_auths();
     let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
@@ -2877,7 +2948,10 @@ fn test_event_emitter_fee_collected() {
     assert!(events.len() >= 5); // Market created + votes + oracle result + market resolved + fee collected
 
     // Verify event structure
-    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "FeeCollected"), &String::from_str(&test.env, "test"));
+    let is_valid = client.validate_event_structure(
+        &String::from_str(&test.env, "FeeCollected"),
+        &String::from_str(&test.env, "test"),
+    );
     assert!(is_valid);
 }
 
@@ -2915,7 +2989,7 @@ fn test_event_logger_get_error_events() {
 
     // Get error events
     let error_events = client.get_error_events();
-    
+
     // Initially should be empty or contain existing errors
     // This test verifies the function works without panicking
     assert!(error_events.len() >= 0);
@@ -2928,7 +3002,7 @@ fn test_event_logger_get_performance_metrics() {
 
     // Get performance metrics
     let metrics = client.get_performance_metrics();
-    
+
     // Initially should be empty or contain existing metrics
     // This test verifies the function works without panicking
     assert!(metrics.len() >= 0);
@@ -3065,7 +3139,7 @@ fn test_event_helpers_format_timestamp() {
 
     let timestamp = 1234567890;
     let formatted = client.format_event_timestamp(&timestamp);
-    
+
     // Should return a string representation
     assert!(!formatted.to_string().is_empty());
     assert!(formatted.to_string().contains("1234567890"));
@@ -3084,7 +3158,7 @@ fn test_event_helpers_create_context() {
     ];
 
     let context = client.create_event_context(&context_parts);
-    
+
     // Should create a context string with parts separated by " | "
     assert!(context.to_string().contains("Market"));
     assert!(context.to_string().contains("Vote"));
@@ -3205,7 +3279,7 @@ fn test_event_integration() {
 
     // Test integration of multiple event operations
     test.create_test_market();
-    
+
     // Add votes
     test.env.mock_all_auths();
     let token_sac_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
@@ -3251,7 +3325,10 @@ fn test_event_error_handling() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test invalid event type validation
-    let is_valid = client.validate_event_structure(&String::from_str(&test.env, "InvalidEventType"), &String::from_str(&test.env, "test"));
+    let is_valid = client.validate_event_structure(
+        &String::from_str(&test.env, "InvalidEventType"),
+        &String::from_str(&test.env, "test"),
+    );
     assert!(!is_valid);
 
     // Test invalid test event validation
@@ -3271,12 +3348,15 @@ fn test_event_performance() {
 
     // Test performance of multiple event operations
     test.create_test_market();
-    
+
     // Multiple event operations should complete quickly
     for _ in 0..10 {
         let _market_events = client.get_market_events(&test.market_id);
         let _recent_events = client.get_recent_events(&5);
-        let _is_valid = client.validate_event_structure(&String::from_str(&test.env, "MarketCreated"), &String::from_str(&test.env, "test"));
+        let _is_valid = client.validate_event_structure(
+            &String::from_str(&test.env, "MarketCreated"),
+            &String::from_str(&test.env, "test"),
+        );
         let _age = client.get_event_age(&(test.env.ledger().timestamp() - 1800));
     }
 
@@ -3315,7 +3395,10 @@ fn test_input_validation_string() {
     assert!(!is_valid);
 
     // Test string too long
-    let long_string = String::from_str(&test.env, "This is a very long string that exceeds the maximum length limit");
+    let long_string = String::from_str(
+        &test.env,
+        "This is a very long string that exceeds the maximum length limit",
+    );
     let is_valid = client.validate_string_length(&long_string, &1, &20);
     assert!(!is_valid);
 }
@@ -3446,10 +3529,7 @@ fn test_market_validation_invalid_outcomes() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Test market creation with single outcome (too few)
-    let invalid_outcomes = vec![
-        &test.env,
-        String::from_str(&test.env, "yes"),
-    ];
+    let invalid_outcomes = vec![&test.env, String::from_str(&test.env, "yes")];
 
     let oracle_config = test.create_default_oracle_config();
 
@@ -3513,7 +3593,7 @@ fn test_market_validation_nonexistent() {
     // Test validation of non-existent market
     let non_existent_market = Symbol::new(&test.env, "non_existent");
     let result = client.validate_market_state(&non_existent_market);
-    
+
     assert!(!result.is_valid);
     assert!(result.has_errors());
 }
@@ -3573,11 +3653,11 @@ fn test_fee_validation_config() {
 
     // Test valid fee config
     let result = client.validate_fee_config(
-        &2, // platform_fee_percentage
-        &10_000_000, // creation_fee
-        &1_000_000, // min_fee_amount
+        &2,             // platform_fee_percentage
+        &10_000_000,    // creation_fee
+        &1_000_000,     // min_fee_amount
         &1_000_000_000, // max_fee_amount
-        &100_000_000, // collection_threshold
+        &100_000_000,   // collection_threshold
     );
 
     assert!(result.is_valid);
@@ -3710,11 +3790,7 @@ fn test_dispute_validation_creation() {
     client.resolve_market(&test.market_id);
 
     // Test valid dispute creation
-    let result = client.validate_dispute_creation(
-        &test.user,
-        &test.market_id,
-        &10_0000000,
-    );
+    let result = client.validate_dispute_creation(&test.user, &test.market_id, &10_0000000);
 
     assert!(result.is_valid);
     assert!(result.error_count == 0);
@@ -3821,13 +3897,8 @@ fn test_comprehensive_validation_scenario() {
     assert!(oracle_result.error_count == 0);
 
     // Test fee config validation
-    let fee_result = client.validate_fee_config(
-        &2,
-        &10_000_000,
-        &1_000_000,
-        &1_000_000_000,
-        &100_000_000,
-    );
+    let fee_result =
+        client.validate_fee_config(&2, &10_000_000, &1_000_000, &1_000_000_000, &100_000_000);
 
     assert!(fee_result.is_valid);
     assert!(fee_result.error_count == 0);
