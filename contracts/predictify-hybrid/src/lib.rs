@@ -58,9 +58,13 @@ use config::{ConfigManager, ConfigUtils, ConfigValidator, ContractConfig, Enviro
 pub mod utils;
 use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, CommonUtils};
 
-/// Event logging and monitoring module
+/// Event logging module
 pub mod events;
 use events::{EventLogger, EventHelpers, EventTestingUtils, EventDocumentation};
+
+/// Monitoring subsystem module
+pub mod monitoring;
+use monitoring::ContractMonitor;
 
 /// Admin controls and functions module
 pub mod admin;

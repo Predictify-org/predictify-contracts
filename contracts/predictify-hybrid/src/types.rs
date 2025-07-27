@@ -844,6 +844,50 @@ pub mod conversion {
     }
 }
 
+// ===== MONITORING TYPES =====
+
+/// Alert information emitted by monitoring functions
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MonitoringAlert {
+    /// Type/code of alert
+    pub alert_type: String,
+    /// Human-readable message
+    pub message: String,
+    /// Severity: 0 = info, 1 = warning, 2 = critical
+    pub severity: u32,
+    /// Unix timestamp
+    pub timestamp: u64,
+}
+
+/// Generic monitoring data used for validation/logging
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MonitoringData {
+    /// Market health information
+    MarketHealth { market_id: Symbol, liquidity: i128, open_interest: i128 },
+    /// Oracle provider status
+    OracleHealth { provider: String, is_online: bool },
+    /// Fee revenue within timeframe
+    FeeRevenue { timeframe: TimeFrame, amount: i128 },
+    /// Dispute information
+    DisputeStatus { market_id: Symbol, open_disputes: u32 },
+    /// Contract performance metrics
+    PerformanceMetrics { tx_count: u32, avg_gas: i128 },
+    /// Custom payload
+    Custom(String),
+}
+
+/// Time frame definitions for monitoring analytics
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimeFrame {
+    LastHour,
+    LastDay,
+    LastWeek,
+    Custom(u64),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
