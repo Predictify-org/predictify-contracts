@@ -8,6 +8,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
+mod audit;
 mod config;
 mod disputes;
 mod errors;
@@ -322,6 +323,75 @@ impl PredictifyHybrid {
         let stats = markets::MarketAnalytics::get_market_stats(&market);
         
         Ok(stats)
+    }
+
+    // ===== AUDIT SYSTEM FUNCTIONS =====
+
+    /// Initialize the audit system
+    pub fn initialize_audit_system(env: Env, admin: Address) -> Result<(), Error> {
+        audit::AuditManager::initialize_audit_system(&env, &admin)
+    }
+
+    /// Get current audit status
+    pub fn get_audit_status(env: Env) -> Result<audit::AuditChecklist, Error> {
+        audit::AuditManager::get_audit_status(&env)
+    }
+
+    /// Update audit item completion status
+    pub fn update_audit_item_status(
+        env: Env,
+        category: audit::AuditCategory,
+        item_id: u32,
+        completed: bool,
+        auditor: Address,
+    ) -> Result<(), Error> {
+        audit::AuditManager::update_audit_item_status(&env, category, item_id, completed, auditor)
+    }
+
+    /// Validate audit completion for deployment readiness
+    pub fn validate_audit_completion(env: Env) -> Result<bool, Error> {
+        let checklist = audit::AuditManager::get_audit_status(&env)?;
+        audit::AuditManager::validate_audit_completion(&env, &checklist)
+    }
+
+    /// Generate comprehensive audit report
+    pub fn generate_audit_report(env: Env) -> Result<String, Error> {
+        audit::AuditManager::generate_audit_report(&env)
+    }
+
+    /// Get audit statistics
+    pub fn get_audit_statistics(env: Env) -> Result<Map<String, u32>, Error> {
+        audit::AuditManager::get_audit_statistics(&env)
+    }
+
+    /// Get security audit checklist
+    pub fn get_security_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_security_audit_checklist(&env)
+    }
+
+    /// Get code review checklist
+    pub fn get_code_review_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_code_review_checklist(&env)
+    }
+
+    /// Get testing audit checklist
+    pub fn get_testing_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_testing_audit_checklist(&env)
+    }
+
+    /// Get documentation audit checklist
+    pub fn get_docs_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_documentation_audit_checklist(&env)
+    }
+
+    /// Get deployment audit checklist
+    pub fn get_deployment_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_deployment_audit_checklist(&env)
+    }
+
+    /// Reset audit system (admin only)
+    pub fn reset_audit_system(env: Env, admin: Address) -> Result<(), Error> {
+        audit::AuditManager::reset_audit_system(&env, &admin)
     }
 }
 
