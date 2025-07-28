@@ -313,6 +313,32 @@ pub struct ConfigInitializedEvent {
     pub timestamp: u64,
 }
 
+/// Audit item updated event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditItemUpdatedEvent {
+    /// Auditor address
+    pub auditor: Address,
+    /// Audit item ID
+    pub item_id: u32,
+    /// Completion status
+    pub completed: bool,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
+/// Audit system event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditSystemEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Action performed (initialized, reset, etc.)
+    pub action: String,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Event emission utilities
@@ -661,6 +687,51 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_final"), &event);
+    }
+
+    /// Emit audit item updated event
+    pub fn emit_audit_item_updated(
+        env: &Env,
+        auditor: &Address,
+        item_id: u32,
+        completed: bool,
+    ) {
+        let event = AuditItemUpdatedEvent {
+            auditor: auditor.clone(),
+            item_id,
+            completed,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("aud_item"), &event);
+    }
+
+    /// Emit audit system initialized event
+    pub fn emit_audit_system_initialized(
+        env: &Env,
+        admin: &Address,
+    ) {
+        let event = AuditSystemEvent {
+            admin: admin.clone(),
+            action: String::from_str(env, "initialized"),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("aud_init"), &event);
+    }
+
+    /// Emit audit system reset event
+    pub fn emit_audit_system_reset(
+        env: &Env,
+        admin: &Address,
+    ) {
+        let event = AuditSystemEvent {
+            admin: admin.clone(),
+            action: String::from_str(env, "reset"),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("aud_reset"), &event);
     }
 
     /// Store event in persistent storage
