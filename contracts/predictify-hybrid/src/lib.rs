@@ -20,6 +20,7 @@ mod resolution;
 mod types;
 mod utils;
 mod validation;
+mod validation_tests;
 mod voting;
 
 // Re-export commonly used items

@@ -9,7 +9,7 @@ use crate::{
     types::{Market, OracleConfig, OracleProvider},
 };
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec, IntoVal};
 
 // ===== VALIDATION ERROR TYPES =====
 
@@ -32,6 +32,15 @@ pub enum ValidationError {
     InvalidStake,
     InvalidThreshold,
     InvalidConfig,
+    StringTooLong,
+    StringTooShort,
+    NumberOutOfRange,
+    InvalidAddressFormat,
+    TimestampOutOfBounds,
+    ArrayTooLarge,
+    ArrayTooSmall,
+    InvalidQuestionFormat,
+    InvalidOutcomeFormat,
 }
 
 impl ValidationError {
@@ -53,6 +62,15 @@ impl ValidationError {
             ValidationError::InvalidStake => Error::InsufficientStake,
             ValidationError::InvalidThreshold => Error::InvalidThreshold,
             ValidationError::InvalidConfig => Error::InvalidOracleConfig,
+            ValidationError::StringTooLong => Error::InvalidQuestion,
+            ValidationError::StringTooShort => Error::InvalidQuestion,
+            ValidationError::NumberOutOfRange => Error::InvalidThreshold,
+            ValidationError::InvalidAddressFormat => Error::Unauthorized,
+            ValidationError::TimestampOutOfBounds => Error::InvalidDuration,
+            ValidationError::ArrayTooLarge => Error::InvalidOutcomes,
+            ValidationError::ArrayTooSmall => Error::InvalidOutcomes,
+            ValidationError::InvalidQuestionFormat => Error::InvalidQuestion,
+            ValidationError::InvalidOutcomeFormat => Error::InvalidOutcome,
         }
     }
 }
@@ -117,18 +135,140 @@ impl ValidationResult {
     }
 }
 
-// ===== INPUT VALIDATION =====
+// ===== COMPREHENSIVE INPUT VALIDATION =====
 
-/// Input validation utilities
+/// Comprehensive input validation utilities
 pub struct InputValidator;
 
 impl InputValidator {
-    /// Validate address format and structure
-    pub fn validate_address(env: &Env, address: &Address) -> Result<(), ValidationError> {
-        // Address validation is handled by Soroban SDK
-        // Additional validation can be added here if needed
+    /// Validate string length with specific limits
+    pub fn validate_string_length(
+        input: &String,
+        max_length: u32,
+    ) -> Result<(), ValidationError> {
+        let length = input.len() as u32;
+
+        if length == 0 {
+            return Err(ValidationError::StringTooShort);
+        }
+
+        if length > max_length {
+            return Err(ValidationError::StringTooLong);
+        }
+
         Ok(())
     }
+
+    /// Validate numeric range for all parameters
+    pub fn validate_numeric_range(
+        value: i128,
+        min: i128,
+        max: i128,
+    ) -> Result<(), ValidationError> {
+        if value < min {
+            return Err(ValidationError::NumberOutOfRange);
+        }
+
+        if value > max {
+            return Err(ValidationError::NumberOutOfRange);
+        }
+
+        Ok(())
+    }
+
+    /// Validate address format and validity
+    pub fn validate_address_format(address: &Address) -> Result<(), ValidationError> {
+          //this is called, Soroban host performs the necessary
+        // authentication, manages replay prevention and enforces the user's
+        // authorization policies.
+             address.require_auth();
+
+        Ok(())
+    }
+
+
+    pub fn validate_address(address: &Address , env: &Env) -> Result<(), ValidationError> {
+        address.require_auth_for_args(vec![env, address.into_val(env)]);
+        Ok(())
+    }
+
+    /// Validate timestamp bounds
+    pub fn validate_timestamp_bounds(
+        timestamp: u64,
+        min: u64,
+        max: u64,
+    ) -> Result<(), ValidationError> {
+        if timestamp < min {
+            return Err(ValidationError::TimestampOutOfBounds);
+        }
+
+        if timestamp > max {
+            return Err(ValidationError::TimestampOutOfBounds);
+        }
+
+        Ok(())
+    }
+
+    /// Validate array size limits
+    pub fn validate_array_size(
+        array: &Vec<String>,
+        max_size: u32,
+    ) -> Result<(), ValidationError> {
+        let size = array.len() as u32;
+
+        if size == 0 {
+            return Err(ValidationError::ArrayTooSmall);
+        }
+
+        if size > max_size {
+            return Err(ValidationError::ArrayTooLarge);
+        }
+
+        Ok(())
+    }
+
+    /// Validate question format specifically
+    pub fn validate_question_format(question: &String) -> Result<(), ValidationError> {
+        // Check string length
+        if let Err(_) = Self::validate_string_length(question, config::MAX_QUESTION_LENGTH) {
+            return Err(ValidationError::InvalidQuestionFormat);
+        }
+
+        // Check for empty or whitespace-only questions
+        if question.is_empty() {
+            return Err(ValidationError::InvalidQuestionFormat);
+        }
+
+        // Check for minimum meaningful length (at least 10 characters)
+        if question.len() < 10 {
+            return Err(ValidationError::InvalidQuestionFormat);
+        }
+        Ok(())
+    }
+
+    /// Validate outcome format specifically
+    pub fn validate_outcome_format(outcome: &String) -> Result<(), ValidationError> {
+        // Check string length
+        if let Err(_) = Self::validate_string_length(outcome, config::MAX_OUTCOME_LENGTH) {
+            return Err(ValidationError::InvalidOutcomeFormat);
+        }
+
+        // Check for empty outcomes
+        if outcome.is_empty() {
+            return Err(ValidationError::InvalidOutcomeFormat);
+        }
+
+        // Check for minimum meaningful length (at least 2 characters)
+        if outcome.len() < 2 {
+            return Err(ValidationError::InvalidOutcomeFormat);
+        }
+
+     
+
+        Ok(())
+    }
+
+
 
     /// Validate string length and content
     pub fn validate_string(
@@ -140,15 +280,15 @@ impl InputValidator {
         let length = value.len() as u32;
 
         if length < min_length {
-            return Err(ValidationError::InvalidString);
+            return Err(ValidationError::StringTooShort);
         }
 
         if length > max_length {
-            return Err(ValidationError::InvalidString);
+            return Err(ValidationError::StringTooLong);
         }
 
         if value.is_empty() {
-            return Err(ValidationError::InvalidString);
+            return Err(ValidationError::StringTooShort);
         }
 
         Ok(())
@@ -161,11 +301,11 @@ impl InputValidator {
         max: &i128,
     ) -> Result<(), ValidationError> {
         if *value < *min {
-            return Err(ValidationError::InvalidNumber);
+            return Err(ValidationError::NumberOutOfRange);
         }
 
         if *value > *max {
-            return Err(ValidationError::InvalidNumber);
+            return Err(ValidationError::NumberOutOfRange);
         }
 
         Ok(())
@@ -174,7 +314,7 @@ impl InputValidator {
     /// Validate positive number
     pub fn validate_positive_number(value: &i128) -> Result<(), ValidationError> {
         if *value <= 0 {
-            return Err(ValidationError::InvalidNumber);
+            return Err(ValidationError::NumberOutOfRange);
         }
 
         Ok(())
@@ -185,7 +325,7 @@ impl InputValidator {
         let current_time = env.ledger().timestamp();
 
         if *timestamp <= current_time {
-            return Err(ValidationError::InvalidTimestamp);
+            return Err(ValidationError::TimestampOutOfBounds);
         }
 
         Ok(())
@@ -203,16 +343,9 @@ impl InputValidator {
 
         Ok(())
     }
-}
 
-// ===== MARKET VALIDATION =====
-
-/// Market validation utilities
-pub struct MarketValidator;
-
-impl MarketValidator {
-    /// Validate market creation parameters
-    pub fn validate_market_creation(
+    /// Comprehensive validation for all input types
+    pub fn validate_comprehensive_inputs(
         env: &Env,
         admin: &Address,
         question: &String,
@@ -223,22 +356,29 @@ impl MarketValidator {
         let mut result = ValidationResult::valid();
 
         // Validate admin address
-        if let Err(_) = InputValidator::validate_address(env, admin) {
+        if let Err(_) = Self::validate_address_format(admin) {
             result.add_error();
         }
 
-        // Validate question
-        if let Err(_) = InputValidator::validate_string(env, question, 1, 500) {
+        // Validate question format
+        if let Err(_) = Self::validate_question_format(question) {
             result.add_error();
         }
 
-        // Validate outcomes
-        if let Err(_) = Self::validate_outcomes(env, outcomes) {
+        // Validate outcomes array size
+        if let Err(_) = Self::validate_array_size(outcomes, config::MAX_MARKET_OUTCOMES) {
             result.add_error();
+        }
+
+        // Validate each outcome format
+        for outcome in outcomes.iter() {
+            if let Err(_) = Self::validate_outcome_format(&outcome) {
+                result.add_error();
+            }
         }
 
         // Validate duration
-        if let Err(_) = InputValidator::validate_duration(duration_days) {
+        if let Err(_) = Self::validate_duration(duration_days) {
             result.add_error();
         }
 
@@ -247,23 +387,61 @@ impl MarketValidator {
             result.add_error();
         }
 
+        // Add recommendations for optimization
+        if result.is_valid {
+            if question.len() < 50 {
+                result.add_recommendation(); // Suggest longer questions for better clarity
+            }
+            if outcomes.len() < 3 {
+                result.add_recommendation(); // Suggest more outcomes for better market dynamics
+            }
+        }
+
         result
     }
+}
 
-    /// Validate market outcomes
+// ===== MARKET VALIDATION =====
+
+/// Market validation utilities
+pub struct MarketValidator;
+
+impl MarketValidator {
+    /// Validate market creation parameters with comprehensive validation
+    pub fn validate_market_creation(
+        env: &Env,
+        admin: &Address,
+        question: &String,
+        outcomes: &Vec<String>,
+        duration_days: &u32,
+        oracle_config: &OracleConfig,
+    ) -> ValidationResult {
+        // Use the comprehensive validation function
+        InputValidator::validate_comprehensive_inputs(
+            env,
+            admin,
+            question,
+            outcomes,
+            duration_days,
+            oracle_config,
+        )
+    }
+
+    /// Validate market outcomes with comprehensive validation
     pub fn validate_outcomes(env: &Env, outcomes: &Vec<String>) -> Result<(), ValidationError> {
-        if outcomes.len() < config::MIN_MARKET_OUTCOMES {
-            return Err(ValidationError::InvalidOutcome);
+        // Validate array size
+        if let Err(_) = InputValidator::validate_array_size(outcomes, config::MAX_MARKET_OUTCOMES) {
+            return Err(ValidationError::ArrayTooSmall);
         }
 
-        if outcomes.len() > config::MAX_MARKET_OUTCOMES {
-            return Err(ValidationError::InvalidOutcome);
+        if (outcomes.len() as u32) < config::MIN_MARKET_OUTCOMES {
+            return Err(ValidationError::ArrayTooSmall);
         }
 
-        // Validate each outcome
+        // Validate each outcome format
         for outcome in outcomes.iter() {
-            if let Err(_) = InputValidator::validate_string(env, &outcome, 1, 100) {
-                return Err(ValidationError::InvalidOutcome);
+            if let Err(_) = InputValidator::validate_outcome_format(&outcome) {
+                return Err(ValidationError::InvalidOutcomeFormat);
             }
         }
 
@@ -376,18 +554,22 @@ impl MarketValidator {
 pub struct OracleValidator;
 
 impl OracleValidator {
-    /// Validate oracle configuration
+    /// Validate oracle configuration with comprehensive validation
     pub fn validate_oracle_config(
         env: &Env,
         oracle_config: &OracleConfig,
     ) -> Result<(), ValidationError> {
-        // Validate feed ID
-        if let Err(_) = InputValidator::validate_string(env, &oracle_config.feed_id, 1, 50) {
+        // Validate feed ID string length
+        if let Err(_) = InputValidator::validate_string_length(&oracle_config.feed_id, 50) {
             return Err(ValidationError::InvalidOracle);
         }
 
-        // Validate threshold
-        if let Err(_) = InputValidator::validate_positive_number(&oracle_config.threshold) {
+        // Validate threshold with numeric range
+        if let Err(_) = InputValidator::validate_numeric_range(
+            oracle_config.threshold,
+            1,
+            i128::MAX,
+        ) {
             return Err(ValidationError::InvalidOracle);
         }
 
@@ -459,30 +641,26 @@ impl OracleValidator {
 pub struct FeeValidator;
 
 impl FeeValidator {
-    /// Validate fee amount
+    /// Validate fee amount with comprehensive validation
     pub fn validate_fee_amount(amount: &i128) -> Result<(), ValidationError> {
-        if let Err(_) = InputValidator::validate_positive_number(amount) {
-            return Err(ValidationError::InvalidFee);
-        }
-
-        if *amount < config::MIN_FEE_AMOUNT {
-            return Err(ValidationError::InvalidFee);
-        }
-
-        if *amount > config::MAX_FEE_AMOUNT {
+        if let Err(_) = InputValidator::validate_numeric_range(
+            *amount,
+            config::MIN_FEE_AMOUNT,
+            config::MAX_FEE_AMOUNT,
+        ) {
             return Err(ValidationError::InvalidFee);
         }
 
         Ok(())
     }
 
-    /// Validate fee percentage
+    /// Validate fee percentage with comprehensive validation
     pub fn validate_fee_percentage(percentage: &i128) -> Result<(), ValidationError> {
-        if let Err(_) = InputValidator::validate_positive_number(percentage) {
-            return Err(ValidationError::InvalidFee);
-        }
-
-        if *percentage > 100 {
+        if let Err(_) = InputValidator::validate_numeric_range(
+            *percentage,
+            0,
+            100,
+        ) {
             return Err(ValidationError::InvalidFee);
         }
 
@@ -540,7 +718,7 @@ impl FeeValidator {
 pub struct VoteValidator;
 
 impl VoteValidator {
-    /// Validate vote parameters
+    /// Validate vote parameters with comprehensive validation
     pub fn validate_vote(
         env: &Env,
         user: &Address,
@@ -549,9 +727,9 @@ impl VoteValidator {
         stake_amount: &i128,
         market: &Market,
     ) -> Result<(), ValidationError> {
-        // Validate user address
-        if let Err(_) = InputValidator::validate_address(env, user) {
-            return Err(ValidationError::InvalidVote);
+        // Validate user address format
+        if let Err(_) = InputValidator::validate_address_format(user) {
+            return Err(ValidationError::InvalidAddressFormat);
         }
 
         // Validate market for voting
@@ -559,14 +737,23 @@ impl VoteValidator {
             return Err(ValidationError::InvalidVote);
         }
 
-        // Validate outcome
+        // Validate outcome format
+        if let Err(_) = InputValidator::validate_outcome_format(outcome) {
+            return Err(ValidationError::InvalidOutcomeFormat);
+        }
+
+        // Validate outcome against market outcomes
         if let Err(_) = Self::validate_outcome(env, outcome, &market.outcomes) {
             return Err(ValidationError::InvalidVote);
         }
 
-        // Validate stake amount
-        if let Err(_) = Self::validate_stake_amount(stake_amount) {
-            return Err(ValidationError::InvalidVote);
+        // Validate stake amount with numeric range
+        if let Err(_) = InputValidator::validate_numeric_range(
+            *stake_amount,
+            config::MIN_VOTE_STAKE,
+            i128::MAX,
+        ) {
+            return Err(ValidationError::InvalidStake);
         }
 
         // Check if user has already voted
@@ -616,7 +803,7 @@ impl VoteValidator {
 pub struct DisputeValidator;
 
 impl DisputeValidator {
-    /// Validate dispute creation
+    /// Validate dispute creation with comprehensive validation
     pub fn validate_dispute_creation(
         env: &Env,
         user: &Address,
@@ -624,25 +811,27 @@ impl DisputeValidator {
         dispute_stake: &i128,
         market: &Market,
     ) -> Result<(), ValidationError> {
-        // Validate user address
-        if let Err(_) = InputValidator::validate_address(env, user) {
-            return Err(ValidationError::InvalidDispute);
+        // Validate user address format
+        if let Err(_) = InputValidator::validate_address_format(user) {
+            return Err(ValidationError::InvalidAddressFormat);
         }
-
 
         // Validate market exists and is resolved
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
 
-
         if market.winning_outcome.is_none() {
             return Err(ValidationError::InvalidMarket);
         }
 
-        // Validate dispute stake
-        if let Err(_) = Self::validate_dispute_stake(dispute_stake) {
-            return Err(ValidationError::InvalidDispute);
+        // Validate dispute stake with numeric range
+        if let Err(_) = InputValidator::validate_numeric_range(
+            *dispute_stake,
+            config::MIN_DISPUTE_STAKE,
+            i128::MAX,
+        ) {
+            return Err(ValidationError::InvalidStake);
         }
 
         // Check if user has already disputed
@@ -653,17 +842,13 @@ impl DisputeValidator {
         Ok(())
     }
 
-    /// Validate dispute stake amount
+    /// Validate dispute stake amount with comprehensive validation
     pub fn validate_dispute_stake(stake_amount: &i128) -> Result<(), ValidationError> {
-        if let Err(_) = InputValidator::validate_positive_number(stake_amount) {
-            return Err(ValidationError::InvalidStake);
-        }
-
-        if *stake_amount < config::MIN_DISPUTE_STAKE {
-            return Err(ValidationError::InvalidStake);
-        }
-
-        Ok(())
+        InputValidator::validate_numeric_range(
+            *stake_amount,
+            config::MIN_DISPUTE_STAKE,
+            i128::MAX,
+        )
     }
 }
 
@@ -680,12 +865,12 @@ impl ConfigValidator {
         token_id: &Address,
     ) -> Result<(), ValidationError> {
         // Validate admin address
-        if let Err(_) = InputValidator::validate_address(env, admin) {
+        if let Err(_) = InputValidator::validate_address(admin, env) {
             return Err(ValidationError::InvalidConfig);
         }
 
         // Validate token address
-        if let Err(_) = InputValidator::validate_address(env, token_id) {
+        if let Err(_) = InputValidator::validate_address(token_id, env) {
             return Err(ValidationError::InvalidConfig);
         }
 
@@ -767,7 +952,7 @@ impl ComprehensiveValidator {
         let mut result = ValidationResult::valid();
 
         // Validate admin
-        if let Err(_) = InputValidator::validate_address(env, admin) {
+        if let Err(_) = InputValidator::validate_address(admin, env) {
             result.add_error();
         }
 
