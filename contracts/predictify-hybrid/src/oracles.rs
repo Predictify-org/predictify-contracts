@@ -516,7 +516,7 @@ impl OracleFactory {
         if !Self::is_provider_supported(&provider) {
             return Err(Error::InvalidOracleConfig);
         }
-        
+
         match provider {
             OracleProvider::Reflector => {
                 let oracle = ReflectorOracle::new(contract_id);

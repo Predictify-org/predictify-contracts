@@ -303,10 +303,12 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             // Test valid extension days
-            assert!(
-                ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 5)
-                    .is_err()
-            ); // Market doesn't exist
+            assert!(ExtensionValidator::validate_extension_conditions(
+                &env,
+                &symbol_short!("test"),
+                5
+            )
+            .is_err()); // Market doesn't exist
 
             // Test invalid extension days
             assert_eq!(

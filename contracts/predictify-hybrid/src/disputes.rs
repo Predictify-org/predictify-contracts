@@ -404,10 +404,8 @@ impl DisputeValidator {
 
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"));
+        let stored_admin: Option<Address> =
+            env.storage().persistent().get(&Symbol::new(env, "Admin"));
 
         match stored_admin {
             Some(stored_admin) => {
@@ -737,10 +735,10 @@ impl DisputeUtils {
     pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
         // This is a simplified implementation - in a real system you'd need to track all votes
         let votes = Vec::new(env);
-        
+
         // Get the voting data to access stored votes
         let _voting_data = Self::get_dispute_voting(env, dispute_id)?;
-        
+
         // In a real implementation, you would iterate through stored vote keys
         // For now, return empty vector as this would require tracking vote keys separately
         Ok(votes)
@@ -845,7 +843,6 @@ impl DisputeUtils {
         vote: bool,
         stake: i128,
     ) {
-
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
         let event_key = symbol_short!("vote_evt");
@@ -860,7 +857,6 @@ impl DisputeUtils {
         _dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) {
-
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
         let event_key = symbol_short!("fee_event");

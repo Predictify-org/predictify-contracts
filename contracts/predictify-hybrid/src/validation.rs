@@ -1,6 +1,5 @@
 #![allow(unused_variables)]
 
-
 extern crate alloc;
 
 use crate::{
@@ -9,7 +8,7 @@ use crate::{
     types::{Market, OracleConfig, OracleProvider},
 };
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec, IntoVal};
+use soroban_sdk::{contracttype, vec, Address, Env, IntoVal, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
 
@@ -142,10 +141,7 @@ pub struct InputValidator;
 
 impl InputValidator {
     /// Validate string length with specific limits
-    pub fn validate_string_length(
-        input: &String,
-        max_length: u32,
-    ) -> Result<(), ValidationError> {
+    pub fn validate_string_length(input: &String, max_length: u32) -> Result<(), ValidationError> {
         let length = input.len() as u32;
 
         if length == 0 {
@@ -178,16 +174,15 @@ impl InputValidator {
 
     /// Validate address format and validity
     pub fn validate_address_format(address: &Address) -> Result<(), ValidationError> {
-          //this is called, Soroban host performs the necessary
+        //this is called, Soroban host performs the necessary
         // authentication, manages replay prevention and enforces the user's
         // authorization policies.
-             address.require_auth();
+        address.require_auth();
 
         Ok(())
     }
 
-
-    pub fn validate_address(address: &Address , env: &Env) -> Result<(), ValidationError> {
+    pub fn validate_address(address: &Address, env: &Env) -> Result<(), ValidationError> {
         address.require_auth_for_args(vec![env, address.into_val(env)]);
         Ok(())
     }
@@ -210,10 +205,7 @@ impl InputValidator {
     }
 
     /// Validate array size limits
-    pub fn validate_array_size(
-        array: &Vec<String>,
-        max_size: u32,
-    ) -> Result<(), ValidationError> {
+    pub fn validate_array_size(array: &Vec<String>, max_size: u32) -> Result<(), ValidationError> {
         let size = array.len() as u32;
 
         if size == 0 {
@@ -263,12 +255,8 @@ impl InputValidator {
             return Err(ValidationError::InvalidOutcomeFormat);
         }
 
-     
-
         Ok(())
     }
-
-
 
     /// Validate string length and content
     pub fn validate_string(
@@ -463,12 +451,10 @@ impl MarketValidator {
         market: &Market,
         market_id: &Symbol,
     ) -> Result<(), ValidationError> {
-
         // Check if market exists
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
 
         // Check if market is still active
         let current_time = env.ledger().timestamp();
@@ -490,12 +476,10 @@ impl MarketValidator {
         market: &Market,
         market_id: &Symbol,
     ) -> Result<(), ValidationError> {
-
         // Check if market exists
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
 
         // Check if market has ended
         let current_time = env.ledger().timestamp();
@@ -522,12 +506,10 @@ impl MarketValidator {
         market: &Market,
         market_id: &Symbol,
     ) -> Result<(), ValidationError> {
-
         // Check if market exists
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
 
         // Check if market is resolved
         if market.winning_outcome.is_none() {
@@ -565,11 +547,9 @@ impl OracleValidator {
         }
 
         // Validate threshold with numeric range
-        if let Err(_) = InputValidator::validate_numeric_range(
-            oracle_config.threshold,
-            1,
-            i128::MAX,
-        ) {
+        if let Err(_) =
+            InputValidator::validate_numeric_range(oracle_config.threshold, 1, i128::MAX)
+        {
             return Err(ValidationError::InvalidOracle);
         }
 
@@ -619,12 +599,10 @@ impl OracleValidator {
         oracle_result: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), ValidationError> {
-
         // Check if oracle result is empty
         if oracle_result.is_empty() {
             return Err(ValidationError::InvalidOracle);
         }
-
 
         // Check if oracle result matches one of the market outcomes
         if !market_outcomes.contains(oracle_result) {
@@ -656,11 +634,7 @@ impl FeeValidator {
 
     /// Validate fee percentage with comprehensive validation
     pub fn validate_fee_percentage(percentage: &i128) -> Result<(), ValidationError> {
-        if let Err(_) = InputValidator::validate_numeric_range(
-            *percentage,
-            0,
-            100,
-        ) {
+        if let Err(_) = InputValidator::validate_numeric_range(*percentage, 0, 100) {
             return Err(ValidationError::InvalidFee);
         }
 
@@ -748,11 +722,9 @@ impl VoteValidator {
         }
 
         // Validate stake amount with numeric range
-        if let Err(_) = InputValidator::validate_numeric_range(
-            *stake_amount,
-            config::MIN_VOTE_STAKE,
-            i128::MAX,
-        ) {
+        if let Err(_) =
+            InputValidator::validate_numeric_range(*stake_amount, config::MIN_VOTE_STAKE, i128::MAX)
+        {
             return Err(ValidationError::InvalidStake);
         }
 
@@ -770,11 +742,9 @@ impl VoteValidator {
         outcome: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), ValidationError> {
-
         if outcome.is_empty() {
             return Err(ValidationError::InvalidOutcome);
         }
-
 
         if !market_outcomes.contains(outcome) {
             return Err(ValidationError::InvalidOutcome);
@@ -844,11 +814,7 @@ impl DisputeValidator {
 
     /// Validate dispute stake amount with comprehensive validation
     pub fn validate_dispute_stake(stake_amount: &i128) -> Result<(), ValidationError> {
-        InputValidator::validate_numeric_range(
-            *stake_amount,
-            config::MIN_DISPUTE_STAKE,
-            i128::MAX,
-        )
+        InputValidator::validate_numeric_range(*stake_amount, config::MIN_DISPUTE_STAKE, i128::MAX)
     }
 }
 

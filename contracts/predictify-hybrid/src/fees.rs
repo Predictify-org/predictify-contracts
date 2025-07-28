@@ -298,10 +298,8 @@ pub struct FeeValidator;
 impl FeeValidator {
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"));
+        let stored_admin: Option<Address> =
+            env.storage().persistent().get(&Symbol::new(env, "Admin"));
 
         match stored_admin {
             Some(stored_admin) => {
@@ -515,7 +513,6 @@ impl FeeTracker {
     /// Record creation fee
 
     pub fn record_creation_fee(env: &Env, _admin: &Address, amount: i128) -> Result<(), Error> {
-
         // Record creation fee in analytics
         let creation_key = symbol_short!("creat_fee");
         let current_total: i128 = env.storage().persistent().get(&creation_key).unwrap_or(0);

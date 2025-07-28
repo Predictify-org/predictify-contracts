@@ -2,11 +2,9 @@
 
 use crate::{
     errors::Error,
-
     markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
     types::Market,
 };
-
 
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
@@ -160,7 +158,6 @@ impl VotingManager {
         MarketStateManager::extend_for_dispute(&mut market, env, DISPUTE_EXTENSION_HOURS.into());
         MarketStateManager::update_market(env, &market_id, &market);
 
-
         Ok(())
     }
 
@@ -202,7 +199,6 @@ impl VotingManager {
         market_id: Symbol,
     ) -> Result<DisputeThreshold, Error> {
         let _market = MarketStateManager::get_market(env, &market_id)?;
-
 
         // Get adjustment factors
         let factors = ThresholdUtils::get_threshold_adjustment_factors(env, &market_id)?;
@@ -274,13 +270,12 @@ impl VotingManager {
 
         // Get market for updating
         let mut market = MarketStateManager::get_market(env, &market_id)?;
-        
+
         // Mark fees as collected
         MarketStateManager::mark_fees_collected(&mut market, Some(&market_id));
         MarketStateManager::update_market(env, &market_id, &market);
         Ok(new_threshold_data)
     }
-
 
     /// Get threshold history for a market
     pub fn get_threshold_history(
@@ -302,9 +297,7 @@ impl ThresholdUtils {
         env: &Env,
         market_id: &Symbol,
     ) -> Result<ThresholdAdjustmentFactors, Error> {
-
         let market = MarketStateManager::get_market(env, market_id)?;
-
 
         // Calculate market size factor
         let market_size_factor =
@@ -317,7 +310,6 @@ impl ThresholdUtils {
 
         // Calculate complexity factor (based on number of outcomes)
         let complexity_factor = Self::calculate_complexity_factor(&market)?;
-
 
         let total_adjustment = market_size_factor + activity_factor + complexity_factor;
 
@@ -335,9 +327,7 @@ impl ThresholdUtils {
         market_id: &Symbol,
         base_threshold: i128,
     ) -> Result<i128, Error> {
-
         let market = MarketStateManager::get_market(env, market_id)?;
-
 
         // For large markets, increase threshold
         if market.total_staked > LARGE_MARKET_THRESHOLD {
@@ -354,9 +344,7 @@ impl ThresholdUtils {
         market_id: &Symbol,
         activity_level: u32,
     ) -> Result<i128, Error> {
-
         let _market = MarketStateManager::get_market(env, market_id)?;
-
 
         // For high activity markets, increase threshold
         if activity_level > HIGH_ACTIVITY_THRESHOLD {
@@ -534,10 +522,8 @@ impl VotingValidator {
 
     /// Validate admin authentication and permissions
     pub fn validate_admin_authentication(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"));
+        let stored_admin: Option<Address> =
+            env.storage().persistent().get(&Symbol::new(env, "Admin"));
 
         match stored_admin {
             Some(stored_admin) => {
@@ -589,7 +575,6 @@ impl VotingValidator {
         market: &Market,
         user: &Address,
     ) -> Result<(), Error> {
-
         // Check if user has already claimed
         let claimed = market.claimed.get(user.clone()).unwrap_or(false);
         if claimed {
@@ -896,7 +881,6 @@ mod tests {
     use crate::types::{OracleConfig, OracleProvider};
     use soroban_sdk::{testutils::Address as _, vec};
 
-
     #[test]
     fn test_voting_validator_authentication() {
         let env = Env::default();
@@ -934,7 +918,7 @@ mod tests {
                 2500000,
                 String::from_str(&env, "gt"),
             ),
-            crate::types::MarketState::Active
+            crate::types::MarketState::Active,
         );
         market.total_staked = 100_000_000; // 10 XLM
 
@@ -961,7 +945,7 @@ mod tests {
                 2500000,
                 String::from_str(&env, "gt"),
             ),
-            crate::types::MarketState::Active
+            crate::types::MarketState::Active,
         );
 
         // Add some test votes
@@ -994,7 +978,7 @@ mod tests {
                 2500000,
                 String::from_str(&env, "gt"),
             ),
-            crate::types::MarketState::Active
+            crate::types::MarketState::Active,
         );
 
         let user = Address::generate(&env);
@@ -1020,4 +1004,3 @@ mod tests {
         assert!(testing::validate_voting_stats(&stats).is_ok());
     }
 }
-

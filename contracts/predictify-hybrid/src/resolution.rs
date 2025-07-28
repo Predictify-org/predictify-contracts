@@ -2,9 +2,7 @@ use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 
-use crate::markets::{
-    CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils,
-};
+use crate::markets::{CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils};
 
 use crate::oracles::{OracleFactory, OracleUtils};
 use crate::types::*;
@@ -386,10 +384,8 @@ impl MarketResolutionValidator {
 
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"));
+        let stored_admin: Option<Address> =
+            env.storage().persistent().get(&Symbol::new(env, "Admin"));
 
         match stored_admin {
             Some(stored_admin) => {
@@ -793,11 +789,10 @@ mod tests {
         assert!(ResolutionTesting::validate_resolution_structure(&market_resolution).is_ok());
     }
 
-
     #[test]
     fn test_resolution_method_determination() {
         let env = Env::default();
-        
+
         // Create test data
         let community_consensus = CommunityConsensus {
             outcome: String::from_str(&env, "yes"),

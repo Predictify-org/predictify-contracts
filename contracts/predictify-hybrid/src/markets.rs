@@ -22,7 +22,14 @@ pub struct MarketCreator;
 
 impl MarketCreator {
     /// Create a new market with full configuration
-    pub fn create_market(env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, oracle_config: OracleConfig) -> Result<Symbol, Error> {
+    pub fn create_market(
+        env: &Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        oracle_config: OracleConfig,
+    ) -> Result<Symbol, Error> {
         // Validate market parameters
         MarketValidator::validate_market_params(env, &question, &outcomes, duration_days)?;
 
@@ -36,11 +43,19 @@ impl MarketCreator {
         let end_time = MarketUtils::calculate_end_time(env, duration_days);
 
         // Create market instance
-        let market = Market::new(env, admin.clone(), question, outcomes, end_time, oracle_config, MarketState::Active);
-        
+        let market = Market::new(
+            env,
+            admin.clone(),
+            question,
+            outcomes,
+            end_time,
+            oracle_config,
+            MarketState::Active,
+        );
+
         // Process market creation fee
         MarketUtils::process_creation_fee(env, &admin)?;
-        
+
         // Store market
         env.storage().persistent().set(&market_id, &market);
 
@@ -48,7 +63,16 @@ impl MarketCreator {
     }
 
     /// Create a market with Reflector oracle
-    pub fn create_reflector_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, asset_symbol: String, threshold: i128, comparison: String) -> Result<Symbol, Error> {
+    pub fn create_reflector_market(
+        _env: &Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        asset_symbol: String,
+        threshold: i128,
+        comparison: String,
+    ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Reflector,
             feed_id: asset_symbol,
@@ -56,11 +80,27 @@ impl MarketCreator {
             comparison,
         };
 
-        Self::create_market(_env, admin, question, outcomes, duration_days, oracle_config)
+        Self::create_market(
+            _env,
+            admin,
+            question,
+            outcomes,
+            duration_days,
+            oracle_config,
+        )
     }
 
     /// Create a market with Pyth oracle
-    pub fn create_pyth_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, feed_id: String, threshold: i128, comparison: String) -> Result<Symbol, Error> {
+    pub fn create_pyth_market(
+        _env: &Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        feed_id: String,
+        threshold: i128,
+        comparison: String,
+    ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Pyth,
             feed_id,
@@ -68,12 +108,37 @@ impl MarketCreator {
             comparison,
         };
 
-        Self::create_market(_env, admin, question, outcomes, duration_days, oracle_config)
+        Self::create_market(
+            _env,
+            admin,
+            question,
+            outcomes,
+            duration_days,
+            oracle_config,
+        )
     }
 
     /// Create a market with Reflector oracle for specific assets
-    pub fn create_reflector_asset_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, asset_symbol: String, threshold: i128, comparison: String) -> Result<Symbol, Error> {
-        Self::create_reflector_market(_env, admin, question, outcomes, duration_days, asset_symbol, threshold, comparison)
+    pub fn create_reflector_asset_market(
+        _env: &Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        asset_symbol: String,
+        threshold: i128,
+        comparison: String,
+    ) -> Result<Symbol, Error> {
+        Self::create_reflector_market(
+            _env,
+            admin,
+            question,
+            outcomes,
+            duration_days,
+            asset_symbol,
+            threshold,
+            comparison,
+        )
     }
 }
 
@@ -91,7 +156,6 @@ impl MarketValidator {
         outcomes: &Vec<String>,
         duration_days: u32,
     ) -> Result<(), Error> {
-
         // Validate question is not empty
         if question.is_empty() {
             return Err(Error::InvalidQuestion);
@@ -153,13 +217,11 @@ impl MarketValidator {
 
     /// Validate outcome for a market
 
-
     pub fn validate_outcome(
         _env: &Env,
         outcome: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), Error> {
-
         for valid_outcome in market_outcomes.iter() {
             if *outcome == valid_outcome {
                 return Ok(());
@@ -219,7 +281,13 @@ impl MarketStateManager {
     }
 
     /// Add vote to market
-    pub fn add_vote(market: &mut Market, user: Address, outcome: String, stake: i128, _market_id: Option<&Symbol>) {
+    pub fn add_vote(
+        market: &mut Market,
+        user: Address,
+        outcome: String,
+        stake: i128,
+        _market_id: Option<&Symbol>,
+    ) {
         MarketStateLogic::check_function_access_for_state("vote", market.state).unwrap();
         market.votes.set(user.clone(), outcome);
         market.stakes.set(user.clone(), stake);
@@ -228,18 +296,31 @@ impl MarketStateManager {
     }
 
     /// Add dispute stake to market
-    pub fn add_dispute_stake(market: &mut Market, user: Address, stake: i128, market_id: Option<&Symbol>) {
+    pub fn add_dispute_stake(
+        market: &mut Market,
+        user: Address,
+        stake: i128,
+        market_id: Option<&Symbol>,
+    ) {
         MarketStateLogic::check_function_access_for_state("dispute", market.state).unwrap();
         let existing_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
         market.dispute_stakes.set(user, existing_stake + stake);
         // State transition: Ended -> Disputed
         if market.state == MarketState::Ended {
-            MarketStateLogic::validate_state_transition(market.state, MarketState::Disputed).unwrap();
+            MarketStateLogic::validate_state_transition(market.state, MarketState::Disputed)
+                .unwrap();
             let old_state = market.state;
             market.state = MarketState::Disputed;
             let env = &market.votes.env();
-            let owned_event_id = market_id.cloned().unwrap_or_else(|| Symbol::new(env, "unknown_market_id"));
-            MarketStateLogic::emit_state_change_event(env, &owned_event_id, old_state, market.state);
+            let owned_event_id = market_id
+                .cloned()
+                .unwrap_or_else(|| Symbol::new(env, "unknown_market_id"));
+            MarketStateLogic::emit_state_change_event(
+                env,
+                &owned_event_id,
+                old_state,
+                market.state,
+            );
         }
     }
 
@@ -261,11 +342,19 @@ impl MarketStateManager {
         market.winning_outcome = Some(outcome);
         // State transition: Ended/Disputed -> Resolved
         if market.state == MarketState::Ended || market.state == MarketState::Disputed {
-            MarketStateLogic::validate_state_transition(market.state, MarketState::Resolved).unwrap();
+            MarketStateLogic::validate_state_transition(market.state, MarketState::Resolved)
+                .unwrap();
             market.state = MarketState::Resolved;
             let env = &market.votes.env();
-            let owned_event_id = market_id.cloned().unwrap_or_else(|| Symbol::new(env, "unknown_market_id"));
-            MarketStateLogic::emit_state_change_event(env, &owned_event_id, old_state, market.state);
+            let owned_event_id = market_id
+                .cloned()
+                .unwrap_or_else(|| Symbol::new(env, "unknown_market_id"));
+            MarketStateLogic::emit_state_change_event(
+                env,
+                &owned_event_id,
+                old_state,
+                market.state,
+            );
         }
     }
 
@@ -278,8 +367,15 @@ impl MarketStateManager {
             MarketStateLogic::validate_state_transition(market.state, MarketState::Closed).unwrap();
             market.state = MarketState::Closed;
             let env = &market.votes.env();
-            let owned_event_id = market_id.cloned().unwrap_or_else(|| Symbol::new(env, "unknown_market_id"));
-            MarketStateLogic::emit_state_change_event(env, &owned_event_id, old_state, market.state);
+            let owned_event_id = market_id
+                .cloned()
+                .unwrap_or_else(|| Symbol::new(env, "unknown_market_id"));
+            MarketStateLogic::emit_state_change_event(
+                env,
+                &owned_event_id,
+                old_state,
+                market.state,
+            );
         }
         market.fee_collected = true;
     }
@@ -393,7 +489,7 @@ impl MarketAnalytics {
             percentage: consensus_percentage,
         }
     }
-    
+
     /// Calculate basic analytics for a market
     pub fn calculate_basic_analytics(_market: &Market) -> MarketAnalytics {
         // This is a placeholder implementation
@@ -568,7 +664,14 @@ impl MarketTestHelpers {
     pub fn create_test_market(_env: &Env) -> Result<Symbol, Error> {
         let config = Self::create_test_market_config(_env);
 
-        MarketCreator::create_market(_env, config.admin, config.question, config.outcomes, config.duration_days, config.oracle_config)
+        MarketCreator::create_market(
+            _env,
+            config.admin,
+            config.question,
+            config.outcomes,
+            config.duration_days,
+            config.oracle_config,
+        )
     }
 
     /// Add test vote to market
@@ -592,7 +695,6 @@ impl MarketTestHelpers {
         // Add vote
         MarketStateManager::add_vote(&mut market, user, outcome, stake, None);
         MarketStateManager::update_market(env, market_id, &market);
-
 
         Ok(())
     }
@@ -649,7 +751,10 @@ impl MarketStateLogic {
     }
 
     /// Check if a function is allowed in the given state
-    pub fn check_function_access_for_state(function: &str, state: MarketState) -> Result<(), Error> {
+    pub fn check_function_access_for_state(
+        function: &str,
+        state: MarketState,
+    ) -> Result<(), Error> {
         use MarketState::*;
         let allowed = match function {
             "vote" => matches!(state, Active),
@@ -667,8 +772,14 @@ impl MarketStateLogic {
     }
 
     /// Emit a state change event (placeholder: use env.events().publish)
-    pub fn emit_state_change_event(env: &Env, market_id: &Symbol, old_state: MarketState, new_state: MarketState) {
-        env.events().publish(("market_state_change", market_id), (old_state, new_state));
+    pub fn emit_state_change_event(
+        env: &Env,
+        market_id: &Symbol,
+        old_state: MarketState,
+        new_state: MarketState,
+    ) {
+        env.events()
+            .publish(("market_state_change", market_id), (old_state, new_state));
     }
 
     /// Validate that the market's state is consistent with its data
@@ -714,7 +825,11 @@ impl MarketStateLogic {
     }
 
     /// Check if a market can transition to a target state
-    pub fn can_transition_to_state(env: &Env, market_id: &Symbol, target_state: MarketState) -> Result<bool, Error> {
+    pub fn can_transition_to_state(
+        env: &Env,
+        market_id: &Symbol,
+        target_state: MarketState,
+    ) -> Result<bool, Error> {
         let market = MarketStateManager::get_market(env, market_id)?;
         Ok(MarketStateLogic::validate_state_transition(market.state, target_state).is_ok())
     }
