@@ -90,6 +90,24 @@ pub enum Error {
     ExtensionFeeInsufficient = 419,
     /// Admin address is not set (initialization missing)
     AdminNotSet = 420,
+
+    // ===== AUDIT SYSTEM ERRORS =====
+    /// Audit not initialized
+    AuditNotInitialized = 500,
+    /// Audit item not found
+    AuditItemNotFound = 501,
+    /// Audit already completed
+    AuditAlreadyCompleted = 502,
+    /// Audit requirements not met
+    AuditRequirementsNotMet = 503,
+    /// Invalid audit category
+    InvalidAuditCategory = 504,
+    /// Invalid audit priority
+    InvalidAuditPriority = 505,
+    /// Audit permission denied
+    AuditPermissionDenied = 506,
+    /// Audit validation failed
+    AuditValidationFailed = 507,
 }
 
 impl Error {
@@ -134,6 +152,14 @@ impl Error {
             Error::MarketExtensionNotAllowed => "Market extension not allowed",
             Error::ExtensionFeeInsufficient => "Extension fee insufficient",
             Error::AdminNotSet => "Admin address is not set (initialization missing)",
+            Error::AuditNotInitialized => "Audit system is not initialized",
+            Error::AuditItemNotFound => "Audit item not found",
+            Error::AuditAlreadyCompleted => "Audit is already completed",
+            Error::AuditRequirementsNotMet => "Audit requirements not met for deployment",
+            Error::InvalidAuditCategory => "Invalid audit category",
+            Error::InvalidAuditPriority => "Invalid audit priority",
+            Error::AuditPermissionDenied => "Permission denied for audit operation",
+            Error::AuditValidationFailed => "Audit validation failed",
         }
     }
 
@@ -178,6 +204,14 @@ impl Error {
             Error::MarketExtensionNotAllowed => "MARKET_EXTENSION_NOT_ALLOWED",
             Error::ExtensionFeeInsufficient => "EXTENSION_FEE_INSUFFICIENT",
             Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::AuditNotInitialized => "AUDIT_NOT_INITIALIZED",
+            Error::AuditItemNotFound => "AUDIT_ITEM_NOT_FOUND",
+            Error::AuditAlreadyCompleted => "AUDIT_ALREADY_COMPLETED",
+            Error::AuditRequirementsNotMet => "AUDIT_REQUIREMENTS_NOT_MET",
+            Error::InvalidAuditCategory => "INVALID_AUDIT_CATEGORY",
+            Error::InvalidAuditPriority => "INVALID_AUDIT_PRIORITY",
+            Error::AuditPermissionDenied => "AUDIT_PERMISSION_DENIED",
+            Error::AuditValidationFailed => "AUDIT_VALIDATION_FAILED",
         }
     }
 }
