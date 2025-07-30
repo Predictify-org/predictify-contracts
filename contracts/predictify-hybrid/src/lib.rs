@@ -22,6 +22,9 @@ mod utils;
 mod validation;
 mod voting;
 
+#[cfg(test)]
+mod integration_test;
+
 // Re-export commonly used items
 pub use errors::Error;
 pub use types::*;
@@ -30,6 +33,7 @@ use admin::AdminInitializer;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
 };
+use alloc::format;
 
 #[contract]
 pub struct PredictifyHybrid;
@@ -182,7 +186,7 @@ impl PredictifyHybrid {
         let new_counter = counter + 1;
         env.storage().persistent().set(&counter_key, &new_counter);
 
-        let market_id = Symbol::new(&env, "market");
+        let market_id = Symbol::new(&env, &format!("market_{}", new_counter));
 
         // Calculate end time
         let seconds_per_day: u64 = 24 * 60 * 60;
@@ -575,8 +579,9 @@ impl PredictifyHybrid {
 
 
 
-        // Set winning outcome
+        // Set winning outcome and update state
         market.winning_outcome = Some(winning_outcome);
+        market.state = MarketState::Resolved;
         env.storage().persistent().set(&market_id, &market);
     }
     
@@ -917,6 +922,103 @@ impl PredictifyHybrid {
         let stats = markets::MarketAnalytics::get_market_stats(&market);
         
         Ok(stats)
+    }
+
+    /// Dispute a market resolution
+    pub fn dispute_market(
+        env: Env,
+        user: Address,
+        market_id: Symbol,
+        stake: i128,
+        reason: Option<String>,
+    ) -> Result<(), Error> {
+        user.require_auth();
+        disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
+    }
+
+    /// Vote on a dispute
+    pub fn vote_on_dispute(
+        env: Env,
+        user: Address,
+        market_id: Symbol,
+        dispute_id: Symbol,
+        vote: bool,
+        stake: i128,
+        reason: Option<String>,
+    ) -> Result<(), Error> {
+        user.require_auth();
+        disputes::DisputeManager::vote_on_dispute(&env, user, market_id, dispute_id, vote, stake, reason)
+    }
+
+    /// Resolve a dispute (admin only)
+    pub fn resolve_dispute(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<disputes::DisputeResolution, Error> {
+        admin.require_auth();
+        
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| {
+                panic_with_error!(env, Error::Unauthorized);
+            });
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
+    }
+
+    /// Collect fees from a market (admin only)
+    pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
+        admin.require_auth();
+        
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| {
+                panic_with_error!(env, Error::Unauthorized);
+            });
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        fees::FeeManager::collect_fees(&env, admin, market_id)
+    }
+
+    /// Extend market duration (admin only)
+    pub fn extend_market(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        additional_days: u32,
+        reason: String,
+        fee_amount: i128,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| {
+                panic_with_error!(env, Error::Unauthorized);
+            });
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        extensions::ExtensionManager::extend_market_duration(&env, admin, market_id, additional_days, reason)
     }
 }
 
