@@ -304,6 +304,38 @@ pub struct ConfigInitializedEvent {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeInitiatedEvent {
+    pub upgrade_id: String,
+    pub admin: Address,
+    pub from_version: crate::upgrade::ContractVersion,
+    pub to_version: crate::upgrade::ContractVersion,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeCompletedEvent {
+    pub upgrade_id: String,
+    pub admin: Address,
+    pub new_version: crate::upgrade::ContractVersion,
+    pub success: bool,
+    pub duration_seconds: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RollbackExecutedEvent {
+    pub rollback_id: String,
+    pub admin: Address,
+    pub from_version: crate::upgrade::ContractVersion,
+    pub to_version: crate::upgrade::ContractVersion,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Event emission utilities
@@ -621,6 +653,67 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_final"), &event);
+    }
+
+    /// Emit upgrade initiated event
+    pub fn emit_upgrade_initiated(
+        env: &Env,
+        upgrade_id: &String,
+        admin: &Address,
+        from_version: &crate::upgrade::ContractVersion,
+        to_version: &crate::upgrade::ContractVersion,
+    ) {
+        let event = UpgradeInitiatedEvent {
+            upgrade_id: upgrade_id.clone(),
+            admin: admin.clone(),
+            from_version: from_version.clone(),
+            to_version: to_version.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("upg_init"), &event);
+    }
+
+    /// Emit upgrade completed event
+    pub fn emit_upgrade_completed(
+        env: &Env,
+        upgrade_id: &String,
+        admin: &Address,
+        new_version: &crate::upgrade::ContractVersion,
+        success: bool,
+        duration_seconds: u64,
+    ) {
+        let event = UpgradeCompletedEvent {
+            upgrade_id: upgrade_id.clone(),
+            admin: admin.clone(),
+            new_version: new_version.clone(),
+            success,
+            duration_seconds,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("upg_comp"), &event);
+    }
+
+    /// Emit rollback executed event
+    pub fn emit_rollback_executed(
+        env: &Env,
+        rollback_id: &String,
+        admin: &Address,
+        from_version: &crate::upgrade::ContractVersion,
+        to_version: &crate::upgrade::ContractVersion,
+        reason: &String,
+    ) {
+        let event = RollbackExecutedEvent {
+            rollback_id: rollback_id.clone(),
+            admin: admin.clone(),
+            from_version: from_version.clone(),
+            to_version: to_version.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("rbk_exec"), &event);
     }
 
     /// Store event in persistent storage

@@ -80,6 +80,10 @@ use validation::{
     ValidationDocumentation, ValidationResult, VoteValidator as ValidationVoteValidator,
 };
 
+// Upgrade module
+pub mod upgrade;
+use upgrade::{UpgradeManager, UpgradeValidator, RollbackManager};
+
 #[contract]
 pub struct PredictifyHybrid;
 
@@ -1300,6 +1304,59 @@ impl PredictifyHybrid {
     /// Test validation utilities
     pub fn test_validation_utilities(env: Env) -> ValidationResult {
         validation::ValidationTestingUtils::create_test_validation_result(&env)
+    }
+
+    // ===== UPGRADE MANAGEMENT METHODS =====
+    pub fn upgrade_contract(env: Env, new_contract: Address, admin: Address) -> upgrade::UpgradeData {
+        match UpgradeManager::upgrade_contract(&env, new_contract, admin) {
+            Ok(data) => data,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    pub fn get_contract_version(env: Env) -> upgrade::ContractVersion {
+        UpgradeManager::get_contract_version(&env).unwrap_or_else(|e| panic_with_error!(env, e))
+    }
+
+    pub fn set_contract_version(env: Env, version: upgrade::ContractVersion) {
+        UpgradeManager::set_contract_version(&env, version).unwrap_or_else(|e| panic_with_error!(env, e));
+    }
+
+    pub fn get_upgrade_history(env: Env) -> Vec<upgrade::UpgradeData> {
+        UpgradeManager::get_upgrade_history(&env)
+    }
+
+    pub fn is_upgrade_in_progress(env: Env) -> bool {
+        UpgradeManager::is_upgrade_in_progress(&env)
+    }
+
+    pub fn validate_upgrade_compatibility(
+        env: Env,
+        old_version: upgrade::ContractVersion,
+        new_version: upgrade::ContractVersion,
+    ) -> upgrade::CompatibilityReport {
+        UpgradeValidator::validate_upgrade_compatibility(&env, &old_version, &new_version)
+            .unwrap_or_else(|e| panic_with_error!(env, e))
+    }
+
+    pub fn validate_upgrade_safety(env: Env, upgrade: upgrade::UpgradeData) -> upgrade::SafetyReport {
+        UpgradeValidator::validate_upgrade_safety(&env, &upgrade).unwrap_or_else(|e| panic_with_error!(env, e))
+    }
+
+    pub fn test_upgrade_compatibility(env: Env, new_contract: Address) -> upgrade::TestResults {
+        UpgradeValidator::test_upgrade_compatibility(&env, new_contract).unwrap_or_else(|e| panic_with_error!(env, e))
+    }
+
+    pub fn rollback_upgrade(env: Env, admin: Address, reason: String) -> upgrade::RollbackData {
+        RollbackManager::rollback_upgrade(&env, admin, reason).unwrap_or_else(|e| panic_with_error!(env, e))
+    }
+
+    pub fn validate_rollback_conditions(env: Env) {
+        RollbackManager::validate_rollback_conditions(&env).unwrap_or_else(|e| panic_with_error!(env, e));
+    }
+
+    pub fn emergency_rollback(env: Env, admin: Address, reason: String) -> upgrade::RollbackData {
+        RollbackManager::emergency_rollback(&env, admin, reason).unwrap_or_else(|e| panic_with_error!(env, e))
     }
 }
 mod test;
