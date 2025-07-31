@@ -2,10 +2,9 @@ extern crate alloc;
 
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
-
-
 use crate::errors::Error;
 use crate::config::Environment;
+use crate::upgrade::ContractVersion;
 
 // Define AdminRole locally since it's not available in the crate root
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -310,6 +309,56 @@ pub struct ConfigInitializedEvent {
     /// Environment
     pub environment: String,
     /// Initialization timestamp
+    pub timestamp: u64,
+}
+
+// Upgrade Initiated Event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeInitiatedEvent {
+    /// Upgrade ID
+    pub upgrade_id: String,
+    /// Admin address
+    pub admin: Address,
+    /// Contract from version
+    pub from_version: ContractVersion,
+    /// Contract to version
+    pub to_version: ContractVersion,
+    /// Timestamp
+    pub timestamp: u64,
+}
+
+// Upgrade Completed Event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeCompletedEvent {
+    /// Upgrade ID
+    pub upgrade_id: String,
+    /// Admin address
+    pub admin: Address,
+    /// Contract new version
+    pub new_version: ContractVersion,
+    /// Success status
+    pub success: bool,
+    /// Upgrade duration
+    pub duration_seconds: u64,
+    /// Timestamp
+    pub timestamp: u64,
+}
+
+// Rollback Executed Event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RollbackExecutedEvent {
+    /// Rollback ID
+    pub rollback_id: String,
+    /// Admin address
+    pub admin: Address,
+    /// Contract from version
+    pub from_version: ContractVersion,
+    /// Contract to version
+    pub to_version: ContractVersion,
+    pub reason: String,
     pub timestamp: u64,
 }
 
@@ -661,6 +710,67 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_final"), &event);
+    }
+
+    /// Emit upgrade initiated event
+    pub fn emit_upgrade_initiated(
+        env: &Env,
+        upgrade_id: &String,
+        admin: &Address,
+        from_version: &crate::upgrade::ContractVersion,
+        to_version: &crate::upgrade::ContractVersion,
+    ) {
+        let event = UpgradeInitiatedEvent {
+            upgrade_id: upgrade_id.clone(),
+            admin: admin.clone(),
+            from_version: from_version.clone(),
+            to_version: to_version.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("upg_init"), &event);
+    }
+
+    /// Emit upgrade completed event
+    pub fn emit_upgrade_completed(
+        env: &Env,
+        upgrade_id: &String,
+        admin: &Address,
+        new_version: &crate::upgrade::ContractVersion,
+        success: bool,
+        duration_seconds: u64,
+    ) {
+        let event = UpgradeCompletedEvent {
+            upgrade_id: upgrade_id.clone(),
+            admin: admin.clone(),
+            new_version: new_version.clone(),
+            success,
+            duration_seconds,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("upg_comp"), &event);
+    }
+
+    /// Emit rollback executed event
+    pub fn emit_rollback_executed(
+        env: &Env,
+        rollback_id: &String,
+        admin: &Address,
+        from_version: &crate::upgrade::ContractVersion,
+        to_version: &crate::upgrade::ContractVersion,
+        reason: &String,
+    ) {
+        let event = RollbackExecutedEvent {
+            rollback_id: rollback_id.clone(),
+            admin: admin.clone(),
+            from_version: from_version.clone(),
+            to_version: to_version.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("rbk_exec"), &event);
     }
 
     /// Store event in persistent storage
