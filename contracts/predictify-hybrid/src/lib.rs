@@ -18,6 +18,7 @@ mod markets;
 mod oracles;
 mod resolution;
 mod types;
+mod upgrade;
 mod utils;
 mod validation;
 mod voting;
