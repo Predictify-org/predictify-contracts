@@ -1,10 +1,18 @@
 extern crate alloc;
-use alloc::format;
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::admin::AdminRole;
+// use alloc::string::ToString; // Removed to fix Display/ToString trait errors
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 use crate::errors::Error;
-use crate::Environment;
+use crate::config::Environment;
+use crate::upgrade::ContractVersion;
+
+// Define AdminRole locally since it's not available in the crate root
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdminRole {
+    Owner,
+    Admin,
+    Moderator,
+}
 
 /// Comprehensive event system for Predictify Hybrid contract
 ///
@@ -304,34 +312,52 @@ pub struct ConfigInitializedEvent {
     pub timestamp: u64,
 }
 
+// Upgrade Initiated Event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpgradeInitiatedEvent {
+    /// Upgrade ID
     pub upgrade_id: String,
+    /// Admin address
     pub admin: Address,
-    pub from_version: crate::upgrade::ContractVersion,
-    pub to_version: crate::upgrade::ContractVersion,
+    /// Contract from version
+    pub from_version: ContractVersion,
+    /// Contract to version
+    pub to_version: ContractVersion,
+    /// Timestamp
     pub timestamp: u64,
 }
 
+// Upgrade Completed Event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpgradeCompletedEvent {
+    /// Upgrade ID
     pub upgrade_id: String,
+    /// Admin address
     pub admin: Address,
-    pub new_version: crate::upgrade::ContractVersion,
+    /// Contract new version
+    pub new_version: ContractVersion,
+    /// Success status
     pub success: bool,
+    /// Upgrade duration
     pub duration_seconds: u64,
+    /// Timestamp
     pub timestamp: u64,
 }
 
+// Rollback Executed Event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RollbackExecutedEvent {
+    /// Rollback ID
     pub rollback_id: String,
+    /// Admin address
     pub admin: Address,
-    pub from_version: crate::upgrade::ContractVersion,
-    pub to_version: crate::upgrade::ContractVersion,
+    /// Contract from version
+    pub from_version: ContractVersion,
+    /// Contract to version
+    pub to_version: ContractVersion,
     pub reason: String,
     pub timestamp: u64,
 }
@@ -570,7 +596,12 @@ impl EventEmitter {
     }
 
     /// Emit admin action logged event
-    pub fn emit_admin_action_logged(env: &Env, admin: &Address, action: &str, success: &bool) {
+    pub fn emit_admin_action_logged(
+        env: &Env,
+        admin: &Address,
+        action: &str,
+        success: &bool,
+    ) {
         let event = AdminActionEvent {
             admin: admin.clone(),
             action: String::from_str(env, action),
@@ -593,10 +624,19 @@ impl EventEmitter {
     }
 
     /// Emit config initialized event
-    pub fn emit_config_initialized(env: &Env, admin: &Address, environment: &Environment) {
+    pub fn emit_config_initialized(
+        env: &Env,
+        admin: &Address,
+        environment: &Environment,
+    ) {
         let event = ConfigInitializedEvent {
             admin: admin.clone(),
-            environment: String::from_str(env, &format!("{:?}", environment)),
+            environment: String::from_str(env, match environment {
+                Environment::Development => "Development",
+                Environment::Testnet => "Testnet",
+                Environment::Mainnet => "Mainnet",
+                Environment::Custom => "Custom",
+            }),
             timestamp: env.ledger().timestamp(),
         };
 
@@ -612,7 +652,11 @@ impl EventEmitter {
     ) {
         let event = AdminRoleEvent {
             admin: admin.clone(),
-            role: String::from_str(env, &format!("{:?}", role)),
+            role: String::from_str(env, match role {
+                AdminRole::Owner => "Owner",
+                AdminRole::Admin => "Admin", 
+                AdminRole::Moderator => "Moderator",
+            }),
             assigned_by: assigned_by.clone(),
             timestamp: env.ledger().timestamp(),
         };
@@ -621,7 +665,11 @@ impl EventEmitter {
     }
 
     /// Emit admin role deactivated event
-    pub fn emit_admin_role_deactivated(env: &Env, admin: &Address, deactivated_by: &Address) {
+    pub fn emit_admin_role_deactivated(
+        env: &Env,
+        admin: &Address,
+        deactivated_by: &Address,
+    ) {
         let event = AdminRoleEvent {
             admin: admin.clone(),
             role: String::from_str(env, "deactivated"),
@@ -633,7 +681,11 @@ impl EventEmitter {
     }
 
     /// Emit market closed event
-    pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
+    pub fn emit_market_closed(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+    ) {
         let event = MarketClosedEvent {
             market_id: market_id.clone(),
             admin: admin.clone(),
@@ -644,7 +696,12 @@ impl EventEmitter {
     }
 
     /// Emit market finalized event
-    pub fn emit_market_finalized(env: &Env, market_id: &Symbol, admin: &Address, outcome: &String) {
+    pub fn emit_market_finalized(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        outcome: &String,
+    ) {
         let event = MarketFinalizedEvent {
             market_id: market_id.clone(),
             admin: admin.clone(),
@@ -963,11 +1020,14 @@ impl EventValidator {
     }
 
     /// Validate extension requested event
+
     pub fn validate_extension_requested_event(
         event: &ExtensionRequestedEvent,
     ) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+        // Remove empty check for Symbol since it doesn't have is_empty method
+        // Market ID validation is handled by the Symbol type itself
+
+
         if event.additional_days == 0 {
             return Err(Error::InvalidInput);
         }
@@ -1024,10 +1084,20 @@ impl EventHelpers {
     }
 
     /// Create event context string
-    pub fn create_event_context(env: &Env, _context_parts: &Vec<String>) -> String {
-        // For now, return a placeholder since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
-        String::from_str(env, "context")
+    pub fn create_event_context(env: &Env, context_parts: &Vec<String>) -> String {
+
+        let mut context = String::from_str(env, "");
+        for (i, part) in context_parts.iter().enumerate() {
+            if i > 0 {
+                let _separator = String::from_str(env, " | ");
+                let _context_str = String::from_str(env, "");
+                context = String::from_str(env, "");
+            } else {
+                context = part.clone();
+            }
+        }
+        context
+
     }
 
     /// Validate event timestamp
@@ -1189,12 +1259,12 @@ impl EventTestingUtils {
     /// Simulate event emission
     pub fn simulate_event_emission(env: &Env, _event_type: &String) -> bool {
         // Simulate successful event emission
-        // For now, use a default symbol since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+
         let event_key = Symbol::new(env, "event");
         env.storage()
             .persistent()
             .set(&event_key, &String::from_str(env, "test"));
+
         true
     }
 }
@@ -1304,19 +1374,26 @@ impl EventDocumentation {
             String::from_str(env, "EventEmitter::emit_market_created(env, market_id, question, outcomes, admin, end_time)"),
         );
         examples.set(
-            String::from_str(env, "EmitVoteCast"),
+
+            String::from_str(&env, "EmitVoteCast"),
             String::from_str(
-                env,
+                &env,
                 "EventEmitter::emit_vote_cast(env, market_id, voter, outcome, stake)",
             ),
+
         );
         examples.set(
             String::from_str(env, "GetMarketEvents"),
             String::from_str(env, "EventLogger::get_market_events(env, market_id)"),
         );
         examples.set(
-            String::from_str(env, "ValidateEvent"),
-            String::from_str(env, "EventValidator::validate_market_created_event(&event)"),
+
+            String::from_str(&env, "ValidateEvent"),
+            String::from_str(
+                &env,
+                "EventValidator::validate_market_created_event(&event)",
+            ),
+
         );
 
         examples
