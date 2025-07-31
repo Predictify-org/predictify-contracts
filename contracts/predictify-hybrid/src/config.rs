@@ -805,7 +805,6 @@ impl ConfigTesting {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_config_manager_default_configs() {
@@ -877,25 +876,22 @@ mod tests {
     #[test]
     fn test_config_storage() {
         let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
         let config = ConfigManager::get_development_config(&env);
 
-        env.as_contract(&contract_id, || {
-            // Test storage and retrieval
-            assert!(ConfigManager::store_config(&env, &config).is_ok());
-            let retrieved_config = ConfigManager::get_config(&env).unwrap();
-            assert_eq!(
-                retrieved_config.fees.platform_fee_percentage,
-                config.fees.platform_fee_percentage
-            );
+        // Test storage and retrieval
+        assert!(ConfigManager::store_config(&env, &config).is_ok());
+        let retrieved_config = ConfigManager::get_config(&env).unwrap();
+        assert_eq!(
+            retrieved_config.fees.platform_fee_percentage,
+            config.fees.platform_fee_percentage
+        );
 
-            // Test reset to defaults
-            let reset_config = ConfigManager::reset_to_defaults(&env).unwrap();
-            assert_eq!(
-                reset_config.fees.platform_fee_percentage,
-                DEFAULT_PLATFORM_FEE_PERCENTAGE
-            );
-        });
+        // Test reset to defaults
+        let reset_config = ConfigManager::reset_to_defaults(&env).unwrap();
+        assert_eq!(
+            reset_config.fees.platform_fee_percentage,
+            DEFAULT_PLATFORM_FEE_PERCENTAGE
+        );
     }
 
     #[test]

@@ -18,6 +18,7 @@ mod markets;
 mod oracles;
 mod resolution;
 mod types;
+mod upgrade;
 mod utils;
 mod validation;
 mod voting;
@@ -30,6 +31,7 @@ use admin::AdminInitializer;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
 };
+use upgrade::{UpgradeManager, UpgradeValidator, RollbackManager};
 
 #[contract]
 pub struct PredictifyHybrid;
@@ -122,7 +124,6 @@ impl PredictifyHybrid {
 
         market_id
     }
-
 
     // Allows users to vote on a market outcome by staking tokens
     pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
@@ -322,6 +323,67 @@ impl PredictifyHybrid {
         let stats = markets::MarketAnalytics::get_market_stats(&market);
         
         Ok(stats)
+    }
+
+    // ===== UPGRADE MANAGEMENT METHODS =====
+    pub fn upgrade_contract(env: Env, new_contract: Address, admin: Address) -> upgrade::UpgradeData {
+        match UpgradeManager::upgrade_contract(&env, new_contract, admin) {
+            Ok(data) => data,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    pub fn get_contract_version(env: Env) -> upgrade::ContractVersion {
+        UpgradeManager::get_contract_version(&env).unwrap_or_else(|e| panic_with_error!(env, e))
+    }
+
+    pub fn set_contract_version(env: Env, version: upgrade::ContractVersion) {
+        UpgradeManager::set_contract_version(&env, version).unwrap_or_else(|e| panic_with_error!(env, e));
+    }
+
+    pub fn get_upgrade_history(env: Env) -> Vec<upgrade::UpgradeData> {
+        UpgradeManager::get_upgrade_history(&env)
+    }
+
+    pub fn is_upgrade_in_progress(env: Env) -> bool {
+        UpgradeManager::is_upgrade_in_progress(&env)
+    }
+
+    pub fn validate_upgrade_compatibility(
+        env: Env,
+        user: Address,
+        market_id: Symbol,
+        oracle_contract: Address,
+    ) -> Result<String, Error> {
+        // Get the market from storage
+        let market = env.storage().persistent().get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        // Validate market state
+        if market.oracle_result.is_some() {
+            return Err(Error::MarketAlreadyResolved);
+        }
+
+
+        // Check if market has ended
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            return Err(Error::MarketClosed);
+
+        }
+        
+        // Get oracle result using the resolution module
+        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id, &oracle_contract)?;
+        
+        Ok(oracle_resolution.oracle_result)
+    }
+
+    pub fn validate_rollback_conditions(env: Env) {
+        RollbackManager::validate_rollback_conditions(&env).unwrap_or_else(|e| panic_with_error!(env, e));
+    }
+
+    pub fn emergency_rollback(env: Env, admin: Address, reason: String) -> upgrade::RollbackData {
+        RollbackManager::emergency_rollback(&env, admin, reason).unwrap_or_else(|e| panic_with_error!(env, e))
     }
 }
 

@@ -298,20 +298,17 @@ pub struct FeeValidator;
 impl FeeValidator {
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
+        let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"));
+            .get(&Symbol::new(env, "Admin"))
+            .expect("Admin not set");
 
-        match stored_admin {
-            Some(stored_admin) => {
-                if admin != &stored_admin {
-                    return Err(Error::Unauthorized);
-                }
-                Ok(())
-            }
-            None => Err(Error::Unauthorized),
+        if admin != &stored_admin {
+            return Err(Error::Unauthorized);
         }
+
+        Ok(())
     }
 
     /// Validate market for fee collection
@@ -513,9 +510,7 @@ impl FeeTracker {
     }
 
     /// Record creation fee
-
     pub fn record_creation_fee(env: &Env, _admin: &Address, amount: i128) -> Result<(), Error> {
-
         // Record creation fee in analytics
         let creation_key = symbol_short!("creat_fee");
         let current_total: i128 = env.storage().persistent().get(&creation_key).unwrap_or(0);
@@ -660,7 +655,6 @@ impl FeeAnalytics {
 #[cfg(test)]
 pub mod testing {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
 
     /// Create a test fee configuration
     pub fn create_test_fee_config() -> FeeConfig {
@@ -750,19 +744,19 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            soroban_sdk::vec![
+            vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
             ],
             env.ledger().timestamp() + 86400,
-            crate::types::OracleConfig::new(
+            crate::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
                 String::from_str(&env, "BTC/USD"),
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
-            crate::types::MarketState::Active,
+            crate::MarketState::Active,
         );
 
         // Set total staked
@@ -776,22 +770,19 @@ mod tests {
     #[test]
     fn test_fee_validator_admin_permissions() {
         let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
 
-        env.as_contract(&contract_id, || {
-            // Set admin in storage
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
+        // Set admin in storage
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "Admin"), &admin);
 
-            // Valid admin
-            assert!(FeeValidator::validate_admin_permissions(&env, &admin).is_ok());
+        // Valid admin
+        assert!(FeeValidator::validate_admin_permissions(&env, &admin).is_ok());
 
-            // Invalid admin
-            let invalid_admin = Address::generate(&env);
-            assert!(FeeValidator::validate_admin_permissions(&env, &invalid_admin).is_err());
-        });
+        // Invalid admin
+        let invalid_admin = Address::generate(&env);
+        assert!(FeeValidator::validate_admin_permissions(&env, &invalid_admin).is_err());
     }
 
     #[test]
@@ -813,7 +804,7 @@ mod tests {
             &env,
             Address::generate(&env),
             String::from_str(&env, "Test Market"),
-            soroban_sdk::vec![
+            vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
@@ -825,7 +816,7 @@ mod tests {
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
-            crate::types::MarketState::Active,
+            crate::MarketState::Active,
         );
 
         // Market not resolved
@@ -850,30 +841,24 @@ mod tests {
     #[test]
     fn test_fee_config_manager() {
         let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
         let config = testing::create_test_fee_config();
 
-        env.as_contract(&contract_id, || {
-            // Store and retrieve config
-            FeeConfigManager::store_fee_config(&env, &config).unwrap();
-            let retrieved_config = FeeConfigManager::get_fee_config(&env).unwrap();
+        // Store and retrieve config
+        FeeConfigManager::store_fee_config(&env, &config).unwrap();
+        let retrieved_config = FeeConfigManager::get_fee_config(&env).unwrap();
 
-            assert_eq!(config, retrieved_config);
-        });
+        assert_eq!(config, retrieved_config);
     }
 
     #[test]
     fn test_fee_analytics_calculation() {
         let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
 
-        env.as_contract(&contract_id, || {
-            // Test with no fee history
-            let analytics = FeeAnalytics::calculate_analytics(&env).unwrap();
-            assert_eq!(analytics.total_fees_collected, 0);
-            assert_eq!(analytics.markets_with_fees, 0);
-            assert_eq!(analytics.average_fee_per_market, 0);
-        });
+        // Test with no fee history
+        let analytics = FeeAnalytics::calculate_analytics(&env).unwrap();
+        assert_eq!(analytics.total_fees_collected, 0);
+        assert_eq!(analytics.markets_with_fees, 0);
+        assert_eq!(analytics.average_fee_per_market, 0);
     }
 
     #[test]

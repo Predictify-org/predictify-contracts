@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::{
     errors::Error,
     markets::MarketStateManager,
@@ -347,8 +345,8 @@ impl DisputeManager {
     }
 
     /// Get dispute votes
-    pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
-        DisputeUtils::get_dispute_votes(env, dispute_id)
+    pub fn get_dispute_votes(env: &Env, _dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
+        DisputeUtils::get_dispute_votes(env, _dispute_id)
     }
 
     /// Validate dispute resolution conditions
@@ -404,20 +402,17 @@ impl DisputeValidator {
 
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
+        let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"));
+            .get(&Symbol::new(env, "Admin"))
+            .expect("Admin not set");
 
-        match stored_admin {
-            Some(stored_admin) => {
-                if admin != &stored_admin {
-                    return Err(Error::Unauthorized);
-                }
-                Ok(())
-            }
-            None => Err(Error::Unauthorized),
+        if admin != &stored_admin {
+            return Err(Error::Unauthorized);
         }
+
+        Ok(())
     }
 
     /// Validate dispute parameters
@@ -703,8 +698,8 @@ impl DisputeUtils {
     }
 
     /// Get dispute voting data
-    pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
-        let key = (symbol_short!("dispute_v"), dispute_id.clone());
+    pub fn get_dispute_voting(env: &Env, _dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
+        let key = symbol_short!("dispute_v");
         env.storage()
             .persistent()
             .get(&key)
@@ -714,10 +709,10 @@ impl DisputeUtils {
     /// Store dispute voting data
     pub fn store_dispute_voting(
         env: &Env,
-        dispute_id: &Symbol,
+        _dispute_id: &Symbol,
         voting: &DisputeVoting,
     ) -> Result<(), Error> {
-        let key = (symbol_short!("dispute_v"), dispute_id.clone());
+        let key = symbol_short!("dispute_v");
         env.storage().persistent().set(&key, voting);
         Ok(())
     }
@@ -725,24 +720,20 @@ impl DisputeUtils {
     /// Store dispute vote
     pub fn store_dispute_vote(
         env: &Env,
-        dispute_id: &Symbol,
+        _dispute_id: &Symbol,
         vote: &DisputeVote,
     ) -> Result<(), Error> {
-        let key = (symbol_short!("vote"), dispute_id.clone(), vote.user.clone());
+        let key = symbol_short!("vote");
         env.storage().persistent().set(&key, vote);
         Ok(())
     }
 
     /// Get dispute votes
-    pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
+    pub fn get_dispute_votes(env: &Env, _dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
         // This is a simplified implementation - in a real system you'd need to track all votes
         let votes = Vec::new(env);
-        
-        // Get the voting data to access stored votes
-        let _voting_data = Self::get_dispute_voting(env, dispute_id)?;
-        
-        // In a real implementation, you would iterate through stored vote keys
-        // For now, return empty vector as this would require tracking vote keys separately
+
+        // For now, return empty vector - in practice you'd iterate through stored votes
         Ok(votes)
     }
 
@@ -790,10 +781,10 @@ impl DisputeUtils {
     /// Store dispute fee distribution
     pub fn store_dispute_fee_distribution(
         env: &Env,
-        dispute_id: &Symbol,
+        _dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) -> Result<(), Error> {
-        let key = (symbol_short!("dispute_f"), dispute_id.clone());
+        let key = symbol_short!("dispute_f");
         env.storage().persistent().set(&key, distribution);
         Ok(())
     }
@@ -803,7 +794,7 @@ impl DisputeUtils {
         env: &Env,
         dispute_id: &Symbol,
     ) -> Result<DisputeFeeDistribution, Error> {
-        let key = (symbol_short!("dispute_f"), dispute_id.clone());
+        let key = symbol_short!("dispute_f");
         Ok(env
             .storage()
             .persistent()
@@ -822,22 +813,21 @@ impl DisputeUtils {
     /// Store dispute escalation
     pub fn store_dispute_escalation(
         env: &Env,
-        dispute_id: &Symbol,
+        _dispute_id: &Symbol,
         escalation: &DisputeEscalation,
     ) -> Result<(), Error> {
-        let key = (symbol_short!("dispute_e"), dispute_id.clone());
+        let key = symbol_short!("dispute_e");
         env.storage().persistent().set(&key, escalation);
         Ok(())
     }
 
     /// Get dispute escalation
-    pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
-        let key = (symbol_short!("dispute_e"), dispute_id.clone());
+    pub fn get_dispute_escalation(env: &Env, _dispute_id: &Symbol) -> Option<DisputeEscalation> {
+        let key = symbol_short!("dispute_e");
         env.storage().persistent().get(&key)
     }
 
     /// Emit dispute vote event
-
     pub fn emit_dispute_vote_event(
         env: &Env,
         _dispute_id: &Symbol,
@@ -845,7 +835,6 @@ impl DisputeUtils {
         vote: bool,
         stake: i128,
     ) {
-
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
         let event_key = symbol_short!("vote_evt");
@@ -854,13 +843,11 @@ impl DisputeUtils {
     }
 
     /// Emit fee distribution event
-
     pub fn emit_fee_distribution_event(
         env: &Env,
         _dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) {
-
         // In a real implementation, this would emit an event
         // For now, we'll just store it in persistent storage
         let event_key = symbol_short!("fee_event");
@@ -1128,8 +1115,7 @@ mod tests {
         assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
 
         // Set market as ended
-
-        market.end_time = env.ledger().timestamp().saturating_sub(1);
+        market.end_time = env.ledger().timestamp() - 1;
 
         // No oracle result - should fail
         assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
@@ -1145,7 +1131,7 @@ mod tests {
     fn test_dispute_validator_stake_validation() {
         let env = Env::default();
         let user = Address::generate(&env);
-        let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+        let mut market = create_test_market(&env, env.ledger().timestamp() - 1);
         market.oracle_result = Some(String::from_str(&env, "yes"));
 
         // Valid stake

@@ -1,11 +1,7 @@
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-
-use crate::markets::{
-    CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils,
-};
-
+use crate::markets::{CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils};
 use crate::oracles::{OracleFactory, OracleUtils};
 use crate::types::*;
 
@@ -156,14 +152,10 @@ impl OracleResolutionManager {
     }
 
     /// Get oracle resolution for a market
-
     pub fn get_oracle_resolution(
         _env: &Env,
         _market_id: &Symbol,
     ) -> Result<Option<OracleResolution>, Error> {
-        // For now, return None since we don't store complex types in storage
-        // In a real implementation, you would store this in a more sophisticated way
-
         Ok(None)
     }
 
@@ -293,14 +285,10 @@ impl MarketResolutionManager {
     }
 
     /// Get market resolution
-
     pub fn get_market_resolution(
         _env: &Env,
         _market_id: &Symbol,
     ) -> Result<Option<MarketResolution>, Error> {
-        // For now, return None since we don't store complex types in storage
-        // In a real implementation, you would store this in a more sophisticated way
-
         Ok(None)
     }
 
@@ -386,20 +374,17 @@ impl MarketResolutionValidator {
 
     /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> = env
+        let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"));
+            .get(&Symbol::new(env, "Admin"))
+            .unwrap_or_else(|| panic!("Admin not set"));
 
-        match stored_admin {
-            Some(stored_admin) => {
-                if admin != &stored_admin {
-                    return Err(Error::Unauthorized);
-                }
-                Ok(())
-            }
-            None => Err(Error::Unauthorized),
+        if admin != &stored_admin {
+            return Err(Error::Unauthorized);
         }
+
+        Ok(())
     }
 
     /// Validate outcome
@@ -708,8 +693,7 @@ impl Default for ResolutionAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test::PredictifyTest, PredictifyHybridClient};
-    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+    use soroban_sdk::{testutils::Address as _, vec};
 
     #[test]
     fn test_oracle_resolution_manager_fetch_result() {
@@ -744,7 +728,7 @@ mod tests {
             &env,
             admin,
             String::from_str(&env, "Test Market"),
-            soroban_sdk::vec![
+            vec![
                 &env,
                 String::from_str(&env, "yes"),
                 String::from_str(&env, "no"),
@@ -769,9 +753,9 @@ mod tests {
         let oracle_result = String::from_str(&env, "yes");
         let community_consensus = CommunityConsensus {
             outcome: String::from_str(&env, "yes"),
-            votes: 8,
+            votes: 6,
             total_votes: 10,
-            percentage: 80,
+            percentage: 60,
         };
 
         let method = MarketResolutionAnalytics::determine_resolution_method(
@@ -793,11 +777,10 @@ mod tests {
         assert!(ResolutionTesting::validate_resolution_structure(&market_resolution).is_ok());
     }
 
-
     #[test]
     fn test_resolution_method_determination() {
         let env = Env::default();
-        
+
         // Create test data
         let community_consensus = CommunityConsensus {
             outcome: String::from_str(&env, "yes"),

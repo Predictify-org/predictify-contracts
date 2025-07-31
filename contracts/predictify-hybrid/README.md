@@ -38,7 +38,7 @@ struct PythOracleClient<'a> {
 }
 ```
 
-#### Key Functions:
+#### Key Functions
 
 1. **get_latest_price()**: Retrieves fresh price data from Pyth contract
 2. **validate_pyth_feed()**: Validates feed ID format and availability
@@ -46,7 +46,7 @@ struct PythOracleClient<'a> {
 4. **handle_pyth_errors()**: Comprehensive error handling for all scenarios
 5. **get_pyth_confidence_interval()**: Validates price confidence within 5% threshold
 
-#### Price Data Structure:
+#### Price Data Structure
 
 ```rust
 pub struct PythPriceInfo {
@@ -68,6 +68,7 @@ The integration supports major crypto assets with their Pyth feed IDs:
 ### Advanced Price Validation
 
 #### Staleness Checks
+
 ```rust
 // Prices older than 60 seconds are considered stale
 let max_age = 60; // seconds
@@ -77,6 +78,7 @@ if current_time > price_info.publish_time + max_age {
 ```
 
 #### Confidence Validation
+
 ```rust
 // Maximum 5% confidence interval allowed
 let max_confidence_pct = 5;
@@ -87,6 +89,7 @@ if confidence_pct > max_confidence_pct {
 ```
 
 #### Exponential Scaling
+
 ```rust
 // Handles Pyth's exponential price format
 let adjusted_price = if price_info.expo >= 0 {
@@ -114,6 +117,7 @@ pub enum Error {
 ### Using Pyth Oracle in Markets
 
 #### Create Market with Pyth Oracle
+
 ```rust
 create_pyth_market(
     admin: Address,
@@ -127,6 +131,7 @@ create_pyth_market(
 ```
 
 #### Example: BTC Price Prediction with Pyth
+
 ```javascript
 const pythMarketId = await predictifyClient.create_pyth_market(
     adminAddress,
@@ -163,6 +168,7 @@ twap(asset: ReflectorAsset, records: u32) -> Option<i128>
 ### Supported Assets
 
 The Reflector oracle supports various assets including:
+
 - **BTC** (Bitcoin)
 - **ETH** (Ethereum)
 - **XLM** (Stellar Lumens)
@@ -171,6 +177,7 @@ The Reflector oracle supports various assets including:
 ## Contract Functions
 
 ### 1. Initialize Contract
+
 ```rust
 initialize(admin: Address)
 ```
@@ -178,6 +185,7 @@ initialize(admin: Address)
 ### 2. Create Markets
 
 #### Using Real Reflector Oracle
+
 ```rust
 create_reflector_market(
     admin: Address,
@@ -191,6 +199,7 @@ create_reflector_market(
 ```
 
 #### Using Reflector Oracle with Specific Asset
+
 ```rust
 create_reflector_asset_market(
     admin: Address,
@@ -204,6 +213,7 @@ create_reflector_asset_market(
 ```
 
 #### Using Pyth Oracle (Real Integration)
+
 ```rust
 create_pyth_market(
     admin: Address,
@@ -217,6 +227,7 @@ create_pyth_market(
 ```
 
 ### 3. Oracle Resolution
+
 ```rust
 fetch_oracle_result(
     market_id: Symbol,
@@ -241,6 +252,7 @@ fetch_oracle_result(
 ### When to Use Each Oracle
 
 **Use Pyth Network when:**
+
 - You need institutional-grade data quality
 - High-frequency updates are required
 - Confidence intervals are important
@@ -248,6 +260,7 @@ fetch_oracle_result(
 - Maximum precision is needed
 
 **Use Reflector Oracle when:**
+
 - Cost efficiency is priority
 - Stellar ecosystem assets
 - Proven track record on Stellar
@@ -438,21 +451,25 @@ console.log("Real oracle result:", realResult);
 ## Deployment Steps
 
 1. **Build the contract**:
+
 ```bash
 cargo build --target wasm32-unknown-unknown --release
 ```
 
 2. **Deploy to Stellar**:
+
 ```bash
 soroban contract deploy --wasm target/wasm32-unknown-unknown/release/predictify_hybrid.wasm
 ```
 
 3. **Initialize with admin**:
+
 ```bash
 soroban contract invoke --id <contract_id> -- initialize --admin <admin_address>
 ```
 
 4. **Set token contract**:
+
 ```bash
 soroban contract invoke --id <contract_id> -- set_token_contract --token_contract <token_address>
 ```
@@ -486,6 +503,7 @@ soroban contract invoke --id <contract_id> -- set_token_contract --token_contrac
 ### Common Issues
 
 #### Pyth Oracle Issues
+
 1. **PythPriceStale**: Price data older than 60 seconds
    - **Solution**: Wait for fresh price update or increase staleness threshold
 2. **PythConfidenceTooLow**: Confidence interval exceeds 5%
@@ -496,6 +514,7 @@ soroban contract invoke --id <contract_id> -- set_token_contract --token_contrac
    - **Solution**: Check contract address and network connectivity
 
 #### Reflector Oracle Issues
+
 1. **OracleUnavailable Error**: Check if Reflector contract is accessible
 2. **Asset Not Found**: Verify asset symbol is supported by Reflector
 3. **Price Staleness**: Check if oracle data is recent enough
@@ -504,6 +523,7 @@ soroban contract invoke --id <contract_id> -- set_token_contract --token_contrac
 ### Debugging Tools
 
 #### Pyth Oracle Debugging
+
 ```javascript
 // Check Pyth oracle with detailed error handling
 try {
@@ -523,6 +543,7 @@ try {
 ```
 
 #### Reflector Oracle Debugging
+
 ```javascript
 // Check Reflector oracle availability
 try {
@@ -534,6 +555,7 @@ try {
 ```
 
 #### Oracle Comparison Test
+
 ```javascript
 // Compare results from both oracles
 async function compareOracles(marketId) {
@@ -566,7 +588,7 @@ The contract now includes **complete real integration** with Pyth Network Oracle
 ✅ **Staleness Protection**: 60-second freshness requirement  
 ✅ **Production Ready**: All tests passing with real oracle architecture  
 
-The contract is now ready for production use with **real oracle data** from both Pyth Network and Reflector oracles! 
+The contract is now ready for production use with **real oracle data** from both Pyth Network and Reflector oracles!
 
 ### Next Steps for Full Production Deployment
 
@@ -576,4 +598,4 @@ The contract is now ready for production use with **real oracle data** from both
 4. **Test on Testnet**: Validate with real Pyth data on Stellar testnet
 5. **Monitor Performance**: Track oracle response times and reliability
 
-**The mock implementation has been completely replaced with a production-ready Pyth Network integration!** 🚀 
+**The mock implementation has been completely replaced with a production-ready Pyth Network integration!** 🚀

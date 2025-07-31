@@ -293,28 +293,25 @@ use crate::markets::{MarketStateManager, MarketUtils};
 mod tests {
     use super::*;
     use crate::types::ExtensionStats;
-    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_extension_validation() {
         let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
         let _admin = Address::generate(&env);
 
-        env.as_contract(&contract_id, || {
-            // Test valid extension days
-            assert!(
-                ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 5)
-                    .is_err()
-            ); // Market doesn't exist
+        // Test valid extension days
+        assert!(
+            ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 5)
+                .is_err()
+        ); // Market doesn't exist
 
-            // Test invalid extension days
-            assert_eq!(
-                ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
-                    .unwrap_err(),
-                Error::InvalidExtensionDays
-            );
-        });
+        // Test invalid extension days
+        assert_eq!(
+            ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
+                .unwrap_err(),
+            Error::InvalidExtensionDays
+        );
 
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
