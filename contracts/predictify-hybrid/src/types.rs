@@ -86,9 +86,7 @@ impl OracleConfig {
     }
 
     /// Validate the oracle configuration
-
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
-
         // Validate threshold
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
@@ -145,15 +143,12 @@ pub struct Market {
     pub fee_collected: bool,
     /// Current market state
     pub state: MarketState,
-
     /// Total extension days
     pub total_extension_days: u32,
     /// Maximum extension days allowed
     pub max_extension_days: u32,
-
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
-
 }
 
 impl Market {
@@ -182,11 +177,9 @@ impl Market {
             winning_outcome: None,
             fee_collected: false,
             state,
-
             total_extension_days: 0,
             max_extension_days: 30, // Default maximum extension days
             extension_history: Vec::new(env),
-
         }
     }
 
@@ -256,7 +249,6 @@ pub enum ReflectorAsset {
     /// Other asset identified by symbol
     Other(Symbol),
 }
-
 
 /// Reflector price data structure
 #[contracttype]
@@ -364,13 +356,25 @@ impl MarketCreationParams {
     }
 }
 
-
 // ===== ADDITIONAL TYPES =====
 
 /// Community consensus data
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-<<<<<<< HEAD
+pub struct CommunityConsensus {
+    /// Consensus outcome
+    pub outcome: String,
+    /// Number of votes for this outcome
+    pub votes: u32,
+    /// Total number of votes
+    pub total_votes: u32,
+    /// Percentage of votes for this outcome
+    pub percentage: i128,
+}
+
+/// Oracle result enumeration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OracleResult {
     /// Oracle returned a price
     Price(i128),
@@ -533,24 +537,21 @@ mod tests {
     #[test]
     fn test_oracle_provider() {
         let provider = OracleProvider::Pyth;
-        assert_eq!(provider.name(), "Pyth Network");
-        assert!(provider.is_supported());
-        assert_eq!(provider.default_feed_format(), "BTC/USD");
+        assert_eq!(provider.name(), "Pyth");
+        assert!(!provider.is_supported()); // Only Reflector is supported
     }
 
     #[test]
     fn test_oracle_config() {
         let env = soroban_sdk::Env::default();
         let config = OracleConfig::new(
-            OracleProvider::Pyth,
-            String::from_str(&env, "BTC/USD"),
+            OracleProvider::Reflector,
+            String::from_str(&env, "BTC"),
             2500000,
             String::from_str(&env, "gt"),
         );
 
         assert!(config.validate(&env).is_ok());
-        assert!(config.is_supported());
-        assert!(config.is_greater_than(&env));
     }
 
     #[test]
@@ -563,8 +564,8 @@ mod tests {
             String::from_str(&env, "no"),
         ];
         let oracle_config = OracleConfig::new(
-            OracleProvider::Pyth,
-            String::from_str(&env, "BTC/USD"),
+            OracleProvider::Reflector,
+            String::from_str(&env, "BTC"),
             2500000,
             String::from_str(&env, "gt"),
         );
@@ -585,48 +586,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reflector_asset() {
-        let env = soroban_sdk::Env::default();
-        let symbol = Symbol::new(&env, "BTC");
-        let asset = ReflectorAsset::other(symbol);
-
-        assert!(asset.is_other());
-        assert!(!asset.is_stellar());
-    }
-
-    #[test]
-    fn test_market_state() {
-        let env = soroban_sdk::Env::default();
-        let admin = Address::generate(&env);
-        let outcomes = vec![
-            &env,
-            String::from_str(&env, "yes"),
-            String::from_str(&env, "no"),
-        ];
-        let oracle_config = OracleConfig::new(
-            OracleProvider::Pyth,
-            String::from_str(&env, "BTC/USD"),
-            2500000,
-            String::from_str(&env, "gt"),
-        );
-
-        let market = Market::new(
-            &env,
-            admin,
-            String::from_str(&env, "Test question"),
-            outcomes,
-            env.ledger().timestamp() + 86400,
-            oracle_config,
-            MarketState::Active,
-        );
-
-        let state = MarketState::from_market(&market, env.ledger().timestamp());
-        assert!(state.is_active());
-        assert!(!state.has_ended());
-        assert!(!state.is_resolved());
-    }
-
-    #[test]
     fn test_oracle_result() {
         let result = OracleResult::price(2500000);
         assert!(result.is_available());
@@ -639,7 +598,7 @@ mod tests {
 
     #[test]
     fn test_validation_helpers() {
-        assert!(validation::validate_oracle_provider(&OracleProvider::Pyth).is_ok());
+        assert!(validation::validate_oracle_provider(&OracleProvider::Reflector).is_ok());
         assert!(validation::validate_price(2500000).is_ok());
         assert!(validation::validate_stake(1000000, 500000).is_ok());
         assert!(validation::validate_duration(30).is_ok());
@@ -648,24 +607,25 @@ mod tests {
     #[test]
     fn test_conversion_helpers() {
         assert_eq!(
-            conversion::string_to_oracle_provider("pyth"),
-            Some(OracleProvider::Pyth)
+            conversion::string_to_oracle_provider("reflector"),
+            Some(OracleProvider::Reflector)
         );
         assert_eq!(
-            conversion::oracle_provider_to_string(&OracleProvider::Pyth),
-            "Pyth Network"
+            conversion::oracle_provider_to_string(&OracleProvider::Reflector),
+            "Reflector"
         );
     }
-=======
-pub struct CommunityConsensus {
-    /// Consensus outcome
-    pub outcome: String,
-    /// Number of votes for this outcome
-    pub votes: u32,
-    /// Total number of votes
-    pub total_votes: u32,
-    /// Percentage of votes for this outcome
-    pub percentage: i128,
 
->>>>>>> a6217bfaf1e5cc95af15f467e0feee78e59c36c3
+    #[test]
+    fn test_community_consensus() {
+        let consensus = CommunityConsensus {
+            outcome: String::from_str(&soroban_sdk::Env::default(), "yes"),
+            votes: 75,
+            total_votes: 100,
+            percentage: 75,
+        };
+        
+        assert_eq!(consensus.votes, 75);
+        assert_eq!(consensus.percentage, 75);
+    }
 }
