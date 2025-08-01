@@ -1,7 +1,10 @@
+#![allow(dead_code)]
+
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::types::*;
+// Oracle imports removed - not currently used
 
 /// Market management system for Predictify Hybrid contract
 ///
@@ -19,18 +22,18 @@ pub struct MarketCreator;
 
 impl MarketCreator {
     /// Create a new market with full configuration
-    pub fn create_market(_env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, oracle_config: OracleConfig) -> Result<Symbol, Error> {
+    pub fn create_market(env: &Env, admin: Address, question: String, outcomes: Vec<String>, duration_days: u32, oracle_config: OracleConfig) -> Result<Symbol, Error> {
         // Validate market parameters
-        MarketValidator::validate_market_params(_env, &question, &outcomes, duration_days)?;
+        MarketValidator::validate_market_params(env, &question, &outcomes, duration_days)?;
 
         // Validate oracle configuration
-        MarketValidator::validate_oracle_config(_env, &oracle_config)?;
+        MarketValidator::validate_oracle_config(env, &oracle_config)?;
 
         // Generate unique market ID
-        let market_id = MarketUtils::generate_market_id(_env);
+        let market_id = MarketUtils::generate_market_id(env);
 
         // Calculate end time
-        let end_time = MarketUtils::calculate_end_time(_env, duration_days);
+        let end_time = MarketUtils::calculate_end_time(env, duration_days);
 
         // Create market instance
         let market = Market::new(env, admin.clone(), question, outcomes, end_time, oracle_config, MarketState::Active);
@@ -39,7 +42,7 @@ impl MarketCreator {
         MarketUtils::process_creation_fee(env, &admin)?;
         
         // Store market
-        _env.storage().persistent().set(&market_id, &market);
+        env.storage().persistent().set(&market_id, &market);
 
         Ok(market_id)
     }
@@ -81,7 +84,14 @@ pub struct MarketValidator;
 
 impl MarketValidator {
     /// Validate market creation parameters
-    pub fn validate_market_params(_env: &Env, question: &String, outcomes: &Vec<String>, duration_days: u32) -> Result<(), Error> {
+
+    pub fn validate_market_params(
+        _env: &Env,
+        question: &String,
+        outcomes: &Vec<String>,
+        duration_days: u32,
+    ) -> Result<(), Error> {
+
         // Validate question is not empty
         if question.is_empty() {
             return Err(Error::InvalidQuestion);
@@ -142,7 +152,14 @@ impl MarketValidator {
     }
 
     /// Validate outcome for a market
-    pub fn validate_outcome(_env: &Env, outcome: &String, market_outcomes: &Vec<String>) -> Result<(), Error> {
+
+
+    pub fn validate_outcome(
+        _env: &Env,
+        outcome: &String,
+        market_outcomes: &Vec<String>,
+    ) -> Result<(), Error> {
+
         for valid_outcome in market_outcomes.iter() {
             if *outcome == valid_outcome {
                 return Ok(());
@@ -202,7 +219,7 @@ impl MarketStateManager {
     }
 
     /// Add vote to market
-    pub fn add_vote(market: &mut Market, user: Address, outcome: String, stake: i128, market_id: Option<&Symbol>) {
+    pub fn add_vote(market: &mut Market, user: Address, outcome: String, stake: i128, _market_id: Option<&Symbol>) {
         MarketStateLogic::check_function_access_for_state("vote", market.state).unwrap();
         market.votes.set(user.clone(), outcome);
         market.stakes.set(user.clone(), stake);
@@ -376,6 +393,13 @@ impl MarketAnalytics {
             percentage: consensus_percentage,
         }
     }
+    
+    /// Calculate basic analytics for a market
+    pub fn calculate_basic_analytics(_market: &Market) -> MarketAnalytics {
+        // This is a placeholder implementation
+        // In a real implementation, you would calculate comprehensive analytics
+        MarketAnalytics
+    }
 }
 
 // ===== MARKET UTILITIES =====
@@ -472,6 +496,7 @@ impl MarketUtils {
 // ===== MARKET STATISTICS TYPES =====
 
 /// Market statistics
+#[contracttype]
 #[derive(Clone, Debug)]
 pub struct MarketStats {
     pub total_votes: u32,
@@ -535,6 +560,7 @@ impl MarketTestHelpers {
                 25_000_00,
                 String::from_str(_env, "gt"),
             ),
+            1_000_000, // Creation fee: 1 XLM
         )
     }
 
@@ -547,21 +573,21 @@ impl MarketTestHelpers {
 
     /// Add test vote to market
     pub fn add_test_vote(
-        _env: &Env,
+        env: &Env,
         market_id: &Symbol,
         user: Address,
         outcome: String,
         stake: i128,
     ) -> Result<(), Error> {
-        let mut market = MarketStateManager::get_market(_env, market_id)?;
+        let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        MarketValidator::validate_market_for_voting(_env, &market)?;
-        MarketValidator::validate_outcome(_env, &outcome, &market.outcomes)?;
+        MarketValidator::validate_market_for_voting(env, &market)?;
+        MarketValidator::validate_outcome(env, &outcome, &market.outcomes)?;
         MarketValidator::validate_stake(stake, 1_000_000)?; // 0.1 XLM minimum
 
         // Transfer stake
-        let token_client = MarketUtils::get_token_client(_env)?;
-        token_client.transfer(&user, &_env.current_contract_address(), &stake);
+        let token_client = MarketUtils::get_token_client(env)?;
+        token_client.transfer(&user, &env.current_contract_address(), &stake);
 
         // Add vote
         MarketStateManager::add_vote(&mut market, user, outcome, stake, None);
@@ -573,13 +599,13 @@ impl MarketTestHelpers {
 
     /// Simulate market resolution
     pub fn simulate_market_resolution(
-        _env: &Env,
+        env: &Env,
         market_id: &Symbol,
         oracle_result: String,
     ) -> Result<String, Error> {
-        let mut market = MarketStateManager::get_market(_env, market_id)?;
+        let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        MarketValidator::validate_market_for_resolution(_env, &market)?;
+        MarketValidator::validate_market_for_resolution(env, &market)?;
 
         // Set oracle result
         MarketStateManager::set_oracle_result(&mut market, oracle_result.clone());
@@ -589,7 +615,7 @@ impl MarketTestHelpers {
 
         // Determine final result
         let final_result =
-            MarketUtils::determine_final_result(_env, &oracle_result, &community_consensus);
+            MarketUtils::determine_final_result(env, &oracle_result, &community_consensus);
 
         // Set winning outcome
         MarketStateManager::set_winning_outcome(&mut market, final_result.clone(), None);

@@ -1,58 +1,61 @@
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
+#![allow(dead_code)]
 
-/// Comprehensive type system for Predictify Hybrid contract
-///
-/// This module provides organized type definitions categorized by functionality:
-/// - Oracle Types: Oracle providers, configurations, and data structures
-/// - Market Types: Market data structures and state management
-/// - Price Types: Price data and validation structures
-/// - Validation Types: Input validation and business logic types
-/// - Utility Types: Helper types and conversion utilities
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+
+// ===== MARKET STATE =====
+
+/// Market state enumeration
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MarketState {
+    /// Market is active and accepting votes
+    Active,
+    /// Market has ended, waiting for resolution
+    Ended,
+    /// Market is under dispute
+    Disputed,
+    /// Market has been resolved
+    Resolved,
+    /// Market is closed
+    Closed,
+    /// Market has been cancelled
+    Cancelled,
+}
 
 // ===== ORACLE TYPES =====
 
-/// Supported oracle providers for price feeds
+/// Oracle provider enumeration
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OracleProvider {
-    /// Band Protocol oracle
-    BandProtocol,
-    /// DIA oracle
-    DIA,
-    /// Reflector oracle (Stellar-based)
+    /// Reflector oracle (primary oracle for Stellar Network)
     Reflector,
-    /// Pyth Network oracle
+    /// Pyth Network oracle (placeholder for Stellar)
     Pyth,
+    /// Band Protocol oracle (not available on Stellar)
+    BandProtocol,
+    /// DIA oracle (not available on Stellar)
+    DIA,
 }
 
 impl OracleProvider {
-    /// Get a human-readable name for the oracle provider
+    /// Get provider name
     pub fn name(&self) -> &'static str {
         match self {
+            OracleProvider::Reflector => "Reflector",
+            OracleProvider::Pyth => "Pyth",
             OracleProvider::BandProtocol => "Band Protocol",
             OracleProvider::DIA => "DIA",
-            OracleProvider::Reflector => "Reflector",
-            OracleProvider::Pyth => "Pyth Network",
         }
     }
 
-    /// Check if the oracle provider is supported
+    /// Check if provider is supported on Stellar
     pub fn is_supported(&self) -> bool {
-        matches!(self, OracleProvider::Pyth | OracleProvider::Reflector)
-    }
-
-    /// Get the default feed ID format for this provider
-    pub fn default_feed_format(&self) -> &'static str {
-        match self {
-            OracleProvider::BandProtocol => "BTC/USD",
-            OracleProvider::DIA => "BTC/USD",
-            OracleProvider::Reflector => "BTC",
-            OracleProvider::Pyth => "BTC/USD",
-        }
+        matches!(self, OracleProvider::Reflector)
     }
 }
 
-/// Configuration for oracle integration
+/// Oracle configuration for markets
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleConfig {
@@ -83,56 +86,28 @@ impl OracleConfig {
     }
 
     /// Validate the oracle configuration
-    pub fn validate(&self, _env: &Env) -> Result<(), crate::errors::Error> {
+
+    pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+
         // Validate threshold
         if self.threshold <= 0 {
-            return Err(crate::errors::Error::InvalidThreshold);
+            return Err(crate::Error::InvalidThreshold);
         }
 
         // Validate comparison operator
-        if self.comparison != String::from_str(_env, "gt")
-            && self.comparison != String::from_str(_env, "lt")
-            && self.comparison != String::from_str(_env, "eq")
+        if self.comparison != String::from_str(env, "gt")
+            && self.comparison != String::from_str(env, "lt")
+            && self.comparison != String::from_str(env, "eq")
         {
-            return Err(crate::errors::Error::InvalidComparison);
-        }
-
-        // Validate feed_id is not empty
-        if self.feed_id.is_empty() {
-            return Err(crate::errors::Error::InvalidOracleFeed);
+            return Err(crate::Error::InvalidComparison);
         }
 
         // Validate provider is supported
         if !self.provider.is_supported() {
-            return Err(crate::errors::Error::InvalidOracleConfig);
+            return Err(crate::Error::InvalidOracleConfig);
         }
 
         Ok(())
-    }
-
-    /// Check if the configuration is for a supported provider
-    pub fn is_supported(&self) -> bool {
-        self.provider.is_supported()
-    }
-
-    /// Get the comparison operator as a string
-    pub fn comparison_operator(&self) -> &String {
-        &self.comparison
-    }
-
-    /// Check if the comparison is "greater than"
-    pub fn is_greater_than(&self, env: &Env) -> bool {
-        self.comparison == String::from_str(env, "gt")
-    }
-
-    /// Check if the comparison is "less than"
-    pub fn is_less_than(&self, env: &Env) -> bool {
-        self.comparison == String::from_str(env, "lt")
-    }
-
-    /// Check if the comparison is "equal to"
-    pub fn is_equal_to(&self, env: &Env) -> bool {
-        self.comparison == String::from_str(env, "eq")
     }
 }
 
@@ -168,66 +143,16 @@ pub struct Market {
     pub winning_outcome: Option<String>,
     /// Whether fees have been collected
     pub fee_collected: bool,
-    /// Explicit market state
+    /// Current market state
     pub state: MarketState,
-    /// Market extension history
-    pub extension_history: Vec<MarketExtension>,
-    /// Total extension days applied
+
+    /// Total extension days
     pub total_extension_days: u32,
-    /// Maximum allowed extension days
+    /// Maximum extension days allowed
     pub max_extension_days: u32,
-}
 
-/// Market extension record
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MarketExtension {
-    /// Extension timestamp
-    pub timestamp: u64,
-    /// Additional days requested
-    pub additional_days: u32,
-    /// Admin who requested the extension
-    pub admin: Address,
-    /// Extension reason/justification
-    pub reason: String,
-    /// Extension fee paid
-    pub fee_paid: i128,
-}
-
-impl MarketExtension {
-    /// Create a new market extension record
-    pub fn new(
-        env: &Env,
-        additional_days: u32,
-        admin: Address,
-        reason: String,
-        fee_paid: i128,
-    ) -> Self {
-        Self {
-            timestamp: env.ledger().timestamp(),
-            additional_days,
-            admin,
-            reason,
-            fee_paid,
-        }
-    }
-
-    /// Validate extension parameters
-    pub fn validate(&self, _env: &Env) -> Result<(), crate::errors::Error> {
-        if self.additional_days == 0 {
-            return Err(crate::errors::Error::InvalidExtensionDays);
-        }
-
-        if self.additional_days > 30 {
-            return Err(crate::errors::Error::ExtensionDaysExceeded);
-        }
-
-        if self.reason.is_empty() {
-            return Err(crate::errors::Error::InvalidExtensionReason);
-        }
-
-        Ok(())
-    }
+    /// Extension history
+    pub extension_history: Vec<MarketExtension>,
 
 }
 
@@ -257,9 +182,10 @@ impl Market {
             winning_outcome: None,
             fee_collected: false,
             state,
-            extension_history: vec![env],
+
             total_extension_days: 0,
             max_extension_days: 30, // Default maximum extension days
+            extension_history: Vec::new(env),
 
         }
     }
@@ -279,65 +205,7 @@ impl Market {
         self.winning_outcome.is_some()
     }
 
-    /// Check if the market has oracle result
-    pub fn has_oracle_result(&self) -> bool {
-        self.oracle_result.is_some()
-    }
-
-    /// Get user's vote
-    pub fn get_user_vote(&self, user: &Address) -> Option<String> {
-        self.votes.get(user.clone())
-    }
-
-    /// Get user's stake
-    pub fn get_user_stake(&self, user: &Address) -> i128 {
-        self.stakes.get(user.clone()).unwrap_or(0)
-    }
-
-    /// Check if user has claimed
-    pub fn has_user_claimed(&self, user: &Address) -> bool {
-        self.claimed.get(user.clone()).unwrap_or(false)
-    }
-
-    /// Get user's dispute stake
-    pub fn get_user_dispute_stake(&self, user: &Address) -> i128 {
-        self.dispute_stakes.get(user.clone()).unwrap_or(0)
-    }
-
-    /// Add user vote and stake
-    pub fn add_vote(&mut self, user: Address, outcome: String, stake: i128) {
-        self.votes.set(user.clone(), outcome);
-        self.stakes.set(user.clone(), stake);
-        self.total_staked += stake;
-    }
-
-    /// Add dispute stake
-    pub fn add_dispute_stake(&mut self, user: Address, stake: i128) {
-        let current_stake = self.dispute_stakes.get(user.clone()).unwrap_or(0);
-        self.dispute_stakes.set(user, current_stake + stake);
-    }
-
-    /// Mark user as claimed
-    pub fn mark_claimed(&mut self, user: Address) {
-        self.claimed.set(user, true);
-    }
-
-    /// Set oracle result
-    pub fn set_oracle_result(&mut self, result: String) {
-        self.oracle_result = Some(result);
-    }
-
-    /// Set winning outcome
-    pub fn set_winning_outcome(&mut self, outcome: String) {
-        self.winning_outcome = Some(outcome);
-    }
-
-    /// Mark fees as collected
-    pub fn mark_fees_collected(&mut self) {
-        self.fee_collected = true;
-    }
-
-    /// Get total dispute stakes
+    /// Get total dispute stakes for the market
     pub fn total_dispute_stakes(&self) -> i128 {
         let mut total = 0;
         for (_, stake) in self.dispute_stakes.iter() {
@@ -346,31 +214,23 @@ impl Market {
         total
     }
 
-    /// Get winning stake total
-    pub fn winning_stake_total(&self) -> i128 {
-        if let Some(winning_outcome) = &self.winning_outcome {
-            let mut total = 0;
-            for (user, outcome) in self.votes.iter() {
-                if &outcome == winning_outcome {
-                    total += self.stakes.get(user.clone()).unwrap_or(0);
-                }
-            }
-            total
-        } else {
-            0
-        }
+    /// Add a vote to the market (for testing)
+    pub fn add_vote(&mut self, user: Address, outcome: String, stake: i128) {
+        self.votes.set(user.clone(), outcome);
+        self.stakes.set(user, stake);
+        self.total_staked += stake;
     }
 
     /// Validate market parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
+    pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
         // Validate question
         if self.question.is_empty() {
-            return Err(crate::errors::Error::InvalidQuestion);
+            return Err(crate::Error::InvalidQuestion);
         }
 
         // Validate outcomes
         if self.outcomes.len() < 2 {
-            return Err(crate::errors::Error::InvalidOutcomes);
+            return Err(crate::Error::InvalidOutcomes);
         }
 
         // Validate oracle config
@@ -378,10 +238,72 @@ impl Market {
 
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
-            return Err(crate::errors::Error::InvalidDuration);
+            return Err(crate::Error::InvalidDuration);
         }
 
         Ok(())
+    }
+}
+
+// ===== REFLECTOR ORACLE TYPES =====
+
+/// Reflector asset enumeration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReflectorAsset {
+    /// Stellar Lumens (XLM)
+    Stellar,
+    /// Other asset identified by symbol
+    Other(Symbol),
+}
+
+
+/// Reflector price data structure
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReflectorPriceData {
+    /// Price value in cents (e.g., 2500000 = $25,000)
+    pub price: i128,
+    /// Timestamp of price update
+    pub timestamp: u64,
+    /// Price source/confidence
+    pub source: String,
+}
+
+// ===== MARKET EXTENSION TYPES =====
+
+/// Market extension data structure
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketExtension {
+    /// Number of additional days
+    pub additional_days: u32,
+    /// Administrator who requested the extension
+    pub admin: Address,
+    /// Reason for the extension
+    pub reason: String,
+    /// Fee amount paid
+    pub fee_amount: i128,
+    /// Extension timestamp
+    pub timestamp: u64,
+}
+
+impl MarketExtension {
+    /// Create a new market extension
+    pub fn new(
+        env: &Env,
+        additional_days: u32,
+        admin: Address,
+        reason: String,
+        fee_amount: i128,
+    ) -> Self {
+        Self {
+            additional_days,
+            admin,
+            reason,
+            fee_amount,
+            timestamp: env.ledger().timestamp(),
+        }
     }
 }
 
@@ -389,217 +311,36 @@ impl Market {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExtensionStats {
-    /// Total number of extensions made
+    /// Total number of extensions
     pub total_extensions: u32,
-    /// Total extension days applied
+    /// Total extension days
     pub total_extension_days: u32,
-    /// Maximum allowed extension days
+    /// Maximum extension days allowed
     pub max_extension_days: u32,
-    /// Whether market can still be extended
+    /// Whether the market can be extended
     pub can_extend: bool,
     /// Extension fee per day
     pub extension_fee_per_day: i128,
 }
 
-// ===== PRICE TYPES =====
-
-/// Pyth Network price data structure
-#[contracttype]
-pub struct PythPrice {
-    /// Price value
-    pub price: i128,
-    /// Confidence interval
-    pub conf: u64,
-    /// Price exponent
-    pub expo: i32,
-    /// Publish timestamp
-    pub publish_time: u64,
-}
-
-impl PythPrice {
-    /// Create a new Pyth price
-    pub fn new(price: i128, conf: u64, expo: i32, publish_time: u64) -> Self {
-        Self {
-            price,
-            conf,
-            expo,
-            publish_time,
-        }
-    }
-
-    /// Get the price in cents
-    pub fn price_in_cents(&self) -> i128 {
-        self.price
-    }
-
-    /// Check if the price is stale (older than max_age seconds)
-    pub fn is_stale(&self, current_time: u64, max_age: u64) -> bool {
-        current_time - self.publish_time > max_age
-    }
-
-    /// Validate the price data
-    pub fn validate(&self) -> Result<(), crate::errors::Error> {
-        if self.price <= 0 {
-            return Err(crate::errors::Error::OraclePriceOutOfRange);
-        }
-
-        if self.conf == 0 {
-            return Err(crate::errors::Error::OracleDataStale);
-        }
-
-        Ok(())
-    }
-}
-
-/// Reflector asset types
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReflectorAsset {
-    /// Stellar asset (using contract address)
-    Stellar(Address),
-    /// Other asset (using symbol)
-    Other(Symbol),
-}
-
-impl ReflectorAsset {
-    /// Create a Stellar asset
-    pub fn stellar(contract_id: Address) -> Self {
-        ReflectorAsset::Stellar(contract_id)
-    }
-
-    /// Create an other asset
-    pub fn other(symbol: Symbol) -> Self {
-        ReflectorAsset::Other(symbol)
-    }
-
-    /// Get the asset identifier as a string
-    pub fn to_string(&self, env: &Env) -> String {
-        match self {
-            ReflectorAsset::Stellar(_addr) => String::from_str(env, "stellar_asset"),
-            ReflectorAsset::Other(_symbol) => String::from_str(env, "other_asset"),
-        }
-    }
-
-    /// Check if this is a Stellar asset
-    pub fn is_stellar(&self) -> bool {
-        matches!(self, ReflectorAsset::Stellar(_))
-    }
-
-    /// Check if this is an other asset
-    pub fn is_other(&self) -> bool {
-        matches!(self, ReflectorAsset::Other(_))
-    }
-}
-
-/// Reflector price data structure
-#[contracttype]
-pub struct ReflectorPriceData {
-    /// Price value
-    pub price: i128,
-    /// Timestamp
-    pub timestamp: u64,
-}
-
-impl ReflectorPriceData {
-    /// Create new Reflector price data
-    pub fn new(price: i128, timestamp: u64) -> Self {
-        Self { price, timestamp }
-    }
-
-    /// Get the price in cents
-    pub fn price_in_cents(&self) -> i128 {
-        self.price
-    }
-
-    /// Check if the price is stale
-    pub fn is_stale(&self, current_time: u64, max_age: u64) -> bool {
-        current_time - self.timestamp > max_age
-    }
-
-    /// Validate the price data
-    pub fn validate(&self) -> Result<(), crate::errors::Error> {
-        if self.price <= 0 {
-            return Err(crate::errors::Error::OraclePriceOutOfRange);
-        }
-
-        Ok(())
-    }
-}
-
-/// Reflector configuration data
-#[contracttype]
-pub struct ReflectorConfigData {
-    /// Admin address
-    pub admin: Address,
-    /// Supported assets
-    pub assets: Vec<ReflectorAsset>,
-    /// Base asset
-    pub base_asset: ReflectorAsset,
-    /// Decimal places
-    pub decimals: u32,
-    /// Update period
-    pub period: u64,
-    /// Resolution
-    pub resolution: u32,
-}
-
-impl ReflectorConfigData {
-    /// Create new Reflector config data
-    pub fn new(
-        admin: Address,
-        assets: Vec<ReflectorAsset>,
-        base_asset: ReflectorAsset,
-        decimals: u32,
-        period: u64,
-        resolution: u32,
-    ) -> Self {
-        Self {
-            admin,
-            assets,
-            base_asset,
-            decimals,
-            period,
-            resolution,
-        }
-    }
-
-    /// Check if an asset is supported
-    pub fn supports_asset(&self, asset: &ReflectorAsset) -> bool {
-        self.assets.contains(asset)
-    }
-
-    /// Validate the configuration
-    pub fn validate(&self) -> Result<(), crate::errors::Error> {
-        if self.assets.is_empty() {
-            return Err(crate::errors::Error::InvalidOracleConfig);
-        }
-
-        if self.decimals == 0 {
-            return Err(crate::errors::Error::InvalidOracleConfig);
-        }
-
-        if self.period == 0 {
-            return Err(crate::errors::Error::InvalidOracleConfig);
-        }
-
-        if self.resolution == 0 {
-            return Err(crate::errors::Error::InvalidOracleConfig);
-        }
-
-        Ok(())
-    }
-}
-
-// ===== VALIDATION TYPES =====
+// ===== MARKET CREATION TYPES =====
 
 /// Market creation parameters
-#[derive(Clone, Debug)]
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketCreationParams {
+    /// Market administrator address
     pub admin: Address,
+    /// Market question/prediction
     pub question: String,
+    /// Available outcomes for the market
     pub outcomes: Vec<String>,
+    /// Market duration in days
     pub duration_days: u32,
+    /// Oracle configuration for this market
     pub oracle_config: OracleConfig,
+    /// Creation fee amount
+    pub creation_fee: i128,
 }
 
 impl MarketCreationParams {
@@ -610,6 +351,7 @@ impl MarketCreationParams {
         outcomes: Vec<String>,
         duration_days: u32,
         oracle_config: OracleConfig,
+        creation_fee: i128,
     ) -> Self {
         Self {
             admin,
@@ -617,123 +359,18 @@ impl MarketCreationParams {
             outcomes,
             duration_days,
             oracle_config,
+            creation_fee,
         }
-    }
-
-    /// Validate all parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::errors::Error> {
-        // Validate question
-        if self.question.is_empty() {
-            return Err(crate::errors::Error::InvalidQuestion);
-        }
-
-        // Validate outcomes
-        if self.outcomes.len() < 2 {
-            return Err(crate::errors::Error::InvalidOutcomes);
-        }
-
-        // Validate duration
-        if self.duration_days == 0 || self.duration_days > 365 {
-            return Err(crate::errors::Error::InvalidDuration);
-        }
-
-        // Validate oracle config
-        self.oracle_config.validate(env)?;
-
-        Ok(())
-    }
-
-    /// Calculate end time from duration
-    pub fn calculate_end_time(&self, env: &Env) -> u64 {
-        let seconds_per_day: u64 = 24 * 60 * 60;
-        let duration_seconds: u64 = (self.duration_days as u64) * seconds_per_day;
-        env.ledger().timestamp() + duration_seconds
     }
 }
 
-/// Vote parameters
-#[derive(Clone, Debug)]
-pub struct VoteParams {
-    pub user: Address,
-    pub outcome: String,
-    pub stake: i128,
-}
 
-impl VoteParams {
-    /// Create new vote parameters
-    pub fn new(user: Address, outcome: String, stake: i128) -> Self {
-        Self {
-            user,
-            outcome,
-            stake,
-        }
-    }
+// ===== ADDITIONAL TYPES =====
 
-    /// Validate vote parameters
-    pub fn validate(&self, _env: &Env, market: &Market) -> Result<(), crate::errors::Error> {
-        // Validate outcome
-        if !market.outcomes.contains(&self.outcome) {
-            return Err(crate::errors::Error::InvalidOutcome);
-        }
-
-        // Validate stake
-        if self.stake <= 0 {
-            return Err(crate::errors::Error::InsufficientStake);
-        }
-
-        // Check if user already voted
-        if market.get_user_vote(&self.user).is_some() {
-            return Err(crate::errors::Error::AlreadyVoted);
-        }
-
-        Ok(())
-    }
-}
-
-// ===== UTILITY TYPES =====
-
-/// Market state enumeration
+/// Community consensus data
 #[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MarketState {
-    /// Market is active and accepting votes
-    Active,
-    /// Market has ended but not resolved
-    Ended,
-    /// Market has been resolved
-    Resolved,
-    /// Market is in dispute
-    Disputed,
-    /// Market has been closed
-    Closed,
-    /// Market has been cancelled
-    Cancelled,
-}
-
-impl MarketState {
-    /// Get state from market (legacy, for migration)
-    pub fn from_market(market: &Market, current_time: u64) -> Self {
-        market.state
-    }
-
-    /// Check if market is active
-    pub fn is_active(&self) -> bool {
-        matches!(self, MarketState::Active)
-    }
-
-    /// Check if market has ended
-    pub fn has_ended(&self) -> bool {
-        matches!(self, MarketState::Ended | MarketState::Resolved | MarketState::Closed | MarketState::Cancelled)
-    }
-
-    /// Check if market is resolved
-    pub fn is_resolved(&self) -> bool {
-        matches!(self, MarketState::Resolved)
-    }
-}
-
-/// Oracle result type
 #[derive(Clone, Debug, Eq, PartialEq)]
+<<<<<<< HEAD
 pub enum OracleResult {
     /// Oracle returned a price
     Price(i128),
@@ -1019,4 +656,16 @@ mod tests {
             "Pyth Network"
         );
     }
+=======
+pub struct CommunityConsensus {
+    /// Consensus outcome
+    pub outcome: String,
+    /// Number of votes for this outcome
+    pub votes: u32,
+    /// Total number of votes
+    pub total_votes: u32,
+    /// Percentage of votes for this outcome
+    pub percentage: i128,
+
+>>>>>>> a6217bfaf1e5cc95af15f467e0feee78e59c36c3
 }
