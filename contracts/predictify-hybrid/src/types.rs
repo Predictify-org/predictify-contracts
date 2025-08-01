@@ -86,9 +86,7 @@ impl OracleConfig {
     }
 
     /// Validate the oracle configuration
-
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
-
         // Validate threshold
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
@@ -145,15 +143,12 @@ pub struct Market {
     pub fee_collected: bool,
     /// Current market state
     pub state: MarketState,
-
     /// Total extension days
     pub total_extension_days: u32,
     /// Maximum extension days allowed
     pub max_extension_days: u32,
-
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
-
 }
 
 impl Market {
@@ -182,11 +177,9 @@ impl Market {
             winning_outcome: None,
             fee_collected: false,
             state,
-
             total_extension_days: 0,
             max_extension_days: 30, // Default maximum extension days
             extension_history: Vec::new(env),
-
         }
     }
 
@@ -256,7 +249,6 @@ pub enum ReflectorAsset {
     /// Other asset identified by symbol
     Other(Symbol),
 }
-
 
 /// Reflector price data structure
 #[contracttype]
@@ -364,7 +356,6 @@ impl MarketCreationParams {
     }
 }
 
-
 // ===== ADDITIONAL TYPES =====
 
 /// Community consensus data
@@ -379,5 +370,262 @@ pub struct CommunityConsensus {
     pub total_votes: u32,
     /// Percentage of votes for this outcome
     pub percentage: i128,
+}
 
+/// Oracle result enumeration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OracleResult {
+    /// Oracle returned a price
+    Price(i128),
+    /// Oracle is unavailable
+    Unavailable,
+    /// Oracle data is stale
+    Stale,
+}
+
+impl OracleResult {
+    /// Create from price
+    pub fn price(price: i128) -> Self {
+        OracleResult::Price(price)
+    }
+
+    /// Create unavailable result
+    pub fn unavailable() -> Self {
+        OracleResult::Unavailable
+    }
+
+    /// Create stale result
+    pub fn stale() -> Self {
+        OracleResult::Stale
+    }
+
+    /// Check if result is available
+    pub fn is_available(&self) -> bool {
+        matches!(self, OracleResult::Price(_))
+    }
+
+    /// Get price if available
+    pub fn get_price(&self) -> Option<i128> {
+        match self {
+            OracleResult::Price(price) => Some(*price),
+            _ => None,
+        }
+    }
+}
+
+// ===== HELPER FUNCTIONS =====
+
+/// Type validation helpers
+pub mod validation {
+    use super::*;
+
+    /// Validate oracle provider
+    pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), crate::errors::Error> {
+        if !provider.is_supported() {
+            return Err(crate::errors::Error::InvalidOracleConfig);
+        }
+        Ok(())
+    }
+
+    /// Validate price data
+    pub fn validate_price(price: i128) -> Result<(), crate::errors::Error> {
+        if price <= 0 {
+            return Err(crate::errors::Error::OraclePriceOutOfRange);
+        }
+        Ok(())
+    }
+
+    /// Validate stake amount
+    pub fn validate_stake(stake: i128, min_stake: i128) -> Result<(), crate::errors::Error> {
+        if stake < min_stake {
+            return Err(crate::errors::Error::InsufficientStake);
+        }
+        Ok(())
+    }
+
+    /// Validate market duration
+    pub fn validate_duration(duration_days: u32) -> Result<(), crate::errors::Error> {
+        if duration_days == 0 || duration_days > 365 {
+            return Err(crate::errors::Error::InvalidDuration);
+        }
+        Ok(())
+    }
+}
+
+/// Type conversion helpers
+pub mod conversion {
+    use super::*;
+
+    /// Convert string to oracle provider
+    pub fn string_to_oracle_provider(s: &str) -> Option<OracleProvider> {
+        match s.to_lowercase().as_str() {
+            "band" | "bandprotocol" => Some(OracleProvider::BandProtocol),
+            "dia" => Some(OracleProvider::DIA),
+            "reflector" => Some(OracleProvider::Reflector),
+            "pyth" => Some(OracleProvider::Pyth),
+            _ => None,
+        }
+    }
+
+    /// Convert oracle provider to string
+    pub fn oracle_provider_to_string(provider: &OracleProvider) -> &'static str {
+        provider.name()
+    }
+
+    /// Convert comparison string to validation
+    pub fn validate_comparison(comparison: &String, env: &Env) -> Result<(), crate::errors::Error> {
+        if comparison != &String::from_str(env, "gt")
+            && comparison != &String::from_str(env, "lt")
+            && comparison != &String::from_str(env, "eq")
+        {
+            return Err(crate::errors::Error::InvalidComparison);
+        }
+        Ok(())
+    }
+}
+
+// ===== MONITORING TYPES =====
+
+/// Alert information emitted by monitoring functions
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MonitoringAlert {
+    /// Type/code of alert
+    pub alert_type: String,
+    /// Human-readable message
+    pub message: String,
+    /// Severity: 0 = info, 1 = warning, 2 = critical
+    pub severity: u32,
+    /// Unix timestamp
+    pub timestamp: u64,
+}
+
+/// Generic monitoring data used for validation/logging
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MonitoringData {
+    /// Market health information
+    MarketHealth { market_id: Symbol, liquidity: i128, open_interest: i128 },
+    /// Oracle provider status
+    OracleHealth { provider: String, is_online: bool },
+    /// Fee revenue within timeframe
+    FeeRevenue { timeframe: TimeFrame, amount: i128 },
+    /// Dispute information
+    DisputeStatus { market_id: Symbol, open_disputes: u32 },
+    /// Contract performance metrics
+    PerformanceMetrics { tx_count: u32, avg_gas: i128 },
+    /// Custom payload
+    Custom(String),
+}
+
+/// Time frame definitions for monitoring analytics
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimeFrame {
+    LastHour,
+    LastDay,
+    LastWeek,
+    Custom(u64),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn test_oracle_provider() {
+        let provider = OracleProvider::Pyth;
+        assert_eq!(provider.name(), "Pyth");
+        assert!(!provider.is_supported()); // Only Reflector is supported
+    }
+
+    #[test]
+    fn test_oracle_config() {
+        let env = soroban_sdk::Env::default();
+        let config = OracleConfig::new(
+            OracleProvider::Reflector,
+            String::from_str(&env, "BTC"),
+            2500000,
+            String::from_str(&env, "gt"),
+        );
+
+        assert!(config.validate(&env).is_ok());
+    }
+
+    #[test]
+    fn test_market_creation() {
+        let env = soroban_sdk::Env::default();
+        let admin = Address::generate(&env);
+        let outcomes = vec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ];
+        let oracle_config = OracleConfig::new(
+            OracleProvider::Reflector,
+            String::from_str(&env, "BTC"),
+            2500000,
+            String::from_str(&env, "gt"),
+        );
+
+        let market = Market::new(
+            &env,
+            admin.clone(),
+            String::from_str(&env, "Test question"),
+            outcomes,
+            env.ledger().timestamp() + 86400,
+            oracle_config,
+            MarketState::Active,
+        );
+
+        assert!(market.is_active(env.ledger().timestamp()));
+        assert!(!market.is_resolved());
+        assert_eq!(market.total_staked, 0);
+    }
+
+    #[test]
+    fn test_oracle_result() {
+        let result = OracleResult::price(2500000);
+        assert!(result.is_available());
+        assert_eq!(result.get_price(), Some(2500000));
+
+        let unavailable = OracleResult::unavailable();
+        assert!(!unavailable.is_available());
+        assert_eq!(unavailable.get_price(), None);
+    }
+
+    #[test]
+    fn test_validation_helpers() {
+        assert!(validation::validate_oracle_provider(&OracleProvider::Reflector).is_ok());
+        assert!(validation::validate_price(2500000).is_ok());
+        assert!(validation::validate_stake(1000000, 500000).is_ok());
+        assert!(validation::validate_duration(30).is_ok());
+    }
+
+    #[test]
+    fn test_conversion_helpers() {
+        assert_eq!(
+            conversion::string_to_oracle_provider("reflector"),
+            Some(OracleProvider::Reflector)
+        );
+        assert_eq!(
+            conversion::oracle_provider_to_string(&OracleProvider::Reflector),
+            "Reflector"
+        );
+    }
+
+    #[test]
+    fn test_community_consensus() {
+        let consensus = CommunityConsensus {
+            outcome: String::from_str(&soroban_sdk::Env::default(), "yes"),
+            votes: 75,
+            total_votes: 100,
+            percentage: 75,
+        };
+        
+        assert_eq!(consensus.votes, 75);
+        assert_eq!(consensus.percentage, 75);
+    }
 }

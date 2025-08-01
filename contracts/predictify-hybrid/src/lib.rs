@@ -28,7 +28,87 @@ pub use types::*;
 use admin::AdminInitializer;
 
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec, symbol_short,
+};
+
+// Predictify Hybrid Contract - Organized Module Structure
+// 
+// This contract provides a comprehensive prediction market system with:
+// - Oracle integration for automated market resolution
+// - Community voting and consensus mechanisms
+// - Dispute resolution and escalation systems
+// - Fee management and analytics
+// - Admin controls and configuration management
+// - Event logging and monitoring
+// - Validation and security systems
+
+// ===== MODULE DECLARATIONS =====
+
+/// Error handling and management module
+pub mod errors;
+use errors::Error;
+
+/// Core data types and structures module
+pub mod types;
+use types::*;
+
+/// Oracle integration and management module
+pub mod oracles;
+
+/// Market creation and state management module
+pub mod markets;
+use markets::{MarketCreator, MarketStateManager};
+
+/// Voting system and consensus module
+pub mod voting;
+use voting::{VotingManager};
+
+/// Dispute resolution and escalation module
+pub mod disputes;
+use disputes::{DisputeManager};
+
+/// Market resolution and analytics module
+pub mod resolution;
+use resolution::{OracleResolutionManager, MarketResolutionManager};
+
+/// Fee calculation and management module
+pub mod fees;
+use fees::{FeeManager};
+
+/// Configuration management module
+pub mod config;
+use config::{ConfigManager, ConfigUtils, ConfigValidator, ContractConfig, Environment};
+
+/// Utility functions and helpers module
+pub mod utils;
+use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, CommonUtils};
+
+/// Event logging module
+pub mod events;
+use events::{EventLogger, EventHelpers, EventTestingUtils, EventDocumentation};
+
+/// Monitoring subsystem module
+pub mod monitoring;
+use monitoring::ContractMonitor;
+
+/// Admin controls and functions module
+pub mod admin;
+use admin::{AdminInitializer, AdminFunctions};
+
+/// Market extensions and modifications module
+pub mod extensions;
+use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
+
+/// Input validation and security module
+pub mod validation;
+use validation::{
+    ValidationResult, InputValidator, 
+    MarketValidator as ValidationMarketValidator, 
+    OracleValidator as ValidationOracleValidator,
+    FeeValidator as ValidationFeeValidator, 
+    VoteValidator as ValidationVoteValidator, 
+    DisputeValidator as ValidationDisputeValidator, 
+    ComprehensiveValidator, ValidationDocumentation,
 };
 
 #[contract]
