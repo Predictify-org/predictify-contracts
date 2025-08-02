@@ -26,7 +26,64 @@ pub enum AdminRole {
 
 // ===== EVENT TYPES =====
 
-/// Market creation event
+/// Event emitted when a new prediction market is successfully created.
+///
+/// This event provides comprehensive information about newly created markets,
+/// including market parameters, outcomes, administrative details, and timing.
+/// Essential for tracking market creation activity and building market indices.
+///
+/// # Event Data
+///
+/// Contains all critical market creation parameters:
+/// - Market identification and question details
+/// - Available outcomes for prediction
+/// - Administrative and timing information
+/// - Creation timestamp for chronological ordering
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+/// # use predictify_hybrid::events::MarketCreatedEvent;
+/// # let env = Env::default();
+/// # let admin = Address::generate(&env);
+/// 
+/// // Market creation event data
+/// let event = MarketCreatedEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     question: String::from_str(&env, "Will Bitcoin reach $50,000 by end of 2024?"),
+///     outcomes: vec![
+///         &env,
+///         String::from_str(&env, "Yes"),
+///         String::from_str(&env, "No")
+///     ],
+///     admin: admin.clone(),
+///     end_time: 1735689600, // Dec 31, 2024
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// 
+/// // Event provides complete market context
+/// println!("New market: {}", event.question.to_string());
+/// println!("Market ID: {}", event.market_id.to_string());
+/// println!("Outcomes: {} options", event.outcomes.len());
+/// println!("Ends: {}", event.end_time);
+/// ```
+///
+/// # Integration Points
+///
+/// - **Market Indexing**: Build searchable market directories
+/// - **Activity Feeds**: Display recent market creation activity
+/// - **Analytics**: Track market creation patterns and trends
+/// - **Notifications**: Alert users about new markets in categories of interest
+/// - **Audit Trails**: Maintain complete record of market creation events
+///
+/// # Event Timing
+///
+/// Emitted immediately after successful market creation, providing:
+/// - Real-time notification of new markets
+/// - Chronological ordering via timestamp
+/// - Immediate availability for user interfaces
+/// - Historical record for analytics and reporting
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketCreatedEvent {
@@ -44,7 +101,67 @@ pub struct MarketCreatedEvent {
     pub timestamp: u64,
 }
 
-/// Vote cast event
+/// Event emitted when a user successfully casts a vote on a prediction market.
+///
+/// This event captures all details of voting activity, including voter identity,
+/// chosen outcome, stake amount, and timing. Critical for tracking market
+/// participation, calculating outcomes, and maintaining voting transparency.
+///
+/// # Vote Information
+///
+/// Records complete voting context:
+/// - Market and voter identification
+/// - Selected outcome and confidence (stake)
+/// - Precise timing for chronological analysis
+/// - Economic weight for outcome calculations
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::events::VoteCastEvent;
+/// # let env = Env::default();
+/// # let voter = Address::generate(&env);
+/// 
+/// // Vote casting event data
+/// let event = VoteCastEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     voter: voter.clone(),
+///     outcome: String::from_str(&env, "Yes"),
+///     stake: 10_000_000, // 1.0 XLM
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// 
+/// // Event provides complete voting context
+/// println!("Vote cast by: {}", event.voter.to_string());
+/// println!("Market: {}", event.market_id.to_string());
+/// println!("Outcome: {}", event.outcome.to_string());
+/// println!("Stake: {} XLM", event.stake / 10_000_000);
+/// ```
+///
+/// # Economic Tracking
+///
+/// Enables comprehensive economic analysis:
+/// - **Stake Distribution**: Track economic weight across outcomes
+/// - **Voter Confidence**: Analyze stake amounts as confidence indicators
+/// - **Market Liquidity**: Monitor total stakes and participation levels
+/// - **Outcome Probability**: Calculate implied probabilities from stakes
+///
+/// # Transparency Features
+///
+/// Supports market transparency through:
+/// - **Public Voting Records**: All votes are publicly auditable
+/// - **Stake Verification**: Economic weights are transparently recorded
+/// - **Chronological Ordering**: Precise timing enables trend analysis
+/// - **Voter Attribution**: Clear voter identity for accountability
+///
+/// # Integration Applications
+///
+/// - **Real-time Updates**: Live market activity feeds
+/// - **Analytics Dashboards**: Voting pattern analysis and visualization
+/// - **Outcome Calculation**: Stake-weighted probability calculations
+/// - **User Portfolios**: Track individual voting history and performance
+/// - **Market Sentiment**: Aggregate voting trends and momentum analysis
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VoteCastEvent {
@@ -60,7 +177,70 @@ pub struct VoteCastEvent {
     pub timestamp: u64,
 }
 
-/// Oracle result fetched event
+/// Event emitted when oracle data is successfully fetched for market resolution.
+///
+/// This event captures comprehensive oracle data retrieval information, including
+/// the specific data source, fetched values, comparison logic, and timing.
+/// Essential for transparency, auditability, and dispute resolution processes.
+///
+/// # Oracle Data Context
+///
+/// Provides complete oracle resolution context:
+/// - Market identification and oracle provider details
+/// - Actual fetched data values and comparison parameters
+/// - Resolution logic and threshold evaluation
+/// - Precise timing for chronological verification
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String};
+/// # use predictify_hybrid::events::OracleResultEvent;
+/// # let env = Env::default();
+/// 
+/// // Oracle result event for Bitcoin price market
+/// let event = OracleResultEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     result: String::from_str(&env, "Yes"), // Bitcoin reached $50k
+///     provider: String::from_str(&env, "Chainlink"),
+///     feed_id: String::from_str(&env, "BTC/USD"),
+///     price: 52_000_00000000, // $52,000 (8 decimal precision)
+///     threshold: 50_000_00000000, // $50,000 threshold
+///     comparison: String::from_str(&env, "gte"), // greater than or equal
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// 
+/// // Event provides complete oracle context
+/// println!("Oracle result: {}", event.result.to_string());
+/// println!("Price fetched: ${}", event.price / 100000000);
+/// println!("Threshold: ${}", event.threshold / 100000000);
+/// println!("Provider: {}", event.provider.to_string());
+/// println!("Feed: {}", event.feed_id.to_string());
+/// ```
+///
+/// # Transparency and Auditability
+///
+/// Enables complete oracle transparency:
+/// - **Data Source Verification**: Clear provider and feed identification
+/// - **Value Documentation**: Exact fetched values with precision
+/// - **Logic Transparency**: Comparison operators and thresholds
+/// - **Timing Verification**: Precise fetch timestamps
+///
+/// # Dispute Resolution Support
+///
+/// Critical for dispute processes:
+/// - **Evidence Base**: Concrete data for dispute evaluation
+/// - **Verification Path**: Complete audit trail from source to result
+/// - **Alternative Validation**: Enable cross-reference with other sources
+/// - **Historical Context**: Timestamp-based data verification
+///
+/// # Integration Applications
+///
+/// - **Oracle Monitoring**: Track oracle performance and reliability
+/// - **Data Verification**: Cross-reference oracle results with external sources
+/// - **Dispute Analysis**: Provide evidence for community dispute resolution
+/// - **Market Analytics**: Analyze oracle accuracy and market outcomes
+/// - **Compliance Reporting**: Maintain regulatory audit trails
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleResultEvent {
@@ -82,7 +262,73 @@ pub struct OracleResultEvent {
     pub timestamp: u64,
 }
 
-/// Market resolved event
+/// Event emitted when a prediction market is successfully resolved with final outcome.
+///
+/// This event captures the complete resolution process, including the final outcome,
+/// resolution methodology (oracle vs. community), confidence metrics, and timing.
+/// Critical for market finalization, payout calculations, and resolution transparency.
+///
+/// # Resolution Context
+///
+/// Provides comprehensive resolution information:
+/// - Final market outcome and supporting evidence
+/// - Resolution methodology and confidence scoring
+/// - Oracle and community input comparison
+/// - Timing for chronological resolution tracking
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String};
+/// # use predictify_hybrid::events::MarketResolvedEvent;
+/// # let env = Env::default();
+/// 
+/// // Market resolution event for Bitcoin price market
+/// let event = MarketResolvedEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     final_outcome: String::from_str(&env, "Yes"),
+///     oracle_result: String::from_str(&env, "Yes"),
+///     community_consensus: String::from_str(&env, "Yes"),
+///     resolution_method: String::from_str(&env, "Oracle_Community_Consensus"),
+///     confidence_score: 95, // 95% confidence
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// 
+/// // Event provides complete resolution context
+/// println!("Market resolved: {}", event.market_id.to_string());
+/// println!("Final outcome: {}", event.final_outcome.to_string());
+/// println!("Resolution method: {}", event.resolution_method.to_string());
+/// println!("Confidence: {}%", event.confidence_score);
+/// 
+/// // Check consensus alignment
+/// let consensus_aligned = event.oracle_result == event.community_consensus;
+/// println!("Oracle-Community alignment: {}", consensus_aligned);
+/// ```
+///
+/// # Resolution Methods
+///
+/// Supports multiple resolution approaches:
+/// - **Oracle Only**: Pure oracle-based resolution
+/// - **Community Only**: Pure community voting resolution
+/// - **Hybrid Consensus**: Oracle and community agreement
+/// - **Dispute Resolution**: Community override of oracle result
+/// - **Admin Override**: Administrative resolution for edge cases
+///
+/// # Confidence Scoring
+///
+/// Confidence scores indicate resolution reliability:
+/// - **90-100%**: High confidence, strong consensus
+/// - **70-89%**: Medium confidence, reasonable consensus
+/// - **50-69%**: Low confidence, weak consensus
+/// - **Below 50%**: Very low confidence, potential disputes
+///
+/// # Integration Applications
+///
+/// - **Payout Processing**: Trigger reward distribution to winners
+/// - **Market Analytics**: Track resolution accuracy and patterns
+/// - **Confidence Metrics**: Display resolution reliability to users
+/// - **Dispute Prevention**: Early warning for low-confidence resolutions
+/// - **Historical Analysis**: Build resolution methodology effectiveness data
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketResolvedEvent {
@@ -102,7 +348,72 @@ pub struct MarketResolvedEvent {
     pub timestamp: u64,
 }
 
-/// Dispute created event
+/// Event emitted when a user creates a formal dispute against a market resolution.
+///
+/// This event captures dispute initiation details, including the disputing party,
+/// economic stake, reasoning, and timing. Essential for tracking dispute activity,
+/// managing dispute processes, and maintaining resolution transparency.
+///
+/// # Dispute Information
+///
+/// Records complete dispute context:
+/// - Market identification and disputing party
+/// - Economic stake demonstrating dispute seriousness
+/// - Optional reasoning for dispute justification
+/// - Precise timing for dispute process management
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::events::DisputeCreatedEvent;
+/// # let env = Env::default();
+/// # let disputer = Address::generate(&env);
+/// 
+/// // Dispute creation event
+/// let event = DisputeCreatedEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     disputer: disputer.clone(),
+///     stake: 50_000_000, // 5.0 XLM dispute stake
+///     reason: Some(String::from_str(&env, 
+///         "Oracle price appears incorrect - multiple exchanges show different value")),
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// 
+/// // Event provides complete dispute context
+/// println!("Dispute created by: {}", event.disputer.to_string());
+/// println!("Market disputed: {}", event.market_id.to_string());
+/// println!("Stake amount: {} XLM", event.stake / 10_000_000);
+/// 
+/// if let Some(reason) = &event.reason {
+///     println!("Dispute reason: {}", reason.to_string());
+/// }
+/// ```
+///
+/// # Economic Stakes
+///
+/// Dispute stakes serve multiple purposes:
+/// - **Seriousness Filter**: Minimum stake prevents frivolous disputes
+/// - **Economic Risk**: Disputers risk stake if dispute is rejected
+/// - **Incentive Alignment**: Encourages well-researched disputes
+/// - **Compensation Pool**: Stakes fund dispute resolution rewards
+///
+/// # Dispute Lifecycle
+///
+/// Dispute creation triggers:
+/// 1. **Validation**: Check dispute eligibility and stake requirements
+/// 2. **Community Voting**: Open dispute for community evaluation
+/// 3. **Evidence Collection**: Gather supporting data and arguments
+/// 4. **Resolution Process**: Determine dispute validity
+/// 5. **Stake Distribution**: Reward accurate participants
+///
+/// # Integration Applications
+///
+/// - **Dispute Management**: Track and manage active disputes
+/// - **Community Engagement**: Notify community of new disputes
+/// - **Resolution Analytics**: Analyze dispute patterns and outcomes
+/// - **Transparency Reporting**: Maintain public dispute records
+/// - **Economic Monitoring**: Track dispute stakes and economic activity
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DisputeCreatedEvent {
@@ -118,7 +429,79 @@ pub struct DisputeCreatedEvent {
     pub timestamp: u64,
 }
 
-/// Dispute resolved event
+/// Event emitted when a dispute is successfully resolved with final outcome and rewards.
+///
+/// This event captures the complete dispute resolution process, including the final
+/// outcome, winning and losing participants, fee distribution, and timing.
+/// Essential for transparency, reward distribution, and dispute analytics.
+///
+/// # Resolution Information
+///
+/// Records complete dispute resolution context:
+/// - Market identification and final dispute outcome
+/// - Winner and loser participant lists
+/// - Economic reward distribution amounts
+/// - Precise timing for chronological tracking
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+/// # use predictify_hybrid::events::DisputeResolvedEvent;
+/// # let env = Env::default();
+/// # let winner1 = Address::generate(&env);
+/// # let winner2 = Address::generate(&env);
+/// # let loser1 = Address::generate(&env);
+/// 
+/// // Dispute resolution event
+/// let event = DisputeResolvedEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     outcome: String::from_str(&env, "Dispute_Upheld"), // Community sided with disputer
+///     winners: vec![&env, winner1.clone(), winner2.clone()], // Correct voters
+///     losers: vec![&env, loser1.clone()], // Incorrect voters
+///     fee_distribution: 25_000_000, // 2.5 XLM distributed to winners
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// 
+/// // Event provides complete resolution context
+/// println!("Dispute resolved: {}", event.market_id.to_string());
+/// println!("Outcome: {}", event.outcome.to_string());
+/// println!("Winners: {} participants", event.winners.len());
+/// println!("Losers: {} participants", event.losers.len());
+/// println!("Total rewards: {} XLM", event.fee_distribution / 10_000_000);
+/// ```
+///
+/// # Resolution Outcomes
+///
+/// Possible dispute outcomes:
+/// - **Dispute_Upheld**: Community agreed with disputer, oracle was wrong
+/// - **Dispute_Rejected**: Community disagreed with disputer, oracle was correct
+/// - **Dispute_Inconclusive**: Insufficient consensus, requires escalation
+/// - **Dispute_Invalid**: Dispute did not meet validity requirements
+///
+/// # Economic Distribution
+///
+/// Fee distribution mechanics:
+/// - **Winner Rewards**: Proportional share of loser stakes
+/// - **Stake Recovery**: Winners recover their original stakes
+/// - **Penalty Application**: Losers forfeit stakes to winners
+/// - **Platform Fee**: Small percentage retained for operations
+///
+/// # Participant Tracking
+///
+/// Winner and loser lists enable:
+/// - **Reward Distribution**: Direct transfer to winner addresses
+/// - **Reputation Tracking**: Build participant accuracy records
+/// - **Analytics**: Analyze voting patterns and success rates
+/// - **Transparency**: Public record of dispute participation
+///
+/// # Integration Applications
+///
+/// - **Reward Processing**: Execute payments to winning participants
+/// - **Reputation Systems**: Update participant accuracy scores
+/// - **Dispute Analytics**: Track resolution patterns and outcomes
+/// - **Community Metrics**: Measure dispute system effectiveness
+/// - **Transparency Reporting**: Maintain public dispute resolution records
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DisputeResolvedEvent {

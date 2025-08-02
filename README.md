@@ -7,15 +7,16 @@
 
 ## 📋 Table of Contents
 1. [Project Summary](#project-summary)  
-2. [Prerequisites](#prerequisites)  
-3. [Configuration for Mainnet](#configuration-for-mainnet)  
-4. [Deployment Instructions](#deployment-instructions)  
-5. [Oracle Setup](#oracle-setup)  
-6. [Testing Deployment](#testing-deployment)  
-7. [Monitoring and Alerts](#monitoring-and-alerts)  
-8. [Security Checklist](#security-checklist)  
-9. [Rollback Procedures](#rollback-procedures)  
-10. [Maintenance Procedures](#maintenance-procedures)
+2. [API Documentation](#api-documentation)  
+3. [Prerequisites](#prerequisites)  
+4. [Configuration for Mainnet](#configuration-for-mainnet)  
+5. [Deployment Instructions](#deployment-instructions)  
+6. [Oracle Setup](#oracle-setup)  
+7. [Testing Deployment](#testing-deployment)  
+8. [Monitoring and Alerts](#monitoring-and-alerts)  
+9. [Security Checklist](#security-checklist)  
+10. [Rollback Procedures](#rollback-procedures)  
+11. [Maintenance Procedures](#maintenance-procedures)
 
 ---
 
@@ -24,6 +25,23 @@ This repository contains smart contracts for Stellar's Soroban platform, organiz
 
 - `hello-world`: A basic example contract for testing and structure reference.
 - `predictify-hybrid`: A hybrid prediction market with oracle integration (Reflector, Pyth), staking, dispute resolution, and community voting.
+
+---
+
+## 📚 API Documentation
+
+For comprehensive API documentation, including versioning information, integration examples, and troubleshooting guides, please refer to:
+
+**📖 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)**
+
+This dedicated documentation file contains:
+- **API Versioning**: Semantic versioning, compatibility matrix, upgrade strategies
+- **Core API Reference**: Function signatures, parameters, and examples
+- **Data Structures**: Complete type definitions and usage
+- **Error Codes**: Comprehensive error reference with solutions
+- **Integration Examples**: Real-world usage patterns and best practices
+- **Troubleshooting Guide**: Common issues and debugging tools
+- **Support Resources**: Community channels and getting help
 
 ---
 
@@ -193,7 +211,7 @@ soroban contract deploy ...
 - Publish deployed contract IDs in README
 - Oracle dashboard or visual monitor tool (Grafana, etc.)
 
----
+
 
 For deployment support or technical questions, please open an issue or contact the Predictify core team.
 

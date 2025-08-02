@@ -38,7 +38,33 @@ pub const DISPUTE_EXTENSION_HOURS: u32 = crate::config::DISPUTE_EXTENSION_HOURS;
 
 // ===== VOTING STRUCTURES =====
 
-/// Represents a user's vote on a market
+/// Represents a user's vote on a prediction market.
+///
+/// This structure encapsulates all essential information about a user's voting action,
+/// including their chosen outcome, stake amount, and timestamp. Votes are immutable
+/// once recorded and form the foundation of the prediction market's consensus mechanism.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String};
+/// # use predictify_hybrid::voting::Vote;
+/// # let env = Env::default();
+/// 
+/// let vote = Vote {
+///     user: Address::generate(&env),
+///     outcome: String::from_str(&env, "yes"),
+///     stake: 5000000i128, // 0.5 XLM
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+///
+/// # Integration Points
+///
+/// Vote structures integrate with:
+/// - **Market System**: Votes are aggregated to determine market consensus
+/// - **Payout System**: Vote stakes determine winning distributions
+/// - **Analytics System**: Vote data powers market analytics and insights
 #[contracttype]
 pub struct Vote {
     pub user: Address,
@@ -47,7 +73,31 @@ pub struct Vote {
     pub timestamp: u64,
 }
 
-/// Represents voting statistics for a market
+/// Comprehensive voting statistics for a prediction market.
+///
+/// This structure provides detailed analytics about voting activity on a market,
+/// including participation metrics, stake distribution, and voter demographics.
+/// Statistics are calculated dynamically and provide insights into market health
+/// and consensus formation.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Map, String};
+/// # use predictify_hybrid::voting::VotingStats;
+/// # let env = Env::default();
+/// 
+/// let mut outcome_distribution = Map::new(&env);
+/// outcome_distribution.set(String::from_str(&env, "yes"), 15000000i128);
+/// outcome_distribution.set(String::from_str(&env, "no"), 8000000i128);
+/// 
+/// let stats = VotingStats {
+///     total_votes: 25,
+///     total_staked: 23000000i128,
+///     outcome_distribution,
+///     unique_voters: 18,
+/// };
+/// ```
 #[contracttype]
 pub struct VotingStats {
     pub total_votes: u32,
@@ -56,7 +106,26 @@ pub struct VotingStats {
     pub unique_voters: u32,
 }
 
-/// Represents payout calculation data
+/// Comprehensive payout calculation data for winning voters.
+///
+/// This structure contains all necessary information to calculate and validate
+/// payouts for users who voted on the winning outcome of a prediction market.
+/// It ensures transparent and accurate distribution of winnings based on
+/// proportional stake and platform fee deductions.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use predictify_hybrid::voting::PayoutData;
+/// 
+/// let payout_data = PayoutData {
+///     user_stake: 2000000i128,      // User staked 0.2 XLM
+///     winning_total: 8000000i128,   // Total winning stake: 0.8 XLM
+///     total_pool: 20000000i128,     // Total market pool: 2.0 XLM
+///     fee_percentage: 200i128,      // 2% platform fee
+///     payout_amount: 4900000i128,   // Final payout: 0.49 XLM
+/// };
+/// ```
 #[contracttype]
 pub struct PayoutData {
     pub user_stake: i128,
@@ -66,7 +135,30 @@ pub struct PayoutData {
     pub payout_amount: i128,
 }
 
-/// Represents dispute threshold data
+/// Dynamic dispute threshold configuration for prediction markets.
+///
+/// This structure manages the dispute threshold system that determines how much
+/// stake is required to initiate a dispute against a market's resolution.
+/// Thresholds are dynamically adjusted based on market characteristics such as
+/// size, activity level, and complexity to ensure appropriate dispute barriers.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol};
+/// # use predictify_hybrid::voting::DisputeThreshold;
+/// # let env = Env::default();
+/// 
+/// let threshold = DisputeThreshold {
+///     market_id: Symbol::new(&env, "BTC_100K"),
+///     base_threshold: 100000000i128,      // 10 XLM base
+///     adjusted_threshold: 150000000i128,   // 15 XLM after adjustments
+///     market_size_factor: 1200i128,       // 20% increase for large market
+///     activity_factor: 1100i128,          // 10% increase for high activity
+///     complexity_factor: 1000i128,        // No complexity adjustment
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
 #[contracttype]
 pub struct DisputeThreshold {
     pub market_id: Symbol,
@@ -78,7 +170,28 @@ pub struct DisputeThreshold {
     pub timestamp: u64,
 }
 
-/// Represents threshold adjustment factors
+/// Threshold adjustment factors for dynamic dispute threshold calculation.
+///
+/// This structure contains the individual adjustment factors used to calculate
+/// dynamic dispute thresholds based on market characteristics. Each factor
+/// represents a multiplier (in basis points) that adjusts the base threshold
+/// to reflect market-specific conditions and risk levels.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use predictify_hybrid::voting::ThresholdAdjustmentFactors;
+/// 
+/// let factors = ThresholdAdjustmentFactors {
+///     market_size_factor: 1300i128,    // 30% increase for large market
+///     activity_factor: 1150i128,       // 15% increase for high activity
+///     complexity_factor: 1100i128,     // 10% increase for complexity
+///     total_adjustment: 1649i128,      // Combined 64.9% increase
+/// };
+/// 
+/// let base_threshold = 100000000i128; // 10 XLM
+/// let adjusted_threshold = (base_threshold * factors.total_adjustment) / 1000;
+/// ```
 #[contracttype]
 pub struct ThresholdAdjustmentFactors {
     pub market_size_factor: i128,
@@ -87,7 +200,29 @@ pub struct ThresholdAdjustmentFactors {
     pub total_adjustment: i128,
 }
 
-/// Represents threshold history entry
+/// Historical record of dispute threshold changes for audit and governance.
+///
+/// This structure maintains a complete audit trail of all dispute threshold
+/// modifications for a market, including the rationale for changes and the
+/// administrator who authorized them. This ensures transparency and accountability
+/// in threshold management decisions.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, Symbol};
+/// # use predictify_hybrid::voting::ThresholdHistoryEntry;
+/// # let env = Env::default();
+/// 
+/// let history_entry = ThresholdHistoryEntry {
+///     market_id: Symbol::new(&env, "BTC_100K"),
+///     old_threshold: 100000000i128,    // Previous: 10 XLM
+///     new_threshold: 150000000i128,    // New: 15 XLM
+///     adjustment_reason: String::from_str(&env, "Increased due to high market activity"),
+///     adjusted_by: Address::generate(&env),
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
 #[contracttype]
 #[derive(Clone)]
 pub struct ThresholdHistoryEntry {
@@ -101,7 +236,67 @@ pub struct ThresholdHistoryEntry {
 
 // ===== VOTING MANAGER =====
 
-/// Main voting manager for handling all voting operations
+/// Comprehensive voting manager for prediction market voting operations.
+///
+/// VotingManager serves as the central coordinator for all voting-related operations
+/// in the prediction market system. It handles vote processing, dispute management,
+/// claim processing, fee collection, and dynamic threshold management. The manager
+/// ensures voting integrity, proper stake handling, and accurate payout calculations.
+///
+/// # Core Functionality
+///
+/// **Vote Processing:**
+/// - Validate and process user votes on market outcomes
+/// - Handle stake transfers and vote recording
+/// - Ensure voting eligibility and prevent duplicate votes
+///
+/// **Dispute Management:**
+/// - Process dispute submissions against market resolutions
+/// - Validate dispute stakes against dynamic thresholds
+/// - Handle dispute stake transfers and recording
+///
+/// **Claim Processing:**
+/// - Calculate and distribute winnings to successful voters
+/// - Validate claim eligibility and prevent double claims
+/// - Handle payout transfers and fee deductions
+///
+/// **Threshold Management:**
+/// - Calculate dynamic dispute thresholds based on market characteristics
+/// - Support administrative threshold adjustments
+/// - Maintain threshold history for governance and audit
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, Symbol};
+/// # use predictify_hybrid::voting::VotingManager;
+/// # let env = Env::default();
+/// 
+/// let user = Address::generate(&env);
+/// let market_id = Symbol::new(&env, "BTC_100K");
+/// let outcome = String::from_str(&env, "yes");
+/// let stake = 5000000i128; // 0.5 XLM
+/// 
+/// // Process a user vote
+/// match VotingManager::process_vote(&env, user.clone(), market_id.clone(), outcome, stake) {
+///     Ok(()) => println!("Vote processed successfully"),
+///     Err(e) => println!("Vote processing failed: {:?}", e),
+/// }
+/// 
+/// // Process a winning claim
+/// match VotingManager::process_claim(&env, user.clone(), market_id.clone()) {
+///     Ok(payout) => println!("Claim processed: {} stroops payout", payout),
+///     Err(e) => println!("Claim processing failed: {:?}", e),
+/// }
+/// ```
+///
+/// # Integration Points
+///
+/// VotingManager integrates with:
+/// - **Market System**: Validates market states and updates market data
+/// - **Token System**: Handles stake transfers and payout distributions
+/// - **Event System**: Emits events for all voting operations
+/// - **Validation System**: Uses comprehensive validation for all operations
 pub struct VotingManager;
 
 impl VotingManager {
@@ -288,7 +483,57 @@ impl VotingManager {
 
 // ===== THRESHOLD UTILITIES =====
 
-/// Utility functions for threshold management
+/// Comprehensive threshold management utilities for dynamic dispute thresholds.
+///
+/// ThresholdUtils provides a complete suite of functions for managing dynamic dispute
+/// thresholds in prediction markets. It handles threshold calculation, adjustment factor
+/// computation, threshold storage and retrieval, history tracking, and validation.
+/// The utilities ensure fair and appropriate dispute barriers based on market characteristics.
+///
+/// # Core Functionality
+///
+/// **Threshold Calculation:**
+/// - Calculate dynamic thresholds based on market characteristics
+/// - Apply adjustment factors for market size, activity, and complexity
+/// - Ensure thresholds remain within acceptable bounds
+///
+/// **Factor Management:**
+/// - Compute adjustment factors based on market metrics
+/// - Handle market size, activity level, and complexity assessments
+/// - Combine factors into total adjustment multipliers
+///
+/// **Storage Operations:**
+/// - Store and retrieve dispute threshold configurations
+/// - Maintain threshold history for audit and governance
+/// - Handle threshold updates and modifications
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, Address, String};
+/// # use predictify_hybrid::voting::{ThresholdUtils, DisputeThreshold};
+/// # let env = Env::default();
+/// 
+/// let market_id = Symbol::new(&env, "BTC_100K");
+/// 
+/// // Get threshold adjustment factors
+/// match ThresholdUtils::get_threshold_adjustment_factors(&env, &market_id) {
+///     Ok(factors) => {
+///         println!("Market size factor: {}", factors.market_size_factor);
+///         println!("Activity factor: {}", factors.activity_factor);
+///         println!("Total adjustment: {}", factors.total_adjustment);
+///     }
+///     Err(e) => println!("Factor calculation failed: {:?}", e),
+/// }
+/// ```
+///
+/// # Integration Points
+///
+/// ThresholdUtils integrates with:
+/// - **Voting System**: Provide thresholds for dispute validation
+/// - **Market Analytics**: Use market data for threshold calculations
+/// - **Admin System**: Support manual threshold adjustments
+/// - **Storage System**: Persist threshold data and history
 pub struct ThresholdUtils;
 
 impl ThresholdUtils {
@@ -481,7 +726,53 @@ impl ThresholdUtils {
 
 // ===== THRESHOLD VALIDATOR =====
 
-/// Validates threshold-related operations
+/// Comprehensive validation utilities for threshold-related operations.
+///
+/// ThresholdValidator provides specialized validation functions for all threshold-related
+/// operations in the voting system. It ensures that threshold values are within acceptable
+/// ranges, validates administrative permissions for threshold adjustments, and maintains
+/// system integrity through comprehensive validation checks.
+///
+/// # Core Functionality
+///
+/// **Threshold Validation:**
+/// - Validate threshold values against system limits
+/// - Check threshold ranges and constraints
+/// - Ensure threshold consistency and integrity
+///
+/// **Permission Validation:**
+/// - Validate administrative permissions for threshold adjustments
+/// - Check user authorization for threshold operations
+/// - Ensure proper access control for sensitive operations
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::voting::ThresholdValidator;
+/// # let env = Env::default();
+/// 
+/// // Validate threshold limits
+/// let threshold = 100000000i128; // 10 XLM
+/// match ThresholdValidator::validate_threshold_limits(threshold) {
+///     Ok(()) => println!("Threshold is valid"),
+///     Err(e) => println!("Threshold validation failed: {:?}", e),
+/// }
+/// 
+/// // Validate admin permissions
+/// let admin = Address::generate(&env);
+/// match ThresholdValidator::validate_threshold_adjustment_permissions(&env, &admin) {
+///     Ok(()) => println!("Admin authorized for threshold adjustments"),
+///     Err(e) => println!("Permission validation failed: {:?}", e),
+/// }
+/// ```
+///
+/// # Integration Points
+///
+/// ThresholdValidator integrates with:
+/// - **Admin System**: Validate administrative operations
+/// - **Threshold System**: Ensure threshold value integrity
+/// - **Security System**: Enforce access control and permissions
 pub struct ThresholdValidator;
 
 impl ThresholdValidator {
@@ -509,7 +800,66 @@ impl ThresholdValidator {
 
 // ===== VOTING VALIDATOR =====
 
-/// Validates voting-related operations
+/// Comprehensive validation utilities for voting-related operations.
+///
+/// VotingValidator provides specialized validation functions for all voting operations
+/// in the prediction market system. It ensures voting integrity, validates user permissions,
+/// checks market states, and validates stake amounts to maintain system security and fairness.
+///
+/// # Core Functionality
+///
+/// **User Validation:**
+/// - Validate user authentication and authorization
+/// - Check admin permissions for administrative operations
+/// - Ensure proper access control for voting operations
+///
+/// **Market State Validation:**
+/// - Validate market states for voting eligibility
+/// - Check market states for dispute eligibility
+/// - Verify market states for claim processing
+/// - Validate market states for fee collection
+///
+/// **Parameter Validation:**
+/// - Validate vote parameters including outcomes and stakes
+/// - Check dispute stake amounts against thresholds
+/// - Validate stake amounts with dynamic threshold checking
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, Vec};
+/// # use predictify_hybrid::voting::VotingValidator;
+/// # use predictify_hybrid::types::Market;
+/// # let env = Env::default();
+/// 
+/// // Validate vote parameters
+/// let outcome = String::from_str(&env, "yes");
+/// let valid_outcomes = vec![&env, 
+///     String::from_str(&env, "yes"),
+///     String::from_str(&env, "no")
+/// ];
+/// let stake = 5000000i128; // 0.5 XLM
+/// 
+/// match VotingValidator::validate_vote_parameters(&env, &outcome, &valid_outcomes, stake) {
+///     Ok(()) => println!("Vote parameters are valid"),
+///     Err(e) => println!("Vote validation failed: {:?}", e),
+/// }
+/// 
+/// // Validate dispute stake
+/// let dispute_stake = 100000000i128; // 10 XLM
+/// match VotingValidator::validate_dispute_stake(dispute_stake) {
+///     Ok(()) => println!("Dispute stake is sufficient"),
+///     Err(e) => println!("Dispute stake validation failed: {:?}", e),
+/// }
+/// ```
+///
+/// # Integration Points
+///
+/// VotingValidator integrates with:
+/// - **Authentication System**: Validate user permissions and access
+/// - **Market System**: Check market states and eligibility
+/// - **Stake System**: Validate stake amounts and requirements
+/// - **Security System**: Enforce voting rules and constraints
 pub struct VotingValidator;
 
 impl VotingValidator {
@@ -649,7 +999,79 @@ impl VotingValidator {
 
 // ===== VOTING UTILITIES =====
 
-/// Utility functions for voting operations
+/// Comprehensive utility functions for voting operations.
+///
+/// VotingUtils provides essential utility functions for voting operations in prediction
+/// markets, including stake transfers, payout calculations, voting statistics, and user
+/// vote tracking. These utilities support the core voting functionality and ensure
+/// proper handling of stakes, payouts, and voting data.
+///
+/// # Core Functionality
+///
+/// **Stake Management:**
+/// - Transfer stakes from users to contract
+/// - Transfer winnings to users
+/// - Handle fee transfers to administrators
+/// - Calculate payout amounts for winning voters
+///
+/// **Statistics and Analytics:**
+/// - Generate voting statistics for markets
+/// - Track user voting participation
+/// - Retrieve user vote details
+/// - Monitor claim status for users
+///
+/// **Fee Calculations:**
+/// - Calculate platform fees for markets
+/// - Handle fee distribution and transfers
+/// - Support fee-related operations
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::voting::VotingUtils;
+/// # use predictify_hybrid::types::Market;
+/// # let env = Env::default();
+/// 
+/// // Transfer stake from user
+/// let user = Address::generate(&env);
+/// let stake = 5000000i128; // 0.5 XLM
+/// 
+/// match VotingUtils::transfer_stake(&env, &user, stake) {
+///     Ok(()) => println!("Stake transferred successfully"),
+///     Err(e) => println!("Stake transfer failed: {:?}", e),
+/// }
+/// 
+/// // Check if user has voted
+/// # let market = Market::new(
+/// #     &env,
+/// #     Address::generate(&env),
+/// #     String::from_str(&env, "Test"),
+/// #     vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+/// #     env.ledger().timestamp() + 86400,
+/// #     crate::types::OracleConfig::new(
+/// #         crate::types::OracleProvider::Reflector,
+/// #         String::from_str(&env, "BTC/USD"),
+/// #         100000000000i128,
+/// #         String::from_str(&env, "gte")
+/// #     ),
+/// #     crate::types::MarketState::Active
+/// # );
+/// 
+/// if VotingUtils::has_user_voted(&market, &user) {
+///     println!("User has already voted on this market");
+/// } else {
+///     println!("User has not voted yet");
+/// }
+/// ```
+///
+/// # Integration Points
+///
+/// VotingUtils integrates with:
+/// - **Token System**: Handle stake and payout transfers
+/// - **Market System**: Access market data for calculations
+/// - **Analytics System**: Provide voting statistics and metrics
+/// - **Fee System**: Calculate and distribute platform fees
 pub struct VotingUtils;
 
 impl VotingUtils {
@@ -750,7 +1172,88 @@ impl VotingUtils {
 
 // ===== VOTING ANALYTICS =====
 
-/// Analytics functions for voting data
+/// Comprehensive analytics functions for voting data analysis.
+///
+/// VotingAnalytics provides advanced analytical capabilities for prediction market
+/// voting data, including participation analysis, stake distribution calculations,
+/// voting power concentration metrics, and voter ranking systems. These analytics
+/// support market insights, risk assessment, and governance decisions.
+///
+/// # Core Functionality
+///
+/// **Participation Analytics:**
+/// - Calculate voting participation rates
+/// - Analyze voter engagement patterns
+/// - Track participation trends over time
+///
+/// **Stake Analytics:**
+/// - Calculate average stake per voter
+/// - Analyze stake distribution by outcome
+/// - Measure voting power concentration
+/// - Identify top voters by stake amount
+///
+/// **Market Health Metrics:**
+/// - Assess market consensus strength
+/// - Detect potential manipulation patterns
+/// - Evaluate market liquidity and activity
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, Map};
+/// # use predictify_hybrid::voting::VotingAnalytics;
+/// # use predictify_hybrid::types::Market;
+/// # let env = Env::default();
+/// 
+/// # let market = Market::new(
+/// #     &env,
+/// #     Address::generate(&env),
+/// #     String::from_str(&env, "Test Market"),
+/// #     vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+/// #     env.ledger().timestamp() + 86400,
+/// #     crate::types::OracleConfig::new(
+/// #         crate::types::OracleProvider::Reflector,
+/// #         String::from_str(&env, "BTC/USD"),
+/// #         100000000000i128,
+/// #         String::from_str(&env, "gte")
+/// #     ),
+/// #     crate::types::MarketState::Active
+/// # );
+/// 
+/// // Calculate participation rate
+/// let participation_rate = VotingAnalytics::calculate_participation_rate(&market);
+/// println!("Participation rate: {:.2}%", participation_rate * 100.0);
+/// 
+/// // Calculate average stake
+/// let avg_stake = VotingAnalytics::calculate_average_stake(&market);
+/// println!("Average stake per voter: {} stroops", avg_stake);
+/// 
+/// // Analyze voting power concentration
+/// let concentration = VotingAnalytics::calculate_voting_power_concentration(&market);
+/// println!("Voting power concentration: {:.2}", concentration);
+/// 
+/// // Get top voters
+/// let top_voters = VotingAnalytics::get_top_voters(&market, 5);
+/// println!("Top {} voters by stake:", top_voters.len());
+/// for (i, (voter, stake)) in top_voters.iter().enumerate() {
+///     println!("{}. {}: {} stroops", i + 1, voter, stake);
+/// }
+/// ```
+///
+/// # Analytics Applications
+///
+/// - **Market Health Assessment**: Evaluate market participation and engagement
+/// - **Risk Management**: Detect concentration risks and manipulation attempts
+/// - **Governance Insights**: Inform threshold adjustments and policy decisions
+/// - **User Experience**: Provide market insights and voting recommendations
+///
+/// # Integration Points
+///
+/// VotingAnalytics integrates with:
+/// - **Market System**: Access voting and market data
+/// - **Dashboard System**: Provide real-time analytics displays
+/// - **Risk Management**: Support risk assessment and monitoring
+/// - **Governance System**: Inform policy and threshold decisions
 pub struct VotingAnalytics;
 
 impl VotingAnalytics {
@@ -813,7 +1316,35 @@ pub mod testing {
     use super::*;
     use soroban_sdk::testutils::Address as _;
 
-    /// Create a test vote
+    /// Create a test vote for testing and development purposes.
+    ///
+    /// This utility function creates a properly structured Vote instance for use in
+    /// testing scenarios. It ensures all required fields are populated with valid
+    /// test data and follows the same structure as production votes.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for timestamp generation
+    /// * `user` - The address of the test user casting the vote
+    /// * `outcome` - The outcome the test user is voting for
+    /// * `stake` - The stake amount for the test vote (in stroops)
+    ///
+    /// # Example Usage
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, String};
+    /// # use predictify_hybrid::voting::testing;
+    /// # let env = Env::default();
+    /// 
+    /// let test_user = Address::generate(&env);
+    /// let test_outcome = String::from_str(&env, "yes");
+    /// let test_stake = 5000000i128; // 0.5 XLM
+    /// 
+    /// let test_vote = testing::create_test_vote(&env, test_user, test_outcome, test_stake);
+    /// 
+    /// assert_eq!(test_vote.stake, test_stake);
+    /// assert_eq!(test_vote.outcome, String::from_str(&env, "yes"));
+    /// ```
     pub fn create_test_vote(env: &Env, user: Address, outcome: String, stake: i128) -> Vote {
         Vote {
             user,
@@ -823,7 +1354,30 @@ pub mod testing {
         }
     }
 
-    /// Create test voting statistics
+    /// Create test voting statistics for testing and development purposes.
+    ///
+    /// This utility function creates a properly structured VotingStats instance with
+    /// realistic test data for use in testing scenarios. It includes sample outcome
+    /// distributions and voting metrics that reflect typical market activity.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for creating maps and data structures
+    ///
+    /// # Example Usage
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::voting::testing;
+    /// # let env = Env::default();
+    /// 
+    /// let test_stats = testing::create_test_voting_stats(&env);
+    /// 
+    /// assert!(test_stats.total_votes > 0);
+    /// assert!(test_stats.total_staked > 0);
+    /// assert!(test_stats.unique_voters > 0);
+    /// assert!(!test_stats.outcome_distribution.is_empty());
+    /// ```
     pub fn create_test_voting_stats(env: &Env) -> VotingStats {
         let outcome_distribution = Map::new(env);
         VotingStats {
@@ -834,7 +1388,25 @@ pub mod testing {
         }
     }
 
-    /// Create test payout data
+    /// Create test payout data for testing and development purposes.
+    ///
+    /// This utility function creates a properly structured PayoutData instance with
+    /// realistic test values for payout calculations. The test data includes valid
+    /// stake amounts, pool totals, fee percentages, and calculated payout amounts.
+    ///
+    /// # Example Usage
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::voting::testing;
+    /// 
+    /// let test_payout = testing::create_test_payout_data();
+    /// 
+    /// assert!(test_payout.user_stake > 0);
+    /// assert!(test_payout.winning_total > 0);
+    /// assert!(test_payout.total_pool > 0);
+    /// assert!(test_payout.fee_percentage >= 0);
+    /// assert!(test_payout.payout_amount > 0);
+    /// ```
     pub fn create_test_payout_data() -> PayoutData {
         PayoutData {
             user_stake: 1000,
@@ -845,7 +1417,35 @@ pub mod testing {
         }
     }
 
-    /// Validate vote structure
+    /// Validate the structure and integrity of a Vote instance.
+    ///
+    /// This utility function performs comprehensive validation of a Vote structure
+    /// to ensure all fields are properly populated and within valid ranges. It checks
+    /// stake amounts, timestamp validity, and outcome format consistency.
+    ///
+    /// # Parameters
+    ///
+    /// * `vote` - The Vote instance to validate
+    ///
+    /// # Example Usage
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, String};
+    /// # use predictify_hybrid::voting::{Vote, testing};
+    /// # let env = Env::default();
+    /// 
+    /// let test_vote = Vote {
+    ///     user: Address::generate(&env),
+    ///     outcome: String::from_str(&env, "yes"),
+    ///     stake: 5000000i128,
+    ///     timestamp: env.ledger().timestamp(),
+    /// };
+    /// 
+    /// match testing::validate_vote_structure(&test_vote) {
+    ///     Ok(()) => println!("Vote structure is valid"),
+    ///     Err(e) => println!("Vote validation failed: {:?}", e),
+    /// }
+    /// ```
     pub fn validate_vote_structure(vote: &Vote) -> Result<(), Error> {
         if vote.stake <= 0 {
             return Err(Error::InsufficientStake);
@@ -858,7 +1458,39 @@ pub mod testing {
         Ok(())
     }
 
-    /// Validate voting stats structure
+    /// Validate the structure and consistency of a VotingStats instance.
+    ///
+    /// This utility function performs comprehensive validation of a VotingStats structure
+    /// to ensure all fields are consistent and within valid ranges. It checks vote counts,
+    /// stake totals, outcome distribution consistency, and voter count validity.
+    ///
+    /// # Parameters
+    ///
+    /// * `stats` - The VotingStats instance to validate
+    ///
+    /// # Example Usage
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Map, String};
+    /// # use predictify_hybrid::voting::{VotingStats, testing};
+    /// # let env = Env::default();
+    /// 
+    /// let mut outcome_distribution = Map::new(&env);
+    /// outcome_distribution.set(String::from_str(&env, "yes"), 10000000i128);
+    /// outcome_distribution.set(String::from_str(&env, "no"), 5000000i128);
+    /// 
+    /// let test_stats = VotingStats {
+    ///     total_votes: 15,
+    ///     total_staked: 15000000i128,
+    ///     outcome_distribution,
+    ///     unique_voters: 12,
+    /// };
+    /// 
+    /// match testing::validate_voting_stats(&test_stats) {
+    ///     Ok(()) => println!("Voting stats structure is valid"),
+    ///     Err(e) => println!("Stats validation failed: {:?}", e),
+    /// }
+    /// ```
     pub fn validate_voting_stats(stats: &VotingStats) -> Result<(), Error> {
         if stats.total_staked < 0 {
             return Err(Error::InsufficientStake);

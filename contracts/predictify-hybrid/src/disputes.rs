@@ -10,7 +10,56 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 
 // ===== DISPUTE STRUCTURES =====
 
-/// Represents a dispute on a market
+/// Represents a formal dispute against a market's oracle resolution.
+///
+/// A dispute is created when a community member challenges the oracle's
+/// resolution of a market, believing the outcome is incorrect. Disputes
+/// require a stake to prevent spam and ensure serious commitment.
+///
+/// # Fields
+///
+/// * `user` - Address of the user who initiated the dispute
+/// * `market_id` - Unique identifier of the disputed market
+/// * `stake` - Amount staked by the disputer (must meet minimum requirements)
+/// * `timestamp` - When the dispute was created (ledger timestamp)
+/// * `reason` - Optional explanation for why the dispute was raised
+/// * `status` - Current status of the dispute (Active, Resolved, etc.)
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::disputes::{Dispute, DisputeStatus};
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+/// # let market_id = Symbol::new(&env, "market_123");
+/// 
+/// let dispute = Dispute {
+///     user: user.clone(),
+///     market_id: market_id.clone(),
+///     stake: 10_000_000, // 1 XLM
+///     timestamp: env.ledger().timestamp(),
+///     reason: Some(String::from_str(&env, "Oracle data appears incorrect")),
+///     status: DisputeStatus::Active,
+/// };
+/// 
+/// // Dispute is now active and awaiting community voting
+/// assert_eq!(dispute.status, DisputeStatus::Active);
+/// ```
+///
+/// # Dispute Lifecycle
+///
+/// 1. **Creation**: User stakes tokens and provides reasoning
+/// 2. **Community Voting**: Other users vote on dispute validity
+/// 3. **Resolution**: Dispute is resolved based on community consensus
+/// 4. **Fee Distribution**: Stakes are distributed to winning side
+///
+/// # Staking Requirements
+///
+/// - Minimum stake amount enforced to prevent spam
+/// - Stake is locked during dispute resolution
+/// - Winners receive their stake back plus rewards
+/// - Losers forfeit their stake to the winning side
 #[contracttype]
 pub struct Dispute {
     pub user: Address,
@@ -21,7 +70,52 @@ pub struct Dispute {
     pub status: DisputeStatus,
 }
 
-/// Represents the status of a dispute
+/// Represents the current lifecycle status of a dispute.
+///
+/// Disputes progress through various states from creation to final resolution.
+/// Each status indicates what actions are available and the dispute's current phase.
+///
+/// # Variants
+///
+/// * `Active` - Dispute is open and accepting community votes
+/// * `Resolved` - Dispute has been resolved with a final outcome
+/// * `Rejected` - Dispute was rejected by community consensus
+/// * `Expired` - Dispute voting period ended without sufficient participation
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::disputes::DisputeStatus;
+/// 
+/// // Check if dispute can still receive votes
+/// let status = DisputeStatus::Active;
+/// let can_vote = matches!(status, DisputeStatus::Active);
+/// assert!(can_vote);
+/// 
+/// // Check if dispute is finalized
+/// let final_status = DisputeStatus::Resolved;
+/// let is_final = matches!(final_status, 
+///     DisputeStatus::Resolved | DisputeStatus::Rejected | DisputeStatus::Expired
+/// );
+/// assert!(is_final);
+/// ```
+///
+/// # Status Transitions
+///
+/// Valid transitions:
+/// - `Active` → `Resolved` (community upholds dispute)
+/// - `Active` → `Rejected` (community rejects dispute)
+/// - `Active` → `Expired` (insufficient voting participation)
+/// 
+/// Invalid transitions:
+/// - Any final status → Any other status (disputes are immutable once resolved)
+///
+/// # Business Logic
+///
+/// - **Active**: Dispute accepts votes, market resolution is pending
+/// - **Resolved**: Oracle result overturned, new outcome established
+/// - **Rejected**: Oracle result upheld, original outcome stands
+/// - **Expired**: Insufficient community engagement, original outcome stands
 #[contracttype]
 pub enum DisputeStatus {
     Active,
@@ -30,7 +124,56 @@ pub enum DisputeStatus {
     Expired,
 }
 
-/// Represents dispute statistics for a market
+/// Comprehensive statistics about disputes for a specific market.
+///
+/// This structure aggregates dispute activity data to provide insights into
+/// community engagement, dispute patterns, and market controversy levels.
+/// Used for analytics, governance decisions, and market quality assessment.
+///
+/// # Fields
+///
+/// * `total_disputes` - Total number of disputes ever raised for this market
+/// * `total_dispute_stakes` - Sum of all stakes committed to disputes (in stroops)
+/// * `active_disputes` - Number of disputes currently accepting votes
+/// * `resolved_disputes` - Number of disputes that have been finalized
+/// * `unique_disputers` - Count of unique addresses that have disputed this market
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::disputes::DisputeStats;
+/// 
+/// let stats = DisputeStats {
+///     total_disputes: 3,
+///     total_dispute_stakes: 50_000_000, // 5 XLM total
+///     active_disputes: 1,
+///     resolved_disputes: 2,
+///     unique_disputers: 3,
+/// };
+/// 
+/// // Calculate average stake per dispute
+/// let avg_stake = stats.total_dispute_stakes / stats.total_disputes as i128;
+/// assert_eq!(avg_stake, 16_666_666); // ~1.67 XLM average
+/// 
+/// // Check market controversy level
+/// let controversy_ratio = stats.total_disputes as f64 / 10.0; // Assume 10 total participants
+/// println!("Market controversy: {:.1}%", controversy_ratio * 100.0);
+/// ```
+///
+/// # Analytics Use Cases
+///
+/// - **Market Quality**: High dispute rates may indicate poor oracle data
+/// - **Community Engagement**: Dispute participation shows market interest
+/// - **Economic Impact**: Total stakes show financial commitment to accuracy
+/// - **Resolution Efficiency**: Active vs resolved ratio shows processing speed
+///
+/// # Governance Insights
+///
+/// Statistics help identify:
+/// - Markets requiring oracle provider review
+/// - Patterns of systematic disputes
+/// - Community confidence in specific market types
+/// - Economic incentive effectiveness
 #[contracttype]
 pub struct DisputeStats {
     pub total_disputes: u32,
@@ -40,7 +183,66 @@ pub struct DisputeStats {
     pub unique_disputers: u32,
 }
 
-/// Represents dispute resolution data
+/// Contains the final resolution data for a completed dispute process.
+///
+/// This structure captures the outcome of the hybrid resolution system,
+/// combining oracle data with community voting to determine the final
+/// market result. Used for transparency and audit trails.
+///
+/// # Fields
+///
+/// * `market_id` - Unique identifier of the resolved market
+/// * `final_outcome` - The definitive outcome after dispute resolution
+/// * `oracle_weight` - Influence of oracle data in final decision (scaled integer)
+/// * `community_weight` - Influence of community votes in final decision (scaled integer)
+/// * `dispute_impact` - How much disputes affected the final outcome (scaled integer)
+/// * `resolution_timestamp` - When the final resolution was determined
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String};
+/// # use predictify_hybrid::disputes::DisputeResolution;
+/// # let env = Env::default();
+/// 
+/// let resolution = DisputeResolution {
+///     market_id: Symbol::new(&env, "btc_100k"),
+///     final_outcome: String::from_str(&env, "No"),
+///     oracle_weight: 60, // 60% oracle influence
+///     community_weight: 40, // 40% community influence
+///     dispute_impact: 25, // 25% change from original oracle result
+///     resolution_timestamp: env.ledger().timestamp(),
+/// };
+/// 
+/// // Verify hybrid resolution weights sum to 100%
+/// assert_eq!(resolution.oracle_weight + resolution.community_weight, 100);
+/// 
+/// // Check if community significantly influenced outcome
+/// let community_influenced = resolution.dispute_impact > 20;
+/// assert!(community_influenced);
+/// ```
+///
+/// # Hybrid Resolution Model
+///
+/// The resolution combines:
+/// 1. **Oracle Data**: Automated, objective data source
+/// 2. **Community Voting**: Human judgment and local knowledge
+/// 3. **Dispute Impact**: Measure of how much community changed oracle result
+///
+/// # Weight Calculation
+///
+/// - Weights are scaled integers (0-100) representing percentages
+/// - Oracle weight typically higher for objective markets
+/// - Community weight increases with dispute strength
+/// - Final outcome balances both sources proportionally
+///
+/// # Transparency Features
+///
+/// Resolution data provides:
+/// - Clear audit trail of decision factors
+/// - Quantified influence of each resolution source
+/// - Timestamp for regulatory compliance
+/// - Outcome justification for participants
 #[contracttype]
 pub struct DisputeResolution {
     pub market_id: Symbol,
@@ -51,7 +253,65 @@ pub struct DisputeResolution {
     pub resolution_timestamp: u64,
 }
 
-/// Represents a dispute vote
+/// Represents an individual vote cast on a dispute by a community member.
+///
+/// Community members can vote on active disputes to express their opinion
+/// on whether the dispute is valid. Votes are weighted by stake to ensure
+/// economic alignment and prevent manipulation.
+///
+/// # Fields
+///
+/// * `user` - Address of the voter
+/// * `dispute_id` - Unique identifier of the dispute being voted on
+/// * `vote` - Boolean vote (true = support dispute, false = reject dispute)
+/// * `stake` - Amount staked with this vote (determines voting power)
+/// * `timestamp` - When the vote was cast
+/// * `reason` - Optional explanation for the vote decision
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::disputes::DisputeVote;
+/// # let env = Env::default();
+/// # let voter = Address::generate(&env);
+/// # let dispute_id = Symbol::new(&env, "dispute_123");
+/// 
+/// let vote = DisputeVote {
+///     user: voter.clone(),
+///     dispute_id: dispute_id.clone(),
+///     vote: true, // Supporting the dispute
+///     stake: 5_000_000, // 0.5 XLM voting power
+///     timestamp: env.ledger().timestamp(),
+///     reason: Some(String::from_str(&env, "Oracle data contradicts reliable sources")),
+/// };
+/// 
+/// // Vote supports the dispute with economic backing
+/// assert!(vote.vote);
+/// assert!(vote.stake > 0);
+/// ```
+///
+/// # Voting Mechanics
+///
+/// - **Stake-Weighted**: Higher stakes carry more voting power
+/// - **Binary Choice**: Support (true) or reject (false) the dispute
+/// - **Economic Commitment**: Voters risk their stake on the outcome
+/// - **Transparent Reasoning**: Optional explanations for accountability
+///
+/// # Vote Outcomes
+///
+/// - **Support (true)**: Voter believes dispute is valid, oracle was wrong
+/// - **Reject (false)**: Voter believes dispute is invalid, oracle was correct
+/// - **Winning Side**: Receives their stake back plus rewards from losing side
+/// - **Losing Side**: Forfeits stake to winners as penalty for incorrect vote
+///
+/// # Governance Features
+///
+/// Dispute voting enables:
+/// - Democratic resolution of oracle disagreements
+/// - Economic incentives for accurate voting
+/// - Community oversight of oracle quality
+/// - Transparent decision-making process
 #[contracttype]
 #[derive(Clone)]
 pub struct DisputeVote {
@@ -63,7 +323,73 @@ pub struct DisputeVote {
     pub reason: Option<String>,
 }
 
-/// Represents dispute voting data
+/// Aggregated voting data and metadata for a dispute resolution process.
+///
+/// This structure tracks the complete voting process for a dispute,
+/// including participation metrics, stake distribution, and timing.
+/// Used to determine dispute outcomes and manage the voting lifecycle.
+///
+/// # Fields
+///
+/// * `dispute_id` - Unique identifier of the dispute being voted on
+/// * `voting_start` - Timestamp when voting period began
+/// * `voting_end` - Timestamp when voting period ends
+/// * `total_votes` - Total number of individual votes cast
+/// * `support_votes` - Number of votes supporting the dispute
+/// * `against_votes` - Number of votes rejecting the dispute
+/// * `total_support_stake` - Total stake backing dispute support
+/// * `total_against_stake` - Total stake backing dispute rejection
+/// * `status` - Current status of the voting process
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol};
+/// # use predictify_hybrid::disputes::{DisputeVoting, DisputeVotingStatus};
+/// # let env = Env::default();
+/// 
+/// let voting = DisputeVoting {
+///     dispute_id: Symbol::new(&env, "dispute_123"),
+///     voting_start: env.ledger().timestamp(),
+///     voting_end: env.ledger().timestamp() + 86400, // 24 hours
+///     total_votes: 15,
+///     support_votes: 8,
+///     against_votes: 7,
+///     total_support_stake: 25_000_000, // 2.5 XLM
+///     total_against_stake: 20_000_000, // 2.0 XLM
+///     status: DisputeVotingStatus::Active,
+/// };
+/// 
+/// // Calculate voting metrics
+/// let participation_rate = voting.total_votes as f64 / 100.0; // Assume 100 eligible voters
+/// let stake_ratio = voting.total_support_stake as f64 / voting.total_against_stake as f64;
+/// 
+/// println!("Participation: {:.1}%, Stake ratio: {:.2}", 
+///     participation_rate * 100.0, stake_ratio);
+/// ```
+///
+/// # Voting Period Management
+///
+/// - **Start Time**: When dispute voting opens to community
+/// - **End Time**: Deadline for vote submission (typically 24-48 hours)
+/// - **Status Tracking**: Monitors voting process lifecycle
+/// - **Early Resolution**: May close early if outcome is decisive
+///
+/// # Outcome Determination
+///
+/// Resolution considers both:
+/// 1. **Vote Count**: Simple majority of individual votes
+/// 2. **Stake Weight**: Economic weight of supporting stakes
+/// 3. **Participation Threshold**: Minimum votes required for validity
+/// 4. **Stake Threshold**: Minimum total stake for legitimacy
+///
+/// # Analytics and Insights
+///
+/// Voting data provides:
+/// - Community engagement levels
+/// - Economic commitment to accuracy
+/// - Dispute resolution efficiency
+/// - Market controversy indicators
 #[contracttype]
 pub struct DisputeVoting {
     pub dispute_id: Symbol,
@@ -77,7 +403,55 @@ pub struct DisputeVoting {
     pub status: DisputeVotingStatus,
 }
 
-/// Represents dispute voting status
+/// Current status of a dispute voting process.
+///
+/// Tracks the lifecycle of community voting on disputes, from initiation
+/// through completion or termination. Each status determines what actions
+/// are available and how the voting process should be handled.
+///
+/// # Variants
+///
+/// * `Active` - Voting is open and accepting community votes
+/// * `Completed` - Voting period ended with sufficient participation
+/// * `Expired` - Voting period ended without meeting minimum requirements
+/// * `Cancelled` - Voting was terminated early (e.g., by admin action)
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::disputes::DisputeVotingStatus;
+/// 
+/// // Check if voting is still accepting votes
+/// let status = DisputeVotingStatus::Active;
+/// let can_vote = matches!(status, DisputeVotingStatus::Active);
+/// assert!(can_vote);
+/// 
+/// // Check if voting has concluded
+/// let final_status = DisputeVotingStatus::Completed;
+/// let is_concluded = matches!(final_status, 
+///     DisputeVotingStatus::Completed | 
+///     DisputeVotingStatus::Expired | 
+///     DisputeVotingStatus::Cancelled
+/// );
+/// assert!(is_concluded);
+/// ```
+///
+/// # Status Transitions
+///
+/// Valid transitions:
+/// - `Active` → `Completed` (successful voting completion)
+/// - `Active` → `Expired` (insufficient participation)
+/// - `Active` → `Cancelled` (administrative termination)
+/// 
+/// Invalid transitions:
+/// - Any final status → Any other status (voting outcomes are immutable)
+///
+/// # Business Logic by Status
+///
+/// - **Active**: Accept votes, track participation, monitor deadlines
+/// - **Completed**: Process results, distribute rewards, update dispute status
+/// - **Expired**: Apply default outcome, return stakes, log insufficient participation
+/// - **Cancelled**: Return all stakes, invalidate dispute, log cancellation reason
 #[contracttype]
 pub enum DisputeVotingStatus {
     Active,
@@ -86,7 +460,66 @@ pub enum DisputeVotingStatus {
     Cancelled,
 }
 
-/// Represents dispute escalation data
+/// Data structure for disputes that have been escalated to higher authority.
+///
+/// When standard community voting cannot resolve a dispute (due to ties,
+/// insufficient participation, or complexity), the dispute can be escalated
+/// to admin review or specialized resolution mechanisms.
+///
+/// # Fields
+///
+/// * `dispute_id` - Unique identifier of the escalated dispute
+/// * `escalated_by` - Address of the user who requested escalation
+/// * `escalation_reason` - Explanation for why escalation was necessary
+/// * `escalation_timestamp` - When the escalation was requested
+/// * `escalation_level` - Tier of escalation (1=admin, 2=governance, etc.)
+/// * `requires_admin_review` - Whether admin intervention is needed
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::disputes::DisputeEscalation;
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+/// 
+/// let escalation = DisputeEscalation {
+///     dispute_id: Symbol::new(&env, "dispute_456"),
+///     escalated_by: user.clone(),
+///     escalation_reason: String::from_str(&env, 
+///         "Voting resulted in exact tie, need admin decision"),
+///     escalation_timestamp: env.ledger().timestamp(),
+///     escalation_level: 1, // Admin review
+///     requires_admin_review: true,
+/// };
+/// 
+/// // Escalation requires admin intervention
+/// assert!(escalation.requires_admin_review);
+/// assert_eq!(escalation.escalation_level, 1);
+/// ```
+///
+/// # Escalation Triggers
+///
+/// Disputes may be escalated when:
+/// - **Voting Ties**: Equal stakes on both sides
+/// - **Low Participation**: Insufficient community engagement
+/// - **Technical Issues**: Oracle data unavailable or corrupted
+/// - **Complex Cases**: Subjective outcomes requiring expert judgment
+/// - **Appeal Requests**: Losing party contests the result
+///
+/// # Escalation Levels
+///
+/// 1. **Level 1**: Admin review and decision
+/// 2. **Level 2**: Governance token holder voting
+/// 3. **Level 3**: External arbitration or expert panel
+/// 4. **Level 4**: Legal or regulatory intervention
+///
+/// # Resolution Authority
+///
+/// - **Admin Review**: Fast resolution for clear-cut cases
+/// - **Governance Voting**: Democratic resolution for policy matters
+/// - **Expert Panel**: Specialized knowledge for technical disputes
+/// - **Legal Process**: Final resort for high-stakes disagreements
 #[contracttype]
 pub struct DisputeEscalation {
     pub dispute_id: Symbol,
@@ -97,7 +530,78 @@ pub struct DisputeEscalation {
     pub requires_admin_review: bool,
 }
 
-/// Represents dispute fee distribution data
+/// Records the distribution of fees and stakes after dispute resolution.
+///
+/// When a dispute is resolved, stakes from the losing side are distributed
+/// to the winning side as rewards for accurate judgment. This structure
+/// tracks the distribution process and ensures transparent fee allocation.
+///
+/// # Fields
+///
+/// * `dispute_id` - Unique identifier of the resolved dispute
+/// * `total_fees` - Total amount available for distribution (in stroops)
+/// * `winner_stake` - Total stake from the winning side
+/// * `loser_stake` - Total stake from the losing side (becomes rewards)
+/// * `winner_addresses` - List of addresses that voted correctly
+/// * `distribution_timestamp` - When fees were distributed
+/// * `fees_distributed` - Whether distribution has been completed
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, Vec, Address};
+/// # use predictify_hybrid::disputes::DisputeFeeDistribution;
+/// # let env = Env::default();
+/// # let mut winners = Vec::new(&env);
+/// # winners.push_back(Address::generate(&env));
+/// # winners.push_back(Address::generate(&env));
+/// 
+/// let distribution = DisputeFeeDistribution {
+///     dispute_id: Symbol::new(&env, "dispute_789"),
+///     total_fees: 30_000_000, // 3 XLM total
+///     winner_stake: 20_000_000, // 2 XLM from winners
+///     loser_stake: 10_000_000, // 1 XLM from losers (becomes rewards)
+///     winner_addresses: winners,
+///     distribution_timestamp: env.ledger().timestamp(),
+///     fees_distributed: true,
+/// };
+/// 
+/// // Calculate reward ratio
+/// let reward_ratio = distribution.loser_stake as f64 / distribution.winner_stake as f64;
+/// println!("Winners receive {:.1}% bonus", reward_ratio * 100.0);
+/// 
+/// // Verify distribution completed
+/// assert!(distribution.fees_distributed);
+/// ```
+///
+/// # Distribution Mechanics
+///
+/// 1. **Stake Recovery**: Winners get their original stakes back
+/// 2. **Reward Distribution**: Loser stakes distributed proportionally to winners
+/// 3. **Platform Fee**: Small percentage retained for platform operations
+/// 4. **Gas Costs**: Distribution transaction costs handled appropriately
+///
+/// # Proportional Rewards
+///
+/// Winners receive rewards based on:
+/// - **Stake Size**: Larger stakes receive proportionally larger rewards
+/// - **Timing**: Early voters may receive slight bonuses
+/// - **Confidence**: Stronger votes (higher stakes) earn more rewards
+///
+/// # Transparency Features
+///
+/// - **Public Record**: All distributions are publicly auditable
+/// - **Address List**: Winners are explicitly recorded
+/// - **Timestamp**: Distribution timing is permanently recorded
+/// - **Status Flag**: Clear indication of completion status
+///
+/// # Economic Incentives
+///
+/// Fee distribution creates:
+/// - **Accuracy Rewards**: Economic incentive for correct voting
+/// - **Participation Incentive**: Rewards for community engagement
+/// - **Quality Control**: Penalties for incorrect dispute judgments
+/// - **Platform Sustainability**: Fees support ongoing operations
 #[contracttype]
 pub struct DisputeFeeDistribution {
     pub dispute_id: Symbol,
@@ -111,11 +615,135 @@ pub struct DisputeFeeDistribution {
 
 // ===== DISPUTE MANAGER =====
 
-/// Main dispute manager for handling all dispute operations
+/// Central manager for all dispute-related operations in the prediction market system.
+///
+/// The DisputeManager handles the complete dispute lifecycle, from initial dispute
+/// creation through community voting to final resolution and fee distribution.
+/// It coordinates between oracle data and community consensus to ensure fair
+/// and accurate market outcomes.
+///
+/// # Core Responsibilities
+///
+/// - **Dispute Processing**: Handle dispute creation and validation
+/// - **Community Voting**: Manage voting processes and participation
+/// - **Resolution Logic**: Combine oracle and community data for final outcomes
+/// - **Fee Distribution**: Distribute stakes and rewards to participants
+/// - **Analytics**: Track dispute patterns and market quality metrics
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::disputes::DisputeManager;
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+/// # let admin = Address::generate(&env);
+/// # let market_id = Symbol::new(&env, "market_123");
+/// 
+/// // User disputes a market result
+/// let result = DisputeManager::process_dispute(
+///     &env,
+///     user.clone(),
+///     market_id.clone(),
+///     10_000_000, // 1 XLM stake
+///     Some(String::from_str(&env, "Oracle data appears incorrect"))
+/// );
+/// 
+/// // Admin resolves the dispute after community voting
+/// let resolution = DisputeManager::resolve_dispute(
+///     &env,
+///     market_id.clone(),
+///     admin.clone()
+/// );
+/// ```
+///
+/// # Dispute Workflow
+///
+/// 1. **Dispute Creation**: User stakes tokens to challenge oracle result
+/// 2. **Validation**: System validates dispute eligibility and parameters
+/// 3. **Community Voting**: Other users vote on dispute validity
+/// 4. **Resolution**: Combine oracle and community data for final outcome
+/// 5. **Distribution**: Distribute stakes and rewards to winning participants
+///
+/// # Security Features
+///
+/// - **Stake Requirements**: Minimum stakes prevent spam disputes
+/// - **Authentication**: All operations require proper user authorization
+/// - **Admin Oversight**: Critical operations require admin permissions
+/// - **Economic Incentives**: Rewards align with accurate dispute resolution
 pub struct DisputeManager;
 
 impl DisputeManager {
-    /// Process a user's dispute of market result
+    /// Processes a user's formal dispute against a market's oracle resolution.
+    ///
+    /// This function allows community members to challenge oracle results by
+    /// staking tokens and providing reasoning. The dispute triggers a community
+    /// voting process to determine if the oracle result should be overturned.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - Address of the user initiating the dispute (must authenticate)
+    /// * `market_id` - Unique identifier of the market being disputed
+    /// * `stake` - Amount to stake on the dispute (must meet minimum requirements)
+    /// * `reason` - Optional explanation for why the dispute is being raised
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the dispute is successfully processed, or an `Error` if:
+    /// - Market is not eligible for disputes (not ended, no oracle result)
+    /// - Stake amount is below minimum requirements
+    /// - User has already disputed this market
+    /// - Market is already in a disputed state
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol, String};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let user = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "btc_price_market");
+    /// 
+    /// // User disputes oracle result with reasoning
+    /// let result = DisputeManager::process_dispute(
+    ///     &env,
+    ///     user.clone(),
+    ///     market_id.clone(),
+    ///     15_000_000, // 1.5 XLM stake
+    ///     Some(String::from_str(&env, 
+    ///         "Oracle price differs significantly from major exchanges"))
+    /// );
+    /// 
+    /// match result {
+    ///     Ok(()) => println!("Dispute successfully created"),
+    ///     Err(e) => println!("Dispute failed: {:?}", e),
+    /// }
+    /// ```
+    ///
+    /// # Process Flow
+    ///
+    /// 1. **Authentication**: Verify user signature and authorization
+    /// 2. **Market Validation**: Ensure market is eligible for disputes
+    /// 3. **Parameter Validation**: Check stake amount and user eligibility
+    /// 4. **Stake Transfer**: Lock user's stake in the dispute
+    /// 5. **Dispute Creation**: Create and store dispute record
+    /// 6. **Market Extension**: Extend market deadline for voting period
+    /// 7. **Storage Update**: Persist all changes to blockchain storage
+    ///
+    /// # Economic Impact
+    ///
+    /// - **Stake Lock**: User's stake is locked until dispute resolution
+    /// - **Market Extension**: Market deadline extended by dispute period
+    /// - **Voting Incentive**: Other users can earn rewards by voting correctly
+    /// - **Quality Control**: Economic cost discourages frivolous disputes
+    ///
+    /// # Security Considerations
+    ///
+    /// - Requires user authentication to prevent unauthorized disputes
+    /// - Validates market state to ensure disputes are only allowed when appropriate
+    /// - Enforces minimum stake requirements to prevent spam
+    /// - Checks for duplicate disputes from the same user
     pub fn process_dispute(
         env: &Env,
         user: Address,
@@ -158,7 +786,85 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Resolve a dispute by determining final outcome
+    /// Resolves a dispute by combining oracle data with community voting results.
+    ///
+    /// This function determines the final outcome of a disputed market by analyzing
+    /// community votes, calculating weights for oracle vs community input, and
+    /// creating a comprehensive resolution record for transparency and auditability.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to resolve
+    /// * `admin` - Address of the admin performing the resolution (must authenticate)
+    ///
+    /// # Returns
+    ///
+    /// Returns a `DisputeResolution` containing the final outcome and resolution
+    /// metadata, or an `Error` if:
+    /// - Admin lacks proper permissions
+    /// - Market is not ready for resolution (voting still active)
+    /// - Insufficient community participation
+    /// - Resolution calculation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "disputed_market");
+    /// 
+    /// // Admin resolves dispute after voting period
+    /// let resolution = DisputeManager::resolve_dispute(
+    ///     &env,
+    ///     market_id.clone(),
+    ///     admin.clone()
+    /// ).unwrap();
+    /// 
+    /// // Check resolution details
+    /// println!("Final outcome: {}", resolution.final_outcome.to_string());
+    /// println!("Oracle weight: {}%", resolution.oracle_weight);
+    /// println!("Community weight: {}%", resolution.community_weight);
+    /// println!("Dispute impact: {}%", resolution.dispute_impact);
+    /// 
+    /// // Verify weights sum to 100%
+    /// assert_eq!(resolution.oracle_weight + resolution.community_weight, 100);
+    /// ```
+    ///
+    /// # Resolution Algorithm
+    ///
+    /// The hybrid resolution process:
+    /// 1. **Collect Votes**: Aggregate all community votes and stakes
+    /// 2. **Calculate Impact**: Measure how much disputes affected the outcome
+    /// 3. **Weight Determination**: Balance oracle reliability vs community consensus
+    /// 4. **Outcome Synthesis**: Combine weighted inputs for final result
+    /// 5. **Resolution Record**: Create transparent audit trail
+    ///
+    /// # Weighting Logic
+    ///
+    /// - **High Oracle Confidence + Low Disputes**: Oracle weight ~80%
+    /// - **Medium Oracle Confidence + Medium Disputes**: Balanced ~60/40%
+    /// - **Low Oracle Confidence + High Disputes**: Community weight ~70%
+    /// - **Tie Situations**: Admin discretion with documented reasoning
+    ///
+    /// # Transparency Features
+    ///
+    /// Resolution provides complete audit trail:
+    /// - Final outcome with clear justification
+    /// - Exact weights used in decision process
+    /// - Quantified impact of community disputes
+    /// - Timestamp for regulatory compliance
+    /// - Immutable record for future reference
+    ///
+    /// # Administrative Authority
+    ///
+    /// Only authorized admins can resolve disputes to ensure:
+    /// - Proper validation of voting completion
+    /// - Correct application of resolution algorithms
+    /// - Appropriate handling of edge cases
+    /// - Consistent resolution quality across markets
     pub fn resolve_dispute(
         env: &Env,
         market_id: Symbol,
@@ -201,13 +907,134 @@ impl DisputeManager {
         Ok(resolution)
     }
 
-    /// Get dispute statistics for a market
+    /// Retrieves comprehensive dispute statistics for a specific market.
+    ///
+    /// This function calculates and returns detailed statistics about dispute
+    /// activity for a market, including participation metrics, stake distribution,
+    /// and resolution patterns. Used for analytics, governance, and market quality assessment.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns a `DisputeStats` structure containing comprehensive dispute metrics,
+    /// or an `Error` if the market is not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "analyzed_market");
+    /// 
+    /// // Get dispute statistics for analysis
+    /// let stats = DisputeManager::get_dispute_stats(&env, market_id).unwrap();
+    /// 
+    /// // Analyze dispute activity
+    /// println!("Total disputes: {}", stats.total_disputes);
+    /// println!("Total stakes: {} XLM", stats.total_dispute_stakes / 10_000_000);
+    /// println!("Unique disputers: {}", stats.unique_disputers);
+    /// 
+    /// // Calculate engagement metrics
+    /// let avg_stake = if stats.total_disputes > 0 {
+    ///     stats.total_dispute_stakes / stats.total_disputes as i128
+    /// } else { 0 };
+    /// println!("Average stake per dispute: {} XLM", avg_stake / 10_000_000);
+    /// 
+    /// // Check market controversy level
+    /// let controversy_ratio = stats.total_disputes as f64 / 100.0; // Assume 100 participants
+    /// if controversy_ratio > 0.1 {
+    ///     println!("High controversy market detected");
+    /// }
+    /// ```
+    ///
+    /// # Statistics Included
+    ///
+    /// The returned statistics provide:
+    /// - **Total Disputes**: Count of all disputes ever raised
+    /// - **Total Stakes**: Sum of all dispute stakes in stroops
+    /// - **Active Disputes**: Number of currently unresolved disputes
+    /// - **Resolved Disputes**: Number of completed dispute processes
+    /// - **Unique Disputers**: Count of distinct addresses that disputed
+    ///
+    /// # Use Cases
+    ///
+    /// - **Market Quality Assessment**: High dispute rates may indicate oracle issues
+    /// - **Community Engagement**: Participation levels show market interest
+    /// - **Economic Analysis**: Stake amounts reveal financial commitment
+    /// - **Governance Decisions**: Data supports policy and parameter adjustments
+    /// - **Oracle Evaluation**: Dispute patterns help assess oracle reliability
     pub fn get_dispute_stats(env: &Env, market_id: Symbol) -> Result<DisputeStats, Error> {
         let market = MarketStateManager::get_market(env, &market_id)?;
         Ok(DisputeAnalytics::calculate_dispute_stats(&market))
     }
 
-    /// Get all disputes for a market
+    /// Retrieves all dispute records associated with a specific market.
+    ///
+    /// This function returns a complete list of all disputes that have been
+    /// raised against a market, including both active and resolved disputes.
+    /// Useful for detailed analysis, audit trails, and dispute history review.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to query
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Vec<Dispute>` containing all dispute records for the market,
+    /// or an `Error` if the market is not found. Empty vector if no disputes exist.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::disputes::{DisputeManager, DisputeStatus};
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "disputed_market");
+    /// 
+    /// // Get all disputes for detailed analysis
+    /// let disputes = DisputeManager::get_market_disputes(&env, market_id).unwrap();
+    /// 
+    /// // Analyze dispute patterns
+    /// for dispute in disputes.iter() {
+    ///     println!("Dispute by: {}", dispute.user.to_string());
+    ///     println!("Stake: {} XLM", dispute.stake / 10_000_000);
+    ///     println!("Status: {:?}", dispute.status);
+    ///     
+    ///     if let Some(reason) = &dispute.reason {
+    ///         println!("Reason: {}", reason.to_string());
+    ///     }
+    /// }
+    /// 
+    /// // Filter by status
+    /// let active_disputes: Vec<_> = disputes.iter()
+    ///     .filter(|d| matches!(d.status, DisputeStatus::Active))
+    ///     .collect();
+    /// 
+    /// println!("Active disputes: {}", active_disputes.len());
+    /// ```
+    ///
+    /// # Dispute Information
+    ///
+    /// Each dispute record contains:
+    /// - **User Address**: Who initiated the dispute
+    /// - **Stake Amount**: Economic commitment to the dispute
+    /// - **Timestamp**: When the dispute was created
+    /// - **Reason**: Optional explanation for the dispute
+    /// - **Status**: Current state (Active, Resolved, Rejected, Expired)
+    ///
+    /// # Analysis Applications
+    ///
+    /// - **Audit Trails**: Complete history of market challenges
+    /// - **Pattern Recognition**: Identify systematic dispute trends
+    /// - **User Behavior**: Analyze disputer participation patterns
+    /// - **Timeline Analysis**: Track dispute timing and resolution speed
+    /// - **Quality Metrics**: Assess market and oracle performance
     pub fn get_market_disputes(env: &Env, market_id: Symbol) -> Result<Vec<Dispute>, Error> {
         let market = MarketStateManager::get_market(env, &market_id)?;
         Ok(DisputeUtils::extract_disputes_from_market(
@@ -215,13 +1042,134 @@ impl DisputeManager {
         ))
     }
 
-    /// Check if user has disputed a market
+    /// Checks whether a specific user has already disputed a given market.
+    ///
+    /// This function prevents duplicate disputes from the same user and provides
+    /// a quick way to check user participation in dispute processes. Essential
+    /// for validation logic and user interface state management.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to check
+    /// * `user` - Address of the user to check for dispute participation
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the user has disputed this market, `false` if they haven't,
+    /// or an `Error` if the market is not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol, Address};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_123");
+    /// # let user = Address::generate(&env);
+    /// 
+    /// // Check if user can dispute (hasn't disputed before)
+    /// let has_disputed = DisputeManager::has_user_disputed(
+    ///     &env, 
+    ///     market_id.clone(), 
+    ///     user.clone()
+    /// ).unwrap();
+    /// 
+    /// if has_disputed {
+    ///     println!("User has already disputed this market");
+    ///     // Show dispute status instead of dispute option
+    /// } else {
+    ///     println!("User can dispute this market");
+    ///     // Show dispute creation interface
+    /// }
+    /// 
+    /// // Validation before allowing dispute creation
+    /// if !has_disputed {
+    ///     // Proceed with dispute creation logic
+    ///     println!("Proceeding with dispute creation");
+    /// }
+    /// ```
+    ///
+    /// # Use Cases
+    ///
+    /// - **Duplicate Prevention**: Ensure users can only dispute once per market
+    /// - **UI State Management**: Show appropriate interface based on user status
+    /// - **Validation Logic**: Pre-validate dispute creation requests
+    /// - **User Analytics**: Track user participation across markets
+    /// - **Access Control**: Implement business rules for dispute eligibility
+    ///
+    /// # Business Rules
+    ///
+    /// - Users can only dispute a market once to prevent spam
+    /// - Check is performed before allowing dispute creation
+    /// - Historical disputes (resolved/rejected) still count as "disputed"
+    /// - Essential for maintaining dispute system integrity
     pub fn has_user_disputed(env: &Env, market_id: Symbol, user: Address) -> Result<bool, Error> {
         let market = MarketStateManager::get_market(env, &market_id)?;
         Ok(DisputeUtils::has_user_disputed(&market, &user))
     }
 
-    /// Get user's dispute stake for a market
+    /// Retrieves the total stake amount a user has committed to disputes on a market.
+    ///
+    /// This function returns the amount a user has staked when disputing a market,
+    /// which is locked until dispute resolution. Used for displaying user positions,
+    /// calculating potential rewards, and managing stake-related operations.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to query
+    /// * `user` - Address of the user whose stake to retrieve
+    ///
+    /// # Returns
+    ///
+    /// Returns the user's dispute stake amount in stroops, or `0` if the user
+    /// has not disputed this market. Returns an `Error` if the market is not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol, Address};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "staked_market");
+    /// # let user = Address::generate(&env);
+    /// 
+    /// // Get user's dispute stake
+    /// let stake = DisputeManager::get_user_dispute_stake(
+    ///     &env,
+    ///     market_id.clone(),
+    ///     user.clone()
+    /// ).unwrap();
+    /// 
+    /// if stake > 0 {
+    ///     println!("User has {} XLM staked in disputes", stake / 10_000_000);
+    ///     
+    ///     // Calculate potential rewards (example logic)
+    ///     let potential_reward = stake * 120 / 100; // 20% bonus if dispute wins
+    ///     println!("Potential reward: {} XLM", potential_reward / 10_000_000);
+    ///     
+    ///     // Show stake status in UI
+    ///     println!("Stake is locked until dispute resolution");
+    /// } else {
+    ///     println!("User has not disputed this market");
+    /// }
+    /// ```
+    ///
+    /// # Stake Management
+    ///
+    /// - **Locked Funds**: Stake is locked until dispute resolution
+    /// - **Reward Calculation**: Basis for calculating potential rewards
+    /// - **Risk Assessment**: Shows user's economic exposure
+    /// - **Portfolio Tracking**: Part of user's total locked assets
+    ///
+    /// # Use Cases
+    ///
+    /// - **User Dashboards**: Display locked stake amounts
+    /// - **Reward Calculations**: Determine potential dispute rewards
+    /// - **Risk Management**: Show user's economic exposure
+    /// - **Portfolio Analytics**: Track user's dispute participation
+    /// - **Liquidity Planning**: Account for locked funds in user balance
     pub fn get_user_dispute_stake(
         env: &Env,
         market_id: Symbol,
@@ -231,7 +1179,99 @@ impl DisputeManager {
         Ok(DisputeUtils::get_user_dispute_stake(&market, &user))
     }
 
-    /// Vote on a dispute
+    /// Allows community members to vote on the validity of a dispute.
+    ///
+    /// This function enables users to participate in dispute resolution by casting
+    /// weighted votes (backed by stakes) on whether they believe a dispute is valid.
+    /// Votes determine the final outcome and reward distribution.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - Address of the user casting the vote (must authenticate)
+    /// * `market_id` - Unique identifier of the disputed market
+    /// * `dispute_id` - Unique identifier of the specific dispute
+    /// * `vote` - Boolean vote (true = support dispute, false = reject dispute)
+    /// * `stake` - Amount to stake with the vote (determines voting power)
+    /// * `reason` - Optional explanation for the vote decision
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the vote is successfully recorded, or an `Error` if:
+    /// - User has already voted on this dispute
+    /// - Dispute voting period has ended
+    /// - Stake amount is below minimum requirements
+    /// - Dispute is not in an active voting state
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol, String};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let voter = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "disputed_market");
+    /// # let dispute_id = Symbol::new(&env, "dispute_456");
+    /// 
+    /// // Vote to support the dispute
+    /// let result = DisputeManager::vote_on_dispute(
+    ///     &env,
+    ///     voter.clone(),
+    ///     market_id.clone(),
+    ///     dispute_id.clone(),
+    ///     true, // Supporting the dispute
+    ///     5_000_000, // 0.5 XLM voting power
+    ///     Some(String::from_str(&env, "Oracle data contradicts multiple sources"))
+    /// );
+    /// 
+    /// match result {
+    ///     Ok(()) => println!("Vote successfully recorded"),
+    ///     Err(e) => println!("Vote failed: {:?}", e),
+    /// }
+    /// 
+    /// // Vote to reject the dispute
+    /// let other_voter = Address::generate(&env);
+    /// let reject_result = DisputeManager::vote_on_dispute(
+    ///     &env,
+    ///     other_voter,
+    ///     market_id,
+    ///     dispute_id,
+    ///     false, // Rejecting the dispute
+    ///     3_000_000, // 0.3 XLM voting power
+    ///     Some(String::from_str(&env, "Oracle data appears accurate"))
+    /// );
+    /// ```
+    ///
+    /// # Voting Mechanics
+    ///
+    /// - **Stake-Weighted**: Higher stakes provide more voting influence
+    /// - **Binary Choice**: Support (true) or reject (false) the dispute
+    /// - **Economic Risk**: Voters risk their stake on the outcome
+    /// - **Transparent Process**: All votes are recorded with optional reasoning
+    ///
+    /// # Vote Outcomes
+    ///
+    /// - **Support Vote (true)**: Believes dispute is valid, oracle was incorrect
+    /// - **Reject Vote (false)**: Believes dispute is invalid, oracle was correct
+    /// - **Winning Side**: Receives stake back plus proportional rewards
+    /// - **Losing Side**: Forfeits stake to winners as accuracy incentive
+    ///
+    /// # Process Flow
+    ///
+    /// 1. **Authentication**: Verify voter signature and authorization
+    /// 2. **Validation**: Check voting eligibility and dispute status
+    /// 3. **Stake Transfer**: Lock voter's stake with the vote
+    /// 4. **Vote Recording**: Store vote with timestamp and reasoning
+    /// 5. **Event Emission**: Broadcast vote event for transparency
+    /// 6. **Aggregation**: Update dispute voting statistics
+    ///
+    /// # Economic Incentives
+    ///
+    /// Voting creates strong incentives for accuracy:
+    /// - Correct votes earn rewards from incorrect votes
+    /// - Stake amounts reflect voter confidence
+    /// - Economic penalties discourage frivolous voting
+    /// - Proportional rewards based on stake size
     pub fn vote_on_dispute(
         env: &Env,
         user: Address,
@@ -272,7 +1312,69 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Calculate dispute outcome based on voting
+    /// Calculates the final outcome of a dispute based on community voting results.
+    ///
+    /// This function analyzes all votes cast on a dispute, applies stake weighting,
+    /// and determines whether the dispute should be upheld (true) or rejected (false).
+    /// The calculation considers both vote counts and economic stakes.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `dispute_id` - Unique identifier of the dispute to calculate outcome for
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the dispute is upheld (oracle was wrong), `false` if rejected
+    /// (oracle was correct), or an `Error` if:
+    /// - Dispute is not found
+    /// - Voting period is still active
+    /// - Insufficient votes to determine outcome
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let dispute_id = Symbol::new(&env, "completed_dispute");
+    /// 
+    /// // Calculate outcome after voting period ends
+    /// let outcome = DisputeManager::calculate_dispute_outcome(
+    ///     &env, 
+    ///     dispute_id.clone()
+    /// ).unwrap();
+    /// 
+    /// if outcome {
+    ///     println!("Dispute upheld - oracle result overturned");
+    ///     // Community believes oracle was incorrect
+    /// } else {
+    ///     println!("Dispute rejected - oracle result stands");
+    ///     // Community believes oracle was correct
+    /// }
+    /// ```
+    ///
+    /// # Calculation Algorithm
+    ///
+    /// The outcome determination process:
+    /// 1. **Vote Aggregation**: Collect all votes with stakes
+    /// 2. **Stake Weighting**: Apply economic weight to each vote
+    /// 3. **Threshold Analysis**: Check minimum participation requirements
+    /// 4. **Outcome Decision**: Determine result based on weighted consensus
+    ///
+    /// # Weighting Logic
+    ///
+    /// - **Stake-Weighted Voting**: Larger stakes have more influence
+    /// - **Participation Threshold**: Minimum votes required for validity
+    /// - **Economic Consensus**: Stakes must exceed minimum threshold
+    /// - **Tie Breaking**: Admin intervention required for exact ties
+    ///
+    /// # Use Cases
+    ///
+    /// - **Resolution Processing**: Determine final dispute outcome
+    /// - **Fee Distribution**: Basis for distributing stakes to winners
+    /// - **Market Finalization**: Update market with final result
+    /// - **Analytics**: Track dispute resolution patterns
     pub fn calculate_dispute_outcome(env: &Env, dispute_id: Symbol) -> Result<bool, Error> {
         // Get dispute voting data
         let voting_data = DisputeUtils::get_dispute_voting(env, &dispute_id)?;
@@ -286,7 +1388,77 @@ impl DisputeManager {
         Ok(outcome)
     }
 
-    /// Distribute dispute fees to winners
+    /// Distributes stakes and fees to the winning side of a resolved dispute.
+    ///
+    /// This function calculates and executes the distribution of stakes from
+    /// losing voters to winning voters, creating economic incentives for
+    /// accurate dispute resolution participation.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `dispute_id` - Unique identifier of the resolved dispute
+    ///
+    /// # Returns
+    ///
+    /// Returns a `DisputeFeeDistribution` record containing distribution details,
+    /// or an `Error` if:
+    /// - Dispute is not ready for distribution
+    /// - Outcome calculation fails
+    /// - Distribution transaction fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let dispute_id = Symbol::new(&env, "resolved_dispute");
+    /// 
+    /// // Distribute fees after dispute resolution
+    /// let distribution = DisputeManager::distribute_dispute_fees(
+    ///     &env,
+    ///     dispute_id.clone()
+    /// ).unwrap();
+    /// 
+    /// // Check distribution results
+    /// println!("Total fees distributed: {} XLM", 
+    ///     distribution.total_fees / 10_000_000);
+    /// println!("Winners: {} addresses", 
+    ///     distribution.winner_addresses.len());
+    /// println!("Winner stake: {} XLM", 
+    ///     distribution.winner_stake / 10_000_000);
+    /// println!("Loser stake (rewards): {} XLM", 
+    ///     distribution.loser_stake / 10_000_000);
+    /// 
+    /// // Calculate reward ratio
+    /// let reward_ratio = distribution.loser_stake as f64 / 
+    ///     distribution.winner_stake as f64;
+    /// println!("Winners receive {:.1}% bonus", reward_ratio * 100.0);
+    /// ```
+    ///
+    /// # Distribution Mechanics
+    ///
+    /// 1. **Outcome Determination**: Calculate which side won
+    /// 2. **Stake Aggregation**: Sum stakes from winning and losing sides
+    /// 3. **Proportional Distribution**: Distribute loser stakes to winners
+    /// 4. **Platform Fee**: Deduct small percentage for operations
+    /// 5. **Transaction Execution**: Transfer funds to winner addresses
+    ///
+    /// # Reward Calculation
+    ///
+    /// Winners receive:
+    /// - **Original Stake**: Full recovery of their staked amount
+    /// - **Proportional Bonus**: Share of losing side's stakes
+    /// - **Early Voter Bonus**: Potential bonus for early participation
+    ///
+    /// # Economic Incentives
+    ///
+    /// Fee distribution creates:
+    /// - **Accuracy Rewards**: Economic benefit for correct voting
+    /// - **Participation Incentive**: Rewards encourage community engagement
+    /// - **Quality Control**: Penalties for incorrect dispute judgments
+    /// - **Platform Sustainability**: Small fees support operations
     pub fn distribute_dispute_fees(
         env: &Env,
         dispute_id: Symbol,
@@ -314,7 +1486,84 @@ impl DisputeManager {
         Ok(fee_distribution)
     }
 
-    /// Escalate a dispute
+    /// Escalates a dispute to higher authority when standard resolution fails.
+    ///
+    /// This function allows users to escalate disputes that cannot be resolved
+    /// through normal community voting, such as ties, low participation, or
+    /// complex cases requiring expert judgment.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - Address of the user requesting escalation (must authenticate)
+    /// * `dispute_id` - Unique identifier of the dispute to escalate
+    /// * `reason` - Explanation for why escalation is necessary
+    ///
+    /// # Returns
+    ///
+    /// Returns a `DisputeEscalation` record containing escalation details,
+    /// or an `Error` if:
+    /// - User lacks permission to escalate
+    /// - Dispute is not eligible for escalation
+    /// - Escalation reason is insufficient
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol, String};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let user = Address::generate(&env);
+    /// # let dispute_id = Symbol::new(&env, "tied_dispute");
+    /// 
+    /// // Escalate a dispute with exact vote tie
+    /// let escalation = DisputeManager::escalate_dispute(
+    ///     &env,
+    ///     user.clone(),
+    ///     dispute_id.clone(),
+    ///     String::from_str(&env, 
+    ///         "Voting resulted in exact tie with equal stakes on both sides")
+    /// ).unwrap();
+    /// 
+    /// // Check escalation details
+    /// println!("Escalated by: {}", escalation.escalated_by.to_string());
+    /// println!("Escalation level: {}", escalation.escalation_level);
+    /// println!("Requires admin review: {}", escalation.requires_admin_review);
+    /// println!("Reason: {}", escalation.escalation_reason.to_string());
+    /// ```
+    ///
+    /// # Escalation Triggers
+    ///
+    /// Valid reasons for escalation:
+    /// - **Exact Ties**: Equal stakes on both sides
+    /// - **Low Participation**: Insufficient community voting
+    /// - **Technical Issues**: Oracle data problems or system errors
+    /// - **Complex Cases**: Subjective outcomes requiring expert judgment
+    /// - **Appeal Process**: Losing party contests the result
+    ///
+    /// # Escalation Levels
+    ///
+    /// 1. **Level 1**: Admin review and decision
+    /// 2. **Level 2**: Governance token holder voting
+    /// 3. **Level 3**: External arbitration panel
+    /// 4. **Level 4**: Legal or regulatory intervention
+    ///
+    /// # Process Flow
+    ///
+    /// 1. **Authentication**: Verify escalation requester
+    /// 2. **Validation**: Check escalation eligibility
+    /// 3. **Record Creation**: Store escalation with reasoning
+    /// 4. **Admin Notification**: Alert administrators of escalation
+    /// 5. **Status Update**: Mark dispute as escalated
+    /// 6. **Event Emission**: Broadcast escalation event
+    ///
+    /// # Resolution Authority
+    ///
+    /// Escalated disputes require:
+    /// - **Admin Review**: Manual evaluation by authorized administrators
+    /// - **Expert Judgment**: Specialized knowledge for complex cases
+    /// - **Governance Process**: Community governance for policy matters
+    /// - **External Arbitration**: Independent third-party resolution
     pub fn escalate_dispute(
         env: &Env,
         user: Address,
