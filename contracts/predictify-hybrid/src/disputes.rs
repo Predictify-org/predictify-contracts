@@ -2613,38 +2613,35 @@ impl DisputeAnalytics {
 
     /// Get timeout analytics
     pub fn get_timeout_analytics(env: &Env, dispute_id: &Symbol) -> TimeoutAnalytics {
-        // Wrap with as_contract to access storage
-        env.as_contract(&env.current_contract_address(), || {
-            match DisputeUtils::get_dispute_timeout(env, dispute_id) {
-                Ok(timeout) => {
-                    let current_time = env.ledger().timestamp();
-                    let time_remaining = if current_time < timeout.expires_at {
-                        timeout.expires_at - current_time
-                    } else {
-                        0
-                    };
+        match DisputeUtils::get_dispute_timeout(env, dispute_id) {
+            Ok(timeout) => {
+                let current_time = env.ledger().timestamp();
+                let time_remaining = if current_time < timeout.expires_at {
+                    timeout.expires_at - current_time
+                } else {
+                    0
+                };
 
-                    TimeoutAnalytics {
-                        dispute_id: dispute_id.clone(),
-                        timeout_hours: timeout.timeout_hours,
-                        time_remaining_seconds: time_remaining,
-                        time_remaining_hours: time_remaining / 3600,
-                        is_expired: current_time >= timeout.expires_at,
-                        status: timeout.status,
-                        total_extensions: timeout.total_extension_hours,
-                    }
-                }
-                Err(_) => TimeoutAnalytics {
+                TimeoutAnalytics {
                     dispute_id: dispute_id.clone(),
-                    timeout_hours: 0,
-                    time_remaining_seconds: 0,
-                    time_remaining_hours: 0,
-                    is_expired: false,
-                    status: DisputeTimeoutStatus::Active,
-                    total_extensions: 0,
-                },
+                    timeout_hours: timeout.timeout_hours,
+                    time_remaining_seconds: time_remaining,
+                    time_remaining_hours: time_remaining / 3600,
+                    is_expired: current_time >= timeout.expires_at,
+                    status: timeout.status,
+                    total_extensions: timeout.total_extension_hours,
+                }
             }
-        })
+            Err(_) => TimeoutAnalytics {
+                dispute_id: dispute_id.clone(),
+                timeout_hours: 0,
+                time_remaining_seconds: 0,
+                time_remaining_hours: 0,
+                is_expired: false,
+                status: DisputeTimeoutStatus::Active,
+                total_extensions: 0,
+            },
+        }
     }
 }
 

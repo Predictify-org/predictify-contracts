@@ -32,6 +32,24 @@ pub const MAX_FEE_AMOUNT: i128 = crate::config::MAX_FEE_AMOUNT;
 /// Fee collection threshold (minimum amount before fees can be collected)
 pub const FEE_COLLECTION_THRESHOLD: i128 = crate::config::FEE_COLLECTION_THRESHOLD; // 10 XLM
 
+// ===== DYNAMIC FEE CONSTANTS =====
+
+/// Maximum fee percentage (5%)
+pub const MAX_FEE_PERCENTAGE: i128 = 500; // 5.00% in basis points
+
+/// Minimum fee percentage (0.1%)
+pub const MIN_FEE_PERCENTAGE: i128 = 10; // 0.10% in basis points
+
+/// Activity level thresholds
+pub const ACTIVITY_LEVEL_LOW: u32 = 10; // 10 votes
+pub const ACTIVITY_LEVEL_MEDIUM: u32 = 50; // 50 votes
+pub const ACTIVITY_LEVEL_HIGH: u32 = 100; // 100 votes
+
+/// Market size tiers (in XLM)
+pub const MARKET_SIZE_SMALL: i128 = 100_000_000; // 10 XLM
+pub const MARKET_SIZE_MEDIUM: i128 = 1_000_000_000; // 100 XLM
+pub const MARKET_SIZE_LARGE: i128 = 10_000_000_000; // 1000 XLM
+
 // ===== FEE TYPES =====
 
 /// Comprehensive fee configuration structure for market operations.
@@ -107,6 +125,182 @@ pub struct FeeConfig {
     pub collection_threshold: i128,
     /// Whether fees are enabled
     pub fees_enabled: bool,
+}
+
+/// Dynamic fee tier configuration based on market size
+///
+/// This structure defines fee tiers for different market sizes, allowing
+/// for more granular fee structures based on the total amount staked.
+/// Larger markets can have different fee rates to reflect their complexity
+/// and resource requirements.
+///
+/// # Fee Tiers
+///
+/// - **Small Markets** (0-10 XLM): Lower fees for accessibility
+/// - **Medium Markets** (10-100 XLM): Standard fees for typical markets
+/// - **Large Markets** (100-1000 XLM): Higher fees for complex markets
+/// - **Enterprise Markets** (1000+ XLM): Premium fees for large-scale markets
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # use predictify_hybrid::fees::FeeTier;
+/// # let env = Env::default();
+/// 
+/// let tier = FeeTier {
+///     min_size: 0,
+///     max_size: 100_000_000, // 10 XLM
+///     fee_percentage: 150, // 1.5%
+///     tier_name: String::from_str(&env, "Small"),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeTier {
+    /// Minimum market size for this tier (in stroops)
+    pub min_size: i128,
+    /// Maximum market size for this tier (in stroops)
+    pub max_size: i128,
+    /// Fee percentage for this tier (in basis points)
+    pub fee_percentage: i128,
+    /// Tier name/description
+    pub tier_name: String,
+}
+
+/// Activity-based fee adjustment configuration
+///
+/// This structure defines how fees are adjusted based on market activity
+/// levels. Higher activity markets may have different fee structures to
+/// account for increased resource usage and complexity.
+///
+/// # Activity Levels
+///
+/// - **Low Activity** (0-10 votes): Standard fees
+/// - **Medium Activity** (10-50 votes): Slight fee adjustment
+/// - **High Activity** (50-100 votes): Moderate fee adjustment
+/// - **Very High Activity** (100+ votes): Significant fee adjustment
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # use predictify_hybrid::fees::ActivityAdjustment;
+/// # let env = Env::default();
+/// 
+/// let adjustment = ActivityAdjustment {
+///     activity_level: 50,
+///     fee_multiplier: 110, // 10% increase
+///     description: String::from_str(&env, "Medium Activity"),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActivityAdjustment {
+    /// Activity level threshold (number of votes)
+    pub activity_level: u32,
+    /// Fee multiplier (100 = no change, 110 = 10% increase)
+    pub fee_multiplier: i128,
+    /// Description of this activity level
+    pub description: String,
+}
+
+/// Dynamic fee calculation factors
+///
+/// This structure contains all the factors that influence dynamic fee
+/// calculation, including market size, activity level, and any special
+/// considerations for the specific market.
+///
+/// # Calculation Factors
+///
+/// - **Base Fee**: Starting fee percentage
+/// - **Size Multiplier**: Adjustment based on market size
+/// - **Activity Multiplier**: Adjustment based on activity level
+/// - **Complexity Factor**: Additional adjustment for market complexity
+/// - **Final Fee**: Calculated final fee percentage
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # use predictify_hybrid::fees::FeeCalculationFactors;
+/// # let env = Env::default();
+/// 
+/// let factors = FeeCalculationFactors {
+///     base_fee_percentage: 200, // 2%
+///     size_multiplier: 110, // 10% increase
+///     activity_multiplier: 105, // 5% increase
+///     complexity_factor: 100, // No complexity adjustment
+///     final_fee_percentage: 231, // 2.31% (calculated)
+///     market_size_tier: String::from_str(&env, "Medium"),
+///     activity_level: String::from_str(&env, "High"),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeCalculationFactors {
+    /// Base fee percentage (in basis points)
+    pub base_fee_percentage: i128,
+    /// Size-based multiplier (100 = no change)
+    pub size_multiplier: i128,
+    /// Activity-based multiplier (100 = no change)
+    pub activity_multiplier: i128,
+    /// Complexity factor (100 = no change)
+    pub complexity_factor: i128,
+    /// Final calculated fee percentage (in basis points)
+    pub final_fee_percentage: i128,
+    /// Market size tier name
+    pub market_size_tier: String,
+    /// Activity level description
+    pub activity_level: String,
+}
+
+/// Fee history record for tracking fee changes
+///
+/// This structure tracks the history of fee calculations and changes
+/// for transparency and audit purposes.
+///
+/// # History Tracking
+///
+/// - **Fee Changes**: When and why fees were adjusted
+/// - **Calculation Records**: How fees were calculated
+/// - **Admin Actions**: Who made fee changes and when
+/// - **Market Performance**: How fees performed over time
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # use predictify_hybrid::fees::FeeHistory;
+/// # let env = Env::default();
+/// 
+/// let history = FeeHistory {
+///     market_id: Symbol::new(&env, "market_123"),
+///     timestamp: env.ledger().timestamp(),
+///     old_fee_percentage: 200, // 2%
+///     new_fee_percentage: 220, // 2.2%
+///     reason: String::from_str(&env, "Activity level increased"),
+///     admin: Address::generate(&env),
+///     calculation_factors: factors, // FeeCalculationFactors
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeHistory {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Timestamp of the fee change
+    pub timestamp: u64,
+    /// Previous fee percentage
+    pub old_fee_percentage: i128,
+    /// New fee percentage
+    pub new_fee_percentage: i128,
+    /// Reason for the fee change
+    pub reason: String,
+    /// Admin who made the change
+    pub admin: Address,
+    /// Calculation factors used
+    pub calculation_factors: FeeCalculationFactors,
 }
 
 /// Record of a completed fee collection operation from a market.
@@ -610,6 +804,45 @@ impl FeeManager {
         let market = MarketStateManager::get_market(env, market_id)?;
         FeeValidator::validate_market_fees(&market)
     }
+
+    /// Update fee structure with new fee tiers
+    pub fn update_fee_structure(
+        env: &Env,
+        admin: Address,
+        new_fee_tiers: Map<u32, i128>,
+    ) -> Result<(), Error> {
+        // Require authentication from the admin
+        admin.require_auth();
+
+        // Validate admin permissions
+        FeeValidator::validate_admin_permissions(env, &admin)?;
+
+        // Validate fee tiers
+        for (tier_id, fee_percentage) in new_fee_tiers.iter() {
+            if fee_percentage < MIN_FEE_PERCENTAGE || fee_percentage > MAX_FEE_PERCENTAGE {
+                return Err(Error::InvalidInput);
+            }
+        }
+
+        // Store new fee tiers
+        let storage_key = symbol_short!("fee_tiers");
+        env.storage().persistent().set(&storage_key, &new_fee_tiers);
+
+        // Record fee structure update
+        FeeTracker::record_fee_structure_update(env, &admin, &new_fee_tiers)?;
+
+        Ok(())
+    }
+
+    /// Get fee history for a specific market
+    pub fn get_fee_history(env: &Env, market_id: Symbol) -> Result<Vec<FeeHistory>, Error> {
+        let history_key = Symbol::new(env, "fee_history");
+        
+        match env.storage().persistent().get::<Symbol, Vec<FeeHistory>>(&history_key) {
+            Some(history) => Ok(history),
+            None => Ok(Vec::new(env)),
+        }
+    }
 }
 
 // ===== FEE CALCULATOR =====
@@ -687,6 +920,189 @@ impl FeeCalculator {
         } else {
             Ok(adjusted_fee)
         }
+    }
+
+    /// Calculate dynamic fee based on market size and activity
+    pub fn calculate_dynamic_fee_by_market_id(env: &Env, market_id: Symbol) -> Result<i128, Error> {
+        let market = crate::markets::MarketStateManager::get_market(env, &market_id)?;
+        Self::calculate_dynamic_fee(&market)
+    }
+
+    /// Get fee tier based on market size
+    pub fn get_fee_tier_by_market_size(env: &Env, total_staked: i128) -> Result<FeeTier, Error> {
+        let tier_name = if total_staked >= MARKET_SIZE_LARGE {
+            String::from_str(env, "Large")
+        } else if total_staked >= MARKET_SIZE_MEDIUM {
+            String::from_str(env, "Medium")
+        } else if total_staked >= MARKET_SIZE_SMALL {
+            String::from_str(env, "Small")
+        } else {
+            String::from_str(env, "Micro")
+        };
+
+        let fee_percentage = if tier_name == String::from_str(env, "Large") {
+            250 // 2.5%
+        } else if tier_name == String::from_str(env, "Medium") {
+            200 // 2.0%
+        } else if tier_name == String::from_str(env, "Small") {
+            150 // 1.5%
+        } else if tier_name == String::from_str(env, "Micro") {
+            100 // 1.0%
+        } else {
+            200 // Default 2.0%
+        };
+
+        let min_size = if tier_name == String::from_str(env, "Large") {
+            MARKET_SIZE_LARGE
+        } else if tier_name == String::from_str(env, "Medium") {
+            MARKET_SIZE_MEDIUM
+        } else if tier_name == String::from_str(env, "Small") {
+            MARKET_SIZE_SMALL
+        } else if tier_name == String::from_str(env, "Micro") {
+            0
+        } else {
+            0
+        };
+
+        let max_size = if tier_name == String::from_str(env, "Large") {
+            i128::MAX
+        } else if tier_name == String::from_str(env, "Medium") {
+            MARKET_SIZE_LARGE - 1
+        } else if tier_name == String::from_str(env, "Small") {
+            MARKET_SIZE_MEDIUM - 1
+        } else if tier_name == String::from_str(env, "Micro") {
+            MARKET_SIZE_SMALL - 1
+        } else {
+            MARKET_SIZE_SMALL - 1
+        };
+
+        Ok(FeeTier {
+            min_size,
+            max_size,
+            fee_percentage,
+            tier_name,
+        })
+    }
+
+    /// Adjust fee by activity level
+    pub fn adjust_fee_by_activity(env: &Env, market_id: Symbol, activity_level: u32) -> Result<i128, Error> {
+        let market = crate::markets::MarketStateManager::get_market(env, &market_id)?;
+        let base_fee = Self::calculate_dynamic_fee(&market)?;
+
+        let activity_multiplier = if activity_level >= ACTIVITY_LEVEL_HIGH {
+            120 // 20% increase for high activity
+        } else if activity_level >= ACTIVITY_LEVEL_MEDIUM {
+            110 // 10% increase for medium activity
+        } else if activity_level >= ACTIVITY_LEVEL_LOW {
+            105 // 5% increase for low activity
+        } else {
+            100 // No adjustment for very low activity
+        };
+
+        let adjusted_fee = (base_fee * activity_multiplier) / 100;
+
+        // Ensure fee is within limits
+        if adjusted_fee < MIN_FEE_AMOUNT {
+            Ok(MIN_FEE_AMOUNT)
+        } else if adjusted_fee > MAX_FEE_AMOUNT {
+            Ok(MAX_FEE_AMOUNT)
+        } else {
+            Ok(adjusted_fee)
+        }
+    }
+
+    /// Validate fee percentage
+    pub fn validate_fee_percentage(env: &Env, fee: i128, market_id: Symbol) -> Result<bool, Error> {
+        if fee < MIN_FEE_PERCENTAGE {
+            return Err(Error::InvalidInput);
+        }
+
+        if fee > MAX_FEE_PERCENTAGE {
+            return Err(Error::InvalidInput);
+        }
+
+        // Check if fee is reasonable for the market size
+        let market = crate::markets::MarketStateManager::get_market(env, &market_id)?;
+        let tier = Self::get_fee_tier_by_market_size(env, market.total_staked)?;
+
+        // Allow some flexibility around the tier fee
+        let min_allowed = (tier.fee_percentage * 80) / 100; // 20% below tier
+        let max_allowed = (tier.fee_percentage * 120) / 100; // 20% above tier
+
+        if fee < min_allowed || fee > max_allowed {
+            return Err(Error::InvalidInput);
+        }
+
+        Ok(true)
+    }
+
+    /// Get fee calculation factors for a market
+    pub fn get_fee_calculation_factors(env: &Env, market_id: Symbol) -> Result<FeeCalculationFactors, Error> {
+        let market = crate::markets::MarketStateManager::get_market(env, &market_id)?;
+        
+        // Get base fee tier
+        let tier = Self::get_fee_tier_by_market_size(env, market.total_staked)?;
+        
+        // Calculate activity level
+        let vote_count = market.votes.len() as u32;
+        let activity_level = if vote_count >= ACTIVITY_LEVEL_HIGH {
+            String::from_str(env, "High")
+        } else if vote_count >= ACTIVITY_LEVEL_MEDIUM {
+            String::from_str(env, "Medium")
+        } else if vote_count >= ACTIVITY_LEVEL_LOW {
+            String::from_str(env, "Low")
+        } else {
+            String::from_str(env, "Very Low")
+        };
+
+        // Calculate multipliers
+        let size_multiplier = if tier.tier_name == String::from_str(env, "Large") {
+            110 // 10% increase
+        } else if tier.tier_name == String::from_str(env, "Medium") {
+            100 // No change
+        } else if tier.tier_name == String::from_str(env, "Small") {
+            95  // 5% decrease
+        } else if tier.tier_name == String::from_str(env, "Micro") {
+            90  // 10% decrease
+        } else {
+            100
+        };
+
+        let activity_multiplier = if activity_level == String::from_str(env, "High") {
+            120    // 20% increase
+        } else if activity_level == String::from_str(env, "Medium") {
+            110   // 10% increase
+        } else if activity_level == String::from_str(env, "Low") {
+            105    // 5% increase
+        } else if activity_level == String::from_str(env, "Very Low") {
+            100 // No change
+        } else {
+            100
+        };
+
+        let complexity_factor = 100; // No complexity adjustment for now
+
+        // Calculate final fee percentage
+        let final_fee_percentage = (tier.fee_percentage * size_multiplier * activity_multiplier * complexity_factor) / (100 * 100 * 100);
+
+        // Ensure final fee is within limits
+        let final_fee_percentage = if final_fee_percentage < MIN_FEE_PERCENTAGE {
+            MIN_FEE_PERCENTAGE
+        } else if final_fee_percentage > MAX_FEE_PERCENTAGE {
+            MAX_FEE_PERCENTAGE
+        } else {
+            final_fee_percentage
+        };
+
+        Ok(FeeCalculationFactors {
+            base_fee_percentage: tier.fee_percentage,
+            size_multiplier,
+            activity_multiplier,
+            complexity_factor,
+            final_fee_percentage,
+            market_size_tier: tier.tier_name,
+            activity_level,
+        })
     }
 }
 
@@ -954,6 +1370,22 @@ impl FeeTracker {
         let total_key = symbol_short!("tot_fees");
         Ok(env.storage().persistent().get(&total_key).unwrap_or(0))
     }
+
+    /// Record fee structure update
+    pub fn record_fee_structure_update(
+        env: &Env,
+        admin: &Address,
+        new_fee_tiers: &Map<u32, i128>,
+    ) -> Result<(), Error> {
+        let storage_key = symbol_short!("fee_str");
+        let update_data = (
+            admin.clone(),
+            new_fee_tiers.clone(),
+            env.ledger().timestamp(),
+        );
+        env.storage().persistent().set(&storage_key, &update_data);
+        Ok(())
+    }
 }
 
 // ===== FEE CONFIG MANAGER =====
@@ -1131,6 +1563,51 @@ pub mod testing {
 
         Ok(())
     }
+
+    /// Create test fee tier
+    pub fn create_test_fee_tier(env: &Env) -> FeeTier {
+        FeeTier {
+            min_size: 0,
+            max_size: 100_000_000, // 10 XLM
+            fee_percentage: 150, // 1.5%
+            tier_name: String::from_str(env, "Small"),
+        }
+    }
+
+    /// Create test activity adjustment
+    pub fn create_test_activity_adjustment(env: &Env) -> ActivityAdjustment {
+        ActivityAdjustment {
+            activity_level: 50,
+            fee_multiplier: 110, // 10% increase
+            description: String::from_str(env, "Medium Activity"),
+        }
+    }
+
+    /// Create test fee calculation factors
+    pub fn create_test_fee_calculation_factors(env: &Env) -> FeeCalculationFactors {
+        FeeCalculationFactors {
+            base_fee_percentage: 200, // 2%
+            size_multiplier: 100, // No change
+            activity_multiplier: 110, // 10% increase
+            complexity_factor: 100, // No change
+            final_fee_percentage: 220, // 2.2%
+            market_size_tier: String::from_str(env, "Medium"),
+            activity_level: String::from_str(env, "Medium"),
+        }
+    }
+
+    /// Create test fee history
+    pub fn create_test_fee_history(env: &Env, market_id: Symbol) -> FeeHistory {
+        FeeHistory {
+            market_id,
+            timestamp: env.ledger().timestamp(),
+            old_fee_percentage: 200, // 2%
+            new_fee_percentage: 220, // 2.2%
+            reason: String::from_str(env, "Activity level increased"),
+            admin: Address::generate(env),
+            calculation_factors: testing::create_test_fee_calculation_factors(env),
+        }
+    }
 }
 
 // ===== MODULE TESTS =====
@@ -1288,5 +1765,48 @@ mod tests {
             Address::generate(&env),
         );
         assert!(testing::validate_fee_collection_structure(&collection).is_ok());
+    }
+
+    #[test]
+    fn test_dynamic_fee_tier_calculation() {
+        let env = Env::default();
+        
+        // Test small market tier
+        let small_tier = FeeCalculator::get_fee_tier_by_market_size(&env, 50_000_000).unwrap();
+        assert_eq!(small_tier.fee_percentage, 100); // 1.0%
+        assert_eq!(small_tier.tier_name, String::from_str(&env, "Micro"));
+        
+        // Test medium market tier
+        let medium_tier = FeeCalculator::get_fee_tier_by_market_size(&env, 500_000_000).unwrap();
+        assert_eq!(medium_tier.fee_percentage, 150); // 1.5%
+        assert_eq!(medium_tier.tier_name, String::from_str(&env, "Small"));
+        
+        // Test large market tier
+        let large_tier = FeeCalculator::get_fee_tier_by_market_size(&env, 5_000_000_000).unwrap();
+        assert_eq!(large_tier.fee_percentage, 200); // 2.0%
+        assert_eq!(large_tier.tier_name, String::from_str(&env, "Medium"));
+    }
+
+    #[test]
+    fn test_fee_calculation_factors() {
+        let env = Env::default();
+        
+        // Test the structure creation
+        let factors = testing::create_test_fee_calculation_factors(&env);
+        assert_eq!(factors.base_fee_percentage, 200);
+        assert_eq!(factors.final_fee_percentage, 220);
+        assert_eq!(factors.market_size_tier, String::from_str(&env, "Medium"));
+        assert_eq!(factors.activity_level, String::from_str(&env, "Medium"));
+    }
+
+    #[test]
+    fn test_fee_history_creation() {
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "test_market");
+        
+        let history = testing::create_test_fee_history(&env, market_id);
+        assert_eq!(history.old_fee_percentage, 200);
+        assert_eq!(history.new_fee_percentage, 220);
+        assert_eq!(history.reason, String::from_str(&env, "Activity level increased"));
     }
 }
