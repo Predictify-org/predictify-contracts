@@ -17,6 +17,7 @@ mod fees;
 mod markets;
 mod oracles;
 mod resolution;
+mod storage;
 mod types;
 mod utils;
 mod validation;
@@ -1030,6 +1031,92 @@ impl PredictifyHybrid {
             additional_days,
             reason,
         )
+    }
+
+    // ===== STORAGE OPTIMIZATION FUNCTIONS =====
+
+    /// Compress market data for storage optimization
+    pub fn compress_market_data(env: Env, market_id: Symbol) -> Result<storage::CompressedMarket, Error> {
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+        
+        storage::StorageOptimizer::compress_market_data(&env, &market)
+    }
+
+    /// Clean up old market data based on age and state
+    pub fn cleanup_old_market_data(env: Env, market_id: Symbol) -> Result<bool, Error> {
+        storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)
+    }
+
+    /// Migrate storage format from old to new format
+    pub fn migrate_storage_format(
+        env: Env,
+        from_format: storage::StorageFormat,
+        to_format: storage::StorageFormat,
+    ) -> Result<storage::StorageMigration, Error> {
+        storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format)
+    }
+
+    /// Monitor storage usage and return statistics
+    pub fn monitor_storage_usage(env: Env) -> Result<storage::StorageUsageStats, Error> {
+        storage::StorageOptimizer::monitor_storage_usage(&env)
+    }
+
+    /// Optimize storage layout for a specific market
+    pub fn optimize_storage_layout(env: Env, market_id: Symbol) -> Result<bool, Error> {
+        storage::StorageOptimizer::optimize_storage_layout(&env, &market_id)
+    }
+
+    /// Get storage usage statistics
+    pub fn get_storage_usage_statistics(env: Env) -> Result<storage::StorageUsageStats, Error> {
+        storage::StorageOptimizer::get_storage_usage_statistics(&env)
+    }
+
+    /// Validate storage integrity for a specific market
+    pub fn validate_storage_integrity(env: Env, market_id: Symbol) -> Result<storage::StorageIntegrityResult, Error> {
+        storage::StorageOptimizer::validate_storage_integrity(&env, &market_id)
+    }
+
+    /// Get storage configuration
+    pub fn get_storage_config(env: Env) -> storage::StorageConfig {
+        storage::StorageOptimizer::get_storage_config(&env)
+    }
+
+    /// Update storage configuration
+    pub fn update_storage_config(env: Env, config: storage::StorageConfig) -> Result<(), Error> {
+        storage::StorageOptimizer::update_storage_config(&env, &config)
+    }
+
+    /// Calculate storage cost for a market
+    pub fn calculate_storage_cost(env: Env, market_id: Symbol) -> Result<u64, Error> {
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+        
+        Ok(storage::StorageUtils::calculate_storage_cost(&market))
+    }
+
+    /// Get storage efficiency score for a market
+    pub fn get_storage_efficiency_score(env: Env, market_id: Symbol) -> Result<u32, Error> {
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+        
+        Ok(storage::StorageUtils::get_storage_efficiency_score(&market))
+    }
+
+    /// Get storage recommendations for a market
+    pub fn get_storage_recommendations(env: Env, market_id: Symbol) -> Result<Vec<String>, Error> {
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+        
+        Ok(storage::StorageUtils::get_storage_recommendations(&market))
     }
 }
 
