@@ -1,6 +1,5 @@
 #![allow(unused_variables)]
 
-
 extern crate alloc;
 
 use crate::{
@@ -1670,12 +1669,10 @@ impl MarketValidator {
         market: &Market,
         market_id: &Symbol,
     ) -> Result<(), ValidationError> {
-
         // Check if market exists
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
 
         // Check if market is still active
         let current_time = env.ledger().timestamp();
@@ -1697,12 +1694,10 @@ impl MarketValidator {
         market: &Market,
         market_id: &Symbol,
     ) -> Result<(), ValidationError> {
-
         // Check if market exists
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
 
         // Check if market has ended
         let current_time = env.ledger().timestamp();
@@ -1729,12 +1724,10 @@ impl MarketValidator {
         market: &Market,
         market_id: &Symbol,
     ) -> Result<(), ValidationError> {
-
         // Check if market exists
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
 
         // Check if market is resolved
         if market.winning_outcome.is_none() {
@@ -1822,12 +1815,10 @@ impl OracleValidator {
         oracle_result: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), ValidationError> {
-
         // Check if oracle result is empty
         if oracle_result.is_empty() {
             return Err(ValidationError::InvalidOracle);
         }
-
 
         // Check if oracle result matches one of the market outcomes
         if !market_outcomes.contains(oracle_result) {
@@ -2053,11 +2044,9 @@ impl VoteValidator {
         outcome: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), ValidationError> {
-
         if outcome.is_empty() {
             return Err(ValidationError::InvalidOutcome);
         }
-
 
         if !market_outcomes.contains(outcome) {
             return Err(ValidationError::InvalidOutcome);
@@ -2182,12 +2171,10 @@ impl DisputeValidator {
             return Err(ValidationError::InvalidDispute);
         }
 
-
         // Validate market exists and is resolved
         if market.question.is_empty() {
             return Err(ValidationError::InvalidMarket);
         }
-
 
         if market.winning_outcome.is_none() {
             return Err(ValidationError::InvalidMarket);
