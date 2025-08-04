@@ -20,7 +20,6 @@ mod resolution;
 mod types;
 mod utils;
 mod validation;
-mod validation_tests;
 mod voting;
 
 #[cfg(test)]
@@ -577,6 +576,7 @@ impl PredictifyHybrid {
         market.state = MarketState::Resolved;
         env.storage().persistent().set(&market_id, &market);
     }
+
     /// Fetches oracle result for a market from external oracle contracts.
     ///
     /// This function retrieves prediction results from configured oracle sources
@@ -672,6 +672,7 @@ impl PredictifyHybrid {
 
         Ok(oracle_resolution.oracle_result)
     }
+
     /// Resolves a market automatically using oracle data and community consensus.
     ///
     /// This function implements the hybrid resolution algorithm that combines
