@@ -683,6 +683,70 @@ pub struct AdminInitializedEvent {
     pub timestamp: u64,
 }
 
+/// Dispute timeout set event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeTimeoutSetEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Market ID
+    pub market_id: Symbol,
+    /// Timeout hours
+    pub timeout_hours: u32,
+    /// Set by admin
+    pub set_by: Address,
+    /// Set timestamp
+    pub timestamp: u64,
+}
+
+/// Dispute timeout expired event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeTimeoutExpiredEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Market ID
+    pub market_id: Symbol,
+    /// Expiration timestamp
+    pub expiration_timestamp: u64,
+    /// Auto-resolution outcome
+    pub outcome: String,
+    /// Resolution method
+    pub resolution_method: String,
+}
+
+/// Dispute timeout extended event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeTimeoutExtendedEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Market ID
+    pub market_id: Symbol,
+    /// Additional hours
+    pub additional_hours: u32,
+    /// Extended by admin
+    pub extended_by: Address,
+    /// Extension timestamp
+    pub timestamp: u64,
+}
+
+/// Dispute auto-resolved event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeAutoResolvedEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Market ID
+    pub market_id: Symbol,
+    /// Resolution outcome
+    pub outcome: String,
+    /// Resolution reason
+    pub reason: String,
+    /// Resolution timestamp
+    pub timestamp: u64,
+}
+
 /// Config initialized event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1027,6 +1091,82 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_final"), &event);
+    }
+
+    /// Emit dispute timeout set event
+    pub fn emit_dispute_timeout_set(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        timeout_hours: u32,
+        set_by: &Address,
+    ) {
+        let event = DisputeTimeoutSetEvent {
+            dispute_id: dispute_id.clone(),
+            market_id: market_id.clone(),
+            timeout_hours,
+            set_by: set_by.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("tout_set"), &event);
+    }
+
+    /// Emit dispute timeout expired event
+    pub fn emit_dispute_timeout_expired(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        outcome: &String,
+        resolution_method: &String,
+    ) {
+        let event = DisputeTimeoutExpiredEvent {
+            dispute_id: dispute_id.clone(),
+            market_id: market_id.clone(),
+            expiration_timestamp: env.ledger().timestamp(),
+            outcome: outcome.clone(),
+            resolution_method: resolution_method.clone(),
+        };
+
+        Self::store_event(env, &symbol_short!("tout_exp"), &event);
+    }
+
+    /// Emit dispute timeout extended event
+    pub fn emit_dispute_timeout_extended(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        additional_hours: u32,
+        extended_by: &Address,
+    ) {
+        let event = DisputeTimeoutExtendedEvent {
+            dispute_id: dispute_id.clone(),
+            market_id: market_id.clone(),
+            additional_hours,
+            extended_by: extended_by.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("tout_ext"), &event);
+    }
+
+    /// Emit dispute auto-resolved event
+    pub fn emit_dispute_auto_resolved(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        outcome: &String,
+        reason: &String,
+    ) {
+        let event = DisputeAutoResolvedEvent {
+            dispute_id: dispute_id.clone(),
+            market_id: market_id.clone(),
+            outcome: outcome.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("auto_res"), &event);
     }
 
     /// Store event in persistent storage

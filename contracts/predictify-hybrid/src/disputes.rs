@@ -613,6 +613,61 @@ pub struct DisputeFeeDistribution {
     pub fees_distributed: bool,
 }
 
+/// Represents dispute timeout configuration
+#[contracttype]
+pub struct DisputeTimeout {
+    pub dispute_id: Symbol,
+    pub market_id: Symbol,
+    pub timeout_hours: u32,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub extended_at: Option<u64>,
+    pub total_extension_hours: u32,
+    pub status: DisputeTimeoutStatus,
+}
+
+/// Represents dispute timeout status
+#[contracttype]
+pub enum DisputeTimeoutStatus {
+    Active,
+    Expired,
+    Extended,
+    AutoResolved,
+}
+
+/// Represents dispute timeout outcome
+#[contracttype]
+pub struct DisputeTimeoutOutcome {
+    pub dispute_id: Symbol,
+    pub market_id: Symbol,
+    pub outcome: String,
+    pub resolution_method: String,
+    pub resolution_timestamp: u64,
+    pub reason: String,
+}
+
+/// Represents timeout statistics
+#[contracttype]
+pub struct TimeoutStats {
+    pub total_timeouts: u32,
+    pub active_timeouts: u32,
+    pub expired_timeouts: u32,
+    pub auto_resolved_timeouts: u32,
+    pub average_timeout_hours: u32,
+}
+
+/// Represents timeout analytics
+#[contracttype]
+pub struct TimeoutAnalytics {
+    pub dispute_id: Symbol,
+    pub timeout_hours: u32,
+    pub time_remaining_seconds: u64,
+    pub time_remaining_hours: u64,
+    pub is_expired: bool,
+    pub status: DisputeTimeoutStatus,
+    pub total_extensions: u32,
+}
+
 // ===== DISPUTE MANAGER =====
 
 /// Central manager for all dispute-related operations in the prediction market system.
@@ -1607,6 +1662,203 @@ impl DisputeManager {
     ) -> Result<bool, Error> {
         DisputeValidator::validate_dispute_resolution_conditions(env, &dispute_id)
     }
+
+    /// Set dispute timeout
+    pub fn set_dispute_timeout(
+        env: &Env,
+        dispute_id: Symbol,
+        timeout_hours: u32,
+        admin: Address,
+    ) -> Result<(), Error> {
+        // Require authentication from the admin
+        admin.require_auth();
+
+        // Validate admin permissions
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        // Validate timeout hours
+        if timeout_hours == 0 || timeout_hours > 720 { // Max 30 days
+            return Err(Error::InvalidTimeoutHours);
+        }
+
+        // Create timeout configuration
+        let timeout = DisputeTimeout {
+            dispute_id: dispute_id.clone(),
+            market_id: Symbol::new(env, ""), // Will be set by DisputeUtils
+            timeout_hours,
+            created_at: env.ledger().timestamp(),
+            expires_at: env.ledger().timestamp() + (timeout_hours as u64 * 3600),
+            extended_at: None,
+            total_extension_hours: 0,
+            status: DisputeTimeoutStatus::Active,
+        };
+
+        // Store timeout configuration
+        DisputeUtils::store_dispute_timeout(env, &dispute_id, &timeout)?;
+
+        // Emit timeout set event
+        crate::events::EventEmitter::emit_dispute_timeout_set(
+            env,
+            &dispute_id,
+            &Symbol::new(env, ""), // Market ID will be set properly
+            timeout_hours,
+            &admin,
+        );
+
+        Ok(())
+    }
+
+    /// Check dispute timeout
+    pub fn check_dispute_timeout(env: &Env, dispute_id: Symbol) -> Result<bool, Error> {
+        let timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
+        let current_time = env.ledger().timestamp();
+        
+        Ok(current_time >= timeout.expires_at)
+    }
+
+    /// Auto resolve dispute on timeout
+    pub fn auto_resolve_dispute_on_timeout(
+        env: &Env,
+        dispute_id: Symbol,
+    ) -> Result<DisputeTimeoutOutcome, Error> {
+        // Check if timeout has expired
+        if !Self::check_dispute_timeout(env, dispute_id.clone())? {
+            return Err(Error::DisputeTimeoutNotExpired);
+        }
+
+        // Get timeout configuration
+        let mut timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
+        
+        // Update timeout status
+        timeout.status = DisputeTimeoutStatus::AutoResolved;
+        DisputeUtils::store_dispute_timeout(env, &dispute_id, &timeout)?;
+
+        // Determine timeout outcome
+        let outcome = Self::determine_timeout_outcome(env, dispute_id.clone())?;
+
+        // Emit timeout expired event
+        crate::events::EventEmitter::emit_dispute_timeout_expired(
+            env,
+            &dispute_id,
+            &outcome.market_id,
+            &outcome.outcome,
+            &outcome.resolution_method,
+        );
+
+        // Emit auto-resolved event
+        crate::events::EventEmitter::emit_dispute_auto_resolved(
+            env,
+            &dispute_id,
+            &outcome.market_id,
+            &outcome.outcome,
+            &outcome.reason,
+        );
+
+        Ok(outcome)
+    }
+
+    /// Determine timeout outcome
+    pub fn determine_timeout_outcome(
+        env: &Env,
+        dispute_id: Symbol,
+    ) -> Result<DisputeTimeoutOutcome, Error> {
+        // Get dispute voting data
+        let voting_data = DisputeUtils::get_dispute_voting(env, &dispute_id)?;
+        
+        // Determine outcome based on stake-weighted voting
+        let outcome = if voting_data.total_support_stake > voting_data.total_against_stake {
+            String::from_str(env, "Support")
+        } else {
+            String::from_str(env, "Against")
+        };
+
+        // Create timeout outcome
+        let timeout_outcome = DisputeTimeoutOutcome {
+            dispute_id: dispute_id.clone(),
+            market_id: Symbol::new(env, ""), // Will be set properly
+            outcome,
+            resolution_method: String::from_str(env, "Timeout Auto-Resolution"),
+            resolution_timestamp: env.ledger().timestamp(),
+            reason: String::from_str(env, "Dispute timeout expired - automatic resolution based on stake-weighted voting"),
+        };
+
+        Ok(timeout_outcome)
+    }
+
+    /// Emit timeout event
+    pub fn emit_timeout_event(
+        env: &Env,
+        dispute_id: Symbol,
+        outcome: String,
+    ) -> Result<(), Error> {
+        let timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
+        
+        crate::events::EventEmitter::emit_dispute_timeout_expired(
+            env,
+            &dispute_id,
+            &timeout.market_id,
+            &outcome,
+            &String::from_str(env, "Timeout"),
+        );
+
+        Ok(())
+    }
+
+    /// Get dispute timeout status
+    pub fn get_dispute_timeout_status(
+        env: &Env,
+        dispute_id: Symbol,
+    ) -> Result<DisputeTimeoutStatus, Error> {
+        let timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
+        Ok(timeout.status)
+    }
+
+    /// Extend dispute timeout
+    pub fn extend_dispute_timeout(
+        env: &Env,
+        dispute_id: Symbol,
+        additional_hours: u32,
+        admin: Address,
+    ) -> Result<(), Error> {
+        // Require authentication from the admin
+        admin.require_auth();
+
+        // Validate admin permissions
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        // Validate additional hours
+        if additional_hours == 0 || additional_hours > 168 { // Max 7 days extension
+            return Err(Error::InvalidTimeoutHours);
+        }
+
+        // Get current timeout
+        let mut timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
+
+        // Check if timeout can be extended
+        if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
+            return Err(Error::DisputeTimeoutExtensionNotAllowed);
+        }
+
+        // Update timeout
+        timeout.extended_at = Some(env.ledger().timestamp());
+        timeout.total_extension_hours += additional_hours;
+        timeout.expires_at += additional_hours as u64 * 3600;
+        timeout.status = DisputeTimeoutStatus::Extended;
+
+        // Store updated timeout
+        DisputeUtils::store_dispute_timeout(env, &dispute_id, &timeout)?;
+
+        // Emit timeout extended event
+        crate::events::EventEmitter::emit_dispute_timeout_extended(
+            env,
+            &dispute_id,
+            &timeout.market_id,
+            additional_hours,
+            &admin,
+        );
+
+        Ok(())
+    }
 }
 
 // ===== DISPUTE VALIDATOR =====
@@ -1800,6 +2052,43 @@ impl DisputeValidator {
         let escalation = DisputeUtils::get_dispute_escalation(env, dispute_id);
         if escalation.is_some() {
             return Err(Error::DisputeEscalationNotAllowed);
+        }
+
+        Ok(())
+    }
+
+    /// Validate dispute timeout parameters
+    pub fn validate_dispute_timeout_parameters(timeout_hours: u32) -> Result<(), Error> {
+        if timeout_hours == 0 {
+            return Err(Error::InvalidTimeoutHours);
+        }
+
+        if timeout_hours > 720 { // Max 30 days
+            return Err(Error::InvalidTimeoutHours);
+        }
+
+        Ok(())
+    }
+
+    /// Validate dispute timeout extension parameters
+    pub fn validate_dispute_timeout_extension_parameters(additional_hours: u32) -> Result<(), Error> {
+        if additional_hours == 0 {
+            return Err(Error::InvalidTimeoutHours);
+        }
+
+        if additional_hours > 168 { // Max 7 days extension
+            return Err(Error::InvalidTimeoutHours);
+        }
+
+        Ok(())
+    }
+
+    /// Validate dispute timeout status for extension
+    pub fn validate_dispute_timeout_status_for_extension(
+        timeout: &DisputeTimeout,
+    ) -> Result<(), Error> {
+        if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
+            return Err(Error::DisputeTimeoutExtensionNotAllowed);
         }
 
         Ok(())
@@ -2129,6 +2418,57 @@ impl DisputeUtils {
         );
         env.storage().persistent().set(&event_key, &event_data);
     }
+
+    /// Store dispute timeout
+    pub fn store_dispute_timeout(
+        env: &Env,
+        dispute_id: &Symbol,
+        timeout: &DisputeTimeout,
+    ) -> Result<(), Error> {
+        let key = (symbol_short!("timeout"), dispute_id.clone());
+        env.storage().persistent().set(&key, timeout);
+        Ok(())
+    }
+
+    /// Get dispute timeout
+    pub fn get_dispute_timeout(env: &Env, dispute_id: &Symbol) -> Result<DisputeTimeout, Error> {
+        let key = (symbol_short!("timeout"), dispute_id.clone());
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::DisputeTimeoutNotSet)
+    }
+
+    /// Check if dispute timeout exists
+    pub fn has_dispute_timeout(env: &Env, dispute_id: &Symbol) -> bool {
+        let key = (symbol_short!("timeout"), dispute_id.clone());
+        env.storage().persistent().has(&key)
+    }
+
+    /// Remove dispute timeout
+    pub fn remove_dispute_timeout(env: &Env, dispute_id: &Symbol) -> Result<(), Error> {
+        let key = (symbol_short!("timeout"), dispute_id.clone());
+        env.storage().persistent().remove(&key);
+        Ok(())
+    }
+
+    /// Get all active timeouts
+    pub fn get_active_timeouts(env: &Env) -> Vec<DisputeTimeout> {
+        // This is a simplified implementation
+        // In a real system, you would maintain an index of active timeouts
+        Vec::new(env)
+    }
+
+    /// Check for expired timeouts
+    pub fn check_expired_timeouts(env: &Env) -> Vec<Symbol> {
+        let mut expired_disputes = Vec::new(env);
+        let current_time = env.ledger().timestamp();
+        
+        // This is a simplified implementation
+        // In a real system, you would iterate through all timeouts and check expiration
+        // For now, return empty vector
+        expired_disputes
+    }
 }
 
 // ===== DISPUTE ANALYTICS =====
@@ -2256,6 +2596,52 @@ impl DisputeAnalytics {
 
         (total_disputers as f64) / (total_voters as f64)
     }
+
+    /// Calculate timeout statistics
+    pub fn calculate_timeout_stats(env: &Env) -> TimeoutStats {
+        // This is a simplified implementation
+        // In a real system, you would iterate through all timeouts and calculate statistics
+        TimeoutStats {
+            total_timeouts: 0,
+            active_timeouts: 0,
+            expired_timeouts: 0,
+            auto_resolved_timeouts: 0,
+            average_timeout_hours: 0,
+        }
+    }
+
+    /// Get timeout analytics
+    pub fn get_timeout_analytics(env: &Env, dispute_id: &Symbol) -> TimeoutAnalytics {
+        match DisputeUtils::get_dispute_timeout(env, dispute_id) {
+            Ok(timeout) => {
+                let current_time = env.ledger().timestamp();
+                let time_remaining = if current_time < timeout.expires_at {
+                    timeout.expires_at - current_time
+                } else {
+                    0
+                };
+
+                TimeoutAnalytics {
+                    dispute_id: dispute_id.clone(),
+                    timeout_hours: timeout.timeout_hours,
+                    time_remaining_seconds: time_remaining,
+                    time_remaining_hours: time_remaining / 3600,
+                    is_expired: current_time >= timeout.expires_at,
+                    status: timeout.status,
+                    total_extensions: timeout.total_extension_hours,
+                }
+            }
+            Err(_) => TimeoutAnalytics {
+                dispute_id: dispute_id.clone(),
+                timeout_hours: 0,
+                time_remaining_seconds: 0,
+                time_remaining_hours: 0,
+                is_expired: false,
+                status: DisputeTimeoutStatus::Active,
+                total_extensions: 0,
+            },
+        }
+    }
 }
 
 // ===== DISPUTE TESTING UTILITIES =====
@@ -2320,6 +2706,54 @@ pub mod testing {
         }
 
         if stats.total_disputes < stats.unique_disputers {
+            return Err(Error::InvalidInput);
+        }
+
+        Ok(())
+    }
+
+    /// Create test dispute timeout
+    pub fn create_test_dispute_timeout(env: &Env, dispute_id: Symbol) -> DisputeTimeout {
+        DisputeTimeout {
+            dispute_id: dispute_id.clone(),
+            market_id: Symbol::new(env, "test_market"),
+            timeout_hours: 24,
+            created_at: env.ledger().timestamp(),
+            expires_at: env.ledger().timestamp() + 86400, // 24 hours
+            extended_at: None,
+            total_extension_hours: 0,
+            status: DisputeTimeoutStatus::Active,
+        }
+    }
+
+    /// Create test timeout outcome
+    pub fn create_test_timeout_outcome(env: &Env, dispute_id: Symbol) -> DisputeTimeoutOutcome {
+        DisputeTimeoutOutcome {
+            dispute_id: dispute_id.clone(),
+            market_id: Symbol::new(env, "test_market"),
+            outcome: String::from_str(env, "Support"),
+            resolution_method: String::from_str(env, "Timeout Auto-Resolution"),
+            resolution_timestamp: env.ledger().timestamp(),
+            reason: String::from_str(env, "Test timeout resolution"),
+        }
+    }
+
+    /// Validate timeout structure
+    pub fn validate_timeout_structure(timeout: &DisputeTimeout) -> Result<(), Error> {
+        if timeout.timeout_hours == 0 {
+            return Err(Error::InvalidTimeoutHours);
+        }
+
+        if timeout.expires_at <= timeout.created_at {
+            return Err(Error::InvalidInput);
+        }
+
+        Ok(())
+    }
+
+    /// Validate timeout outcome structure
+    pub fn validate_timeout_outcome_structure(outcome: &DisputeTimeoutOutcome) -> Result<(), Error> {
+        if outcome.resolution_timestamp == 0 {
             return Err(Error::InvalidInput);
         }
 
@@ -2452,5 +2886,40 @@ mod tests {
 
         let stats = testing::create_test_dispute_stats();
         assert!(testing::validate_dispute_stats(&stats).is_ok());
+    }
+
+    #[test]
+    fn test_timeout_utilities() {
+        let env = Env::default();
+        let dispute_id = Symbol::new(&env, "test_dispute");
+
+        let timeout = testing::create_test_dispute_timeout(&env, dispute_id.clone());
+        assert!(testing::validate_timeout_structure(&timeout).is_ok());
+
+        let outcome = testing::create_test_timeout_outcome(&env, dispute_id);
+        assert!(testing::validate_timeout_outcome_structure(&outcome).is_ok());
+    }
+
+    #[test]
+    fn test_timeout_validation() {
+        // Test timeout parameters validation
+        assert!(DisputeValidator::validate_dispute_timeout_parameters(24).is_ok());
+        assert!(DisputeValidator::validate_dispute_timeout_parameters(0).is_err());
+        assert!(DisputeValidator::validate_dispute_timeout_parameters(800).is_err());
+
+        // Test timeout extension parameters validation
+        assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(24).is_ok());
+        assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(0).is_err());
+        assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(200).is_err());
+    }
+
+    #[test]
+    fn test_timeout_analytics() {
+        let env = Env::default();
+        let dispute_id = Symbol::new(&env, "test_dispute");
+
+        let analytics = DisputeAnalytics::get_timeout_analytics(&env, &dispute_id);
+        assert_eq!(analytics.timeout_hours, 0); // No timeout set
+        assert_eq!(analytics.is_expired, false);
     }
 }

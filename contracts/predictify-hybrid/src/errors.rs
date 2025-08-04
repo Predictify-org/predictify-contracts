@@ -164,6 +164,16 @@ pub enum Error {
     ExtensionFeeInsufficient = 419,
     /// Admin address is not set (initialization missing)
     AdminNotSet = 420,
+    /// Dispute timeout not set
+    DisputeTimeoutNotSet = 421,
+    /// Dispute timeout expired
+    DisputeTimeoutExpired = 422,
+    /// Dispute timeout not expired
+    DisputeTimeoutNotExpired = 423,
+    /// Invalid timeout hours
+    InvalidTimeoutHours = 424,
+    /// Dispute timeout extension not allowed
+    DisputeTimeoutExtensionNotAllowed = 425,
 }
 
 impl Error {
@@ -257,6 +267,11 @@ impl Error {
             Error::MarketExtensionNotAllowed => "Market extension not allowed",
             Error::ExtensionFeeInsufficient => "Extension fee insufficient",
             Error::AdminNotSet => "Admin address is not set (initialization missing)",
+            Error::DisputeTimeoutNotSet => "Dispute timeout not set",
+            Error::DisputeTimeoutExpired => "Dispute timeout expired",
+            Error::DisputeTimeoutNotExpired => "Dispute timeout not expired",
+            Error::InvalidTimeoutHours => "Invalid timeout hours",
+            Error::DisputeTimeoutExtensionNotAllowed => "Dispute timeout extension not allowed",
         }
     }
 
@@ -363,6 +378,11 @@ impl Error {
             Error::MarketExtensionNotAllowed => "MARKET_EXTENSION_NOT_ALLOWED",
             Error::ExtensionFeeInsufficient => "EXTENSION_FEE_INSUFFICIENT",
             Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::DisputeTimeoutNotSet => "DISPUTE_TIMEOUT_NOT_SET",
+            Error::DisputeTimeoutExpired => "DISPUTE_TIMEOUT_EXPIRED",
+            Error::DisputeTimeoutNotExpired => "DISPUTE_TIMEOUT_NOT_EXPIRED",
+            Error::InvalidTimeoutHours => "INVALID_TIMEOUT_HOURS",
+            Error::DisputeTimeoutExtensionNotAllowed => "DISPUTE_TIMEOUT_EXTENSION_NOT_ALLOWED",
         }
     }
 }
