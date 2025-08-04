@@ -759,6 +759,46 @@ pub struct ConfigInitializedEvent {
     pub timestamp: u64,
 }
 
+/// Storage cleanup event
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct StorageCleanupEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Cleanup type
+    pub cleanup_type: String,
+    /// Cleanup timestamp
+    pub timestamp: u64,
+}
+
+/// Storage optimization event
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct StorageOptimizationEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Optimization type
+    pub optimization_type: String,
+    /// Optimization timestamp
+    pub timestamp: u64,
+}
+
+/// Storage migration event
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct StorageMigrationEvent {
+    /// Migration ID
+    pub migration_id: Symbol,
+    /// Source format
+    pub from_format: String,
+    /// Target format
+    pub to_format: String,
+    /// Number of markets migrated
+    pub markets_migrated: u32,
+    /// Migration timestamp
+    pub timestamp: u64,
+}
+
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Event emission utilities
@@ -1167,6 +1207,55 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("auto_res"), &event);
+    }
+
+    /// Emit storage cleanup event
+    pub fn emit_storage_cleanup_event(
+        env: &Env,
+        market_id: &Symbol,
+        cleanup_type: &String,
+    ) {
+        let event = StorageCleanupEvent {
+            market_id: market_id.clone(),
+            cleanup_type: cleanup_type.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("stor_cln"), &event);
+    }
+
+    /// Emit storage optimization event
+    pub fn emit_storage_optimization_event(
+        env: &Env,
+        market_id: &Symbol,
+        optimization_type: &String,
+    ) {
+        let event = StorageOptimizationEvent {
+            market_id: market_id.clone(),
+            optimization_type: optimization_type.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("stor_opt"), &event);
+    }
+
+    /// Emit storage migration event
+    pub fn emit_storage_migration_event(
+        env: &Env,
+        migration_id: &Symbol,
+        from_format: &String,
+        to_format: &String,
+        markets_migrated: u32,
+    ) {
+        let event = StorageMigrationEvent {
+            migration_id: migration_id.clone(),
+            from_format: from_format.clone(),
+            to_format: to_format.clone(),
+            markets_migrated,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("stor_mig"), &event);
     }
 
     /// Store event in persistent storage
