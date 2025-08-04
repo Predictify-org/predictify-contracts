@@ -147,7 +147,7 @@ pub struct FeeConfig {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::fees::FeeTier;
 /// # let env = Env::default();
-/// 
+///
 /// let tier = FeeTier {
 ///     min_size: 0,
 ///     max_size: 100_000_000, // 10 XLM
@@ -187,7 +187,7 @@ pub struct FeeTier {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::fees::ActivityAdjustment;
 /// # let env = Env::default();
-/// 
+///
 /// let adjustment = ActivityAdjustment {
 ///     activity_level: 50,
 ///     fee_multiplier: 110, // 10% increase
@@ -225,7 +225,7 @@ pub struct ActivityAdjustment {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::fees::FeeCalculationFactors;
 /// # let env = Env::default();
-/// 
+///
 /// let factors = FeeCalculationFactors {
 ///     base_fee_percentage: 200, // 2%
 ///     size_multiplier: 110, // 10% increase
@@ -273,7 +273,7 @@ pub struct FeeCalculationFactors {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::fees::FeeHistory;
 /// # let env = Env::default();
-/// 
+///
 /// let history = FeeHistory {
 ///     market_id: Symbol::new(&env, "market_123"),
 ///     timestamp: env.ledger().timestamp(),
@@ -837,8 +837,12 @@ impl FeeManager {
     /// Get fee history for a specific market
     pub fn get_fee_history(env: &Env, market_id: Symbol) -> Result<Vec<FeeHistory>, Error> {
         let history_key = Symbol::new(env, "fee_history");
-        
-        match env.storage().persistent().get::<Symbol, Vec<FeeHistory>>(&history_key) {
+
+        match env
+            .storage()
+            .persistent()
+            .get::<Symbol, Vec<FeeHistory>>(&history_key)
+        {
             Some(history) => Ok(history),
             None => Ok(Vec::new(env)),
         }
@@ -985,7 +989,11 @@ impl FeeCalculator {
     }
 
     /// Adjust fee by activity level
-    pub fn adjust_fee_by_activity(env: &Env, market_id: Symbol, activity_level: u32) -> Result<i128, Error> {
+    pub fn adjust_fee_by_activity(
+        env: &Env,
+        market_id: Symbol,
+        activity_level: u32,
+    ) -> Result<i128, Error> {
         let market = crate::markets::MarketStateManager::get_market(env, &market_id)?;
         let base_fee = Self::calculate_dynamic_fee(&market)?;
 
@@ -1037,12 +1045,15 @@ impl FeeCalculator {
     }
 
     /// Get fee calculation factors for a market
-    pub fn get_fee_calculation_factors(env: &Env, market_id: Symbol) -> Result<FeeCalculationFactors, Error> {
+    pub fn get_fee_calculation_factors(
+        env: &Env,
+        market_id: Symbol,
+    ) -> Result<FeeCalculationFactors, Error> {
         let market = crate::markets::MarketStateManager::get_market(env, &market_id)?;
-        
+
         // Get base fee tier
         let tier = Self::get_fee_tier_by_market_size(env, market.total_staked)?;
-        
+
         // Calculate activity level
         let vote_count = market.votes.len() as u32;
         let activity_level = if vote_count >= ACTIVITY_LEVEL_HIGH {
@@ -1061,19 +1072,19 @@ impl FeeCalculator {
         } else if tier.tier_name == String::from_str(env, "Medium") {
             100 // No change
         } else if tier.tier_name == String::from_str(env, "Small") {
-            95  // 5% decrease
+            95 // 5% decrease
         } else if tier.tier_name == String::from_str(env, "Micro") {
-            90  // 10% decrease
+            90 // 10% decrease
         } else {
             100
         };
 
         let activity_multiplier = if activity_level == String::from_str(env, "High") {
-            120    // 20% increase
+            120 // 20% increase
         } else if activity_level == String::from_str(env, "Medium") {
-            110   // 10% increase
+            110 // 10% increase
         } else if activity_level == String::from_str(env, "Low") {
-            105    // 5% increase
+            105 // 5% increase
         } else if activity_level == String::from_str(env, "Very Low") {
             100 // No change
         } else {
@@ -1083,7 +1094,9 @@ impl FeeCalculator {
         let complexity_factor = 100; // No complexity adjustment for now
 
         // Calculate final fee percentage
-        let final_fee_percentage = (tier.fee_percentage * size_multiplier * activity_multiplier * complexity_factor) / (100 * 100 * 100);
+        let final_fee_percentage =
+            (tier.fee_percentage * size_multiplier * activity_multiplier * complexity_factor)
+                / (100 * 100 * 100);
 
         // Ensure final fee is within limits
         let final_fee_percentage = if final_fee_percentage < MIN_FEE_PERCENTAGE {
@@ -1569,7 +1582,7 @@ pub mod testing {
         FeeTier {
             min_size: 0,
             max_size: 100_000_000, // 10 XLM
-            fee_percentage: 150, // 1.5%
+            fee_percentage: 150,   // 1.5%
             tier_name: String::from_str(env, "Small"),
         }
     }
@@ -1586,10 +1599,10 @@ pub mod testing {
     /// Create test fee calculation factors
     pub fn create_test_fee_calculation_factors(env: &Env) -> FeeCalculationFactors {
         FeeCalculationFactors {
-            base_fee_percentage: 200, // 2%
-            size_multiplier: 100, // No change
-            activity_multiplier: 110, // 10% increase
-            complexity_factor: 100, // No change
+            base_fee_percentage: 200,  // 2%
+            size_multiplier: 100,      // No change
+            activity_multiplier: 110,  // 10% increase
+            complexity_factor: 100,    // No change
             final_fee_percentage: 220, // 2.2%
             market_size_tier: String::from_str(env, "Medium"),
             activity_level: String::from_str(env, "Medium"),
@@ -1770,17 +1783,17 @@ mod tests {
     #[test]
     fn test_dynamic_fee_tier_calculation() {
         let env = Env::default();
-        
+
         // Test small market tier
         let small_tier = FeeCalculator::get_fee_tier_by_market_size(&env, 50_000_000).unwrap();
         assert_eq!(small_tier.fee_percentage, 100); // 1.0%
         assert_eq!(small_tier.tier_name, String::from_str(&env, "Micro"));
-        
+
         // Test medium market tier
         let medium_tier = FeeCalculator::get_fee_tier_by_market_size(&env, 500_000_000).unwrap();
         assert_eq!(medium_tier.fee_percentage, 150); // 1.5%
         assert_eq!(medium_tier.tier_name, String::from_str(&env, "Small"));
-        
+
         // Test large market tier
         let large_tier = FeeCalculator::get_fee_tier_by_market_size(&env, 5_000_000_000).unwrap();
         assert_eq!(large_tier.fee_percentage, 200); // 2.0%
@@ -1790,7 +1803,7 @@ mod tests {
     #[test]
     fn test_fee_calculation_factors() {
         let env = Env::default();
-        
+
         // Test the structure creation
         let factors = testing::create_test_fee_calculation_factors(&env);
         assert_eq!(factors.base_fee_percentage, 200);
@@ -1803,10 +1816,13 @@ mod tests {
     fn test_fee_history_creation() {
         let env = Env::default();
         let market_id = Symbol::new(&env, "test_market");
-        
+
         let history = testing::create_test_fee_history(&env, market_id);
         assert_eq!(history.old_fee_percentage, 200);
         assert_eq!(history.new_fee_percentage, 220);
-        assert_eq!(history.reason, String::from_str(&env, "Activity level increased"));
+        assert_eq!(
+            history.reason,
+            String::from_str(&env, "Activity level increased")
+        );
     }
 }
