@@ -18,7 +18,6 @@
 
 use super::*;
 
-
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::{self, StellarAssetClient},
@@ -141,7 +140,6 @@ fn test_create_market_successful() {
         String::from_str(&test.env, "yes"),
         String::from_str(&test.env, "no"),
     ];
-
 
     // Create market
     let market_id = client.create_market(
@@ -394,11 +392,11 @@ fn test_fee_calculation() {
 #[test]
 fn test_fee_validation() {
     let _test = PredictifyTest::setup();
-    
+
     // Test valid fee amount
     let valid_fee = 1_0000000; // 1 XLM
     assert!(valid_fee >= 1_000_000); // MIN_FEE_AMOUNT
-    
+
     // Test invalid fee amounts would be caught by validation
     let too_small_fee = 500_000; // 0.5 XLM
     assert!(too_small_fee < 1_000_000); // Below MIN_FEE_AMOUNT
@@ -441,7 +439,7 @@ fn test_question_length_validation() {
     // Test maximum question length (should not exceed 500 characters)
     let long_question = "a".repeat(501);
     let _long_question_str = String::from_str(&test.env, &long_question);
-    
+
     // This should be handled by validation in the actual implementation
     // For now, we test that the constant is properly defined
     assert_eq!(crate::config::MAX_QUESTION_LENGTH, 500);
@@ -450,10 +448,10 @@ fn test_question_length_validation() {
 #[test]
 fn test_outcome_validation() {
     let _test = PredictifyTest::setup();
-    
+
     // Test outcome length limits
     assert_eq!(crate::config::MAX_OUTCOME_LENGTH, 100);
-    
+
     // Test minimum and maximum outcomes
     assert_eq!(crate::config::MIN_MARKET_OUTCOMES, 2);
     assert_eq!(crate::config::MAX_MARKET_OUTCOMES, 10);
@@ -466,7 +464,7 @@ fn test_outcome_validation() {
 fn test_percentage_calculations() {
     // Test percentage denominator
     assert_eq!(crate::config::PERCENTAGE_DENOMINATOR, 100);
-    
+
     // Test percentage calculation logic
     let total = 1000_0000000; // 1000 XLM
     let percentage = 2; // 2%
@@ -477,12 +475,12 @@ fn test_percentage_calculations() {
 #[test]
 fn test_time_calculations() {
     let test = PredictifyTest::setup();
-    
+
     // Test duration calculations
     let current_time = test.env.ledger().timestamp();
     let duration_days = 30;
     let expected_end_time = current_time + (duration_days as u64 * 24 * 60 * 60);
-    
+
     // Verify the calculation matches what's used in market creation
     let market_id = test.create_test_market();
     let market = test.env.as_contract(&test.contract_id, || {
@@ -492,7 +490,7 @@ fn test_time_calculations() {
             .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
-    
+
     assert_eq!(market.end_time, expected_end_time);
 }
 
@@ -503,7 +501,7 @@ fn test_time_calculations() {
 fn test_market_creation_data() {
     let test = PredictifyTest::setup();
     let market_id = test.create_test_market();
-    
+
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -511,7 +509,7 @@ fn test_market_creation_data() {
             .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
-    
+
     // Verify market creation data is properly stored
     assert!(!market.question.is_empty());
     assert_eq!(market.outcomes.len(), 2);
@@ -545,7 +543,7 @@ fn test_voting_data_integrity() {
     assert!(market.votes.contains_key(test.user.clone()));
     let user_vote = market.votes.get(test.user.clone()).unwrap();
     assert_eq!(user_vote, String::from_str(&test.env, "yes"));
-    
+
     assert!(market.stakes.contains_key(test.user.clone()));
     let user_stake = market.stakes.get(test.user.clone()).unwrap();
     assert_eq!(user_stake, 1_0000000);
@@ -559,7 +557,7 @@ fn test_voting_data_integrity() {
 fn test_oracle_configuration() {
     let test = PredictifyTest::setup();
     let market_id = test.create_test_market();
-    
+
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -567,12 +565,18 @@ fn test_oracle_configuration() {
             .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
-    
+
     // Verify oracle configuration is properly stored
     assert_eq!(market.oracle_config.provider, OracleProvider::Reflector);
-    assert_eq!(market.oracle_config.feed_id, String::from_str(&test.env, "BTC"));
+    assert_eq!(
+        market.oracle_config.feed_id,
+        String::from_str(&test.env, "BTC")
+    );
     assert_eq!(market.oracle_config.threshold, 2500000);
-    assert_eq!(market.oracle_config.comparison, String::from_str(&test.env, "gt"));
+    assert_eq!(
+        market.oracle_config.comparison,
+        String::from_str(&test.env, "gt")
+    );
 }
 
 #[test]
@@ -582,7 +586,7 @@ fn test_oracle_provider_types() {
     let _reflector = OracleProvider::Reflector;
     let _band = OracleProvider::BandProtocol;
     let _dia = OracleProvider::DIA;
-    
+
     // Test oracle provider comparison
     assert_ne!(OracleProvider::Pyth, OracleProvider::Reflector);
     assert_eq!(OracleProvider::Pyth, OracleProvider::Pyth);
