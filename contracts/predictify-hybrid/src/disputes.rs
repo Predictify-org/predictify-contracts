@@ -1678,7 +1678,8 @@ impl DisputeManager {
         DisputeValidator::validate_admin_permissions(env, &admin)?;
 
         // Validate timeout hours
-        if timeout_hours == 0 || timeout_hours > 720 { // Max 30 days
+        if timeout_hours == 0 || timeout_hours > 720 {
+            // Max 30 days
             return Err(Error::InvalidTimeoutHours);
         }
 
@@ -1713,7 +1714,7 @@ impl DisputeManager {
     pub fn check_dispute_timeout(env: &Env, dispute_id: Symbol) -> Result<bool, Error> {
         let timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
         let current_time = env.ledger().timestamp();
-        
+
         Ok(current_time >= timeout.expires_at)
     }
 
@@ -1729,7 +1730,7 @@ impl DisputeManager {
 
         // Get timeout configuration
         let mut timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
-        
+
         // Update timeout status
         timeout.status = DisputeTimeoutStatus::AutoResolved;
         DisputeUtils::store_dispute_timeout(env, &dispute_id, &timeout)?;
@@ -1765,7 +1766,7 @@ impl DisputeManager {
     ) -> Result<DisputeTimeoutOutcome, Error> {
         // Get dispute voting data
         let voting_data = DisputeUtils::get_dispute_voting(env, &dispute_id)?;
-        
+
         // Determine outcome based on stake-weighted voting
         let outcome = if voting_data.total_support_stake > voting_data.total_against_stake {
             String::from_str(env, "Support")
@@ -1780,20 +1781,19 @@ impl DisputeManager {
             outcome,
             resolution_method: String::from_str(env, "Timeout Auto-Resolution"),
             resolution_timestamp: env.ledger().timestamp(),
-            reason: String::from_str(env, "Dispute timeout expired - automatic resolution based on stake-weighted voting"),
+            reason: String::from_str(
+                env,
+                "Dispute timeout expired - automatic resolution based on stake-weighted voting",
+            ),
         };
 
         Ok(timeout_outcome)
     }
 
     /// Emit timeout event
-    pub fn emit_timeout_event(
-        env: &Env,
-        dispute_id: Symbol,
-        outcome: String,
-    ) -> Result<(), Error> {
+    pub fn emit_timeout_event(env: &Env, dispute_id: Symbol, outcome: String) -> Result<(), Error> {
         let timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
-        
+
         crate::events::EventEmitter::emit_dispute_timeout_expired(
             env,
             &dispute_id,
@@ -1828,7 +1828,8 @@ impl DisputeManager {
         DisputeValidator::validate_admin_permissions(env, &admin)?;
 
         // Validate additional hours
-        if additional_hours == 0 || additional_hours > 168 { // Max 7 days extension
+        if additional_hours == 0 || additional_hours > 168 {
+            // Max 7 days extension
             return Err(Error::InvalidTimeoutHours);
         }
 
@@ -2064,7 +2065,8 @@ impl DisputeValidator {
             return Err(Error::InvalidTimeoutHours);
         }
 
-        if timeout_hours > 720 { // Max 30 days
+        if timeout_hours > 720 {
+            // Max 30 days
             return Err(Error::InvalidTimeoutHours);
         }
 
@@ -2072,12 +2074,15 @@ impl DisputeValidator {
     }
 
     /// Validate dispute timeout extension parameters
-    pub fn validate_dispute_timeout_extension_parameters(additional_hours: u32) -> Result<(), Error> {
+    pub fn validate_dispute_timeout_extension_parameters(
+        additional_hours: u32,
+    ) -> Result<(), Error> {
         if additional_hours == 0 {
             return Err(Error::InvalidTimeoutHours);
         }
 
-        if additional_hours > 168 { // Max 7 days extension
+        if additional_hours > 168 {
+            // Max 7 days extension
             return Err(Error::InvalidTimeoutHours);
         }
 
@@ -2464,7 +2469,7 @@ impl DisputeUtils {
     pub fn check_expired_timeouts(env: &Env) -> Vec<Symbol> {
         let mut expired_disputes = Vec::new(env);
         let current_time = env.ledger().timestamp();
-        
+
         // This is a simplified implementation
         // In a real system, you would iterate through all timeouts and check expiration
         // For now, return empty vector
@@ -2753,7 +2758,9 @@ pub mod testing {
     }
 
     /// Validate timeout outcome structure
-    pub fn validate_timeout_outcome_structure(outcome: &DisputeTimeoutOutcome) -> Result<(), Error> {
+    pub fn validate_timeout_outcome_structure(
+        outcome: &DisputeTimeoutOutcome,
+    ) -> Result<(), Error> {
         if outcome.resolution_timestamp == 0 {
             return Err(Error::InvalidInput);
         }
