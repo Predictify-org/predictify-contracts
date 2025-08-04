@@ -68,7 +68,7 @@ const MAX_TOTAL_EXTENSIONS: u32 = crate::config::MAX_TOTAL_EXTENSIONS;
 /// # let env = Env::default();
 /// # let admin = Address::generate(&env);
 /// # let market_id = Symbol::new(&env, "btc_market");
-/// 
+///
 /// // Extend market by 7 days
 /// let result = ExtensionManager::extend_market_duration(
 ///     &env,
@@ -77,18 +77,18 @@ const MAX_TOTAL_EXTENSIONS: u32 = crate::config::MAX_TOTAL_EXTENSIONS;
 ///     7, // Additional days
 ///     String::from_str(&env, "Extended due to high community interest")
 /// );
-/// 
+///
 /// match result {
 ///     Ok(()) => println!("Market successfully extended by 7 days"),
 ///     Err(e) => println!("Extension failed: {:?}", e),
 /// }
-/// 
+///
 /// // Check extension history
 /// let history = ExtensionManager::get_market_extension_history(
-///     &env, 
+///     &env,
 ///     market_id.clone()
 /// ).unwrap();
-/// 
+///
 /// println!("Total extensions: {}", history.len());
 /// ```
 pub struct ExtensionManager;
@@ -125,7 +125,7 @@ impl ExtensionManager {
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "crypto_prediction");
-    /// 
+    ///
     /// // Extend market for additional data collection
     /// let result = ExtensionManager::extend_market_duration(
     ///     &env,
@@ -134,7 +134,7 @@ impl ExtensionManager {
     ///     14, // Two weeks extension
     ///     String::from_str(&env, "Oracle data delayed, need more time for accurate resolution")
     /// );
-    /// 
+    ///
     /// match result {
     ///     Ok(()) => {
     ///         println!("Market extended successfully");
@@ -245,24 +245,24 @@ impl ExtensionManager {
     /// # use predictify_hybrid::extensions::ExtensionManager;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "btc_market");
-    /// 
+    ///
     /// // Get complete extension history
     /// let history = ExtensionManager::get_market_extension_history(
     ///     &env,
     ///     market_id.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// // Analyze extension patterns
     /// println!("Total extensions: {}", history.len());
-    /// 
+    ///
     /// let mut total_days = 0u32;
     /// let mut total_fees = 0i128;
-    /// 
+    ///
     /// for extension in history.iter() {
     ///     total_days += extension.additional_days;
     ///     total_fees += extension.fee_amount;
     ///     
-    ///     println!("Extension: {} days by {} (fee: {} XLM)", 
+    ///     println!("Extension: {} days by {} (fee: {} XLM)",
     ///         extension.additional_days,
     ///         extension.admin.to_string(),
     ///         extension.fee_amount / 10_000_000);
@@ -271,7 +271,7 @@ impl ExtensionManager {
     ///         println!("Reason: {}", reason.to_string());
     ///     }
     /// }
-    /// 
+    ///
     /// println!("Total extended days: {}", total_days);
     /// println!("Total fees paid: {} XLM", total_fees / 10_000_000);
     /// ```
@@ -323,13 +323,13 @@ impl ExtensionManager {
     /// # use predictify_hybrid::extensions::ExtensionManager;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "crypto_market");
-    /// 
+    ///
     /// // Get extension statistics
     /// let stats = ExtensionManager::get_extension_stats(
     ///     &env,
     ///     market_id.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// // Display extension status
     /// println!("Extension Statistics for Market: {}", market_id.to_string());
     /// println!("─────────────────────────────────────────");
@@ -337,17 +337,17 @@ impl ExtensionManager {
     /// println!("Total days extended: {}", stats.total_extension_days);
     /// println!("Maximum extension days: {}", stats.max_extension_days);
     /// println!("Can extend further: {}", stats.can_extend);
-    /// println!("Extension fee per day: {} XLM", 
+    /// println!("Extension fee per day: {} XLM",
     ///     stats.extension_fee_per_day / 10_000_000);
-    /// 
+    ///
     /// // Calculate remaining extension capacity
     /// let remaining_days = stats.max_extension_days - stats.total_extension_days;
     /// println!("Remaining extension capacity: {} days", remaining_days);
-    /// 
+    ///
     /// // Estimate cost for maximum extension
     /// if stats.can_extend && remaining_days > 0 {
     ///     let max_cost = (remaining_days as i128) * stats.extension_fee_per_day;
-    ///     println!("Cost to use remaining capacity: {} XLM", 
+    ///     println!("Cost to use remaining capacity: {} XLM",
     ///         max_cost / 10_000_000);
     /// }
     /// ```
@@ -417,14 +417,14 @@ impl ExtensionManager {
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "prediction_market");
-    /// 
+    ///
     /// // Check extension eligibility
     /// let can_extend = ExtensionManager::can_extend_market(
     ///     &env,
     ///     market_id.clone(),
     ///     admin.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// if can_extend {
     ///     println!("Market can be extended by this admin");
     ///     
@@ -490,31 +490,31 @@ impl ExtensionManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::extensions::ExtensionManager;
-    /// 
+    ///
     /// // Calculate fees for different extension periods
     /// let one_day_fee = ExtensionManager::calculate_extension_fee(1);
     /// let one_week_fee = ExtensionManager::calculate_extension_fee(7);
     /// let one_month_fee = ExtensionManager::calculate_extension_fee(30);
-    /// 
+    ///
     /// println!("Extension Fee Calculator");
     /// println!("─────────────────────────");
     /// println!("1 day: {} XLM", one_day_fee / 10_000_000);
     /// println!("1 week: {} XLM", one_week_fee / 10_000_000);
     /// println!("1 month: {} XLM", one_month_fee / 10_000_000);
-    /// 
+    ///
     /// // Calculate cost per day
     /// let daily_rate = one_day_fee;
     /// println!("Daily rate: {} XLM", daily_rate / 10_000_000);
-    /// 
+    ///
     /// // Verify linear pricing
     /// assert_eq!(one_week_fee, daily_rate * 7);
     /// assert_eq!(one_month_fee, daily_rate * 30);
-    /// 
+    ///
     /// // Budget planning example
     /// let budget_xlm = 50; // 50 XLM budget
     /// let budget_stroops = budget_xlm * 10_000_000;
     /// let max_days = budget_stroops / daily_rate;
-    /// println!("With {} XLM budget, can extend up to {} days", 
+    /// println!("With {} XLM budget, can extend up to {} days",
     ///     budget_xlm, max_days);
     /// ```
     ///

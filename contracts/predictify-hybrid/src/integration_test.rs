@@ -1,14 +1,14 @@
 #![cfg(test)]
 use super::*;
+use alloc::format;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::StellarAssetClient,
     vec, String, Symbol,
 };
-use alloc::format;
 
 /// Simplified Integration Test Suite for Predictify Hybrid Contract
-/// 
+///
 /// This module provides basic integration tests covering:
 /// - Market creation and voting
 /// - Basic market lifecycle
@@ -75,9 +75,14 @@ impl IntegrationTestSuite {
         }
     }
 
-    pub fn create_market(&mut self, question: &str, outcomes: Vec<String>, duration_days: u32) -> Symbol {
+    pub fn create_market(
+        &mut self,
+        question: &str,
+        outcomes: Vec<String>,
+        duration_days: u32,
+    ) -> Symbol {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
-        
+
         self.env.mock_all_auths();
         let market_id = client.create_market(
             &self.admin,
@@ -110,7 +115,7 @@ impl IntegrationTestSuite {
     pub fn advance_time(&self, days: u32) {
         let current_ledger = self.env.ledger();
         let new_timestamp = current_ledger.timestamp() + (days as u64 * 24 * 60 * 60);
-        
+
         self.env.ledger().set(LedgerInfo {
             timestamp: new_timestamp,
             protocol_version: current_ledger.protocol_version(),
@@ -136,11 +141,11 @@ impl IntegrationTestSuite {
     pub fn resolve_market(&self, market_id: &Symbol) -> Result<(), Error> {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         self.env.mock_all_auths();
-        
+
         // Get the market to determine the correct outcome to use
         let market = self.get_market(market_id);
         let winning_outcome = market.outcomes.get(0).unwrap().clone(); // Use first outcome as default
-        
+
         // Use manual resolution instead of automatic oracle resolution
         client.resolve_market_manual(&self.admin, market_id, &winning_outcome);
         Ok(())
@@ -156,7 +161,7 @@ impl IntegrationTestSuite {
 #[test]
 fn test_complete_market_lifecycle() {
     let mut test_suite = IntegrationTestSuite::setup(5);
-    
+
     // Step 1: Create a market
     let market_id = test_suite.create_market(
         "Will BTC reach $30,000 by end of year?",
@@ -170,10 +175,10 @@ fn test_complete_market_lifecycle() {
 
     // Step 2: Multiple users vote
     test_suite.vote_on_market(&test_suite.get_user(0), &market_id, "yes", 100_0000000); // 100 XLM
-    test_suite.vote_on_market(&test_suite.get_user(1), &market_id, "yes", 50_0000000);  // 50 XLM
-    test_suite.vote_on_market(&test_suite.get_user(2), &market_id, "no", 75_0000000);   // 75 XLM
-    test_suite.vote_on_market(&test_suite.get_user(3), &market_id, "yes", 25_0000000);  // 25 XLM
-    test_suite.vote_on_market(&test_suite.get_user(4), &market_id, "no", 60_0000000);   // 60 XLM
+    test_suite.vote_on_market(&test_suite.get_user(1), &market_id, "yes", 50_0000000); // 50 XLM
+    test_suite.vote_on_market(&test_suite.get_user(2), &market_id, "no", 75_0000000); // 75 XLM
+    test_suite.vote_on_market(&test_suite.get_user(3), &market_id, "yes", 25_0000000); // 25 XLM
+    test_suite.vote_on_market(&test_suite.get_user(4), &market_id, "no", 60_0000000); // 60 XLM
 
     // Step 3: Verify market state
     let market = test_suite.get_market(&market_id);
@@ -201,7 +206,7 @@ fn test_complete_market_lifecycle() {
 #[test]
 fn test_multi_user_market_scenarios() {
     let mut test_suite = IntegrationTestSuite::setup(10);
-    
+
     // Create multiple markets
     let market_1 = test_suite.create_market(
         "Market 1: BTC price prediction",
@@ -226,14 +231,24 @@ fn test_multi_user_market_scenarios() {
     // Users vote on multiple markets
     for i in 0..10 {
         let user = test_suite.get_user(i);
-        
+
         // Vote on market 1
         let outcome_1 = if i % 2 == 0 { "above_30k" } else { "below_30k" };
-        test_suite.vote_on_market(&user, &market_1, outcome_1, ((i + 1) * 10) as i128 * 1_0000000);
+        test_suite.vote_on_market(
+            &user,
+            &market_1,
+            outcome_1,
+            ((i + 1) * 10) as i128 * 1_0000000,
+        );
 
         // Vote on market 2
         let outcome_2 = if i % 3 == 0 { "above_2k" } else { "below_2k" };
-        test_suite.vote_on_market(&user, &market_2, outcome_2, ((i + 1) * 5) as i128 * 1_0000000);
+        test_suite.vote_on_market(
+            &user,
+            &market_2,
+            outcome_2,
+            ((i + 1) * 5) as i128 * 1_0000000,
+        );
     }
 
     // Verify all markets have votes
@@ -262,11 +277,11 @@ fn test_multi_user_market_scenarios() {
 #[should_panic(expected = "Error(Contract, #101)")] // MarketNotFound
 fn test_error_scenario_integration() {
     let mut test_suite = IntegrationTestSuite::setup(2);
-    
+
     // Test 1: Try to vote on non-existent market
     let client = PredictifyHybridClient::new(&test_suite.env, &test_suite.contract_id);
     let non_existent_market = Symbol::new(&test_suite.env, "non_existent");
-    
+
     test_suite.env.mock_all_auths();
     client.vote(
         &test_suite.get_user(0),
@@ -280,7 +295,7 @@ fn test_error_scenario_integration() {
 #[test]
 fn test_stress_test_multiple_markets() {
     let mut test_suite = IntegrationTestSuite::setup(20);
-    
+
     // Create 5 markets simultaneously
     let mut market_ids = Vec::new(&test_suite.env);
     for i in 0..5 {
@@ -300,10 +315,14 @@ fn test_stress_test_multiple_markets() {
     for user_index in 0..20 {
         let user = test_suite.get_user(user_index);
         for (market_index, market_id) in market_ids.iter().enumerate() {
-            let outcome = if (user_index + market_index) % 2 == 0 { "outcome_a" } else { "outcome_b" };
+            let outcome = if (user_index + market_index) % 2 == 0 {
+                "outcome_a"
+            } else {
+                "outcome_b"
+            };
             let stake = ((user_index + market_index + 1) * 5) as i128 * 1_0000000;
-            
-                         test_suite.vote_on_market(&user, &market_id, outcome, stake);
+
+            test_suite.vote_on_market(&user, &market_id, outcome, stake);
         }
     }
 

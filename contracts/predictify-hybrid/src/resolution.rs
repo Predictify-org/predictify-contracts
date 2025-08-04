@@ -45,10 +45,10 @@ use crate::types::*;
 /// # use predictify_hybrid::markets::Market;
 /// # let env = Env::default();
 /// # let market = Market::default(); // Placeholder
-/// 
+///
 /// // Check current resolution state
 /// let current_state = ResolutionUtils::get_resolution_state(&env, &market);
-/// 
+///
 /// match current_state {
 ///     ResolutionState::Active => {
 ///         println!("Market is active, ready for oracle resolution");
@@ -144,14 +144,14 @@ pub enum ResolutionState {
 /// # let env = Env::default();
 /// # let market_id = Symbol::new(&env, "btc_50k");
 /// # let oracle_contract = Address::generate(&env);
-/// 
+///
 /// // Fetch oracle resolution for a market
 /// let oracle_resolution = OracleResolutionManager::fetch_oracle_result(
 ///     &env,
 ///     &market_id,
 ///     &oracle_contract
 /// )?;
-/// 
+///
 /// // Examine oracle resolution details
 /// println!("Market: {}", oracle_resolution.market_id);
 /// println!("Oracle result: {}", oracle_resolution.oracle_result);
@@ -160,10 +160,10 @@ pub enum ResolutionState {
 /// println!("Comparison: {}", oracle_resolution.comparison);
 /// println!("Provider: {:?}", oracle_resolution.provider);
 /// println!("Feed: {}", oracle_resolution.feed_id);
-/// 
+///
 /// // Validate oracle resolution
 /// OracleResolutionManager::validate_oracle_resolution(&env, &oracle_resolution)?;
-/// 
+///
 /// // Calculate confidence score
 /// let confidence = OracleResolutionManager::calculate_oracle_confidence(&oracle_resolution);
 /// println!("Oracle confidence: {}%", confidence);
@@ -177,19 +177,19 @@ pub enum ResolutionState {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::oracles::OracleUtils;
 /// # let env = Env::default();
-/// 
+///
 /// // Example: BTC above $50,000?
 /// let btc_price = 52_000_00;    // $52,000 (8 decimal precision)
 /// let threshold = 50_000_00;    // $50,000
 /// let comparison = String::from_str(&env, "gt"); // Greater than
-/// 
+///
 /// let outcome = OracleUtils::determine_outcome(
 ///     btc_price,
-///     threshold, 
+///     threshold,
 ///     &comparison,
 ///     &env
 /// )?;
-/// 
+///
 /// assert_eq!(outcome, String::from_str(&env, "yes")); // BTC > $50k = "yes"
 /// # Ok::<(), predictify_hybrid::errors::Error>(())
 /// ```
@@ -266,24 +266,24 @@ pub struct OracleResolution {
 /// # use predictify_hybrid::resolution::{MarketResolutionManager, MarketResolution, ResolutionMethod};
 /// # let env = Env::default();
 /// # let market_id = Symbol::new(&env, "btc_prediction");
-/// 
+///
 /// // Resolve a market using hybrid method
 /// let resolution = MarketResolutionManager::resolve_market(&env, &market_id)?;
-/// 
+///
 /// // Examine resolution details
 /// println!("Market: {}", resolution.market_id);
 /// println!("Final outcome: {}", resolution.final_outcome);
 /// println!("Oracle result: {}", resolution.oracle_result);
-/// println!("Community consensus: {}% ({})", 
+/// println!("Community consensus: {}% ({})",
 ///     resolution.community_consensus.percentage,
 ///     resolution.community_consensus.outcome
 /// );
 /// println!("Resolution method: {:?}", resolution.resolution_method);
 /// println!("Confidence: {}%", resolution.confidence_score);
-/// 
+///
 /// // Validate the resolution
 /// MarketResolutionManager::validate_market_resolution(&env, &resolution)?;
-/// 
+///
 /// // Check resolution method
 /// match resolution.resolution_method {
 ///     ResolutionMethod::Hybrid => {
@@ -311,7 +311,7 @@ pub struct OracleResolution {
 /// ```rust
 /// # use predictify_hybrid::resolution::MarketResolution;
 /// # let resolution = MarketResolution::default(); // Placeholder
-/// 
+///
 /// // Interpret confidence scores
 /// match resolution.confidence_score {
 ///     90..=100 => println!("Very high confidence resolution"),
@@ -384,7 +384,7 @@ pub struct MarketResolution {
 /// # use predictify_hybrid::markets::CommunityConsensus;
 /// # use soroban_sdk::{Env, String};
 /// # let env = Env::default();
-/// 
+///
 /// // Example method selection logic
 /// fn select_resolution_method(
 ///     oracle_available: bool,
@@ -413,7 +413,7 @@ pub struct MarketResolution {
 /// # use predictify_hybrid::resolution::{ResolutionMethod, MarketResolutionAnalytics};
 /// # use predictify_hybrid::markets::CommunityConsensus;
 /// # let env = Env::default();
-/// 
+///
 /// // Determine resolution method based on available data
 /// let oracle_result = String::from_str(&env, "yes");
 /// let community_consensus = CommunityConsensus {
@@ -422,12 +422,12 @@ pub struct MarketResolution {
 ///     total_votes: 200,
 ///     percentage: 75,
 /// };
-/// 
+///
 /// let method = MarketResolutionAnalytics::determine_resolution_method(
 ///     &oracle_result,
 ///     &community_consensus
 /// );
-/// 
+///
 /// match method {
 ///     ResolutionMethod::Hybrid => {
 ///         println!("Using hybrid resolution - oracle and community agree");
@@ -527,10 +527,10 @@ pub enum ResolutionMethod {
 /// # use soroban_sdk::{Env, Map, String, Vec};
 /// # use predictify_hybrid::resolution::{ResolutionAnalytics, ResolutionAnalyticsManager};
 /// # let env = Env::default();
-/// 
+///
 /// // Get current resolution analytics
 /// let analytics = ResolutionAnalyticsManager::get_resolution_analytics(&env)?;
-/// 
+///
 /// // Display system performance metrics
 /// println!("=== Resolution System Analytics ===");
 /// println!("Total resolutions: {}", analytics.total_resolutions);
@@ -538,7 +538,7 @@ pub enum ResolutionMethod {
 /// println!("Community resolutions: {}", analytics.community_resolutions);
 /// println!("Hybrid resolutions: {}", analytics.hybrid_resolutions);
 /// println!("Average confidence: {}%", analytics.average_confidence / 100);
-/// 
+///
 /// // Calculate method distribution
 /// let total = analytics.total_resolutions as f64;
 /// if total > 0.0 {
@@ -546,13 +546,13 @@ pub enum ResolutionMethod {
 ///     println!("Community-only: {:.1}%", (analytics.community_resolutions as f64 / total) * 100.0);
 ///     println!("Hybrid: {:.1}%", (analytics.hybrid_resolutions as f64 / total) * 100.0);
 /// }
-/// 
+///
 /// // Analyze resolution times
 /// if !analytics.resolution_times.is_empty() {
 ///     let avg_time = analytics.resolution_times.iter().sum::<u64>() / analytics.resolution_times.len() as u64;
 ///     println!("Average resolution time: {} seconds", avg_time);
 /// }
-/// 
+///
 /// // Display outcome distribution
 /// for (outcome, count) in analytics.outcome_distribution.iter() {
 ///     println!("Outcome '{}': {} markets", outcome, count);
@@ -566,7 +566,7 @@ pub enum ResolutionMethod {
 /// ```rust
 /// # use predictify_hybrid::resolution::ResolutionAnalytics;
 /// # let analytics = ResolutionAnalytics::default();
-/// 
+///
 /// // Monitor system health
 /// fn assess_system_health(analytics: &ResolutionAnalytics) -> String {
 ///     let confidence_threshold = 80_00; // 80% in basis points
@@ -664,10 +664,10 @@ pub struct ResolutionAnalytics {
 /// # use predictify_hybrid::resolution::{ResolutionValidation, MarketResolutionManager, MarketResolution};
 /// # let env = Env::default();
 /// # let resolution = MarketResolution::default(); // Placeholder
-/// 
+///
 /// // Validate a market resolution
 /// let validation = MarketResolutionManager::validate_market_resolution(&env, &resolution)?;
-/// 
+///
 /// if validation.is_valid {
 ///     println!("✅ Resolution is valid and ready for finalization");
 ///     
@@ -702,7 +702,7 @@ pub struct ResolutionAnalytics {
 /// # use predictify_hybrid::resolution::{ResolutionValidation, OracleResolution};
 /// # use soroban_sdk::{Env, Vec, String};
 /// # let env = Env::default();
-/// 
+///
 /// // Example validation workflow
 /// fn comprehensive_validation_workflow(
 ///     env: &Env,
@@ -728,9 +728,9 @@ pub struct ResolutionAnalytics {
 ///     
 ///     Ok(true)
 /// }
-/// 
+///
 /// fn validate_oracle_data(
-///     _env: &Env, 
+///     _env: &Env,
 ///     _oracle_resolution: &OracleResolution
 /// ) -> Result<ResolutionValidation, predictify_hybrid::errors::Error> {
 ///     // Placeholder implementation
@@ -814,7 +814,7 @@ pub struct ResolutionValidation {
 ///
 /// The typical oracle resolution workflow:
 /// ```text
-/// 1. Validate Market → 2. Fetch Oracle Data → 3. Validate Response → 
+/// 1. Validate Market → 2. Fetch Oracle Data → 3. Validate Response →
 /// 4. Calculate Outcome → 5. Score Confidence → 6. Store Resolution
 /// ```
 ///
@@ -826,34 +826,34 @@ pub struct ResolutionValidation {
 /// # let env = Env::default();
 /// # let market_id = Symbol::new(&env, "btc_50k_market");
 /// # let oracle_contract = Address::generate(&env);
-/// 
+///
 /// // Fetch oracle resolution for a market
 /// let oracle_resolution = OracleResolutionManager::fetch_oracle_result(
 ///     &env,
 ///     &market_id,
 ///     &oracle_contract
 /// )?;
-/// 
+///
 /// println!("Oracle Resolution Results:");
 /// println!("Market: {}", oracle_resolution.market_id);
 /// println!("Result: {}", oracle_resolution.oracle_result);
 /// println!("Price: ${}", oracle_resolution.price / 100);
 /// println!("Threshold: ${}", oracle_resolution.threshold / 100);
 /// println!("Provider: {:?}", oracle_resolution.provider);
-/// 
+///
 /// // Validate the oracle resolution
 /// OracleResolutionManager::validate_oracle_resolution(&env, &oracle_resolution)?;
-/// 
+///
 /// // Calculate confidence score
 /// let confidence = OracleResolutionManager::calculate_oracle_confidence(&oracle_resolution);
 /// println!("Oracle confidence: {}%", confidence);
-/// 
+///
 /// // Store resolution for later retrieval
 /// // (Implementation would store in contract storage)
-/// 
+///
 /// // Retrieve stored resolution
 /// if let Some(stored_resolution) = OracleResolutionManager::get_oracle_resolution(
-///     &env, 
+///     &env,
 ///     &market_id
 /// )? {
 ///     println!("Successfully retrieved stored oracle resolution");
@@ -870,13 +870,13 @@ pub struct ResolutionValidation {
 /// # use predictify_hybrid::types::OracleProvider;
 /// # let env = Env::default();
 /// # let oracle_contract = Address::generate(&env);
-/// 
+///
 /// // Create oracle instance based on provider
 /// let oracle = OracleFactory::create_oracle(
 ///     OracleProvider::Reflector, // Primary provider for Stellar
 ///     oracle_contract
 /// )?;
-/// 
+///
 /// // Use oracle for price fetching
 /// match oracle {
 ///     OracleInstance::Reflector(reflector_oracle) => {
@@ -902,10 +902,10 @@ pub struct ResolutionValidation {
 /// ```rust
 /// # use predictify_hybrid::resolution::{OracleResolution, OracleResolutionManager};
 /// # let oracle_resolution = OracleResolution::default(); // Placeholder
-/// 
+///
 /// // Confidence scoring factors
 /// let confidence = OracleResolutionManager::calculate_oracle_confidence(&oracle_resolution);
-/// 
+///
 /// match confidence {
 ///     90..=100 => println!("Very high confidence - excellent oracle data"),
 ///     80..=89 => println!("High confidence - reliable oracle data"),
@@ -1082,21 +1082,21 @@ impl OracleResolutionManager {
 /// # let env = Env::default();
 /// # let market_id = Symbol::new(&env, "btc_prediction_market");
 /// # let admin = Address::generate(&env);
-/// 
+///
 /// // Resolve a market using hybrid method (oracle + community)
 /// let resolution = MarketResolutionManager::resolve_market(&env, &market_id)?;
-/// 
+///
 /// println!("Market Resolution Complete:");
 /// println!("Market: {}", resolution.market_id);
 /// println!("Final outcome: {}", resolution.final_outcome);
 /// println!("Method: {:?}", resolution.resolution_method);
 /// println!("Confidence: {}%", resolution.confidence_score);
-/// 
+///
 /// // Display resolution details
 /// match resolution.resolution_method {
 ///     ResolutionMethod::Hybrid => {
 ///         println!("Oracle result: {}", resolution.oracle_result);
-///         println!("Community consensus: {}% ({})", 
+///         println!("Community consensus: {}% ({})",
 ///             resolution.community_consensus.percentage,
 ///             resolution.community_consensus.outcome
 ///         );
@@ -1109,10 +1109,10 @@ impl OracleResolutionManager {
 ///     },
 ///     _ => println!("Other resolution method used"),
 /// }
-/// 
+///
 /// // Validate the resolution
 /// MarketResolutionManager::validate_market_resolution(&env, &resolution)?;
-/// 
+///
 /// // Admin can finalize with override if needed
 /// if resolution.confidence_score < 70 {
 ///     let admin_resolution = MarketResolutionManager::finalize_market(
@@ -1134,7 +1134,7 @@ impl OracleResolutionManager {
 /// # use predictify_hybrid::resolution::ResolutionMethod;
 /// # use predictify_hybrid::markets::CommunityConsensus;
 /// # let env = Env::default();
-/// 
+///
 /// // Example resolution decision logic
 /// fn determine_final_outcome(
 ///     oracle_result: &String,
@@ -1172,7 +1172,7 @@ impl OracleResolutionManager {
 /// ```rust
 /// # use predictify_hybrid::resolution::MarketResolution;
 /// # let resolution = MarketResolution::default(); // Placeholder
-/// 
+///
 /// // Interpret confidence levels
 /// match resolution.confidence_score {
 ///     95..=100 => println!("Extremely high confidence - virtually certain outcome"),

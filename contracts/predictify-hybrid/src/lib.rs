@@ -20,20 +20,21 @@ mod resolution;
 mod types;
 mod utils;
 mod validation;
+mod validation_tests;
 mod voting;
 
 #[cfg(test)]
 mod integration_test;
 
 // Re-export commonly used items
+use admin::AdminInitializer;
 pub use errors::Error;
 pub use types::*;
-use admin::AdminInitializer;
 
+use alloc::format;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
 };
-use alloc::format;
 
 #[contract]
 pub struct PredictifyHybrid;
@@ -68,7 +69,7 @@ impl PredictifyHybrid {
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let admin_address = Address::generate(&env);
-    /// 
+    ///
     /// // Initialize the contract with an admin
     /// PredictifyHybrid::initialize(env.clone(), admin_address);
     /// ```
@@ -118,7 +119,7 @@ impl PredictifyHybrid {
     /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleType};
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
-    /// 
+    ///
     /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by 2024?");
     /// let outcomes = vec![
     ///     String::from_str(&env, "Yes"),
@@ -130,7 +131,7 @@ impl PredictifyHybrid {
     ///     asset_code: Some(String::from_str(&env, "BTC")),
     ///     threshold_value: Some(100000),
     /// };
-    /// 
+    ///
     /// let market_id = PredictifyHybrid::create_market(
     ///     env.clone(),
     ///     admin,
@@ -165,10 +166,8 @@ impl PredictifyHybrid {
                 panic!("Admin not set");
             });
 
-
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
-
         }
 
         // Validate inputs
@@ -192,7 +191,6 @@ impl PredictifyHybrid {
         let seconds_per_day: u64 = 24 * 60 * 60;
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
         let end_time: u64 = env.ledger().timestamp() + duration_seconds;
-
 
         // Create a new market
         let market = Market {
@@ -220,7 +218,6 @@ impl PredictifyHybrid {
 
         market_id
     }
-
 
     /// Allows users to vote on a market outcome by staking tokens.
     ///
@@ -252,7 +249,7 @@ impl PredictifyHybrid {
     /// # let env = Env::default();
     /// # let user = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "market_1");
-    /// 
+    ///
     /// // Vote "Yes" with 1000 token units stake
     /// PredictifyHybrid::vote(
     ///     env.clone(),
@@ -284,7 +281,6 @@ impl PredictifyHybrid {
             .unwrap_or_else(|| {
                 panic_with_error!(env, Error::MarketNotFound);
             });
-
 
         // Check if the market is still active
         if env.ledger().timestamp() >= market.end_time {
@@ -338,7 +334,7 @@ impl PredictifyHybrid {
     /// # let env = Env::default();
     /// # let user = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "resolved_market");
-    /// 
+    ///
     /// // Claim winnings from a resolved market
     /// PredictifyHybrid::claim_winnings(
     ///     env.clone(),
@@ -403,9 +399,7 @@ impl PredictifyHybrid {
                 if &outcome == winning_outcome {
                     winning_total += market.stakes.get(voter.clone()).unwrap_or(0);
                 }
-
             }
-
 
             if winning_total > 0 {
                 let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE))
@@ -451,7 +445,7 @@ impl PredictifyHybrid {
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "market_1");
-    /// 
+    ///
     /// match PredictifyHybrid::get_market(env.clone(), market_id) {
     ///     Some(market) => {
     ///         // Market found - access market data
@@ -510,7 +504,7 @@ impl PredictifyHybrid {
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "market_1");
-    /// 
+    ///
     /// // Manually resolve market with "Yes" as winning outcome
     /// PredictifyHybrid::resolve_market_manual(
     ///     env.clone(),
@@ -538,9 +532,13 @@ impl PredictifyHybrid {
     ///
     /// This function requires admin privileges and should be used carefully.
     /// Manual resolutions should be transparent and follow established governance procedures.
-    pub fn resolve_market_manual(env: Env, admin: Address, market_id: Symbol, winning_outcome: String) {
+    pub fn resolve_market_manual(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        winning_outcome: String,
+    ) {
         admin.require_auth();
-
 
         // Verify admin
         let stored_admin: Address = env
@@ -553,9 +551,7 @@ impl PredictifyHybrid {
 
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
-
         }
-
 
         let mut market: Market = env
             .storage()
@@ -570,21 +566,17 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::MarketClosed);
         }
 
-
         // Validate winning outcome
         let outcome_exists = market.outcomes.iter().any(|o| o == winning_outcome);
         if !outcome_exists {
             panic_with_error!(env, Error::InvalidOutcome);
         }
 
-
-
         // Set winning outcome and update state
         market.winning_outcome = Some(winning_outcome);
         market.state = MarketState::Resolved;
         env.storage().persistent().set(&market_id, &market);
     }
-    
     /// Fetches oracle result for a market from external oracle contracts.
     ///
     /// This function retrieves prediction results from configured oracle sources
@@ -619,7 +611,7 @@ impl PredictifyHybrid {
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "btc_market");
     /// # let oracle_address = Address::generate(&env);
-    /// 
+    ///
     /// match PredictifyHybrid::fetch_oracle_result(
     ///     env.clone(),
     ///     market_id,
@@ -654,28 +646,32 @@ impl PredictifyHybrid {
         oracle_contract: Address,
     ) -> Result<String, Error> {
         // Get the market from storage
-        let market = env.storage().persistent().get::<Symbol, Market>(&market_id)
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
             .ok_or(Error::MarketNotFound)?;
-        
+
         // Validate market state
         if market.oracle_result.is_some() {
             return Err(Error::MarketAlreadyResolved);
         }
-        
 
         // Check if market has ended
         let current_time = env.ledger().timestamp();
         if current_time < market.end_time {
             return Err(Error::MarketClosed);
-
         }
-        
+
         // Get oracle result using the resolution module
-        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id, &oracle_contract)?;
-        
+        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
+            &env,
+            &market_id,
+            &oracle_contract,
+        )?;
+
         Ok(oracle_resolution.oracle_result)
     }
-    
     /// Resolves a market automatically using oracle data and community consensus.
     ///
     /// This function implements the hybrid resolution algorithm that combines
@@ -709,7 +705,7 @@ impl PredictifyHybrid {
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "ended_market");
-    /// 
+    ///
     /// match PredictifyHybrid::resolve_market(env.clone(), market_id) {
     ///     Ok(()) => {
     ///         // Market resolved successfully
@@ -750,7 +746,7 @@ impl PredictifyHybrid {
         let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
         Ok(())
     }
-    
+
     /// Retrieves comprehensive analytics about market resolution performance.
     ///
     /// This function provides detailed statistics about how markets are being
@@ -788,7 +784,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// 
+    ///
     /// match PredictifyHybrid::get_resolution_analytics(env.clone()) {
     ///     Ok(analytics) => {
     ///         // Access resolution statistics
@@ -830,7 +826,7 @@ impl PredictifyHybrid {
     pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
         resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
     }
-    
+
     /// Retrieves comprehensive analytics and statistics for a specific market.
     ///
     /// This function provides detailed statistical analysis of a market including
@@ -868,7 +864,7 @@ impl PredictifyHybrid {
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "market_1");
-    /// 
+    ///
     /// match PredictifyHybrid::get_market_analytics(env.clone(), market_id) {
     ///     Ok(stats) => {
     ///         // Access market statistics
@@ -914,13 +910,19 @@ impl PredictifyHybrid {
     /// This function performs calculations on market data and may have
     /// computational overhead for markets with many participants. Consider
     /// caching results for frequently accessed markets.
-    pub fn get_market_analytics(env: Env, market_id: Symbol) -> Result<markets::MarketStats, Error> {
-        let market = env.storage().persistent().get::<Symbol, Market>(&market_id)
+    pub fn get_market_analytics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<markets::MarketStats, Error> {
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
             .ok_or(Error::MarketNotFound)?;
-        
+
         // Calculate market statistics
         let stats = markets::MarketAnalytics::get_market_stats(&market);
-        
+
         Ok(stats)
     }
 
@@ -947,7 +949,9 @@ impl PredictifyHybrid {
         reason: Option<String>,
     ) -> Result<(), Error> {
         user.require_auth();
-        disputes::DisputeManager::vote_on_dispute(&env, user, market_id, dispute_id, vote, stake, reason)
+        disputes::DisputeManager::vote_on_dispute(
+            &env, user, market_id, dispute_id, vote, stake, reason,
+        )
     }
 
     /// Resolve a dispute (admin only)
@@ -957,7 +961,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
     ) -> Result<disputes::DisputeResolution, Error> {
         admin.require_auth();
-        
+
         // Verify admin
         let stored_admin: Address = env
             .storage()
@@ -977,7 +981,7 @@ impl PredictifyHybrid {
     /// Collect fees from a market (admin only)
     pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
         admin.require_auth();
-        
+
         // Verify admin
         let stored_admin: Address = env
             .storage()
@@ -1004,7 +1008,7 @@ impl PredictifyHybrid {
         fee_amount: i128,
     ) -> Result<(), Error> {
         admin.require_auth();
-        
+
         // Verify admin
         let stored_admin: Address = env
             .storage()
@@ -1018,7 +1022,13 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        extensions::ExtensionManager::extend_market_duration(&env, admin, market_id, additional_days, reason)
+        extensions::ExtensionManager::extend_market_duration(
+            &env,
+            admin,
+            market_id,
+            additional_days,
+            reason,
+        )
     }
 }
 

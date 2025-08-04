@@ -47,15 +47,15 @@ use crate::types::*;
 /// # use predictify_hybrid::types::OracleProvider;
 /// # let env = Env::default();
 /// # let oracle_address = soroban_sdk::Address::generate(&env);
-/// 
+///
 /// // Create oracle instance
 /// let oracle = ReflectorOracle::new(oracle_address);
-/// 
+///
 /// // Check oracle health before use
 /// if oracle.is_healthy(&env).unwrap_or(false) {
 ///     // Get price for BTC/USD feed
 ///     let btc_price = oracle.get_price(
-///         &env, 
+///         &env,
 ///         &String::from_str(&env, "BTC/USD")
 ///     );
 ///     
@@ -134,10 +134,10 @@ pub trait OracleInterface {
 /// # use predictify_hybrid::oracles::{PythOracle, PythFeedConfig, OracleInterface};
 /// # let env = Env::default();
 /// # let contract_id = Address::generate(&env);
-/// 
+///
 /// // Create Pyth oracle with feed configurations
 /// let mut oracle = PythOracle::new(contract_id.clone());
-/// 
+///
 /// // Add BTC/USD feed configuration
 /// oracle.add_feed_config(PythFeedConfig {
 ///     feed_id: String::from_str(&env, "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"),
@@ -145,14 +145,14 @@ pub trait OracleInterface {
 ///     decimals: 8,
 ///     is_active: true,
 /// });
-/// 
+///
 /// // Currently returns error (Pyth not available on Stellar)
 /// let price_result = oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
 /// assert!(price_result.is_err());
-/// 
+///
 /// // Check oracle provider
 /// assert_eq!(oracle.provider(), OracleProvider::Pyth);
-/// 
+///
 /// // Validate feed configurations
 /// assert_eq!(oracle.get_feed_count(), 1);
 /// assert!(oracle.is_feed_active(&String::from_str(&env, "BTC/USD")));
@@ -207,16 +207,16 @@ pub struct PythOracle {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::oracles::PythFeedConfig;
 /// # let env = Env::default();
-/// 
+///
 /// // Configure BTC/USD feed
 /// let btc_config = PythFeedConfig {
-///     feed_id: String::from_str(&env, 
+///     feed_id: String::from_str(&env,
 ///         "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"),
 ///     asset_symbol: String::from_str(&env, "BTC/USD"),
 ///     decimals: 8, // 8 decimal places for crypto prices
 ///     is_active: true,
 /// };
-/// 
+///
 /// // Configure ETH/USD feed
 /// let eth_config = PythFeedConfig {
 ///     feed_id: String::from_str(&env,
@@ -225,7 +225,7 @@ pub struct PythOracle {
 ///     decimals: 8,
 ///     is_active: true,
 /// };
-/// 
+///
 /// // Configure stock feed with different precision
 /// let aapl_config = PythFeedConfig {
 ///     feed_id: String::from_str(&env,
@@ -234,9 +234,9 @@ pub struct PythOracle {
 ///     decimals: 2, // 2 decimal places for stock prices
 ///     is_active: true,
 /// };
-/// 
-/// println!("Configured {} with {} decimals", 
-///     btc_config.asset_symbol.to_string(), 
+///
+/// println!("Configured {} with {} decimals",
+///     btc_config.asset_symbol.to_string(),
 ///     btc_config.decimals);
 /// ```
 ///
@@ -541,10 +541,10 @@ impl OracleInterface for PythOracle {
 /// # use predictify_hybrid::types::ReflectorAsset;
 /// # let env = Env::default();
 /// # let oracle_address = Address::generate(&env);
-/// 
+///
 /// // Create Reflector oracle client
 /// let client = ReflectorOracleClient::new(&env, oracle_address);
-/// 
+///
 /// // Check oracle health before use
 /// if client.is_healthy() {
 ///     // Get latest BTC price
@@ -674,19 +674,19 @@ impl<'a> ReflectorOracleClient<'a> {
 /// # use predictify_hybrid::types::OracleProvider;
 /// # let env = Env::default();
 /// # let oracle_address = Address::generate(&env);
-/// 
+///
 /// // Create Reflector oracle instance
 /// let oracle = ReflectorOracle::new(oracle_address.clone());
-/// 
+///
 /// // Verify oracle provider type
 /// assert_eq!(oracle.provider(), OracleProvider::Reflector);
 /// assert_eq!(oracle.contract_id(), oracle_address);
-/// 
+///
 /// // Check oracle health before use
 /// if oracle.is_healthy(&env).unwrap_or(false) {
 ///     // Get BTC price
 ///     let btc_price = oracle.get_price(
-///         &env, 
+///         &env,
 ///         &String::from_str(&env, "BTC/USD")
 ///     );
 ///     
@@ -898,13 +898,13 @@ impl OracleInterface for ReflectorOracle {
 /// # use predictify_hybrid::types::{OracleProvider, OracleConfig};
 /// # let env = Env::default();
 /// # let oracle_address = Address::generate(&env);
-/// 
+///
 /// // Create Reflector oracle (recommended for Stellar)
 /// let reflector_oracle = OracleFactory::create_oracle(
 ///     OracleProvider::Reflector,
 ///     oracle_address.clone()
 /// );
-/// 
+///
 /// match reflector_oracle {
 ///     Ok(OracleInstance::Reflector(oracle)) => {
 ///         println!("Successfully created Reflector oracle");
@@ -912,27 +912,27 @@ impl OracleInterface for ReflectorOracle {
 ///     },
 ///     Err(e) => println!("Failed to create oracle: {:?}", e),
 /// }
-/// 
+///
 /// // Check provider support before creation
 /// if OracleFactory::is_provider_supported(&OracleProvider::Reflector) {
 ///     println!("Reflector is supported on Stellar");
 /// }
-/// 
+///
 /// // Get recommended provider for Stellar
 /// let recommended = OracleFactory::get_recommended_provider();
 /// assert_eq!(recommended, OracleProvider::Reflector);
-/// 
+///
 /// // Create from configuration
 /// let config = OracleConfig {
 ///     provider: OracleProvider::Reflector,
 ///     // ... other config fields
 /// };
-/// 
+///
 /// let oracle_from_config = OracleFactory::create_from_config(
 ///     &config,
 ///     oracle_address
 /// );
-/// 
+///
 /// assert!(oracle_from_config.is_ok());
 /// ```
 ///
@@ -1183,13 +1183,13 @@ impl OracleFactory {
 /// # use predictify_hybrid::types::OracleProvider;
 /// # let env = Env::default();
 /// # let oracle_address = Address::generate(&env);
-/// 
+///
 /// // Create oracle instance through factory
 /// let oracle_result = OracleFactory::create_oracle(
 ///     OracleProvider::Reflector,
 ///     oracle_address
 /// );
-/// 
+///
 /// match oracle_result {
 ///     Ok(oracle_instance) => {
 ///         // Use unified interface regardless of underlying implementation
@@ -1234,16 +1234,16 @@ impl OracleFactory {
 /// # use predictify_hybrid::types::OracleProvider;
 /// # let env = Env::default();
 /// # let oracle_address = Address::generate(&env);
-/// 
+///
 /// // Select oracle based on configuration or conditions
 /// let preferred_provider = if cfg!(feature = "use-reflector") {
 ///     OracleProvider::Reflector
 /// } else {
 ///     OracleFactory::get_recommended_provider()
 /// };
-/// 
+///
 /// let oracle = OracleFactory::create_oracle(preferred_provider, oracle_address)?;
-/// 
+///
 /// // Use oracle regardless of which provider was selected
 /// let is_healthy = oracle.is_healthy(&env)?;
 /// println!("Oracle health: {}", is_healthy);
@@ -1341,11 +1341,11 @@ impl OracleInstance {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::oracles::OracleUtils;
 /// # let env = Env::default();
-/// 
+///
 /// // Compare BTC price against $50k threshold
 /// let btc_price = 52_000_00; // $52,000 (8 decimal precision)
 /// let threshold = 50_000_00;  // $50,000
-/// 
+///
 /// // Check if BTC is above $50k
 /// let is_above_threshold = OracleUtils::compare_prices(
 ///     btc_price,
@@ -1353,9 +1353,9 @@ impl OracleInstance {
 ///     &String::from_str(&env, "gt"),
 ///     &env
 /// )?;
-/// 
+///
 /// assert!(is_above_threshold); // BTC is above $50k
-/// 
+///
 /// // Determine market outcome
 /// let outcome = OracleUtils::determine_outcome(
 ///     btc_price,
@@ -1363,13 +1363,13 @@ impl OracleInstance {
 ///     &String::from_str(&env, "gt"),
 ///     &env
 /// )?;
-/// 
+///
 /// assert_eq!(outcome, String::from_str(&env, "yes"));
-/// 
+///
 /// // Validate oracle response
 /// OracleUtils::validate_oracle_response(btc_price)?;
-/// 
-/// println!("BTC ${} is above ${} threshold: {}", 
+///
+/// println!("BTC ${} is above ${} threshold: {}",
 ///     btc_price / 100, threshold / 100, is_above_threshold);
 /// # Ok::<(), predictify_hybrid::errors::Error>(())
 /// ```

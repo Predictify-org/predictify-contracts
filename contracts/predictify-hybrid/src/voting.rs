@@ -50,7 +50,7 @@ pub const DISPUTE_EXTENSION_HOURS: u32 = crate::config::DISPUTE_EXTENSION_HOURS;
 /// # use soroban_sdk::{Env, Address, String};
 /// # use predictify_hybrid::voting::Vote;
 /// # let env = Env::default();
-/// 
+///
 /// let vote = Vote {
 ///     user: Address::generate(&env),
 ///     outcome: String::from_str(&env, "yes"),
@@ -86,11 +86,11 @@ pub struct Vote {
 /// # use soroban_sdk::{Env, Map, String};
 /// # use predictify_hybrid::voting::VotingStats;
 /// # let env = Env::default();
-/// 
+///
 /// let mut outcome_distribution = Map::new(&env);
 /// outcome_distribution.set(String::from_str(&env, "yes"), 15000000i128);
 /// outcome_distribution.set(String::from_str(&env, "no"), 8000000i128);
-/// 
+///
 /// let stats = VotingStats {
 ///     total_votes: 25,
 ///     total_staked: 23000000i128,
@@ -117,7 +117,7 @@ pub struct VotingStats {
 ///
 /// ```rust
 /// # use predictify_hybrid::voting::PayoutData;
-/// 
+///
 /// let payout_data = PayoutData {
 ///     user_stake: 2000000i128,      // User staked 0.2 XLM
 ///     winning_total: 8000000i128,   // Total winning stake: 0.8 XLM
@@ -148,7 +148,7 @@ pub struct PayoutData {
 /// # use soroban_sdk::{Env, Symbol};
 /// # use predictify_hybrid::voting::DisputeThreshold;
 /// # let env = Env::default();
-/// 
+///
 /// let threshold = DisputeThreshold {
 ///     market_id: Symbol::new(&env, "BTC_100K"),
 ///     base_threshold: 100000000i128,      // 10 XLM base
@@ -181,14 +181,14 @@ pub struct DisputeThreshold {
 ///
 /// ```rust
 /// # use predictify_hybrid::voting::ThresholdAdjustmentFactors;
-/// 
+///
 /// let factors = ThresholdAdjustmentFactors {
 ///     market_size_factor: 1300i128,    // 30% increase for large market
 ///     activity_factor: 1150i128,       // 15% increase for high activity
 ///     complexity_factor: 1100i128,     // 10% increase for complexity
 ///     total_adjustment: 1649i128,      // Combined 64.9% increase
 /// };
-/// 
+///
 /// let base_threshold = 100000000i128; // 10 XLM
 /// let adjusted_threshold = (base_threshold * factors.total_adjustment) / 1000;
 /// ```
@@ -213,7 +213,7 @@ pub struct ThresholdAdjustmentFactors {
 /// # use soroban_sdk::{Env, Address, String, Symbol};
 /// # use predictify_hybrid::voting::ThresholdHistoryEntry;
 /// # let env = Env::default();
-/// 
+///
 /// let history_entry = ThresholdHistoryEntry {
 ///     market_id: Symbol::new(&env, "BTC_100K"),
 ///     old_threshold: 100000000i128,    // Previous: 10 XLM
@@ -271,18 +271,18 @@ pub struct ThresholdHistoryEntry {
 /// # use soroban_sdk::{Env, Address, String, Symbol};
 /// # use predictify_hybrid::voting::VotingManager;
 /// # let env = Env::default();
-/// 
+///
 /// let user = Address::generate(&env);
 /// let market_id = Symbol::new(&env, "BTC_100K");
 /// let outcome = String::from_str(&env, "yes");
 /// let stake = 5000000i128; // 0.5 XLM
-/// 
+///
 /// // Process a user vote
 /// match VotingManager::process_vote(&env, user.clone(), market_id.clone(), outcome, stake) {
 ///     Ok(()) => println!("Vote processed successfully"),
 ///     Err(e) => println!("Vote processing failed: {:?}", e),
 /// }
-/// 
+///
 /// // Process a winning claim
 /// match VotingManager::process_claim(&env, user.clone(), market_id.clone()) {
 ///     Ok(payout) => println!("Claim processed: {} stroops payout", payout),
@@ -513,9 +513,9 @@ impl VotingManager {
 /// # use soroban_sdk::{Env, Symbol, Address, String};
 /// # use predictify_hybrid::voting::{ThresholdUtils, DisputeThreshold};
 /// # let env = Env::default();
-/// 
+///
 /// let market_id = Symbol::new(&env, "BTC_100K");
-/// 
+///
 /// // Get threshold adjustment factors
 /// match ThresholdUtils::get_threshold_adjustment_factors(&env, &market_id) {
 ///     Ok(factors) => {
@@ -751,14 +751,14 @@ impl ThresholdUtils {
 /// # use soroban_sdk::{Env, Address};
 /// # use predictify_hybrid::voting::ThresholdValidator;
 /// # let env = Env::default();
-/// 
+///
 /// // Validate threshold limits
 /// let threshold = 100000000i128; // 10 XLM
 /// match ThresholdValidator::validate_threshold_limits(threshold) {
 ///     Ok(()) => println!("Threshold is valid"),
 ///     Err(e) => println!("Threshold validation failed: {:?}", e),
 /// }
-/// 
+///
 /// // Validate admin permissions
 /// let admin = Address::generate(&env);
 /// match ThresholdValidator::validate_threshold_adjustment_permissions(&env, &admin) {
@@ -831,20 +831,20 @@ impl ThresholdValidator {
 /// # use predictify_hybrid::voting::VotingValidator;
 /// # use predictify_hybrid::types::Market;
 /// # let env = Env::default();
-/// 
+///
 /// // Validate vote parameters
 /// let outcome = String::from_str(&env, "yes");
-/// let valid_outcomes = vec![&env, 
+/// let valid_outcomes = vec![&env,
 ///     String::from_str(&env, "yes"),
 ///     String::from_str(&env, "no")
 /// ];
 /// let stake = 5000000i128; // 0.5 XLM
-/// 
+///
 /// match VotingValidator::validate_vote_parameters(&env, &outcome, &valid_outcomes, stake) {
 ///     Ok(()) => println!("Vote parameters are valid"),
 ///     Err(e) => println!("Vote validation failed: {:?}", e),
 /// }
-/// 
+///
 /// // Validate dispute stake
 /// let dispute_stake = 100000000i128; // 10 XLM
 /// match VotingValidator::validate_dispute_stake(dispute_stake) {
@@ -1032,16 +1032,16 @@ impl VotingValidator {
 /// # use predictify_hybrid::voting::VotingUtils;
 /// # use predictify_hybrid::types::Market;
 /// # let env = Env::default();
-/// 
+///
 /// // Transfer stake from user
 /// let user = Address::generate(&env);
 /// let stake = 5000000i128; // 0.5 XLM
-/// 
+///
 /// match VotingUtils::transfer_stake(&env, &user, stake) {
 ///     Ok(()) => println!("Stake transferred successfully"),
 ///     Err(e) => println!("Stake transfer failed: {:?}", e),
 /// }
-/// 
+///
 /// // Check if user has voted
 /// # let market = Market::new(
 /// #     &env,
@@ -1057,7 +1057,7 @@ impl VotingValidator {
 /// #     ),
 /// #     crate::types::MarketState::Active
 /// # );
-/// 
+///
 /// if VotingUtils::has_user_voted(&market, &user) {
 ///     println!("User has already voted on this market");
 /// } else {
@@ -1204,7 +1204,7 @@ impl VotingUtils {
 /// # use predictify_hybrid::voting::VotingAnalytics;
 /// # use predictify_hybrid::types::Market;
 /// # let env = Env::default();
-/// 
+///
 /// # let market = Market::new(
 /// #     &env,
 /// #     Address::generate(&env),
@@ -1219,19 +1219,19 @@ impl VotingUtils {
 /// #     ),
 /// #     crate::types::MarketState::Active
 /// # );
-/// 
+///
 /// // Calculate participation rate
 /// let participation_rate = VotingAnalytics::calculate_participation_rate(&market);
 /// println!("Participation rate: {:.2}%", participation_rate * 100.0);
-/// 
+///
 /// // Calculate average stake
 /// let avg_stake = VotingAnalytics::calculate_average_stake(&market);
 /// println!("Average stake per voter: {} stroops", avg_stake);
-/// 
+///
 /// // Analyze voting power concentration
 /// let concentration = VotingAnalytics::calculate_voting_power_concentration(&market);
 /// println!("Voting power concentration: {:.2}", concentration);
-/// 
+///
 /// // Get top voters
 /// let top_voters = VotingAnalytics::get_top_voters(&market, 5);
 /// println!("Top {} voters by stake:", top_voters.len());
@@ -1335,13 +1335,13 @@ pub mod testing {
     /// # use soroban_sdk::{Env, Address, String};
     /// # use predictify_hybrid::voting::testing;
     /// # let env = Env::default();
-    /// 
+    ///
     /// let test_user = Address::generate(&env);
     /// let test_outcome = String::from_str(&env, "yes");
     /// let test_stake = 5000000i128; // 0.5 XLM
-    /// 
+    ///
     /// let test_vote = testing::create_test_vote(&env, test_user, test_outcome, test_stake);
-    /// 
+    ///
     /// assert_eq!(test_vote.stake, test_stake);
     /// assert_eq!(test_vote.outcome, String::from_str(&env, "yes"));
     /// ```
@@ -1370,9 +1370,9 @@ pub mod testing {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::voting::testing;
     /// # let env = Env::default();
-    /// 
+    ///
     /// let test_stats = testing::create_test_voting_stats(&env);
-    /// 
+    ///
     /// assert!(test_stats.total_votes > 0);
     /// assert!(test_stats.total_staked > 0);
     /// assert!(test_stats.unique_voters > 0);
@@ -1398,9 +1398,9 @@ pub mod testing {
     ///
     /// ```rust
     /// # use predictify_hybrid::voting::testing;
-    /// 
+    ///
     /// let test_payout = testing::create_test_payout_data();
-    /// 
+    ///
     /// assert!(test_payout.user_stake > 0);
     /// assert!(test_payout.winning_total > 0);
     /// assert!(test_payout.total_pool > 0);
@@ -1433,14 +1433,14 @@ pub mod testing {
     /// # use soroban_sdk::{Env, Address, String};
     /// # use predictify_hybrid::voting::{Vote, testing};
     /// # let env = Env::default();
-    /// 
+    ///
     /// let test_vote = Vote {
     ///     user: Address::generate(&env),
     ///     outcome: String::from_str(&env, "yes"),
     ///     stake: 5000000i128,
     ///     timestamp: env.ledger().timestamp(),
     /// };
-    /// 
+    ///
     /// match testing::validate_vote_structure(&test_vote) {
     ///     Ok(()) => println!("Vote structure is valid"),
     ///     Err(e) => println!("Vote validation failed: {:?}", e),
@@ -1474,18 +1474,18 @@ pub mod testing {
     /// # use soroban_sdk::{Env, Map, String};
     /// # use predictify_hybrid::voting::{VotingStats, testing};
     /// # let env = Env::default();
-    /// 
+    ///
     /// let mut outcome_distribution = Map::new(&env);
     /// outcome_distribution.set(String::from_str(&env, "yes"), 10000000i128);
     /// outcome_distribution.set(String::from_str(&env, "no"), 5000000i128);
-    /// 
+    ///
     /// let test_stats = VotingStats {
     ///     total_votes: 15,
     ///     total_staked: 15000000i128,
     ///     outcome_distribution,
     ///     unique_voters: 12,
     /// };
-    /// 
+    ///
     /// match testing::validate_voting_stats(&test_stats) {
     ///     Ok(()) => println!("Voting stats structure is valid"),
     ///     Err(e) => println!("Stats validation failed: {:?}", e),

@@ -169,10 +169,10 @@ pub const ORACLE_STATS_STORAGE_KEY: &str = "OracleStats";
 ///
 /// ```rust
 /// # use predictify_hybrid::config::Environment;
-/// 
+///
 /// // Environment comparison and selection
 /// let current_env = Environment::Mainnet;
-/// 
+///
 /// match current_env {
 ///     Environment::Development => {
 ///         println!("Using development settings with relaxed rules");
@@ -200,7 +200,7 @@ pub enum Environment {
     /// - Permissive market creation limits
     /// - Debug-friendly error messages
     Development,
-    
+
     /// Testnet environment that mirrors production settings.
     ///
     /// Characteristics:
@@ -210,7 +210,7 @@ pub enum Environment {
     /// - Comprehensive testing capabilities
     /// - Integration testing support
     Testnet,
-    
+
     /// Production mainnet environment with full security.
     ///
     /// Characteristics:
@@ -220,7 +220,7 @@ pub enum Environment {
     /// - Maximum security features
     /// - Audit-ready configuration
     Mainnet,
-    
+
     /// Custom environment for specialized deployments.
     ///
     /// Characteristics:
@@ -261,7 +261,7 @@ pub enum Environment {
 /// # use predictify_hybrid::config::{NetworkConfig, Environment};
 /// # let env = Env::default();
 /// # let contract_addr = Address::generate(&env);
-/// 
+///
 /// // Create mainnet network configuration
 /// let mainnet_config = NetworkConfig {
 ///     environment: Environment::Mainnet,
@@ -270,8 +270,8 @@ pub enum Environment {
 ///     network_id: String::from_str(&env, "mainnet"),
 ///     contract_address: contract_addr,
 /// };
-/// 
-/// println!("Configured for {} environment", 
+///
+/// println!("Configured for {} environment",
 ///     match mainnet_config.environment {
 ///         Environment::Mainnet => "production",
 ///         Environment::Testnet => "testing",
@@ -288,7 +288,7 @@ pub struct NetworkConfig {
     /// This determines which network-specific settings and validation
     /// rules are applied throughout the contract.
     pub environment: Environment,
-    
+
     /// Stellar network passphrase for transaction signing.
     ///
     /// Standard passphrases:
@@ -296,7 +296,7 @@ pub struct NetworkConfig {
     /// - Testnet: "Test SDF Network ; September 2015"
     /// - Development: Custom passphrase for local networks
     pub passphrase: String,
-    
+
     /// RPC endpoint URL for blockchain interactions.
     ///
     /// Examples:
@@ -304,7 +304,7 @@ pub struct NetworkConfig {
     /// - Testnet: "https://horizon-testnet.stellar.org"
     /// - Development: "http://localhost:8000"
     pub rpc_url: String,
-    
+
     /// Network identifier for configuration management.
     ///
     /// Used for:
@@ -313,7 +313,7 @@ pub struct NetworkConfig {
     /// - Deployment tracking
     /// - Environment validation
     pub network_id: String,
-    
+
     /// The deployed contract's address on this network.
     ///
     /// This address is used for:
@@ -350,7 +350,7 @@ pub struct NetworkConfig {
 ///
 /// ```rust
 /// # use predictify_hybrid::config::FeeConfig;
-/// 
+///
 /// // Create a balanced fee configuration
 /// let fee_config = FeeConfig {
 ///     platform_fee_percentage: 250,    // 2.5% of winnings
@@ -360,7 +360,7 @@ pub struct NetworkConfig {
 ///     collection_threshold: 50_000_000, // Collect at 5 XLM
 ///     fees_enabled: true,              // Fees are active
 /// };
-/// 
+///
 /// // Calculate platform fee for a 100 XLM payout
 /// let payout = 1_000_000_000; // 100 XLM
 /// let platform_fee = (payout * fee_config.platform_fee_percentage) / 10000;
@@ -379,7 +379,7 @@ pub struct FeeConfig {
     ///
     /// Range: 0-1000 (0% to 10%)
     pub platform_fee_percentage: i128,
-    
+
     /// Fixed fee required to create a new prediction market (in stroops).
     ///
     /// This fee prevents spam market creation and covers:
@@ -392,25 +392,25 @@ pub struct FeeConfig {
     /// - Testnet: 10_000_000 (1 XLM)
     /// - Mainnet: 50_000_000 (5 XLM)
     pub creation_fee: i128,
-    
+
     /// Minimum fee amount that can be charged (in stroops).
     ///
     /// Ensures fees are meaningful and cover basic operational costs.
     /// Prevents dust fees that could clog the system.
     pub min_fee_amount: i128,
-    
+
     /// Maximum fee amount that can be charged (in stroops).
     ///
     /// Protects users from excessive fees on large markets.
     /// Provides predictable cost ceiling for high-value markets.
     pub max_fee_amount: i128,
-    
+
     /// Threshold amount for automatic fee collection (in stroops).
     ///
     /// When accumulated fees reach this threshold, they are automatically
     /// collected to reduce gas costs and improve efficiency.
     pub collection_threshold: i128,
-    
+
     /// Global flag to enable or disable all fee collection.
     ///
     /// When false:
@@ -446,7 +446,7 @@ pub struct FeeConfig {
 ///
 /// ```rust
 /// # use predictify_hybrid::config::VotingConfig;
-/// 
+///
 /// // Create balanced voting configuration
 /// let voting_config = VotingConfig {
 ///     min_vote_stake: 1_000_000,        // 0.1 XLM minimum vote
@@ -457,7 +457,7 @@ pub struct FeeConfig {
 ///     high_activity_threshold: 100,     // 100+ votes = high activity
 ///     dispute_extension_hours: 24,      // 24 hour dispute window
 /// };
-/// 
+///
 /// // Check if market qualifies as large
 /// let market_volume = 500_000_000; // 50 XLM
 /// let is_large_market = market_volume >= voting_config.large_market_threshold;
@@ -474,25 +474,25 @@ pub struct VotingConfig {
     /// - Testnet: 1_000_000 (0.1 XLM)
     /// - Mainnet: 5_000_000 (0.5 XLM)
     pub min_vote_stake: i128,
-    
+
     /// Minimum stake required to initiate a dispute (in stroops).
     ///
     /// Higher than voting stake to prevent frivolous disputes.
     /// Should be meaningful but not prohibitive for legitimate disputes.
     pub min_dispute_stake: i128,
-    
+
     /// Maximum dispute threshold that can be required (in stroops).
     ///
     /// Caps dispute costs to ensure accessibility while maintaining
     /// serious commitment from disputers.
     pub max_dispute_threshold: i128,
-    
+
     /// Base dispute threshold for standard markets (in stroops).
     ///
     /// Starting point for dispute cost calculations.
     /// May be adjusted based on market size and activity.
     pub base_dispute_threshold: i128,
-    
+
     /// Total stake threshold that defines a "large" market (in stroops).
     ///
     /// Large markets may have:
@@ -500,7 +500,7 @@ pub struct VotingConfig {
     /// - Extended resolution periods
     /// - Additional validation requirements
     pub large_market_threshold: i128,
-    
+
     /// Vote count threshold that defines "high activity" markets.
     ///
     /// High activity markets may receive:
@@ -508,7 +508,7 @@ pub struct VotingConfig {
     /// - Enhanced dispute mechanisms
     /// - Additional monitoring
     pub high_activity_threshold: u32,
-    
+
     /// Additional hours added to resolution period when disputed.
     ///
     /// Provides time for:
@@ -545,7 +545,7 @@ pub struct VotingConfig {
 ///
 /// ```rust
 /// # use predictify_hybrid::config::MarketConfig;
-/// 
+///
 /// // Create production market configuration
 /// let market_config = MarketConfig {
 ///     max_duration_days: 365,    // Up to 1 year markets
@@ -555,18 +555,18 @@ pub struct VotingConfig {
 ///     max_question_length: 500,  // 500 character questions
 ///     max_outcome_length: 100,   // 100 character outcomes
 /// };
-/// 
+///
 /// // Validate a market proposal
 /// let question = "Will Bitcoin reach $100,000 by end of 2024?";
 /// let outcomes = vec!["Yes", "No"];
 /// let duration = 90; // 3 months
-/// 
+///
 /// let valid_question = question.len() <= market_config.max_question_length as usize;
-/// let valid_outcomes = outcomes.len() >= market_config.min_outcomes as usize && 
+/// let valid_outcomes = outcomes.len() >= market_config.min_outcomes as usize &&
 ///                     outcomes.len() <= market_config.max_outcomes as usize;
-/// let valid_duration = duration >= market_config.min_duration_days && 
+/// let valid_duration = duration >= market_config.min_duration_days &&
 ///                     duration <= market_config.max_duration_days;
-/// 
+///
 /// println!("Market valid: {}", valid_question && valid_outcomes && valid_duration);
 /// ```
 #[derive(Clone, Debug)]
@@ -582,7 +582,7 @@ pub struct MarketConfig {
     ///
     /// Typical values: 30-365 days
     pub max_duration_days: u32,
-    
+
     /// Minimum required market duration in days.
     ///
     /// Ensures markets have sufficient time for:
@@ -592,7 +592,7 @@ pub struct MarketConfig {
     ///
     /// Typical values: 1-7 days
     pub min_duration_days: u32,
-    
+
     /// Maximum number of possible outcomes per market.
     ///
     /// Limits complexity while supporting diverse market types:
@@ -605,13 +605,13 @@ pub struct MarketConfig {
     /// - UI complexity
     /// - Resolution difficulty
     pub max_outcomes: u32,
-    
+
     /// Minimum number of required outcomes per market.
     ///
     /// Typically 2 to ensure meaningful prediction markets.
     /// Single-outcome markets don't provide prediction value.
     pub min_outcomes: u32,
-    
+
     /// Maximum length for market questions in characters.
     ///
     /// Balances between:
@@ -622,7 +622,7 @@ pub struct MarketConfig {
     ///
     /// Typical range: 200-1000 characters
     pub max_question_length: u32,
-    
+
     /// Maximum length for outcome descriptions in characters.
     ///
     /// Keeps outcome descriptions:
@@ -661,7 +661,7 @@ pub struct MarketConfig {
 ///
 /// ```rust
 /// # use predictify_hybrid::config::ExtensionConfig;
-/// 
+///
 /// // Create extension configuration
 /// let extension_config = ExtensionConfig {
 ///     max_extension_days: 30,        // Up to 30 days per extension
@@ -669,12 +669,12 @@ pub struct MarketConfig {
 ///     fee_per_day: 1_000_000,        // 0.1 XLM per day
 ///     max_total_extensions: 3,       // Maximum 3 extensions per market
 /// };
-/// 
+///
 /// // Calculate extension cost
 /// let extension_days = 7;
 /// let total_cost = extension_days as i128 * extension_config.fee_per_day;
 /// println!("7-day extension costs: {} stroops", total_cost); // 7,000,000 stroops
-/// 
+///
 /// // Check if extension is valid
 /// let current_extensions = 2;
 /// let can_extend = current_extensions < extension_config.max_total_extensions &&
@@ -692,13 +692,13 @@ pub struct ExtensionConfig {
     /// - Development: 7-14 days
     /// - Production: 14-30 days
     pub max_extension_days: u32,
-    
+
     /// Minimum number of days required for an extension.
     ///
     /// Ensures extensions are meaningful and worth the administrative
     /// overhead. Typically 1-3 days minimum.
     pub min_extension_days: u32,
-    
+
     /// Fee charged per day of extension (in stroops).
     ///
     /// This fee:
@@ -711,7 +711,7 @@ pub struct ExtensionConfig {
     /// - Testnet: 1_000_000 (0.1 XLM/day)
     /// - Mainnet: 5_000_000 (0.5 XLM/day)
     pub fee_per_day: i128,
-    
+
     /// Maximum number of extensions allowed per market.
     ///
     /// Prevents indefinite market extensions while allowing
@@ -746,7 +746,7 @@ pub struct ExtensionConfig {
 ///
 /// ```rust
 /// # use predictify_hybrid::config::ResolutionConfig;
-/// 
+///
 /// // Create balanced resolution configuration
 /// let resolution_config = ResolutionConfig {
 ///     min_confidence_score: 0,    // 0% minimum confidence
@@ -755,15 +755,15 @@ pub struct ExtensionConfig {
 ///     community_weight_percentage: 30, // Community has 30% influence
 ///     min_votes_for_consensus: 5,  // Need at least 5 votes
 /// };
-/// 
+///
 /// // Calculate weighted resolution
 /// let oracle_confidence = 85;  // Oracle 85% confident
 /// let community_confidence = 92; // Community 92% confident
-/// 
-/// let weighted_confidence = 
+///
+/// let weighted_confidence =
 ///     (oracle_confidence * resolution_config.oracle_weight_percentage +
 ///      community_confidence * resolution_config.community_weight_percentage) / 100;
-/// 
+///
 /// println!("Final confidence: {}%", weighted_confidence); // 87%
 /// ```
 #[derive(Clone, Debug)]
@@ -774,13 +774,13 @@ pub struct ResolutionConfig {
     /// Represents the lowest confidence level that can be assigned
     /// to a market resolution. Usually 0 to allow full range.
     pub min_confidence_score: u32,
-    
+
     /// Maximum allowed confidence score (typically 100).
     ///
     /// Represents the highest confidence level that can be assigned
     /// to a market resolution. Usually 100 for percentage-based scoring.
     pub max_confidence_score: u32,
-    
+
     /// Percentage weight given to oracle data in hybrid resolution.
     ///
     /// Determines how much influence oracle data has in the final
@@ -791,7 +791,7 @@ pub struct ResolutionConfig {
     /// - Balanced approach: 50-60%
     /// - Community focused: 30-40%
     pub oracle_weight_percentage: u32,
-    
+
     /// Percentage weight given to community voting in hybrid resolution.
     ///
     /// Determines how much influence community consensus has in the
@@ -802,7 +802,7 @@ pub struct ResolutionConfig {
     /// - Resistance to oracle manipulation
     /// - Democratic decision making
     pub community_weight_percentage: u32,
-    
+
     /// Minimum number of community votes required for valid consensus.
     ///
     /// Ensures community input is meaningful and representative.
@@ -839,18 +839,18 @@ pub struct ResolutionConfig {
 ///
 /// ```rust
 /// # use predictify_hybrid::config::OracleConfig;
-/// 
+///
 /// // Create production oracle configuration
 /// let oracle_config = OracleConfig {
 ///     max_price_age: 3600,      // 1 hour maximum data age
 ///     retry_attempts: 3,        // Try up to 3 times
 ///     timeout_seconds: 30,      // 30 second timeout per attempt
 /// };
-/// 
+///
 /// // Calculate total maximum wait time
 /// let max_wait_time = oracle_config.retry_attempts as u64 * oracle_config.timeout_seconds;
 /// println!("Maximum oracle wait: {} seconds", max_wait_time); // 90 seconds
-/// 
+///
 /// // Check if data is fresh enough
 /// let data_age = 1800; // 30 minutes old
 /// let is_fresh = data_age <= oracle_config.max_price_age;
@@ -869,7 +869,7 @@ pub struct OracleConfig {
     /// - Standard markets: 1800-3600 seconds (30-60 minutes)
     /// - Long-term markets: 3600-7200 seconds (1-2 hours)
     pub max_price_age: u64,
-    
+
     /// Number of retry attempts for failed oracle requests.
     ///
     /// Provides resilience against:
@@ -880,7 +880,7 @@ pub struct OracleConfig {
     ///
     /// Typical values: 2-5 retries
     pub retry_attempts: u32,
-    
+
     /// Timeout duration for each oracle request (in seconds).
     ///
     /// Balances between:
@@ -932,19 +932,19 @@ pub struct OracleConfig {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::config::{ConfigManager, Environment};
 /// # let env = Env::default();
-/// 
+///
 /// // Get environment-specific configurations
 /// let dev_config = ConfigManager::get_development_config(&env);
 /// let mainnet_config = ConfigManager::get_mainnet_config(&env);
-/// 
+///
 /// // Compare environment differences
 /// println!("Dev creation fee: {} stroops", dev_config.fees.creation_fee);
 /// println!("Mainnet creation fee: {} stroops", mainnet_config.fees.creation_fee);
-/// 
+///
 /// // Access nested configuration
 /// println!("Oracle timeout: {} seconds", dev_config.oracle.timeout_seconds);
 /// println!("Max market duration: {} days", dev_config.market.max_duration_days);
-/// 
+///
 /// // Validate environment consistency
 /// assert_eq!(dev_config.network.environment, Environment::Development);
 /// assert_eq!(mainnet_config.network.environment, Environment::Mainnet);
@@ -983,37 +983,37 @@ pub struct ContractConfig {
     /// Defines which Stellar network the contract operates on,
     /// connection parameters, and environment-specific settings.
     pub network: NetworkConfig,
-    
+
     /// Economic model and fee structure configuration.
     ///
     /// Controls platform fees, creation costs, limits, and
     /// collection thresholds for sustainable operation.
     pub fees: FeeConfig,
-    
+
     /// Voting and dispute mechanism configuration.
     ///
     /// Governs community participation, stake requirements,
     /// and dispute resolution processes.
     pub voting: VotingConfig,
-    
+
     /// Market creation and structure configuration.
     ///
     /// Defines constraints for market creation including
     /// duration limits, outcome counts, and content restrictions.
     pub market: MarketConfig,
-    
+
     /// Market duration extension configuration.
     ///
     /// Controls how markets can be extended beyond their
     /// original duration, including fees and limits.
     pub extension: ExtensionConfig,
-    
+
     /// Market resolution and confidence scoring configuration.
     ///
     /// Defines how markets are resolved using hybrid oracle
     /// and community consensus mechanisms.
     pub resolution: ResolutionConfig,
-    
+
     /// Oracle integration and reliability configuration.
     ///
     /// Controls how the contract interacts with external
@@ -1062,14 +1062,14 @@ pub struct ContractConfig {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::config::{ConfigManager, Environment};
 /// # let env = Env::default();
-/// 
+///
 /// // Get environment-appropriate configurations
 /// let dev_config = ConfigManager::get_development_config(&env);
 /// let mainnet_config = ConfigManager::get_mainnet_config(&env);
-/// 
+///
 /// // Store configuration in contract
 /// ConfigManager::store_config(&env, &mainnet_config).unwrap();
-/// 
+///
 /// // Retrieve stored configuration
 /// let stored_config = ConfigManager::get_config(&env).unwrap();
 /// assert_eq!(stored_config.network.environment, Environment::Mainnet);
@@ -1107,16 +1107,16 @@ impl ConfigManager {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::config::{ConfigManager, Environment};
     /// # let env = Env::default();
-    /// 
+    ///
     /// // Get development configuration
     /// let dev_config = ConfigManager::get_development_config(&env);
-    /// 
+    ///
     /// // Verify development characteristics
     /// assert_eq!(dev_config.network.environment, Environment::Development);
     /// assert!(dev_config.fees.creation_fee < 10_000_000); // Less than 1 XLM
     /// assert!(dev_config.oracle.timeout_seconds <= 30); // Quick timeouts
-    /// 
-    /// println!("Development config ready with {} second oracle timeout", 
+    ///
+    /// println!("Development config ready with {} second oracle timeout",
     ///     dev_config.oracle.timeout_seconds);
     /// ```
     ///
@@ -1193,20 +1193,20 @@ impl ConfigManager {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::config::{ConfigManager, Environment};
     /// # let env = Env::default();
-    /// 
+    ///
     /// // Get testnet configuration
     /// let testnet_config = ConfigManager::get_testnet_config(&env);
-    /// 
+    ///
     /// // Verify testnet characteristics
     /// assert_eq!(testnet_config.network.environment, Environment::Testnet);
-    /// assert_eq!(testnet_config.network.passphrase.to_string(), 
+    /// assert_eq!(testnet_config.network.passphrase.to_string(),
     ///     "Test SDF Network ; September 2015");
-    /// 
+    ///
     /// // Compare with development settings
     /// let dev_config = ConfigManager::get_development_config(&env);
     /// assert!(testnet_config.fees.creation_fee >= dev_config.fees.creation_fee);
-    /// 
-    /// println!("Testnet config with {} XLM creation fee", 
+    ///
+    /// println!("Testnet config with {} XLM creation fee",
     ///     testnet_config.fees.creation_fee / 10_000_000);
     /// ```
     ///
@@ -1286,20 +1286,20 @@ impl ConfigManager {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::config::{ConfigManager, Environment};
     /// # let env = Env::default();
-    /// 
+    ///
     /// // Get mainnet configuration
     /// let mainnet_config = ConfigManager::get_mainnet_config(&env);
-    /// 
+    ///
     /// // Verify mainnet characteristics
     /// assert_eq!(mainnet_config.network.environment, Environment::Mainnet);
-    /// assert_eq!(mainnet_config.network.passphrase.to_string(), 
+    /// assert_eq!(mainnet_config.network.passphrase.to_string(),
     ///     "Public Global Stellar Network ; September 2015");
-    /// 
+    ///
     /// // Check production-grade settings
     /// assert!(mainnet_config.fees.creation_fee >= 10_000_000); // At least 1 XLM
     /// assert!(mainnet_config.fees.platform_fee_percentage >= 200); // At least 2%
-    /// 
-    /// println!("Mainnet config with {}% platform fee", 
+    ///
+    /// println!("Mainnet config with {}% platform fee",
     ///     mainnet_config.fees.platform_fee_percentage / 100);
     /// ```
     ///
@@ -1385,15 +1385,15 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get default fee configuration
     /// let fee_config = ConfigManager::get_default_fee_config();
-    /// 
+    ///
     /// // Verify default values
     /// assert_eq!(fee_config.platform_fee_percentage, 2); // 2%
     /// assert_eq!(fee_config.creation_fee, 10_000_000); // 1 XLM
     /// assert!(fee_config.fees_enabled);
-    /// 
+    ///
     /// println!("Default platform fee: {}%", fee_config.platform_fee_percentage);
     /// ```
     ///
@@ -1445,15 +1445,15 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get mainnet fee configuration
     /// let mainnet_fees = ConfigManager::get_mainnet_fee_config();
     /// let default_fees = ConfigManager::get_default_fee_config();
-    /// 
+    ///
     /// // Compare mainnet vs default
     /// assert!(mainnet_fees.platform_fee_percentage > default_fees.platform_fee_percentage);
     /// assert!(mainnet_fees.creation_fee > default_fees.creation_fee);
-    /// 
+    ///
     /// println!("Mainnet creation fee: {} XLM", mainnet_fees.creation_fee / 10_000_000);
     /// ```
     ///
@@ -1509,14 +1509,14 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get default voting configuration
     /// let voting_config = ConfigManager::get_default_voting_config();
-    /// 
+    ///
     /// // Check accessibility
     /// assert_eq!(voting_config.min_vote_stake, 1_000_000); // 0.1 XLM
     /// assert_eq!(voting_config.dispute_extension_hours, 24);
-    /// 
+    ///
     /// // Calculate dispute cost for standard market
     /// let dispute_cost = voting_config.base_dispute_threshold;
     /// println!("Base dispute cost: {} XLM", dispute_cost / 10_000_000);
@@ -1575,16 +1575,16 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get mainnet voting configuration
     /// let mainnet_voting = ConfigManager::get_mainnet_voting_config();
     /// let default_voting = ConfigManager::get_default_voting_config();
-    /// 
+    ///
     /// // Compare mainnet vs default security
     /// assert!(mainnet_voting.min_dispute_stake > default_voting.min_dispute_stake);
     /// assert!(mainnet_voting.dispute_extension_hours > default_voting.dispute_extension_hours);
-    /// 
-    /// println!("Mainnet dispute stake: {} XLM", 
+    ///
+    /// println!("Mainnet dispute stake: {} XLM",
     ///     mainnet_voting.min_dispute_stake / 10_000_000);
     /// ```
     ///
@@ -1641,19 +1641,19 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get default market configuration
     /// let market_config = ConfigManager::get_default_market_config();
-    /// 
+    ///
     /// // Validate a market proposal
     /// let question = "Will Bitcoin reach $100,000 by end of 2024?";
     /// let outcomes = vec!["Yes", "No"];
     /// let duration_days = 90;
-    /// 
+    ///
     /// let valid_question = question.len() <= market_config.max_question_length as usize;
     /// let valid_outcomes = outcomes.len() >= market_config.min_outcomes as usize;
     /// let valid_duration = duration_days <= market_config.max_duration_days;
-    /// 
+    ///
     /// assert!(valid_question && valid_outcomes && valid_duration);
     /// ```
     ///
@@ -1707,19 +1707,19 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get default extension configuration
     /// let ext_config = ConfigManager::get_default_extension_config();
-    /// 
+    ///
     /// // Calculate extension cost
     /// let extension_days = 7;
     /// let total_cost = extension_days as i128 * ext_config.fee_per_day;
-    /// 
+    ///
     /// // Check if extension is allowed
     /// let current_extensions = 2;
     /// let can_extend = current_extensions < ext_config.max_total_extensions &&
     ///                 extension_days <= ext_config.max_extension_days;
-    /// 
+    ///
     /// println!("7-day extension costs: {} XLM", total_cost / 10_000_000);
     /// assert!(can_extend);
     /// ```
@@ -1773,16 +1773,16 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get default resolution configuration
     /// let resolution_config = ConfigManager::get_default_resolution_config();
-    /// 
+    ///
     /// // Check hybrid weighting
     /// assert_eq!(resolution_config.oracle_weight_percentage, 60);
     /// assert_eq!(resolution_config.community_weight_percentage, 40);
-    /// assert_eq!(resolution_config.oracle_weight_percentage + 
+    /// assert_eq!(resolution_config.oracle_weight_percentage +
     ///           resolution_config.community_weight_percentage, 100);
-    /// 
+    ///
     /// // Verify confidence thresholds
     /// assert!(resolution_config.min_confidence_score >= 70);
     /// println!("Minimum confidence required: {}%", resolution_config.min_confidence_score);
@@ -1844,17 +1844,17 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get default oracle configuration
     /// let oracle_config = ConfigManager::get_default_oracle_config();
-    /// 
+    ///
     /// // Check data freshness requirements
     /// assert_eq!(oracle_config.max_price_age, 3600); // 1 hour
-    /// 
+    ///
     /// // Verify reliability settings
     /// assert_eq!(oracle_config.retry_attempts, 3);
     /// assert_eq!(oracle_config.timeout_seconds, 30);
-    /// 
+    ///
     /// // Calculate maximum total time for oracle resolution
     /// let max_resolution_time = oracle_config.retry_attempts * oracle_config.timeout_seconds;
     /// println!("Maximum oracle resolution time: {} seconds", max_resolution_time);
@@ -1921,17 +1921,17 @@ impl ConfigManager {
     ///
     /// ```rust
     /// # use predictify_hybrid::config::ConfigManager;
-    /// 
+    ///
     /// // Get mainnet oracle configuration
     /// let mainnet_oracle = ConfigManager::get_mainnet_oracle_config();
     /// let default_oracle = ConfigManager::get_default_oracle_config();
-    /// 
+    ///
     /// // Compare mainnet vs default strictness
     /// assert!(mainnet_oracle.max_price_age < default_oracle.max_price_age);
     /// assert!(mainnet_oracle.retry_attempts > default_oracle.retry_attempts);
     /// assert!(mainnet_oracle.timeout_seconds > default_oracle.timeout_seconds);
-    /// 
-    /// println!("Mainnet data freshness: {} minutes", 
+    ///
+    /// println!("Mainnet data freshness: {} minutes",
     ///     mainnet_oracle.max_price_age / 60);
     /// ```
     ///
@@ -1980,13 +1980,13 @@ impl ConfigManager {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::config::ConfigManager;
     /// # let env = Env::default();
-    /// 
+    ///
     /// // Create and store development configuration
     /// let dev_config = ConfigManager::get_development_config(&env);
     /// let result = ConfigManager::store_config(&env, &dev_config);
-    /// 
+    ///
     /// assert!(result.is_ok());
-    /// 
+    ///
     /// // Verify storage by retrieving
     /// let retrieved_config = ConfigManager::get_config(&env).unwrap();
     /// assert_eq!(retrieved_config.network.environment, dev_config.network.environment);
@@ -2034,19 +2034,19 @@ impl ConfigManager {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::config::{ConfigManager, Environment};
     /// # let env = Env::default();
-    /// 
+    ///
     /// // Store a configuration first
     /// let testnet_config = ConfigManager::get_testnet_config(&env);
     /// ConfigManager::store_config(&env, &testnet_config).unwrap();
-    /// 
+    ///
     /// // Retrieve the stored configuration
     /// let current_config = ConfigManager::get_config(&env).unwrap();
-    /// 
+    ///
     /// // Verify it matches what was stored
     /// assert_eq!(current_config.network.environment, Environment::Testnet);
-    /// assert_eq!(current_config.fees.platform_fee_percentage, 
+    /// assert_eq!(current_config.fees.platform_fee_percentage,
     ///           testnet_config.fees.platform_fee_percentage);
-    /// 
+    ///
     /// println!("Current environment: {:?}", current_config.network.environment);
     /// ```
     ///
@@ -2094,19 +2094,19 @@ impl ConfigManager {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::config::ConfigManager;
     /// # let env = Env::default();
-    /// 
+    ///
     /// // Get current configuration
     /// let mut current_config = ConfigManager::get_development_config(&env);
     /// ConfigManager::store_config(&env, &current_config).unwrap();
-    /// 
+    ///
     /// // Modify fee settings
     /// current_config.fees.platform_fee_percentage = 3; // Increase to 3%
     /// current_config.fees.creation_fee = 15_000_000; // Increase to 1.5 XLM
-    /// 
+    ///
     /// // Update stored configuration
     /// let result = ConfigManager::update_config(&env, &current_config);
     /// assert!(result.is_ok());
-    /// 
+    ///
     /// // Verify update
     /// let updated_config = ConfigManager::get_config(&env).unwrap();
     /// assert_eq!(updated_config.fees.platform_fee_percentage, 3);
@@ -2152,18 +2152,18 @@ impl ConfigManager {
     /// # use soroban_sdk::Env;
     /// # use predictify_hybrid::config::{ConfigManager, Environment};
     /// # let env = Env::default();
-    /// 
+    ///
     /// // Store a custom configuration first
     /// let mainnet_config = ConfigManager::get_mainnet_config(&env);
     /// ConfigManager::store_config(&env, &mainnet_config).unwrap();
-    /// 
+    ///
     /// // Reset to development defaults
     /// let reset_config = ConfigManager::reset_to_defaults(&env).unwrap();
-    /// 
+    ///
     /// // Verify reset to development environment
     /// assert_eq!(reset_config.network.environment, Environment::Development);
     /// assert_eq!(reset_config.fees.platform_fee_percentage, 2); // Default 2%
-    /// 
+    ///
     /// // Confirm it's stored
     /// let stored_config = ConfigManager::get_config(&env).unwrap();
     /// assert_eq!(stored_config.network.environment, Environment::Development);

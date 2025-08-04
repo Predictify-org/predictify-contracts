@@ -34,7 +34,7 @@ use soroban_sdk::contracterror;
 ///
 /// ```rust
 /// # use predictify_hybrid::errors::Error;
-/// 
+///
 /// // Handle specific error types
 /// fn handle_market_operation_result(result: Result<(), Error>) {
 ///     match result {
@@ -53,7 +53,7 @@ use soroban_sdk::contracterror;
 ///         }
 ///     }
 /// }
-/// 
+///
 /// // Get error information
 /// let error = Error::MarketClosed;
 /// println!("Error Code: {}", error.code());           // "MARKET_CLOSED"
@@ -181,26 +181,26 @@ impl Error {
     ///
     /// ```rust
     /// # use predictify_hybrid::errors::Error;
-    /// 
+    ///
     /// // Display user-friendly error messages
     /// let error = Error::InsufficientStake;
     /// println!("Operation failed: {}", error.description());
     /// // Output: "Operation failed: Insufficient stake amount"
-    /// 
+    ///
     /// // Use in error handling for user interfaces
     /// fn display_error_to_user(error: Error) {
     ///     let message = format!("Error: {}", error.description());
     ///     // Display message in UI
     ///     println!("{}", message);
     /// }
-    /// 
+    ///
     /// // Compare different error descriptions
     /// let errors = vec![
     ///     Error::MarketNotFound,
     ///     Error::MarketClosed,
     ///     Error::AlreadyVoted,
     /// ];
-    /// 
+    ///
     /// for error in errors {
     ///     println!("{}: {}", error.code(), error.description());
     /// }
@@ -275,12 +275,12 @@ impl Error {
     ///
     /// ```rust
     /// # use predictify_hybrid::errors::Error;
-    /// 
+    ///
     /// // Use for structured logging
     /// let error = Error::OracleUnavailable;
     /// println!("ERROR_CODE={} MESSAGE={}", error.code(), error.description());
     /// // Output: "ERROR_CODE=ORACLE_UNAVAILABLE MESSAGE=Oracle is unavailable"
-    /// 
+    ///
     /// // Use for API error responses
     /// fn create_api_error_response(error: Error) -> String {
     ///     format!(
@@ -294,7 +294,7 @@ impl Error {
     ///         error as u32
     ///     )
     /// }
-    /// 
+    ///
     /// // Use for error categorization
     /// fn categorize_error(error: Error) -> &'static str {
     ///     match error.code() {
@@ -304,11 +304,11 @@ impl Error {
     ///         _ => "General Error",
     ///     }
     /// }
-    /// 
+    ///
     /// // Use for monitoring and alerting
     /// fn should_alert(error: Error) -> bool {
-    ///     matches!(error.code(), 
-    ///         "ORACLE_UNAVAILABLE" | 
+    ///     matches!(error.code(),
+    ///         "ORACLE_UNAVAILABLE" |
     ///         "DISPUTE_FEE_DISTRIBUTION_FAILED" |
     ///         "ADMIN_NOT_SET"
     ///     )

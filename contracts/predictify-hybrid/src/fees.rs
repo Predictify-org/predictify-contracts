@@ -54,7 +54,7 @@ pub const FEE_COLLECTION_THRESHOLD: i128 = crate::config::FEE_COLLECTION_THRESHO
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::fees::FeeConfig;
 /// # let env = Env::default();
-/// 
+///
 /// // Standard fee configuration
 /// let config = FeeConfig {
 ///     platform_fee_percentage: 200, // 2.00% (basis points)
@@ -64,12 +64,12 @@ pub const FEE_COLLECTION_THRESHOLD: i128 = crate::config::FEE_COLLECTION_THRESHO
 ///     collection_threshold: 100_000_000, // 10 XLM threshold
 ///     fees_enabled: true,
 /// };
-/// 
+///
 /// // Calculate platform fee for 50 XLM stake
 /// let stake_amount = 500_000_000; // 50 XLM
 /// let platform_fee = (stake_amount * config.platform_fee_percentage) / 10_000;
 /// println!("Platform fee: {} XLM", platform_fee / 10_000_000);
-/// 
+///
 /// // Check if fees are collectible
 /// if config.fees_enabled && stake_amount >= config.collection_threshold {
 ///     println!("Fees can be collected");
@@ -130,7 +130,7 @@ pub struct FeeConfig {
 /// # use predictify_hybrid::fees::FeeCollection;
 /// # let env = Env::default();
 /// # let admin = Address::generate(&env);
-/// 
+///
 /// // Fee collection record
 /// let collection = FeeCollection {
 ///     market_id: Symbol::new(&env, "btc_prediction"),
@@ -139,14 +139,14 @@ pub struct FeeConfig {
 ///     timestamp: env.ledger().timestamp(),
 ///     fee_percentage: 200, // 2% fee rate used
 /// };
-/// 
+///
 /// // Analyze collection details
 /// println!("Fee Collection Report");
 /// println!("Market: {}", collection.market_id.to_string());
 /// println!("Amount: {} XLM", collection.amount / 10_000_000);
 /// println!("Collected by: {}", collection.collected_by.to_string());
 /// println!("Fee rate: {}%", collection.fee_percentage as f64 / 100.0);
-/// 
+///
 /// // Calculate original stake from fee
 /// let original_stake = (collection.amount * 10_000) / collection.fee_percentage;
 /// println!("Original stake: {} XLM", original_stake / 10_000_000);
@@ -202,7 +202,7 @@ pub struct FeeCollection {
 /// # use soroban_sdk::{Env, Map, String, Vec};
 /// # use predictify_hybrid::fees::{FeeAnalytics, FeeCollection};
 /// # let env = Env::default();
-/// 
+///
 /// // Fee analytics example
 /// let analytics = FeeAnalytics {
 ///     total_fees_collected: 1_000_000_000, // 100 XLM total
@@ -211,27 +211,27 @@ pub struct FeeCollection {
 ///     collection_history: Vec::new(&env), // Historical records
 ///     fee_distribution: Map::new(&env), // Distribution by market size
 /// };
-/// 
+///
 /// // Display analytics summary
 /// println!("Fee System Analytics");
 /// println!("═══════════════════════════════════════");
-/// println!("Total fees collected: {} XLM", 
+/// println!("Total fees collected: {} XLM",
 ///     analytics.total_fees_collected / 10_000_000);
 /// println!("Markets with fees: {}", analytics.markets_with_fees);
-/// println!("Average per market: {} XLM", 
+/// println!("Average per market: {} XLM",
 ///     analytics.average_fee_per_market / 10_000_000);
-/// 
+///
 /// // Calculate fee collection rate
 /// if analytics.markets_with_fees > 0 {
 ///     let collection_efficiency = (analytics.markets_with_fees as f64 / 100.0) * 100.0;
 ///     println!("Collection efficiency: {:.1}%", collection_efficiency);
 /// }
-/// 
+///
 /// // Analyze fee distribution
 /// println!("Fee distribution by market category:");
 /// for (category, amount) in analytics.fee_distribution.iter() {
-///     println!("  {}: {} XLM", 
-///         category.to_string(), 
+///     println!("  {}: {} XLM",
+///         category.to_string(),
 ///         amount / 10_000_000);
 /// }
 /// ```
@@ -295,7 +295,7 @@ pub struct FeeAnalytics {
 /// # use soroban_sdk::{Env, String, Vec};
 /// # use predictify_hybrid::fees::{FeeValidationResult, FeeBreakdown};
 /// # let env = Env::default();
-/// 
+///
 /// // Fee validation result example
 /// let validation = FeeValidationResult {
 ///     is_valid: false,
@@ -313,7 +313,7 @@ pub struct FeeAnalytics {
 ///         user_payout_amount: 980_000_000, // 98 XLM
 ///     },
 /// };
-/// 
+///
 /// // Process validation results
 /// if validation.is_valid {
 ///     println!("Fee validation passed");
@@ -323,7 +323,7 @@ pub struct FeeAnalytics {
 ///     for error in validation.errors.iter() {
 ///         println!("  - {}", error.to_string());
 ///     }
-///     println!("Suggested amount: {} XLM", 
+///     println!("Suggested amount: {} XLM",
 ///         validation.suggested_amount / 10_000_000);
 /// }
 /// ```
@@ -381,7 +381,7 @@ pub struct FeeValidationResult {
 ///
 /// ```rust
 /// # use predictify_hybrid::fees::FeeBreakdown;
-/// 
+///
 /// // Fee breakdown for 100 XLM stake at 2% fee
 /// let breakdown = FeeBreakdown {
 ///     total_staked: 1_000_000_000, // 100 XLM total stake
@@ -390,7 +390,7 @@ pub struct FeeValidationResult {
 ///     platform_fee: 20_000_000, // 2 XLM platform fee
 ///     user_payout_amount: 980_000_000, // 98 XLM after fees
 /// };
-/// 
+///
 /// // Display breakdown to user
 /// println!("Fee Calculation Breakdown");
 /// println!("─────────────────────────────────────────");
@@ -399,11 +399,11 @@ pub struct FeeValidationResult {
 /// println!("Fee Amount: {} XLM", breakdown.fee_amount / 10_000_000);
 /// println!("Platform Fee: {} XLM", breakdown.platform_fee / 10_000_000);
 /// println!("User Payout: {} XLM", breakdown.user_payout_amount / 10_000_000);
-/// 
+///
 /// // Verify calculation accuracy
 /// let expected_fee = (breakdown.total_staked * breakdown.fee_percentage) / 10_000;
 /// assert_eq!(breakdown.fee_amount, expected_fee);
-/// 
+///
 /// let expected_payout = breakdown.total_staked - breakdown.fee_amount;
 /// assert_eq!(breakdown.user_payout_amount, expected_payout);
 /// ```
@@ -470,21 +470,21 @@ pub struct FeeBreakdown {
 /// # let env = Env::default();
 /// # let admin = Address::generate(&env);
 /// # let market_id = Symbol::new(&env, "btc_market");
-/// 
+///
 /// // Collect fees from a resolved market
 /// let collected_amount = FeeManager::collect_fees(
 ///     &env,
 ///     admin.clone(),
 ///     market_id.clone()
 /// ).unwrap();
-/// 
+///
 /// println!("Collected {} XLM in fees", collected_amount / 10_000_000);
-/// 
+///
 /// // Get fee analytics
 /// let analytics = FeeManager::get_fee_analytics(&env).unwrap();
-/// println!("Total platform fees: {} XLM", 
+/// println!("Total platform fees: {} XLM",
 ///     analytics.total_fees_collected / 10_000_000);
-/// 
+///
 /// // Validate market fees
 /// let validation = FeeManager::validate_market_fees(&env, &market_id).unwrap();
 /// if validation.is_valid {

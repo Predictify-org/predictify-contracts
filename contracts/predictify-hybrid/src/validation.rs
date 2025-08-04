@@ -49,7 +49,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 /// # use soroban_sdk::{Env, Address, String};
 /// # use predictify_hybrid::validation::{ValidationError, InputValidator};
 /// # let env = Env::default();
-/// 
+///
 /// // Handle address validation error
 /// let user_address = Address::generate(&env);
 /// match InputValidator::validate_address(&env, &user_address) {
@@ -62,7 +62,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 ///         println!("Unexpected validation error: {:?}", other_error);
 ///     }
 /// }
-/// 
+///
 /// // Handle string validation error
 /// let market_question = String::from_str(&env, ""); // Empty string
 /// match InputValidator::validate_string(&env, &market_question, 10, 500) {
@@ -75,7 +75,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 ///         println!("Unexpected validation error: {:?}", other_error);
 ///     }
 /// }
-/// 
+///
 /// // Handle number validation error
 /// let stake_amount = -1000i128; // Negative stake
 /// match InputValidator::validate_positive_number(&stake_amount) {
@@ -96,11 +96,11 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 /// ```rust
 /// # use predictify_hybrid::validation::ValidationError;
 /// # use predictify_hybrid::errors::Error;
-/// 
+///
 /// // Convert validation error to contract error
 /// let validation_error = ValidationError::InvalidStake;
 /// let contract_error = validation_error.to_contract_error();
-/// 
+///
 /// match contract_error {
 ///     Error::InsufficientStake => {
 ///         println!("Converted to insufficient stake error");
@@ -110,14 +110,14 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 ///         println!("Unexpected contract error conversion");
 ///     }
 /// }
-/// 
+///
 /// // Handle multiple validation errors
 /// let validation_errors = vec![
 ///     ValidationError::InvalidAddress,
 ///     ValidationError::InvalidString,
 ///     ValidationError::InvalidNumber,
 /// ];
-/// 
+///
 /// for error in validation_errors {
 ///     let contract_error = error.to_contract_error();
 ///     println!("Validation error {:?} -> Contract error {:?}", error, contract_error);
@@ -132,7 +132,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 /// # use predictify_hybrid::validation::{ValidationError, MarketValidator};
 /// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Pattern 1: Early return on validation error
 /// fn validate_market_creation_params(
 ///     env: &Env,
@@ -151,7 +151,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 ///     
 ///     Ok(())
 /// }
-/// 
+///
 /// // Pattern 2: Collect all validation errors
 /// fn validate_all_market_params(
 ///     env: &Env,
@@ -175,7 +175,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 ///     
 ///     errors
 /// }
-/// 
+///
 /// // Pattern 3: Convert and propagate errors
 /// fn create_market_with_validation(
 ///     env: &Env,
@@ -279,21 +279,21 @@ impl ValidationError {
 ///
 /// ```rust
 /// # use predictify_hybrid::validation::ValidationResult;
-/// 
+///
 /// // Create a valid result
 /// let mut result = ValidationResult::valid();
 /// assert!(result.is_valid);
 /// assert_eq!(result.error_count, 0);
 /// assert_eq!(result.warning_count, 0);
-/// 
+///
 /// // Add warnings and recommendations
 /// result.add_warning();
 /// result.add_recommendation();
-/// 
+///
 /// assert!(result.is_valid); // Still valid with warnings
 /// assert_eq!(result.warning_count, 1);
 /// assert_eq!(result.recommendation_count, 1);
-/// 
+///
 /// // Add an error
 /// result.add_error();
 /// assert!(!result.is_valid); // Now invalid
@@ -309,21 +309,21 @@ impl ValidationError {
 /// # use soroban_sdk::{Env, Address, String, Vec};
 /// # use predictify_hybrid::validation::{ValidationResult, InputValidator};
 /// # let env = Env::default();
-/// 
+///
 /// // Start with valid result
 /// let mut validation_result = ValidationResult::valid();
-/// 
+///
 /// // Validate multiple parameters
 /// let admin = Address::generate(&env);
 /// let question = String::from_str(&env, "Will BTC reach $100k?");
 /// let duration = 30u32;
-/// 
+///
 /// // Validate admin address
 /// if InputValidator::validate_address(&env, &admin).is_err() {
 ///     validation_result.add_error();
 ///     println!("Admin address validation failed");
 /// }
-/// 
+///
 /// // Validate question length
 /// if InputValidator::validate_string(&env, &question, 10, 500).is_err() {
 ///     validation_result.add_error();
@@ -332,7 +332,7 @@ impl ValidationError {
 ///     validation_result.add_warning();
 ///     println!("Question is quite short, consider adding more detail");
 /// }
-/// 
+///
 /// // Validate duration
 /// if InputValidator::validate_duration(&duration).is_err() {
 ///     validation_result.add_error();
@@ -341,7 +341,7 @@ impl ValidationError {
 ///     validation_result.add_recommendation();
 ///     println!("Consider longer duration for better market participation");
 /// }
-/// 
+///
 /// // Check final result
 /// if validation_result.is_valid {
 ///     println!("✓ All validations passed");
@@ -363,7 +363,7 @@ impl ValidationError {
 /// # use soroban_sdk::{Env, Address, String, Vec};
 /// # use predictify_hybrid::validation::{ValidationResult, InputValidator};
 /// # let env = Env::default();
-/// 
+///
 /// // Validate multiple market parameters
 /// fn validate_market_batch(
 ///     env: &Env,
@@ -405,7 +405,7 @@ impl ValidationError {
 ///     
 ///     result
 /// }
-/// 
+///
 /// // Use batch validation
 /// let admins = vec![
 ///     Address::generate(&env),
@@ -416,9 +416,9 @@ impl ValidationError {
 ///     String::from_str(&env, "Will ETH reach $5k?"),
 /// ];
 /// let durations = vec![30u32, 60u32];
-/// 
+///
 /// let batch_result = validate_market_batch(&env, &admins, &questions, &durations);
-/// 
+///
 /// println!("Batch validation completed:");
 /// println!("  Valid: {}", batch_result.is_valid);
 /// println!("  Errors: {}", batch_result.error_count);
@@ -431,7 +431,7 @@ impl ValidationError {
 /// Generate detailed validation reports:
 /// ```rust
 /// # use predictify_hybrid::validation::ValidationResult;
-/// 
+///
 /// // Generate validation summary
 /// fn generate_validation_report(result: &ValidationResult) -> String {
 ///     let mut report = String::new();
@@ -456,12 +456,12 @@ impl ValidationError {
 ///     
 ///     report
 /// }
-/// 
+///
 /// // Example usage
 /// let mut result = ValidationResult::valid();
 /// result.add_warning();
 /// result.add_recommendation();
-/// 
+///
 /// let report = generate_validation_report(&result);
 /// println!("{}", report);
 /// // Output:
@@ -589,7 +589,7 @@ impl ValidationResult {
 /// # use soroban_sdk::{Env, Address, String};
 /// # use predictify_hybrid::validation::{InputValidator, ValidationError};
 /// # let env = Env::default();
-/// 
+///
 /// // Validate address
 /// let user_address = Address::generate(&env);
 /// match InputValidator::validate_address(&env, &user_address) {
@@ -599,7 +599,7 @@ impl ValidationResult {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate string length
 /// let market_question = String::from_str(&env, "Will Bitcoin reach $100,000?");
 /// match InputValidator::validate_string(&env, &market_question, 10, 500) {
@@ -609,7 +609,7 @@ impl ValidationResult {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate positive number
 /// let stake_amount = 1000000i128; // 1 XLM in stroops
 /// match InputValidator::validate_positive_number(&stake_amount) {
@@ -619,7 +619,7 @@ impl ValidationResult {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate number range
 /// let threshold = 50000000i128; // $50 threshold
 /// let min_threshold = 1000000i128; // $1 minimum
@@ -631,7 +631,7 @@ impl ValidationResult {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate future timestamp
 /// let market_deadline = env.ledger().timestamp() + 86400; // 1 day from now
 /// match InputValidator::validate_future_timestamp(&env, &market_deadline) {
@@ -641,7 +641,7 @@ impl ValidationResult {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate duration
 /// let market_duration = 30u32; // 30 days
 /// match InputValidator::validate_duration(&market_duration) {
@@ -660,7 +660,7 @@ impl ValidationResult {
 /// # use soroban_sdk::{Env, Address};
 /// # use predictify_hybrid::validation::{InputValidator, ValidationError};
 /// # let env = Env::default();
-/// 
+///
 /// // Validate market admin address
 /// let admin_address = Address::generate(&env);
 /// match InputValidator::validate_address(&env, &admin_address) {
@@ -676,17 +676,17 @@ impl ValidationResult {
 ///         println!("Unexpected validation error: {:?}", e);
 ///     }
 /// }
-/// 
+///
 /// // Validate multiple participant addresses
 /// let participants = vec![
 ///     Address::generate(&env),
 ///     Address::generate(&env),
 ///     Address::generate(&env),
 /// ];
-/// 
+///
 /// let mut valid_participants = Vec::new();
 /// let mut invalid_count = 0;
-/// 
+///
 /// for (i, participant) in participants.iter().enumerate() {
 ///     match InputValidator::validate_address(&env, participant) {
 ///         Ok(()) => {
@@ -699,10 +699,10 @@ impl ValidationResult {
 ///         }
 ///     }
 /// }
-/// 
+///
 /// println!("Valid participants: {}", valid_participants.len());
 /// println!("Invalid participants: {}", invalid_count);
-/// 
+///
 /// // Validate oracle provider address
 /// let oracle_address = Address::generate(&env);
 /// if InputValidator::validate_address(&env, &oracle_address).is_ok() {
@@ -719,7 +719,7 @@ impl ValidationResult {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::validation::{InputValidator, ValidationError};
 /// # let env = Env::default();
-/// 
+///
 /// // Validate market questions
 /// let questions = vec![
 ///     String::from_str(&env, "Will Bitcoin reach $100,000 by the end of 2024?"),
@@ -727,7 +727,7 @@ impl ValidationResult {
 ///     String::from_str(&env, &"A".repeat(600)), // Too long
 ///     String::from_str(&env, "Will Ethereum reach $5,000 this year?"),
 /// ];
-/// 
+///
 /// for (i, question) in questions.iter().enumerate() {
 ///     match InputValidator::validate_string(&env, question, 10, 500) {
 ///         Ok(()) => {
@@ -741,14 +741,14 @@ impl ValidationResult {
 ///         }
 ///     }
 /// }
-/// 
+///
 /// // Validate market descriptions
 /// let descriptions = vec![
 ///     String::from_str(&env, "Detailed market description with comprehensive information about the prediction criteria."),
 ///     String::from_str(&env, ""), // Empty description
 ///     String::from_str(&env, "OK"), // Too short
 /// ];
-/// 
+///
 /// for (i, description) in descriptions.iter().enumerate() {
 ///     match InputValidator::validate_string(&env, description, 20, 1000) {
 ///         Ok(()) => {
@@ -762,7 +762,7 @@ impl ValidationResult {
 ///         }
 ///     }
 /// }
-/// 
+///
 /// // Validate oracle feed IDs
 /// let feed_ids = vec![
 ///     String::from_str(&env, "BTC/USD"),
@@ -770,7 +770,7 @@ impl ValidationResult {
 ///     String::from_str(&env, "XLM/USD"),
 ///     String::from_str(&env, "A"), // Too short
 /// ];
-/// 
+///
 /// for (i, feed_id) in feed_ids.iter().enumerate() {
 ///     match InputValidator::validate_string(&env, feed_id, 3, 50) {
 ///         Ok(()) => {
@@ -791,7 +791,7 @@ impl ValidationResult {
 /// Validate numbers with range and positivity constraints:
 /// ```rust
 /// # use predictify_hybrid::validation::{InputValidator, ValidationError};
-/// 
+///
 /// // Validate stake amounts
 /// let stake_amounts = vec![
 ///     1000000i128,   // 1 XLM - valid
@@ -799,7 +799,7 @@ impl ValidationResult {
 ///     0i128,         // Zero - invalid for stakes
 ///     100000000i128, // 100 XLM - valid
 /// ];
-/// 
+///
 /// for (i, stake) in stake_amounts.iter().enumerate() {
 ///     match InputValidator::validate_positive_number(stake) {
 ///         Ok(()) => {
@@ -813,7 +813,7 @@ impl ValidationResult {
 ///         }
 ///     }
 /// }
-/// 
+///
 /// // Validate threshold ranges
 /// let thresholds = vec![
 ///     (50000000i128, 1000000i128, 100000000i128),   // $50, valid range $1-$100
@@ -821,16 +821,16 @@ impl ValidationResult {
 ///     (150000000i128, 1000000i128, 100000000i128),  // $150, above maximum
 ///     (25000000i128, 1000000i128, 100000000i128),   // $25, valid
 /// ];
-/// 
+///
 /// for (i, (threshold, min, max)) in thresholds.iter().enumerate() {
 ///     match InputValidator::validate_number_range(threshold, min, max) {
 ///         Ok(()) => {
 ///             println!("Threshold {}: ✓ Valid (${:.2})", i + 1, *threshold as f64 / 1_000_000.0);
 ///         }
 ///         Err(ValidationError::InvalidNumber) => {
-///             println!("Threshold {}: ✗ Outside range ${:.2}-${:.2} (${:.2})", 
-///                 i + 1, 
-///                 *min as f64 / 1_000_000.0, 
+///             println!("Threshold {}: ✗ Outside range ${:.2}-${:.2} (${:.2})",
+///                 i + 1,
+///                 *min as f64 / 1_000_000.0,
 ///                 *max as f64 / 1_000_000.0,
 ///                 *threshold as f64 / 1_000_000.0
 ///             );
@@ -840,7 +840,7 @@ impl ValidationResult {
 ///         }
 ///     }
 /// }
-/// 
+///
 /// // Validate fee percentages
 /// let fee_percentages = vec![
 ///     250i128,   // 2.5% - valid
@@ -849,10 +849,10 @@ impl ValidationResult {
 ///     10000i128, // 100% - might be too high
 ///     15000i128, // 150% - definitely too high
 /// ];
-/// 
+///
 /// let min_fee = 0i128;
 /// let max_fee = 1000i128; // 10% maximum
-/// 
+///
 /// for (i, fee) in fee_percentages.iter().enumerate() {
 ///     match InputValidator::validate_number_range(fee, &min_fee, &max_fee) {
 ///         Ok(()) => {
@@ -875,10 +875,10 @@ impl ValidationResult {
 /// # use soroban_sdk::{Env};
 /// # use predictify_hybrid::validation::{InputValidator, ValidationError};
 /// # let env = Env::default();
-/// 
+///
 /// // Get current timestamp
 /// let current_time = env.ledger().timestamp();
-/// 
+///
 /// // Validate future timestamps
 /// let timestamps = vec![
 ///     current_time - 3600,    // 1 hour ago - invalid
@@ -887,7 +887,7 @@ impl ValidationResult {
 ///     current_time + 86400,   // 1 day from now - valid
 ///     current_time + 2592000, // 30 days from now - valid
 /// ];
-/// 
+///
 /// for (i, timestamp) in timestamps.iter().enumerate() {
 ///     match InputValidator::validate_future_timestamp(&env, timestamp) {
 ///         Ok(()) => {
@@ -903,7 +903,7 @@ impl ValidationResult {
 ///         }
 ///     }
 /// }
-/// 
+///
 /// // Validate market durations
 /// let durations = vec![
 ///     0u32,   // 0 days - invalid
@@ -914,7 +914,7 @@ impl ValidationResult {
 ///     365u32, // 1 year - valid
 ///     400u32, // Over 1 year - might be invalid
 /// ];
-/// 
+///
 /// for (i, duration) in durations.iter().enumerate() {
 ///     match InputValidator::validate_duration(duration) {
 ///         Ok(()) => {
@@ -928,7 +928,7 @@ impl ValidationResult {
 ///         }
 ///     }
 /// }
-/// 
+///
 /// // Convert durations to timestamps and validate
 /// let base_time = current_time;
 /// for (i, duration) in durations.iter().enumerate() {
@@ -1106,7 +1106,7 @@ impl InputValidator {
 /// # use predictify_hybrid::validation::{MarketValidator, ValidationResult};
 /// # use predictify_hybrid::types::{Market, OracleConfig, OracleProvider, MarketState};
 /// # let env = Env::default();
-/// 
+///
 /// // Validate market creation
 /// let admin = Address::generate(&env);
 /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by year end?");
@@ -1122,7 +1122,7 @@ impl InputValidator {
 ///     threshold: 100000000000i128, // $100k
 ///     comparison: String::from_str(&env, "gte"),
 /// };
-/// 
+///
 /// let creation_result = MarketValidator::validate_market_creation(
 ///     &env,
 ///     &admin,
@@ -1131,7 +1131,7 @@ impl InputValidator {
 ///     &duration,
 ///     &oracle_config,
 /// );
-/// 
+///
 /// if creation_result.is_valid {
 ///     println!("✓ Market creation parameters are valid");
 ///     if creation_result.has_warnings() {
@@ -1140,13 +1140,13 @@ impl InputValidator {
 /// } else {
 ///     println!("✗ Market creation validation failed with {} errors", creation_result.error_count);
 /// }
-/// 
+///
 /// // Validate voting parameters
 /// let voter = Address::generate(&env);
 /// let market_id = Symbol::new(&env, "BTC_100K");
 /// let outcome = String::from_str(&env, "yes");
 /// let stake = 5000000i128; // 5 XLM
-/// 
+///
 /// let voting_result = MarketValidator::validate_voting(
 ///     &env,
 ///     &voter,
@@ -1154,7 +1154,7 @@ impl InputValidator {
 ///     &outcome,
 ///     &stake,
 /// );
-/// 
+///
 /// if voting_result.is_valid {
 ///     println!("✓ Voting parameters are valid");
 /// } else {
@@ -1170,7 +1170,7 @@ impl InputValidator {
 /// # use predictify_hybrid::validation::{MarketValidator, ValidationResult};
 /// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Test various market creation scenarios
 /// let test_scenarios = vec![
 ///     // Scenario 1: Valid market
@@ -1228,7 +1228,7 @@ impl InputValidator {
 ///         "Market with invalid duration"
 ///     ),
 /// ];
-/// 
+///
 /// for (i, (admin, question, outcomes, duration, oracle_config, description)) in test_scenarios.iter().enumerate() {
 ///     println!("\n=== Test Scenario {}: {} ===", i + 1, description);
 ///     
@@ -1266,11 +1266,11 @@ impl InputValidator {
 /// # use soroban_sdk::{Env, Address, String, Symbol};
 /// # use predictify_hybrid::validation::{MarketValidator, ValidationResult};
 /// # let env = Env::default();
-/// 
+///
 /// // Test voting scenarios
 /// let market_id = Symbol::new(&env, "BTC_100K");
 /// let valid_outcomes = vec!["yes", "no"];
-/// 
+///
 /// let voting_scenarios = vec![
 ///     // Scenario 1: Valid vote
 ///     (
@@ -1301,7 +1301,7 @@ impl InputValidator {
 ///         "Vote with negative stake"
 ///     ),
 /// ];
-/// 
+///
 /// for (i, (voter, outcome, stake, description)) in voting_scenarios.iter().enumerate() {
 ///     println!("\n=== Voting Scenario {}: {} ===", i + 1, description);
 ///     
@@ -1333,7 +1333,7 @@ impl InputValidator {
 /// # use predictify_hybrid::validation::{MarketValidator, ValidationResult};
 /// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Test oracle configurations
 /// let oracle_scenarios = vec![
 ///     // Scenario 1: Valid Reflector oracle
@@ -1377,7 +1377,7 @@ impl InputValidator {
 ///         "Oracle with invalid feed ID"
 ///     ),
 /// ];
-/// 
+///
 /// for (i, (oracle_config, description)) in oracle_scenarios.iter().enumerate() {
 ///     println!("\n=== Oracle Scenario {}: {} ===", i + 1, description);
 ///     
@@ -1407,7 +1407,7 @@ impl InputValidator {
 /// # use predictify_hybrid::validation::{MarketValidator, ValidationResult};
 /// # use predictify_hybrid::types::{Market, MarketState, OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Create test markets with different states
 /// let test_markets = vec![
 ///     // Market 1: Active market (should not collect fees yet)
@@ -1455,7 +1455,7 @@ impl InputValidator {
 ///         "Resolved market - fees collectible"
 ///     ),
 /// ];
-/// 
+///
 /// for (i, (market, market_id, description)) in test_markets.iter().enumerate() {
 ///     println!("\n=== Fee Collection Scenario {}: {} ===", i + 1, description);
 ///     
@@ -1485,7 +1485,7 @@ impl InputValidator {
 /// # use predictify_hybrid::validation::{MarketValidator, ValidationResult};
 /// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Batch validate multiple market creation requests
 /// fn validate_market_batch(
 ///     env: &Env,
@@ -1513,7 +1513,7 @@ impl InputValidator {
 ///     
 ///     results
 /// }
-/// 
+///
 /// // Create batch of market requests
 /// let market_requests = vec![
 ///     (
@@ -1547,9 +1547,9 @@ impl InputValidator {
 ///         },
 ///     ),
 /// ];
-/// 
+///
 /// let batch_results = validate_market_batch(&env, &market_requests);
-/// 
+///
 /// println!("Batch validation completed:");
 /// for (i, result) in batch_results.iter().enumerate() {
 ///     if result.is_valid {
@@ -1558,7 +1558,7 @@ impl InputValidator {
 ///         println!("  Market {}: ✗ Invalid ({} errors)", i + 1, result.error_count);
 ///     }
 /// }
-/// 
+///
 /// let valid_count = batch_results.iter().filter(|r| r.is_valid).count();
 /// let total_count = batch_results.len();
 /// println!("Summary: {}/{} markets passed validation", valid_count, total_count);
@@ -1956,11 +1956,11 @@ impl FeeValidator {
 /// # use soroban_sdk::{Env, Address, String, Vec, Symbol};
 /// # use predictify_hybrid::validation::{VoteValidator, ValidationError};
 /// # let env = Env::default();
-/// 
+///
 /// // Validate user voting eligibility
 /// let voter = Address::generate(&env);
 /// let market_id = Symbol::new(&env, "BTC_100K");
-/// 
+///
 /// match VoteValidator::validate_user(&env, &voter, &market_id) {
 ///     Ok(()) => println!("User is eligible to vote"),
 ///     Err(ValidationError::InvalidAddress) => {
@@ -1971,14 +1971,14 @@ impl FeeValidator {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate vote outcome
 /// let vote_outcome = String::from_str(&env, "yes");
 /// let market_outcomes = vec![
 ///     String::from_str(&env, "yes"),
 ///     String::from_str(&env, "no"),
 /// ];
-/// 
+///
 /// match VoteValidator::validate_outcome(&env, &vote_outcome, &market_outcomes) {
 ///     Ok(()) => println!("Vote outcome is valid"),
 ///     Err(ValidationError::InvalidOutcome) => {
@@ -1986,10 +1986,10 @@ impl FeeValidator {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate stake amount
 /// let stake_amount = 5000000i128; // 5 XLM
-/// 
+///
 /// match VoteValidator::validate_stake_amount(&stake_amount) {
 ///     Ok(()) => println!("Stake amount is valid"),
 ///     Err(ValidationError::InvalidStake) => {
@@ -2114,7 +2114,7 @@ impl VoteValidator {
 /// # use predictify_hybrid::validation::{DisputeValidator, ValidationError};
 /// # use predictify_hybrid::types::{Market, MarketState, OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Validate dispute creation
 /// let user = Address::generate(&env);
 /// let market_id = Symbol::new(&env, "BTC_100K");
@@ -2132,7 +2132,7 @@ impl VoteValidator {
 ///     },
 ///     state: MarketState::Resolved,
 /// };
-/// 
+///
 /// match DisputeValidator::validate_dispute_creation(&env, &user, &market_id, &dispute_stake, &market) {
 ///     Ok(()) => println!("Dispute creation is valid"),
 ///     Err(ValidationError::InvalidDispute) => {
@@ -2143,10 +2143,10 @@ impl VoteValidator {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate dispute stake
 /// let stake_amounts = vec![1000000i128, 10000000i128, -5000000i128, 0i128];
-/// 
+///
 /// for (i, stake) in stake_amounts.iter().enumerate() {
 ///     match DisputeValidator::validate_dispute_stake(stake) {
 ///         Ok(()) => println!("Dispute stake {}: Valid ({} stroops)", i + 1, stake),
@@ -2250,11 +2250,11 @@ impl DisputeValidator {
 /// # use predictify_hybrid::validation::{ConfigValidator, ValidationError};
 /// # use predictify_hybrid::config;
 /// # let env = Env::default();
-/// 
+///
 /// // Validate contract configuration
 /// let admin = Address::generate(&env);
 /// let token_id = Address::generate(&env);
-/// 
+///
 /// match ConfigValidator::validate_contract_config(&env, &admin, &token_id) {
 ///     Ok(()) => println!("Contract configuration is valid"),
 ///     Err(ValidationError::InvalidConfig) => {
@@ -2265,10 +2265,10 @@ impl DisputeValidator {
 ///     }
 ///     Err(e) => println!("Validation error: {:?}", e),
 /// }
-/// 
+///
 /// // Validate environment configuration
 /// let environment = config::Environment::Testnet;
-/// 
+///
 /// match ConfigValidator::validate_environment_config(&env, &environment) {
 ///     Ok(()) => println!("Environment configuration is valid"),
 ///     Err(ValidationError::InvalidConfig) => {
@@ -2357,7 +2357,7 @@ impl ConfigValidator {
 /// # use predictify_hybrid::validation::{ComprehensiveValidator, ValidationResult};
 /// # use predictify_hybrid::types::{Market, OracleConfig, OracleProvider, MarketState};
 /// # let env = Env::default();
-/// 
+///
 /// // Comprehensive market creation validation
 /// let admin = Address::generate(&env);
 /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by year end?");
@@ -2372,7 +2372,7 @@ impl ConfigValidator {
 ///     threshold: 100000000000i128,
 ///     comparison: String::from_str(&env, "gte"),
 /// };
-/// 
+///
 /// let result = ComprehensiveValidator::validate_complete_market_creation(
 ///     &env,
 ///     &admin,
@@ -2381,7 +2381,7 @@ impl ConfigValidator {
 ///     &duration,
 ///     &oracle_config,
 /// );
-/// 
+///
 /// if result.is_valid {
 ///     println!("✓ Complete market creation validation passed");
 ///     if result.has_warnings() {
@@ -2393,7 +2393,7 @@ impl ConfigValidator {
 /// } else {
 ///     println!("✗ Market creation validation failed with {} errors", result.error_count);
 /// }
-/// 
+///
 /// // Comprehensive input validation
 /// let input_result = ComprehensiveValidator::validate_inputs(
 ///     &env,
@@ -2402,9 +2402,9 @@ impl ConfigValidator {
 ///     &outcomes,
 ///     &duration,
 /// );
-/// 
+///
 /// println!("Input validation: {}", if input_result.is_valid { "✓ Valid" } else { "✗ Invalid" });
-/// 
+///
 /// // Comprehensive market state validation
 /// let market = Market {
 ///     admin: admin.clone(),
@@ -2415,13 +2415,13 @@ impl ConfigValidator {
 ///     state: MarketState::Active,
 /// };
 /// let market_id = Symbol::new(&env, "BTC_100K");
-/// 
+///
 /// let state_result = ComprehensiveValidator::validate_market_state(
 ///     &env,
 ///     &market,
 ///     &market_id,
 /// );
-/// 
+///
 /// println!("Market state validation: {}", if state_result.is_valid { "✓ Valid" } else { "✗ Invalid" });
 /// ```
 ///
@@ -2593,26 +2593,26 @@ impl ComprehensiveValidator {
 /// # use predictify_hybrid::validation::{ValidationTestingUtils, ValidationResult, ValidationError};
 /// # use predictify_hybrid::types::{Market, OracleConfig};
 /// # let env = Env::default();
-/// 
+///
 /// // Create test validation result
 /// let test_result = ValidationTestingUtils::create_test_validation_result(&env);
 /// println!("Test result valid: {}", test_result.is_valid);
 /// println!("Test result errors: {}", test_result.error_count);
-/// 
+///
 /// // Create test validation error
 /// let test_error = ValidationTestingUtils::create_test_validation_error(&env);
 /// println!("Test error: {:?}", test_error);
-/// 
+///
 /// // Create test market
 /// let test_market = ValidationTestingUtils::create_test_market(&env);
 /// println!("Test market question: {}", test_market.question);
 /// println!("Test market outcomes: {}", test_market.outcomes.len());
-/// 
+///
 /// // Create test oracle config
 /// let test_oracle = ValidationTestingUtils::create_test_oracle_config(&env);
 /// println!("Test oracle provider: {:?}", test_oracle.provider);
 /// println!("Test oracle feed: {}", test_oracle.feed_id);
-/// 
+///
 /// // Validate test data structure
 /// let validation_result = ValidationTestingUtils::validate_test_data_structure(&test_result);
 /// match validation_result {
@@ -2720,11 +2720,11 @@ impl ValidationTestingUtils {
 /// ```rust
 /// # use predictify_hybrid::validation::{ValidationErrorHandler, ValidationError, ValidationResult};
 /// # use predictify_hybrid::errors::Error;
-/// 
+///
 /// // Handle validation error conversion
 /// let validation_error = ValidationError::InvalidStake;
 /// let contract_error = ValidationErrorHandler::handle_validation_error(validation_error);
-/// 
+///
 /// match contract_error {
 ///     Error::InsufficientStake => {
 ///         println!("Converted to insufficient stake error");
@@ -2733,11 +2733,11 @@ impl ValidationTestingUtils {
 ///         println!("Unexpected error conversion");
 ///     }
 /// }
-/// 
+///
 /// // Handle validation result
 /// let mut result = ValidationResult::valid();
 /// result.add_error();
-/// 
+///
 /// match ValidationErrorHandler::handle_validation_result(result) {
 ///     Ok(()) => println!("Validation passed"),
 ///     Err(e) => println!("Validation failed: {:?}", e),
@@ -2809,17 +2809,17 @@ impl ValidationErrorHandler {
 /// # use soroban_sdk::{Env, Map, String};
 /// # use predictify_hybrid::validation::ValidationDocumentation;
 /// # let env = Env::default();
-/// 
+///
 /// // Get validation system overview
 /// let overview = ValidationDocumentation::get_validation_overview(&env);
 /// println!("Validation system: {}", overview);
-/// 
+///
 /// // Get validation rules
 /// let rules = ValidationDocumentation::get_validation_rules(&env);
 /// for (rule_name, rule_description) in rules.iter() {
 ///     println!("Rule {}: {}", rule_name, rule_description);
 /// }
-/// 
+///
 /// // Get error codes
 /// let error_codes = ValidationDocumentation::get_validation_error_codes(&env);
 /// for (error_code, error_description) in error_codes.iter() {

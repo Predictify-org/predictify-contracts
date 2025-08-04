@@ -69,7 +69,7 @@ use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 /// # let env = Env::default();
 /// # let market = Market::default(); // Placeholder
 /// # let current_time = env.ledger().timestamp();
-/// 
+///
 /// // Check market state and determine available operations
 /// match market.state {
 ///     MarketState::Active => {
@@ -192,10 +192,10 @@ pub enum MarketState {
 ///
 /// ```rust
 /// # use predictify_hybrid::types::OracleProvider;
-/// 
+///
 /// // Check provider support before using
 /// let provider = OracleProvider::Reflector;
-/// 
+///
 /// if provider.is_supported() {
 ///     println!("Using {} oracle provider", provider.name());
 ///     // Proceed with oracle integration
@@ -203,7 +203,7 @@ pub enum MarketState {
 ///     println!("Provider {} not supported on Stellar", provider.name());
 ///     // Use fallback or error handling
 /// }
-/// 
+///
 /// // Provider selection logic
 /// let recommended_provider = match std::env::var("ORACLE_PREFERENCE") {
 ///     Ok(pref) if pref == "pyth" => {
@@ -216,7 +216,7 @@ pub enum MarketState {
 ///     },
 ///     _ => OracleProvider::Reflector, // Default to Reflector
 /// };
-/// 
+///
 /// println!("Selected oracle: {}", recommended_provider.name());
 /// ```
 ///
@@ -229,11 +229,11 @@ pub enum MarketState {
 /// # use predictify_hybrid::oracles::OracleFactory;
 /// # let env = Env::default();
 /// # let oracle_contract = Address::generate(&env);
-/// 
+///
 /// // Create oracle instance based on provider
 /// let provider = OracleProvider::Reflector;
 /// let oracle_result = OracleFactory::create_oracle(provider, oracle_contract);
-/// 
+///
 /// match oracle_result {
 ///     Ok(oracle_instance) => {
 ///         println!("Successfully created {} oracle", provider.name());
@@ -339,7 +339,7 @@ impl OracleProvider {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Create oracle config for "Will BTC be above $50,000?"
 /// let btc_config = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -347,16 +347,16 @@ impl OracleProvider {
 ///     50_000_00, // $50,000 in cents
 ///     String::from_str(&env, "gt") // Greater than
 /// );
-/// 
+///
 /// // Validate the configuration
 /// btc_config.validate(&env)?;
-/// 
+///
 /// println!("Oracle Config:");
 /// println!("Provider: {}", btc_config.provider.name());
 /// println!("Feed: {}", btc_config.feed_id);
 /// println!("Threshold: ${}", btc_config.threshold / 100);
 /// println!("Comparison: {}", btc_config.comparison);
-/// 
+///
 /// // Create config for "Will ETH drop below $2,000?"
 /// let eth_config = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -364,7 +364,7 @@ impl OracleProvider {
 ///     2_000_00, // $2,000 in cents
 ///     String::from_str(&env, "lt") // Less than
 /// );
-/// 
+///
 /// // Create config for "Will XLM equal exactly $0.50?"
 /// let xlm_config = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -396,20 +396,20 @@ impl OracleProvider {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// let config = OracleConfig::new(
 ///     OracleProvider::Reflector,
 ///     String::from_str(&env, "BTC/USD"),
 ///     50_000_00,
 ///     String::from_str(&env, "gt")
 /// );
-/// 
+///
 /// // Validation checks:
 /// // 1. Threshold must be positive
 /// // 2. Comparison must be "gt", "lt", or "eq"
 /// // 3. Provider must be supported on current network
 /// // 4. Feed ID must not be empty
-/// 
+///
 /// match config.validate(&env) {
 ///     Ok(()) => println!("Configuration is valid"),
 ///     Err(e) => println!("Validation failed: {:?}", e),
@@ -431,7 +431,7 @@ impl OracleProvider {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // "Will BTC reach $100k by year end?"
 /// let btc_100k = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -439,7 +439,7 @@ impl OracleProvider {
 ///     100_000_00,
 ///     String::from_str(&env, "gt")
 /// );
-/// 
+///
 /// // "Will ETH stay above $1,500?"
 /// let eth_support = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -555,7 +555,7 @@ impl OracleConfig {
 /// # use predictify_hybrid::types::{Market, MarketState, OracleConfig, OracleProvider};
 /// # let env = Env::default();
 /// # let admin = Address::generate(&env);
-/// 
+///
 /// // Create a new prediction market
 /// let market = Market::new(
 ///     &env,
@@ -574,10 +574,10 @@ impl OracleConfig {
 ///     ),
 ///     MarketState::Active
 /// );
-/// 
+///
 /// // Validate the market
 /// market.validate(&env)?;
-/// 
+///
 /// // Check market status
 /// let current_time = env.ledger().timestamp();
 /// if market.is_active(current_time) {
@@ -585,13 +585,13 @@ impl OracleConfig {
 /// } else if market.has_ended(current_time) {
 ///     println!("Market has ended, ready for resolution");
 /// }
-/// 
+///
 /// // Display market information
 /// println!("Market Question: {}", market.question);
 /// println!("Admin: {}", market.admin);
 /// println!("Total Staked: {} stroops", market.total_staked);
 /// println!("State: {:?}", market.state);
-/// 
+///
 /// // Check if market is resolved
 /// if market.is_resolved() {
 ///     if let Some(result) = &market.oracle_result {
@@ -609,24 +609,24 @@ impl OracleConfig {
 /// # use predictify_hybrid::types::Market;
 /// # let mut market = Market::default(); // Placeholder
 /// # let user = Address::generate(&soroban_sdk::Env::default());
-/// 
+///
 /// // Add user vote and stake (for testing)
 /// market.add_vote(
 ///     user.clone(),
 ///     String::from_str(&soroban_sdk::Env::default(), "yes"),
 ///     1_000_000 // 1 XLM in stroops
 /// );
-/// 
+///
 /// // Check user's vote
 /// if let Some(user_vote) = market.votes.get(user.clone()) {
 ///     println!("User voted: {}", user_vote);
 /// }
-/// 
+///
 /// // Check user's stake
 /// if let Some(user_stake) = market.stakes.get(user.clone()) {
 ///     println!("User staked: {} stroops", user_stake);
 /// }
-/// 
+///
 /// // Check if user has claimed payout
 /// let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
 /// println!("User claimed payout: {}", has_claimed);
@@ -640,7 +640,7 @@ impl OracleConfig {
 /// # use predictify_hybrid::types::Market;
 /// # let env = Env::default();
 /// # let market = Market::default(); // Placeholder
-/// 
+///
 /// // Validation checks multiple aspects:
 /// match market.validate(&env) {
 ///     Ok(()) => {
@@ -664,14 +664,14 @@ impl OracleConfig {
 /// ```rust
 /// # use predictify_hybrid::types::Market;
 /// # let market = Market::default(); // Placeholder
-/// 
+///
 /// // Total market value
 /// println!("Total staked: {} stroops", market.total_staked);
-/// 
+///
 /// // Dispute stakes (for contested resolutions)
 /// let dispute_total = market.total_dispute_stakes();
 /// println!("Total dispute stakes: {} stroops", dispute_total);
-/// 
+///
 /// // Calculate potential payouts
 /// let winner_pool = market.total_staked; // Simplified
 /// println!("Winner pool: {} stroops", winner_pool);
@@ -861,13 +861,13 @@ impl Market {
 ///
 /// ```rust
 /// # use predictify_hybrid::types::ReflectorAsset;
-/// 
+///
 /// // Asset identification and properties
 /// let btc = ReflectorAsset::BTC;
 /// println!("Asset: {}", btc.symbol());
 /// println!("Name: {}", btc.name());
 /// println!("Decimals: {}", btc.decimals());
-/// 
+///
 /// // Asset validation
 /// let assets = vec![ReflectorAsset::BTC, ReflectorAsset::ETH, ReflectorAsset::XLM];
 /// for asset in assets {
@@ -875,11 +875,11 @@ impl Market {
 ///         println!("{} is supported by Reflector", asset.symbol());
 ///     }
 /// }
-/// 
+///
 /// // Feed ID generation
 /// let btc_feed = ReflectorAsset::BTC.feed_id();
 /// println!("BTC feed ID: {}", btc_feed); // "BTC/USD"
-/// 
+///
 /// let eth_feed = ReflectorAsset::ETH.feed_id();
 /// println!("ETH feed ID: {}", eth_feed); // "ETH/USD"
 /// ```
@@ -891,7 +891,7 @@ impl Market {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::types::{ReflectorAsset, OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Create oracle config for BTC price prediction
 /// let btc_asset = ReflectorAsset::BTC;
 /// let oracle_config = OracleConfig::new(
@@ -900,7 +900,7 @@ impl Market {
 ///     50_000_00, // $50,000 threshold
 ///     String::from_str(&env, "gt")
 /// );
-/// 
+///
 /// // Validate asset support
 /// if btc_asset.is_supported() {
 ///     println!("BTC oracle config created successfully");
@@ -912,21 +912,21 @@ impl Market {
 /// Each asset has specific characteristics:
 /// ```rust
 /// # use predictify_hybrid::types::ReflectorAsset;
-/// 
+///
 /// // Bitcoin properties
 /// let btc = ReflectorAsset::BTC;
 /// assert_eq!(btc.symbol(), "BTC");
 /// assert_eq!(btc.name(), "Bitcoin");
 /// assert_eq!(btc.decimals(), 8);
 /// assert!(btc.is_supported());
-/// 
+///
 /// // Ethereum properties
 /// let eth = ReflectorAsset::ETH;
 /// assert_eq!(eth.symbol(), "ETH");
 /// assert_eq!(eth.name(), "Ethereum");
 /// assert_eq!(eth.decimals(), 18);
 /// assert!(eth.is_supported());
-/// 
+///
 /// // Stellar Lumens properties
 /// let xlm = ReflectorAsset::XLM;
 /// assert_eq!(xlm.symbol(), "XLM");
@@ -950,7 +950,7 @@ impl Market {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::types::{ReflectorAsset, OracleConfig, OracleProvider};
 /// # let env = Env::default();
-/// 
+///
 /// // Create market for "Will BTC reach $100k?"
 /// let btc_market_config = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -958,7 +958,7 @@ impl Market {
 ///     100_000_00,
 ///     String::from_str(&env, "gt")
 /// );
-/// 
+///
 /// // Create market for "Will ETH drop below $1,000?"
 /// let eth_market_config = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -966,7 +966,7 @@ impl Market {
 ///     1_000_00,
 ///     String::from_str(&env, "lt")
 /// );
-/// 
+///
 /// // Create market for "Will XLM reach $1?"
 /// let xlm_market_config = OracleConfig::new(
 ///     OracleProvider::Reflector,
@@ -1035,7 +1035,7 @@ pub enum ReflectorAsset {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::types::ReflectorPriceData;
 /// # let env = Env::default();
-/// 
+///
 /// // Create price data from Reflector response
 /// let btc_price = ReflectorPriceData::new(
 ///     5_000_000, // $50,000.00 in cents
@@ -1045,19 +1045,19 @@ pub enum ReflectorAsset {
 ///     95, // 95% confidence
 ///     Some(1_000_000_000) // $10M volume
 /// );
-/// 
+///
 /// // Display price information
 /// println!("BTC Price: ${:.2}", btc_price.price_in_dollars());
 /// println!("Updated: {}", btc_price.timestamp);
 /// println!("Confidence: {}%", btc_price.confidence);
-/// 
+///
 /// // Validate price data quality
 /// if btc_price.is_valid() {
 ///     println!("Price data is valid and reliable");
 /// } else {
 ///     println!("Price data quality concerns detected");
 /// }
-/// 
+///
 /// // Check data freshness
 /// let current_time = env.ledger().timestamp();
 /// if btc_price.is_fresh(current_time, 300) { // 5 minutes
@@ -1073,7 +1073,7 @@ pub enum ReflectorAsset {
 /// ```rust
 /// # use predictify_hybrid::types::ReflectorPriceData;
 /// # let price_data = ReflectorPriceData::default(); // Placeholder
-/// 
+///
 /// // Validation checks multiple aspects:
 /// let validation_result = price_data.validate();
 /// match validation_result {
@@ -1099,10 +1099,10 @@ pub enum ReflectorAsset {
 /// # use predictify_hybrid::types::{ReflectorPriceData, OracleConfig};
 /// # let price_data = ReflectorPriceData::default(); // Placeholder
 /// # let oracle_config = OracleConfig::default(); // Placeholder
-/// 
+///
 /// // Apply oracle configuration to determine outcome
 /// let market_outcome = price_data.resolve_outcome(&oracle_config);
-/// 
+///
 /// match market_outcome {
 ///     Ok(outcome) => {
 ///         println!("Market resolved to: {}", outcome);
@@ -1113,12 +1113,12 @@ pub enum ReflectorAsset {
 ///         // Handle resolution errors
 ///     }
 /// }
-/// 
+///
 /// // Example: BTC > $50,000 check
 /// let btc_price = 5_500_000; // $55,000
 /// let threshold = 5_000_000;  // $50,000
 /// let comparison = "gt";      // Greater than
-/// 
+///
 /// let result = if comparison == "gt" {
 ///     btc_price > threshold
 /// } else if comparison == "lt" {
@@ -1126,7 +1126,7 @@ pub enum ReflectorAsset {
 /// } else {
 ///     btc_price == threshold
 /// };
-/// 
+///
 /// println!("Market outcome: {}", if result { "yes" } else { "no" });
 /// ```
 ///
@@ -1136,7 +1136,7 @@ pub enum ReflectorAsset {
 /// ```rust
 /// # use predictify_hybrid::types::ReflectorPriceData;
 /// # let price_data = ReflectorPriceData::default(); // Placeholder
-/// 
+///
 /// // Check confidence level
 /// if price_data.confidence >= 90 {
 ///     println!("High confidence price data");
@@ -1145,7 +1145,7 @@ pub enum ReflectorAsset {
 /// } else {
 ///     println!("Low confidence - use with caution");
 /// }
-/// 
+///
 /// // Check trading volume (if available)
 /// if let Some(volume) = price_data.volume {
 ///     if volume > 1_000_000_00 { // $1M+
@@ -1164,10 +1164,10 @@ pub enum ReflectorAsset {
 /// # use predictify_hybrid::types::ReflectorPriceData;
 /// # let env = Env::default();
 /// # let price_data = ReflectorPriceData::default(); // Placeholder
-/// 
+///
 /// let current_time = env.ledger().timestamp();
 /// let max_age = 600; // 10 minutes
-/// 
+///
 /// if price_data.is_fresh(current_time, max_age) {
 ///     println!("Price data is current");
 /// } else {
@@ -1260,7 +1260,7 @@ pub struct ReflectorPriceData {
 /// # use predictify_hybrid::types::MarketExtension;
 /// # let env = Env::default();
 /// # let requester = Address::generate(&env);
-/// 
+///
 /// // Create extension request for low participation
 /// let extension = MarketExtension::new(
 ///     &env,
@@ -1271,16 +1271,16 @@ pub struct ReflectorPriceData {
 ///     1_000_000, // 1 XLM extension fee
 ///     false // Pending approval
 /// );
-/// 
+///
 /// // Validate extension request
 /// extension.validate(&env)?;
-/// 
+///
 /// // Display extension information
 /// println!("Extension requested by: {}", extension.requester);
 /// println!("Extension duration: {} hours", extension.duration_hours());
 /// println!("Extension fee: {} stroops", extension.fee);
 /// println!("Reason: {}", extension.reason);
-/// 
+///
 /// // Check if extension is within limits
 /// if extension.is_within_limits() {
 ///     println!("Extension request is valid");
@@ -1296,7 +1296,7 @@ pub struct ReflectorPriceData {
 /// ```rust
 /// # use predictify_hybrid::types::MarketExtension;
 /// # let extension = MarketExtension::default(); // Placeholder
-/// 
+///
 /// // Validation checks multiple aspects:
 /// let validation_result = extension.validate(&soroban_sdk::Env::default());
 /// match validation_result {
@@ -1320,11 +1320,11 @@ pub struct ReflectorPriceData {
 /// Extension fees vary by type and duration:
 /// ```rust
 /// # use predictify_hybrid::types::MarketExtension;
-/// 
+///
 /// // Calculate extension fee based on duration
 /// let base_fee = 1_000_000; // 1 XLM base fee
 /// let duration_hours = 48; // 48 hour extension
-/// 
+///
 /// let total_fee = if duration_hours <= 24 {
 ///     base_fee // Standard 24-hour extension
 /// } else if duration_hours <= 72 {
@@ -1332,7 +1332,7 @@ pub struct ReflectorPriceData {
 /// } else {
 ///     base_fee * 5 // Long extension (73+ hours)
 /// };
-/// 
+///
 /// println!("Extension fee for {} hours: {} stroops", duration_hours, total_fee);
 /// ```
 ///
@@ -1342,10 +1342,10 @@ pub struct ReflectorPriceData {
 /// ```rust
 /// # use predictify_hybrid::types::MarketExtension;
 /// # let mut extension = MarketExtension::default(); // Placeholder
-/// 
+///
 /// // Step 1: Request submitted with fee
 /// extension.set_status("pending");
-/// 
+///
 /// // Step 2: Admin review
 /// if extension.meets_criteria() {
 ///     extension.approve();
@@ -1354,7 +1354,7 @@ pub struct ReflectorPriceData {
 ///     extension.reject("Insufficient justification");
 ///     println!("Extension rejected");
 /// }
-/// 
+///
 /// // Step 3: Apply extension if approved
 /// if extension.is_approved() {
 ///     extension.apply_to_market();
@@ -1376,7 +1376,7 @@ pub struct ReflectorPriceData {
 /// ```rust
 /// # use predictify_hybrid::types::MarketExtension;
 /// # let extension = MarketExtension::default(); // Placeholder
-/// 
+///
 /// // Extension statistics
 /// println!("Extension type: {}", extension.extension_type());
 /// println!("Participation before: {}%", extension.participation_before());
@@ -1392,7 +1392,7 @@ pub struct ReflectorPriceData {
 /// # use predictify_hybrid::types::MarketExtension;
 /// # let env = Env::default();
 /// # let system = Address::generate(&env);
-/// 
+///
 /// let auto_extension = MarketExtension::new(
 ///     &env,
 ///     system, // System-initiated
@@ -1410,7 +1410,7 @@ pub struct ReflectorPriceData {
 /// # use predictify_hybrid::types::MarketExtension;
 /// # let env = Env::default();
 /// # let community_member = Address::generate(&env);
-/// 
+///
 /// let community_extension = MarketExtension::new(
 ///     &env,
 ///     community_member,
@@ -1495,10 +1495,10 @@ impl MarketExtension {
 /// # use soroban_sdk::Env;
 /// # use predictify_hybrid::types::ExtensionStats;
 /// # let env = Env::default();
-/// 
+///
 /// // Create extension statistics tracker
 /// let mut stats = ExtensionStats::new(&env);
-/// 
+///
 /// // Record extension request
 /// stats.record_extension_request(
 ///     "user_requested",
@@ -1506,14 +1506,14 @@ impl MarketExtension {
 ///     2_000_000, // 2 XLM fee
 ///     true // Approved
 /// );
-/// 
+///
 /// // Record participation impact
 /// stats.record_participation_change(
 ///     10, // 10 additional votes
 ///     5_000_000, // 5 XLM additional stakes
 ///     25.0 // 25% participation increase
 /// );
-/// 
+///
 /// // Display statistics
 /// println!("Total extensions: {}", stats.total_extensions);
 /// println!("Approval rate: {:.1}%", stats.approval_rate());
@@ -1527,16 +1527,16 @@ impl MarketExtension {
 /// ```rust
 /// # use predictify_hybrid::types::ExtensionStats;
 /// # let stats = ExtensionStats::default(); // Placeholder
-/// 
+///
 /// // Calculate effectiveness metrics
 /// let effectiveness_report = stats.generate_effectiveness_report();
-/// 
+///
 /// println!("Extension Effectiveness Report:");
 /// println!("- Auto extensions success rate: {:.1}%", effectiveness_report.auto_success_rate);
 /// println!("- User extensions success rate: {:.1}%", effectiveness_report.user_success_rate);
 /// println!("- Average participation boost: {:.1}%", effectiveness_report.avg_participation_boost);
 /// println!("- ROI on extension fees: {:.2}x", effectiveness_report.fee_roi);
-/// 
+///
 /// // Identify optimal extension patterns
 /// if effectiveness_report.auto_success_rate > effectiveness_report.user_success_rate {
 ///     println!("Recommendation: Favor automatic extensions for low participation");
@@ -1551,12 +1551,12 @@ impl MarketExtension {
 /// ```rust
 /// # use predictify_hybrid::types::ExtensionStats;
 /// # let stats = ExtensionStats::default(); // Placeholder
-/// 
+///
 /// // Analyze monthly trends
 /// let monthly_trends = stats.get_monthly_trends();
-/// 
+///
 /// for (month, trend_data) in monthly_trends {
-///     println!("Month {}: {} extensions, {:.1}% approval rate", 
+///     println!("Month {}: {} extensions, {:.1}% approval rate",
 ///         month, trend_data.count, trend_data.approval_rate);
 ///     
 ///     if trend_data.count > trend_data.previous_month_count {
@@ -1565,7 +1565,7 @@ impl MarketExtension {
 ///         println!("  ↘ Extension requests decreasing");
 ///     }
 /// }
-/// 
+///
 /// // Seasonal patterns
 /// let seasonal_analysis = stats.analyze_seasonal_patterns();
 /// println!("Peak extension period: {}", seasonal_analysis.peak_period);
@@ -1578,16 +1578,16 @@ impl MarketExtension {
 /// ```rust
 /// # use predictify_hybrid::types::ExtensionStats;
 /// # let stats = ExtensionStats::default(); // Placeholder
-/// 
+///
 /// // Fee effectiveness analysis
 /// let fee_analysis = stats.analyze_fee_effectiveness();
-/// 
+///
 /// println!("Fee Analysis:");
-/// println!("- Optimal fee range: {} - {} stroops", 
+/// println!("- Optimal fee range: {} - {} stroops",
 ///     fee_analysis.optimal_min, fee_analysis.optimal_max);
 /// println!("- Fee elasticity: {:.2}", fee_analysis.elasticity);
 /// println!("- Revenue maximizing fee: {} stroops", fee_analysis.revenue_max_fee);
-/// 
+///
 /// // Fee recommendations
 /// if fee_analysis.current_fee < fee_analysis.optimal_min {
 ///     println!("Recommendation: Increase extension fees to improve quality");
@@ -1604,15 +1604,15 @@ impl MarketExtension {
 /// ```rust
 /// # use predictify_hybrid::types::ExtensionStats;
 /// # let stats = ExtensionStats::default(); // Placeholder
-/// 
+///
 /// // Market quality impact
 /// let quality_impact = stats.assess_market_quality_impact();
-/// 
+///
 /// println!("Market Quality Impact:");
 /// println!("- Resolution accuracy improvement: {:.1}%", quality_impact.accuracy_improvement);
 /// println!("- Participation diversity increase: {:.1}%", quality_impact.diversity_increase);
 /// println!("- Stake distribution improvement: {:.1}%", quality_impact.distribution_improvement);
-/// 
+///
 /// // Long-term effects
 /// println!("\nLong-term Effects:");
 /// println!("- User retention rate: {:.1}%", quality_impact.retention_rate);
@@ -1626,10 +1626,10 @@ impl MarketExtension {
 /// ```rust
 /// # use predictify_hybrid::types::ExtensionStats;
 /// # let stats = ExtensionStats::default(); // Placeholder
-/// 
+///
 /// // Benchmark by market category
 /// let benchmarks = stats.benchmark_by_category();
-/// 
+///
 /// for (category, benchmark) in benchmarks {
 ///     println!("{} Markets:", category);
 ///     println!("  Extension rate: {:.1}%", benchmark.extension_rate);
@@ -1637,7 +1637,7 @@ impl MarketExtension {
 ///     println!("  Avg duration: {:.1} hours", benchmark.avg_duration_hours);
 ///     println!("  Participation boost: {:.1}%", benchmark.participation_boost);
 /// }
-/// 
+///
 /// // Identify best practices
 /// let best_practices = stats.identify_best_practices();
 /// println!("\nBest Practices:");
@@ -1662,7 +1662,7 @@ impl MarketExtension {
 /// ```rust
 /// # use predictify_hybrid::types::ExtensionStats;
 /// # let stats = ExtensionStats::default(); // Placeholder
-/// 
+///
 /// // Generate monthly report
 /// let monthly_report = stats.generate_monthly_report();
 /// println!("Extension Monthly Report:");
@@ -1670,7 +1670,7 @@ impl MarketExtension {
 /// println!("Approval Rate: {:.1}%", monthly_report.approval_rate);
 /// println!("Revenue Generated: {} XLM", monthly_report.revenue_xlm);
 /// println!("Participation Impact: +{:.1}%", monthly_report.participation_impact);
-/// 
+///
 /// // Export data for external analysis
 /// let csv_data = stats.export_to_csv();
 /// println!("CSV export ready: {} records", csv_data.len());
@@ -1735,7 +1735,7 @@ pub struct ExtensionStats {
 /// # use predictify_hybrid::types::{MarketCreationParams, OracleConfig, OracleProvider};
 /// # let env = Env::default();
 /// # let admin = Address::generate(&env);
-/// 
+///
 /// // Create parameters for a Bitcoin price prediction market
 /// let btc_market_params = MarketCreationParams::new(
 ///     admin.clone(),
@@ -1753,16 +1753,16 @@ pub struct ExtensionStats {
 ///     ),
 ///     5_000_000 // 5 XLM creation fee
 /// );
-/// 
+///
 /// // Validate parameters before market creation
 /// btc_market_params.validate(&env)?;
-/// 
+///
 /// // Display market information
 /// println!("Market Question: {}", btc_market_params.question);
 /// println!("Duration: {} days", btc_market_params.duration_days);
 /// println!("Creation Fee: {} stroops", btc_market_params.creation_fee);
 /// println!("Oracle Provider: {}", btc_market_params.oracle_config.provider.name());
-/// 
+///
 /// // Check if admin has sufficient balance
 /// if admin_has_sufficient_balance(&admin, btc_market_params.creation_fee) {
 ///     println!("Admin can afford market creation");
@@ -1778,7 +1778,7 @@ pub struct ExtensionStats {
 /// ```rust
 /// # use predictify_hybrid::types::MarketCreationParams;
 /// # let params = MarketCreationParams::default(); // Placeholder
-/// 
+///
 /// // Validation checks multiple aspects:
 /// let validation_result = params.validate(&soroban_sdk::Env::default());
 /// match validation_result {
@@ -1804,21 +1804,21 @@ pub struct ExtensionStats {
 /// ```rust
 /// # use soroban_sdk::{Env, String};
 /// # let env = Env::default();
-/// 
+///
 /// // Good question examples:
 /// let good_questions = vec![
 ///     "Will Bitcoin reach $100,000 by December 31, 2024?",
 ///     "Will Ethereum's price exceed $5,000 before June 1, 2024?",
 ///     "Will XLM trade above $1.00 within the next 90 days?"
 /// ];
-/// 
+///
 /// // Question validation criteria:
 /// // 1. Clear and unambiguous
 /// // 2. Specific timeframe
 /// // 3. Measurable outcome
 /// // 4. Appropriate length (10-200 characters)
 /// // 5. No offensive or inappropriate content
-/// 
+///
 /// for question in good_questions {
 ///     let question_str = String::from_str(&env, question);
 ///     if validate_question(&question_str) {
@@ -1833,13 +1833,13 @@ pub struct ExtensionStats {
 /// ```rust
 /// # use soroban_sdk::{Env, String, Vec};
 /// # let env = Env::default();
-/// 
+///
 /// // Binary outcomes (most common)
 /// let binary_outcomes = Vec::from_array(&env, [
 ///     String::from_str(&env, "yes"),
 ///     String::from_str(&env, "no")
 /// ]);
-/// 
+///
 /// // Multiple choice outcomes
 /// let multiple_outcomes = Vec::from_array(&env, [
 ///     String::from_str(&env, "under_50k"),
@@ -1847,7 +1847,7 @@ pub struct ExtensionStats {
 ///     String::from_str(&env, "75k_to_100k"),
 ///     String::from_str(&env, "over_100k")
 /// ]);
-/// 
+///
 /// // Outcome validation rules:
 /// // 1. Minimum 2 outcomes
 /// // 2. Maximum 10 outcomes
@@ -1861,7 +1861,7 @@ pub struct ExtensionStats {
 /// Market duration affects participation and resolution:
 /// ```rust
 /// # use predictify_hybrid::types::MarketCreationParams;
-/// 
+///
 /// // Duration recommendations by market type:
 /// let duration_guidelines = vec![
 ///     ("Short-term price movements", 1..=7),    // 1-7 days
@@ -1869,12 +1869,12 @@ pub struct ExtensionStats {
 ///     ("Quarterly outcomes", 30..=90),          // 1-3 months
 ///     ("Annual predictions", 90..=365),         // 3-12 months
 /// ];
-/// 
+///
 /// for (market_type, duration_range) in duration_guidelines {
-///     println!("{}: {} days", market_type, 
+///     println!("{}: {} days", market_type,
 ///         format!("{}-{}", duration_range.start(), duration_range.end()));
 /// }
-/// 
+///
 /// // Duration validation:
 /// // - Minimum: 1 day
 /// // - Maximum: 365 days (1 year)
@@ -1886,10 +1886,10 @@ pub struct ExtensionStats {
 /// Creation fees vary based on market characteristics:
 /// ```rust
 /// # use predictify_hybrid::types::MarketCreationParams;
-/// 
+///
 /// // Base fee calculation
 /// let base_fee = 1_000_000; // 1 XLM base fee
-/// 
+///
 /// // Fee modifiers based on duration
 /// let duration_multiplier = |days: u32| -> f64 {
 ///     match days {
@@ -1900,7 +1900,7 @@ pub struct ExtensionStats {
 ///         _ => 5.0,          // Invalid duration: penalty
 ///     }
 /// };
-/// 
+///
 /// // Calculate total creation fee
 /// let duration_days = 30;
 /// let total_fee = (base_fee as f64 * duration_multiplier(duration_days)) as i128;
@@ -1915,7 +1915,7 @@ pub struct ExtensionStats {
 /// # use predictify_hybrid::types::{MarketCreationParams, OracleConfig, OracleProvider};
 /// # let env = Env::default();
 /// # let admin = Address::generate(&env);
-/// 
+///
 /// // Bitcoin price threshold template
 /// let btc_template = |threshold: i128, days: u32| -> MarketCreationParams {
 ///     MarketCreationParams::new(
@@ -1935,7 +1935,7 @@ pub struct ExtensionStats {
 ///         calculate_creation_fee(days)
 ///     )
 /// };
-/// 
+///
 /// // Create BTC $100k market
 /// let btc_100k_market = btc_template(100_000_00, 90);
 /// ```
@@ -2043,7 +2043,7 @@ impl MarketCreationParams {
 /// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::types::CommunityConsensus;
 /// # let env = Env::default();
-/// 
+///
 /// // Create community consensus for a market outcome
 /// let consensus = CommunityConsensus::new(
 ///     String::from_str(&env, "yes"),
@@ -2051,13 +2051,13 @@ impl MarketCreationParams {
 ///     200, // 200 total votes
 ///     75   // 75% of votes for "yes"
 /// );
-/// 
+///
 /// // Display consensus information
 /// println!("Community Consensus:");
 /// println!("Outcome: {}", consensus.outcome);
 /// println!("Votes: {} out of {}", consensus.votes, consensus.total_votes);
 /// println!("Percentage: {}%", consensus.percentage);
-/// 
+///
 /// // Check consensus strength
 /// if consensus.is_strong_consensus() {
 ///     println!("Strong community consensus achieved");
@@ -2066,7 +2066,7 @@ impl MarketCreationParams {
 /// } else {
 ///     println!("No clear consensus - may need dispute resolution");
 /// }
-/// 
+///
 /// // Validate consensus quality
 /// consensus.validate(&env)?;
 /// # Ok::<(), predictify_hybrid::errors::Error>(())
@@ -2078,7 +2078,7 @@ impl MarketCreationParams {
 /// ```rust
 /// # use predictify_hybrid::types::CommunityConsensus;
 /// # let consensus = CommunityConsensus::default(); // Placeholder
-/// 
+///
 /// // Validation checks multiple aspects:
 /// let validation_result = consensus.validate(&soroban_sdk::Env::default());
 /// match validation_result {
@@ -2103,7 +2103,7 @@ impl MarketCreationParams {
 /// ```rust
 /// # use predictify_hybrid::types::CommunityConsensus;
 /// # let consensus = CommunityConsensus::default(); // Placeholder
-/// 
+///
 /// // Consensus strength categories
 /// let strength = match consensus.percentage {
 ///     90..=100 => "Overwhelming Consensus",
@@ -2112,9 +2112,9 @@ impl MarketCreationParams {
 ///     51..=59 => "Simple Majority",
 ///     _ => "No Consensus"
 /// };
-/// 
+///
 /// println!("Consensus Strength: {}", strength);
-/// 
+///
 /// // Participation analysis
 /// let participation_rate = consensus.calculate_participation_rate();
 /// if participation_rate >= 50 {
@@ -2132,15 +2132,15 @@ impl MarketCreationParams {
 /// ```rust
 /// # use predictify_hybrid::types::CommunityConsensus;
 /// # let consensus = CommunityConsensus::default(); // Placeholder
-/// 
+///
 /// // Stake-weighted calculation
 /// let stake_weighted_consensus = consensus.calculate_stake_weighted();
-/// 
-/// println!("Vote-based consensus: {}% for {}", 
+///
+/// println!("Vote-based consensus: {}% for {}",
 ///     consensus.percentage, consensus.outcome);
-/// println!("Stake-weighted consensus: {:.1}% for {}", 
+/// println!("Stake-weighted consensus: {:.1}% for {}",
 ///     stake_weighted_consensus.percentage, stake_weighted_consensus.outcome);
-/// 
+///
 /// // Compare vote vs stake consensus
 /// if consensus.outcome == stake_weighted_consensus.outcome {
 ///     println!("Vote and stake consensus align");
@@ -2155,15 +2155,15 @@ impl MarketCreationParams {
 /// ```rust
 /// # use predictify_hybrid::types::CommunityConsensus;
 /// # let consensus = CommunityConsensus::default(); // Placeholder
-/// 
+///
 /// // Historical consensus snapshots
 /// let consensus_history = consensus.get_historical_snapshots();
-/// 
+///
 /// for (timestamp, snapshot) in consensus_history {
-///     println!("Time {}: {}% for {}", 
+///     println!("Time {}: {}% for {}",
 ///         timestamp, snapshot.percentage, snapshot.outcome);
 /// }
-/// 
+///
 /// // Consensus stability analysis
 /// let stability = consensus.analyze_stability();
 /// if stability.is_stable {
@@ -2178,26 +2178,26 @@ impl MarketCreationParams {
 /// Handle markets with multiple possible outcomes:
 /// ```rust
 /// # use predictify_hybrid::types::CommunityConsensus;
-/// 
+///
 /// // Calculate consensus for all outcomes
 /// let all_outcomes_consensus = vec![
 ///     ("outcome_a", 45, 22), // 45% of votes, 22% of stakes
 ///     ("outcome_b", 35, 38), // 35% of votes, 38% of stakes
 ///     ("outcome_c", 20, 40), // 20% of votes, 40% of stakes
 /// ];
-/// 
+///
 /// // Determine winner by different methods
 /// let vote_winner = all_outcomes_consensus.iter()
 ///     .max_by_key(|(_, votes, _)| votes)
 ///     .map(|(outcome, _, _)| outcome);
-/// 
+///
 /// let stake_winner = all_outcomes_consensus.iter()
 ///     .max_by_key(|(_, _, stakes)| stakes)
 ///     .map(|(outcome, _, _)| outcome);
-/// 
+///
 /// println!("Vote winner: {:?}", vote_winner);
 /// println!("Stake winner: {:?}", stake_winner);
-/// 
+///
 /// // Check for conflicts
 /// if vote_winner != stake_winner {
 ///     println!("Conflict detected - may need hybrid resolution");
@@ -2210,7 +2210,7 @@ impl MarketCreationParams {
 /// ```rust
 /// # use predictify_hybrid::types::CommunityConsensus;
 /// # let consensus = CommunityConsensus::default(); // Placeholder
-/// 
+///
 /// // Use consensus for market resolution
 /// if consensus.is_reliable() {
 ///     let resolution_outcome = consensus.outcome.clone();
@@ -2232,17 +2232,17 @@ impl MarketCreationParams {
 /// ```rust
 /// # use predictify_hybrid::types::CommunityConsensus;
 /// # let consensus = CommunityConsensus::default(); // Placeholder
-/// 
+///
 /// // Quality assessment
 /// let quality_metrics = consensus.assess_quality();
-/// 
+///
 /// println!("Consensus Quality Report:");
 /// println!("- Participation Rate: {:.1}%", quality_metrics.participation_rate);
 /// println!("- Majority Strength: {:.1}%", quality_metrics.majority_strength);
 /// println!("- Stake Alignment: {:.1}%", quality_metrics.stake_alignment);
 /// println!("- Time Stability: {:.1}%", quality_metrics.time_stability);
 /// println!("- Overall Quality: {:.1}/10", quality_metrics.overall_score);
-/// 
+///
 /// // Quality-based decision making
 /// if quality_metrics.overall_score >= 8.0 {
 ///     println!("High quality consensus - safe to use for resolution");

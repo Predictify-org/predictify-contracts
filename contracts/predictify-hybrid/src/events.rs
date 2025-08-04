@@ -47,7 +47,7 @@ pub enum AdminRole {
 /// # use predictify_hybrid::events::MarketCreatedEvent;
 /// # let env = Env::default();
 /// # let admin = Address::generate(&env);
-/// 
+///
 /// // Market creation event data
 /// let event = MarketCreatedEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
@@ -61,7 +61,7 @@ pub enum AdminRole {
 ///     end_time: 1735689600, // Dec 31, 2024
 ///     timestamp: env.ledger().timestamp(),
 /// };
-/// 
+///
 /// // Event provides complete market context
 /// println!("New market: {}", event.question.to_string());
 /// println!("Market ID: {}", event.market_id.to_string());
@@ -122,7 +122,7 @@ pub struct MarketCreatedEvent {
 /// # use predictify_hybrid::events::VoteCastEvent;
 /// # let env = Env::default();
 /// # let voter = Address::generate(&env);
-/// 
+///
 /// // Vote casting event data
 /// let event = VoteCastEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
@@ -131,7 +131,7 @@ pub struct MarketCreatedEvent {
 ///     stake: 10_000_000, // 1.0 XLM
 ///     timestamp: env.ledger().timestamp(),
 /// };
-/// 
+///
 /// // Event provides complete voting context
 /// println!("Vote cast by: {}", event.voter.to_string());
 /// println!("Market: {}", event.market_id.to_string());
@@ -197,7 +197,7 @@ pub struct VoteCastEvent {
 /// # use soroban_sdk::{Env, Symbol, String};
 /// # use predictify_hybrid::events::OracleResultEvent;
 /// # let env = Env::default();
-/// 
+///
 /// // Oracle result event for Bitcoin price market
 /// let event = OracleResultEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
@@ -209,7 +209,7 @@ pub struct VoteCastEvent {
 ///     comparison: String::from_str(&env, "gte"), // greater than or equal
 ///     timestamp: env.ledger().timestamp(),
 /// };
-/// 
+///
 /// // Event provides complete oracle context
 /// println!("Oracle result: {}", event.result.to_string());
 /// println!("Price fetched: ${}", event.price / 100000000);
@@ -282,7 +282,7 @@ pub struct OracleResultEvent {
 /// # use soroban_sdk::{Env, Symbol, String};
 /// # use predictify_hybrid::events::MarketResolvedEvent;
 /// # let env = Env::default();
-/// 
+///
 /// // Market resolution event for Bitcoin price market
 /// let event = MarketResolvedEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
@@ -293,13 +293,13 @@ pub struct OracleResultEvent {
 ///     confidence_score: 95, // 95% confidence
 ///     timestamp: env.ledger().timestamp(),
 /// };
-/// 
+///
 /// // Event provides complete resolution context
 /// println!("Market resolved: {}", event.market_id.to_string());
 /// println!("Final outcome: {}", event.final_outcome.to_string());
 /// println!("Resolution method: {}", event.resolution_method.to_string());
 /// println!("Confidence: {}%", event.confidence_score);
-/// 
+///
 /// // Check consensus alignment
 /// let consensus_aligned = event.oracle_result == event.community_consensus;
 /// println!("Oracle-Community alignment: {}", consensus_aligned);
@@ -369,22 +369,22 @@ pub struct MarketResolvedEvent {
 /// # use predictify_hybrid::events::DisputeCreatedEvent;
 /// # let env = Env::default();
 /// # let disputer = Address::generate(&env);
-/// 
+///
 /// // Dispute creation event
 /// let event = DisputeCreatedEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
 ///     disputer: disputer.clone(),
 ///     stake: 50_000_000, // 5.0 XLM dispute stake
-///     reason: Some(String::from_str(&env, 
+///     reason: Some(String::from_str(&env,
 ///         "Oracle price appears incorrect - multiple exchanges show different value")),
 ///     timestamp: env.ledger().timestamp(),
 /// };
-/// 
+///
 /// // Event provides complete dispute context
 /// println!("Dispute created by: {}", event.disputer.to_string());
 /// println!("Market disputed: {}", event.market_id.to_string());
 /// println!("Stake amount: {} XLM", event.stake / 10_000_000);
-/// 
+///
 /// if let Some(reason) = &event.reason {
 ///     println!("Dispute reason: {}", reason.to_string());
 /// }
@@ -452,7 +452,7 @@ pub struct DisputeCreatedEvent {
 /// # let winner1 = Address::generate(&env);
 /// # let winner2 = Address::generate(&env);
 /// # let loser1 = Address::generate(&env);
-/// 
+///
 /// // Dispute resolution event
 /// let event = DisputeResolvedEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
@@ -462,7 +462,7 @@ pub struct DisputeCreatedEvent {
 ///     fee_distribution: 25_000_000, // 2.5 XLM distributed to winners
 ///     timestamp: env.ledger().timestamp(),
 /// };
-/// 
+///
 /// // Event provides complete resolution context
 /// println!("Dispute resolved: {}", event.market_id.to_string());
 /// println!("Outcome: {}", event.outcome.to_string());

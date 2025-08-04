@@ -33,7 +33,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 /// # let env = Env::default();
 /// # let user = Address::generate(&env);
 /// # let market_id = Symbol::new(&env, "market_123");
-/// 
+///
 /// let dispute = Dispute {
 ///     user: user.clone(),
 ///     market_id: market_id.clone(),
@@ -42,7 +42,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 ///     reason: Some(String::from_str(&env, "Oracle data appears incorrect")),
 ///     status: DisputeStatus::Active,
 /// };
-/// 
+///
 /// // Dispute is now active and awaiting community voting
 /// assert_eq!(dispute.status, DisputeStatus::Active);
 /// ```
@@ -86,15 +86,15 @@ pub struct Dispute {
 ///
 /// ```rust
 /// # use predictify_hybrid::disputes::DisputeStatus;
-/// 
+///
 /// // Check if dispute can still receive votes
 /// let status = DisputeStatus::Active;
 /// let can_vote = matches!(status, DisputeStatus::Active);
 /// assert!(can_vote);
-/// 
+///
 /// // Check if dispute is finalized
 /// let final_status = DisputeStatus::Resolved;
-/// let is_final = matches!(final_status, 
+/// let is_final = matches!(final_status,
 ///     DisputeStatus::Resolved | DisputeStatus::Rejected | DisputeStatus::Expired
 /// );
 /// assert!(is_final);
@@ -106,7 +106,7 @@ pub struct Dispute {
 /// - `Active` → `Resolved` (community upholds dispute)
 /// - `Active` → `Rejected` (community rejects dispute)
 /// - `Active` → `Expired` (insufficient voting participation)
-/// 
+///
 /// Invalid transitions:
 /// - Any final status → Any other status (disputes are immutable once resolved)
 ///
@@ -142,7 +142,7 @@ pub enum DisputeStatus {
 ///
 /// ```rust
 /// # use predictify_hybrid::disputes::DisputeStats;
-/// 
+///
 /// let stats = DisputeStats {
 ///     total_disputes: 3,
 ///     total_dispute_stakes: 50_000_000, // 5 XLM total
@@ -150,11 +150,11 @@ pub enum DisputeStatus {
 ///     resolved_disputes: 2,
 ///     unique_disputers: 3,
 /// };
-/// 
+///
 /// // Calculate average stake per dispute
 /// let avg_stake = stats.total_dispute_stakes / stats.total_disputes as i128;
 /// assert_eq!(avg_stake, 16_666_666); // ~1.67 XLM average
-/// 
+///
 /// // Check market controversy level
 /// let controversy_ratio = stats.total_disputes as f64 / 10.0; // Assume 10 total participants
 /// println!("Market controversy: {:.1}%", controversy_ratio * 100.0);
@@ -204,7 +204,7 @@ pub struct DisputeStats {
 /// # use soroban_sdk::{Env, Symbol, String};
 /// # use predictify_hybrid::disputes::DisputeResolution;
 /// # let env = Env::default();
-/// 
+///
 /// let resolution = DisputeResolution {
 ///     market_id: Symbol::new(&env, "btc_100k"),
 ///     final_outcome: String::from_str(&env, "No"),
@@ -213,10 +213,10 @@ pub struct DisputeStats {
 ///     dispute_impact: 25, // 25% change from original oracle result
 ///     resolution_timestamp: env.ledger().timestamp(),
 /// };
-/// 
+///
 /// // Verify hybrid resolution weights sum to 100%
 /// assert_eq!(resolution.oracle_weight + resolution.community_weight, 100);
-/// 
+///
 /// // Check if community significantly influenced outcome
 /// let community_influenced = resolution.dispute_impact > 20;
 /// assert!(community_influenced);
@@ -276,7 +276,7 @@ pub struct DisputeResolution {
 /// # let env = Env::default();
 /// # let voter = Address::generate(&env);
 /// # let dispute_id = Symbol::new(&env, "dispute_123");
-/// 
+///
 /// let vote = DisputeVote {
 ///     user: voter.clone(),
 ///     dispute_id: dispute_id.clone(),
@@ -285,7 +285,7 @@ pub struct DisputeResolution {
 ///     timestamp: env.ledger().timestamp(),
 ///     reason: Some(String::from_str(&env, "Oracle data contradicts reliable sources")),
 /// };
-/// 
+///
 /// // Vote supports the dispute with economic backing
 /// assert!(vote.vote);
 /// assert!(vote.stake > 0);
@@ -347,7 +347,7 @@ pub struct DisputeVote {
 /// # use soroban_sdk::{Env, Symbol};
 /// # use predictify_hybrid::disputes::{DisputeVoting, DisputeVotingStatus};
 /// # let env = Env::default();
-/// 
+///
 /// let voting = DisputeVoting {
 ///     dispute_id: Symbol::new(&env, "dispute_123"),
 ///     voting_start: env.ledger().timestamp(),
@@ -359,12 +359,12 @@ pub struct DisputeVote {
 ///     total_against_stake: 20_000_000, // 2.0 XLM
 ///     status: DisputeVotingStatus::Active,
 /// };
-/// 
+///
 /// // Calculate voting metrics
 /// let participation_rate = voting.total_votes as f64 / 100.0; // Assume 100 eligible voters
 /// let stake_ratio = voting.total_support_stake as f64 / voting.total_against_stake as f64;
-/// 
-/// println!("Participation: {:.1}%, Stake ratio: {:.2}", 
+///
+/// println!("Participation: {:.1}%, Stake ratio: {:.2}",
 ///     participation_rate * 100.0, stake_ratio);
 /// ```
 ///
@@ -420,17 +420,17 @@ pub struct DisputeVoting {
 ///
 /// ```rust
 /// # use predictify_hybrid::disputes::DisputeVotingStatus;
-/// 
+///
 /// // Check if voting is still accepting votes
 /// let status = DisputeVotingStatus::Active;
 /// let can_vote = matches!(status, DisputeVotingStatus::Active);
 /// assert!(can_vote);
-/// 
+///
 /// // Check if voting has concluded
 /// let final_status = DisputeVotingStatus::Completed;
-/// let is_concluded = matches!(final_status, 
-///     DisputeVotingStatus::Completed | 
-///     DisputeVotingStatus::Expired | 
+/// let is_concluded = matches!(final_status,
+///     DisputeVotingStatus::Completed |
+///     DisputeVotingStatus::Expired |
 ///     DisputeVotingStatus::Cancelled
 /// );
 /// assert!(is_concluded);
@@ -442,7 +442,7 @@ pub struct DisputeVoting {
 /// - `Active` → `Completed` (successful voting completion)
 /// - `Active` → `Expired` (insufficient participation)
 /// - `Active` → `Cancelled` (administrative termination)
-/// 
+///
 /// Invalid transitions:
 /// - Any final status → Any other status (voting outcomes are immutable)
 ///
@@ -482,17 +482,17 @@ pub enum DisputeVotingStatus {
 /// # use predictify_hybrid::disputes::DisputeEscalation;
 /// # let env = Env::default();
 /// # let user = Address::generate(&env);
-/// 
+///
 /// let escalation = DisputeEscalation {
 ///     dispute_id: Symbol::new(&env, "dispute_456"),
 ///     escalated_by: user.clone(),
-///     escalation_reason: String::from_str(&env, 
+///     escalation_reason: String::from_str(&env,
 ///         "Voting resulted in exact tie, need admin decision"),
 ///     escalation_timestamp: env.ledger().timestamp(),
 ///     escalation_level: 1, // Admin review
 ///     requires_admin_review: true,
 /// };
-/// 
+///
 /// // Escalation requires admin intervention
 /// assert!(escalation.requires_admin_review);
 /// assert_eq!(escalation.escalation_level, 1);
@@ -555,7 +555,7 @@ pub struct DisputeEscalation {
 /// # let mut winners = Vec::new(&env);
 /// # winners.push_back(Address::generate(&env));
 /// # winners.push_back(Address::generate(&env));
-/// 
+///
 /// let distribution = DisputeFeeDistribution {
 ///     dispute_id: Symbol::new(&env, "dispute_789"),
 ///     total_fees: 30_000_000, // 3 XLM total
@@ -565,11 +565,11 @@ pub struct DisputeEscalation {
 ///     distribution_timestamp: env.ledger().timestamp(),
 ///     fees_distributed: true,
 /// };
-/// 
+///
 /// // Calculate reward ratio
 /// let reward_ratio = distribution.loser_stake as f64 / distribution.winner_stake as f64;
 /// println!("Winners receive {:.1}% bonus", reward_ratio * 100.0);
-/// 
+///
 /// // Verify distribution completed
 /// assert!(distribution.fees_distributed);
 /// ```
@@ -639,7 +639,7 @@ pub struct DisputeFeeDistribution {
 /// # let user = Address::generate(&env);
 /// # let admin = Address::generate(&env);
 /// # let market_id = Symbol::new(&env, "market_123");
-/// 
+///
 /// // User disputes a market result
 /// let result = DisputeManager::process_dispute(
 ///     &env,
@@ -648,7 +648,7 @@ pub struct DisputeFeeDistribution {
 ///     10_000_000, // 1 XLM stake
 ///     Some(String::from_str(&env, "Oracle data appears incorrect"))
 /// );
-/// 
+///
 /// // Admin resolves the dispute after community voting
 /// let resolution = DisputeManager::resolve_dispute(
 ///     &env,
@@ -704,17 +704,17 @@ impl DisputeManager {
     /// # let env = Env::default();
     /// # let user = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "btc_price_market");
-    /// 
+    ///
     /// // User disputes oracle result with reasoning
     /// let result = DisputeManager::process_dispute(
     ///     &env,
     ///     user.clone(),
     ///     market_id.clone(),
     ///     15_000_000, // 1.5 XLM stake
-    ///     Some(String::from_str(&env, 
+    ///     Some(String::from_str(&env,
     ///         "Oracle price differs significantly from major exchanges"))
     /// );
-    /// 
+    ///
     /// match result {
     ///     Ok(()) => println!("Dispute successfully created"),
     ///     Err(e) => println!("Dispute failed: {:?}", e),
@@ -815,20 +815,20 @@ impl DisputeManager {
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "disputed_market");
-    /// 
+    ///
     /// // Admin resolves dispute after voting period
     /// let resolution = DisputeManager::resolve_dispute(
     ///     &env,
     ///     market_id.clone(),
     ///     admin.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// // Check resolution details
     /// println!("Final outcome: {}", resolution.final_outcome.to_string());
     /// println!("Oracle weight: {}%", resolution.oracle_weight);
     /// println!("Community weight: {}%", resolution.community_weight);
     /// println!("Dispute impact: {}%", resolution.dispute_impact);
-    /// 
+    ///
     /// // Verify weights sum to 100%
     /// assert_eq!(resolution.oracle_weight + resolution.community_weight, 100);
     /// ```
@@ -930,21 +930,21 @@ impl DisputeManager {
     /// # use predictify_hybrid::disputes::DisputeManager;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "analyzed_market");
-    /// 
+    ///
     /// // Get dispute statistics for analysis
     /// let stats = DisputeManager::get_dispute_stats(&env, market_id).unwrap();
-    /// 
+    ///
     /// // Analyze dispute activity
     /// println!("Total disputes: {}", stats.total_disputes);
     /// println!("Total stakes: {} XLM", stats.total_dispute_stakes / 10_000_000);
     /// println!("Unique disputers: {}", stats.unique_disputers);
-    /// 
+    ///
     /// // Calculate engagement metrics
     /// let avg_stake = if stats.total_disputes > 0 {
     ///     stats.total_dispute_stakes / stats.total_disputes as i128
     /// } else { 0 };
     /// println!("Average stake per dispute: {} XLM", avg_stake / 10_000_000);
-    /// 
+    ///
     /// // Check market controversy level
     /// let controversy_ratio = stats.total_disputes as f64 / 100.0; // Assume 100 participants
     /// if controversy_ratio > 0.1 {
@@ -996,10 +996,10 @@ impl DisputeManager {
     /// # use predictify_hybrid::disputes::{DisputeManager, DisputeStatus};
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "disputed_market");
-    /// 
+    ///
     /// // Get all disputes for detailed analysis
     /// let disputes = DisputeManager::get_market_disputes(&env, market_id).unwrap();
-    /// 
+    ///
     /// // Analyze dispute patterns
     /// for dispute in disputes.iter() {
     ///     println!("Dispute by: {}", dispute.user.to_string());
@@ -1010,12 +1010,12 @@ impl DisputeManager {
     ///         println!("Reason: {}", reason.to_string());
     ///     }
     /// }
-    /// 
+    ///
     /// // Filter by status
     /// let active_disputes: Vec<_> = disputes.iter()
     ///     .filter(|d| matches!(d.status, DisputeStatus::Active))
     ///     .collect();
-    /// 
+    ///
     /// println!("Active disputes: {}", active_disputes.len());
     /// ```
     ///
@@ -1067,14 +1067,14 @@ impl DisputeManager {
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "market_123");
     /// # let user = Address::generate(&env);
-    /// 
+    ///
     /// // Check if user can dispute (hasn't disputed before)
     /// let has_disputed = DisputeManager::has_user_disputed(
-    ///     &env, 
-    ///     market_id.clone(), 
+    ///     &env,
+    ///     market_id.clone(),
     ///     user.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// if has_disputed {
     ///     println!("User has already disputed this market");
     ///     // Show dispute status instead of dispute option
@@ -1082,7 +1082,7 @@ impl DisputeManager {
     ///     println!("User can dispute this market");
     ///     // Show dispute creation interface
     /// }
-    /// 
+    ///
     /// // Validation before allowing dispute creation
     /// if !has_disputed {
     ///     // Proceed with dispute creation logic
@@ -1134,14 +1134,14 @@ impl DisputeManager {
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "staked_market");
     /// # let user = Address::generate(&env);
-    /// 
+    ///
     /// // Get user's dispute stake
     /// let stake = DisputeManager::get_user_dispute_stake(
     ///     &env,
     ///     market_id.clone(),
     ///     user.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// if stake > 0 {
     ///     println!("User has {} XLM staked in disputes", stake / 10_000_000);
     ///     
@@ -1212,7 +1212,7 @@ impl DisputeManager {
     /// # let voter = Address::generate(&env);
     /// # let market_id = Symbol::new(&env, "disputed_market");
     /// # let dispute_id = Symbol::new(&env, "dispute_456");
-    /// 
+    ///
     /// // Vote to support the dispute
     /// let result = DisputeManager::vote_on_dispute(
     ///     &env,
@@ -1223,12 +1223,12 @@ impl DisputeManager {
     ///     5_000_000, // 0.5 XLM voting power
     ///     Some(String::from_str(&env, "Oracle data contradicts multiple sources"))
     /// );
-    /// 
+    ///
     /// match result {
     ///     Ok(()) => println!("Vote successfully recorded"),
     ///     Err(e) => println!("Vote failed: {:?}", e),
     /// }
-    /// 
+    ///
     /// // Vote to reject the dispute
     /// let other_voter = Address::generate(&env);
     /// let reject_result = DisputeManager::vote_on_dispute(
@@ -1338,13 +1338,13 @@ impl DisputeManager {
     /// # use predictify_hybrid::disputes::DisputeManager;
     /// # let env = Env::default();
     /// # let dispute_id = Symbol::new(&env, "completed_dispute");
-    /// 
+    ///
     /// // Calculate outcome after voting period ends
     /// let outcome = DisputeManager::calculate_dispute_outcome(
-    ///     &env, 
+    ///     &env,
     ///     dispute_id.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// if outcome {
     ///     println!("Dispute upheld - oracle result overturned");
     ///     // Community believes oracle was incorrect
@@ -1414,25 +1414,25 @@ impl DisputeManager {
     /// # use predictify_hybrid::disputes::DisputeManager;
     /// # let env = Env::default();
     /// # let dispute_id = Symbol::new(&env, "resolved_dispute");
-    /// 
+    ///
     /// // Distribute fees after dispute resolution
     /// let distribution = DisputeManager::distribute_dispute_fees(
     ///     &env,
     ///     dispute_id.clone()
     /// ).unwrap();
-    /// 
+    ///
     /// // Check distribution results
-    /// println!("Total fees distributed: {} XLM", 
+    /// println!("Total fees distributed: {} XLM",
     ///     distribution.total_fees / 10_000_000);
-    /// println!("Winners: {} addresses", 
+    /// println!("Winners: {} addresses",
     ///     distribution.winner_addresses.len());
-    /// println!("Winner stake: {} XLM", 
+    /// println!("Winner stake: {} XLM",
     ///     distribution.winner_stake / 10_000_000);
-    /// println!("Loser stake (rewards): {} XLM", 
+    /// println!("Loser stake (rewards): {} XLM",
     ///     distribution.loser_stake / 10_000_000);
-    /// 
+    ///
     /// // Calculate reward ratio
-    /// let reward_ratio = distribution.loser_stake as f64 / 
+    /// let reward_ratio = distribution.loser_stake as f64 /
     ///     distribution.winner_stake as f64;
     /// println!("Winners receive {:.1}% bonus", reward_ratio * 100.0);
     /// ```
@@ -1515,16 +1515,16 @@ impl DisputeManager {
     /// # let env = Env::default();
     /// # let user = Address::generate(&env);
     /// # let dispute_id = Symbol::new(&env, "tied_dispute");
-    /// 
+    ///
     /// // Escalate a dispute with exact vote tie
     /// let escalation = DisputeManager::escalate_dispute(
     ///     &env,
     ///     user.clone(),
     ///     dispute_id.clone(),
-    ///     String::from_str(&env, 
+    ///     String::from_str(&env,
     ///         "Voting resulted in exact tie with equal stakes on both sides")
     /// ).unwrap();
-    /// 
+    ///
     /// // Check escalation details
     /// println!("Escalated by: {}", escalation.escalated_by.to_string());
     /// println!("Escalation level: {}", escalation.escalation_level);
