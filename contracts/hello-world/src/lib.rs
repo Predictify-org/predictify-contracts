@@ -29,11 +29,11 @@ use soroban_sdk::{contract, contractimpl, vec, Env, String, Vec};
 /// # let env = Env::default();
 /// # let contract_id = env.register(Contract, ());
 /// # let client = hello_world::ContractClient::new(&env, &contract_id);
-/// 
+///
 /// // Call the hello function
 /// let name = String::from_str(&env, "World");
 /// let greeting = client.hello(&name);
-/// 
+///
 /// // greeting will be ["Hello", "World"]
 /// assert_eq!(greeting.len(), 2);
 /// ```
@@ -98,22 +98,22 @@ impl Contract {
     /// # let env = Env::default();
     /// # let contract_id = env.register(Contract, ());
     /// # let client = hello_world::ContractClient::new(&env, &contract_id);
-    /// 
+    ///
     /// // Basic greeting
     /// let name = String::from_str(&env, "Alice");
     /// let result = client.hello(&name);
-    /// 
+    ///
     /// // Verify the result
     /// assert_eq!(result, vec![
     ///     &env,
     ///     String::from_str(&env, "Hello"),
     ///     String::from_str(&env, "Alice")
     /// ]);
-    /// 
+    ///
     /// // Different names produce different greetings
     /// let dev_greeting = client.hello(&String::from_str(&env, "Developer"));
     /// let world_greeting = client.hello(&String::from_str(&env, "World"));
-    /// 
+    ///
     /// // Both contain "Hello" as the first element
     /// assert_eq!(dev_greeting.get(0).unwrap(), String::from_str(&env, "Hello"));
     /// assert_eq!(world_greeting.get(0).unwrap(), String::from_str(&env, "Hello"));
