@@ -488,7 +488,6 @@ impl OracleConfig {
     /// Validate the oracle configuration
 
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
-
         // Validate threshold
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
@@ -736,7 +735,6 @@ pub struct Market {
 
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
-
 }
 
 impl Market {
@@ -769,7 +767,6 @@ impl Market {
             total_extension_days: 0,
             max_extension_days: 30, // Default maximum extension days
             extension_history: Vec::new(env),
-
         }
     }
 
@@ -1000,7 +997,6 @@ pub enum ReflectorAsset {
     /// Other asset identified by symbol
     Other(Symbol),
 }
-
 
 /// Comprehensive price data structure from Reflector Oracle.
 ///
@@ -1997,7 +1993,6 @@ impl MarketCreationParams {
     }
 }
 
-
 // ===== ADDITIONAL TYPES =====
 
 /// Community consensus data structure for tracking collective market resolution.
@@ -2282,5 +2277,4 @@ pub struct CommunityConsensus {
     pub total_votes: u32,
     /// Percentage of votes for this outcome
     pub percentage: i128,
-
 }
