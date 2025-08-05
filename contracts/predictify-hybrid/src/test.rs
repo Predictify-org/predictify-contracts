@@ -18,7 +18,6 @@
 
 use super::*;
 
-
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::{self, StellarAssetClient},
@@ -103,7 +102,7 @@ impl PredictifyTest {
         }
     }
 
-    pub fn create_test_market(&self) {
+    pub fn create_test_market(&self) -> Symbol {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
 
         // Create market outcomes
@@ -126,7 +125,7 @@ impl PredictifyTest {
                 threshold: 2500000,
                 comparison: String::from_str(&self.env, "gt"),
             },
-        );
+        )
     }
 }
 
@@ -142,10 +141,8 @@ fn test_create_market_successful() {
         String::from_str(&test.env, "no"),
     ];
 
-
-    //Create market
-
-    client.create_market(
+    // Create market
+    let market_id = client.create_market(
         &test.admin,
         &String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"),
         &outcomes,
@@ -162,7 +159,7 @@ fn test_create_market_successful() {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
 
@@ -251,15 +248,13 @@ fn test_create_market_with_empty_question() {
 #[test]
 fn test_successful_vote() {
     let test = PredictifyTest::setup();
-    test.create_test_market();
+    let market_id = test.create_test_market();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-
-
 
     test.env.mock_all_auths();
     client.vote(
         &test.user,
-        &test.market_id,
+        &market_id,
         &String::from_str(&test.env, "yes"),
         &1_0000000,
     );
@@ -268,7 +263,7 @@ fn test_successful_vote() {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
 
@@ -280,17 +275,15 @@ fn test_successful_vote() {
 #[should_panic(expected = "Error(Contract, #102)")] // MarketClosed = 102
 fn test_vote_on_closed_market() {
     let test = PredictifyTest::setup();
-    test.create_test_market();
+    let market_id = test.create_test_market();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-
     // Get market end time and advance past it
-
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
 
@@ -308,7 +301,7 @@ fn test_vote_on_closed_market() {
     test.env.mock_all_auths();
     client.vote(
         &test.user,
-        &test.market_id,
+        &market_id,
         &String::from_str(&test.env, "yes"),
         &1_0000000,
     );
@@ -318,15 +311,13 @@ fn test_vote_on_closed_market() {
 #[should_panic(expected = "Error(Contract, #108)")] // InvalidOutcome = 108
 fn test_vote_with_invalid_outcome() {
     let test = PredictifyTest::setup();
-    test.create_test_market();
+    let market_id = test.create_test_market();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-
-
 
     test.env.mock_all_auths();
     client.vote(
         &test.user,
-        &test.market_id,
+        &market_id,
         &String::from_str(&test.env, "invalid"),
         &1_0000000,
     );
@@ -373,14 +364,14 @@ fn test_authentication_required() {
 #[test]
 fn test_fee_calculation() {
     let test = PredictifyTest::setup();
-    test.create_test_market();
+    let market_id = test.create_test_market();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     // Vote to create some staked amount
     test.env.mock_all_auths();
     client.vote(
         &test.user,
-        &test.market_id,
+        &market_id,
         &String::from_str(&test.env, "yes"),
         &100_0000000, // 100 XLM
     );
@@ -389,7 +380,7 @@ fn test_fee_calculation() {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
 
@@ -401,11 +392,11 @@ fn test_fee_calculation() {
 #[test]
 fn test_fee_validation() {
     let _test = PredictifyTest::setup();
-    
+
     // Test valid fee amount
     let valid_fee = 1_0000000; // 1 XLM
     assert!(valid_fee >= 1_000_000); // MIN_FEE_AMOUNT
-    
+
     // Test invalid fee amounts would be caught by validation
     let too_small_fee = 500_000; // 0.5 XLM
     assert!(too_small_fee < 1_000_000); // Below MIN_FEE_AMOUNT
@@ -448,7 +439,7 @@ fn test_question_length_validation() {
     // Test maximum question length (should not exceed 500 characters)
     let long_question = "a".repeat(501);
     let _long_question_str = String::from_str(&test.env, &long_question);
-    
+
     // This should be handled by validation in the actual implementation
     // For now, we test that the constant is properly defined
     assert_eq!(crate::config::MAX_QUESTION_LENGTH, 500);
@@ -457,10 +448,10 @@ fn test_question_length_validation() {
 #[test]
 fn test_outcome_validation() {
     let _test = PredictifyTest::setup();
-    
+
     // Test outcome length limits
     assert_eq!(crate::config::MAX_OUTCOME_LENGTH, 100);
-    
+
     // Test minimum and maximum outcomes
     assert_eq!(crate::config::MIN_MARKET_OUTCOMES, 2);
     assert_eq!(crate::config::MAX_MARKET_OUTCOMES, 10);
@@ -473,7 +464,7 @@ fn test_outcome_validation() {
 fn test_percentage_calculations() {
     // Test percentage denominator
     assert_eq!(crate::config::PERCENTAGE_DENOMINATOR, 100);
-    
+
     // Test percentage calculation logic
     let total = 1000_0000000; // 1000 XLM
     let percentage = 2; // 2%
@@ -484,22 +475,22 @@ fn test_percentage_calculations() {
 #[test]
 fn test_time_calculations() {
     let test = PredictifyTest::setup();
-    
+
     // Test duration calculations
     let current_time = test.env.ledger().timestamp();
     let duration_days = 30;
     let expected_end_time = current_time + (duration_days as u64 * 24 * 60 * 60);
-    
+
     // Verify the calculation matches what's used in market creation
-    test.create_test_market();
+    let market_id = test.create_test_market();
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
-    
+
     assert_eq!(market.end_time, expected_end_time);
 }
 
@@ -509,16 +500,16 @@ fn test_time_calculations() {
 #[test]
 fn test_market_creation_data() {
     let test = PredictifyTest::setup();
-    test.create_test_market();
-    
+    let market_id = test.create_test_market();
+
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
-    
+
     // Verify market creation data is properly stored
     assert!(!market.question.is_empty());
     assert_eq!(market.outcomes.len(), 2);
@@ -529,13 +520,13 @@ fn test_market_creation_data() {
 #[test]
 fn test_voting_data_integrity() {
     let test = PredictifyTest::setup();
-    test.create_test_market();
+    let market_id = test.create_test_market();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     test.env.mock_all_auths();
     client.vote(
         &test.user,
-        &test.market_id,
+        &market_id,
         &String::from_str(&test.env, "yes"),
         &1_0000000,
     );
@@ -544,7 +535,7 @@ fn test_voting_data_integrity() {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
 
@@ -552,7 +543,7 @@ fn test_voting_data_integrity() {
     assert!(market.votes.contains_key(test.user.clone()));
     let user_vote = market.votes.get(test.user.clone()).unwrap();
     assert_eq!(user_vote, String::from_str(&test.env, "yes"));
-    
+
     assert!(market.stakes.contains_key(test.user.clone()));
     let user_stake = market.stakes.get(test.user.clone()).unwrap();
     assert_eq!(user_stake, 1_0000000);
@@ -565,21 +556,27 @@ fn test_voting_data_integrity() {
 #[test]
 fn test_oracle_configuration() {
     let test = PredictifyTest::setup();
-    test.create_test_market();
-    
+    let market_id = test.create_test_market();
+
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
             .persistent()
-            .get::<Symbol, Market>(&test.market_id)
+            .get::<Symbol, Market>(&market_id)
             .unwrap()
     });
-    
+
     // Verify oracle configuration is properly stored
     assert_eq!(market.oracle_config.provider, OracleProvider::Reflector);
-    assert_eq!(market.oracle_config.feed_id, String::from_str(&test.env, "BTC"));
+    assert_eq!(
+        market.oracle_config.feed_id,
+        String::from_str(&test.env, "BTC")
+    );
     assert_eq!(market.oracle_config.threshold, 2500000);
-    assert_eq!(market.oracle_config.comparison, String::from_str(&test.env, "gt"));
+    assert_eq!(
+        market.oracle_config.comparison,
+        String::from_str(&test.env, "gt")
+    );
 }
 
 #[test]
@@ -589,9 +586,8 @@ fn test_oracle_provider_types() {
     let _reflector = OracleProvider::Reflector;
     let _band = OracleProvider::BandProtocol;
     let _dia = OracleProvider::DIA;
-    
+
     // Test oracle provider comparison
     assert_ne!(OracleProvider::Pyth, OracleProvider::Reflector);
     assert_eq!(OracleProvider::Pyth, OracleProvider::Pyth);
 }
-

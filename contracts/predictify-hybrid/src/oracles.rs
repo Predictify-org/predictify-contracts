@@ -17,7 +17,77 @@ use crate::types::*;
 
 // ===== ORACLE INTERFACE =====
 
-/// Standard interface for all oracle implementations
+/// Standard interface defining the contract for all oracle implementations.
+///
+/// This trait establishes a unified API for interacting with different oracle providers,
+/// enabling seamless switching between oracle sources and consistent behavior across
+/// the platform. All oracle implementations must conform to this interface.
+///
+/// # Design Philosophy
+///
+/// The interface follows these principles:
+/// - **Provider Agnostic**: Works with any oracle provider (Pyth, Reflector, etc.)
+/// - **Consistent API**: Uniform method signatures across all implementations
+/// - **Error Handling**: Standardized error types for predictable behavior
+/// - **Health Monitoring**: Built-in oracle health and availability checking
+///
+/// # Supported Operations
+///
+/// All oracle implementations must support:
+/// - **Price Retrieval**: Get current prices for specified asset feeds
+/// - **Provider Identification**: Return the oracle provider type
+/// - **Contract Access**: Provide oracle contract address information
+/// - **Health Checking**: Verify oracle availability and operational status
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String};
+/// # use predictify_hybrid::oracles::{OracleInterface, ReflectorOracle};
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+/// # let oracle_address = soroban_sdk::Address::generate(&env);
+///
+/// // Create oracle instance
+/// let oracle = ReflectorOracle::new(oracle_address);
+///
+/// // Check oracle health before use
+/// if oracle.is_healthy(&env).unwrap_or(false) {
+///     // Get price for BTC/USD feed
+///     let btc_price = oracle.get_price(
+///         &env,
+///         &String::from_str(&env, "BTC/USD")
+///     );
+///     
+///     match btc_price {
+///         Ok(price) => println!("BTC price: ${}", price / 100),
+///         Err(e) => println!("Failed to get price: {:?}", e),
+///     }
+///     
+///     // Verify provider type
+///     assert_eq!(oracle.provider(), OracleProvider::Reflector);
+/// } else {
+///     println!("Oracle is not healthy, using fallback");
+/// }
+/// ```
+///
+/// # Implementation Requirements
+///
+/// Oracle implementations must:
+/// - Handle network failures gracefully with appropriate error codes
+/// - Validate feed IDs and return meaningful errors for invalid feeds
+/// - Implement proper authentication and authorization where required
+/// - Provide accurate health status based on actual oracle availability
+/// - Return prices in consistent units (typically with 8 decimal precision)
+///
+/// # Error Handling
+///
+/// Common error scenarios:
+/// - **Network Issues**: Oracle service unavailable or unreachable
+/// - **Invalid Feeds**: Requested feed ID not supported by oracle
+/// - **Authentication**: Oracle requires authentication that failed
+/// - **Rate Limiting**: Too many requests to oracle service
+/// - **Data Quality**: Oracle returned invalid or stale price data
 pub trait OracleInterface {
     /// Get the current price for a given feed ID
     fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
@@ -34,22 +104,165 @@ pub trait OracleInterface {
 
 // ===== PYTH ORACLE IMPLEMENTATION =====
 
-/// Pyth Network oracle implementation
+/// Pyth Network oracle implementation for future Stellar blockchain support.
 ///
-/// **Important**: Pyth Network does not currently support Stellar blockchain.
-/// This implementation is designed to be future-proof and follows Rust best practices.
-/// When Pyth becomes available on Stellar, this implementation can be easily updated
-/// to use the actual Pyth price feeds.
+/// **Current Status**: Pyth Network does not currently support Stellar blockchain.
+/// This implementation is designed to be future-proof and follows Rust best practices
+/// for when Pyth becomes available on Stellar.
 ///
-/// For now, this implementation returns appropriate errors to indicate that Pyth
-/// is not available on Stellar.
+/// # Implementation Strategy
+///
+/// This oracle implementation:
+/// - **Future-Ready**: Designed for easy integration when Pyth supports Stellar
+/// - **Error Handling**: Returns appropriate errors indicating unavailability
+/// - **Configuration Support**: Maintains feed configurations for future use
+/// - **Standard Interface**: Implements OracleInterface for consistency
+///
+/// # Pyth Network Overview
+///
+/// Pyth Network is a high-frequency, cross-chain oracle network that provides
+/// real-time financial market data. Key features include:
+/// - **High Frequency**: Sub-second price updates
+/// - **Institutional Grade**: Data from major trading firms and exchanges
+/// - **Cross-Chain**: Supports multiple blockchain networks
+/// - **Decentralized**: Distributed network of data providers
+///
+/// # Example Usage (Future)
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, Vec};
+/// # use predictify_hybrid::oracles::{PythOracle, PythFeedConfig, OracleInterface};
+/// # let env = Env::default();
+/// # let contract_id = Address::generate(&env);
+///
+/// // Create Pyth oracle with feed configurations
+/// let mut oracle = PythOracle::new(contract_id.clone());
+///
+/// // Add BTC/USD feed configuration
+/// oracle.add_feed_config(PythFeedConfig {
+///     feed_id: String::from_str(&env, "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"),
+///     asset_symbol: String::from_str(&env, "BTC/USD"),
+///     decimals: 8,
+///     is_active: true,
+/// });
+///
+/// // Currently returns error (Pyth not available on Stellar)
+/// let price_result = oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
+/// assert!(price_result.is_err());
+///
+/// // Check oracle provider
+/// assert_eq!(oracle.provider(), OracleProvider::Pyth);
+///
+/// // Validate feed configurations
+/// assert_eq!(oracle.get_feed_count(), 1);
+/// assert!(oracle.is_feed_active(&String::from_str(&env, "BTC/USD")));
+/// ```
+///
+/// # Feed Configuration
+///
+/// Pyth feeds are identified by:
+/// - **Feed ID**: Unique 64-character hexadecimal identifier
+/// - **Asset Symbol**: Human-readable symbol (e.g., "BTC/USD")
+/// - **Decimals**: Price precision (typically 8 for crypto)
+/// - **Active Status**: Whether the feed is currently active
+///
+/// # Migration Path
+///
+/// When Pyth becomes available on Stellar:
+/// 1. **Update Dependencies**: Add Pyth Stellar SDK
+/// 2. **Implement get_price()**: Replace error with actual Pyth price fetching
+/// 3. **Add Authentication**: Implement any required Pyth authentication
+/// 4. **Update Health Check**: Connect to actual Pyth network status
+/// 5. **Test Integration**: Comprehensive testing with live Pyth feeds
+///
+/// # Current Limitations
+///
+/// - All price requests return `Error::OracleNotAvailable`
+/// - Health checks always return `false`
+/// - No actual network connectivity to Pyth services
+/// - Feed configurations are stored but not used for price fetching
 #[derive(Debug, Clone)]
 pub struct PythOracle {
     contract_id: Address,
     feed_configurations: Vec<PythFeedConfig>,
 }
 
-/// Pyth feed configuration
+/// Configuration structure for Pyth Network price feeds.
+///
+/// This structure defines the parameters needed to configure and manage
+/// individual price feeds from the Pyth Network. Each feed represents
+/// a specific asset pair with its own unique identifier and characteristics.
+///
+/// # Feed Identification
+///
+/// Pyth feeds use:
+/// - **Unique Feed IDs**: 64-character hexadecimal identifiers
+/// - **Asset Symbols**: Human-readable trading pair names
+/// - **Precision Settings**: Decimal places for price representation
+/// - **Status Flags**: Active/inactive feed management
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String};
+/// # use predictify_hybrid::oracles::PythFeedConfig;
+/// # let env = Env::default();
+///
+/// // Configure BTC/USD feed
+/// let btc_config = PythFeedConfig {
+///     feed_id: String::from_str(&env,
+///         "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"),
+///     asset_symbol: String::from_str(&env, "BTC/USD"),
+///     decimals: 8, // 8 decimal places for crypto prices
+///     is_active: true,
+/// };
+///
+/// // Configure ETH/USD feed
+/// let eth_config = PythFeedConfig {
+///     feed_id: String::from_str(&env,
+///         "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"),
+///     asset_symbol: String::from_str(&env, "ETH/USD"),
+///     decimals: 8,
+///     is_active: true,
+/// };
+///
+/// // Configure stock feed with different precision
+/// let aapl_config = PythFeedConfig {
+///     feed_id: String::from_str(&env,
+///         "0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688"),
+///     asset_symbol: String::from_str(&env, "AAPL/USD"),
+///     decimals: 2, // 2 decimal places for stock prices
+///     is_active: true,
+/// };
+///
+/// println!("Configured {} with {} decimals",
+///     btc_config.asset_symbol.to_string(),
+///     btc_config.decimals);
+/// ```
+///
+/// # Feed ID Format
+///
+/// Pyth feed IDs are:
+/// - **64 characters long**: Hexadecimal representation
+/// - **Globally unique**: Each feed has a unique identifier across all assets
+/// - **Immutable**: Feed IDs don't change once assigned
+/// - **Network specific**: Different IDs for different blockchain networks
+///
+/// # Decimal Precision
+///
+/// Common decimal configurations:
+/// - **Crypto pairs**: 8 decimals (e.g., BTC/USD: $45,123.45678901)
+/// - **Forex pairs**: 6 decimals (e.g., EUR/USD: 1.123456)
+/// - **Stock prices**: 2 decimals (e.g., AAPL: $150.25)
+/// - **Commodities**: Variable based on asset type
+///
+/// # Feed Management
+///
+/// Feed configurations support:
+/// - **Dynamic activation**: Enable/disable feeds without removing configuration
+/// - **Batch operations**: Configure multiple feeds simultaneously
+/// - **Validation**: Ensure feed IDs and symbols are properly formatted
+/// - **Asset discovery**: List all configured assets and their symbols
 #[contracttype]
 #[derive(Debug, Clone)]
 pub struct PythFeedConfig {
@@ -296,10 +509,87 @@ impl OracleInterface for PythOracle {
 
 // ===== REFLECTOR ORACLE CLIENT =====
 
-/// Client for interacting with Reflector oracle contract
+/// Client for interacting with Reflector oracle contract on Stellar Network.
 ///
-/// Reflector is the primary oracle provider for the Stellar Network,
-/// providing real-time price feeds with high reliability and security.
+/// Reflector is the primary oracle provider for the Stellar Network, offering
+/// institutional-grade price feeds with high reliability, security, and native
+/// integration with the Stellar ecosystem. This client provides a convenient
+/// interface for accessing Reflector's price data and oracle services.
+///
+/// # Reflector Network Overview
+///
+/// Reflector provides:
+/// - **Real-time Price Feeds**: Live market data for major cryptocurrencies
+/// - **TWAP Calculations**: Time-weighted average prices for volatility smoothing
+/// - **High Availability**: Enterprise-grade uptime and reliability
+/// - **Stellar Native**: Built specifically for Stellar blockchain
+/// - **Multiple Assets**: Support for BTC, ETH, XLM, and other major cryptocurrencies
+///
+/// # Supported Operations
+///
+/// The client supports:
+/// - **Latest Price**: Get the most recent price for any supported asset
+/// - **Historical Price**: Retrieve price data at specific timestamps
+/// - **TWAP**: Calculate time-weighted average prices over specified periods
+/// - **Health Monitoring**: Check oracle availability and responsiveness
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::oracles::ReflectorOracleClient;
+/// # use predictify_hybrid::types::ReflectorAsset;
+/// # let env = Env::default();
+/// # let oracle_address = Address::generate(&env);
+///
+/// // Create Reflector oracle client
+/// let client = ReflectorOracleClient::new(&env, oracle_address);
+///
+/// // Check oracle health before use
+/// if client.is_healthy() {
+///     // Get latest BTC price
+///     if let Some(btc_data) = client.lastprice(ReflectorAsset::BTC) {
+///         println!("BTC price: ${}", btc_data.price / 100);
+///         println!("Last updated: {}", btc_data.timestamp);
+///     }
+///     
+///     // Get TWAP for ETH over last 10 records
+///     if let Some(eth_twap) = client.twap(ReflectorAsset::ETH, 10) {
+///         println!("ETH TWAP: ${}", eth_twap / 100);
+///     }
+///     
+///     // Get historical price at specific timestamp
+///     let timestamp = env.ledger().timestamp() - 3600; // 1 hour ago
+///     if let Some(historical) = client.price(ReflectorAsset::XLM, timestamp) {
+///         println!("XLM price 1h ago: ${}", historical.price / 100);
+///     }
+/// } else {
+///     println!("Reflector oracle is not responding");
+/// }
+/// ```
+///
+/// # Asset Support
+///
+/// Reflector supports major cryptocurrencies including:
+/// - **BTC**: Bitcoin price feeds
+/// - **ETH**: Ethereum price feeds  
+/// - **XLM**: Stellar Lumens (native asset)
+/// - **Other**: Custom assets via symbol specification
+///
+/// # Error Handling
+///
+/// The client handles various scenarios:
+/// - **Network Issues**: Returns None when oracle is unreachable
+/// - **Invalid Assets**: Returns None for unsupported asset types
+/// - **Stale Data**: Provides timestamp information for data freshness validation
+/// - **Service Downtime**: Health check indicates oracle availability
+///
+/// # Performance Considerations
+///
+/// - **Caching**: Consider caching price data to reduce oracle calls
+/// - **Batch Requests**: Group multiple price requests when possible
+/// - **Fallback Strategy**: Implement fallback mechanisms for oracle downtime
+/// - **Rate Limiting**: Respect oracle rate limits to avoid service disruption
 pub struct ReflectorOracleClient<'a> {
     env: &'a Env,
     contract_id: Address,
@@ -350,13 +640,114 @@ impl<'a> ReflectorOracleClient<'a> {
 
 // ===== REFLECTOR ORACLE IMPLEMENTATION =====
 
-/// Reflector oracle implementation for Stellar Network
+/// Reflector oracle implementation for Stellar Network integration.
 ///
-/// This is the primary oracle provider for Stellar, offering:
-/// - Real-time price feeds for major cryptocurrencies
-/// - TWAP (Time-Weighted Average Price) calculations
-/// - High reliability and uptime
-/// - Native integration with Stellar ecosystem
+/// This is the primary and recommended oracle provider for Stellar blockchain,
+/// offering enterprise-grade price feeds with native Stellar integration.
+/// The implementation provides a standardized interface for accessing Reflector's
+/// comprehensive oracle services.
+///
+/// # Key Features
+///
+/// Reflector oracle provides:
+/// - **Real-time Price Feeds**: Live market data with sub-second updates
+/// - **TWAP Calculations**: Time-weighted average prices for volatility smoothing
+/// - **High Reliability**: Enterprise-grade uptime and service availability
+/// - **Stellar Native**: Built specifically for Stellar blockchain ecosystem
+/// - **Multi-Asset Support**: BTC, ETH, XLM, and other major cryptocurrencies
+/// - **Historical Data**: Access to historical price information
+///
+/// # Implementation Strategy
+///
+/// This oracle implementation:
+/// - **Production Ready**: Fully functional with live Reflector network
+/// - **Error Resilient**: Comprehensive error handling for network issues
+/// - **Feed Validation**: Validates feed IDs and asset symbols
+/// - **Health Monitoring**: Real-time oracle availability checking
+/// - **Standard Interface**: Implements OracleInterface for consistency
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String};
+/// # use predictify_hybrid::oracles::{ReflectorOracle, OracleInterface};
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+/// # let oracle_address = Address::generate(&env);
+///
+/// // Create Reflector oracle instance
+/// let oracle = ReflectorOracle::new(oracle_address.clone());
+///
+/// // Verify oracle provider type
+/// assert_eq!(oracle.provider(), OracleProvider::Reflector);
+/// assert_eq!(oracle.contract_id(), oracle_address);
+///
+/// // Check oracle health before use
+/// if oracle.is_healthy(&env).unwrap_or(false) {
+///     // Get BTC price
+///     let btc_price = oracle.get_price(
+///         &env,
+///         &String::from_str(&env, "BTC/USD")
+///     );
+///     
+///     match btc_price {
+///         Ok(price) => {
+///             println!("BTC price: ${}", price / 100);
+///             
+///             // Use price for market resolution
+///             let threshold = 50_000_00; // $50,000
+///             if price > threshold {
+///                 println!("BTC is above $50k threshold");
+///             }
+///         },
+///         Err(e) => println!("Failed to get BTC price: {:?}", e),
+///     }
+///     
+///     // Get ETH price
+///     let eth_price = oracle.get_price(
+///         &env,
+///         &String::from_str(&env, "ETH/USD")
+///     );
+///     
+///     if let Ok(price) = eth_price {
+///         println!("ETH price: ${}", price / 100);
+///     }
+/// } else {
+///     println!("Reflector oracle is not healthy, using fallback");
+/// }
+/// ```
+///
+/// # Feed ID Format
+///
+/// Reflector accepts feed IDs in formats:
+/// - **Standard Pairs**: "BTC/USD", "ETH/USD", "XLM/USD"
+/// - **Asset Only**: "BTC", "ETH", "XLM" (assumes USD denomination)
+/// - **Custom Symbols**: Any symbol supported by Reflector network
+///
+/// # Price Format
+///
+/// Prices are returned as:
+/// - **Integer Values**: No floating point arithmetic
+/// - **8 Decimal Precision**: Prices multiplied by 100,000,000
+/// - **USD Denomination**: All prices in US Dollar terms
+/// - **Positive Values**: Always positive integers representing price
+///
+/// # Error Scenarios
+///
+/// Common error conditions:
+/// - **Network Issues**: Reflector service temporarily unavailable
+/// - **Invalid Feeds**: Requested asset not supported by Reflector
+/// - **Stale Data**: Price data older than acceptable threshold
+/// - **Service Limits**: Rate limiting or quota exceeded
+///
+/// # Integration Best Practices
+///
+/// For production use:
+/// - **Health Checks**: Always verify oracle health before price requests
+/// - **Error Handling**: Implement comprehensive error handling and fallbacks
+/// - **Caching**: Cache price data to reduce oracle calls and improve performance
+/// - **Monitoring**: Monitor oracle responses and implement alerting
+/// - **Fallback Strategy**: Have backup oracle or manual resolution procedures
 #[derive(Debug)]
 pub struct ReflectorOracle {
     contract_id: Address,
@@ -473,10 +864,111 @@ impl OracleInterface for ReflectorOracle {
 
 // ===== ORACLE FACTORY =====
 
-/// Factory for creating oracle instances
+/// Factory pattern implementation for creating oracle instances across different providers.
 ///
-/// Primary focus on Reflector oracle for Stellar Network.
-/// Pyth is marked as unsupported since it's not available on Stellar.
+/// The Oracle Factory provides a centralized mechanism for creating and managing
+/// oracle instances, with built-in support for provider validation, configuration
+/// management, and Stellar Network compatibility checking.
+///
+/// # Supported Providers
+///
+/// **Stellar Network Compatible:**
+/// - **Reflector**: Primary and recommended oracle provider for Stellar
+/// - **Production Ready**: Fully functional with live price feeds
+///
+/// **Not Supported on Stellar:**
+/// - **Pyth Network**: Not available on Stellar blockchain
+/// - **Band Protocol**: Not integrated with Stellar ecosystem
+/// - **DIA**: Not available for Stellar Network
+///
+/// # Design Philosophy
+///
+/// The factory follows these principles:
+/// - **Provider Abstraction**: Hide implementation details behind common interface
+/// - **Validation**: Ensure only supported providers are instantiated
+/// - **Configuration Driven**: Support configuration-based oracle creation
+/// - **Error Handling**: Clear error messages for unsupported configurations
+/// - **Future Extensibility**: Easy to add new providers when they become available
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::oracles::{OracleFactory, OracleInstance};
+/// # use predictify_hybrid::types::{OracleProvider, OracleConfig};
+/// # let env = Env::default();
+/// # let oracle_address = Address::generate(&env);
+///
+/// // Create Reflector oracle (recommended for Stellar)
+/// let reflector_oracle = OracleFactory::create_oracle(
+///     OracleProvider::Reflector,
+///     oracle_address.clone()
+/// );
+///
+/// match reflector_oracle {
+///     Ok(OracleInstance::Reflector(oracle)) => {
+///         println!("Successfully created Reflector oracle");
+///         // Use oracle for price feeds
+///     },
+///     Err(e) => println!("Failed to create oracle: {:?}", e),
+/// }
+///
+/// // Check provider support before creation
+/// if OracleFactory::is_provider_supported(&OracleProvider::Reflector) {
+///     println!("Reflector is supported on Stellar");
+/// }
+///
+/// // Get recommended provider for Stellar
+/// let recommended = OracleFactory::get_recommended_provider();
+/// assert_eq!(recommended, OracleProvider::Reflector);
+///
+/// // Create from configuration
+/// let config = OracleConfig {
+///     provider: OracleProvider::Reflector,
+///     // ... other config fields
+/// };
+///
+/// let oracle_from_config = OracleFactory::create_from_config(
+///     &config,
+///     oracle_address
+/// );
+///
+/// assert!(oracle_from_config.is_ok());
+/// ```
+///
+/// # Provider Validation
+///
+/// The factory performs validation to ensure:
+/// - **Stellar Compatibility**: Only Stellar-compatible providers are allowed
+/// - **Implementation Status**: Providers must have working implementations
+/// - **Network Support**: Providers must support the target blockchain network
+/// - **Configuration Validity**: Oracle configurations must be valid and complete
+///
+/// # Error Handling
+///
+/// Common error scenarios:
+/// - **Unsupported Provider**: Attempting to create oracle for unsupported provider
+/// - **Invalid Configuration**: Malformed or incomplete oracle configuration
+/// - **Network Mismatch**: Provider not available on current blockchain network
+/// - **Contract Issues**: Invalid or unreachable oracle contract address
+///
+/// # Future Extensibility
+///
+/// When new oracle providers become available on Stellar:
+/// 1. **Add Provider Type**: Update OracleProvider enum
+/// 2. **Implement Oracle**: Create provider-specific oracle implementation
+/// 3. **Update Factory**: Add creation logic in create_oracle method
+/// 4. **Update Validation**: Mark provider as supported in is_provider_supported
+/// 5. **Test Integration**: Comprehensive testing with new provider
+///
+/// # Production Considerations
+///
+/// For production deployments:
+/// - **Provider Selection**: Use Reflector as primary oracle provider
+/// - **Fallback Strategy**: Implement fallback mechanisms for oracle failures
+/// - **Configuration Management**: Store oracle configurations securely
+/// - **Monitoring**: Monitor oracle creation and health status
+/// - **Error Handling**: Implement comprehensive error handling and logging
 pub struct OracleFactory;
 
 impl OracleFactory {
@@ -516,7 +1008,7 @@ impl OracleFactory {
         if !Self::is_provider_supported(&provider) {
             return Err(Error::InvalidOracleConfig);
         }
-        
+
         match provider {
             OracleProvider::Reflector => {
                 let oracle = ReflectorOracle::new(contract_id);
@@ -660,9 +1152,118 @@ impl OracleFactory {
 
 // ===== ORACLE INSTANCE ENUM =====
 
-/// Enum to hold different oracle implementations
+/// Enumeration of supported oracle implementations for runtime polymorphism.
 ///
-/// Currently only Reflector is fully supported on Stellar
+/// This enum provides a unified interface for working with different oracle providers
+/// while maintaining type safety and enabling runtime oracle selection. It abstracts
+/// the underlying oracle implementation details behind a common interface.
+///
+/// # Supported Implementations
+///
+/// **Production Ready:**
+/// - **Reflector**: Primary oracle provider for Stellar Network with full functionality
+///
+/// **Future/Placeholder:**
+/// - **Pyth**: Placeholder implementation for future Stellar support
+///
+/// # Design Benefits
+///
+/// The enum approach provides:
+/// - **Type Safety**: Compile-time guarantees about oracle operations
+/// - **Runtime Selection**: Choose oracle provider based on configuration
+/// - **Unified Interface**: Common methods across all oracle implementations
+/// - **Easy Extension**: Simple to add new oracle providers
+/// - **Pattern Matching**: Leverage Rust's powerful pattern matching
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String};
+/// # use predictify_hybrid::oracles::{OracleFactory, OracleInstance};
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+/// # let oracle_address = Address::generate(&env);
+///
+/// // Create oracle instance through factory
+/// let oracle_result = OracleFactory::create_oracle(
+///     OracleProvider::Reflector,
+///     oracle_address
+/// );
+///
+/// match oracle_result {
+///     Ok(oracle_instance) => {
+///         // Use unified interface regardless of underlying implementation
+///         println!("Oracle provider: {:?}", oracle_instance.provider());
+///         println!("Contract ID: {}", oracle_instance.contract_id());
+///         
+///         // Check health before use
+///         if oracle_instance.is_healthy(&env).unwrap_or(false) {
+///             // Get price using unified interface
+///             let price = oracle_instance.get_price(
+///                 &env,
+///                 &String::from_str(&env, "BTC/USD")
+///             );
+///             
+///             match price {
+///                 Ok(btc_price) => println!("BTC: ${}", btc_price / 100),
+///                 Err(e) => println!("Price error: {:?}", e),
+///             }
+///         }
+///         
+///         // Pattern match for provider-specific operations
+///         match oracle_instance {
+///             OracleInstance::Reflector(ref reflector) => {
+///                 println!("Using Reflector oracle");
+///                 // Reflector-specific operations if needed
+///             },
+///             OracleInstance::Pyth(ref pyth) => {
+///                 println!("Using Pyth oracle (placeholder)");
+///                 // Pyth-specific operations if needed
+///             },
+///         }
+///     },
+///     Err(e) => println!("Failed to create oracle: {:?}", e),
+/// }
+/// ```
+///
+/// # Runtime Oracle Selection
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::oracles::{OracleFactory, OracleInstance};
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+/// # let oracle_address = Address::generate(&env);
+///
+/// // Select oracle based on configuration or conditions
+/// let preferred_provider = if cfg!(feature = "use-reflector") {
+///     OracleProvider::Reflector
+/// } else {
+///     OracleFactory::get_recommended_provider()
+/// };
+///
+/// let oracle = OracleFactory::create_oracle(preferred_provider, oracle_address)?;
+///
+/// // Use oracle regardless of which provider was selected
+/// let is_healthy = oracle.is_healthy(&env)?;
+/// println!("Oracle health: {}", is_healthy);
+/// # Ok::<(), predictify_hybrid::errors::Error>(())
+/// ```
+///
+/// # Error Handling
+///
+/// All methods return Results for consistent error handling:
+/// - **Network Errors**: Oracle service unavailable or unreachable
+/// - **Invalid Feeds**: Requested feed not supported by oracle
+/// - **Authentication**: Oracle requires authentication that failed
+/// - **Rate Limiting**: Too many requests to oracle service
+///
+/// # Performance Considerations
+///
+/// - **Enum Dispatch**: Minimal overhead for method calls through enum
+/// - **Zero-Cost Abstractions**: No runtime cost for abstraction layer
+/// - **Memory Efficiency**: Only one oracle instance stored per enum
+/// - **Compile-Time Optimization**: Rust compiler optimizes enum dispatch
 #[derive(Debug)]
 pub enum OracleInstance {
     Pyth(PythOracle),           // Placeholder - not supported on Stellar
@@ -705,7 +1306,119 @@ impl OracleInstance {
 
 // ===== ORACLE UTILITIES =====
 
-/// General oracle utilities
+/// Comprehensive utilities for oracle operations, price analysis, and market resolution.
+///
+/// The Oracle Utils module provides essential functionality for working with oracle data,
+/// including price comparison logic, market outcome determination, data validation,
+/// and various helper functions for oracle-based market resolution.
+///
+/// # Core Functionality
+///
+/// **Price Operations:**
+/// - **Price Comparison**: Compare oracle prices against thresholds with various operators
+/// - **Outcome Determination**: Determine market outcomes based on price conditions
+/// - **Data Validation**: Validate oracle responses for reasonableness and safety
+/// - **Format Conversion**: Convert between different price formats and precisions
+///
+/// **Market Resolution:**
+/// - **Condition Evaluation**: Evaluate market conditions against oracle data
+/// - **Threshold Checking**: Check if prices meet specified threshold conditions
+/// - **Boolean Outcomes**: Convert price comparisons to yes/no market outcomes
+/// - **Error Handling**: Robust error handling for invalid comparisons or data
+///
+/// # Supported Comparisons
+///
+/// The utilities support various comparison operators:
+/// - **Greater Than ("gt")**: Price > threshold
+/// - **Less Than ("lt")**: Price < threshold  
+/// - **Equal To ("eq")**: Price == threshold
+/// - **Greater or Equal ("gte")**: Price >= threshold (if implemented)
+/// - **Less or Equal ("lte")**: Price <= threshold (if implemented)
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String};
+/// # use predictify_hybrid::oracles::OracleUtils;
+/// # let env = Env::default();
+///
+/// // Compare BTC price against $50k threshold
+/// let btc_price = 52_000_00; // $52,000 (8 decimal precision)
+/// let threshold = 50_000_00;  // $50,000
+///
+/// // Check if BTC is above $50k
+/// let is_above_threshold = OracleUtils::compare_prices(
+///     btc_price,
+///     threshold,
+///     &String::from_str(&env, "gt"),
+///     &env
+/// )?;
+///
+/// assert!(is_above_threshold); // BTC is above $50k
+///
+/// // Determine market outcome
+/// let outcome = OracleUtils::determine_outcome(
+///     btc_price,
+///     threshold,
+///     &String::from_str(&env, "gt"),
+///     &env
+/// )?;
+///
+/// assert_eq!(outcome, String::from_str(&env, "yes"));
+///
+/// // Validate oracle response
+/// OracleUtils::validate_oracle_response(btc_price)?;
+///
+/// println!("BTC ${} is above ${} threshold: {}",
+///     btc_price / 100, threshold / 100, is_above_threshold);
+/// # Ok::<(), predictify_hybrid::errors::Error>(())
+/// ```
+///
+/// # Price Format Standards
+///
+/// Oracle prices follow these conventions:
+/// - **Integer Representation**: No floating point arithmetic
+/// - **8 Decimal Precision**: Prices multiplied by 100,000,000
+/// - **USD Denomination**: All prices in US Dollar terms
+/// - **Positive Values**: Always positive integers
+///
+/// Examples:
+/// - $1.00 = 100 (2 decimal precision)
+/// - $1.00 = 100_000_000 (8 decimal precision)
+/// - $50,000.00 = 50_000_00 (2 decimal precision)
+/// - $50,000.00 = 5_000_000_000_000 (8 decimal precision)
+///
+/// # Validation Rules
+///
+/// Oracle response validation includes:
+/// - **Positive Prices**: Prices must be greater than zero
+/// - **Reasonable Range**: Prices between $0.01 and $1,000,000
+/// - **Precision Limits**: Prices within acceptable precision bounds
+/// - **Overflow Protection**: Prevent integer overflow in calculations
+///
+/// # Market Resolution Logic
+///
+/// Market outcomes are determined as follows:
+/// 1. **Get Oracle Price**: Retrieve current price from oracle
+/// 2. **Compare with Threshold**: Apply comparison operator
+/// 3. **Determine Outcome**: Convert boolean result to "yes"/"no"
+/// 4. **Validate Result**: Ensure outcome is valid and reasonable
+///
+/// # Error Scenarios
+///
+/// Common error conditions:
+/// - **Invalid Comparison**: Unsupported comparison operator
+/// - **Invalid Threshold**: Threshold price out of reasonable range
+/// - **Oracle Failure**: Oracle price unavailable or invalid
+/// - **Calculation Error**: Mathematical operation failed
+///
+/// # Integration with Markets
+///
+/// Oracle Utils integrates with market resolution:
+/// - **Automated Resolution**: Markets can auto-resolve based on oracle data
+/// - **Condition Checking**: Verify market conditions are met
+/// - **Outcome Generation**: Generate final market outcomes
+/// - **Validation**: Ensure oracle data is suitable for market resolution
 pub struct OracleUtils;
 
 impl OracleUtils {
