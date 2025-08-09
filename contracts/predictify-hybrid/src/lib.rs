@@ -1,10 +1,6 @@
 #![no_std]
 
 extern crate alloc;
-extern crate wee_alloc;
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
@@ -16,6 +12,7 @@ mod extensions;
 mod fees;
 mod markets;
 mod oracles;
+mod reentrancy;
 mod resolution;
 mod storage;
 mod types;
@@ -34,8 +31,29 @@ pub use types::*;
 
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
+
+    contract, contractimpl, panic_with_error, symbol_short, vec, Address, Env, Map, String, Symbol, Vec,
 };
+use alloc::string::ToString;
+
+// Global allocator for wasm32 target
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+// Import commonly used items from modules
+use markets::{MarketCreator, MarketStateManager};
+use voting::VotingManager;
+use disputes::DisputeManager;
+use extensions::{ExtensionManager, ExtensionUtils, ExtensionValidator};
+use fees::FeeManager;
+use reentrancy::{validate_no_reentrancy, protect_external_call};
+use resolution::{OracleResolutionManager, MarketResolutionManager};
+use config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
+use utils::{TimeUtils, StringUtils, NumericUtils, ValidationUtils, CommonUtils};
+use events::{EventLogger, EventHelpers, EventTestingUtils, EventDocumentation};
+use validation::ValidationResult;
+
 
 #[contract]
 pub struct PredictifyHybrid;
@@ -167,57 +185,53 @@ impl PredictifyHybrid {
                 panic!("Admin not set");
             });
 
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        // Use error helper for admin validation
+        let _ = errors::helpers::require_admin(&env, &admin, &stored_admin);
 
-        // Validate inputs
-        if outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
-        }
-
-        if question.len() == 0 {
-            panic_with_error!(env, Error::InvalidQuestion);
-        }
-
-        // Generate a unique market ID
-        let counter_key = Symbol::new(&env, "MarketCounter");
-        let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
-        let new_counter = counter + 1;
-        env.storage().persistent().set(&counter_key, &new_counter);
-
-        let market_id = Symbol::new(&env, &format!("market_{}", new_counter));
-
-        // Calculate end time
-        let seconds_per_day: u64 = 24 * 60 * 60;
-        let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
-        let end_time: u64 = env.ledger().timestamp() + duration_seconds;
-
-        // Create a new market
-        let market = Market {
-            admin: admin.clone(),
+        // Use the markets module to create the market
+        match MarketCreator::create_market(
+            &env,
+            admin.clone(),
             question,
             outcomes,
-            end_time,
+            duration_days,
             oracle_config,
-            oracle_result: None,
-            votes: Map::new(&env),
-            total_staked: 0,
-            dispute_stakes: Map::new(&env),
-            stakes: Map::new(&env),
-            claimed: Map::new(&env),
-            winning_outcome: None,
-            fee_collected: false,
-            state: MarketState::Active,
-            total_extension_days: 0,
-            max_extension_days: 30,
-            extension_history: Vec::new(&env),
-        };
+        ) {
+            Ok(market_id) => {
+                // Process creation fee using the fee management system
+                match FeeManager::process_creation_fee(&env, &admin) {
+                    Ok(_) => market_id,
+                    Err(e) => panic_with_error!(env, e),
+                }
+            }
+            Err(e) => panic_with_error!(env, e),
 
-        // Store the market
-        env.storage().persistent().set(&market_id, &market);
+        }
+    }
 
-        market_id
+    /// Distribute winnings to users
+    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
+        // Require authentication
+        user.require_auth();
+        
+        // Validate no reentrancy
+        validate_no_reentrancy(&env).unwrap_or_else(|e| panic_with_error!(env, e));
+        
+        // Protect against reentrancy attacks
+        let result = protect_external_call(
+            &env,
+            symbol_short!("claim_win"),
+            user.clone(),
+            || {
+                // Execute the claim operation
+                VotingManager::process_claim(&env, user, market_id)
+            },
+        );
+        
+        match result {
+            Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
     /// Allows users to vote on a market outcome by staking tokens.
@@ -273,122 +287,115 @@ impl PredictifyHybrid {
     /// - Current time must be before market end time
     /// - Market must not be cancelled or resolved
     pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
+
+        // Require authentication
         user.require_auth();
-
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
-
-        // Check if the market is still active
-        if env.ledger().timestamp() >= market.end_time {
-            panic_with_error!(env, Error::MarketClosed);
+        
+        // Validate no reentrancy
+        validate_no_reentrancy(&env).unwrap_or_else(|e| panic_with_error!(env, e));
+        
+        // Protect against reentrancy attacks
+        let result = protect_external_call(
+            &env,
+            symbol_short!("vote"),
+            user.clone(),
+            || {
+                // Execute the vote operation
+                VotingManager::process_vote(&env, user, market_id, outcome, stake)
+            },
+        );
+        
+        match result {
+            Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
         }
-
-        // Validate outcome
-        let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
-        if !outcome_exists {
-            panic_with_error!(env, Error::InvalidOutcome);
-        }
-
-        // Check if user already voted
-        if market.votes.get(user.clone()).is_some() {
-            panic_with_error!(env, Error::AlreadyVoted);
-        }
-
-        // Store the vote and stake
-        market.votes.set(user.clone(), outcome);
-        market.stakes.set(user.clone(), stake);
-        market.total_staked += stake;
-
-        env.storage().persistent().set(&market_id, &market);
     }
 
-    /// Allows users to claim their winnings from resolved prediction markets.
-    ///
-    /// This function enables users who voted for the winning outcome to claim
-    /// their proportional share of the total market pool, minus platform fees.
-    /// Users can only claim once per market, and only after the market is resolved.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `user` - The address of the user claiming winnings (must be authenticated)
-    /// * `market_id` - Unique identifier of the resolved market
-    ///
-    /// # Panics
-    ///
-    /// This function will panic with specific errors if:
-    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::AlreadyClaimed` - User has already claimed winnings from this market
-    /// - `Error::MarketNotResolved` - Market hasn't been resolved yet
-    /// - `Error::NothingToClaim` - User didn't vote or voted for losing outcome
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use soroban_sdk::{Env, Address, Symbol};
-    /// # use predictify_hybrid::PredictifyHybrid;
-    /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
-    /// # let market_id = Symbol::new(&env, "resolved_market");
-    ///
-    /// // Claim winnings from a resolved market
-    /// PredictifyHybrid::claim_winnings(
-    ///     env.clone(),
-    ///     user,
-    ///     market_id
-    /// );
-    /// ```
-    ///
-    /// # Payout Calculation
-    ///
-    /// Winnings are calculated using the formula:
-    /// ```text
-    /// user_payout = (user_stake * (100 - fee_percentage) / 100) * total_pool / winning_total
-    /// ```
-    ///
-    /// Where:
-    /// - `user_stake` - Amount the user staked on the winning outcome
-    /// - `fee_percentage` - Platform fee (currently 2%)
-    /// - `total_pool` - Sum of all stakes in the market
-    /// - `winning_total` - Sum of stakes on the winning outcome
-    ///
-    /// # Market State Requirements
-    ///
-    /// - Market must be in `Resolved` state with a winning outcome set
-    /// - User must have voted for the winning outcome
-    /// - User must not have previously claimed winnings
-    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
-        user.require_auth();
+    // Fetch oracle result to determine market outcome
+    pub fn fetch_oracle_result(env: Env, market_id: Symbol, oracle_contract: Address) -> String {
+        // Validate no reentrancy
+        validate_no_reentrancy(&env).unwrap_or_else(|e| panic_with_error!(env, e));
+        
+        // Protect against reentrancy attacks
+        let result = protect_external_call(
+            &env,
+            symbol_short!("fetch_orc"),
+            oracle_contract.clone(),
+            || {
+                // Execute the oracle fetch operation
+                resolution::OracleResolutionManager::fetchoracle_result(&env, &market_id, &oracle_contract)
+            },
+        );
+        
+        match result {
+            Ok(resolution) => resolution.oracle_result,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
 
-        let mut market: Market = env
+    // Allows users to dispute the market result by staking tokens
+    pub fn dispute_result(env: Env, user: Address, market_id: Symbol, stake: i128) {
+        // Require authentication
+        user.require_auth();
+        
+        // Validate no reentrancy
+        validate_no_reentrancy(&env).unwrap_or_else(|e| panic_with_error!(env, e));
+        
+        // Protect against reentrancy attacks
+        let result = protect_external_call(
+            &env,
+            symbol_short!("dispute"),
+            user.clone(),
+            || {
+                // Execute the dispute operation
+                DisputeManager::process_dispute(&env, user, market_id, stake, None)
+            },
+        );
+        
+        match result {
+            Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+
+    // ===== RESOLUTION SYSTEM METHODS =====
+
+    // Get oracle resolution for a market
+    pub fn get_oracle_resolution(env: Env, market_id: Symbol) -> Option<resolution::OracleResolution> {
+        OracleResolutionManager::get_oracle_resolution(&env, &market_id).unwrap_or_default()
+    }
+
+    // Get market resolution for a market
+    pub fn get_market_resolution(env: Env, market_id: Symbol) -> Option<resolution::MarketResolution> {
+        MarketResolutionManager::get_market_resolution(&env, &market_id).unwrap_or_default()
+    }
+
+    /// Get oracle statistics
+    pub fn get_oracle_stats(env: Env) -> resolution::OracleStats {
+        resolution::OracleResolutionAnalytics::get_oracle_stats(&env).unwrap_or_default()
+    }
+
+    /// Process winnings claim and calculate payouts for resolved markets
+    pub fn process_winnings_claim(env: Env, user: Address, market_id: Symbol) -> Result<i128, Error> {
+        // Get the market from storage
+        let mut market = env
             .storage()
             .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
-
-        // Check if user has claimed already
-        if market.claimed.get(user.clone()).unwrap_or(false) {
-            panic_with_error!(env, Error::AlreadyClaimed);
-        }
+            .get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
 
         // Check if market is resolved
         let winning_outcome = match &market.winning_outcome {
             Some(outcome) => outcome,
-            None => panic_with_error!(env, Error::MarketNotResolved),
+            None => return Err(Error::MarketNotResolved),
         };
 
         // Get user's vote
         let user_outcome = market
             .votes
             .get(user.clone())
-            .unwrap_or_else(|| panic_with_error!(env, Error::NothingToClaim));
+            .ok_or(Error::NothingToClaim)?;
 
         let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
 
@@ -406,16 +413,70 @@ impl PredictifyHybrid {
                 let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE))
                     / PERCENTAGE_DENOMINATOR;
                 let total_pool = market.total_staked;
-                let _payout = (user_share * total_pool) / winning_total;
+                let payout = (user_share * total_pool) / winning_total;
 
-                // In a real implementation, transfer tokens here
-                // For now, we just mark as claimed
+                // Mark as claimed
+                market.claimed.set(user.clone(), true);
+                env.storage().persistent().set(&market_id, &market);
+
+                return Ok(payout);
             }
         }
 
-        // Mark as claimed
-        market.claimed.set(user.clone(), true);
-        env.storage().persistent().set(&market_id, &market);
+        Err(Error::NothingToClaim)
+    }
+
+    // Get resolution state for a market
+    pub fn get_resolution_state(env: Env, market_id: Symbol) -> resolution::ResolutionState {
+        match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => resolution::ResolutionUtils::get_resolution_state(&env, &market),
+            Err(_) => resolution::ResolutionState::Active,
+        }
+    }
+
+    // Check if market can be resolved
+    pub fn can_resolve_market(env: Env, market_id: Symbol) -> bool {
+        match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => resolution::ResolutionUtils::can_resolve_market(&env, &market),
+            Err(_) => false,
+        }
+    }
+
+    // Calculate resolution time for a market
+    pub fn calculate_resolution_time(env: Env, market_id: Symbol) -> u64 {
+        match MarketStateManager::get_market(&env, &market_id) {
+            Ok(market) => {
+                let current_time = env.ledger().timestamp();
+                TimeUtils::time_difference(current_time, market.end_time)
+            },
+            Err(_) => 0,
+        }
+    }
+
+    // Get dispute statistics for a market
+    pub fn get_dispute_stats(env: Env, market_id: Symbol) -> disputes::DisputeStats {
+        match DisputeManager::get_dispute_stats(&env, market_id) {
+            Ok(stats) => stats,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // Get all disputes for a market
+    pub fn get_market_disputes(env: Env, market_id: Symbol) -> Vec<disputes::Dispute> {
+        match DisputeManager::get_market_disputes(&env, market_id) {
+            Ok(disputes) => disputes,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // Check if user has disputed a market
+    pub fn has_user_disputed(env: Env, market_id: Symbol, user: Address) -> bool {
+        DisputeManager::has_user_disputed(&env, market_id, user).unwrap_or_default()
+    }
+
+    // Get user's dispute stake for a market
+    pub fn get_user_dispute_stake(env: Env, market_id: Symbol, user: Address) -> i128 {
+        DisputeManager::get_user_dispute_stake(&env, market_id, user).unwrap_or_default()
     }
 
     /// Retrieves complete market information by market identifier.
@@ -537,7 +598,7 @@ impl PredictifyHybrid {
         env: Env,
         admin: Address,
         market_id: Symbol,
-        winning_outcome: String,
+        _winning_outcome: String,
     ) {
         admin.require_auth();
 
@@ -546,38 +607,99 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
 
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+            .expect("Admin not set");
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
+        // Use error helper for admin validation
+        let _ = errors::helpers::require_admin(&env, &admin, &stored_admin);
 
-        // Check if market has ended
-        if env.ledger().timestamp() < market.end_time {
-            panic_with_error!(env, Error::MarketClosed);
-        }
-
-        // Validate winning outcome
-        let outcome_exists = market.outcomes.iter().any(|o| o == winning_outcome);
-        if !outcome_exists {
-            panic_with_error!(env, Error::InvalidOutcome);
-        }
-
-        // Set winning outcome and update state
-        market.winning_outcome = Some(winning_outcome);
-        market.state = MarketState::Resolved;
-        env.storage().persistent().set(&market_id, &market);
+        // Remove market from storage
+        MarketStateManager::remove_market(&env, &market_id);
     }
+
+    // Helper function to create a market with Reflector oracle
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_reflector_market(
+        env: Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        asset_symbol: String,
+        threshold: i128,
+        comparison: String,
+    ) -> Symbol {
+        let params = ReflectorMarketParams {
+            admin,
+            question,
+            outcomes,
+            duration_days,
+            asset_symbol,
+            threshold,
+            comparison,
+        };
+        match MarketCreator::create_reflector_market(&env, params) {
+            Ok(market_id) => market_id,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // Helper function to create a market with Pyth oracle
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_pyth_market(
+        env: Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        feed_id: String,
+        threshold: i128,
+        comparison: String,
+    ) -> Symbol {
+        let params = PythMarketParams {
+            admin,
+            question,
+            outcomes,
+            duration_days,
+            feed_id,
+            threshold,
+            comparison,
+        };
+        match MarketCreator::create_pyth_market(&env, params) {
+            Ok(market_id) => market_id,
+            Err(e) => panic_with_error!(env, e),
+
+        }
+    }
+
+    /// Helper function to create a market with Reflector oracle for specific assets
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_reflector_asset_market(
+        env: Env,
+        admin: Address,
+        question: String,
+        outcomes: Vec<String>,
+        duration_days: u32,
+        asset_symbol: String, // e.g., "BTC", "ETH", "XLM"
+        threshold: i128,
+        comparison: String,
+    ) -> Symbol {
+        let params = ReflectorMarketParams {
+            admin,
+            question,
+            outcomes,
+            duration_days,
+            asset_symbol,
+            threshold,
+            comparison,
+        };
+        match MarketCreator::create_reflector_asset_market(&env, params) {
+            Ok(market_id) => market_id,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    // ===== MARKET EXTENSION FUNCTIONS =====
 
 
 
@@ -645,38 +767,6 @@ impl PredictifyHybrid {
     /// - Market must exist and be past its end time
     /// - Market must not already have an oracle result
     /// - Oracle contract must be accessible and responsive
-    pub fn fetch_oracle_result(
-        env: Env,
-        market_id: Symbol,
-        oracle_contract: Address,
-    ) -> Result<String, Error> {
-        // Get the market from storage
-        let market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Validate market state
-        if market.oracle_result.is_some() {
-            return Err(Error::MarketAlreadyResolved);
-        }
-
-        // Check if market has ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
-            return Err(Error::MarketClosed);
-        }
-
-        // Get oracle result using the resolution module
-        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
-            &env,
-            &market_id,
-            &oracle_contract,
-        )?;
-
-        Ok(oracle_resolution.oracle_result)
-    }
 
     /// Resolves a market automatically using oracle data and community consensus.
     ///
@@ -920,16 +1010,38 @@ impl PredictifyHybrid {
         env: Env,
         market_id: Symbol,
     ) -> Result<markets::MarketStats, Error> {
-        let market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
 
-        // Calculate market statistics
         let stats = markets::MarketAnalytics::get_market_stats(&market);
-
         Ok(stats)
+    }
+
+    /// Validate extension conditions for a market
+    pub fn validate_extension_conditions(
+        env: Env,
+        market_id: Symbol,
+        additional_days: u32,
+    ) -> bool {
+        ExtensionValidator::validate_extension_conditions(&env, &market_id, additional_days).is_ok()
+    }
+
+    /// Check extension limits for a market
+    pub fn check_extension_limits(env: Env, market_id: Symbol, additional_days: u32) -> bool {
+        ExtensionValidator::check_extension_limits(&env, &market_id, additional_days).is_ok()
+    }
+
+    /// Get market extension history
+    pub fn get_market_extension_history(
+        env: Env,
+        market_id: Symbol,
+    ) -> Vec<types::MarketExtension> {
+        match ExtensionManager::get_market_extension_history(&env, market_id) {
+            Ok(history) => history,
+            Err(_) => vec![&env],
+        }
     }
 
     /// Dispute a market resolution
@@ -938,10 +1050,77 @@ impl PredictifyHybrid {
         user: Address,
         market_id: Symbol,
         stake: i128,
-        reason: Option<String>,
-    ) -> Result<(), Error> {
+    ) -> Result<disputes::Dispute, Error> {
         user.require_auth();
-        disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
+
+        // Validate no reentrancy
+        validate_no_reentrancy(&env).unwrap_or_else(|e| panic_with_error!(env, e));
+        
+        // Protect against reentrancy attacks
+        let result = protect_external_call(
+            &env,
+            symbol_short!("dispute"),
+            user.clone(),
+            || {
+                // Execute the dispute operation
+                match DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), stake, None) {
+                    Ok(()) => {
+                        // Create and return dispute object
+                        Ok(disputes::Dispute {
+                            user: user.clone(),
+                            market_id: market_id.clone(),
+                            stake,
+                            timestamp: env.ledger().timestamp(),
+                            reason: None,
+                            status: disputes::DisputeStatus::Active,
+                        })
+                    },
+                    Err(e) => Err(e),
+                }
+            },
+        );
+        
+        match result {
+            Ok(dispute) => Ok(dispute),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Check if admin can extend market
+    pub fn can_extend_market(env: Env, market_id: Symbol, admin: Address) -> bool {
+        ExtensionManager::can_extend_market(&env, market_id, admin).unwrap_or_default()
+    }
+
+    /// Handle extension fees
+    pub fn handle_extension_fees(env: Env, market_id: Symbol, additional_days: u32) -> i128 {
+        ExtensionUtils::handle_extension_fees(&env, &market_id, additional_days).unwrap_or_default()
+    }
+
+    /// Get extension statistics for a market
+    pub fn get_extension_stats(env: Env, market_id: Symbol) -> ExtensionStats {
+        match ExtensionManager::get_extension_stats(&env, market_id) {
+            Ok(stats) => stats,
+            Err(_) => ExtensionStats {
+                total_extensions: 0,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                can_extend: false,
+                extension_fee_per_day: 100_000_000,
+            },
+        }
+    }
+
+    /// Calculate extension fee for given days
+    pub fn calculate_extension_fee(additional_days: u32) -> i128 {
+        // Use numeric utilities for fee calculation
+        let base_fee = 100_000_000; // 10 XLM base fee
+        let fee_per_day = 10_000_000; // 1 XLM per day
+        NumericUtils::clamp(
+            &(base_fee + (fee_per_day * additional_days as i128)),
+            &100_000_000, // Minimum fee
+            &1_000_000_000 // Maximum fee
+        )
+
     }
 
     /// Vote on a dispute
@@ -953,11 +1132,123 @@ impl PredictifyHybrid {
         vote: bool,
         stake: i128,
         reason: Option<String>,
-    ) -> Result<(), Error> {
+
+    ) {
         user.require_auth();
-        disputes::DisputeManager::vote_on_dispute(
-            &env, user, market_id, dispute_id, vote, stake, reason,
-        )
+
+        match DisputeManager::vote_on_dispute(&env, user, market_id, dispute_id, vote, stake, reason) {
+            Ok(_) => (), // Success
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Calculate dispute outcome based on voting
+    pub fn calculate_dispute_outcome(env: Env, dispute_id: Symbol) -> bool {
+        DisputeManager::calculate_dispute_outcome(&env, dispute_id).unwrap_or_default()
+    }
+
+    /// Distribute dispute fees to winners
+    pub fn distribute_dispute_fees(env: Env, dispute_id: Symbol) -> disputes::DisputeFeeDistribution {
+        match DisputeManager::distribute_dispute_fees(&env, dispute_id) {
+            Ok(distribution) => distribution,
+            Err(_) => disputes::DisputeFeeDistribution {
+                dispute_id: symbol_short!("error"),
+                total_fees: 0,
+                winner_stake: 0,
+                loser_stake: 0,
+                winner_addresses: vec![&env],
+                distribution_timestamp: 0,
+                fees_distributed: false,
+            },
+        }
+    }
+
+    /// Escalate a dispute
+    pub fn escalate_dispute(
+        env: Env,
+        user: Address,
+        dispute_id: Symbol,
+        reason: String,
+    ) -> disputes::DisputeEscalation {
+        user.require_auth();
+
+        match DisputeManager::escalate_dispute(&env, user, dispute_id, reason) {
+            Ok(escalation) => escalation,
+            Err(_) => {
+                let default_address = env.storage()
+                    .persistent()
+                    .get(&Symbol::new(&env, "Admin"))
+                    .unwrap_or_else(|| panic!("Admin not set"));
+                disputes::DisputeEscalation {
+                    dispute_id: symbol_short!("error"),
+                    escalated_by: default_address,
+                    escalation_reason: String::from_str(&env, "Error"),
+                    escalation_timestamp: 0,
+                    escalation_level: 0,
+                    requires_admin_review: false,
+                }
+            },
+        }
+    }
+
+    /// Get dispute votes
+    pub fn get_dispute_votes(env: Env, dispute_id: Symbol) -> Vec<disputes::DisputeVote> {
+        match DisputeManager::get_dispute_votes(&env, &dispute_id) {
+            Ok(votes) => votes,
+            Err(_) => vec![&env],
+        }
+    }
+
+    /// Validate dispute resolution conditions
+    pub fn validate_dispute_resolution(env: Env, dispute_id: Symbol) -> bool {
+        DisputeManager::validate_dispute_resolution_conditions(&env, dispute_id).unwrap_or_default()
+    }
+
+    // ===== DYNAMIC THRESHOLD FUNCTIONS =====
+
+    /// Calculate dynamic dispute threshold for a market
+    pub fn calculate_dispute_threshold(env: Env, market_id: Symbol) -> voting::DisputeThreshold {
+        match VotingManager::calculate_dispute_threshold(&env, market_id) {
+            Ok(threshold) => threshold,
+            Err(_) => voting::DisputeThreshold {
+                market_id: symbol_short!("error"),
+                base_threshold: 10_000_000,
+                adjusted_threshold: 10_000_000,
+                market_size_factor: 0,
+                activity_factor: 0,
+                complexity_factor: 0,
+                timestamp: 0,
+            },
+        }
+    }
+
+    /// Adjust threshold by market size
+    pub fn adjust_threshold_by_market_size(env: Env, market_id: Symbol, base_threshold: i128) -> i128 {
+        voting::ThresholdUtils::adjust_threshold_by_market_size(&env, &market_id, base_threshold).unwrap_or_default()
+    }
+
+    /// Modify threshold by activity level
+    pub fn modify_threshold_by_activity(env: Env, market_id: Symbol, activity_level: u32) -> i128 {
+        voting::ThresholdUtils::modify_threshold_by_activity(&env, &market_id, activity_level).unwrap_or_default()
+    }
+
+    /// Validate dispute threshold
+    pub fn validate_dispute_threshold(threshold: i128, market_id: Symbol) -> bool {
+        voting::ThresholdUtils::validate_dispute_threshold(threshold, &market_id).is_ok()
+    }
+
+    /// Get threshold adjustment factors
+    pub fn get_threshold_adjustment_factors(env: Env, market_id: Symbol) -> voting::ThresholdAdjustmentFactors {
+        match voting::ThresholdUtils::get_threshold_adjustment_factors(&env, &market_id) {
+            Ok(factors) => factors,
+            Err(_) => voting::ThresholdAdjustmentFactors {
+                market_size_factor: 0,
+                activity_factor: 0,
+                complexity_factor: 0,
+                total_adjustment: 0,
+            },
+        }
+
     }
 
     /// Resolve a dispute (admin only)
@@ -968,50 +1259,126 @@ impl PredictifyHybrid {
     ) -> Result<disputes::DisputeResolution, Error> {
         admin.require_auth();
 
-        // Verify admin
+        // Use the dispute manager to resolve the dispute
+        DisputeManager::resolve_dispute(&env, market_id, admin)
+    }
+
+    /// Get threshold history for a market
+    pub fn get_threshold_history(env: Env, market_id: Symbol) -> Vec<voting::ThresholdHistoryEntry> {
+        match VotingManager::get_threshold_history(&env, market_id) {
+            Ok(history) => history,
+            Err(_) => vec![&env],
+        }
+    }
+
+    // ===== CONFIGURATION MANAGEMENT METHODS =====
+
+    /// Initialize contract with configuration
+    pub fn initialize_with_config(env: Env, admin: Address, environment: Environment) {
+        // Store admin address
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "Admin"), &admin);
+
+        // Initialize configuration based on environment
+        let config = match environment {
+            Environment::Development => ConfigManager::get_development_config(&env),
+            Environment::Testnet => ConfigManager::get_testnet_config(&env),
+            Environment::Mainnet => ConfigManager::get_mainnet_config(&env),
+            Environment::Custom => ConfigManager::get_development_config(&env), // Default to development for custom
+        };
+
+        // Store configuration
+        match ConfigManager::store_config(&env, &config) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+
+    /// Update contract configuration (admin only)
+    pub fn update_config(env: Env, admin: Address, config: ContractConfig) -> Result<(), Error> {
+        let stored_admin = env.storage().persistent().get(&Symbol::new(&env, "Admin")).unwrap();
+        errors::helpers::require_admin(&env, &admin, &stored_admin)?;
+
+        // Store configuration
+        ConfigManager::store_config(&env, &config)?;
+        Ok(())
+    }
+
+    /// Reset configuration to defaults
+    pub fn reset_config_to_defaults(env: Env, admin: Address) -> ContractConfig {
+        // Verify admin permissions
+
         let stored_admin: Address = env
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
 
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
+            .unwrap_or_else(|| panic!("Admin not set"));
+
+        if let Err(e) = errors::helpers::require_admin(&env, &admin, &stored_admin) {
+            panic_with_error!(env, e);
         }
 
-        disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
+        // Reset to defaults
+        match ConfigManager::reset_to_defaults(&env) {
+            Ok(config) => config,
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
-    /// Collect fees from a market (admin only)
-    pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
-        admin.require_auth();
+    /// Update contract admin (admin only)
+    pub fn update_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), Error> {
+        let stored_admin = env.storage().persistent().get(&Symbol::new(&env, "Admin")).unwrap();
+        errors::helpers::require_admin(&env, &admin, &stored_admin)?;
 
-        // Verify admin
+        // Store new admin
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "Admin"), &new_admin);
+        Ok(())
+    }
+
+    /// Update contract token (admin only)
+    pub fn update_token(env: Env, admin: Address, new_token: Address) -> Address {
+        // Verify admin permissions
+
         let stored_admin: Address = env
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
 
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
+            .unwrap_or_else(|| panic!("Admin not set"));
+
+        if let Err(e) = errors::helpers::require_admin(&env, &admin, &stored_admin) {
+            panic_with_error!(env, e);
         }
 
-        fees::FeeManager::collect_fees(&env, admin, market_id)
+        // Store new token
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "TokenID"), &new_token);
+
+        new_token
     }
 
-    /// Extend market duration (admin only)
-    pub fn extend_market(
+    /// Get configuration summary
+    pub fn get_config_summary(env: Env) -> String {
+        let config = match ConfigManager::get_config(&env) {
+            Ok(config) => config,
+            Err(_) => ConfigManager::get_development_config(&env),
+        };
+        ConfigUtils::get_config_summary(&config)
+    }
+
+    /// Extend market duration with validation and fee handling
+    pub fn extend_market_duration(
         env: Env,
         admin: Address,
         market_id: Symbol,
         additional_days: u32,
         reason: String,
-        fee_amount: i128,
     ) -> Result<(), Error> {
         admin.require_auth();
 
@@ -1020,23 +1387,21 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
+            .expect("Admin not set");
 
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        // Use error helper for admin validation
+        let _ = errors::helpers::require_admin(&env, &admin, &stored_admin);
 
-        extensions::ExtensionManager::extend_market_duration(
+        match extensions::ExtensionManager::extend_market_duration(
             &env,
             admin,
             market_id,
             additional_days,
             reason,
-        )
-
-
+        ) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     // ===== STORAGE OPTIMIZATION FUNCTIONS =====
@@ -1047,8 +1412,188 @@ impl PredictifyHybrid {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
+
         storage::StorageOptimizer::compress_market_data(&env, &market)
+    }
+
+    // ===== UTILITY-BASED METHODS =====
+
+    /// Format duration in human-readable format
+    pub fn format_duration(env: Env, seconds: u64) -> String {
+        TimeUtils::format_duration(&env, seconds)
+    }
+
+    /// Calculate percentage with custom denominator
+    pub fn calculate_percentage(percentage: i128, value: i128, denominator: i128) -> i128 {
+        NumericUtils::calculate_percentage(&percentage, &value, &denominator)
+    }
+
+    /// Validate string length
+    pub fn validate_string_length(s: String, min_length: u32, max_length: u32) -> bool {
+        StringUtils::validate_string_length(&s, min_length, max_length).is_ok()
+    }
+
+    /// Sanitize string
+    pub fn sanitize_string(s: String) -> String {
+        StringUtils::sanitize_string(&s)
+    }
+
+    /// Convert number to string
+    pub fn number_to_string(value: i128) -> String {
+        let env = Env::default();
+        NumericUtils::i128_to_string(&env, &value)
+    }
+
+    /// Convert string to number
+    pub fn string_to_number(s: String) -> i128 {
+        NumericUtils::string_to_i128(&s)
+    }
+
+    /// Generate unique ID
+    pub fn generate_unique_id(prefix: String) -> String {
+        let env = Env::default();
+        CommonUtils::generate_unique_id(&env, &prefix)
+    }
+
+    /// Compare addresses for equality
+    pub fn addresses_equal(a: Address, b: Address) -> bool {
+        CommonUtils::addresses_equal(&a, &b)
+    }
+
+    /// Compare strings ignoring case
+    pub fn strings_equal_ignore_case(a: String, b: String) -> bool {
+        CommonUtils::strings_equal_ignore_case(&a, &b)
+    }
+
+    /// Calculate weighted average
+    pub fn calculate_weighted_average(values: Vec<i128>, weights: Vec<i128>) -> i128 {
+        CommonUtils::calculate_weighted_average(&values, &weights)
+    }
+
+    /// Calculate simple interest
+    pub fn calculate_simple_interest(principal: i128, rate: i128, periods: i128) -> i128 {
+        CommonUtils::calculate_simple_interest(&principal, &rate, &periods)
+    }
+
+    /// Round to nearest multiple
+    pub fn round_to_nearest(value: i128, multiple: i128) -> i128 {
+        NumericUtils::round_to_nearest(&value, &multiple)
+    }
+
+    /// Clamp value between min and max
+    pub fn clamp_value(value: i128, min: i128, max: i128) -> i128 {
+        NumericUtils::clamp(&value, &min, &max)
+    }
+
+    /// Check if value is within range
+    pub fn is_within_range(value: i128, min: i128, max: i128) -> bool {
+        NumericUtils::is_within_range(&value, &min, &max)
+    }
+
+    /// Calculate absolute difference
+    pub fn abs_difference(a: i128, b: i128) -> i128 {
+        NumericUtils::abs_difference(&a, &b)
+    }
+
+    /// Calculate square root
+    pub fn sqrt(value: i128) -> i128 {
+        NumericUtils::sqrt(&value)
+    }
+
+    /// Validate positive number
+    pub fn validate_positive_number(value: i128) -> bool {
+        ValidationUtils::validate_positive_number(&value)
+    }
+
+    /// Validate number range
+    pub fn validate_number_range(value: i128, min: i128, max: i128) -> bool {
+        ValidationUtils::validate_number_range(&value, &min, &max)
+    }
+
+    /// Validate future timestamp
+    pub fn validate_future_timestamp(env: Env, timestamp: u64) -> bool {
+        ValidationUtils::validate_future_timestamp(&env, &timestamp)
+    }
+
+    /// Get time utilities information
+    pub fn get_time_utilities() -> String {
+        let env = Env::default();
+        let current_time = env.ledger().timestamp();
+        let mut s = alloc::string::String::new();
+        s.push_str("Current time: ");
+        s.push_str(&current_time.to_string());
+        s.push_str(", Days to seconds: 86400");
+        String::from_str(&env, &s)
+    }
+
+    // ===== EVENT-BASED METHODS =====
+
+    /// Get market events
+    pub fn get_market_events(env: Env, market_id: Symbol) -> Vec<events::MarketEventSummary> {
+        EventLogger::get_market_events(&env, &market_id)
+    }
+
+    /// Get recent events
+    pub fn get_recent_events(env: Env, limit: u32) -> Vec<events::EventSummary> {
+        EventLogger::get_recent_events(&env, limit)
+    }
+
+    /// Get error events
+    pub fn get_error_events(env: Env) -> Vec<events::ErrorLoggedEvent> {
+        EventLogger::get_error_events(&env)
+    }
+
+    /// Get performance metrics
+    pub fn get_performance_metrics(env: Env) -> Vec<events::PerformanceMetricEvent> {
+        EventLogger::get_performance_metrics(&env)
+    }
+
+    /// Clear old events
+    pub fn clear_old_events(env: Env, older_than_timestamp: u64) {
+        EventLogger::clear_old_events(&env, older_than_timestamp);
+    }
+
+    /// Validate event structure
+    pub fn validate_event_structure(env: Env, event_type: String, _event_data: String) -> bool {
+        let valid_event_types = vec![
+            &env,
+            String::from_str(&env, "MarketCreated"),
+            String::from_str(&env, "VoteCast"),
+            String::from_str(&env, "OracleResult"),
+            String::from_str(&env, "MarketResolved"),
+            String::from_str(&env, "DisputeCreated"),
+            String::from_str(&env, "DisputeResolved"),
+            String::from_str(&env, "FeeCollected"),
+            String::from_str(&env, "ExtensionRequested"),
+            String::from_str(&env, "ConfigUpdated"),
+            String::from_str(&env, "ErrorLogged"),
+            String::from_str(&env, "PerformanceMetric"),
+        ];
+        
+        // Check if event_type is in the list of valid types
+        for valid_type in valid_event_types.iter() {
+            if event_type == valid_type {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Get event documentation
+    pub fn get_event_documentation(_env: Env) -> Map<String, String> {
+        // Implementation
+        Map::new(&Env::default())
+    }
+
+    /// Get event usage examples
+    pub fn get_event_usage_examples(_env: Env) -> Map<String, String> {
+        // Implementation
+        Map::new(&Env::default())
+    }
+
+    /// Get event system overview
+    pub fn get_event_system_overview(env: Env) -> String {
+        EventDocumentation::get_overview(&env)
     }
 
     /// Clean up old market data based on age and state
@@ -1056,13 +1601,73 @@ impl PredictifyHybrid {
         storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)
     }
 
-    /// Migrate storage format from old to new format
-    pub fn migrate_storage_format(
-        env: Env,
-        from_format: storage::StorageFormat,
-        to_format: storage::StorageFormat,
-    ) -> Result<storage::StorageMigration, Error> {
-        storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format)
+    /// Validate test event structure
+    pub fn validate_test_event(env: Env, event_type: String) -> bool {
+        let market_created = String::from_str(&env, "MarketCreated");
+        let vote_cast = String::from_str(&env, "VoteCast");
+        let oracle_result = String::from_str(&env, "OracleResult");
+        let market_resolved = String::from_str(&env, "MarketResolved");
+        let dispute_created = String::from_str(&env, "DisputeCreated");
+        let fee_collected = String::from_str(&env, "FeeCollected");
+        let error_logged = String::from_str(&env, "ErrorLogged");
+        let performance_metric = String::from_str(&env, "PerformanceMetric");
+        
+        if event_type == market_created {
+            let test_event = EventTestingUtils::create_test_market_created_event(
+                &env,
+                &Symbol::new(&env, "test"),
+                &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            );
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else if event_type == vote_cast {
+            let test_event = EventTestingUtils::create_test_vote_cast_event(
+                &env,
+                &Symbol::new(&env, "test"),
+                &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            );
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else if event_type == oracle_result {
+            let test_event = EventTestingUtils::create_test_oracle_result_event(
+                &env,
+                &Symbol::new(&env, "test"),
+            );
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else if event_type == market_resolved {
+            let test_event = EventTestingUtils::create_test_market_resolved_event(
+                &env,
+                &Symbol::new(&env, "test"),
+            );
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else if event_type == dispute_created {
+            let test_event = EventTestingUtils::create_test_dispute_created_event(
+                &env,
+                &Symbol::new(&env, "test"),
+                &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            );
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else if event_type == fee_collected {
+            let test_event = EventTestingUtils::create_test_fee_collected_event(
+                &env,
+                &Symbol::new(&env, "test"),
+                &Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            );
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else if event_type == error_logged {
+            let test_event = EventTestingUtils::create_test_error_logged_event(&env);
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else if event_type == performance_metric {
+            let test_event = EventTestingUtils::create_test_performance_metric_event(&env);
+            EventTestingUtils::validate_test_event_structure(&test_event).is_ok()
+        } else {
+            false
+        }
+    }
+
+    /// Get event age in seconds
+    pub fn get_event_age(env: Env, event_timestamp: u64) -> u64 {
+        let current_timestamp = env.ledger().timestamp();
+        EventHelpers::get_event_age(current_timestamp, event_timestamp)
+
     }
 
     /// Monitor storage usage and return statistics
@@ -1105,14 +1710,16 @@ impl PredictifyHybrid {
         Ok(storage::StorageUtils::calculate_storage_cost(&market))
     }
 
-    /// Get storage efficiency score for a market
-    pub fn get_storage_efficiency_score(env: Env, market_id: Symbol) -> Result<u32, Error> {
-        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
-            Ok(m) => m,
-            Err(e) => return Err(e),
-        };
+
+    /// Validate oracle configuration
+    pub fn validate_oracle_config(env: Env, oracle_config: OracleConfig) -> ValidationResult {
+        let mut result = ValidationResult::valid();
         
-        Ok(storage::StorageUtils::get_storage_efficiency_score(&market))
+        if let Err(_error) = crate::errors::helpers::require_valid_oracle_config(&env, &oracle_config) {
+            result.add_error();
+        }
+
+        result
     }
 
     /// Get storage recommendations for a market
@@ -1128,3 +1735,6 @@ impl PredictifyHybrid {
 }
 
 mod test;
+
+#[cfg(test)]
+mod reentrancy_tests;

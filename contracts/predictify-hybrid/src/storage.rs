@@ -2,7 +2,7 @@
 
 use super::*;
 use soroban_sdk::{
-    contracttype, map, vec, Address, Env, Map, Symbol, Vec,
+    contracttype, Env, Symbol, Vec,
 };
 use crate::markets::{MarketStateManager, MarketStateLogic};
 
@@ -599,7 +599,6 @@ impl StorageUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address;
     
     #[test]
     fn test_storage_optimizer_compression() {

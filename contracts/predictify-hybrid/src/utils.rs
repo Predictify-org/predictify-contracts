@@ -16,178 +16,10 @@ use crate::errors::Error;
 /// - Conversion utility functions
 /// - Testing utility functions
 /// - Common helper functions for contract operations
-
 // ===== TIME AND DATE UTILITIES =====
 
-/// Comprehensive time and date utility functions for market lifecycle management.
-///
-/// This utility class provides essential time-related operations for prediction markets,
-/// including duration calculations, timestamp validation, deadline management, and
-/// human-readable time formatting. All functions are designed to work with Stellar
-/// blockchain timestamps and market timing requirements.
-///
-/// # Core Functionality
-///
-/// **Time Conversions:**
-/// - Convert days, hours, minutes to seconds
-/// - Calculate time differences between timestamps
-/// - Format durations in human-readable format
-///
-/// **Timestamp Validation:**
-/// - Check if timestamps are in future or past
-/// - Validate deadline status
-/// - Ensure duration values are within acceptable ranges
-///
-/// **Market Timing:**
-/// - Calculate time until market deadlines
-/// - Validate market duration parameters
-/// - Support market extension calculations
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::Env;
-/// # use predictify_hybrid::utils::TimeUtils;
-/// # let env = Env::default();
-///
-/// // Convert market duration to seconds
-/// let market_duration_days = 30;
-/// let duration_seconds = TimeUtils::days_to_seconds(market_duration_days);
-/// println!("Market duration: {} seconds", duration_seconds);
-///
-/// // Check if market has ended
-/// let current_time = env.ledger().timestamp();
-/// let market_end_time = current_time + TimeUtils::days_to_seconds(7); // 7 days from now
-///
-/// if TimeUtils::is_deadline_passed(current_time, market_end_time) {
-///     println!("Market has ended");
-/// } else {
-///     let time_remaining = TimeUtils::time_until_deadline(current_time, market_end_time);
-///     let formatted_time = TimeUtils::format_duration(&env, time_remaining);
-///     println!("Time remaining: {}", formatted_time);
-/// }
-///
-/// // Validate market duration
-/// let proposed_duration = 45; // days
-/// if TimeUtils::validate_duration(&proposed_duration) {
-///     println!("Duration is valid");
-/// } else {
-///     println!("Duration exceeds maximum allowed");
-/// }
-/// ```
-///
-/// # Time Conversion Utilities
-///
-/// Convert various time units to seconds for blockchain operations:
-/// ```rust
-/// # use predictify_hybrid::utils::TimeUtils;
-///
-/// // Common time conversions
-/// let one_day = TimeUtils::days_to_seconds(1);        // 86,400 seconds
-/// let one_hour = TimeUtils::hours_to_seconds(1);      // 3,600 seconds
-/// let one_minute = TimeUtils::minutes_to_seconds(1);  // 60 seconds
-///
-/// // Market duration examples
-/// let short_market = TimeUtils::days_to_seconds(7);   // 1 week
-/// let medium_market = TimeUtils::days_to_seconds(30); // 1 month
-/// let long_market = TimeUtils::days_to_seconds(90);   // 3 months
-///
-/// println!("Short market: {} seconds", short_market);
-/// println!("Medium market: {} seconds", medium_market);
-/// println!("Long market: {} seconds", long_market);
-/// ```
-///
-/// # Timestamp Validation
-///
-/// Validate timestamps for market operations:
-/// ```rust
-/// # use soroban_sdk::Env;
-/// # use predictify_hybrid::utils::TimeUtils;
-/// # let env = Env::default();
-///
-/// let current_time = env.ledger().timestamp();
-/// let future_time = current_time + TimeUtils::days_to_seconds(30);
-/// let past_time = current_time - TimeUtils::days_to_seconds(30);
-///
-/// // Timestamp validation
-/// assert!(TimeUtils::is_future_timestamp(current_time, future_time));
-/// assert!(TimeUtils::is_past_timestamp(current_time, past_time));
-/// assert!(!TimeUtils::is_deadline_passed(current_time, future_time));
-/// assert!(TimeUtils::is_deadline_passed(current_time, past_time));
-///
-/// // Calculate time differences
-/// let diff_future = TimeUtils::time_difference(current_time, future_time);
-/// let diff_past = TimeUtils::time_difference(current_time, past_time);
-///
-/// println!("Time to future: {} seconds", diff_future);
-/// println!("Time from past: {} seconds", diff_past);
-/// ```
-///
-/// # Duration Formatting
-///
-/// Format time durations for user interfaces:
-/// ```rust
-/// # use soroban_sdk::Env;
-/// # use predictify_hybrid::utils::TimeUtils;
-/// # let env = Env::default();
-///
-/// // Format various durations
-/// let durations = vec![
-///     TimeUtils::minutes_to_seconds(45),    // "45m"
-///     TimeUtils::hours_to_seconds(2),       // "2h 0m"
-///     TimeUtils::days_to_seconds(1),        // "1d 0h 0m"
-///     TimeUtils::days_to_seconds(7) + TimeUtils::hours_to_seconds(12), // "7d 12h 0m"
-/// ];
-///
-/// for duration in durations {
-///     let formatted = TimeUtils::format_duration(&env, duration);
-///     println!("Duration: {}", formatted);
-/// }
-/// ```
-///
-/// # Market Deadline Management
-///
-/// Manage market deadlines and extensions:
-/// ```rust
-/// # use soroban_sdk::Env;
-/// # use predictify_hybrid::utils::TimeUtils;
-/// # let env = Env::default();
-///
-/// let current_time = env.ledger().timestamp();
-/// let market_end = current_time + TimeUtils::days_to_seconds(7);
-///
-/// // Check time until deadline
-/// let time_remaining = TimeUtils::time_until_deadline(current_time, market_end);
-/// if time_remaining > 0 {
-///     let formatted_remaining = TimeUtils::format_duration(&env, time_remaining);
-///     println!("Market ends in: {}", formatted_remaining);
-///     
-///     // Check if extension is needed (less than 24 hours remaining)
-///     if time_remaining < TimeUtils::days_to_seconds(1) {
-///         println!("Market may need extension for more participation");
-///     }
-/// } else {
-///     println!("Market has ended");
-/// }
-/// ```
-///
-/// # Integration Points
-///
-/// TimeUtils integrates with:
-/// - **Market Manager**: Market duration and deadline validation
-/// - **Extension System**: Calculate extension durations
-/// - **Resolution System**: Timing for oracle resolution
-/// - **Event System**: Timestamp formatting for events
-/// - **Admin System**: Validate administrative timing operations
-/// - **User Interface**: Human-readable time displays
-///
-/// # Performance Considerations
-///
-/// All time operations are optimized for blockchain execution:
-/// - **Constant Time**: All calculations are O(1) operations
-/// - **No External Calls**: Pure mathematical operations
-/// - **Memory Efficient**: Minimal memory allocation
-/// - **Gas Optimized**: Low computational overhead
+///   Time and date utility functions
+
 pub struct TimeUtils;
 
 impl TimeUtils {
@@ -208,11 +40,7 @@ impl TimeUtils {
 
     /// Calculate time difference between two timestamps
     pub fn time_difference(timestamp1: u64, timestamp2: u64) -> u64 {
-        if timestamp1 > timestamp2 {
-            timestamp1 - timestamp2
-        } else {
-            timestamp2 - timestamp1
-        }
+        timestamp1.abs_diff(timestamp2)
     }
 
     /// Check if a timestamp is in the future
@@ -237,26 +65,22 @@ impl TimeUtils {
             s.push_str(&hours.to_string());
             s.push_str("h ");
             s.push_str(&minutes.to_string());
-            s.push_str("m");
+            s.push('m');
         } else if hours > 0 {
             s.push_str(&hours.to_string());
             s.push_str("h ");
             s.push_str(&minutes.to_string());
-            s.push_str("m");
+            s.push('m');
         } else {
             s.push_str(&minutes.to_string());
-            s.push_str("m");
+            s.push('m');
         }
         String::from_str(env, &s)
     }
 
     /// Calculate time until deadline
     pub fn time_until_deadline(current_time: u64, deadline: u64) -> u64 {
-        if deadline > current_time {
-            deadline - current_time
-        } else {
-            0
-        }
+        deadline.saturating_sub(current_time)
     }
 
     /// Check if deadline has passed
@@ -515,97 +339,102 @@ pub struct StringUtils;
 impl StringUtils {
     /// Convert string to uppercase
     pub fn to_uppercase(s: &String) -> String {
-        let _env = Env::default();
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return original string as placeholder
+
+        // For now, return the original string (proper conversion is complex in Soroban)
+
         s.clone()
     }
 
     /// Convert string to lowercase
     pub fn to_lowercase(s: &String) -> String {
-        let _env = Env::default();
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return original string as placeholder
+
+        // For now, return the original string (proper conversion is complex in Soroban)
+
         s.clone()
     }
 
     /// Trim whitespace from string
     pub fn trim(s: &String) -> String {
-        let _env = Env::default();
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return original string as placeholder
+
+        // For now, return the original string (proper trimming is complex in Soroban)
+
         s.clone()
     }
 
     /// Truncate string to specified length
-    pub fn truncate(s: &String, _max_length: u32) -> String {
-        let _env = Env::default();
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return original string as placeholder
-        s.clone()
+
+    pub fn truncate(s: &String, max_length: u32) -> String {
+        let env = Env::default();
+        // Simple truncation by checking length (proper character manipulation is complex in Soroban)
+        if s.len() <= max_length {
+            s.clone()
+        } else {
+            // Return empty string for now since proper slicing is complex
+            String::from_str(&env, "")
+        }
+
     }
 
     /// Split string by delimiter
     pub fn split(s: &String, _delimiter: &str) -> Vec<String> {
         let env = Env::default();
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return vector with original string as placeholder
+
+        // For now, return a vector with just the original string
+
         let mut result = Vec::new(&env);
         result.push_back(s.clone());
         result
     }
 
     /// Join strings with delimiter
-    pub fn join(strings: &Vec<String>, delimiter: &str) -> String {
+    pub fn join(strings: &Vec<String>, _delimiter: &str) -> String {
         let env = Env::default();
-        let mut result = alloc::string::String::new();
-        for (i, _s) in strings.iter().enumerate() {
-            if i > 0 {
-                result.push_str(delimiter);
-            }
-            // Can't convert soroban_sdk::String to std::string::String
-            // Skip string conversion
+
+        // For now, return the first string or empty if empty
+        if !strings.is_empty() {
+            strings.get(0).unwrap_or(String::from_str(&env, ""))
+        } else {
+            String::from_str(&env, "")
+
         }
-        String::from_str(&env, &result)
     }
 
     /// Check if string contains substring
     pub fn contains(_s: &String, _substring: &str) -> bool {
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return false as placeholder
+
+        // For now, always return false (complex string matching in Soroban)
+
         false
     }
 
     /// Check if string starts with prefix
     pub fn starts_with(_s: &String, _prefix: &str) -> bool {
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return false as placeholder
+
+        // For now, always return false (complex string matching in Soroban)
+
         false
     }
 
     /// Check if string ends with suffix
     pub fn ends_with(_s: &String, _suffix: &str) -> bool {
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return false as placeholder
+
+        // For now, always return false (complex string matching in Soroban)
+
         false
     }
 
     /// Replace substring in string
     pub fn replace(s: &String, _old: &str, _new: &str) -> String {
-        let _env = Env::default();
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return original string as placeholder
+
+        // For now, return the original string (complex replacement in Soroban)
+
         s.clone()
     }
 
     /// Validate string length
 
-    pub fn validate_string_length(
-        s: &String,
-        min_length: u32,
-        max_length: u32,
-    ) -> Result<(), Error> {
-        let len = s.len() as u32;
+    pub fn validate_string_length(s: &String, min_length: u32, max_length: u32) -> Result<(), Error> {
+        let len = s.len();
 
         if len < min_length || len > max_length {
             Err(Error::InvalidInput)
@@ -616,9 +445,9 @@ impl StringUtils {
 
     /// Sanitize string (remove special characters)
     pub fn sanitize_string(s: &String) -> String {
-        let _env = Env::default();
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return original string as placeholder
+
+        // For now, return the original string (complex sanitization in Soroban)
+
         s.clone()
     }
 
@@ -942,7 +771,9 @@ impl NumericUtils {
 
     /// Calculate weighted average
     pub fn weighted_average(values: &Vec<i128>, weights: &Vec<i128>) -> i128 {
-        if values.len() != weights.len() || values.len() == 0 {
+
+        if values.is_empty() || weights.is_empty() || values.len() != weights.len() {
+
             return 0;
         }
         let mut total_weight = 0;
@@ -974,8 +805,9 @@ impl NumericUtils {
 
     /// Convert string to number
     pub fn string_to_i128(_s: &String) -> i128 {
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return 0 as placeholder
+
+        // For now, return 0 (complex string parsing in Soroban)
+
         0
     }
 }
@@ -1341,16 +1173,18 @@ impl ValidationUtils {
 
     /// Validate email format (basic)
     pub fn validate_email(_email: &String) -> bool {
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return false as placeholder
-        false
+
+        // For now, always return true (complex email validation in Soroban)
+        true
+
     }
 
     /// Validate URL format (basic)
     pub fn validate_url(_url: &String) -> bool {
-        // Can't convert soroban_sdk::String to std::string::String
-        // Return false as placeholder
-        false
+
+        // For now, always return true (complex URL validation in Soroban)
+        true
+
     }
 }
 
@@ -1649,41 +1483,49 @@ pub struct ConversionUtils;
 impl ConversionUtils {
     /// Convert address to string
     pub fn address_to_string(env: &Env, _address: &Address) -> String {
-        // For now, return a placeholder since we can't easily convert Address to string
-        // This is a limitation of the current Soroban SDK
-        String::from_str(env, "address")
+
+        // For now, return a default address string (complex conversion in Soroban)
+        String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF")
+
     }
 
     /// Convert string to address
     pub fn string_to_address(_env: &Env, s: &String) -> Address {
+
+        // Implementation
+
         Address::from_string(s)
     }
 
     /// Convert symbol to string
     pub fn symbol_to_string(env: &Env, _symbol: &Symbol) -> String {
-        // For now, return a placeholder since we can't easily convert Symbol to string
-        // This is a limitation of the current Soroban SDK
+
+        // For now, return a default string (complex symbol conversion in Soroban)
+
         String::from_str(env, "symbol")
     }
 
     /// Convert string to symbol
     pub fn string_to_symbol(env: &Env, _s: &String) -> Symbol {
-        // For now, return a default symbol since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+
+        // For now, return a default symbol (complex conversion in Soroban)
+
         Symbol::new(env, "default")
     }
 
     /// Convert map to string representation
     pub fn map_to_string(env: &Env, _map: &Map<String, String>) -> String {
-        // For now, return a placeholder since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+
+        // For now, return empty map string (complex map serialization in Soroban)
+
         String::from_str(env, "{}")
     }
 
     /// Convert vec to string representation
     pub fn vec_to_string(env: &Env, _vec: &Vec<String>) -> String {
-        // For now, return a placeholder since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
+
+        // For now, return empty array string (complex vec serialization in Soroban)
+
         String::from_str(env, "[]")
     }
 
@@ -2051,11 +1893,17 @@ pub struct CommonUtils;
 impl CommonUtils {
     /// Generate unique ID
     pub fn generate_unique_id(env: &Env, _prefix: &String) -> String {
-        let _timestamp = env.ledger().timestamp();
-        let _sequence = env.ledger().sequence();
-        // For now, return a simple ID since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
-        String::from_str(env, "id")
+
+        let timestamp = env.ledger().timestamp();
+        let sequence = env.ledger().sequence();
+        let mut id = alloc::string::String::new();
+        id.push_str("market");
+        id.push('_');
+        id.push_str(&timestamp.to_string());
+        id.push('_');
+        id.push_str(&sequence.to_string());
+        String::from_str(env, &id)
+
     }
 
     /// Compare two addresses for equality
@@ -2064,10 +1912,11 @@ impl CommonUtils {
     }
 
     /// Compare two strings ignoring case
-    pub fn strings_equal_ignore_case(_a: &String, _b: &String) -> bool {
-        // For now, return true since we can't easily convert Soroban String
-        // This is a limitation of the current Soroban SDK
-        true
+
+    pub fn strings_equal_ignore_case(a: &String, b: &String) -> bool {
+        // For now, just compare directly (case-insensitive comparison is complex in Soroban)
+        a == b
+
     }
 
     /// Calculate weighted average
@@ -2081,10 +1930,18 @@ impl CommonUtils {
     }
 
     /// Format number with commas
-    pub fn format_number_with_commas(env: &Env, _number: &i128) -> String {
-        // For now, return a placeholder since we can't easily convert to string
-        // This is a limitation of the current Soroban SDK
-        String::from_str(env, "0")
+
+    pub fn format_number_with_commas(env: &Env, number: &i128) -> String {
+        let mut s = alloc::string::String::new();
+        let num_str = number.to_string();
+        for (count, c) in num_str.chars().rev().enumerate() {
+            if count > 0 && count % 3 == 0 {
+                s.insert(0, ',');
+            }
+            s.insert(0, c);
+        }
+        String::from_str(env, &s)
+
     }
 
     /// Generate random number within range

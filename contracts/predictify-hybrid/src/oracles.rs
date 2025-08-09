@@ -12,82 +12,10 @@ use crate::types::*;
 /// - Reflector oracle implementation (primary oracle for Stellar Network)
 /// - Oracle factory pattern for creating oracle instances
 /// - Oracle utilities for price comparison and outcome determination
-///
-/// Note: Pyth Network is not available on Stellar, so Reflector is the primary oracle provider.
 
 // ===== ORACLE INTERFACE =====
+///   Standard interface for all oracle implementations
 
-/// Standard interface defining the contract for all oracle implementations.
-///
-/// This trait establishes a unified API for interacting with different oracle providers,
-/// enabling seamless switching between oracle sources and consistent behavior across
-/// the platform. All oracle implementations must conform to this interface.
-///
-/// # Design Philosophy
-///
-/// The interface follows these principles:
-/// - **Provider Agnostic**: Works with any oracle provider (Pyth, Reflector, etc.)
-/// - **Consistent API**: Uniform method signatures across all implementations
-/// - **Error Handling**: Standardized error types for predictable behavior
-/// - **Health Monitoring**: Built-in oracle health and availability checking
-///
-/// # Supported Operations
-///
-/// All oracle implementations must support:
-/// - **Price Retrieval**: Get current prices for specified asset feeds
-/// - **Provider Identification**: Return the oracle provider type
-/// - **Contract Access**: Provide oracle contract address information
-/// - **Health Checking**: Verify oracle availability and operational status
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::{Env, String};
-/// # use predictify_hybrid::oracles::{OracleInterface, ReflectorOracle};
-/// # use predictify_hybrid::types::OracleProvider;
-/// # let env = Env::default();
-/// # let oracle_address = soroban_sdk::Address::generate(&env);
-///
-/// // Create oracle instance
-/// let oracle = ReflectorOracle::new(oracle_address);
-///
-/// // Check oracle health before use
-/// if oracle.is_healthy(&env).unwrap_or(false) {
-///     // Get price for BTC/USD feed
-///     let btc_price = oracle.get_price(
-///         &env,
-///         &String::from_str(&env, "BTC/USD")
-///     );
-///     
-///     match btc_price {
-///         Ok(price) => println!("BTC price: ${}", price / 100),
-///         Err(e) => println!("Failed to get price: {:?}", e),
-///     }
-///     
-///     // Verify provider type
-///     assert_eq!(oracle.provider(), OracleProvider::Reflector);
-/// } else {
-///     println!("Oracle is not healthy, using fallback");
-/// }
-/// ```
-///
-/// # Implementation Requirements
-///
-/// Oracle implementations must:
-/// - Handle network failures gracefully with appropriate error codes
-/// - Validate feed IDs and return meaningful errors for invalid feeds
-/// - Implement proper authentication and authorization where required
-/// - Provide accurate health status based on actual oracle availability
-/// - Return prices in consistent units (typically with 8 decimal precision)
-///
-/// # Error Handling
-///
-/// Common error scenarios:
-/// - **Network Issues**: Oracle service unavailable or unreachable
-/// - **Invalid Feeds**: Requested feed ID not supported by oracle
-/// - **Authentication**: Oracle requires authentication that failed
-/// - **Rate Limiting**: Too many requests to oracle service
-/// - **Data Quality**: Oracle returned invalid or stale price data
 pub trait OracleInterface {
     /// Get the current price for a given feed ID
     fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
@@ -380,21 +308,24 @@ impl PythOracle {
         self.feed_configurations.len() as u32
     }
 
-    /// Convert raw price to scaled price based on feed configuration
+    /// Get price for a specific feed ID (mock implementation)
     ///
     /// # Arguments
-    /// * `raw_price` - Raw price from oracle
-    /// * `feed_config` - Feed configuration containing decimals
+    /// * `_env` - Soroban environment (unused in mock)
+    /// * `feed_id` - The feed ID to get price for
     ///
     /// # Returns
-    /// Scaled price in the contract's expected format
-    pub fn scale_price(&self, raw_price: i128, feed_config: &PythFeedConfig) -> i128 {
-        // Convert from Pyth price format to contract format
-        // This is a placeholder implementation
-        if feed_config.decimals > 0 {
-            raw_price / (10_i128.pow(feed_config.decimals as u32))
+    /// Result containing the price or error
+    pub fn get_price(&self, _env: &Env, feed_id: &String) -> Result<i128, Error> {
+        // Return different mock prices based on the asset
+        if feed_id == &String::from_str(_env, "BTC/USD") {
+            Ok(2_600_000) // $26,000 for BTC
+        } else if feed_id == &String::from_str(_env, "ETH/USD") {
+            Ok(320_000) // $3,200 for ETH
+        } else if feed_id == &String::from_str(_env, "XLM/USD") {
+            Ok(12_00) // $0.12 for XLM
         } else {
-            raw_price
+            Ok(2_600_000) // Default to BTC price
         }
     }
 
@@ -1006,7 +937,7 @@ impl OracleFactory {
     ) -> Result<OracleInstance, Error> {
         // Check if provider is supported on Stellar
         if !Self::is_provider_supported(&provider) {
-            return Err(Error::InvalidOracleConfig);
+            return Err(Error::InvalidConfig);
         }
 
         match provider {
@@ -1014,10 +945,8 @@ impl OracleFactory {
                 let oracle = ReflectorOracle::new(contract_id);
                 Ok(OracleInstance::Reflector(oracle))
             }
-            _ => {
-                // All other providers should be caught by is_provider_supported check above
-                Err(Error::InvalidOracleConfig)
-            }
+
+            OracleProvider::Pyth | OracleProvider::BandProtocol | OracleProvider::DIA => Err(Error::InvalidConfig),
         }
     }
 
@@ -1144,7 +1073,7 @@ impl OracleFactory {
             }
             OracleProvider::BandProtocol | OracleProvider::DIA => {
                 // These providers are not supported on Stellar
-                Err(Error::InvalidOracleConfig)
+                Err(Error::InvalidConfig)
             }
         }
     }
@@ -1436,7 +1365,7 @@ impl OracleUtils {
         } else if comparison == &String::from_str(env, "eq") {
             Ok(price == threshold)
         } else {
-            Err(Error::InvalidComparison)
+            Err(Error::InvalidInput)
         }
     }
 
@@ -1463,7 +1392,7 @@ impl OracleUtils {
         }
 
         // Check for reasonable price range (1 cent to $1M)
-        if price < 1 || price > 100_000_000_00 {
+        if !(1..=10_000_000_000).contains(&price) {
             return Err(Error::InvalidThreshold);
         }
 
@@ -1506,7 +1435,7 @@ mod tests {
         // Test Pyth oracle creation (should fail)
         let pyth_oracle = OracleFactory::create_oracle(OracleProvider::Pyth, contract_id.clone());
         assert!(pyth_oracle.is_err());
-        assert_eq!(pyth_oracle.unwrap_err(), Error::InvalidOracleConfig);
+        assert_eq!(pyth_oracle.unwrap_err(), Error::InvalidConfig);
 
         // Test Reflector oracle creation
         let reflector_oracle =
@@ -1517,7 +1446,7 @@ mod tests {
         let unsupported_oracle =
             OracleFactory::create_oracle(OracleProvider::BandProtocol, contract_id);
         assert!(unsupported_oracle.is_err());
-        assert_eq!(unsupported_oracle.unwrap_err(), Error::InvalidOracleConfig);
+        assert_eq!(unsupported_oracle.unwrap_err(), Error::InvalidConfig);
     }
 
     #[test]
@@ -1525,8 +1454,8 @@ mod tests {
         let env = Env::default();
 
         // Test price comparison
-        let price = 30_000_00; // $30k
-        let threshold = 25_000_00; // $25k
+        let price = 3_000_000; // $30k
+        let threshold = 2_500_000; // $25k
 
         // Test greater than
         let gt_result =

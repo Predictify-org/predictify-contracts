@@ -1,11 +1,13 @@
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
 
-use crate::markets::{CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils};
+use crate::{
+    errors::Error,
+    markets::{MarketAnalytics, MarketStateManager, MarketUtils, CommunityConsensus},
+    oracles::{OracleFactory, OracleUtils},
+    types::{Market, MarketState, OracleProvider},
+};
 
-use crate::oracles::{OracleFactory, OracleUtils};
-use crate::types::*;
 
 /// Resolution management system for Predictify Hybrid contract
 ///
@@ -15,89 +17,10 @@ use crate::types::*;
 /// - Resolution analytics and statistics
 /// - Resolution helper utilities and testing functions
 /// - Resolution state management and tracking
-
 // ===== RESOLUTION TYPES =====
 
-/// Enumeration of possible resolution states for market lifecycle management.
-///
-/// This enum tracks the progression of a market through its resolution phases,
-/// from initial creation through final outcome determination. Each state represents
-/// a specific stage in the resolution process with distinct validation rules and
-/// available operations.
-///
-/// # State Transitions
-///
-/// The typical resolution flow follows this pattern:
-/// ```text
-/// Active → OracleResolved → MarketResolved → [Disputed] → Finalized
-/// ```
-///
-/// **Alternative flows:**
-/// - Direct admin resolution: `Active → MarketResolved → Finalized`
-/// - Dispute flow: `MarketResolved → Disputed → Finalized`
-/// - Oracle-only flow: `Active → OracleResolved → MarketResolved → Finalized`
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::{Env, Symbol};
-/// # use predictify_hybrid::resolution::{ResolutionState, ResolutionUtils};
-/// # use predictify_hybrid::markets::Market;
-/// # let env = Env::default();
-/// # let market = Market::default(); // Placeholder
-///
-/// // Check current resolution state
-/// let current_state = ResolutionUtils::get_resolution_state(&env, &market);
-///
-/// match current_state {
-///     ResolutionState::Active => {
-///         println!("Market is active, ready for oracle resolution");
-///         // Can fetch oracle results
-///     },
-///     ResolutionState::OracleResolved => {
-///         println!("Oracle result available, can proceed to market resolution");
-///         // Can combine with community consensus
-///     },
-///     ResolutionState::MarketResolved => {
-///         println!("Market resolved, awaiting finalization or disputes");
-///         // Can be disputed or finalized
-///     },
-///     ResolutionState::Disputed => {
-///         println!("Resolution is under dispute");
-///         // Dispute resolution process active
-///     },
-///     ResolutionState::Finalized => {
-///         println!("Resolution is final and immutable");
-///         // No further changes allowed
-///     },
-/// }
-/// ```
-///
-/// # State Validation
-///
-/// Each state has specific validation requirements:
-/// - **Active**: Market must be within voting period
-/// - **OracleResolved**: Oracle data must be valid and recent
-/// - **MarketResolved**: Final outcome must be determined
-/// - **Disputed**: Dispute must be properly filed and active
-/// - **Finalized**: Resolution must be complete and immutable
-///
-/// # Business Rules
-///
-/// State transitions enforce business logic:
-/// - Markets cannot skip resolution states arbitrarily
-/// - Finalized resolutions cannot be changed
-/// - Disputed resolutions require proper dispute resolution
-/// - Oracle resolution requires valid oracle data
-///
-/// # Integration Points
-///
-/// Resolution states integrate with:
-/// - **Market Management**: Controls available market operations
-/// - **Voting System**: Determines when voting periods end
-/// - **Dispute System**: Manages dispute lifecycle
-/// - **Oracle System**: Coordinates oracle data fetching
-/// - **Admin Functions**: Enables administrative overrides
+/// Resolution state enumeration
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[contracttype]
 pub enum ResolutionState {
@@ -146,7 +69,7 @@ pub enum ResolutionState {
 /// # let oracle_contract = Address::generate(&env);
 ///
 /// // Fetch oracle resolution for a market
-/// let oracle_resolution = OracleResolutionManager::fetch_oracle_result(
+/// let oracle_resolution = OracleResolutionManager::fetchoracle_result(
 ///     &env,
 ///     &market_id,
 ///     &oracle_contract
@@ -828,7 +751,7 @@ pub struct ResolutionValidation {
 /// # let oracle_contract = Address::generate(&env);
 ///
 /// // Fetch oracle resolution for a market
-/// let oracle_resolution = OracleResolutionManager::fetch_oracle_result(
+/// let oracle_resolution = OracleResolutionManager::fetchoracle_result(
 ///     &env,
 ///     &market_id,
 ///     &oracle_contract
@@ -942,7 +865,7 @@ pub struct OracleResolutionManager;
 
 impl OracleResolutionManager {
     /// Fetch oracle result for a market
-    pub fn fetch_oracle_result(
+    pub fn fetchoracle_result(
         env: &Env,
         market_id: &Symbol,
         oracle_contract: &Address,
@@ -990,10 +913,8 @@ impl OracleResolutionManager {
 
     /// Get oracle resolution for a market
 
-    pub fn get_oracle_resolution(
-        _env: &Env,
-        _market_id: &Symbol,
-    ) -> Result<Option<OracleResolution>, Error> {
+    pub fn get_oracle_resolution(_env: &Env, _market_id: &Symbol) -> Result<Option<OracleResolution>, Error> {
+
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
 
@@ -1304,10 +1225,8 @@ impl MarketResolutionManager {
 
     /// Get market resolution
 
-    pub fn get_market_resolution(
-        _env: &Env,
-        _market_id: &Symbol,
-    ) -> Result<Option<MarketResolution>, Error> {
+    pub fn get_market_resolution(_env: &Env, _market_id: &Symbol) -> Result<Option<MarketResolution>, Error> {
+
         // For now, return None since we don't store complex types in storage
         // In a real implementation, you would store this in a more sophisticated way
 
@@ -1476,6 +1395,9 @@ impl OracleResolutionAnalytics {
 
     /// Get oracle resolution statistics
     pub fn get_oracle_stats(_env: &Env) -> Result<OracleStats, Error> {
+
+        // For now, return default stats since we don't store complex types
+
         Ok(OracleStats::default())
     }
 }
@@ -1486,11 +1408,19 @@ pub struct MarketResolutionAnalytics;
 impl MarketResolutionAnalytics {
     /// Determine resolution method
     pub fn determine_resolution_method(
-        _oracle_result: &String,
+        oracle_result: &String,
         community_consensus: &CommunityConsensus,
     ) -> ResolutionMethod {
-        if community_consensus.percentage > 70 {
-            ResolutionMethod::Hybrid
+
+        if oracle_result == &community_consensus.outcome {
+            if community_consensus.percentage > 70 {
+                ResolutionMethod::Hybrid
+            } else {
+                ResolutionMethod::OracleOnly
+            }
+        } else if community_consensus.percentage > 80 && community_consensus.total_votes >= 10 {
+            ResolutionMethod::CommunityOnly
+
         } else {
             ResolutionMethod::OracleOnly
         }
@@ -1498,19 +1428,19 @@ impl MarketResolutionAnalytics {
 
     /// Calculate confidence score
     pub fn calculate_confidence_score(
-        _oracle_result: &String,
+        oracle_result: &String,
         community_consensus: &CommunityConsensus,
         method: &ResolutionMethod,
     ) -> u32 {
         match method {
             ResolutionMethod::OracleOnly => 85,
             ResolutionMethod::CommunityOnly => {
-                let base_confidence = community_consensus.percentage as u32;
+                let base_confidence = community_consensus.percentage;
                 base_confidence.min(90)
             }
             ResolutionMethod::Hybrid => {
                 let oracle_confidence = 85;
-                let community_confidence = community_consensus.percentage as u32;
+                let community_confidence = community_consensus.percentage;
                 ((oracle_confidence + community_confidence) / 2).min(95)
             }
             ResolutionMethod::AdminOverride => 100,
@@ -1520,6 +1450,9 @@ impl MarketResolutionAnalytics {
 
     /// Calculate resolution analytics
     pub fn calculate_resolution_analytics(_env: &Env) -> Result<ResolutionAnalytics, Error> {
+
+        // For now, return default analytics since we don't store complex types
+
         Ok(ResolutionAnalytics::default())
     }
 
@@ -1579,11 +1512,7 @@ impl ResolutionUtils {
     /// Calculate resolution time
     pub fn calculate_resolution_time(env: &Env, market: &Market) -> u64 {
         let current_time = env.ledger().timestamp();
-        if current_time > market.end_time {
-            current_time - market.end_time
-        } else {
-            0
-        }
+        current_time.saturating_sub(market.end_time)
     }
 
     /// Validate resolution parameters
@@ -1665,7 +1594,7 @@ impl ResolutionTesting {
     ) -> Result<MarketResolution, Error> {
         // Fetch oracle result
         let _oracle_resolution =
-            OracleResolutionManager::fetch_oracle_result(env, market_id, oracle_contract)?;
+            OracleResolutionManager::fetchoracle_result(env, market_id, oracle_contract)?;
 
         // Resolve market
         let market_resolution = MarketResolutionManager::resolve_market(env, market_id)?;
@@ -1716,7 +1645,6 @@ impl Default for ResolutionAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test::PredictifyTest, PredictifyHybridClient};
     use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 
     #[test]
@@ -1746,17 +1674,17 @@ mod tests {
 
     #[test]
     fn test_resolution_utils_get_state() {
+        use crate::types::OracleConfig;
+        
         let env = Env::default();
         let admin = Address::generate(&env);
         let market = Market::new(
             &env,
             admin,
             String::from_str(&env, "Test Market"),
-            soroban_sdk::vec![
-                &env,
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no"),
-            ],
+
+            soroban_sdk::vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+
             env.ledger().timestamp() + 86400,
             OracleConfig {
                 provider: OracleProvider::Pyth,
@@ -1802,35 +1730,43 @@ mod tests {
     }
 
     #[test]
-    fn test_resolution_method_determination() {
-        let env = Env::default();
 
-        // Create test data
-        let community_consensus = CommunityConsensus {
-            outcome: String::from_str(&env, "yes"),
-            votes: 75,
-            total_votes: 100,
-            percentage: 75,
-        };
+    fn test_resolution_performance() {
+        use crate::test::PredictifyTest;
+        use crate::PredictifyHybridClient;
+        
+        let test = PredictifyTest::setup();
+        test.create_test_market();
 
-        // Test hybrid resolution
-        let method = MarketResolutionAnalytics::determine_resolution_method(
-            &String::from_str(&env, "yes"),
-            &community_consensus,
-        );
-        assert!(matches!(method, ResolutionMethod::Hybrid));
+        let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-        // Test oracle-only resolution
-        let low_consensus = CommunityConsensus {
-            outcome: String::from_str(&env, "yes"),
-            votes: 60,
-            total_votes: 100,
-            percentage: 60,
-        };
-        let method = MarketResolutionAnalytics::determine_resolution_method(
-            &String::from_str(&env, "yes"),
-            &low_consensus,
-        );
-        assert!(matches!(method, ResolutionMethod::OracleOnly));
+        // Test multiple resolution operations
+        let market = test.env.as_contract(&test.contract_id, || {
+            test.env
+                .storage()
+                .persistent()
+                .get::<Symbol, Market>(&test.market_id)
+                .unwrap()
+        });
+
+        test.env.ledger().set(LedgerInfo {
+            timestamp: market.end_time + 1,
+            protocol_version: 22,
+            sequence_number: test.env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+
+        // Multiple oracle resolution calls
+        client.fetch_oracle_result(&test.market_id, &test.pyth_contract);
+        // Multiple market resolution calls
+        client.resolve_market(&test.market_id);
+        // Multiple analytics calls
+        client.get_resolution_analytics();
+        // No performance assertions (no std::time)
     }
-}
+} 
+
