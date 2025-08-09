@@ -45,6 +45,20 @@ This dedicated documentation file contains:
 
 ---
 
+## ⚡ Gas Optimization Documentation
+
+- Gas Guide and Best Practices: [GAS_OPTIMIZATION.md](./GAS_OPTIMIZATION.md)
+- Per-Function Cost Analysis (catalog + templates): [GAS_COST_ANALYSIS.md](./GAS_COST_ANALYSIS.md)
+- Benchmarking Procedures: [GAS_BENCHMARKING.md](./GAS_BENCHMARKING.md)
+- Testing Guidelines (prevent regressions): [GAS_TESTING_GUIDELINES.md](./GAS_TESTING_GUIDELINES.md)
+- Usage Monitoring & Ops: [GAS_MONITORING.md](./GAS_MONITORING.md)
+- Case Studies (Predictify-specific): [GAS_CASE_STUDIES.md](./GAS_CASE_STUDIES.md)
+- Troubleshooting Guide: [GAS_TROUBLESHOOTING.md](./GAS_TROUBLESHOOTING.md)
+
+These documents provide practical steps to measure, monitor, and reduce fees for Soroban contracts in this repo.
+
+---
+
 ## 🛠️ Prerequisites
 - [Rust](https://www.rust-lang.org/tools/install)
 - [Soroban CLI](https://github.com/stellar/soroban-tools)
