@@ -28,34 +28,27 @@ This repository contains smart contracts for Stellar's Soroban platform, organiz
 
 ---
 
-## 📚 API Documentation
+## 📚 Documentation
 
-For comprehensive API documentation, including versioning information, integration examples, and troubleshooting guides, please refer to:
+For comprehensive documentation, please refer to our organized documentation structure:
 
-**📖 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)**
+**📖 [Documentation Index](./docs/README.md)**
 
-This dedicated documentation file contains:
-- **API Versioning**: Semantic versioning, compatibility matrix, upgrade strategies
-- **Core API Reference**: Function signatures, parameters, and examples
-- **Data Structures**: Complete type definitions and usage
-- **Error Codes**: Comprehensive error reference with solutions
-- **Integration Examples**: Real-world usage patterns and best practices
-- **Troubleshooting Guide**: Common issues and debugging tools
-- **Support Resources**: Community channels and getting help
+### 🚀 API Documentation
+Complete API reference and integration guides: **[API Documentation](./docs/api/API_DOCUMENTATION.md)**
+
+### ⛽ Gas Optimization
+Performance optimization and cost analysis: **[Gas Documentation](./docs/gas/)**
+
+### 🔒 Security
+Security audits, best practices, and threat analysis: **[Security Documentation](./docs/security/)**
+
+### 🛠️ Operations
+Deployment, maintenance, and incident management: **[Operations Documentation](./docs/operations/)**
 
 ---
 
-## ⚡ Gas Optimization Documentation
 
-- Gas Guide and Best Practices: [GAS_OPTIMIZATION.md](./GAS_OPTIMIZATION.md)
-- Per-Function Cost Analysis (catalog + templates): [GAS_COST_ANALYSIS.md](./GAS_COST_ANALYSIS.md)
-- Benchmarking Procedures: [GAS_BENCHMARKING.md](./GAS_BENCHMARKING.md)
-- Testing Guidelines (prevent regressions): [GAS_TESTING_GUIDELINES.md](./GAS_TESTING_GUIDELINES.md)
-- Usage Monitoring & Ops: [GAS_MONITORING.md](./GAS_MONITORING.md)
-- Case Studies (Predictify-specific): [GAS_CASE_STUDIES.md](./GAS_CASE_STUDIES.md)
-- Troubleshooting Guide: [GAS_TROUBLESHOOTING.md](./GAS_TROUBLESHOOTING.md)
-
-These documents provide practical steps to measure, monitor, and reduce fees for Soroban contracts in this repo.
 
 ---
 
