@@ -36,12 +36,19 @@ Operational procedures and incident management:
 
 - **[Incident Response](./operations/INCIDENT_RESPONSE.md)** - Incident response procedures and protocols
 
+### 📋 [Contract Documentation](./contracts/)
+Implementation-specific documentation for the Predictify Hybrid contract:
+
+- **[Types System](./contracts/TYPES_SYSTEM.md)** - Comprehensive type system and data structures
+- **[Voting System](./contracts/VOTING_SYSTEM.md)** - Voting mechanism and dispute resolution
+
 ## 🎯 Quick Start
 
 1. **For Developers**: Start with [API Documentation](./api/API_DOCUMENTATION.md)
-2. **For Security Auditors**: Review [Security Documentation](./security/)
-3. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
-4. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
+2. **For Contract Contributors**: Review [Contract Documentation](./contracts/)
+3. **For Security Auditors**: Review [Security Documentation](./security/)
+4. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
+5. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
 
 ## 🔗 Related Resources
 
@@ -61,6 +68,7 @@ When adding new documentation:
 ## 🏷️ Documentation Categories
 
 - **API**: Contract interfaces, function references, and integration guides
+- **Contracts**: Implementation-specific documentation for contract systems
 - **Security**: Security audits, best practices, and threat analysis
 - **Gas**: Performance optimization, cost analysis, and monitoring
 - **Operations**: Deployment, maintenance, and incident management
