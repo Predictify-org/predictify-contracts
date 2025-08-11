@@ -108,6 +108,16 @@ pub enum Error {
     AuditPermissionDenied = 506,
     /// Audit validation failed
     AuditValidationFailed = 507,
+
+    // ===== DISPUTE TIMEOUT ERRORS =====
+    /// Invalid timeout hours
+    InvalidTimeoutHours = 600,
+    /// Dispute timeout not expired
+    DisputeTimeoutNotExpired = 601,
+    /// Dispute timeout extension not allowed
+    DisputeTimeoutExtensionNotAllowed = 602,
+    /// Dispute timeout not set
+    DisputeTimeoutNotSet = 603,
 }
 
 impl Error {
@@ -160,6 +170,10 @@ impl Error {
             Error::InvalidAuditPriority => "Invalid audit priority",
             Error::AuditPermissionDenied => "Permission denied for audit operation",
             Error::AuditValidationFailed => "Audit validation failed",
+            Error::InvalidTimeoutHours => "Invalid timeout hours specified",
+            Error::DisputeTimeoutNotExpired => "Dispute timeout period has not expired yet",
+            Error::DisputeTimeoutExtensionNotAllowed => "Dispute timeout extension is not allowed",
+            Error::DisputeTimeoutNotSet => "Dispute timeout is not set",
         }
     }
 
@@ -212,6 +226,10 @@ impl Error {
             Error::InvalidAuditPriority => "INVALID_AUDIT_PRIORITY",
             Error::AuditPermissionDenied => "AUDIT_PERMISSION_DENIED",
             Error::AuditValidationFailed => "AUDIT_VALIDATION_FAILED",
+            Error::InvalidTimeoutHours => "INVALID_TIMEOUT_HOURS",
+            Error::DisputeTimeoutNotExpired => "DISPUTE_TIMEOUT_NOT_EXPIRED",
+            Error::DisputeTimeoutExtensionNotAllowed => "DISPUTE_TIMEOUT_EXTENSION_NOT_ALLOWED",
+            Error::DisputeTimeoutNotSet => "DISPUTE_TIMEOUT_NOT_SET",
         }
     }
 }
