@@ -782,7 +782,46 @@ pub struct AuditSystemEvent {
     /// Action performed (initialized, reset, etc.)
     pub action: String,
     /// Event timestamp
+    pub timestamp: u64,
+}
 
+/// Storage cleanup event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageCleanupEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Cleanup type
+    pub cleanup_type: String,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Storage optimization event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageOptimizationEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Optimization type
+    pub optimization_type: String,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Storage migration event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageMigrationEvent {
+    /// Migration ID
+    pub migration_id: Symbol,
+    /// From format
+    pub from_format: String,
+    /// To format
+    pub to_format: String,
+    /// Number of markets migrated
+    pub markets_migrated: u32,
+    /// Event timestamp
     pub timestamp: u64,
 }
 
