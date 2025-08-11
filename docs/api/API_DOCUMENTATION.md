@@ -216,7 +216,7 @@ const getContractVersion = async (contractId: string): Promise<string> => {
 **Documentation:**
 - [v1.0.x API Reference](./docs/api/v1.0/)
 - [v0.9.x Legacy Docs](./docs/api/v0.9/)
-- [Migration Guide v0.9 → v1.0](./docs/migration/v0.9-to-v1.0.md)
+- [Migration Guide v0.9 → v1.0](./migration/v0.9-to-v1.0.md)
 
 **Contract Addresses:**
 - **v1.0.x Mainnet**: `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGK3HGU`

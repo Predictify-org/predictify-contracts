@@ -502,6 +502,9 @@ fn test_market_creation_data() {
     let test = PredictifyTest::setup();
     let market_id = test.create_test_market();
 
+
+
+
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()

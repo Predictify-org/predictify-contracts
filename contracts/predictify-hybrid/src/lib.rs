@@ -22,6 +22,7 @@ mod storage;
 mod types;
 mod utils;
 mod validation;
+mod validation_tests;
 mod voting;
 
 #[cfg(test)]
@@ -579,6 +580,9 @@ impl PredictifyHybrid {
         env.storage().persistent().set(&market_id, &market);
     }
 
+
+
+
     /// Fetches oracle result for a market from external oracle contracts.
     ///
     /// This function retrieves prediction results from configured oracle sources
@@ -969,6 +973,39 @@ impl PredictifyHybrid {
         audit::AuditManager::get_audit_statistics(&env)
     }
 
+    /// Extend market duration (admin only)
+    pub fn extend_market(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        additional_days: u32,
+        reason: String,
+        fee_amount: i128,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| {
+                panic_with_error!(env, Error::Unauthorized);
+            });
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        extensions::ExtensionManager::extend_market_duration(
+            &env,
+            admin,
+            market_id,
+            additional_days,
+            reason,
+        )
+    }
+
     /// Get security audit checklist
     pub fn get_security_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
         audit::AuditChecklistGenerator::get_security_audit_checklist(&env)
@@ -997,7 +1034,56 @@ impl PredictifyHybrid {
     /// Reset audit system (admin only)
     pub fn reset_audit_system(env: Env, admin: Address) -> Result<(), Error> {
         audit::AuditManager::reset_audit_system(&env, &admin)
+    }
 
+    /// Get storage usage statistics
+    pub fn get_storage_usage_statistics(env: Env) -> Result<storage::StorageUsageStats, Error> {
+        storage::StorageOptimizer::get_storage_usage_statistics(&env)
+    }
+
+    /// Validate storage integrity for a specific market
+    pub fn validate_storage_integrity(env: Env, market_id: Symbol) -> Result<storage::StorageIntegrityResult, Error> {
+        storage::StorageOptimizer::validate_storage_integrity(&env, &market_id)
+    }
+
+    /// Get storage configuration
+    pub fn get_storage_config(env: Env) -> storage::StorageConfig {
+        storage::StorageOptimizer::get_storage_config(&env)
+    }
+
+    /// Update storage configuration
+    pub fn update_storage_config(env: Env, config: storage::StorageConfig) -> Result<(), Error> {
+        storage::StorageOptimizer::update_storage_config(&env, &config)
+    }
+
+    /// Calculate storage cost for a market
+    pub fn calculate_storage_cost(env: Env, market_id: Symbol) -> Result<u64, Error> {
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+
+        Ok(storage::StorageUtils::calculate_storage_cost(&market))
+    }
+
+    /// Get storage efficiency score for a market
+    pub fn get_storage_efficiency_score(env: Env, market_id: Symbol) -> Result<u32, Error> {
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+
+        Ok(storage::StorageUtils::get_storage_efficiency_score(&market))
+    }
+
+    /// Get storage recommendations for a market
+    pub fn get_storage_recommendations(env: Env, market_id: Symbol) -> Result<Vec<String>, Error> {
+        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+            Ok(m) => m,
+            Err(e) => return Err(e),
+        };
+
+        Ok(storage::StorageUtils::get_storage_recommendations(&market))
     }
 }
 

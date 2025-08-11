@@ -23,25 +23,32 @@
 ## 🧠 Project Summary
 This repository contains smart contracts for Stellar's Soroban platform, organized in a Rust workspace. Key components include:
 
-- `hello-world`: A basic example contract for testing and structure reference.
+- `predictify-hybrid`: The main prediction market contract with oracle integration.
 - `predictify-hybrid`: A hybrid prediction market with oracle integration (Reflector, Pyth), staking, dispute resolution, and community voting.
 
 ---
 
-## 📚 API Documentation
+## 📚 Documentation
 
-For comprehensive API documentation, including versioning information, integration examples, and troubleshooting guides, please refer to:
+For comprehensive documentation, please refer to our organized documentation structure:
 
-**📖 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)**
+**📖 [Documentation Index](./docs/README.md)**
 
-This dedicated documentation file contains:
-- **API Versioning**: Semantic versioning, compatibility matrix, upgrade strategies
-- **Core API Reference**: Function signatures, parameters, and examples
-- **Data Structures**: Complete type definitions and usage
-- **Error Codes**: Comprehensive error reference with solutions
-- **Integration Examples**: Real-world usage patterns and best practices
-- **Troubleshooting Guide**: Common issues and debugging tools
-- **Support Resources**: Community channels and getting help
+### 🚀 API Documentation
+Complete API reference and integration guides: **[API Documentation](./docs/api/API_DOCUMENTATION.md)**
+
+### ⛽ Gas Optimization
+Performance optimization and cost analysis: **[Gas Documentation](./docs/gas/)**
+
+### 🔒 Security
+Security audits, best practices, and threat analysis: **[Security Documentation](./docs/security/)**
+
+### 🛠️ Operations
+Deployment, maintenance, and incident management: **[Operations Documentation](./docs/operations/)**
+
+---
+
+
 
 ---
 
