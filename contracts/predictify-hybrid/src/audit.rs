@@ -3,7 +3,6 @@
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::admin::AdminAccessControl;
 use crate::events::EventEmitter;
 
 /// Comprehensive audit preparation and checklist system for Predictify Hybrid contract
@@ -702,7 +701,7 @@ impl AuditManager {
         let total_items = checklist.items.len();
         let mut completed_items = 0;
         let mut critical_remaining = 0;
-        let mut high_remaining = 0;
+        let mut _high_remaining = 0;
 
         for item in checklist.items.iter() {
             if item.completed {
@@ -710,7 +709,7 @@ impl AuditManager {
             } else {
                 match item.priority {
                     AuditPriority::Critical => critical_remaining += 1,
-                    AuditPriority::High => high_remaining += 1,
+                    AuditPriority::High => _high_remaining += 1,
                     _ => {}
                 }
             }

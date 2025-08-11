@@ -818,7 +818,7 @@ impl FeeManager {
         FeeValidator::validate_admin_permissions(env, &admin)?;
 
         // Validate fee tiers
-        for (tier_id, fee_percentage) in new_fee_tiers.iter() {
+        for (_tier_id, fee_percentage) in new_fee_tiers.iter() {
             if fee_percentage < MIN_FEE_PERCENTAGE || fee_percentage > MAX_FEE_PERCENTAGE {
                 return Err(Error::InvalidInput);
             }
@@ -835,7 +835,7 @@ impl FeeManager {
     }
 
     /// Get fee history for a specific market
-    pub fn get_fee_history(env: &Env, market_id: Symbol) -> Result<Vec<FeeHistory>, Error> {
+    pub fn get_fee_history(env: &Env, _market_id: Symbol) -> Result<Vec<FeeHistory>, Error> {
         let history_key = Symbol::new(env, "fee_history");
 
         match env
