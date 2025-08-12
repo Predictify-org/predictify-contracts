@@ -759,43 +759,69 @@ pub struct ConfigInitializedEvent {
     pub timestamp: u64,
 }
 
+/// Audit item updated event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditItemUpdatedEvent {
+    /// Auditor address
+    pub auditor: Address,
+    /// Audit item ID
+    pub item_id: u32,
+    /// Completion status
+    pub completed: bool,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
+/// Audit system event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditSystemEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Action performed (initialized, reset, etc.)
+    pub action: String,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 /// Storage cleanup event
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StorageCleanupEvent {
     /// Market ID
     pub market_id: Symbol,
     /// Cleanup type
     pub cleanup_type: String,
-    /// Cleanup timestamp
+    /// Event timestamp
     pub timestamp: u64,
 }
 
 /// Storage optimization event
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StorageOptimizationEvent {
     /// Market ID
     pub market_id: Symbol,
     /// Optimization type
     pub optimization_type: String,
-    /// Optimization timestamp
+    /// Event timestamp
     pub timestamp: u64,
 }
 
 /// Storage migration event
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StorageMigrationEvent {
     /// Migration ID
     pub migration_id: Symbol,
-    /// Source format
+    /// From format
     pub from_format: String,
-    /// Target format
+    /// To format
     pub to_format: String,
     /// Number of markets migrated
     pub markets_migrated: u32,
-    /// Migration timestamp
+    /// Event timestamp
     pub timestamp: u64,
 }
 
@@ -1256,6 +1282,51 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("stor_mig"), &event);
+    }
+
+    /// Emit audit item updated event
+    pub fn emit_audit_item_updated(
+        env: &Env,
+        auditor: &Address,
+        item_id: u32,
+        completed: bool,
+    ) {
+        let event = AuditItemUpdatedEvent {
+            auditor: auditor.clone(),
+            item_id,
+            completed,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("aud_item"), &event);
+    }
+
+    /// Emit audit system initialized event
+    pub fn emit_audit_system_initialized(
+        env: &Env,
+        admin: &Address,
+    ) {
+        let event = AuditSystemEvent {
+            admin: admin.clone(),
+            action: String::from_str(env, "initialized"),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("aud_init"), &event);
+    }
+
+    /// Emit audit system reset event
+    pub fn emit_audit_system_reset(
+        env: &Env,
+        admin: &Address,
+    ) {
+        let event = AuditSystemEvent {
+            admin: admin.clone(),
+            action: String::from_str(env, "reset"),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("aud_reset"), &event);
     }
 
     /// Store event in persistent storage

@@ -139,7 +139,7 @@ impl StorageOptimizer {
         let compressed_size = compressed_data.len() as u32;
         
         // Calculate compression ratio (as percentage * 100 for integer storage)
-        let compression_ratio = if original_size > 0 {
+        let _compression_ratio = if original_size > 0 {
             (compressed_size as i128 * 10000) / original_size as i128
         } else {
             0

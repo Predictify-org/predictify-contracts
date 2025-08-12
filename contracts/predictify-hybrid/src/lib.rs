@@ -8,6 +8,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
+mod audit;
 mod config;
 mod disputes;
 mod errors;
@@ -932,76 +933,44 @@ impl PredictifyHybrid {
         Ok(stats)
     }
 
-    /// Dispute a market resolution
-    pub fn dispute_market(
+
+    // ===== AUDIT SYSTEM FUNCTIONS =====
+
+    /// Initialize the audit system
+    pub fn initialize_audit_system(env: Env, admin: Address) -> Result<(), Error> {
+        audit::AuditManager::initialize_audit_system(&env, &admin)
+    }
+
+    /// Get current audit status
+    pub fn get_audit_status(env: Env) -> Result<audit::AuditChecklist, Error> {
+        audit::AuditManager::get_audit_status(&env)
+    }
+
+    /// Update audit item completion status
+    pub fn update_audit_item_status(
         env: Env,
-        user: Address,
-        market_id: Symbol,
-        stake: i128,
-        reason: Option<String>,
+        category: audit::AuditCategory,
+        item_id: u32,
+        completed: bool,
+        auditor: Address,
     ) -> Result<(), Error> {
-        user.require_auth();
-        disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
+        audit::AuditManager::update_audit_item_status(&env, category, item_id, completed, auditor)
     }
 
-    /// Vote on a dispute
-    pub fn vote_on_dispute(
-        env: Env,
-        user: Address,
-        market_id: Symbol,
-        dispute_id: Symbol,
-        vote: bool,
-        stake: i128,
-        reason: Option<String>,
-    ) -> Result<(), Error> {
-        user.require_auth();
-        disputes::DisputeManager::vote_on_dispute(
-            &env, user, market_id, dispute_id, vote, stake, reason,
-        )
+    /// Validate audit completion for deployment readiness
+    pub fn validate_audit_completion(env: Env) -> Result<bool, Error> {
+        let checklist = audit::AuditManager::get_audit_status(&env)?;
+        audit::AuditManager::validate_audit_completion(&env, &checklist)
     }
 
-    /// Resolve a dispute (admin only)
-    pub fn resolve_dispute(
-        env: Env,
-        admin: Address,
-        market_id: Symbol,
-    ) -> Result<disputes::DisputeResolution, Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
-
-        disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
+    /// Generate comprehensive audit report
+    pub fn generate_audit_report(env: Env) -> Result<String, Error> {
+        audit::AuditManager::generate_audit_report(&env)
     }
 
-    /// Collect fees from a market (admin only)
-    pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
-
-        fees::FeeManager::collect_fees(&env, admin, market_id)
+    /// Get audit statistics
+    pub fn get_audit_statistics(env: Env) -> Result<Map<String, u32>, Error> {
+        audit::AuditManager::get_audit_statistics(&env)
     }
 
     /// Validate fee collection for a market with comprehensive safety checks
@@ -1155,44 +1124,36 @@ impl PredictifyHybrid {
             additional_days,
             reason,
         )
-
-
     }
 
-    // ===== STORAGE OPTIMIZATION FUNCTIONS =====
-
-    /// Compress market data for storage optimization
-    pub fn compress_market_data(env: Env, market_id: Symbol) -> Result<storage::CompressedMarket, Error> {
-        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
-            Ok(m) => m,
-            Err(e) => return Err(e),
-        };
-        
-        storage::StorageOptimizer::compress_market_data(&env, &market)
+    /// Get security audit checklist
+    pub fn get_security_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_security_audit_checklist(&env)
     }
 
-    /// Clean up old market data based on age and state
-    pub fn cleanup_old_market_data(env: Env, market_id: Symbol) -> Result<bool, Error> {
-        storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)
+    /// Get code review checklist
+    pub fn get_code_review_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_code_review_checklist(&env)
     }
 
-    /// Migrate storage format from old to new format
-    pub fn migrate_storage_format(
-        env: Env,
-        from_format: storage::StorageFormat,
-        to_format: storage::StorageFormat,
-    ) -> Result<storage::StorageMigration, Error> {
-        storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format)
+    /// Get testing audit checklist
+    pub fn get_testing_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_testing_audit_checklist(&env)
     }
 
-    /// Monitor storage usage and return statistics
-    pub fn monitor_storage_usage(env: Env) -> Result<storage::StorageUsageStats, Error> {
-        storage::StorageOptimizer::monitor_storage_usage(&env)
+    /// Get documentation audit checklist
+    pub fn get_docs_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_documentation_audit_checklist(&env)
     }
 
-    /// Optimize storage layout for a specific market
-    pub fn optimize_storage_layout(env: Env, market_id: Symbol) -> Result<bool, Error> {
-        storage::StorageOptimizer::optimize_storage_layout(&env, &market_id)
+    /// Get deployment audit checklist
+    pub fn get_deployment_audit_checklist(env: Env) -> Vec<audit::AuditItem> {
+        audit::AuditChecklistGenerator::get_deployment_audit_checklist(&env)
+    }
+
+    /// Reset audit system (admin only)
+    pub fn reset_audit_system(env: Env, admin: Address) -> Result<(), Error> {
+        audit::AuditManager::reset_audit_system(&env, &admin)
     }
 
     /// Get storage usage statistics
@@ -1221,7 +1182,7 @@ impl PredictifyHybrid {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
+
         Ok(storage::StorageUtils::calculate_storage_cost(&market))
     }
 
@@ -1231,7 +1192,7 @@ impl PredictifyHybrid {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
+
         Ok(storage::StorageUtils::get_storage_efficiency_score(&market))
     }
 
@@ -1241,9 +1202,8 @@ impl PredictifyHybrid {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
-        Ok(storage::StorageUtils::get_storage_recommendations(&market))
 
+        Ok(storage::StorageUtils::get_storage_recommendations(&market))
     }
 }
 

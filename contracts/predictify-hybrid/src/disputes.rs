@@ -2604,7 +2604,7 @@ impl DisputeAnalytics {
     }
 
     /// Calculate timeout statistics
-    pub fn calculate_timeout_stats(env: &Env) -> TimeoutStats {
+    pub fn calculate_timeout_stats(_env: &Env) -> TimeoutStats {
         // This is a simplified implementation
         // In a real system, you would iterate through all timeouts and calculate statistics
         TimeoutStats {
