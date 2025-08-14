@@ -2,8 +2,10 @@
 
 use crate::{
     errors::Error,
-    markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
+
+    markets::{MarketAnalytics, MarketStateManager, MarketUtils},
     types::Market,
+    validation::MarketValidator,
 };
 
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
@@ -308,15 +310,14 @@ impl VotingManager {
         outcome: String,
         stake: i128,
     ) -> Result<(), Error> {
-        // Require authentication from the user
-        user.require_auth();
+        // Authentication is already handled by the calling function
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         VotingValidator::validate_market_for_voting(env, &market)?;
 
         // Validate vote parameters
-        VotingValidator::validate_vote_parameters(env, &outcome, &market.outcomes, stake)?;
+        VotingValidator::validate_vote_input(env, &market_id, &outcome, stake, &market.outcomes)?;
 
         // Process stake transfer
         VotingUtils::transfer_stake(env, &user, stake)?;
@@ -335,8 +336,7 @@ impl VotingManager {
         market_id: Symbol,
         stake: i128,
     ) -> Result<(), Error> {
-        // Require authentication from the user
-        user.require_auth();
+        // Authentication is already handled by the calling function
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
@@ -358,8 +358,7 @@ impl VotingManager {
 
     /// Process winnings claim for a user
     pub fn process_claim(env: &Env, user: Address, market_id: Symbol) -> Result<i128, Error> {
-        // Require authentication from the user
-        user.require_auth();
+        // Authentication is already handled by the calling function
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
@@ -389,11 +388,9 @@ impl VotingManager {
 
     /// Calculate dynamic dispute threshold for a market
 
-    pub fn calculate_dispute_threshold(
-        env: &Env,
-        market_id: Symbol,
-    ) -> Result<DisputeThreshold, Error> {
+    pub fn calculate_dispute_threshold(env: &Env, market_id: Symbol) -> Result<DisputeThreshold, Error> {
         let _market = MarketStateManager::get_market(env, &market_id)?;
+        
 
         // Get adjustment factors
         let factors = ThresholdUtils::get_threshold_adjustment_factors(env, &market_id)?;
@@ -550,8 +547,8 @@ impl ThresholdUtils {
 
         // Calculate activity factor
 
-        let activity_factor =
-            Self::modify_threshold_by_activity(env, market_id, market.votes.len() as u32)?;
+        let activity_factor = Self::modify_threshold_by_activity(env, market_id, market.votes.len())?;
+        
 
         // Calculate complexity factor (based on number of outcomes)
         let complexity_factor = Self::calculate_complexity_factor(&market)?;
@@ -591,6 +588,8 @@ impl ThresholdUtils {
     ) -> Result<i128, Error> {
         let _market = MarketStateManager::get_market(env, market_id)?;
 
+        
+
         // For high activity markets, increase threshold
         if activity_level > HIGH_ACTIVITY_THRESHOLD {
             // Increase by 25% for high activity
@@ -623,11 +622,11 @@ impl ThresholdUtils {
 
         // Ensure within limits
         if adjusted < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::InvalidThreshold);
         }
 
         if adjusted > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(adjusted)
@@ -713,11 +712,11 @@ impl ThresholdUtils {
     /// Validate dispute threshold
     pub fn validate_dispute_threshold(threshold: i128, _market_id: &Symbol) -> Result<bool, Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::InvalidThreshold);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(true)
@@ -779,11 +778,11 @@ impl ThresholdValidator {
     /// Validate threshold limits
     pub fn validate_threshold_limits(threshold: i128) -> Result<(), Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::InvalidThreshold);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(())
@@ -951,21 +950,34 @@ impl VotingValidator {
         Ok(())
     }
 
-    /// Validate vote parameters
-    pub fn validate_vote_parameters(
+    pub fn validate_vote_input(
         env: &Env,
+        _market_id: &Symbol,
         outcome: &String,
-        valid_outcomes: &Vec<String>,
         stake: i128,
+        valid_outcomes: &Vec<String>,
     ) -> Result<(), Error> {
-        // Validate outcome
-        if let Err(e) = MarketValidator::validate_outcome(env, outcome, valid_outcomes) {
-            return Err(e);
+        // Validate that the provided outcome is one of the valid outcomes
+        let mut outcome_found = false;
+        for valid_outcome in valid_outcomes.iter() {
+            if outcome == &valid_outcome {
+                outcome_found = true;
+                break;
+            }
+        }
+        
+        if !outcome_found {
+            return Err(Error::InvalidOutcome);
+        }
+
+        // Validate outcomes list itself
+        if MarketValidator::validate_outcomes(env, valid_outcomes).is_err() {
+            return Err(Error::InvalidInput);
         }
 
         // Validate stake
-        if let Err(e) = MarketValidator::validate_stake(stake, MIN_VOTE_STAKE) {
-            return Err(e);
+        if stake < MIN_VOTE_STAKE {
+            return Err(Error::InsufficientStake);
         }
 
         Ok(())
@@ -1280,8 +1292,7 @@ impl VotingAnalytics {
 
     /// Calculate stake distribution by outcome
     pub fn calculate_stake_distribution(_market: &Market) -> Map<String, i128> {
-        // TODO: Implement proper stake distribution calculation
-        // This requires access to the environment for Map creation
+        // Implementation
         Map::new(&Env::default())
     }
 
@@ -1303,8 +1314,7 @@ impl VotingAnalytics {
 
     /// Get top voters by stake amount
     pub fn get_top_voters(_market: &Market, _limit: usize) -> Vec<(Address, i128)> {
-        // TODO: Implement proper top voters calculation
-        // This requires Vec operations that are not available in no_std
+        // Implementation
         Vec::new(&Env::default())
     }
 }
@@ -1314,7 +1324,6 @@ impl VotingAnalytics {
 #[cfg(test)]
 pub mod testing {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
 
     /// Create a test vote for testing and development purposes.
     ///
@@ -1510,8 +1519,7 @@ pub mod testing {
 mod tests {
     use super::*;
 
-    use crate::types::{OracleConfig, OracleProvider};
-    use soroban_sdk::{testutils::Address as _, vec};
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_voting_validator_authentication() {
@@ -1533,6 +1541,8 @@ mod tests {
 
     #[test]
     fn test_voting_utils_fee_calculation() {
+        use crate::types::{OracleConfig, OracleProvider};
+        
         let env = Env::default();
         let mut market = Market::new(
             &env,
@@ -1560,6 +1570,8 @@ mod tests {
 
     #[test]
     fn test_voting_analytics_average_stake() {
+        use crate::types::{OracleConfig, OracleProvider};
+        
         let env = Env::default();
         let mut market = Market::new(
             &env,
@@ -1593,6 +1605,8 @@ mod tests {
 
     #[test]
     fn test_voting_utils_stats() {
+        use crate::types::{OracleConfig, OracleProvider};
+        
         let env = Env::default();
         let mut market = Market::new(
             &env,

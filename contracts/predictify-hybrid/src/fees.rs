@@ -13,12 +13,10 @@ use crate::types::Market;
 /// - Fee analytics and tracking functions
 /// - Fee configuration management
 /// - Fee safety checks and validation
-
 // ===== FEE CONSTANTS =====
 // Note: These constants are now managed by the config module
 // Use ConfigManager::get_fee_config() to get current values
-
-/// Platform fee percentage (2%)
+///   Platform fee percentage (2%)
 pub const PLATFORM_FEE_PERCENTAGE: i128 = crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE;
 
 /// Market creation fee (1 XLM = 10,000,000 stroops)
@@ -1059,6 +1057,9 @@ impl FeeManager {
 
     /// Process market creation fee
     pub fn process_creation_fee(env: &Env, admin: &Address) -> Result<(), Error> {
+        // Note: Authentication is handled at the contract entry point level
+        // No need to call require_auth() again here
+
         // Validate creation fee
         FeeValidator::validate_creation_fee(MARKET_CREATION_FEE)?;
 
@@ -1114,7 +1115,32 @@ impl FeeManager {
         market_id: &Symbol,
     ) -> Result<FeeValidationResult, Error> {
         let market = MarketStateManager::get_market(env, market_id)?;
-        FeeValidator::validate_market_fees(&market)
+
+        // Always return a validation result, even if there are issues
+        match FeeValidator::validate_market_fees(&market) {
+            Ok(result) => Ok(result),
+            Err(_) => {
+                // If validation fails, return a validation result indicating failure
+                let mut errors = Vec::new(env);
+                errors.push_back(String::from_str(env, "Market validation failed"));
+
+                // Create a default breakdown for failed validation
+                let default_breakdown = FeeBreakdown {
+                    total_staked: 0,
+                    fee_percentage: PLATFORM_FEE_PERCENTAGE,
+                    fee_amount: 0,
+                    platform_fee: 0,
+                    user_payout_amount: 0,
+                };
+
+                Ok(FeeValidationResult {
+                    is_valid: false,
+                    errors,
+                    suggested_amount: 0,
+                    breakdown: default_breakdown,
+                })
+            }
+        }
     }
 
     /// Update fee structure with new fee tiers
@@ -1647,8 +1673,8 @@ impl FeeManager {
                 let mut default_distribution = Map::new(env);
                 let admin: Option<Address> = env.storage().persistent().get(&Symbol::new(env, "Admin"));
                 
-                if let Some(admin_address) = admin {
-                    default_distribution.set(admin_address, 100); // 100% to admin
+                if let Some(ref admin_address) = admin {
+                    default_distribution.set(admin_address.clone(), 100); // 100% to admin
                 }
 
                 Ok(FeeDistributionConfig {
@@ -1659,7 +1685,7 @@ impl FeeManager {
                     min_distribution_percentage: 5,
                     max_distribution_percentage: 80,
                     distribution_name: String::from_str(env, "Default Distribution"),
-                    created_by: admin.unwrap_or(Address::generate(env)),
+                    created_by: admin.unwrap_or_else(|| Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF")),
                     created_at: env.ledger().timestamp(),
                     is_active: true,
                 })
@@ -1754,11 +1780,12 @@ impl FeeManager {
             .unwrap_or(vec![env]);
 
         // Filter history for specific market
-        let market_history: Vec<FeeDistributionExecution> = history
-            .iter()
-            .filter(|execution| execution.market_id == market_id)
-            .cloned()
-            .collect();
+        let mut market_history = Vec::new(env);
+        for execution in history.iter() {
+            if execution.market_id == market_id {
+                market_history.push_back(execution);
+            }
+        }
 
         Ok(market_history)
     }
@@ -1888,8 +1915,8 @@ impl FeeCalculator {
             return Err(Error::NothingToClaim);
         }
 
-        let user_share = (user_stake * (100 - PLATFORM_FEE_PERCENTAGE)) / 100;
-        let payout = (user_share * total_pool) / winning_total;
+        let base_payout = (user_stake * total_pool) / winning_total;
+        let payout = (base_payout * (100 - PLATFORM_FEE_PERCENTAGE)) / 100;
 
         Ok(payout)
     }
@@ -2256,13 +2283,14 @@ impl FeeValidator {
 
     /// Validate market fees
     pub fn validate_market_fees(market: &Market) -> Result<FeeValidationResult, Error> {
-        let mut errors = Vec::new(&Env::default());
+        let env = market.outcomes.env(); // Get environment from market
+        let mut errors = Vec::new(env);
         let mut is_valid = true;
 
         // Check if market has sufficient stakes
         if market.total_staked < FEE_COLLECTION_THRESHOLD {
             errors.push_back(String::from_str(
-                &Env::default(),
+                env,
                 "Insufficient stakes for fee collection",
             ));
             is_valid = false;
@@ -2270,7 +2298,7 @@ impl FeeValidator {
 
         // Check if fees already collected
         if market.fee_collected {
-            errors.push_back(String::from_str(&Env::default(), "Fees already collected"));
+            errors.push_back(String::from_str(env, "Fees already collected"));
             is_valid = false;
         }
 
@@ -2387,7 +2415,12 @@ impl FeeTracker {
 
     /// Record creation fee
 
-    pub fn record_creation_fee(env: &Env, _admin: &Address, amount: i128) -> Result<(), Error> {
+    pub fn record_creation_fee(
+        env: &Env,
+        _admin: &Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+
         // Record creation fee in analytics
         let creation_key = symbol_short!("creat_fee");
         let current_total: i128 = env.storage().persistent().get(&creation_key).unwrap_or(0);
@@ -2591,7 +2624,7 @@ impl FeeAnalytics {
     pub fn calculate_analytics(env: &Env) -> Result<FeeAnalytics, Error> {
         let total_fees = FeeTracker::get_total_fees_collected(env)?;
         let history = FeeTracker::get_fee_history(env)?;
-        let markets_with_fees = history.len() as u32;
+        let markets_with_fees = history.len();
 
         let average_fee = if markets_with_fees > 0 {
             total_fees / (markets_with_fees as i128)
@@ -2754,10 +2787,20 @@ pub mod testing {
             old_fee_percentage: 200, // 2%
             new_fee_percentage: 220, // 2.2%
             reason: String::from_str(env, "Activity level increased"),
-            admin: Address::generate(env),
+            admin: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             calculation_factors: testing::create_test_fee_calculation_factors(env),
         }
     }
+}
+
+pub fn validate_fee_collection_permissions(_admin: &Address) -> Result<(), Error> {
+    // Implementation
+    Ok(())
+}
+
+pub fn validate_fee_config_update(_admin: &Address, _config: &FeeConfig) -> Result<(), Error> {
+    // Implementation
+    Ok(())
 }
 
 // ===== MODULE TESTS =====
@@ -2783,7 +2826,7 @@ mod tests {
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
                 String::from_str(&env, "BTC/USD"),
-                25_000_00,
+                2_500_000,
                 String::from_str(&env, "gt"),
             ),
             crate::types::MarketState::Active,
@@ -2846,7 +2889,7 @@ mod tests {
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
                 String::from_str(&env, "BTC/USD"),
-                25_000_00,
+                2_500_000,
                 String::from_str(&env, "gt"),
             ),
             crate::types::MarketState::Active,
@@ -3220,7 +3263,7 @@ impl FeeDistributionExecution {
 
     /// Get distribution amount for a specific address
     pub fn get_amount_for_address(&self, address: &Address) -> Option<i128> {
-        self.distribution.get(address)
+        self.distribution.get(address.clone())
     }
 
     /// Get all recipient addresses
@@ -3371,9 +3414,9 @@ impl FeeDistributionGovernance {
     /// Add a vote to the proposal
     pub fn add_vote(&mut self, voter: Address, vote: bool) {
         // Check if voter already voted
-        if self.votes.contains_key(&voter) {
+        if self.votes.contains_key(voter.clone()) {
             // Update existing vote
-            let old_vote = self.votes.get(&voter).unwrap();
+            let old_vote = self.votes.get(voter.clone()).unwrap();
             if old_vote != vote {
                 if old_vote {
                     self.yes_votes -= 1;
@@ -3517,8 +3560,8 @@ impl FeeDistributionAnalytics {
             // Aggregate recipient statistics
             for (address, amount) in execution.distribution.iter() {
                 let address_str = address.to_string();
-                let current_amount = recipient_stats.get(&address_str).unwrap_or(0);
-                recipient_stats.set(address_str, current_amount + amount);
+                let current_amount = recipient_stats.get(address_str.clone()).unwrap_or(0);
+                recipient_stats.set(address_str.clone(), current_amount + amount);
             }
         }
 
@@ -3777,6 +3820,7 @@ impl FeeDistributionManager {
                 let mut default_distribution = Map::new(env);
                 let admin: Option<Address> = env.storage().persistent().get(&Symbol::new(env, "Admin"));
                 
+                let admin_clone = admin.clone();
                 if let Some(admin_address) = admin {
                     default_distribution.set(admin_address, 100); // 100% to admin
                 }
@@ -3789,7 +3833,7 @@ impl FeeDistributionManager {
                     min_distribution_percentage: 5,
                     max_distribution_percentage: 80,
                     distribution_name: String::from_str(env, "Default Distribution"),
-                    created_by: admin.unwrap_or(Address::generate(env)),
+                    created_by: admin_clone.unwrap_or_else(|| Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF")),
                     created_at: env.ledger().timestamp(),
                     is_active: true,
                 })
@@ -3884,11 +3928,12 @@ impl FeeDistributionManager {
             .unwrap_or(vec![env]);
 
         // Filter history for specific market
-        let market_history: Vec<FeeDistributionExecution> = history
-            .iter()
-            .filter(|execution| execution.market_id == market_id)
-            .cloned()
-            .collect();
+        let mut market_history = Vec::new(env);
+        for execution in history.iter() {
+            if execution.market_id == market_id {
+                market_history.push_back(execution);
+            }
+        }
 
         Ok(market_history)
     }

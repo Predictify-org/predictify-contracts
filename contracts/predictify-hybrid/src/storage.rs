@@ -599,7 +599,6 @@ impl StorageUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address;
     
     #[test]
     fn test_storage_optimizer_compression() {

@@ -445,16 +445,16 @@ fn test_validation_error_messages() {
             Error::InvalidInput
                 | Error::MarketNotFound
                 | Error::InvalidOracleConfig
-                | Error::InvalidFeeConfig
+                | Error::InvalidConfig
                 | Error::AlreadyVoted
                 | Error::AlreadyDisputed
                 | Error::Unauthorized
                 | Error::InvalidQuestion
                 | Error::InvalidThreshold
-                | Error::InvalidDuration
+                | Error::InvalidConfig
                 | Error::InvalidOutcome
                 | Error::InsufficientStake
-                | Error::InvalidOutcomes
+                | Error::InvalidOutcome
         ));
     }
 }

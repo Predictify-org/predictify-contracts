@@ -1,6 +1,6 @@
-#![allow(dead_code)]
 
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use crate::errors::Error;
 
 // ===== MARKET STATE =====
 
@@ -103,174 +103,16 @@ use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 /// }
 /// ```
 ///
-/// # State Validation Rules
-///
-/// Each state has specific validation requirements:
-/// - **Active**: Must have valid end time, oracle config, and outcomes
-/// - **Ended**: Current time must be past market end time
-/// - **Disputed**: Must have active disputes filed within dispute period
-/// - **Resolved**: Must have valid resolution with outcome and method
-/// - **Closed**: All payouts must be completed and verified
-/// - **Cancelled**: Must have valid cancellation reason and admin authorization
-///
-/// # Integration Points
-///
-/// Market states integrate with:
-/// - **Voting System**: Controls when votes can be accepted
-/// - **Oracle System**: Determines when oracle resolution can occur
-/// - **Dispute System**: Manages dispute lifecycle and resolution
-/// - **Payout System**: Controls when payouts can be distributed
-/// - **Admin System**: Handles state transitions and overrides
-/// - **Event System**: Emits state change events for transparency
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MarketState {
-    /// Market is active and accepting votes
-    Active,
-    /// Market has ended, waiting for resolution
-    Ended,
-    /// Market is under dispute
-    Disputed,
-    /// Market has been resolved
-    Resolved,
-    /// Market is closed
-    Closed,
-    /// Market has been cancelled
-    Cancelled,
-}
 
+/// This module provides organized type definitions categorized by functionality:
+/// - Oracle Types: Oracle providers, configurations, and data structures
+/// - Market Types: Market data structures and state management
+/// - Price Types: Price data and validation structures
+/// - Validation Types: Input validation and business logic types
+/// - Utility Types: Helper types and conversion utilities
 // ===== ORACLE TYPES =====
+/// Supported oracle providers for price feeds
 
-/// Enumeration of supported oracle providers for price feed data.
-///
-/// This enum defines the various oracle providers that can supply price data
-/// for prediction market resolution. Each provider has different characteristics,
-/// availability, and integration requirements specific to the Stellar blockchain
-/// ecosystem.
-///
-/// # Provider Categories
-///
-/// **Production Ready (Stellar Network):**
-/// - **Reflector**: Primary oracle provider with full Stellar integration
-///
-/// **Future/Placeholder (Not Yet Available):**
-/// - **Pyth**: High-frequency oracle network (future Stellar support)
-/// - **Band Protocol**: Decentralized oracle network (not on Stellar)
-/// - **DIA**: Multi-chain oracle platform (not on Stellar)
-///
-/// # Provider Characteristics
-///
-/// **Reflector Oracle:**
-/// - **Status**: Production ready and recommended
-/// - **Network**: Native Stellar blockchain integration
-/// - **Assets**: BTC, ETH, XLM, and other major cryptocurrencies
-/// - **Features**: Real-time prices, TWAP calculations, high reliability
-/// - **Use Case**: Primary oracle for all Stellar-based prediction markets
-///
-/// **Pyth Network:**
-/// - **Status**: Placeholder for future implementation
-/// - **Network**: Not currently available on Stellar
-/// - **Assets**: Extensive coverage of crypto, forex, and traditional assets
-/// - **Features**: Sub-second updates, institutional-grade data
-/// - **Use Case**: Future high-frequency prediction markets
-///
-/// **Band Protocol:**
-/// - **Status**: Not supported on Stellar
-/// - **Network**: Primarily Cosmos and EVM-compatible chains
-/// - **Assets**: Wide range of crypto and traditional assets
-/// - **Features**: Decentralized data aggregation
-/// - **Use Case**: Not applicable for Stellar deployment
-///
-/// **DIA:**
-/// - **Status**: Not supported on Stellar
-/// - **Network**: Multi-chain but no Stellar integration
-/// - **Assets**: Comprehensive DeFi and traditional asset coverage
-/// - **Features**: Transparent data sourcing and aggregation
-/// - **Use Case**: Not applicable for Stellar deployment
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use predictify_hybrid::types::OracleProvider;
-///
-/// // Check provider support before using
-/// let provider = OracleProvider::Reflector;
-///
-/// if provider.is_supported() {
-///     println!("Using {} oracle provider", provider.name());
-///     // Proceed with oracle integration
-/// } else {
-///     println!("Provider {} not supported on Stellar", provider.name());
-///     // Use fallback or error handling
-/// }
-///
-/// // Provider selection logic
-/// let recommended_provider = match std::env::var("ORACLE_PREFERENCE") {
-///     Ok(pref) if pref == "pyth" => {
-///         if OracleProvider::Pyth.is_supported() {
-///             OracleProvider::Pyth
-///         } else {
-///             println!("Pyth not available, using Reflector");
-///             OracleProvider::Reflector
-///         }
-///     },
-///     _ => OracleProvider::Reflector, // Default to Reflector
-/// };
-///
-/// println!("Selected oracle: {}", recommended_provider.name());
-/// ```
-///
-/// # Integration with Oracle Factory
-///
-/// Oracle providers work with the Oracle Factory pattern:
-/// ```rust
-/// # use soroban_sdk::{Env, Address};
-/// # use predictify_hybrid::types::OracleProvider;
-/// # use predictify_hybrid::oracles::OracleFactory;
-/// # let env = Env::default();
-/// # let oracle_contract = Address::generate(&env);
-///
-/// // Create oracle instance based on provider
-/// let provider = OracleProvider::Reflector;
-/// let oracle_result = OracleFactory::create_oracle(provider, oracle_contract);
-///
-/// match oracle_result {
-///     Ok(oracle_instance) => {
-///         println!("Successfully created {} oracle", provider.name());
-///         // Use oracle for price feeds
-///     },
-///     Err(e) => {
-///         println!("Failed to create oracle: {:?}", e);
-///         // Handle creation failure
-///     },
-/// }
-/// ```
-///
-/// # Provider Migration Strategy
-///
-/// For future provider additions:
-/// 1. **Add Provider Variant**: Update enum with new provider
-/// 2. **Update Support Check**: Modify `is_supported()` method
-/// 3. **Add Name Mapping**: Update `name()` method
-/// 4. **Implement Integration**: Add provider-specific oracle implementation
-/// 5. **Update Factory**: Add creation logic in OracleFactory
-/// 6. **Test Integration**: Comprehensive testing with new provider
-///
-/// # Network Compatibility
-///
-/// Provider support varies by blockchain network:
-/// - **Stellar**: Only Reflector is currently supported
-/// - **Ethereum**: Pyth, Band Protocol, and DIA are available
-/// - **Cosmos**: Band Protocol is native
-/// - **Multi-chain**: DIA supports multiple networks
-///
-/// # Error Handling
-///
-/// When using unsupported providers:
-/// - Oracle creation will return `Error::InvalidOracleConfig`
-/// - Price requests will return `Error::OracleNotAvailable`
-/// - Health checks will return `false`
-/// - Validation will fail with appropriate error messages
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OracleProvider {
@@ -289,7 +131,7 @@ impl OracleProvider {
     pub fn name(&self) -> &'static str {
         match self {
             OracleProvider::Reflector => "Reflector",
-            OracleProvider::Pyth => "Pyth",
+            OracleProvider::Pyth => "Pyth Network",
             OracleProvider::BandProtocol => "Band Protocol",
             OracleProvider::DIA => "DIA",
         }
@@ -297,7 +139,17 @@ impl OracleProvider {
 
     /// Check if provider is supported on Stellar
     pub fn is_supported(&self) -> bool {
-        matches!(self, OracleProvider::Reflector)
+        matches!(self, OracleProvider::Reflector | OracleProvider::Pyth)
+    }
+
+    /// Get default feed format for provider
+    pub fn default_feed_format(&self) -> &'static str {
+        match self {
+            OracleProvider::Reflector => "BTC/USD",
+            OracleProvider::Pyth => "BTC/USD",
+            OracleProvider::BandProtocol => "BTC/USD",
+            OracleProvider::DIA => "BTC/USD",
+        }
     }
 }
 
@@ -487,10 +339,11 @@ impl OracleConfig {
 
     /// Validate the oracle configuration
 
-    pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+    pub fn validate(&self, env: &Env) -> Result<(), Error> {
         // Validate threshold
         if self.threshold <= 0 {
-            return Err(crate::Error::InvalidThreshold);
+            return Err(Error::InvalidThreshold);
+
         }
 
         // Validate comparison operator
@@ -498,15 +351,34 @@ impl OracleConfig {
             && self.comparison != String::from_str(env, "lt")
             && self.comparison != String::from_str(env, "eq")
         {
-            return Err(crate::Error::InvalidComparison);
+
+            return Err(Error::InvalidInput);
+        }
+
+        // Validate feed_id is not empty
+        if self.feed_id.is_empty() {
+            return Err(Error::InvalidOracleFeed);
+
         }
 
         // Validate provider is supported
         if !self.provider.is_supported() {
-            return Err(crate::Error::InvalidOracleConfig);
+
+            return Err(Error::InvalidConfig);
+
         }
 
         Ok(())
+    }
+
+    /// Check if this config is supported
+    pub fn is_supported(&self) -> bool {
+        self.provider.is_supported()
+    }
+
+    /// Check if comparison is greater than
+    pub fn is_greater_than(&self, env: &Env) -> bool {
+        self.comparison == String::from_str(env, "gt")
     }
 }
 
@@ -732,9 +604,60 @@ pub struct Market {
     pub total_extension_days: u32,
     /// Maximum extension days allowed
     pub max_extension_days: u32,
-
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
+}
+
+/// Market extension record
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketExtension {
+    /// Extension timestamp
+    pub timestamp: u64,
+    /// Additional days requested
+    pub additional_days: u32,
+    /// Admin who requested the extension
+    pub admin: Address,
+    /// Extension reason/justification
+    pub reason: String,
+    /// Extension fee paid
+    pub fee_paid: i128,
+}
+
+impl MarketExtension {
+    /// Create a new market extension record
+    pub fn new(
+        env: &Env,
+        additional_days: u32,
+        admin: Address,
+        reason: String,
+        fee_paid: i128,
+    ) -> Self {
+        Self {
+            timestamp: env.ledger().timestamp(),
+            additional_days,
+            admin,
+            reason,
+            fee_paid,
+        }
+    }
+
+    /// Validate extension parameters
+    pub fn validate(&self, _env: &Env) -> Result<(), Error> {
+        if self.additional_days == 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        if self.additional_days > 30 {
+            return Err(Error::InvalidInput);
+        }
+
+        if self.reason.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        Ok(())
+    }
 }
 
 impl Market {
@@ -801,16 +724,33 @@ impl Market {
         self.total_staked += stake;
     }
 
+    /// Get user's vote if they have voted
+    pub fn get_user_vote(&self, user: &Address) -> Option<crate::voting::Vote> {
+        let outcome = self.votes.get(user.clone())?;
+        let stake = self.stakes.get(user.clone()).unwrap_or(0);
+        
+        // We don't have the exact timestamp stored separately, but we can use a placeholder
+        // In a real implementation, votes would store timestamps
+        Some(crate::voting::Vote {
+            user: user.clone(),
+            outcome,
+            stake,
+            timestamp: 0, // Placeholder - would need to be stored with the vote
+        })
+    }
+
     /// Validate market parameters
-    pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+
+    pub fn validate(&self, env: &Env) -> Result<(), Error> {
         // Validate question
         if self.question.is_empty() {
-            return Err(crate::Error::InvalidQuestion);
+            return Err(Error::InvalidInput);
+
         }
 
         // Validate outcomes
         if self.outcomes.len() < 2 {
-            return Err(crate::Error::InvalidOutcomes);
+            return Err(Error::InvalidOutcome);
         }
 
         // Validate oracle config
@@ -818,7 +758,9 @@ impl Market {
 
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
-            return Err(crate::Error::InvalidDuration);
+
+            return Err(Error::InvalidInput);
+
         }
 
         Ok(())
@@ -998,204 +940,71 @@ pub enum ReflectorAsset {
     Other(Symbol),
 }
 
-/// Comprehensive price data structure from Reflector Oracle.
-///
-/// This structure contains all price information returned by the Reflector Oracle,
-/// including current price, timestamp, and metadata necessary for market resolution
-/// and validation. It serves as the standardized format for oracle price data
-/// within the prediction market system.
-///
-/// # Price Data Components
-///
-/// **Core Price Information:**
-/// - **Price**: Current asset price in cents (integer format)
-/// - **Timestamp**: When the price was last updated
-/// - **Decimals**: Number of decimal places for precision
-///
-/// **Data Quality Indicators:**
-/// - **Source**: Oracle provider identifier
-/// - **Confidence**: Price data reliability score
-/// - **Volume**: Trading volume (if available)
-///
-/// # Price Format Standards
-///
-/// Prices follow consistent formatting:
-/// - **Integer Values**: No floating point arithmetic
-/// - **Cent Precision**: All prices in cents (e.g., 5000000 = $50,000.00)
-/// - **Positive Values**: All prices are positive integers
-/// - **Range Validation**: Prices within reasonable market bounds
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::Env;
-/// # use predictify_hybrid::types::ReflectorPriceData;
-/// # let env = Env::default();
-///
-/// // Create price data from Reflector response
-/// let btc_price = ReflectorPriceData::new(
-///     5_000_000, // $50,000.00 in cents
-///     env.ledger().timestamp(),
-///     8, // Bitcoin decimals
-///     "Reflector".to_string(),
-///     95, // 95% confidence
-///     Some(1_000_000_000) // $10M volume
-/// );
-///
-/// // Display price information
-/// println!("BTC Price: ${:.2}", btc_price.price_in_dollars());
-/// println!("Updated: {}", btc_price.timestamp);
-/// println!("Confidence: {}%", btc_price.confidence);
-///
-/// // Validate price data quality
-/// if btc_price.is_valid() {
-///     println!("Price data is valid and reliable");
-/// } else {
-///     println!("Price data quality concerns detected");
-/// }
-///
-/// // Check data freshness
-/// let current_time = env.ledger().timestamp();
-/// if btc_price.is_fresh(current_time, 300) { // 5 minutes
-///     println!("Price data is fresh (within 5 minutes)");
-/// } else {
-///     println!("Price data is stale - consider refreshing");
-/// }
-/// ```
-///
-/// # Price Validation
-///
-/// Price data undergoes comprehensive validation:
-/// ```rust
-/// # use predictify_hybrid::types::ReflectorPriceData;
-/// # let price_data = ReflectorPriceData::default(); // Placeholder
-///
-/// // Validation checks multiple aspects:
-/// let validation_result = price_data.validate();
-/// match validation_result {
-///     Ok(()) => {
-///         println!("Price data validation passed");
-///         // Safe to use for market resolution
-///     },
-///     Err(e) => {
-///         println!("Price validation failed: {:?}", e);
-///         // Handle validation errors:
-///         // - InvalidPrice: Price is zero or negative
-///         // - StaleData: Timestamp too old
-///         // - LowConfidence: Confidence below threshold
-///         // - InvalidSource: Unknown oracle source
-///     }
-/// }
-/// ```
-///
-/// # Market Resolution Integration
-///
-/// Price data integrates with market resolution:
-/// ```rust
-/// # use predictify_hybrid::types::{ReflectorPriceData, OracleConfig};
-/// # let price_data = ReflectorPriceData::default(); // Placeholder
-/// # let oracle_config = OracleConfig::default(); // Placeholder
-///
-/// // Apply oracle configuration to determine outcome
-/// let market_outcome = price_data.resolve_outcome(&oracle_config);
-///
-/// match market_outcome {
-///     Ok(outcome) => {
-///         println!("Market resolved to: {}", outcome);
-///         // "yes" if condition met, "no" otherwise
-///     },
-///     Err(e) => {
-///         println!("Resolution failed: {:?}", e);
-///         // Handle resolution errors
-///     }
-/// }
-///
-/// // Example: BTC > $50,000 check
-/// let btc_price = 5_500_000; // $55,000
-/// let threshold = 5_000_000;  // $50,000
-/// let comparison = "gt";      // Greater than
-///
-/// let result = if comparison == "gt" {
-///     btc_price > threshold
-/// } else if comparison == "lt" {
-///     btc_price < threshold
-/// } else {
-///     btc_price == threshold
-/// };
-///
-/// println!("Market outcome: {}", if result { "yes" } else { "no" });
-/// ```
-///
-/// # Data Quality Metrics
-///
-/// Price data includes quality indicators:
-/// ```rust
-/// # use predictify_hybrid::types::ReflectorPriceData;
-/// # let price_data = ReflectorPriceData::default(); // Placeholder
-///
-/// // Check confidence level
-/// if price_data.confidence >= 90 {
-///     println!("High confidence price data");
-/// } else if price_data.confidence >= 70 {
-///     println!("Medium confidence price data");
-/// } else {
-///     println!("Low confidence - use with caution");
-/// }
-///
-/// // Check trading volume (if available)
-/// if let Some(volume) = price_data.volume {
-///     if volume > 1_000_000_00 { // $1M+
-///         println!("High liquidity market");
-///     } else {
-///         println!("Lower liquidity - price may be volatile");
-///     }
-/// }
-/// ```
-///
-/// # Time-based Validation
-///
-/// Price data freshness is critical:
-/// ```rust
-/// # use soroban_sdk::Env;
-/// # use predictify_hybrid::types::ReflectorPriceData;
-/// # let env = Env::default();
-/// # let price_data = ReflectorPriceData::default(); // Placeholder
-///
-/// let current_time = env.ledger().timestamp();
-/// let max_age = 600; // 10 minutes
-///
-/// if price_data.is_fresh(current_time, max_age) {
-///     println!("Price data is current");
-/// } else {
-///     let age = current_time - price_data.timestamp;
-///     println!("Price data is {} seconds old", age);
-///     
-///     if age > 3600 { // 1 hour
-///         println!("Data is very stale - reject for resolution");
-///     }
-/// }
-/// ```
-///
-/// # Integration Points
-///
-/// Price data integrates with:
-/// - **Oracle Manager**: Fetches and validates price data
-/// - **Resolution System**: Uses price for market outcome determination
-/// - **Validation System**: Ensures data quality and freshness
-/// - **Analytics System**: Tracks price trends and market performance
-/// - **Event System**: Logs price updates for transparency
-/// - **Dispute System**: Provides evidence for dispute resolution
-///
-/// # Error Handling
-///
-/// Common price data errors:
-/// - **InvalidPrice**: Zero, negative, or unreasonable price
-/// - **StaleTimestamp**: Price data too old for reliable use
-/// - **LowConfidence**: Confidence score below acceptance threshold
-/// - **MissingVolume**: Volume data unavailable when required
-/// - **SourceMismatch**: Price from unexpected oracle source
+impl ReflectorAsset {
+    /// Check if this is an Other asset variant
+    pub fn is_other(&self) -> bool {
+        matches!(self, ReflectorAsset::Other(_))
+    }
+
+    /// Check if this is a Stellar asset variant
+    pub fn is_stellar(&self) -> bool {
+        matches!(self, ReflectorAsset::Stellar)
+    }
+}
+
+/// Pyth Network price data structure
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PythPrice {
+    /// Price value
+    pub price: i128,
+    /// Confidence interval
+    pub conf: u64,
+    /// Price exponent
+    pub expo: i32,
+    /// Publish timestamp
+    pub publish_time: u64,
+}
+
+impl PythPrice {
+    /// Create a new Pyth price
+    pub fn new(price: i128, conf: u64, expo: i32, publish_time: u64) -> Self {
+        Self {
+            price,
+            conf,
+            expo,
+            publish_time,
+        }
+    }
+
+    /// Get the price in cents
+    pub fn price_in_cents(&self) -> i128 {
+        self.price
+    }
+
+    /// Check if the price is stale (older than max_age seconds)
+    pub fn is_stale(&self, current_time: u64, max_age: u64) -> bool {
+        current_time - self.publish_time > max_age
+    }
+
+    /// Validate the price data
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.price <= 0 {
+            return Err(Error::OraclePriceOutOfRange);
+        }
+
+        if self.conf == 0 {
+            return Err(Error::OracleDataStale);
+        }
+
+        Ok(())
+    }
+}
+
+
+/// Reflector price data structure
+#[contracttype]
+
 pub struct ReflectorPriceData {
     /// Price value in cents (e.g., 2500000 = $25,000)
     pub price: i128,
@@ -1205,7 +1014,36 @@ pub struct ReflectorPriceData {
     pub source: String,
 }
 
-// ===== MARKET EXTENSION TYPES =====
+
+impl ReflectorPriceData {
+    /// Create new Reflector price data
+    pub fn new(_env: &Env, price: i128, timestamp: u64, source: String) -> Self {
+        Self { price, timestamp, source }
+    }
+
+    /// Get the price in cents
+    pub fn price_in_cents(&self) -> i128 {
+        self.price
+    }
+
+    /// Check if the price is stale
+    pub fn is_stale(&self, current_time: u64, max_age: u64) -> bool {
+        current_time - self.timestamp > max_age
+    }
+
+    /// Validate the price data
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.price <= 0 {
+            return Err(Error::OraclePriceOutOfRange);
+        }
+
+        if self.timestamp == 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        Ok(())
+    }
+}
 
 /// Market extension data structure for time-based market lifecycle management.
 ///
@@ -1426,273 +1264,6 @@ pub struct ReflectorPriceData {
 /// - **MarketEnded**: Cannot extend market that has already ended
 /// - **ExceedsLimits**: Extension would exceed maximum allowed duration
 /// - **UnauthorizedRequester**: Requester lacks permission for extension
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MarketExtension {
-    /// Number of additional days
-    pub additional_days: u32,
-    /// Administrator who requested the extension
-    pub admin: Address,
-    /// Reason for the extension
-    pub reason: String,
-    /// Fee amount paid
-    pub fee_amount: i128,
-    /// Extension timestamp
-    pub timestamp: u64,
-}
-
-impl MarketExtension {
-    /// Create a new market extension
-    pub fn new(
-        env: &Env,
-        additional_days: u32,
-        admin: Address,
-        reason: String,
-        fee_amount: i128,
-    ) -> Self {
-        Self {
-            additional_days,
-            admin,
-            reason,
-            fee_amount,
-            timestamp: env.ledger().timestamp(),
-        }
-    }
-}
-
-/// Comprehensive statistics tracking for market extension usage and effectiveness.
-///
-/// This structure captures detailed metrics about market extensions, including
-/// usage patterns, effectiveness measurements, and impact on market participation.
-/// It provides valuable insights for optimizing extension policies and understanding
-/// user behavior in prediction markets.
-///
-/// # Statistics Categories
-///
-/// **Usage Metrics:**
-/// - **Total Extensions**: Number of extensions requested
-/// - **Approved Extensions**: Number of extensions approved
-/// - **Auto Extensions**: System-initiated extensions
-/// - **User Extensions**: Community-requested extensions
-///
-/// **Effectiveness Metrics:**
-/// - **Participation Increase**: Additional votes/stakes after extension
-/// - **Resolution Quality**: Impact on market resolution accuracy
-/// - **User Satisfaction**: Community feedback on extensions
-///
-/// **Financial Metrics:**
-/// - **Total Fees Collected**: Revenue from extension fees
-/// - **Average Fee**: Mean fee per extension request
-/// - **Fee Effectiveness**: Correlation between fee and participation
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::Env;
-/// # use predictify_hybrid::types::ExtensionStats;
-/// # let env = Env::default();
-///
-/// // Create extension statistics tracker
-/// let mut stats = ExtensionStats::new(&env);
-///
-/// // Record extension request
-/// stats.record_extension_request(
-///     "user_requested",
-///     48, // 48 hours
-///     2_000_000, // 2 XLM fee
-///     true // Approved
-/// );
-///
-/// // Record participation impact
-/// stats.record_participation_change(
-///     10, // 10 additional votes
-///     5_000_000, // 5 XLM additional stakes
-///     25.0 // 25% participation increase
-/// );
-///
-/// // Display statistics
-/// println!("Total extensions: {}", stats.total_extensions);
-/// println!("Approval rate: {:.1}%", stats.approval_rate());
-/// println!("Average participation increase: {:.1}%", stats.avg_participation_increase());
-/// println!("Total fees collected: {} stroops", stats.total_fees_collected);
-/// ```
-///
-/// # Effectiveness Analysis
-///
-/// Analyze extension effectiveness across different scenarios:
-/// ```rust
-/// # use predictify_hybrid::types::ExtensionStats;
-/// # let stats = ExtensionStats::default(); // Placeholder
-///
-/// // Calculate effectiveness metrics
-/// let effectiveness_report = stats.generate_effectiveness_report();
-///
-/// println!("Extension Effectiveness Report:");
-/// println!("- Auto extensions success rate: {:.1}%", effectiveness_report.auto_success_rate);
-/// println!("- User extensions success rate: {:.1}%", effectiveness_report.user_success_rate);
-/// println!("- Average participation boost: {:.1}%", effectiveness_report.avg_participation_boost);
-/// println!("- ROI on extension fees: {:.2}x", effectiveness_report.fee_roi);
-///
-/// // Identify optimal extension patterns
-/// if effectiveness_report.auto_success_rate > effectiveness_report.user_success_rate {
-///     println!("Recommendation: Favor automatic extensions for low participation");
-/// } else {
-///     println!("Recommendation: Community-driven extensions are more effective");
-/// }
-/// ```
-///
-/// # Trend Analysis
-///
-/// Track extension trends over time:
-/// ```rust
-/// # use predictify_hybrid::types::ExtensionStats;
-/// # let stats = ExtensionStats::default(); // Placeholder
-///
-/// // Analyze monthly trends
-/// let monthly_trends = stats.get_monthly_trends();
-///
-/// for (month, trend_data) in monthly_trends {
-///     println!("Month {}: {} extensions, {:.1}% approval rate",
-///         month, trend_data.count, trend_data.approval_rate);
-///     
-///     if trend_data.count > trend_data.previous_month_count {
-///         println!("  ↗ Extension requests increasing");
-///     } else {
-///         println!("  ↘ Extension requests decreasing");
-///     }
-/// }
-///
-/// // Seasonal patterns
-/// let seasonal_analysis = stats.analyze_seasonal_patterns();
-/// println!("Peak extension period: {}", seasonal_analysis.peak_period);
-/// println!("Low extension period: {}", seasonal_analysis.low_period);
-/// ```
-///
-/// # Fee Optimization Analysis
-///
-/// Analyze fee structures and their impact:
-/// ```rust
-/// # use predictify_hybrid::types::ExtensionStats;
-/// # let stats = ExtensionStats::default(); // Placeholder
-///
-/// // Fee effectiveness analysis
-/// let fee_analysis = stats.analyze_fee_effectiveness();
-///
-/// println!("Fee Analysis:");
-/// println!("- Optimal fee range: {} - {} stroops",
-///     fee_analysis.optimal_min, fee_analysis.optimal_max);
-/// println!("- Fee elasticity: {:.2}", fee_analysis.elasticity);
-/// println!("- Revenue maximizing fee: {} stroops", fee_analysis.revenue_max_fee);
-///
-/// // Fee recommendations
-/// if fee_analysis.current_fee < fee_analysis.optimal_min {
-///     println!("Recommendation: Increase extension fees to improve quality");
-/// } else if fee_analysis.current_fee > fee_analysis.optimal_max {
-///     println!("Recommendation: Decrease extension fees to increase usage");
-/// } else {
-///     println!("Current fee structure is optimal");
-/// }
-/// ```
-///
-/// # Market Impact Assessment
-///
-/// Evaluate how extensions affect market quality:
-/// ```rust
-/// # use predictify_hybrid::types::ExtensionStats;
-/// # let stats = ExtensionStats::default(); // Placeholder
-///
-/// // Market quality impact
-/// let quality_impact = stats.assess_market_quality_impact();
-///
-/// println!("Market Quality Impact:");
-/// println!("- Resolution accuracy improvement: {:.1}%", quality_impact.accuracy_improvement);
-/// println!("- Participation diversity increase: {:.1}%", quality_impact.diversity_increase);
-/// println!("- Stake distribution improvement: {:.1}%", quality_impact.distribution_improvement);
-///
-/// // Long-term effects
-/// println!("\nLong-term Effects:");
-/// println!("- User retention rate: {:.1}%", quality_impact.retention_rate);
-/// println!("- Market creation rate change: {:+.1}%", quality_impact.creation_rate_change);
-/// println!("- Platform trust score: {:.1}/10", quality_impact.trust_score);
-/// ```
-///
-/// # Performance Benchmarking
-///
-/// Compare extension performance across different market types:
-/// ```rust
-/// # use predictify_hybrid::types::ExtensionStats;
-/// # let stats = ExtensionStats::default(); // Placeholder
-///
-/// // Benchmark by market category
-/// let benchmarks = stats.benchmark_by_category();
-///
-/// for (category, benchmark) in benchmarks {
-///     println!("{} Markets:", category);
-///     println!("  Extension rate: {:.1}%", benchmark.extension_rate);
-///     println!("  Success rate: {:.1}%", benchmark.success_rate);
-///     println!("  Avg duration: {:.1} hours", benchmark.avg_duration_hours);
-///     println!("  Participation boost: {:.1}%", benchmark.participation_boost);
-/// }
-///
-/// // Identify best practices
-/// let best_practices = stats.identify_best_practices();
-/// println!("\nBest Practices:");
-/// for practice in best_practices {
-///     println!("- {}", practice);
-/// }
-/// ```
-///
-/// # Integration Points
-///
-/// Extension statistics integrate with:
-/// - **Analytics Dashboard**: Real-time extension metrics
-/// - **Admin Panel**: Extension approval and monitoring tools
-/// - **Market Manager**: Extension policy optimization
-/// - **Fee Manager**: Dynamic fee adjustment based on effectiveness
-/// - **User Interface**: Extension request guidance and feedback
-/// - **Reporting System**: Periodic extension effectiveness reports
-///
-/// # Data Export and Reporting
-///
-/// Generate comprehensive reports for stakeholders:
-/// ```rust
-/// # use predictify_hybrid::types::ExtensionStats;
-/// # let stats = ExtensionStats::default(); // Placeholder
-///
-/// // Generate monthly report
-/// let monthly_report = stats.generate_monthly_report();
-/// println!("Extension Monthly Report:");
-/// println!("Total Requests: {}", monthly_report.total_requests);
-/// println!("Approval Rate: {:.1}%", monthly_report.approval_rate);
-/// println!("Revenue Generated: {} XLM", monthly_report.revenue_xlm);
-/// println!("Participation Impact: +{:.1}%", monthly_report.participation_impact);
-///
-/// // Export data for external analysis
-/// let csv_data = stats.export_to_csv();
-/// println!("CSV export ready: {} records", csv_data.len());
-/// ```
-///
-/// # Error Handling
-///
-/// Common statistics errors:
-/// - **InvalidDataPoint**: Malformed or inconsistent data
-/// - **InsufficientData**: Not enough data for meaningful analysis
-/// - **CalculationError**: Mathematical operation failed
-/// - **ExportError**: Data export operation failed
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExtensionStats {
-    /// Total number of extensions
-    pub total_extensions: u32,
-    /// Total extension days
-    pub total_extension_days: u32,
-    /// Maximum extension days allowed
-    pub max_extension_days: u32,
-    /// Whether the market can be extended
-    pub can_extend: bool,
-    /// Extension fee per day
-    pub extension_fee_per_day: i128,
-}
 
 // ===== MARKET CREATION TYPES =====
 
@@ -1991,290 +1562,424 @@ impl MarketCreationParams {
             creation_fee,
         }
     }
+
+
+    /// Validate all parameters
+    pub fn validate(&self, env: &Env) -> Result<(), Error> {
+        // Validate question
+        if self.question.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        // Validate outcomes
+        if self.outcomes.len() < 2 {
+            return Err(Error::InvalidOutcome);
+        }
+
+        // Validate duration
+        if self.duration_days == 0 || self.duration_days > 365 {
+            return Err(Error::InvalidInput);
+        }
+
+        // Validate oracle config
+        self.oracle_config.validate(env)?;
+
+        Ok(())
+    }
+
+    /// Calculate end time from duration
+    pub fn calculate_end_time(&self, env: &Env) -> u64 {
+        let seconds_per_day: u64 = 24 * 60 * 60;
+        let duration_seconds: u64 = (self.duration_days as u64) * seconds_per_day;
+        env.ledger().timestamp() + duration_seconds
+    }
 }
 
-// ===== ADDITIONAL TYPES =====
+/// Vote parameters
+#[derive(Clone, Debug)]
+pub struct VoteParams {
+    pub user: Address,
+    pub outcome: String,
+    pub stake: i128,
+}
 
-/// Community consensus data structure for tracking collective market resolution.
-///
-/// This structure captures the community's collective opinion on market outcomes,
-/// providing an alternative or supplementary resolution method to oracle-based
-/// resolution. It aggregates user votes, stakes, and participation to determine
-/// the community's consensus on the correct market outcome.
-///
-/// # Consensus Components
-///
-/// **Outcome Data:**
-/// - **Outcome**: The consensus outcome determined by the community
-/// - **Votes**: Number of individual votes for this outcome
-/// - **Total Votes**: Total number of votes across all outcomes
-/// - **Percentage**: Percentage of votes for this outcome
-///
-/// **Consensus Metrics:**
-/// - **Confidence Level**: How confident the consensus is
-/// - **Participation Rate**: Percentage of eligible users who voted
-/// - **Stake Weight**: Financial weight behind the consensus
-///
-/// # Consensus Calculation Methods
-///
-/// **Simple Majority:**
-/// - Outcome with >50% of votes wins
-/// - Most straightforward method
-/// - Used for clear-cut decisions
-///
-/// **Stake-Weighted Consensus:**
-/// - Votes weighted by stake amount
-/// - Higher stakes have more influence
-/// - Reduces impact of spam votes
-///
-/// **Qualified Majority:**
-/// - Requires >60% or >66% consensus
-/// - Used for contentious decisions
-/// - Higher threshold for confidence
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::{Env, String};
-/// # use predictify_hybrid::types::CommunityConsensus;
-/// # let env = Env::default();
-///
-/// // Create community consensus for a market outcome
-/// let consensus = CommunityConsensus::new(
-///     String::from_str(&env, "yes"),
-///     150, // 150 votes for "yes"
-///     200, // 200 total votes
-///     75   // 75% of votes for "yes"
-/// );
-///
-/// // Display consensus information
-/// println!("Community Consensus:");
-/// println!("Outcome: {}", consensus.outcome);
-/// println!("Votes: {} out of {}", consensus.votes, consensus.total_votes);
-/// println!("Percentage: {}%", consensus.percentage);
-///
-/// // Check consensus strength
-/// if consensus.is_strong_consensus() {
-///     println!("Strong community consensus achieved");
-/// } else if consensus.is_majority_consensus() {
-///     println!("Majority consensus reached");
-/// } else {
-///     println!("No clear consensus - may need dispute resolution");
-/// }
-///
-/// // Validate consensus quality
-/// consensus.validate(&env)?;
-/// # Ok::<(), predictify_hybrid::errors::Error>(())
-/// ```
-///
-/// # Consensus Validation
-///
-/// Community consensus undergoes validation:
-/// ```rust
-/// # use predictify_hybrid::types::CommunityConsensus;
-/// # let consensus = CommunityConsensus::default(); // Placeholder
-///
-/// // Validation checks multiple aspects:
-/// let validation_result = consensus.validate(&soroban_sdk::Env::default());
-/// match validation_result {
-///     Ok(()) => {
-///         println!("Consensus validation passed");
-///         // Consensus can be used for resolution
-///     },
-///     Err(e) => {
-///         println!("Consensus validation failed: {:?}", e);
-///         // Handle validation errors:
-///         // - InsufficientParticipation: Too few votes
-///         // - InvalidPercentage: Percentage calculation error
-///         // - NoMajority: No outcome has majority support
-///         // - TiedOutcomes: Multiple outcomes with same vote count
-///     }
-/// }
-/// ```
-///
-/// # Consensus Strength Analysis
-///
-/// Analyze the strength and reliability of consensus:
-/// ```rust
-/// # use predictify_hybrid::types::CommunityConsensus;
-/// # let consensus = CommunityConsensus::default(); // Placeholder
-///
-/// // Consensus strength categories
-/// let strength = match consensus.percentage {
-///     90..=100 => "Overwhelming Consensus",
-///     75..=89 => "Strong Consensus",
-///     60..=74 => "Clear Majority",
-///     51..=59 => "Simple Majority",
-///     _ => "No Consensus"
-/// };
-///
-/// println!("Consensus Strength: {}", strength);
-///
-/// // Participation analysis
-/// let participation_rate = consensus.calculate_participation_rate();
-/// if participation_rate >= 50 {
-///     println!("High participation: {:.1}%", participation_rate);
-/// } else if participation_rate >= 25 {
-///     println!("Moderate participation: {:.1}%", participation_rate);
-/// } else {
-///     println!("Low participation: {:.1}% - consensus may be unreliable", participation_rate);
-/// }
-/// ```
-///
-/// # Stake-Weighted Consensus
-///
-/// Calculate consensus based on financial stakes:
-/// ```rust
-/// # use predictify_hybrid::types::CommunityConsensus;
-/// # let consensus = CommunityConsensus::default(); // Placeholder
-///
-/// // Stake-weighted calculation
-/// let stake_weighted_consensus = consensus.calculate_stake_weighted();
-///
-/// println!("Vote-based consensus: {}% for {}",
-///     consensus.percentage, consensus.outcome);
-/// println!("Stake-weighted consensus: {:.1}% for {}",
-///     stake_weighted_consensus.percentage, stake_weighted_consensus.outcome);
-///
-/// // Compare vote vs stake consensus
-/// if consensus.outcome == stake_weighted_consensus.outcome {
-///     println!("Vote and stake consensus align");
-/// } else {
-///     println!("Vote and stake consensus differ - potential whale influence");
-/// }
-/// ```
-///
-/// # Consensus Evolution Tracking
-///
-/// Track how consensus changes over time:
-/// ```rust
-/// # use predictify_hybrid::types::CommunityConsensus;
-/// # let consensus = CommunityConsensus::default(); // Placeholder
-///
-/// // Historical consensus snapshots
-/// let consensus_history = consensus.get_historical_snapshots();
-///
-/// for (timestamp, snapshot) in consensus_history {
-///     println!("Time {}: {}% for {}",
-///         timestamp, snapshot.percentage, snapshot.outcome);
-/// }
-///
-/// // Consensus stability analysis
-/// let stability = consensus.analyze_stability();
-/// if stability.is_stable {
-///     println!("Consensus has been stable for {} hours", stability.stable_duration_hours);
-/// } else {
-///     println!("Consensus is still evolving - {} changes in last 24h", stability.recent_changes);
-/// }
-/// ```
-///
-/// # Multi-Outcome Consensus
-///
-/// Handle markets with multiple possible outcomes:
-/// ```rust
-/// # use predictify_hybrid::types::CommunityConsensus;
-///
-/// // Calculate consensus for all outcomes
-/// let all_outcomes_consensus = vec![
-///     ("outcome_a", 45, 22), // 45% of votes, 22% of stakes
-///     ("outcome_b", 35, 38), // 35% of votes, 38% of stakes
-///     ("outcome_c", 20, 40), // 20% of votes, 40% of stakes
-/// ];
-///
-/// // Determine winner by different methods
-/// let vote_winner = all_outcomes_consensus.iter()
-///     .max_by_key(|(_, votes, _)| votes)
-///     .map(|(outcome, _, _)| outcome);
-///
-/// let stake_winner = all_outcomes_consensus.iter()
-///     .max_by_key(|(_, _, stakes)| stakes)
-///     .map(|(outcome, _, _)| outcome);
-///
-/// println!("Vote winner: {:?}", vote_winner);
-/// println!("Stake winner: {:?}", stake_winner);
-///
-/// // Check for conflicts
-/// if vote_winner != stake_winner {
-///     println!("Conflict detected - may need hybrid resolution");
-/// }
-/// ```
-///
-/// # Integration with Resolution System
-///
-/// Community consensus integrates with market resolution:
-/// ```rust
-/// # use predictify_hybrid::types::CommunityConsensus;
-/// # let consensus = CommunityConsensus::default(); // Placeholder
-///
-/// // Use consensus for market resolution
-/// if consensus.is_reliable() {
-///     let resolution_outcome = consensus.outcome.clone();
-///     let confidence_score = consensus.calculate_confidence();
-///     
-///     println!("Resolving market to: {}", resolution_outcome);
-///     println!("Confidence: {:.1}%", confidence_score);
-///     
-///     // Apply resolution
-///     apply_market_resolution(resolution_outcome, confidence_score);
-/// } else {
-///     println!("Consensus not reliable - using oracle or dispute resolution");
-/// }
-/// ```
-///
-/// # Consensus Quality Metrics
-///
-/// Evaluate the quality and reliability of consensus:
-/// ```rust
-/// # use predictify_hybrid::types::CommunityConsensus;
-/// # let consensus = CommunityConsensus::default(); // Placeholder
-///
-/// // Quality assessment
-/// let quality_metrics = consensus.assess_quality();
-///
-/// println!("Consensus Quality Report:");
-/// println!("- Participation Rate: {:.1}%", quality_metrics.participation_rate);
-/// println!("- Majority Strength: {:.1}%", quality_metrics.majority_strength);
-/// println!("- Stake Alignment: {:.1}%", quality_metrics.stake_alignment);
-/// println!("- Time Stability: {:.1}%", quality_metrics.time_stability);
-/// println!("- Overall Quality: {:.1}/10", quality_metrics.overall_score);
-///
-/// // Quality-based decision making
-/// if quality_metrics.overall_score >= 8.0 {
-///     println!("High quality consensus - safe to use for resolution");
-/// } else if quality_metrics.overall_score >= 6.0 {
-///     println!("Moderate quality - consider supplementary validation");
-/// } else {
-///     println!("Low quality consensus - use alternative resolution method");
-/// }
-/// ```
-///
-/// # Integration Points
-///
-/// Community consensus integrates with:
-/// - **Resolution System**: Provides community-based resolution outcomes
-/// - **Voting System**: Aggregates individual votes into collective consensus
-/// - **Dispute System**: Offers alternative when oracle resolution is disputed
-/// - **Analytics System**: Tracks consensus patterns and quality
-/// - **Governance System**: Enables community-driven market resolution
-/// - **Event System**: Emits consensus updates and final determinations
-///
-/// # Error Handling
-///
-/// Common consensus errors:
-/// - **InsufficientVotes**: Too few votes to establish reliable consensus
-/// - **TiedOutcomes**: Multiple outcomes with identical vote counts
-/// - **InvalidPercentage**: Percentage calculations don't sum to 100%
-/// - **LowParticipation**: Participation rate below minimum threshold
-/// - **ConsensusInstability**: Consensus changes too frequently to be reliable
+impl VoteParams {
+    /// Create new vote parameters
+    pub fn new(user: Address, outcome: String, stake: i128) -> Self {
+        Self {
+            user,
+            outcome,
+            stake,
+        }
+    }
+
+    /// Validate vote parameters
+    pub fn validate(&self, _env: &Env, market: &Market) -> Result<(), Error> {
+        // Validate outcome
+        if !market.outcomes.contains(&self.outcome) {
+            return Err(Error::InvalidOutcome);
+        }
+
+        // Validate stake
+        if self.stake <= 0 {
+            return Err(Error::InsufficientStake);
+        }
+
+        // Check if user already voted
+        if market.get_user_vote(&self.user).is_some() {
+            return Err(Error::AlreadyVoted);
+        }
+
+        Ok(())
+    }
+}
+
+// ===== UTILITY TYPES =====
+
+/// Market state enumeration
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MarketState {
+    /// Market is active and accepting votes
+    Active,
+    /// Market has ended but not resolved
+    Ended,
+    /// Market has been resolved
+    Resolved,
+    /// Market has been closed
+    Closed,
+    /// Market is under dispute
+    Disputed,
+    /// Market has been cancelled
+    Cancelled,
+}
+
+/// Extension statistics for a market
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CommunityConsensus {
-    /// Consensus outcome
-    pub outcome: String,
-    /// Number of votes for this outcome
-    pub votes: u32,
-    /// Total number of votes
-    pub total_votes: u32,
-    /// Percentage of votes for this outcome
-    pub percentage: i128,
+pub struct ExtensionStats {
+    /// Total number of extensions
+    pub total_extensions: u32,
+    /// Total days extended
+    pub total_extension_days: u32,
+    /// Maximum allowed extension days
+    pub max_extension_days: u32,
+    /// Whether the market can be extended
+    pub can_extend: bool,
+    /// Extension fee per day
+    pub extension_fee_per_day: i128,
+}
+
+impl MarketState {
+    /// Get state from market
+    pub fn from_market(market: &Market, current_time: u64) -> Self {
+        if market.is_resolved() {
+            MarketState::Resolved
+        } else if market.has_ended(current_time) {
+            MarketState::Ended
+        } else {
+            MarketState::Active
+        }
+    }
+
+    /// Check if market is active
+    pub fn is_active(&self) -> bool {
+        matches!(self, MarketState::Active)
+    }
+
+    /// Check if market has ended
+    pub fn has_ended(&self) -> bool {
+        matches!(
+            self,
+            MarketState::Ended | MarketState::Resolved | MarketState::Closed
+        )
+    }
+
+    /// Check if market is resolved
+    pub fn is_resolved(&self) -> bool {
+        matches!(self, MarketState::Resolved)
+    }
+}
+
+/// Oracle result type
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OracleResult {
+    /// Oracle returned a price
+    Price(i128),
+    /// Oracle is unavailable
+    Unavailable,
+    /// Oracle data is stale
+    Stale,
+}
+
+impl OracleResult {
+    /// Create from price
+    pub fn price(price: i128) -> Self {
+        OracleResult::Price(price)
+    }
+
+    /// Create unavailable result
+    pub fn unavailable() -> Self {
+        OracleResult::Unavailable
+    }
+
+    /// Create stale result
+    pub fn stale() -> Self {
+        OracleResult::Stale
+    }
+
+    /// Check if result is available
+    pub fn is_available(&self) -> bool {
+        matches!(self, OracleResult::Price(_))
+    }
+
+    /// Get price if available
+    pub fn get_price(&self) -> Option<i128> {
+        match self {
+            OracleResult::Price(price) => Some(*price),
+            _ => None,
+        }
+    }
+}
+
+// ===== HELPER FUNCTIONS =====
+
+/// Type validation helpers
+pub mod validation {
+    use super::*;
+
+    /// Validate oracle provider
+    pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), Error> {
+        if !provider.is_supported() {
+            return Err(Error::InvalidConfig);
+        }
+        Ok(())
+    }
+
+    /// Validate price data
+    pub fn validate_price(price: i128) -> Result<(), Error> {
+        if price <= 0 {
+            return Err(Error::OraclePriceOutOfRange);
+        }
+        Ok(())
+    }
+
+    /// Validate stake amount
+    pub fn validate_stake(stake: i128, min_stake: i128) -> Result<(), Error> {
+        if stake < min_stake {
+            return Err(Error::InsufficientStake);
+        }
+        Ok(())
+    }
+
+    /// Validate market duration
+    pub fn validate_duration(duration_days: u32) -> Result<(), Error> {
+        if duration_days == 0 || duration_days > 365 {
+            return Err(Error::InvalidInput);
+        }
+        Ok(())
+    }
+}
+
+/// Type conversion helpers
+pub mod conversion {
+    use super::*;
+
+    /// Convert string to oracle provider
+    pub fn string_to_oracle_provider(s: &str) -> Option<OracleProvider> {
+        match s.to_lowercase().as_str() {
+            "band" | "bandprotocol" => Some(OracleProvider::BandProtocol),
+            "dia" => Some(OracleProvider::DIA),
+            "reflector" => Some(OracleProvider::Reflector),
+            "pyth" => Some(OracleProvider::Pyth),
+            _ => None,
+        }
+    }
+
+    /// Convert oracle provider to string
+    pub fn oracle_provider_to_string(provider: &OracleProvider) -> &'static str {
+        provider.name()
+    }
+
+    /// Convert comparison string to validation
+    pub fn validate_comparison(comparison: &String, env: &Env) -> Result<(), Error> {
+        if comparison != &String::from_str(env, "gt")
+            && comparison != &String::from_str(env, "lt")
+            && comparison != &String::from_str(env, "eq")
+        {
+            return Err(Error::InvalidInput);
+        }
+        Ok(())
+    }
+}
+
+// ===== PARAMETER STRUCTS =====
+
+/// Parameters for creating reflector markets
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReflectorMarketParams {
+    pub admin: Address,
+    pub question: String,
+    pub outcomes: Vec<String>,
+    pub duration_days: u32,
+    pub asset_symbol: String,
+    pub threshold: i128,
+    pub comparison: String,
+}
+
+/// Parameters for creating Pyth markets
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PythMarketParams {
+    pub admin: Address,
+    pub question: String,
+    pub outcomes: Vec<String>,
+    pub duration_days: u32,
+    pub feed_id: String,
+    pub threshold: i128,
+    pub comparison: String,
+}
+
+/// Parameters for oracle result events
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleResultParams {
+    pub market_id: Symbol,
+    pub result: String,
+    pub provider: String,
+    pub feed_id: String,
+    pub price: i128,
+    pub timestamp: u64,
+    pub confidence: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn test_oracle_provider() {
+        let provider = OracleProvider::Pyth;
+        assert_eq!(provider.name(), "Pyth Network");
+        assert!(provider.is_supported());
+        assert_eq!(provider.default_feed_format(), "BTC/USD");
+    }
+
+    #[test]
+    fn test_oracle_config() {
+        let env = soroban_sdk::Env::default();
+        let config = OracleConfig::new(
+            OracleProvider::Pyth,
+            String::from_str(&env, "BTC/USD"),
+            2500000,
+            String::from_str(&env, "gt"),
+        );
+
+        assert!(config.validate(&env).is_ok());
+        assert!(config.is_supported());
+        assert!(config.is_greater_than(&env));
+    }
+
+    #[test]
+    fn test_market_creation() {
+        let env = soroban_sdk::Env::default();
+        let admin = Address::generate(&env);
+        let mut outcomes = Vec::new(&env);
+        outcomes.push_back(String::from_str(&env, "yes"));
+        outcomes.push_back(String::from_str(&env, "no"));
+        let oracle_config = OracleConfig::new(
+            OracleProvider::Pyth,
+            String::from_str(&env, "BTC/USD"),
+            2500000,
+            String::from_str(&env, "gt"),
+        );
+
+        let market = Market::new(
+            &env,
+            admin.clone(),
+            String::from_str(&env, "Test question"),
+            outcomes,
+            env.ledger().timestamp() + 86400,
+            oracle_config,
+            MarketState::Active,
+        );
+
+        assert!(market.is_active(env.ledger().timestamp()));
+        assert!(!market.is_resolved());
+        assert_eq!(market.total_staked, 0);
+    }
+
+    #[test]
+    fn test_reflector_asset() {
+        let env = soroban_sdk::Env::default();
+        let symbol = Symbol::new(&env, "BTC");
+        let asset = ReflectorAsset::Other(symbol);
+
+        assert!(asset.is_other());
+        assert!(!asset.is_stellar());
+    }
+
+    #[test]
+    fn test_market_state() {
+        let env = soroban_sdk::Env::default();
+        let admin = Address::generate(&env);
+        let mut outcomes = Vec::new(&env);
+        outcomes.push_back(String::from_str(&env, "yes"));
+        outcomes.push_back(String::from_str(&env, "no"));
+        let oracle_config = OracleConfig::new(
+            OracleProvider::Pyth,
+            String::from_str(&env, "BTC/USD"),
+            2500000,
+            String::from_str(&env, "gt"),
+        );
+
+        let market = Market::new(
+            &env,
+            admin,
+            String::from_str(&env, "Test question"),
+            outcomes,
+            env.ledger().timestamp() + 86400,
+            oracle_config,
+            MarketState::Active,
+        );
+
+        let state = MarketState::from_market(&market, env.ledger().timestamp());
+        assert!(state.is_active());
+        assert!(!state.has_ended());
+        assert!(!state.is_resolved());
+    }
+
+    #[test]
+    fn test_oracle_result() {
+        let result = OracleResult::price(2500000);
+        assert!(result.is_available());
+        assert_eq!(result.get_price(), Some(2500000));
+
+        let unavailable = OracleResult::unavailable();
+        assert!(!unavailable.is_available());
+        assert_eq!(unavailable.get_price(), None);
+    }
+
+    #[test]
+    fn test_validation_helpers() {
+        assert!(validation::validate_oracle_provider(&OracleProvider::Pyth).is_ok());
+        assert!(validation::validate_price(2500000).is_ok());
+        assert!(validation::validate_stake(1000000, 500000).is_ok());
+        assert!(validation::validate_duration(30).is_ok());
+    }
+
+    #[test]
+    fn test_conversion_helpers() {
+        assert_eq!(
+            conversion::string_to_oracle_provider("pyth"),
+            Some(OracleProvider::Pyth)
+        );
+        assert_eq!(
+            conversion::oracle_provider_to_string(&OracleProvider::Pyth),
+            "Pyth Network"
+        );
+    }
+
 }
