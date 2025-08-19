@@ -1,0 +1,53 @@
+[build]
+# Suppress warnings for development utilities and testing code
+rustflags = [
+    "-A", "dead_code",
+    "-A", "unused_variables", 
+    "-A", "unused_imports",
+    "-A", "unused_mut",
+    "-A", "unused_assignments",
+    "-A", "unused_attributes",
+    "-A", "unused_must_use",
+    "-A", "unused_parens",
+    "-A", "unused_braces",
+    "-A", "unused_parens",
+    "-A", "unused_results",
+    "-A", "unused_macros",
+    "-A", "unused_extern_crates",
+    "-A", "unused_crate_dependencies",
+    "-A", "unused_features",
+    "-A", "unused_unsafe",
+    "-A", "unused_labels",
+    "-A", "unused_lifetimes",
+    "-A", "unused_allocation",
+    "-A", "unused_imports",
+    "-A", "unused_qualifications",
+    "-A", "unused_unsafe",
+    "-A", "unused_attributes",
+    "-A", "unused_must_use",
+    "-A", "unused_parens",
+    "-A", "unused_braces",
+    "-A", "unused_results",
+    "-A", "unused_macros",
+    "-A", "unused_extern_crates",
+    "-A", "unused_crate_dependencies",
+    "-A", "unused_features",
+    "-A", "unused_unsafe",
+    "-A", "unused_labels",
+    "-A", "unused_lifetimes",
+    "-A", "unused_allocation",
+    "-A", "unused_qualifications",
+]
+
+[profile.dev]
+# Enable debug information for better development experience
+debug = true
+opt-level = 0
+
+[profile.release]
+# Optimize for size and performance
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols" 
