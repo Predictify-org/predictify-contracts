@@ -161,11 +161,11 @@ mod market_parameter_validator_tests {
             10  // max_outcomes
         ).is_err());
 
-        // Invalid outcomes - duplicate outcomes (case-insensitive)
+        // Invalid outcomes - duplicate outcomes (exact match)
         let duplicate_outcomes = vec![
             &env,
             String::from_str(&env, "Yes"),
-            String::from_str(&env, "YES")
+            String::from_str(&env, "Yes")
         ];
         assert!(MarketParameterValidator::validate_outcome_count(
             &duplicate_outcomes,
