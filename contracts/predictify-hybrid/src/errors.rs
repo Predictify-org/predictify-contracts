@@ -176,6 +176,16 @@ pub enum Error {
     InvalidTimeoutHours = 424,
     /// Dispute timeout extension not allowed
     DisputeTimeoutExtensionNotAllowed = 425,
+
+    // ===== CIRCUIT BREAKER ERRORS =====
+    /// Circuit breaker not initialized
+    CircuitBreakerNotInitialized = 500,
+    /// Circuit breaker is already open (paused)
+    CircuitBreakerAlreadyOpen = 501,
+    /// Circuit breaker is not open (cannot recover)
+    CircuitBreakerNotOpen = 502,
+    /// Circuit breaker is open (operations blocked)
+    CircuitBreakerOpen = 503,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -663,6 +673,10 @@ impl Error {
             Error::DisputeTimeoutNotExpired => "Dispute timeout not expired",
             Error::InvalidTimeoutHours => "Invalid timeout hours",
             Error::DisputeTimeoutExtensionNotAllowed => "Dispute timeout extension not allowed",
+            Error::CircuitBreakerNotInitialized => "Circuit breaker not initialized",
+            Error::CircuitBreakerAlreadyOpen => "Circuit breaker is already open (paused)",
+            Error::CircuitBreakerNotOpen => "Circuit breaker is not open (cannot recover)",
+            Error::CircuitBreakerOpen => "Circuit breaker is open (operations blocked)",
         }
     }
 
@@ -774,6 +788,10 @@ impl Error {
             Error::DisputeTimeoutNotExpired => "DISPUTE_TIMEOUT_NOT_EXPIRED",
             Error::InvalidTimeoutHours => "INVALID_TIMEOUT_HOURS",
             Error::DisputeTimeoutExtensionNotAllowed => "DISPUTE_TIMEOUT_EXTENSION_NOT_ALLOWED",
+            Error::CircuitBreakerNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
+            Error::CircuitBreakerAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
+            Error::CircuitBreakerNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
+            Error::CircuitBreakerOpen => "CIRCUIT_BREAKER_OPEN",
         }
     }
 }

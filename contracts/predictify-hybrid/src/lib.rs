@@ -8,6 +8,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
+mod circuit_breaker;
 mod config;
 mod disputes;
 mod errors;
@@ -22,6 +23,9 @@ mod types;
 mod utils;
 mod validation;
 mod voting;
+
+#[cfg(test)]
+mod circuit_breaker_tests;
 
 #[cfg(test)]
 mod integration_test;
