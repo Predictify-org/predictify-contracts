@@ -2,6 +2,7 @@
 
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
+use crate::config;
 use crate::errors::Error;
 use crate::types::*;
 // Oracle imports removed - not currently used
@@ -442,20 +443,25 @@ impl MarketValidator {
             return Err(Error::InvalidQuestion);
         }
 
-        // Validate outcomes
-        if outcomes.len() < 2 {
-            return Err(Error::InvalidOutcomes);
-        }
+        // Use the new MarketParameterValidator for comprehensive validation
+        use crate::validation::MarketParameterValidator;
 
-        for outcome in outcomes.iter() {
-            if outcome.is_empty() {
-                return Err(Error::InvalidOutcomes);
-            }
-        }
-
-        // Validate duration
-        if duration_days == 0 || duration_days > 365 {
+        // Validate duration limits
+        if let Err(_) = MarketParameterValidator::validate_duration_limits(
+            duration_days,
+            config::MIN_MARKET_DURATION_DAYS,
+            config::MAX_MARKET_DURATION_DAYS,
+        ) {
             return Err(Error::InvalidDuration);
+        }
+
+        // Validate outcome count and content
+        if let Err(_) = MarketParameterValidator::validate_outcome_count(
+            outcomes,
+            config::MIN_MARKET_OUTCOMES,
+            config::MAX_MARKET_OUTCOMES,
+        ) {
+            return Err(Error::InvalidOutcomes);
         }
 
         Ok(())
