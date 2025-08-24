@@ -1,6 +1,6 @@
 ## Gas Optimization Guide (Soroban on Stellar)
 
-This guide explains how to write and maintain gas-efficient Soroban contracts in this repository, with concrete recommendations mapped to `predictify-hybrid` and `hello-world`.
+This guide explains how to write and maintain gas-efficient Soroban contracts in this repository, with concrete recommendations mapped to `predictify-hybrid`.
 
 - Audience: Contract developers and reviewers
 - Targets: Soroban SDK 22.x; built with wasm32v1-none

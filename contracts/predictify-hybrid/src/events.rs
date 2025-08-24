@@ -23,67 +23,10 @@ pub enum AdminRole {
 /// - Event validation and helper functions
 /// - Event testing utilities and examples
 /// - Event documentation and examples
-
 // ===== EVENT TYPES =====
 
-/// Event emitted when a new prediction market is successfully created.
-///
-/// This event provides comprehensive information about newly created markets,
-/// including market parameters, outcomes, administrative details, and timing.
-/// Essential for tracking market creation activity and building market indices.
-///
-/// # Event Data
-///
-/// Contains all critical market creation parameters:
-/// - Market identification and question details
-/// - Available outcomes for prediction
-/// - Administrative and timing information
-/// - Creation timestamp for chronological ordering
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
-/// # use predictify_hybrid::events::MarketCreatedEvent;
-/// # let env = Env::default();
-/// # let admin = Address::generate(&env);
-///
-/// // Market creation event data
-/// let event = MarketCreatedEvent {
-///     market_id: Symbol::new(&env, "btc_50k_2024"),
-///     question: String::from_str(&env, "Will Bitcoin reach $50,000 by end of 2024?"),
-///     outcomes: vec![
-///         &env,
-///         String::from_str(&env, "Yes"),
-///         String::from_str(&env, "No")
-///     ],
-///     admin: admin.clone(),
-///     end_time: 1735689600, // Dec 31, 2024
-///     timestamp: env.ledger().timestamp(),
-/// };
-///
-/// // Event provides complete market context
-/// println!("New market: {}", event.question.to_string());
-/// println!("Market ID: {}", event.market_id.to_string());
-/// println!("Outcomes: {} options", event.outcomes.len());
-/// println!("Ends: {}", event.end_time);
-/// ```
-///
-/// # Integration Points
-///
-/// - **Market Indexing**: Build searchable market directories
-/// - **Activity Feeds**: Display recent market creation activity
-/// - **Analytics**: Track market creation patterns and trends
-/// - **Notifications**: Alert users about new markets in categories of interest
-/// - **Audit Trails**: Maintain complete record of market creation events
-///
-/// # Event Timing
-///
-/// Emitted immediately after successful market creation, providing:
-/// - Real-time notification of new markets
-/// - Chronological ordering via timestamp
-/// - Immediate availability for user interfaces
-/// - Historical record for analytics and reporting
+/// Market creation event
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketCreatedEvent {
@@ -855,9 +798,9 @@ pub struct StorageMigrationEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CircuitBreakerEvent {
     /// Action taken by circuit breaker
-    pub action: crate::circuit_breaker::BreakerAction,
+    pub action: String, // crate::circuit_breaker::BreakerAction,
     /// Condition that triggered the action (if automatic)
-    pub condition: Option<crate::circuit_breaker::BreakerCondition>,
+    pub condition: Option<String>, // Option<crate::circuit_breaker::BreakerCondition>,
     /// Reason for the action
     pub reason: String,
     /// Event timestamp
@@ -915,20 +858,16 @@ impl EventEmitter {
     /// Emit oracle result event
     pub fn emit_oracle_result(
         env: &Env,
-        market_id: &Symbol,
-        result: &String,
-        provider: &String,
-        feed_id: &String,
-        price: i128,
+        params: &crate::types::OracleResultParams,
         threshold: i128,
         comparison: &String,
     ) {
         let event = OracleResultEvent {
-            market_id: market_id.clone(),
-            result: result.clone(),
-            provider: provider.clone(),
-            feed_id: feed_id.clone(),
-            price,
+            market_id: params.market_id.clone(),
+            result: params.result.clone(),
+            provider: params.provider.clone(),
+            feed_id: params.feed_id.clone(),
+            price: params.price,
             threshold,
             comparison: comparison.clone(),
             timestamp: env.ledger().timestamp(),
@@ -1515,8 +1454,14 @@ pub struct EventValidator;
 impl EventValidator {
     /// Validate market created event
     pub fn validate_market_created_event(event: &MarketCreatedEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+        // Skip validation for market_id (Symbol validation is complex)
+
+        if event.question.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+
         if event.outcomes.len() < 2 {
             return Err(Error::InvalidInput);
         }
@@ -1530,8 +1475,14 @@ impl EventValidator {
 
     /// Validate vote cast event
     pub fn validate_vote_cast_event(event: &VoteCastEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+        // Skip validation for market_id (Symbol validation is complex)
+
+        if event.outcome.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+
         if event.stake <= 0 {
             return Err(Error::InvalidInput);
         }
@@ -1540,16 +1491,44 @@ impl EventValidator {
     }
 
     /// Validate oracle result event
-    pub fn validate_oracle_result_event(_event: &OracleResultEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+    pub fn validate_oracle_result_event(event: &OracleResultEvent) -> Result<(), Error> {
+        // Skip validation for market_id (Symbol validation is complex)
+
+        if event.result.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if event.provider.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if event.feed_id.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+
         Ok(())
     }
 
     /// Validate market resolved event
     pub fn validate_market_resolved_event(event: &MarketResolvedEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+        // Skip validation for market_id (Symbol validation is complex)
+
+        if event.final_outcome.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if event.oracle_result.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if event.community_consensus.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+
         if event.confidence_score < 0 || event.confidence_score > 100 {
             return Err(Error::InvalidInput);
         }
@@ -1559,8 +1538,10 @@ impl EventValidator {
 
     /// Validate dispute created event
     pub fn validate_dispute_created_event(event: &DisputeCreatedEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+        // Skip validation for market_id (Symbol validation is complex)
+
+
         if event.stake <= 0 {
             return Err(Error::InvalidInput);
         }
@@ -1570,24 +1551,31 @@ impl EventValidator {
 
     /// Validate fee collected event
     pub fn validate_fee_collected_event(event: &FeeCollectedEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+        // Skip validation for market_id (Symbol validation is complex)
+
+
         if event.amount <= 0 {
             return Err(Error::InvalidInput);
         }
+
+
+        if event.fee_type.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
 
         Ok(())
     }
 
     /// Validate extension requested event
-
     pub fn validate_extension_requested_event(
         event: &ExtensionRequestedEvent,
     ) -> Result<(), Error> {
         // Remove empty check for Symbol since it doesn't have is_empty method
         // Market ID validation is handled by the Symbol type itself
 
-        if event.additional_days == 0 {
+        if event.reason.is_empty() {
             return Err(Error::InvalidInput);
         }
 
@@ -1599,16 +1587,36 @@ impl EventValidator {
     }
 
     /// Validate error logged event
-    pub fn validate_error_logged_event(_event: &ErrorLoggedEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+    pub fn validate_error_logged_event(event: &ErrorLoggedEvent) -> Result<(), Error> {
+        if event.message.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if event.context.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+
         Ok(())
     }
 
     /// Validate performance metric event
-    pub fn validate_performance_metric_event(_event: &PerformanceMetricEvent) -> Result<(), Error> {
-        // For now, skip validation since we can't easily convert Soroban String/Symbol
-        // This is a limitation of the current Soroban SDK
+
+    pub fn validate_performance_metric_event(event: &PerformanceMetricEvent) -> Result<(), Error> {
+        if event.metric_name.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if event.unit.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if event.context.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+
         Ok(())
     }
 }
@@ -1636,10 +1644,12 @@ impl EventHelpers {
     }
 
     /// Get event type from symbol
-    pub fn get_event_type_from_symbol(env: &Env, _symbol: &Symbol) -> String {
-        // For now, return a placeholder since we can't easily convert Symbol to string
-        // This is a limitation of the current Soroban SDK
-        String::from_str(env, "symbol")
+
+  
+    pub fn get_event_type_from_symbol(_symbol: &Symbol) -> String {
+        let env = Env::default();
+        String::from_str(&env, "symbol")
+
     }
 
     /// Create event context string
@@ -1648,8 +1658,9 @@ impl EventHelpers {
         for (i, part) in context_parts.iter().enumerate() {
             if i > 0 {
                 let _separator = String::from_str(env, " | ");
-                let _context_str = String::from_str(env, "");
-                context = String::from_str(env, "");
+
+                // Complex string concatenation is not supported in Soroban
+
             } else {
                 context = part.clone();
             }
@@ -1665,11 +1676,7 @@ impl EventHelpers {
 
     /// Get event age in seconds
     pub fn get_event_age(current_timestamp: u64, event_timestamp: u64) -> u64 {
-        if current_timestamp >= event_timestamp {
-            current_timestamp - event_timestamp
-        } else {
-            0
-        }
+        current_timestamp.saturating_sub(event_timestamp)
     }
 
     /// Check if event is recent (within specified seconds)
@@ -1815,12 +1822,9 @@ impl EventTestingUtils {
 
     /// Simulate event emission
     pub fn simulate_event_emission(env: &Env, _event_type: &String) -> bool {
-        // Simulate successful event emission
 
         let event_key = Symbol::new(env, "event");
-        env.storage()
-            .persistent()
-            .set(&event_key, &String::from_str(env, "test"));
+        env.storage().persistent().set(&event_key, &String::from_str(env, "test"));
 
         true
     }

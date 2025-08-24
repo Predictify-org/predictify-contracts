@@ -2,10 +2,14 @@
 
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::config;
-use crate::errors::Error;
-use crate::types::*;
-// Oracle imports removed - not currently used
+
+
+use crate::{
+    errors::Error,
+    types::{Market, OracleConfig, OracleProvider, MarketCreationParams, MarketState},
+};
+
+
 
 /// Market management system for Predictify Hybrid contract
 ///
@@ -15,14 +19,10 @@ use crate::types::*;
 /// - Market analytics and statistics
 /// - Market helper utilities and testing functions
 /// - Market resolution and dispute handling
-
 // ===== MARKET CREATION =====
 
-/// Market creation utilities for the Predictify prediction market platform.
-///
-/// This struct provides methods to create different types of prediction markets
-/// with various oracle configurations. All market creation functions validate
-/// input parameters and handle fee processing automatically.
+///   Market creation utilities
+
 pub struct MarketCreator;
 
 impl MarketCreator {
@@ -126,6 +126,19 @@ impl MarketCreator {
         // Store market
         env.storage().persistent().set(&market_id, &market);
 
+        // Emit market creation event
+        let market_created_event = crate::events::MarketCreatedEvent {
+            market_id: market_id.clone(),
+            question: market.question.clone(),
+            outcomes: market.outcomes.clone(),
+            admin: admin.clone(),
+            end_time: market.end_time,
+            timestamp: env.ledger().timestamp(),
+        };
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, "mkt_crt"), &market_created_event);
+
         Ok(market_id)
     }
 
@@ -187,30 +200,21 @@ impl MarketCreator {
     /// ```
 
     pub fn create_reflector_market(
-        _env: &Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        asset_symbol: String,
-        threshold: i128,
-        comparison: String,
+
+        env: &Env,
+        params: crate::types::ReflectorMarketParams,
+
     ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Reflector,
-            feed_id: asset_symbol,
-            threshold,
-            comparison,
+            feed_id: params.asset_symbol,
+            threshold: params.threshold,
+            comparison: params.comparison,
         };
 
-        Self::create_market(
-            _env,
-            admin,
-            question,
-            outcomes,
-            duration_days,
-            oracle_config,
-        )
+
+        Self::create_market(env, params.admin, params.question, params.outcomes, params.duration_days, oracle_config)
+
     }
 
     /// Creates a prediction market using Pyth Network oracle as the data source.
@@ -267,30 +271,21 @@ impl MarketCreator {
     /// ).expect("Pyth market creation should succeed");
     /// ```
     pub fn create_pyth_market(
-        _env: &Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        feed_id: String,
-        threshold: i128,
-        comparison: String,
+
+        env: &Env,
+        params: crate::types::PythMarketParams,
+
     ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Pyth,
-            feed_id,
-            threshold,
-            comparison,
+            feed_id: params.feed_id,
+            threshold: params.threshold,
+            comparison: params.comparison,
         };
 
-        Self::create_market(
-            _env,
-            admin,
-            question,
-            outcomes,
-            duration_days,
-            oracle_config,
-        )
+
+        Self::create_market(env, params.admin, params.question, params.outcomes, params.duration_days, oracle_config)
+
     }
 
     /// Creates a prediction market using Reflector oracle for specific asset types.
@@ -347,25 +342,12 @@ impl MarketCreator {
     /// ).expect("Asset market creation should succeed");
     /// ```
     pub fn create_reflector_asset_market(
-        _env: &Env,
-        admin: Address,
-        question: String,
-        outcomes: Vec<String>,
-        duration_days: u32,
-        asset_symbol: String,
-        threshold: i128,
-        comparison: String,
+
+        env: &Env,
+        params: crate::types::ReflectorMarketParams,
     ) -> Result<Symbol, Error> {
-        Self::create_reflector_market(
-            _env,
-            admin,
-            question,
-            outcomes,
-            duration_days,
-            asset_symbol,
-            threshold,
-            comparison,
-        )
+        Self::create_reflector_market(env, params)
+
     }
 }
 
@@ -447,28 +429,25 @@ impl MarketValidator {
     ) -> Result<(), Error> {
         // Validate question is not empty
         if question.is_empty() {
-            return Err(Error::InvalidQuestion);
+            return Err(Error::InvalidInput);
         }
 
-        // Use the new MarketParameterValidator for comprehensive validation
-        use crate::validation::MarketParameterValidator;
 
-        // Validate duration limits
-        if let Err(_) = MarketParameterValidator::validate_duration_limits(
-            duration_days,
-            config::MIN_MARKET_DURATION_DAYS,
-            config::MAX_MARKET_DURATION_DAYS,
-        ) {
-            return Err(Error::InvalidDuration);
+        // Validate outcomes
+        if outcomes.len() < 2 {
+            return Err(Error::InvalidOutcome);
         }
 
-        // Validate outcome count and content
-        if let Err(_) = MarketParameterValidator::validate_outcome_count(
-            outcomes,
-            config::MIN_MARKET_OUTCOMES,
-            config::MAX_MARKET_OUTCOMES,
-        ) {
-            return Err(Error::InvalidOutcomes);
+        for outcome in outcomes.iter() {
+            if outcome.is_empty() {
+                return Err(Error::InvalidOutcome);
+            }
+        }
+
+        // Validate duration
+        if duration_days == 0 || duration_days > 365 {
+            return Err(Error::InvalidInput);
+
         }
 
         Ok(())
@@ -609,7 +588,7 @@ impl MarketValidator {
         let current_time = _env.ledger().timestamp();
 
         if current_time < market.end_time {
-            return Err(Error::MarketClosed);
+            return Err(Error::MarketNotEnded);
         }
 
         if market.oracle_result.is_none() {
@@ -1328,12 +1307,12 @@ impl MarketAnalytics {
     /// }
     /// ```
     pub fn get_market_stats(market: &Market) -> MarketStats {
-        let total_votes = market.votes.len() as u32;
+        let total_votes = market.votes.len();
         let total_staked = market.total_staked;
         let total_dispute_stakes = market.total_dispute_stakes();
 
         // Calculate outcome distribution
-        let mut outcome_stats = Map::new(&market.votes.env());
+        let mut outcome_stats = Map::new(market.votes.env());
         for (_, outcome) in market.votes.iter() {
             let count = outcome_stats.get(outcome.clone()).unwrap_or(0);
             outcome_stats.set(outcome.clone(), count + 1);
@@ -1517,14 +1496,14 @@ impl MarketAnalytics {
     /// }
     /// ```
     pub fn calculate_community_consensus(market: &Market) -> CommunityConsensus {
-        let mut vote_counts: Map<String, u32> = Map::new(&market.votes.env());
+        let mut vote_counts: Map<String, u32> = Map::new(market.votes.env());
 
         for (_, outcome) in market.votes.iter() {
             let count = vote_counts.get(outcome.clone()).unwrap_or(0);
             vote_counts.set(outcome.clone(), count + 1);
         }
 
-        let mut consensus_outcome = String::from_str(&market.votes.env(), "");
+        let mut consensus_outcome = String::from_str(market.votes.env(), "");
         let mut max_votes = 0;
         let mut total_votes = 0;
 
@@ -2190,24 +2169,28 @@ impl MarketTestHelpers {
     /// // Use config for testing market creation
     /// // let market_id = MarketCreator::create_market(...);
     /// ```
-    pub fn create_test_market_config(_env: &Env) -> MarketCreationParams {
+    pub fn create_test_market_config(env: &Env) -> MarketCreationParams {
         MarketCreationParams::new(
             Address::from_str(
-                _env,
+                env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             ),
-            String::from_str(_env, "Will BTC go above $25,000 by December 31?"),
+            String::from_str(env, "Will BTC go above $25,000 by December 31?"),
             vec![
-                _env,
-                String::from_str(_env, "yes"),
-                String::from_str(_env, "no"),
+
+                &env,
+                String::from_str(env, "yes"),
+                String::from_str(env, "no"),
+
             ],
             30,
             OracleConfig::new(
                 OracleProvider::Pyth,
-                String::from_str(_env, "BTC/USD"),
-                25_000_00,
-                String::from_str(_env, "gt"),
+
+                String::from_str(env, "BTC/USD"),
+                2_500_000,
+                String::from_str(env, "gt"),
+
             ),
             1_000_000, // Creation fee: 1 XLM
         )
@@ -2494,7 +2477,7 @@ impl MarketStateLogic {
     /// ).is_err());
     /// ```
     pub fn validate_state_transition(from: MarketState, to: MarketState) -> Result<(), Error> {
-        use MarketState::*;
+        use crate::MarketState::*;
         let allowed = match from {
             Active => matches!(to, Ended | Cancelled | Closed | Disputed),
             Ended => matches!(to, Resolved | Disputed | Closed | Cancelled),
@@ -2565,7 +2548,7 @@ impl MarketStateLogic {
         function: &str,
         state: MarketState,
     ) -> Result<(), Error> {
-        use MarketState::*;
+        use crate::MarketState::*;
         let allowed = match function {
             "vote" => matches!(state, Active),
             "dispute" => matches!(state, Ended),
@@ -2675,10 +2658,9 @@ impl MarketStateLogic {
     /// }
     /// ```
     pub fn validate_market_state_consistency(env: &Env, market: &Market) -> Result<(), Error> {
-        use MarketState::*;
         let now = env.ledger().timestamp();
         match market.state {
-            Active => {
+            MarketState::Active => {
                 if market.end_time <= now {
                     return Err(Error::InvalidState);
                 }
@@ -2686,7 +2668,7 @@ impl MarketStateLogic {
                     return Err(Error::InvalidState);
                 }
             }
-            Ended => {
+            MarketState::Ended => {
                 if market.end_time > now {
                     return Err(Error::InvalidState);
                 }
@@ -2694,17 +2676,17 @@ impl MarketStateLogic {
                     return Err(Error::InvalidState);
                 }
             }
-            Disputed => {
+            MarketState::Disputed => {
                 if market.dispute_stakes.is_empty() {
                     return Err(Error::InvalidState);
                 }
             }
-            Resolved => {
+            MarketState::Resolved => {
                 if market.winning_outcome.is_none() {
                     return Err(Error::InvalidState);
                 }
             }
-            Closed | Cancelled => {}
+            MarketState::Closed | MarketState::Cancelled => {}
         }
         Ok(())
     }
@@ -2911,7 +2893,7 @@ mod tests {
             OracleConfig::new(
                 OracleProvider::Pyth,
                 String::from_str(&env, "BTC/USD"),
-                25_000_00,
+                2_500_000,
                 String::from_str(&env, "gt"),
             ),
             MarketState::Active,

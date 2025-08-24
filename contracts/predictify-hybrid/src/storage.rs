@@ -2,7 +2,7 @@
 
 use super::*;
 use soroban_sdk::{
-    contracttype, map, vec, Address, Env, Map, Symbol, Vec,
+    contracttype, Env, Symbol, Vec,
 };
 use crate::markets::{MarketStateManager, MarketStateLogic};
 
@@ -505,7 +505,7 @@ impl StorageOptimizer {
     fn get_all_market_ids(env: &Env) -> Vec<Symbol> {
         // This is a simplified approach - in a real implementation,
         // you'd maintain a registry of all market IDs
-        let mut market_ids = Vec::new(env);
+        let market_ids = Vec::new(env);
         // For now, return empty vector - this would be populated from a registry
         market_ids
     }
@@ -599,7 +599,6 @@ impl StorageUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address;
     
     #[test]
     fn test_storage_optimizer_compression() {

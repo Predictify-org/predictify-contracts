@@ -23,7 +23,7 @@
 ## 🧠 Project Summary
 This repository contains smart contracts for Stellar's Soroban platform, organized in a Rust workspace. Key components include:
 
-- `hello-world`: A basic example contract for testing and structure reference.
+- `predictify-hybrid`: The main prediction market contract with oracle integration.
 - `predictify-hybrid`: A hybrid prediction market with oracle integration (Reflector, Pyth), staking, dispute resolution, and community voting.
 
 ---

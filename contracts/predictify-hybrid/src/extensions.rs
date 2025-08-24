@@ -11,11 +11,9 @@ use crate::types::*;
 /// - Extension events and logging
 /// - Extension history tracking
 /// - Extension analytics and reporting
-
 // ===== EXTENSION CONSTANTS =====
 // Note: These constants are now managed by the config module
 // Use ConfigManager::get_extension_config() to get current values
-
 const MAX_EXTENSION_DAYS: u32 = crate::config::MAX_EXTENSION_DAYS;
 const MIN_EXTENSION_DAYS: u32 = crate::config::MIN_EXTENSION_DAYS;
 const EXTENSION_FEE_PER_DAY: i128 = crate::config::EXTENSION_FEE_PER_DAY; // 1 XLM per day in stroops
@@ -383,7 +381,7 @@ impl ExtensionManager {
         let market = MarketStateManager::get_market(env, &market_id)?;
 
         Ok(crate::types::ExtensionStats {
-            total_extensions: market.extension_history.len().try_into().unwrap_or(0),
+            total_extensions: market.extension_history.len(),
             total_extension_days: market.total_extension_days,
             max_extension_days: market.max_extension_days,
             can_extend: ExtensionValidator::can_extend_market(env, &market_id, &market.admin)
@@ -567,11 +565,11 @@ impl ExtensionValidator {
     ) -> Result<(), Error> {
         // Validate additional days
         if additional_days < MIN_EXTENSION_DAYS {
-            return Err(Error::InvalidExtensionDays);
+            return Err(Error::InvalidInput);
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
-            return Err(Error::ExtensionDaysExceeded);
+            return Err(Error::InvalidInput);
         }
 
         // Get market and validate state
@@ -601,12 +599,12 @@ impl ExtensionValidator {
 
         // Check total extension days limit
         if market.total_extension_days + additional_days > market.max_extension_days {
-            return Err(Error::ExtensionDaysExceeded);
+            return Err(Error::InvalidInput);
         }
 
         // Check number of extensions limit
         if (market.extension_history.len() as usize) >= (MAX_TOTAL_EXTENSIONS as usize) {
-            return Err(Error::MarketExtensionNotAllowed);
+            return Err(Error::InvalidState);
         }
 
         Ok(())
@@ -647,7 +645,7 @@ impl ExtensionUtils {
         // For now, we'll just validate the fee amount
 
         if fee_amount <= 0 {
-            return Err(Error::ExtensionFeeInsufficient);
+            return Err(Error::InsufficientStake);
         }
 
         Ok(fee_amount)
@@ -740,7 +738,7 @@ use crate::markets::{MarketStateManager, MarketUtils};
 mod tests {
     use super::*;
     use crate::types::ExtensionStats;
-    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_extension_validation() {
@@ -748,28 +746,22 @@ mod tests {
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let _admin = Address::generate(&env);
 
-        env.as_contract(&contract_id, || {
-            // Test valid extension days
-            assert!(ExtensionValidator::validate_extension_conditions(
-                &env,
-                &symbol_short!("test"),
-                5
-            )
-            .is_err()); // Market doesn't exist
-
-            // Test invalid extension days
-            assert_eq!(
-                ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
-                    .unwrap_err(),
-                Error::InvalidExtensionDays
-            );
+        // Test valid extension days - wrap in contract context
+        let result1 = env.as_contract(&contract_id, || {
+            ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 5)
         });
+        assert!(result1.is_err()); // Market doesn't exist
 
-        assert_eq!(
+        // Test invalid extension days
+        let result2 = env.as_contract(&contract_id, || {
+            ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
+        });
+        assert_eq!(result2.unwrap_err(), Error::InvalidInput);
+
+        let result3 = env.as_contract(&contract_id, || {
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
-                .unwrap_err(),
-            Error::ExtensionDaysExceeded
-        );
+        });
+        assert_eq!(result3.unwrap_err(), Error::InvalidInput);
     }
 
     #[test]

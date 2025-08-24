@@ -1,6 +1,8 @@
 use soroban_sdk::{
     contracttype, map, vec, Address, Env, Map, String, Symbol, Vec,
 };
+use alloc::format;
+use alloc::string::ToString;
 
 use crate::errors::Error;
 use crate::events::{EventEmitter, CircuitBreakerEvent};
@@ -206,7 +208,7 @@ impl CircuitBreaker {
         reason: &String,
     ) -> Result<(), Error> {
         // Validate admin permissions
-        crate::admin::AdminManager::validate_admin_permissions(env, admin)?;
+        crate::admin::AdminAccessControl::validate_permission(env, admin)?;
 
         let mut state = Self::get_state(env)?;
         
@@ -354,7 +356,7 @@ impl CircuitBreaker {
         admin: &Address,
     ) -> Result<(), Error> {
         // Validate admin permissions
-        crate::admin::AdminManager::validate_admin_permissions(env, admin)?;
+        crate::admin::AdminAccessControl::validate_permission(env, admin)?;
 
         let mut state = Self::get_state(env)?;
         

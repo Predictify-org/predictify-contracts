@@ -1,6 +1,7 @@
 use soroban_sdk::{
     contracttype, vec, Address, Env, Map, String, Symbol, Vec,
 };
+use alloc::format;
 use alloc::string::ToString;
 
 use crate::errors::Error;
@@ -260,7 +261,7 @@ impl BatchProcessor {
         }
 
         // Process the vote using existing voting logic
-        crate::voting::VoteManager::cast_vote(
+        crate::voting::VotingManager::process_vote(
             env,
             &vote_data.market_id,
             &vote_data.voter,
@@ -330,14 +331,14 @@ impl BatchProcessor {
         Self::validate_claim_data(claim_data)?;
 
         // Check if market exists and is resolved
-        let market = crate::markets::MarketManager::get_market(env, &claim_data.market_id)?;
+        let market = crate::markets::MarketStateManager::get_market(env, &claim_data.market_id)?;
         
         if !market.is_resolved {
             return Err(Error::MarketNotResolved);
         }
 
         // Process the claim using existing claim logic
-        crate::markets::MarketManager::claim_winnings(
+        crate::voting::VotingManager::process_claim(
             env,
             &claim_data.market_id,
             &claim_data.claimant,
@@ -413,7 +414,7 @@ impl BatchProcessor {
         Self::validate_market_data(market_data)?;
 
         // Create market using existing market creation logic
-        crate::markets::MarketManager::create_market(
+        crate::markets::MarketCreator::create_market(
             env,
             admin,
             &market_data.question,
@@ -484,14 +485,14 @@ impl BatchProcessor {
         Self::validate_oracle_feed_data(feed_data)?;
 
         // Check if market exists
-        let market = crate::markets::MarketManager::get_market(env, &feed_data.market_id)?;
+        let market = crate::markets::MarketStateManager::get_market(env, &feed_data.market_id)?;
         
         if market.is_resolved {
             return Err(Error::MarketAlreadyResolved);
         }
 
         // Process oracle call using existing oracle logic
-        crate::oracles::OracleManager::fetch_oracle_result(
+        crate::resolution::OracleResolutionManager::fetch_oracle_result(
             env,
             &feed_data.market_id,
             &feed_data.feed_id,
