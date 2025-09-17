@@ -825,6 +825,73 @@ pub struct StorageMigrationEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when circuit breaker state changes
+///
+/// This event provides comprehensive information about circuit breaker
+/// state changes, including the action taken, condition that triggered
+/// it, reason for the action, and administrative details.
+///
+/// # Event Data
+///
+/// Contains all critical circuit breaker information:
+/// - Action taken (pause, resume, trigger, reset)
+/// - Condition that triggered the action (if automatic)
+/// - Reason for the action
+/// - Timestamp and admin information
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String};
+/// # use predictify_hybrid::events::CircuitBreakerEvent;
+/// # use predictify_hybrid::circuit_breaker::{BreakerAction, BreakerCondition};
+/// # let env = Env::default();
+/// # let admin = Address::generate(&env);
+///
+/// // Circuit breaker event data
+/// let event = CircuitBreakerEvent {
+///     action: BreakerAction::Pause,
+///     condition: Some(BreakerCondition::HighErrorRate),
+///     reason: String::from_str(&env, "Error rate exceeded 10% threshold"),
+///     timestamp: env.ledger().timestamp(),
+///     admin: Some(admin.clone()),
+/// };
+///
+/// // Event provides complete circuit breaker context
+/// println!("Circuit breaker action: {:?}", event.action);
+/// println!("Trigger condition: {:?}", event.condition);
+/// println!("Reason: {}", event.reason.to_string());
+/// ```
+///
+/// # Integration Points
+///
+/// - **Monitoring**: Track circuit breaker state changes
+/// - **Alerting**: Notify administrators of circuit breaker actions
+/// - **Analytics**: Analyze circuit breaker patterns and triggers
+/// - **Audit Trails**: Maintain complete record of safety actions
+/// - **Recovery Tracking**: Monitor recovery attempts and success rates
+///
+/// # Event Timing
+///
+/// Emitted immediately when circuit breaker state changes, providing:
+/// - Real-time notification of safety actions
+/// - Immediate availability for monitoring systems
+/// - Historical record for analysis and reporting
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CircuitBreakerEvent {
+    /// Action taken by circuit breaker
+    pub action: crate::circuit_breaker::BreakerAction,
+    /// Condition that triggered the action (if automatic)
+    pub condition: Option<crate::circuit_breaker::BreakerCondition>,
+    /// Reason for the action
+    pub reason: String,
+    /// Event timestamp
+    pub timestamp: u64,
+    /// Admin who triggered the action (if manual)
+    pub admin: Option<Address>,
+}
+
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Event emission utilities
@@ -1284,6 +1351,7 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("stor_mig"), &event);
     }
 
+
     /// Emit audit item updated event
     pub fn emit_audit_item_updated(
         env: &Env,
@@ -1327,6 +1395,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("aud_reset"), &event);
+
     }
 
     /// Store event in persistent storage

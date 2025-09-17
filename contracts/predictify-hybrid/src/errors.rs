@@ -120,6 +120,7 @@ pub enum Error {
     DisputeTimeoutExtensionNotAllowed = 602,
     /// Dispute timeout not set
     DisputeTimeoutNotSet = 603,
+
 }
 
 impl Error {
@@ -176,6 +177,7 @@ impl Error {
             Error::DisputeTimeoutNotExpired => "Dispute timeout period has not expired yet",
             Error::DisputeTimeoutExtensionNotAllowed => "Dispute timeout extension is not allowed",
             Error::DisputeTimeoutNotSet => "Dispute timeout is not set",
+
         }
     }
 
@@ -231,7 +233,9 @@ impl Error {
             Error::InvalidTimeoutHours => "INVALID_TIMEOUT_HOURS",
             Error::DisputeTimeoutNotExpired => "DISPUTE_TIMEOUT_NOT_EXPIRED",
             Error::DisputeTimeoutExtensionNotAllowed => "DISPUTE_TIMEOUT_EXTENSION_NOT_ALLOWED",
+
             Error::DisputeTimeoutNotSet => "DISPUTE_TIMEOUT_NOT_SET",
+
         }
     }
 }

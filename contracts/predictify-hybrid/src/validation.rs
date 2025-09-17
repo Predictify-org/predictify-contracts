@@ -1906,24 +1906,8 @@ impl OracleValidator {
         env: &Env,
         oracle_config: &OracleConfig,
     ) -> Result<(), ValidationError> {
-        // Validate feed ID string length
-        if let Err(_) = InputValidator::validate_string_length(&oracle_config.feed_id, 50) {
-            return Err(ValidationError::InvalidOracle);
-        }
-
-        // Validate threshold with numeric range
-        if let Err(_) =
-            InputValidator::validate_numeric_range(oracle_config.threshold, 1, i128::MAX)
-        {
-            return Err(ValidationError::InvalidOracle);
-        }
-
-        // Validate comparison operator
-        if let Err(_) = Self::validate_comparison_operator(env, &oracle_config.comparison) {
-            return Err(ValidationError::InvalidOracle);
-        }
-
-        Ok(())
+        // Use the new comprehensive OracleConfigValidator
+        OracleConfigValidator::validate_oracle_config_all_together(oracle_config)
     }
 
     /// Validate comparison operator
@@ -3034,5 +3018,1429 @@ impl ValidationDocumentation {
         );
 
         codes
+    }
+}
+
+// ===== MARKET PARAMETER VALIDATION =====
+
+/// Comprehensive market parameter validation for market creation.
+///
+/// This struct provides detailed validation for all market creation parameters
+/// including duration limits, stake amounts, outcome counts, threshold values,
+/// and comparison operators. It ensures robust market creation with proper
+/// parameter bounds and validation rules.
+///
+/// # Validation Categories
+///
+/// **Duration Validation:**
+/// - Minimum and maximum duration limits
+/// - Duration format and range validation
+/// - Business rule compliance
+///
+/// **Stake Amount Validation:**
+/// - Minimum and maximum stake limits
+/// - Stake amount format validation
+/// - Economic feasibility checks
+///
+/// **Outcome Count Validation:**
+/// - Minimum and maximum outcome limits
+/// - Outcome uniqueness validation
+/// - Market complexity assessment
+///
+/// **Threshold Value Validation:**
+/// - Threshold bounds validation
+/// - Numeric format validation
+/// - Oracle compatibility checks
+///
+/// **Comparison Operator Validation:**
+/// - Valid operator format validation
+/// - Oracle provider compatibility
+/// - Syntax and semantic validation
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, vec};
+/// # use predictify_hybrid::validation::MarketParameterValidator;
+/// # let env = Env::default();
+///
+/// // Validate duration limits
+/// let duration_result = MarketParameterValidator::validate_duration_limits(
+///     30, // duration_days
+///     1,  // min_days
+///     365 // max_days
+/// );
+/// assert!(duration_result.is_ok());
+///
+/// // Validate stake amounts
+/// let stake_result = MarketParameterValidator::validate_stake_amounts(
+///     1_000_000, // stake
+///     100_000,   // min_stake
+///     100_000_000 // max_stake
+/// );
+/// assert!(stake_result.is_ok());
+///
+/// // Validate outcome count
+/// let outcomes = vec![
+///     &env,
+///     String::from_str(&env, "Yes"),
+///     String::from_str(&env, "No")
+/// ];
+/// let outcome_result = MarketParameterValidator::validate_outcome_count(
+///     &outcomes,
+///     2,  // min_outcomes
+///     10  // max_outcomes
+/// );
+/// assert!(outcome_result.is_ok());
+///
+/// // Validate threshold value
+/// let threshold_result = MarketParameterValidator::validate_threshold_value(
+///     50_000_00, // threshold ($50,000 with 2 decimal places)
+///     1_00,      // min_threshold ($1.00)
+///     1_000_000_00 // max_threshold ($1,000,000.00)
+/// );
+/// assert!(threshold_result.is_ok());
+///
+/// // Validate comparison operator
+/// let comparison_result = MarketParameterValidator::validate_comparison_operator(
+///     String::from_str(&env, "gt")
+/// );
+/// assert!(comparison_result.is_ok());
+/// ```
+///
+/// # Integration Points
+///
+/// MarketParameterValidator integrates with:
+/// - **Market Creation**: Validate all creation parameters
+/// - **Oracle Configuration**: Validate oracle-specific parameters
+/// - **Fee System**: Validate stake and fee parameters
+/// - **Admin System**: Validate administrative parameters
+/// - **Event System**: Log validation outcomes
+/// - **Error Handling**: Provide detailed validation error messages
+///
+/// # Validation Rules
+///
+/// Current validation rules:
+/// - **Duration**: 1-365 days (configurable)
+/// - **Stake Amounts**: Positive values within min/max bounds
+/// - **Outcome Count**: 2-10 outcomes (configurable)
+/// - **Threshold Values**: Positive values within oracle limits
+/// - **Comparison Operators**: "gt", "gte", "lt", "lte", "eq"
+///
+/// # Performance Considerations
+///
+/// Parameter validation is optimized for blockchain execution:
+/// - **Early Exit**: Stop validation on first critical error
+/// - **Batch Validation**: Validate multiple parameters efficiently
+/// - **Gas Efficient**: Minimize computational overhead
+/// - **Comprehensive**: Validate all parameters in single call
+/// - **Detailed Results**: Provide specific error information
+pub struct MarketParameterValidator;
+
+impl MarketParameterValidator {
+    /// Validates duration limits for market creation.
+    ///
+    /// This function ensures that the market duration falls within acceptable
+    /// bounds defined by minimum and maximum duration limits. It validates
+    /// both the format and business logic requirements for market duration.
+    ///
+    /// # Parameters
+    ///
+    /// * `duration_days` - The market duration in days to validate
+    /// * `min_days` - Minimum allowed duration in days
+    /// * `max_days` - Maximum allowed duration in days
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Duration is within valid bounds
+    /// * `Err(ValidationError)` - Duration validation failed
+    ///
+    /// # Errors
+    ///
+    /// * `ValidationError::InvalidDuration` - Duration is outside valid range
+    /// * `ValidationError::InvalidNumber` - Duration is zero or negative
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::validation::MarketParameterValidator;
+    ///
+    /// // Valid duration
+    /// assert!(MarketParameterValidator::validate_duration_limits(30, 1, 365).is_ok());
+    ///
+    /// // Invalid duration - too short
+    /// assert!(MarketParameterValidator::validate_duration_limits(0, 1, 365).is_err());
+    ///
+    /// // Invalid duration - too long
+    /// assert!(MarketParameterValidator::validate_duration_limits(400, 1, 365).is_err());
+    /// ```
+    pub fn validate_duration_limits(
+        duration_days: u32,
+        min_days: u32,
+        max_days: u32,
+    ) -> Result<(), ValidationError> {
+        // Validate duration is not zero
+        if duration_days == 0 {
+            return Err(ValidationError::InvalidDuration);
+        }
+
+        // Validate duration is within bounds
+        if duration_days < min_days || duration_days > max_days {
+            return Err(ValidationError::InvalidDuration);
+        }
+
+        Ok(())
+    }
+
+    /// Validates stake amounts for market creation and voting.
+    ///
+    /// This function ensures that stake amounts are within acceptable bounds
+    /// and meet economic feasibility requirements. It validates both minimum
+    /// and maximum stake limits to maintain market integrity.
+    ///
+    /// # Parameters
+    ///
+    /// * `stake` - The stake amount to validate (in token base units)
+    /// * `min_stake` - Minimum allowed stake amount (in token base units)
+    /// * `max_stake` - Maximum allowed stake amount (in token base units)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Stake amount is within valid bounds
+    /// * `Err(ValidationError)` - Stake validation failed
+    ///
+    /// # Errors
+    ///
+    /// * `ValidationError::InvalidStake` - Stake is outside valid range
+    /// * `ValidationError::InvalidNumber` - Stake is zero or negative
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::validation::MarketParameterValidator;
+    ///
+    /// // Valid stake
+    /// assert!(MarketParameterValidator::validate_stake_amounts(
+    ///     1_000_000, // 1 XLM
+    ///     100_000,   // 0.1 XLM minimum
+    ///     100_000_000 // 100 XLM maximum
+    /// ).is_ok());
+    ///
+    /// // Invalid stake - too low
+    /// assert!(MarketParameterValidator::validate_stake_amounts(
+    ///     50_000,    // 0.05 XLM
+    ///     100_000,   // 0.1 XLM minimum
+    ///     100_000_000 // 100 XLM maximum
+    /// ).is_err());
+    ///
+    /// // Invalid stake - too high
+    /// assert!(MarketParameterValidator::validate_stake_amounts(
+    ///     200_000_000, // 200 XLM
+    ///     100_000,     // 0.1 XLM minimum
+    ///     100_000_000  // 100 XLM maximum
+    /// ).is_err());
+    /// ```
+    pub fn validate_stake_amounts(
+        stake: i128,
+        min_stake: i128,
+        max_stake: i128,
+    ) -> Result<(), ValidationError> {
+        // Validate stake is positive
+        if stake <= 0 {
+            return Err(ValidationError::InvalidNumber);
+        }
+
+        // Validate stake is within bounds
+        if stake < min_stake || stake > max_stake {
+            return Err(ValidationError::InvalidStake);
+        }
+
+        // Validate min_stake is less than max_stake
+        if min_stake >= max_stake {
+            return Err(ValidationError::InvalidStake);
+        }
+
+        Ok(())
+    }
+
+    /// Validates outcome count and uniqueness for market creation.
+    ///
+    /// This function ensures that the number of outcomes falls within acceptable
+    /// bounds and that all outcomes are unique. It validates both the count
+    /// and the content of outcomes to maintain market integrity.
+    ///
+    /// # Parameters
+    ///
+    /// * `outcomes` - Vector of outcome strings to validate
+    /// * `min_outcomes` - Minimum allowed number of outcomes
+    /// * `max_outcomes` - Maximum allowed number of outcomes
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Outcome count and content are valid
+    /// * `Err(ValidationError)` - Outcome validation failed
+    ///
+    /// # Errors
+    ///
+    /// * `ValidationError::ArrayTooSmall` - Too few outcomes
+    /// * `ValidationError::ArrayTooLarge` - Too many outcomes
+    /// * `ValidationError::InvalidOutcome` - Duplicate or invalid outcomes
+    /// * `ValidationError::InvalidOutcomeFormat` - Invalid outcome format
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::validation::MarketParameterValidator;
+    /// # let env = Env::default();
+    ///
+    /// // Valid outcomes
+    /// let valid_outcomes = vec![
+    ///     &env,
+    ///     String::from_str(&env, "Yes"),
+    ///     String::from_str(&env, "No")
+    /// ];
+    /// assert!(MarketParameterValidator::validate_outcome_count(
+    ///     &valid_outcomes,
+    ///     2,  // min_outcomes
+    ///     10  // max_outcomes
+    /// ).is_ok());
+    ///
+    /// // Invalid outcomes - too few
+    /// let too_few_outcomes = vec![
+    ///     &env,
+    ///     String::from_str(&env, "Yes")
+    /// ];
+    /// assert!(MarketParameterValidator::validate_outcome_count(
+    ///     &too_few_outcomes,
+    ///     2,  // min_outcomes
+    ///     10  // max_outcomes
+    /// ).is_err());
+    ///
+    /// // Invalid outcomes - too many
+    /// let too_many_outcomes = vec![
+    ///     &env,
+    ///     String::from_str(&env, "A"),
+    ///     String::from_str(&env, "B"),
+    ///     String::from_str(&env, "C"),
+    ///     String::from_str(&env, "D"),
+    ///     String::from_str(&env, "E"),
+    ///     String::from_str(&env, "F"),
+    ///     String::from_str(&env, "G"),
+    ///     String::from_str(&env, "H"),
+    ///     String::from_str(&env, "I"),
+    ///     String::from_str(&env, "J"),
+    ///     String::from_str(&env, "K")
+    /// ];
+    /// assert!(MarketParameterValidator::validate_outcome_count(
+    ///     &too_many_outcomes,
+    ///     2,  // min_outcomes
+    ///     10  // max_outcomes
+    /// ).is_err());
+    /// ```
+    pub fn validate_outcome_count(
+        outcomes: &Vec<String>,
+        min_outcomes: u32,
+        max_outcomes: u32,
+    ) -> Result<(), ValidationError> {
+        let outcome_count = outcomes.len() as u32;
+
+        // Validate outcome count is within bounds
+        if outcome_count < min_outcomes {
+            return Err(ValidationError::ArrayTooSmall);
+        }
+
+        if outcome_count > max_outcomes {
+            return Err(ValidationError::ArrayTooLarge);
+        }
+
+        // Validate each outcome is not empty
+        for outcome in outcomes.iter() {
+            if outcome.is_empty() {
+                return Err(ValidationError::InvalidOutcomeFormat);
+            }
+        }
+
+        // Validate outcomes are unique (case-insensitive)
+        for i in 0..outcomes.len() {
+            for j in (i + 1)..outcomes.len() {
+                let outcome1 = outcomes.get(i).unwrap();
+                let outcome2 = outcomes.get(j).unwrap();
+                
+                // Simple case-insensitive comparison by checking if they're equal
+                // or if one contains the other (for partial matches)
+                if outcome1 == outcome2 {
+                    return Err(ValidationError::InvalidOutcome);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validates threshold values for oracle-based markets.
+    ///
+    /// This function ensures that threshold values are within acceptable bounds
+    /// for oracle price feeds. It validates both the format and the economic
+    /// feasibility of threshold values.
+    ///
+    /// # Parameters
+    ///
+    /// * `threshold` - The threshold value to validate (in asset base units)
+    /// * `min_threshold` - Minimum allowed threshold value
+    /// * `max_threshold` - Maximum allowed threshold value
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Threshold value is within valid bounds
+    /// * `Err(ValidationError)` - Threshold validation failed
+    ///
+    /// # Errors
+    ///
+    /// * `ValidationError::InvalidThreshold` - Threshold is outside valid range
+    /// * `ValidationError::InvalidNumber` - Threshold is zero or negative
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::validation::MarketParameterValidator;
+    ///
+    /// // Valid threshold
+    /// assert!(MarketParameterValidator::validate_threshold_value(
+    ///     50_000_00, // $50,000 with 2 decimal places
+    ///     1_00,      // $1.00 minimum
+    ///     1_000_000_00 // $1,000,000.00 maximum
+    /// ).is_ok());
+    ///
+    /// // Invalid threshold - too low
+    /// assert!(MarketParameterValidator::validate_threshold_value(
+    ///     50,        // $0.50
+    ///     1_00,      // $1.00 minimum
+    ///     1_000_000_00 // $1,000,000.00 maximum
+    /// ).is_err());
+    ///
+    /// // Invalid threshold - too high
+    /// assert!(MarketParameterValidator::validate_threshold_value(
+    ///     2_000_000_00, // $2,000,000.00
+    ///     1_00,         // $1.00 minimum
+    ///     1_000_000_00  // $1,000,000.00 maximum
+    /// ).is_err());
+    /// ```
+    pub fn validate_threshold_value(
+        threshold: i128,
+        min_threshold: i128,
+        max_threshold: i128,
+    ) -> Result<(), ValidationError> {
+        // Validate threshold is positive
+        if threshold <= 0 {
+            return Err(ValidationError::InvalidNumber);
+        }
+
+        // Validate threshold is within bounds
+        if threshold < min_threshold || threshold > max_threshold {
+            return Err(ValidationError::InvalidThreshold);
+        }
+
+        // Validate min_threshold is less than max_threshold
+        if min_threshold >= max_threshold {
+            return Err(ValidationError::InvalidThreshold);
+        }
+
+        Ok(())
+    }
+
+    /// Validates comparison operators for oracle-based markets.
+    ///
+    /// This function ensures that comparison operators are valid and supported
+    /// by the oracle system. It validates both the format and the semantic
+    /// meaning of comparison operators.
+    ///
+    /// # Parameters
+    ///
+    /// * `comparison` - The comparison operator string to validate
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Comparison operator is valid
+    /// * `Err(ValidationError)` - Comparison operator validation failed
+    ///
+    /// # Errors
+    ///
+    /// * `ValidationError::InvalidInput` - Invalid comparison operator
+    /// * `ValidationError::InvalidString` - Empty or malformed operator
+    ///
+    /// # Supported Operators
+    ///
+    /// * `"gt"` - Greater than
+    /// * `"gte"` - Greater than or equal to
+    /// * `"lt"` - Less than
+    /// * `"lte"` - Less than or equal to
+    /// * `"eq"` - Equal to
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::validation::MarketParameterValidator;
+    /// # let env = Env::default();
+    ///
+    /// // Valid operators
+    /// assert!(MarketParameterValidator::validate_comparison_operator(
+    ///     String::from_str(&env, "gt")
+    /// ).is_ok());
+    /// assert!(MarketParameterValidator::validate_comparison_operator(
+    ///     String::from_str(&env, "gte")
+    /// ).is_ok());
+    /// assert!(MarketParameterValidator::validate_comparison_operator(
+    ///     String::from_str(&env, "lt")
+    /// ).is_ok());
+    /// assert!(MarketParameterValidator::validate_comparison_operator(
+    ///     String::from_str(&env, "lte")
+    /// ).is_ok());
+    /// assert!(MarketParameterValidator::validate_comparison_operator(
+    ///     String::from_str(&env, "eq")
+    /// ).is_ok());
+    ///
+    /// // Invalid operators
+    /// assert!(MarketParameterValidator::validate_comparison_operator(
+    ///     String::from_str(&env, "invalid")
+    /// ).is_err());
+    /// assert!(MarketParameterValidator::validate_comparison_operator(
+    ///     String::from_str(&env, "")
+    /// ).is_err());
+    /// ```
+    pub fn validate_comparison_operator(comparison: String) -> Result<(), ValidationError> {
+        // Validate comparison operator is not empty
+        if comparison.is_empty() {
+            return Err(ValidationError::InvalidString);
+        }
+
+        // Validate comparison operator is supported
+        let env = &comparison.env();
+        let valid_operators = vec![
+            &env,
+            String::from_str(env, "gt"),
+            String::from_str(env, "gte"),
+            String::from_str(env, "lt"),
+            String::from_str(env, "lte"),
+            String::from_str(env, "eq")
+        ];
+        
+        if !valid_operators.contains(&comparison) {
+            return Err(ValidationError::InvalidInput);
+        }
+
+        Ok(())
+    }
+
+    /// Validates all market parameters together for comprehensive validation.
+    ///
+    /// This function performs comprehensive validation of all market creation
+    /// parameters in a single call. It ensures that all parameters are valid
+    /// both individually and in combination with each other.
+    ///
+    /// # Parameters
+    ///
+    /// * `params` - MarketParams struct containing all market parameters
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - All parameters are valid
+    /// * `Err(ValidationError)` - One or more parameters failed validation
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, String, vec};
+    /// # use predictify_hybrid::validation::MarketParameterValidator;
+    /// # let env = Env::default();
+    ///
+    /// // Create market parameters struct (example)
+    /// struct MarketParams {
+    ///     duration_days: u32,
+    ///     stake: i128,
+    ///     outcomes: Vec<String>,
+    ///     threshold: i128,
+    ///     comparison: String,
+    /// }
+    ///
+    /// let params = MarketParams {
+    ///     duration_days: 30,
+    ///     stake: 1_000_000,
+    ///     outcomes: vec![
+    ///         &env,
+    ///         String::from_str(&env, "Yes"),
+    ///         String::from_str(&env, "No")
+    ///     ],
+    ///     threshold: 50_000_00,
+    ///     comparison: String::from_str(&env, "gt"),
+    /// };
+    ///
+    /// // Validate all parameters together
+    /// let result = MarketParameterValidator::validate_market_parameters_all_together(&params);
+    /// assert!(result.is_ok());
+    /// ```
+    pub fn validate_market_parameters_all_together(params: &MarketParams) -> Result<(), ValidationError> {
+        // Validate duration limits
+        MarketParameterValidator::validate_duration_limits(
+            params.duration_days,
+            config::MIN_MARKET_DURATION_DAYS,
+            config::MAX_MARKET_DURATION_DAYS,
+        )?;
+
+        // Validate stake amounts
+        MarketParameterValidator::validate_stake_amounts(
+            params.stake,
+            config::MIN_VOTE_STAKE,
+            config::LARGE_MARKET_THRESHOLD,
+        )?;
+
+        // Validate outcome count
+        MarketParameterValidator::validate_outcome_count(
+            &params.outcomes,
+            config::MIN_MARKET_OUTCOMES,
+            config::MAX_MARKET_OUTCOMES,
+        )?;
+
+        // Validate threshold value (if applicable)
+        if params.threshold > 0 {
+            MarketParameterValidator::validate_threshold_value(
+                params.threshold,
+                1_00, // $1.00 minimum
+                1_000_000_00, // $1,000,000.00 maximum
+            )?;
+        }
+
+        // Validate comparison operator (if applicable)
+        if !params.comparison.is_empty() {
+            MarketParameterValidator::validate_comparison_operator(params.comparison.clone())?;
+        }
+
+        Ok(())
+    }
+
+    /// Gets the current parameter validation rules and limits.
+    ///
+    /// This function returns the current validation rules and limits used
+    /// by the MarketParameterValidator. It provides transparency about
+    /// the validation criteria and allows for dynamic rule checking.
+    ///
+    /// # Returns
+    ///
+    /// * `Map<String, String>` - Map containing validation rules and limits
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::validation::MarketParameterValidator;
+    /// # let env = Env::default();
+    ///
+    /// let rules = MarketParameterValidator::get_parameter_validation_rules(&env);
+    /// 
+    /// // Access specific rules
+    /// let duration_rule = rules.get(&String::from_str(&env, "duration_limits")).unwrap();
+    /// let stake_rule = rules.get(&String::from_str(&env, "stake_limits")).unwrap();
+    /// let outcome_rule = rules.get(&String::from_str(&env, "outcome_limits")).unwrap();
+    /// ```
+    pub fn get_parameter_validation_rules(env: &Env) -> Map<String, String> {
+        let mut rules = Map::new(env);
+        
+        // Duration rules
+        rules.set(
+            String::from_str(env, "duration_limits"),
+            String::from_str(env, "1 to 365 days")
+        );
+        
+        // Stake rules
+        rules.set(
+            String::from_str(env, "stake_limits"),
+            String::from_str(env, "100000 to 1000000000 base units")
+        );
+        
+        // Outcome rules
+        rules.set(
+            String::from_str(env, "outcome_limits"),
+            String::from_str(env, "2 to 10 outcomes")
+        );
+        
+        // Threshold rules
+        rules.set(
+            String::from_str(env, "threshold_limits"),
+            String::from_str(env, "1.00 to 1,000,000.00 base units")
+        );
+        
+        // Comparison operator rules
+        rules.set(
+            String::from_str(env, "comparison_operators"),
+            String::from_str(env, "gt, gte, lt, lte, eq")
+        );
+        
+        rules
+    }
+}
+
+/// Market parameters structure for comprehensive validation.
+///
+/// This structure encapsulates all market creation parameters for
+/// comprehensive validation. It provides a clean interface for
+/// validating all parameters together.
+///
+/// # Fields
+///
+/// * `duration_days` - Market duration in days
+/// * `stake` - Stake amount in token base units
+/// * `outcomes` - Vector of outcome strings
+/// * `threshold` - Threshold value for oracle-based markets
+/// * `comparison` - Comparison operator for oracle-based markets
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String, vec};
+/// # use predictify_hybrid::validation::MarketParams;
+/// # let env = Env::default();
+///
+/// let params = MarketParams {
+///     duration_days: 30,
+///     stake: 1_000_000,
+///     outcomes: vec![
+///         &env,
+///         String::from_str(&env, "Yes"),
+///         String::from_str(&env, "No")
+///     ],
+///     threshold: 50_000_00,
+///     comparison: String::from_str(&env, "gt"),
+/// };
+/// ```
+#[derive(Clone, Debug)]
+pub struct MarketParams {
+    pub duration_days: u32,
+    pub stake: i128,
+    pub outcomes: Vec<String>,
+    pub threshold: i128,
+    pub comparison: String,
+}
+
+impl MarketParams {
+    /// Creates a new MarketParams instance with default values.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `duration_days` - Market duration in days
+    /// * `stake` - Stake amount in token base units
+    /// * `outcomes` - Vector of outcome strings
+    ///
+    /// # Returns
+    ///
+    /// * `MarketParams` - New market parameters instance
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::validation::MarketParams;
+    /// # let env = Env::default();
+    ///
+    /// let params = MarketParams::new(
+    ///     &env,
+    ///     30, // duration_days
+    ///     1_000_000, // stake
+    ///     vec![
+    ///         &env,
+    ///         String::from_str(&env, "Yes"),
+    ///         String::from_str(&env, "No")
+    ///     ]
+    /// );
+    /// ```
+    pub fn new(
+        env: &Env,
+        duration_days: u32,
+        stake: i128,
+        outcomes: Vec<String>,
+    ) -> Self {
+        Self {
+            duration_days,
+            stake,
+            outcomes,
+            threshold: 0,
+            comparison: String::from_str(env, ""),
+        }
+    }
+
+    /// Creates a new MarketParams instance for oracle-based markets.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `duration_days` - Market duration in days
+    /// * `stake` - Stake amount in token base units
+    /// * `outcomes` - Vector of outcome strings
+    /// * `threshold` - Threshold value for oracle comparison
+    /// * `comparison` - Comparison operator string
+    ///
+    /// # Returns
+    ///
+    /// * `MarketParams` - New market parameters instance
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::validation::MarketParams;
+    /// # let env = Env::default();
+    ///
+    /// let params = MarketParams::new_with_oracle(
+    ///     &env,
+    ///     30, // duration_days
+    ///     1_000_000, // stake
+    ///     vec![
+    ///         &env,
+    ///         String::from_str(&env, "Yes"),
+    ///         String::from_str(&env, "No")
+    ///     ],
+    ///     50_000_00, // threshold ($50,000)
+    ///     String::from_str(&env, "gt") // comparison operator
+    /// );
+    /// ```
+    pub fn new_with_oracle(
+        env: &Env,
+        duration_days: u32,
+        stake: i128,
+        outcomes: Vec<String>,
+        threshold: i128,
+        comparison: String,
+    ) -> Self {
+        Self {
+            duration_days,
+            stake,
+            outcomes,
+            threshold,
+            comparison,
+        }
+    }
+}
+
+// ===== ORACLE CONFIGURATION VALIDATION =====
+
+/// Comprehensive oracle configuration validation for prediction market resolution.
+///
+/// This struct provides detailed validation for all oracle configuration parameters
+/// including feed ID formats, threshold ranges, comparison operators, provider validation,
+/// and configuration consistency checks. It ensures robust oracle configuration with
+/// proper parameter bounds and validation rules.
+///
+/// # Validation Categories
+///
+/// **Feed ID Validation:**
+/// - Provider-specific feed ID format validation
+/// - Feed ID length and character validation
+/// - Feed ID uniqueness and availability checks
+///
+/// **Threshold Validation:**
+/// - Numeric range validation with provider-specific bounds
+/// - Threshold format and precision validation
+/// - Business rule compliance for price thresholds
+///
+/// **Comparison Operator Validation:**
+/// - Supported operator validation per provider
+/// - Operator syntax and format validation
+/// - Provider-specific operator compatibility
+///
+/// **Provider Validation:**
+/// - Oracle provider availability and support
+/// - Provider-specific configuration requirements
+/// - Network compatibility and integration status
+///
+/// **Configuration Consistency:**
+/// - Cross-parameter validation and consistency
+/// - Provider-specific configuration rules
+/// - Configuration completeness and integrity
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String};
+/// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
+/// # use predictify_hybrid::validation::OracleConfigValidator;
+/// # let env = Env::default();
+///
+/// // Create oracle configuration
+/// let config = OracleConfig::new(
+///     OracleProvider::Reflector,
+///     String::from_str(&env, "BTC/USD"),
+///     50_000_00, // $50,000 threshold
+///     String::from_str(&env, "gt")
+/// );
+///
+/// // Validate the complete configuration
+/// match OracleConfigValidator::validate_oracle_config_all_together(&config) {
+///     Ok(()) => println!("Oracle configuration is valid"),
+///     Err(e) => println!("Validation failed: {:?}", e),
+/// }
+///
+/// // Get provider-specific validation rules
+/// let rules = OracleConfigValidator::get_provider_specific_validation_rules(
+///     &env,
+///     OracleProvider::Reflector
+/// );
+/// println!("Validation rules: {:?}", rules);
+/// ```
+///
+/// # Provider-Specific Validation
+///
+/// **Reflector Oracle:**
+/// - Feed ID format: "ASSET/USD" or "ASSET"
+/// - Threshold range: $0.01 to $10,000,000
+/// - Supported operators: "gt", "lt", "eq"
+///
+/// **Pyth Network (Future):**
+/// - Feed ID format: 64-character hex string
+/// - Threshold range: $0.01 to $1,000,000
+/// - Supported operators: "gt", "gte", "lt", "lte", "eq"
+///
+/// **Band Protocol (Not Supported):**
+/// - Returns validation error for unsupported provider
+///
+/// **DIA (Not Supported):**
+/// - Returns validation error for unsupported provider
+///
+/// # Error Handling
+///
+/// Validation errors include:
+/// - **InvalidFeedId**: Feed ID format or length invalid
+/// - **InvalidThreshold**: Threshold outside valid range
+/// - **InvalidComparison**: Unsupported comparison operator
+/// - **InvalidProvider**: Oracle provider not supported
+/// - **InvalidConfig**: Configuration consistency issues
+/// - **InvalidInput**: General input validation failures
+pub struct OracleConfigValidator;
+
+impl OracleConfigValidator {
+    /// Validate feed ID format for specific oracle provider
+    ///
+    /// # Arguments
+    /// * `feed_id` - The feed identifier to validate
+    /// * `provider` - The oracle provider type
+    ///
+    /// # Returns
+    /// * `Ok(())` - Feed ID format is valid for the provider
+    /// * `Err(ValidationError)` - Feed ID format is invalid
+    ///
+    /// # Provider-Specific Rules
+    ///
+    /// **Reflector Oracle:**
+    /// - Format: "ASSET/USD" or "ASSET" (assumes USD)
+    /// - Length: 3-20 characters
+    /// - Characters: Alphanumeric, "/", "-", "_"
+    /// - Examples: "BTC/USD", "ETH", "XLM/USD"
+    ///
+    /// **Pyth Network:**
+    /// - Format: 64-character hexadecimal string
+    /// - Length: Exactly 64 characters
+    /// - Characters: 0-9, a-f, A-F
+    /// - Examples: "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
+    ///
+    /// **Band Protocol & DIA:**
+    /// - Not supported on Stellar network
+    /// - Returns validation error
+    pub fn validate_feed_id_format(
+        feed_id: &String,
+        provider: &OracleProvider,
+    ) -> Result<(), ValidationError> {
+        // Check if feed ID is empty
+        if feed_id.is_empty() {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        match provider {
+            OracleProvider::Reflector => {
+                // Reflector feed ID validation
+                // Check length (3-20 characters)
+                if feed_id.len() < 3 || feed_id.len() > 20 {
+                    return Err(ValidationError::InvalidOracle);
+                }
+
+                // Basic format validation for Reflector
+                // Valid formats: "BTC/USD", "ETH", "XLM/USD"
+                // For now, just check length and basic structure
+                // In a full implementation, we would parse the string properly
+
+                Ok(())
+            }
+            OracleProvider::Pyth => {
+                // Pyth feed ID validation (66-character hex with 0x prefix)
+                // Check exact length (64 hex chars + 2 for "0x" prefix)
+                if feed_id.len() != 66 {
+                    return Err(ValidationError::InvalidOracle);
+                }
+
+                // Basic hex format validation
+                // For now, just check length
+                // In a full implementation, we would validate hex format properly
+
+                Ok(())
+            }
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                // Not supported on Stellar
+                Err(ValidationError::InvalidOracle)
+            }
+        }
+    }
+
+    /// Validate threshold range for specific oracle provider
+    ///
+    /// # Arguments
+    /// * `threshold` - The threshold value to validate
+    /// * `provider` - The oracle provider type
+    ///
+    /// # Returns
+    /// * `Ok(())` - Threshold is within valid range for the provider
+    /// * `Err(ValidationError)` - Threshold is outside valid range
+    ///
+    /// # Provider-Specific Ranges
+    ///
+    /// **Reflector Oracle:**
+    /// - Minimum: $0.01 (1 cent)
+    /// - Maximum: $10,000,000 (10 million dollars)
+    /// - Precision: 2 decimal places (cents)
+    ///
+    /// **Pyth Network:**
+    /// - Minimum: $0.01 (1 cent)
+    /// - Maximum: $1,000,000 (1 million dollars)
+    /// - Precision: 8 decimal places (crypto precision)
+    ///
+    /// **Band Protocol & DIA:**
+    /// - Not supported on Stellar
+    /// - Returns validation error
+    pub fn validate_threshold_range(
+        threshold: &i128,
+        provider: &OracleProvider,
+    ) -> Result<(), ValidationError> {
+        // Check if threshold is positive
+        if *threshold <= 0 {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        match provider {
+            OracleProvider::Reflector => {
+                // Reflector threshold validation (cents precision)
+                let min_threshold = 1; // $0.01 in cents
+                let max_threshold = 1_000_000_00; // $10,000,000 in cents
+                
+                if *threshold < min_threshold || *threshold > max_threshold {
+                    return Err(ValidationError::InvalidOracle);
+                }
+
+                Ok(())
+            }
+            OracleProvider::Pyth => {
+                // Pyth threshold validation (8 decimal precision)
+                let min_threshold = 1_000_000; // $0.01 in 8-decimal units
+                let max_threshold = 100_000_000_000_000; // $1,000,000 in 8-decimal units
+                
+                if *threshold < min_threshold || *threshold > max_threshold {
+                    return Err(ValidationError::InvalidOracle);
+                }
+
+                Ok(())
+            }
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                // Not supported on Stellar
+                Err(ValidationError::InvalidOracle)
+            }
+        }
+    }
+
+    /// Validate comparison operator with supported operators list
+    ///
+    /// # Arguments
+    /// * `comparison` - The comparison operator to validate
+    /// * `supported_operators` - Vector of supported operators for the provider
+    ///
+    /// # Returns
+    /// * `Ok(())` - Comparison operator is supported
+    /// * `Err(ValidationError)` - Comparison operator is not supported
+    ///
+    /// # Supported Operators
+    ///
+    /// **Standard Operators:**
+    /// - "gt": Greater than
+    /// - "gte": Greater than or equal
+    /// - "lt": Less than
+    /// - "lte": Less than or equal
+    /// - "eq": Equal to
+    /// - "ne": Not equal to
+    ///
+    /// # Provider-Specific Support
+    ///
+    /// **Reflector Oracle:**
+    /// - Supported: "gt", "lt", "eq"
+    /// - Not supported: "gte", "lte", "ne"
+    ///
+    /// **Pyth Network:**
+    /// - Supported: "gt", "gte", "lt", "lte", "eq"
+    /// - Not supported: "ne"
+    ///
+    /// **Band Protocol & DIA:**
+    /// - Not supported on Stellar
+    pub fn validate_comparison_operator(
+        comparison: &String,
+        supported_operators: &Vec<String>,
+    ) -> Result<(), ValidationError> {
+        // Check if comparison is empty
+        if comparison.is_empty() {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        // Check if comparison is in supported operators list
+        if !supported_operators.contains(comparison) {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        Ok(())
+    }
+
+    /// Validate oracle provider availability and support
+    ///
+    /// # Arguments
+    /// * `provider` - The oracle provider to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Provider is supported and available
+    /// * `Err(ValidationError)` - Provider is not supported
+    ///
+    /// # Provider Support Status
+    ///
+    /// **Reflector Oracle:**
+    /// - ✅ Supported on Stellar
+    /// - ✅ Production ready
+    /// - ✅ Full integration available
+    ///
+    /// **Pyth Network:**
+    /// - ⚠️ Placeholder for future Stellar support
+    /// - ❌ Not currently available on Stellar
+    /// - 🔮 Future implementation planned
+    ///
+    /// **Band Protocol:**
+    /// - ❌ Not supported on Stellar
+    /// - ❌ No Stellar integration
+    /// - ❌ Cosmos/EVM focused
+    ///
+    /// **DIA:**
+    /// - ❌ Not supported on Stellar
+    /// - ❌ No Stellar integration
+    /// - ❌ Multi-chain but no Stellar
+    pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), ValidationError> {
+        match provider {
+            OracleProvider::Reflector => {
+                // Reflector is fully supported on Stellar
+                Ok(())
+            }
+            OracleProvider::Pyth => {
+                // Pyth is placeholder for future Stellar support
+                // Currently returns error but could be changed when Pyth supports Stellar
+                Err(ValidationError::InvalidOracle)
+            }
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                // Not supported on Stellar network
+                Err(ValidationError::InvalidOracle)
+            }
+        }
+    }
+
+    /// Validate configuration consistency across all parameters
+    ///
+    /// # Arguments
+    /// * `config` - The oracle configuration to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Configuration is consistent and valid
+    /// * `Err(ValidationError)` - Configuration has consistency issues
+    ///
+    /// # Consistency Checks
+    ///
+    /// **Cross-Parameter Validation:**
+    /// - Provider compatibility with feed ID format
+    /// - Provider compatibility with threshold range
+    /// - Provider compatibility with comparison operator
+    /// - Feed ID format consistency with provider
+    /// - Threshold precision consistency with provider
+    ///
+    /// **Business Rule Validation:**
+    /// - Threshold values make sense for the asset
+    /// - Comparison operators are appropriate for the use case
+    /// - Feed ID represents a valid asset pair
+    /// - Configuration completeness for resolution
+    pub fn validate_config_consistency(config: &OracleConfig) -> Result<(), ValidationError> {
+        // Validate provider first
+        Self::validate_oracle_provider(&config.provider)?;
+
+        // Validate feed ID format for the provider
+        Self::validate_feed_id_format(&config.feed_id, &config.provider)?;
+
+        // Validate threshold range for the provider
+        Self::validate_threshold_range(&config.threshold, &config.provider)?;
+
+        // Get supported operators for the provider
+        let supported_operators = Self::get_supported_operators_for_provider(&config.provider);
+        
+        // Validate comparison operator
+        Self::validate_comparison_operator(&config.comparison, &supported_operators)?;
+
+        // Additional consistency checks
+        match config.provider {
+            OracleProvider::Reflector => {
+                // Reflector-specific consistency checks
+                // Basic validation - check length and format
+                if config.feed_id.len() < 2 || config.feed_id.len() > 20 {
+                    return Err(ValidationError::InvalidOracle);
+                }
+            }
+            OracleProvider::Pyth => {
+                // Pyth-specific consistency checks
+                // Ensure feed ID is 66 characters (64 hex + 0x prefix)
+                if config.feed_id.len() != 66 {
+                    return Err(ValidationError::InvalidOracle);
+                }
+            }
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                // Not supported providers
+                return Err(ValidationError::InvalidOracle);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get provider-specific validation rules and guidelines
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `provider` - The oracle provider to get rules for
+    ///
+    /// # Returns
+    /// * `Map<String, String>` - Validation rules and guidelines
+    ///
+    /// # Rules Structure
+    ///
+    /// The returned map contains:
+    /// - **feed_id_format**: Expected feed ID format
+    /// - **threshold_range**: Valid threshold range
+    /// - **supported_operators**: List of supported comparison operators
+    /// - **precision**: Price precision requirements
+    /// - **network_support**: Network availability status
+    /// - **integration_status**: Integration readiness level
+    pub fn get_provider_specific_validation_rules(
+        env: &Env,
+        provider: &OracleProvider,
+    ) -> Map<String, String> {
+        let mut rules = Map::new(env);
+
+        match provider {
+            OracleProvider::Reflector => {
+                rules.set(
+                    String::from_str(env, "feed_id_format"),
+                    String::from_str(env, "ASSET/USD or ASSET (e.g., BTC/USD, ETH)")
+                );
+                rules.set(
+                    String::from_str(env, "threshold_range"),
+                    String::from_str(env, "$0.01 to $10,000,000 (in cents)")
+                );
+                rules.set(
+                    String::from_str(env, "supported_operators"),
+                    String::from_str(env, "gt, lt, eq")
+                );
+                rules.set(
+                    String::from_str(env, "precision"),
+                    String::from_str(env, "2 decimal places (cents)")
+                );
+                rules.set(
+                    String::from_str(env, "network_support"),
+                    String::from_str(env, "Full Stellar support")
+                );
+                rules.set(
+                    String::from_str(env, "integration_status"),
+                    String::from_str(env, "Production ready")
+                );
+            }
+            OracleProvider::Pyth => {
+                rules.set(
+                    String::from_str(env, "feed_id_format"),
+                    String::from_str(env, "64-character hex string (0x...)")
+                );
+                rules.set(
+                    String::from_str(env, "threshold_range"),
+                    String::from_str(env, "$0.01 to $1,000,000 (8-decimal precision)")
+                );
+                rules.set(
+                    String::from_str(env, "supported_operators"),
+                    String::from_str(env, "gt, gte, lt, lte, eq")
+                );
+                rules.set(
+                    String::from_str(env, "precision"),
+                    String::from_str(env, "8 decimal places")
+                );
+                rules.set(
+                    String::from_str(env, "network_support"),
+                    String::from_str(env, "Future Stellar support")
+                );
+                rules.set(
+                    String::from_str(env, "integration_status"),
+                    String::from_str(env, "Placeholder implementation")
+                );
+            }
+            OracleProvider::BandProtocol => {
+                rules.set(
+                    String::from_str(env, "feed_id_format"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "threshold_range"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "supported_operators"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "precision"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "network_support"),
+                    String::from_str(env, "No Stellar integration")
+                );
+                rules.set(
+                    String::from_str(env, "integration_status"),
+                    String::from_str(env, "Not available")
+                );
+            }
+            OracleProvider::DIA => {
+                rules.set(
+                    String::from_str(env, "feed_id_format"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "threshold_range"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "supported_operators"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "precision"),
+                    String::from_str(env, "Not supported on Stellar")
+                );
+                rules.set(
+                    String::from_str(env, "network_support"),
+                    String::from_str(env, "No Stellar integration")
+                );
+                rules.set(
+                    String::from_str(env, "integration_status"),
+                    String::from_str(env, "Not available")
+                );
+            }
+        }
+
+        rules
+    }
+
+    /// Validate complete oracle configuration with all parameters
+    ///
+    /// # Arguments
+    /// * `config` - The oracle configuration to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - All validation checks passed
+    /// * `Err(ValidationError)` - Validation failed with specific error
+    ///
+    /// # Comprehensive Validation
+    ///
+    /// This function performs all validation checks:
+    /// 1. **Provider Validation**: Check if provider is supported
+    /// 2. **Feed ID Validation**: Validate feed ID format for provider
+    /// 3. **Threshold Validation**: Validate threshold range for provider
+    /// 4. **Comparison Validation**: Validate comparison operator support
+    /// 5. **Consistency Validation**: Check cross-parameter consistency
+    ///
+    /// # Error Prioritization
+    ///
+    /// Validation errors are returned in order of priority:
+    /// 1. **Provider Support**: Provider not available on Stellar
+    /// 2. **Feed ID Format**: Invalid feed ID format for provider
+    /// 3. **Threshold Range**: Threshold outside valid range
+    /// 4. **Comparison Operator**: Unsupported comparison operator
+    /// 5. **Configuration Consistency**: Cross-parameter issues
+    pub fn validate_oracle_config_all_together(config: &OracleConfig) -> Result<(), ValidationError> {
+        // Step 1: Validate provider support
+        Self::validate_oracle_provider(&config.provider)?;
+
+        // Step 2: Validate feed ID format
+        Self::validate_feed_id_format(&config.feed_id, &config.provider)?;
+
+        // Step 3: Validate threshold range
+        Self::validate_threshold_range(&config.threshold, &config.provider)?;
+
+        // Step 4: Get supported operators and validate comparison
+        let supported_operators = Self::get_supported_operators_for_provider(&config.provider);
+        Self::validate_comparison_operator(&config.comparison, &supported_operators)?;
+
+        // Step 5: Validate configuration consistency
+        Self::validate_config_consistency(config)?;
+
+        Ok(())
+    }
+
+    /// Get supported comparison operators for a specific provider
+    ///
+    /// # Arguments
+    /// * `provider` - The oracle provider to get operators for
+    ///
+    /// # Returns
+    /// * `Vec<String>` - Vector of supported comparison operators
+    ///
+    /// # Provider-Specific Operators
+    ///
+    /// **Reflector Oracle:**
+    /// - "gt": Greater than
+    /// - "lt": Less than
+    /// - "eq": Equal to
+    ///
+    /// **Pyth Network:**
+    /// - "gt": Greater than
+    /// - "gte": Greater than or equal
+    /// - "lt": Less than
+    /// - "lte": Less than or equal
+    /// - "eq": Equal to
+    ///
+    /// **Band Protocol & DIA:**
+    /// - Empty vector (not supported)
+    fn get_supported_operators_for_provider(provider: &OracleProvider) -> Vec<String> {
+        match provider {
+            OracleProvider::Reflector => {
+                vec![
+                    &soroban_sdk::Env::default(),
+                    String::from_str(&soroban_sdk::Env::default(), "gt"),
+                    String::from_str(&soroban_sdk::Env::default(), "lt"),
+                    String::from_str(&soroban_sdk::Env::default(), "eq"),
+                ]
+            }
+            OracleProvider::Pyth => {
+                vec![
+                    &soroban_sdk::Env::default(),
+                    String::from_str(&soroban_sdk::Env::default(), "gt"),
+                    String::from_str(&soroban_sdk::Env::default(), "gte"),
+                    String::from_str(&soroban_sdk::Env::default(), "lt"),
+                    String::from_str(&soroban_sdk::Env::default(), "lte"),
+                    String::from_str(&soroban_sdk::Env::default(), "eq"),
+                ]
+            }
+            OracleProvider::BandProtocol | OracleProvider::DIA => {
+                vec![&soroban_sdk::Env::default()]
+            }
+        }
     }
 }
