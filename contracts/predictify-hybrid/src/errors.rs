@@ -799,27 +799,30 @@ impl ErrorHandler {
         
         let recovery_method = recovery.recovery_strategy.clone();
 
-        let success = match recovery.recovery_strategy.as_str() {
-            "retry" => true,
-            "retry_with_delay" => {
-                // Check if enough time has passed since last attempt
-                let delay_required = 60; // 1 minute
-                let time_since_last = env.ledger().timestamp() - recovery.recovery_timestamp;
-                time_since_last >= delay_required
-            },
-            "alternative_method" => {
-                // Try alternative approach based on error type
-                match recovery.original_error_code {
-                    200 => true,  // OracleUnavailable - Try fallback oracle
-                    101 => false, // MarketNotFound - No alternative available
-                    _ => false,
-                }
-            },
-            "skip" => true,
-            "abort" => false,
-            "manual_intervention" => false,
-            "no_recovery" => false,
-            _ => false,
+        let success = if recovery.recovery_strategy == String::from_str(env, "retry") {
+            true
+        } else if recovery.recovery_strategy == String::from_str(env, "retry_with_delay") {
+            // Check if enough time has passed since last attempt
+            let delay_required = 60; // 1 minute
+            let time_since_last = env.ledger().timestamp() - recovery.recovery_timestamp;
+            time_since_last >= delay_required
+        } else if recovery.recovery_strategy == String::from_str(env, "alternative_method") {
+            // Try alternative approach based on error type
+            match recovery.original_error_code {
+                200 => true,  // OracleUnavailable - Try fallback oracle
+                101 => false, // MarketNotFound - No alternative available
+                _ => false,
+            }
+        } else if recovery.recovery_strategy == String::from_str(env, "skip") {
+            true
+        } else if recovery.recovery_strategy == String::from_str(env, "abort") {
+            false
+        } else if recovery.recovery_strategy == String::from_str(env, "manual_intervention") {
+            false
+        } else if recovery.recovery_strategy == String::from_str(env, "no_recovery") {
+            false
+        } else {
+            false
         };
 
         let recovery_duration = env.ledger().timestamp() - start_time;
