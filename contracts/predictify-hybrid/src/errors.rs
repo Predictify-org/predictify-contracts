@@ -452,7 +452,7 @@ impl ErrorHandler {
     /// Generate detailed error message with context
     pub fn generate_detailed_error_message(error: &Error, context: &ErrorContext) -> String {
         let base_message = error.description();
-        let operation = &context.operation;
+        let _operation = &context.operation;
         
         match error {
             Error::Unauthorized => {
