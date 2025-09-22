@@ -2,7 +2,7 @@
 mod circuit_breaker_tests {
     use super::*;
     use crate::circuit_breaker::*;
-    use crate::admin::AdminRoleManager;
+    use crate::admin::{AdminRoleManager, AdminAccessControl};
     use crate::errors::Error;
     use soroban_sdk::{Env, String, Vec, Symbol, testutils::Address, vec};
 
@@ -37,7 +37,7 @@ mod circuit_breaker_tests {
         CircuitBreaker::initialize(&env).unwrap();
         
         let admin = Address::generate(&env);
-        AdminManager::assign_role(&env, &admin, crate::admin::AdminRole::Admin).unwrap();
+        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Test emergency pause
         let reason = String::from_str(&env, "Test emergency pause");
@@ -61,7 +61,7 @@ mod circuit_breaker_tests {
         CircuitBreaker::initialize(&env).unwrap();
         
         let admin = Address::generate(&env);
-        AdminManager::assign_role(&env, &admin, crate::admin::AdminRole::Admin).unwrap();
+        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // First pause the circuit breaker
         let reason = String::from_str(&env, "Test pause");
@@ -130,7 +130,7 @@ mod circuit_breaker_tests {
         
         // Configure shorter recovery timeout for testing
         let admin = Address::generate(&env);
-        AdminManager::assign_role(&env, &admin, crate::admin::AdminRole::Admin).unwrap();
+        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         let mut config = CircuitBreaker::get_config(&env).unwrap();
         config.recovery_timeout = 1; // 1 second
@@ -183,7 +183,7 @@ mod circuit_breaker_tests {
         CircuitBreaker::initialize(&env).unwrap();
         
         let admin = Address::generate(&env);
-        AdminManager::assign_role(&env, &admin, crate::admin::AdminRole::Admin).unwrap();
+        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Perform some actions to generate events
         let reason = String::from_str(&env, "Test event");
@@ -336,7 +336,7 @@ mod circuit_breaker_tests {
         CircuitBreaker::initialize(&env).unwrap();
         
         let admin = Address::generate(&env);
-        AdminManager::assign_role(&env, &admin, crate::admin::AdminRole::Admin).unwrap();
+        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Test complete workflow
         // 1. Normal operation
