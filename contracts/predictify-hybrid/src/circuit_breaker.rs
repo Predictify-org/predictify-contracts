@@ -175,7 +175,7 @@ impl CircuitBreaker {
         Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Reset,
-            None,
+            BreakerCondition::ManualOverride,
             &String::from_str(env, "Configuration updated"),
             Some(admin.clone()),
         );
@@ -227,7 +227,7 @@ impl CircuitBreaker {
         Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Pause,
-            Some(BreakerCondition::ManualOverride),
+            BreakerCondition::ManualOverride,
             reason,
             Some(admin.clone()),
         );
@@ -274,7 +274,7 @@ impl CircuitBreaker {
                 Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Reset,
-                    None,
+                    BreakerCondition::ManualOverride,
                     &String::from_str(env, "Auto-recovery: transitioning to half-open"),
                     None,
                 );
@@ -338,7 +338,7 @@ impl CircuitBreaker {
             Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
-                Some(condition.clone()),
+                condition.clone(),
                 &String::from_str(env, "Automatic circuit breaker triggered"),
                 None,
             );
@@ -378,7 +378,7 @@ impl CircuitBreaker {
         Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Resume,
-            None,
+            BreakerCondition::ManualOverride,
             &String::from_str(env, "Circuit breaker recovered"),
             Some(admin.clone()),
         );
@@ -407,7 +407,7 @@ impl CircuitBreaker {
                 Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Resume,
-                    None,
+                    BreakerCondition::ManualOverride,
                     &String::from_str(env, "Auto-recovery: circuit breaker closed"),
                     None,
                 );
@@ -436,7 +436,7 @@ impl CircuitBreaker {
             Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
-                Some(BreakerCondition::HighErrorRate),
+                BreakerCondition::HighErrorRate,
                 &String::from_str(env, "Failure in half-open state, reopening circuit breaker"),
                 None,
             );
@@ -452,7 +452,7 @@ impl CircuitBreaker {
     pub fn emit_circuit_breaker_event(
         env: &Env,
         action: BreakerAction,
-        condition: Option<BreakerCondition>,
+        condition: BreakerCondition,
         reason: &String,
         admin: Option<Address>,
     ) -> Result<(), Error> {

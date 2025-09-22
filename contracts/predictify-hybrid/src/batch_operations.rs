@@ -45,7 +45,7 @@ pub struct MarketData {
     pub question: String,
     pub outcomes: Vec<String>,
     pub duration_days: u32,
-    pub oracle_config: Option<OracleConfig>,
+    pub oracle_config: OracleConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -420,12 +420,7 @@ impl BatchProcessor {
             market_data.question.clone(),
             market_data.outcomes.clone(),
             market_data.duration_days,
-            market_data.oracle_config.clone().unwrap_or(crate::types::OracleConfig {
-                provider: crate::types::OracleProvider::Reflector,
-                feed_id: String::from_str(env, "default"),
-                threshold: 0,
-                comparison: String::from_str(env, "gt"),
-            }),
+            market_data.oracle_config.clone(),
         )?;
 
         Ok(())
@@ -856,7 +851,12 @@ impl BatchTesting {
                 String::from_str(env, "No")
             ],
             duration_days: 30,
-            oracle_config: None,
+            oracle_config: crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                feed_id: String::from_str(env, "BTC"),
+                threshold: 100_000_00, // $100,000
+                comparison: String::from_str(env, "gt"),
+            },
         }
     }
 
