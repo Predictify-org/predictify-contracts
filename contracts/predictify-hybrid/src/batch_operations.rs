@@ -1,6 +1,8 @@
+use soroban_sdk::{
+    contracttype, vec, Address, Env, Map, String, Symbol, Vec,
+};
 use alloc::format;
 use alloc::string::ToString;
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::types::*;
@@ -10,14 +12,14 @@ use crate::types::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub enum BatchOperationType {
-    Vote,          // Batch vote operations
-    Claim,         // Batch claim operations
-    CreateMarket,  // Batch market creation
-    OracleCall,    // Batch oracle calls
-    Dispute,       // Batch dispute operations
-    Extension,     // Batch market extensions
-    Resolution,    // Batch market resolutions
-    FeeCollection, // Batch fee collection
+    Vote,           // Batch vote operations
+    Claim,          // Batch claim operations
+    CreateMarket,   // Batch market creation
+    OracleCall,     // Batch oracle calls
+    Dispute,        // Batch dispute operations
+    Extension,      // Batch market extensions
+    Resolution,     // Batch market resolutions
+    FeeCollection,  // Batch fee collection
 }
 
 #[derive(Clone, Debug)]
@@ -43,7 +45,7 @@ pub struct MarketData {
     pub question: String,
     pub outcomes: Vec<String>,
     pub duration_days: u32,
-    pub oracle_config: OracleConfig,
+    pub oracle_config: Option<OracleConfig>,
 }
 
 #[derive(Clone, Debug)]
@@ -130,7 +132,7 @@ pub struct BatchProcessor;
 
 impl BatchProcessor {
     // ===== STORAGE KEYS =====
-
+    
     const BATCH_QUEUE_KEY: &'static str = "batch_operation_queue";
     const BATCH_STATS_KEY: &'static str = "batch_operation_statistics";
     const BATCH_CONFIG_KEY: &'static str = "batch_operation_config";
@@ -158,18 +160,12 @@ impl BatchProcessor {
             gas_efficiency_ratio: 1,
         };
 
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::BATCH_CONFIG_KEY), &config);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::BATCH_STATS_KEY), &stats);
-
+        env.storage().instance().set(&Symbol::new(env, Self::BATCH_CONFIG_KEY), &config);
+        env.storage().instance().set(&Symbol::new(env, Self::BATCH_STATS_KEY), &stats);
+        
         // Initialize empty batch queue
         let queue: Vec<BatchOperation> = Vec::new(env);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::BATCH_QUEUE_KEY), &queue);
+        env.storage().instance().set(&Symbol::new(env, Self::BATCH_QUEUE_KEY), &queue);
 
         Ok(())
     }
@@ -183,20 +179,18 @@ impl BatchProcessor {
     }
 
     /// Update batch processor configuration
-    pub fn update_config(env: &Env, admin: &Address, config: &BatchConfig) -> Result<(), Error> {
+    pub fn update_config(
+        env: &Env,
+        admin: &Address,
+        config: &BatchConfig,
+    ) -> Result<(), Error> {
         // Validate admin permissions
-        crate::admin::AdminAccessControl::validate_admin_for_action(
-            env,
-            admin,
-            "update_batch_config",
-        )?;
+        crate::admin::AdminAccessControl::validate_admin_for_action(env, admin, "update_batch_config")?;
 
         // Validate configuration
         Self::validate_batch_config(config)?;
 
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::BATCH_CONFIG_KEY), config);
+        env.storage().instance().set(&Symbol::new(env, Self::BATCH_CONFIG_KEY), config);
 
         Ok(())
     }
@@ -204,7 +198,10 @@ impl BatchProcessor {
     // ===== BATCH VOTE OPERATIONS =====
 
     /// Process batch vote operations
-    pub fn batch_vote(env: &Env, votes: &Vec<VoteData>) -> Result<BatchResult, Error> {
+    pub fn batch_vote(
+        env: &Env,
+        votes: &Vec<VoteData>,
+    ) -> Result<BatchResult, Error> {
         let config = Self::get_config(env)?;
         let start_time = env.ledger().timestamp();
         let mut successful_operations = 0;
@@ -258,7 +255,7 @@ impl BatchProcessor {
 
         // Check if market exists and is open
         let market = crate::markets::MarketStateManager::get_market(env, &vote_data.market_id)?;
-
+        
         if market.end_time <= env.ledger().timestamp() {
             return Err(Error::MarketClosed);
         }
@@ -278,7 +275,10 @@ impl BatchProcessor {
     // ===== BATCH CLAIM OPERATIONS =====
 
     /// Process batch claim operations
-    pub fn batch_claim(env: &Env, claims: &Vec<ClaimData>) -> Result<BatchResult, Error> {
+    pub fn batch_claim(
+        env: &Env,
+        claims: &Vec<ClaimData>,
+    ) -> Result<BatchResult, Error> {
         let config = Self::get_config(env)?;
         let start_time = env.ledger().timestamp();
         let mut successful_operations = 0;
@@ -332,7 +332,7 @@ impl BatchProcessor {
 
         // Check if market exists and is resolved
         let market = crate::markets::MarketStateManager::get_market(env, &claim_data.market_id)?;
-
+        
         if !market.is_resolved() {
             return Err(Error::MarketNotResolved);
         }
@@ -356,11 +356,7 @@ impl BatchProcessor {
         markets: &Vec<MarketData>,
     ) -> Result<BatchResult, Error> {
         // Validate admin permissions
-        crate::admin::AdminAccessControl::validate_admin_for_action(
-            env,
-            admin,
-            "batch_create_markets",
-        )?;
+        crate::admin::AdminAccessControl::validate_admin_for_action(env, admin, "batch_create_markets")?;
 
         let config = Self::get_config(env)?;
         let start_time = env.ledger().timestamp();
@@ -424,7 +420,12 @@ impl BatchProcessor {
             market_data.question.clone(),
             market_data.outcomes.clone(),
             market_data.duration_days,
-            market_data.oracle_config.clone(),
+            market_data.oracle_config.clone().unwrap_or(crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                feed_id: String::from_str(env, "default"),
+                threshold: 0,
+                comparison: String::from_str(env, "gt"),
+            }),
         )?;
 
         Ok(())
@@ -433,7 +434,10 @@ impl BatchProcessor {
     // ===== BATCH ORACLE CALLS =====
 
     /// Process batch oracle calls
-    pub fn batch_oracle_calls(env: &Env, feeds: &Vec<OracleFeed>) -> Result<BatchResult, Error> {
+    pub fn batch_oracle_calls(
+        env: &Env,
+        feeds: &Vec<OracleFeed>,
+    ) -> Result<BatchResult, Error> {
         let config = Self::get_config(env)?;
         let start_time = env.ledger().timestamp();
         let mut successful_operations = 0;
@@ -487,7 +491,7 @@ impl BatchProcessor {
 
         // Check if market exists
         let market = crate::markets::MarketStateManager::get_market(env, &feed_data.market_id)?;
-
+        
         if market.is_resolved() {
             return Err(Error::MarketAlreadyResolved);
         }
@@ -508,7 +512,9 @@ impl BatchProcessor {
     // ===== BATCH OPERATION VALIDATION =====
 
     /// Validate batch operations
-    pub fn validate_batch_operations(operations: &Vec<BatchOperation>) -> Result<(), Error> {
+    pub fn validate_batch_operations(
+        operations: &Vec<BatchOperation>,
+    ) -> Result<(), Error> {
         if operations.is_empty() {
             return Err(Error::InvalidInput);
         }
@@ -592,28 +598,26 @@ impl BatchProcessor {
                 BatchOperationType::FeeCollection => "fee_collection",
             };
 
-            let current_count = error_counts
-                .get(String::from_str(env, error_type))
-                .unwrap_or(0);
+            let current_count = error_counts.get(String::from_str(env, error_type)).unwrap_or(0);
             error_counts.set(String::from_str(env, error_type), current_count + 1);
         }
 
         // Create error summary
         error_summary.set(
             String::from_str(env, "total_errors"),
-            String::from_str(env, &errors.len().to_string()),
+            String::from_str(env, &errors.len().to_string())
         );
 
         error_summary.set(
             String::from_str(env, "error_types"),
-            String::from_str(env, "See error_counts for breakdown"),
+            String::from_str(env, "See error_counts for breakdown")
         );
 
         // Add error counts
         for (error_type, count) in error_counts.iter() {
             error_summary.set(
                 String::from_str(env, &format!("{:?}_errors", error_type)),
-                String::from_str(env, &count.to_string()),
+                String::from_str(env, &count.to_string())
             );
         }
 
@@ -631,7 +635,7 @@ impl BatchProcessor {
     }
 
     /// Update batch statistics
-    pub fn update_batch_statistics(env: &Env, result: &BatchResult) -> Result<(), Error> {
+    fn update_batch_statistics(env: &Env, result: &BatchResult) -> Result<(), Error> {
         let mut stats = Self::get_batch_operation_statistics(env)?;
 
         stats.total_batches_processed += 1;
@@ -641,15 +645,12 @@ impl BatchProcessor {
 
         // Update average batch size
         if stats.total_batches_processed > 0 {
-            stats.average_batch_size =
-                stats.total_operations_processed / stats.total_batches_processed;
+            stats.average_batch_size = stats.total_operations_processed / stats.total_batches_processed;
         }
 
         // Update average execution time
         if stats.total_batches_processed > 0 {
-            let total_time = stats.average_execution_time
-                * (stats.total_batches_processed - 1) as u64
-                + result.execution_time;
+            let total_time = stats.average_execution_time * (stats.total_batches_processed - 1) as u64 + result.execution_time;
             stats.average_execution_time = total_time / stats.total_batches_processed as u64;
         }
 
@@ -659,9 +660,7 @@ impl BatchProcessor {
             stats.gas_efficiency_ratio = (success_rate * 100.0) as u64;
         }
 
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::BATCH_STATS_KEY), &stats);
+        env.storage().instance().set(&Symbol::new(env, Self::BATCH_STATS_KEY), &stats);
 
         Ok(())
     }
@@ -773,7 +772,7 @@ impl BatchUtils {
         operation_type: &BatchOperationType,
     ) -> Result<u32, Error> {
         let config = BatchProcessor::get_config(env)?;
-
+        
         match operation_type {
             BatchOperationType::Vote => Ok(config.max_batch_size.min(20)),
             BatchOperationType::Claim => Ok(config.max_batch_size.min(15)),
@@ -798,12 +797,15 @@ impl BatchUtils {
 
         let success_rate = successful_operations as f64 / total_operations as f64;
         let operations_per_gas = total_operations as f64 / gas_used as f64;
-
+        
         success_rate * operations_per_gas
     }
 
     /// Estimate gas cost for batch operation
-    pub fn estimate_gas_cost(operation_type: &BatchOperationType, operation_count: u32) -> u64 {
+    pub fn estimate_gas_cost(
+        operation_type: &BatchOperationType,
+        operation_count: u32,
+    ) -> u64 {
         let base_cost = match operation_type {
             BatchOperationType::Vote => 1000,
             BatchOperationType::Claim => 1500,
@@ -822,19 +824,14 @@ impl BatchUtils {
 // ===== BATCH TESTING =====
 
 /// Batch operation testing utilities
-#[cfg(test)]
 pub struct BatchTesting;
 
-#[cfg(test)]
 impl BatchTesting {
     /// Create test vote data
     pub fn create_test_vote_data(env: &Env, market_id: &Symbol) -> VoteData {
         VoteData {
             market_id: market_id.clone(),
-            voter: Address::from_string(&String::from_str(
-                env,
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-            )),
+            voter: Address::from_string(&String::from_str(env, "test_voter")),
             outcome: String::from_str(env, "Yes"),
             stake_amount: 1_000_000_000, // 100 XLM
         }
@@ -844,10 +841,7 @@ impl BatchTesting {
     pub fn create_test_claim_data(env: &Env, market_id: &Symbol) -> ClaimData {
         ClaimData {
             market_id: market_id.clone(),
-            claimant: Address::from_string(&String::from_str(
-                env,
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-            )),
+            claimant: Address::from_string(&String::from_str(env, "test_claimant")),
             expected_amount: 2_000_000_000, // 200 XLM
         }
     }
@@ -859,15 +853,10 @@ impl BatchTesting {
             outcomes: vec![
                 &env,
                 String::from_str(env, "Yes"),
-                String::from_str(env, "No"),
+                String::from_str(env, "No")
             ],
             duration_days: 30,
-            oracle_config: crate::types::OracleConfig {
-                provider: crate::types::OracleProvider::Reflector,
-                feed_id: String::from_str(env, "BTC"),
-                threshold: 100_000_00, // $100,000
-                comparison: String::from_str(env, "gt"),
-            },
+            oracle_config: None,
         }
     }
 
@@ -921,4 +910,4 @@ impl BatchTesting {
             execution_time,
         })
     }
-}
+} 

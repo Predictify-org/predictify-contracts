@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use soroban_sdk::{
-    contracterror, contracttype, vec, Address, Env, Map, String, Symbol, Vec,
+    contracterror, contracttype, Address, Env, Map, String, Symbol, Vec,
 };
 use alloc::format;
 use alloc::string::ToString;
@@ -698,11 +698,9 @@ impl ErrorHandler {
             return Err(Error::InvalidState);
         }
 
-        // Validate recovery result if present
-        if let Some(ref result) = recovery.recovery_result {
-            if result.recovery_duration > 3600 { // Max 1 hour recovery time
-                return Err(Error::InvalidState);
-            }
+        // Validate recovery attempts
+        if recovery.recovery_attempts > recovery.max_recovery_attempts {
+            return Err(Error::InvalidInput);
         }
 
         Ok(true)
