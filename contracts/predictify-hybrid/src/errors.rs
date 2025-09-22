@@ -799,7 +799,7 @@ impl ErrorHandler {
         
         let recovery_method = recovery.recovery_strategy.clone();
 
-        let success = match recovery.recovery_strategy.to_string().as_str() {
+        let success = match recovery.recovery_strategy.as_str() {
             "retry" => true,
             "retry_with_delay" => {
                 // Check if enough time has passed since last attempt
