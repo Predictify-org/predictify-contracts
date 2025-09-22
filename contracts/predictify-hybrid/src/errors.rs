@@ -709,7 +709,7 @@ impl ErrorHandler {
     }
 
     /// Get current error recovery status and statistics
-    pub fn get_error_recovery_status(env: &Env) -> Result<ErrorRecoveryStatus, Error> {
+    pub fn get_error_recovery_status(_env: &Env) -> Result<ErrorRecoveryStatus, Error> {
         // In a real implementation, this would aggregate recovery data from storage
         let status = ErrorRecoveryStatus {
             total_attempts: 0,
@@ -740,7 +740,7 @@ impl ErrorHandler {
     }
 
     /// Validate resilience patterns configuration
-    pub fn validate_resilience_patterns(env: &Env, patterns: &Vec<ResiliencePattern>) -> Result<bool, Error> {
+    pub fn validate_resilience_patterns(_env: &Env, patterns: &Vec<ResiliencePattern>) -> Result<bool, Error> {
         for pattern in patterns.iter() {
             // Validate pattern name
             if pattern.pattern_name.is_empty() {
@@ -937,9 +937,9 @@ impl ErrorHandler {
 
     /// Get technical details for debugging
     fn get_technical_details(error: &Error, context: &ErrorContext) -> String {
-        let error_code = error.code();
-        let error_num = *error as u32;
-        let timestamp = context.timestamp;
+        let _error_code = error.code();
+        let _error_num = *error as u32;
+        let _timestamp = context.timestamp;
         
         String::from_str(context.call_chain.env(), "Error details for debugging")
     }
