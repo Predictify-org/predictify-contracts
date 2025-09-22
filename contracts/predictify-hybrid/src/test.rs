@@ -591,3 +591,115 @@ fn test_oracle_provider_types() {
     assert_ne!(OracleProvider::Pyth, OracleProvider::Reflector);
     assert_eq!(OracleProvider::Pyth, OracleProvider::Pyth);
 }
+
+// ===== ERROR RECOVERY TESTS =====
+
+#[test]
+fn test_error_recovery_mechanisms() {
+    let env = Env::default();
+    let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+    
+    // Test error recovery for different error types
+    let context = errors::ErrorContext {
+        operation: String::from_str(&env, "test_operation"),
+        user_address: Some(admin.clone()),
+        market_id: Some(Symbol::new(&env, "test_market")),
+        context_data: Map::new(&env),
+        timestamp: env.ledger().timestamp(),
+        call_chain: {
+            let mut chain = Vec::new(&env);
+            chain.push_back(String::from_str(&env, "test"));
+            chain
+        },
+    };
+
+    // Test recovery for retryable error
+    let recovery = errors::ErrorHandler::recover_from_error(&env, Error::OracleUnavailable, context.clone()).unwrap();
+    assert_eq!(recovery.original_error_code, Error::OracleUnavailable as u32);
+    assert_eq!(recovery.recovery_strategy, String::from_str(&env, "retry_with_delay"));
+    assert!(recovery.recovery_attempts > 0);
+
+    // Test recovery validation
+    let validation_result = errors::ErrorHandler::validate_error_recovery(&env, &recovery).unwrap();
+    assert!(validation_result);
+
+    // Test recovery status
+    let status = errors::ErrorHandler::get_error_recovery_status(&env).unwrap();
+    assert_eq!(status.total_attempts, 0); // No persistent storage in test
+}
+
+#[test]
+fn test_resilience_patterns_validation() {
+    let env = Env::default();
+    
+    let mut patterns = Vec::new(&env);
+    let mut pattern_config = Map::new(&env);
+    pattern_config.set(String::from_str(&env, "max_attempts"), String::from_str(&env, "3"));
+    pattern_config.set(String::from_str(&env, "delay_ms"), String::from_str(&env, "1000"));
+    
+    let pattern = errors::ResiliencePattern {
+        pattern_name: String::from_str(&env, "retry_pattern"),
+        pattern_type: errors::ResiliencePatternType::RetryWithBackoff,
+        pattern_config,
+        enabled: true,
+        priority: 50,
+        last_used: None,
+        success_rate: 8500, // 85%
+    };
+    
+    patterns.push_back(pattern);
+    
+    let validation_result = errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
+    assert!(validation_result);
+}
+
+#[test]
+fn test_error_recovery_procedures_documentation() {
+    let env = Env::default();
+    
+    let procedures = errors::ErrorHandler::document_error_recovery_procedures(&env).unwrap();
+    assert!(procedures.len() > 0);
+    
+    // Check that key procedures are documented
+    assert!(procedures.get(String::from_str(&env, "retry_procedure")).is_some());
+    assert!(procedures.get(String::from_str(&env, "oracle_recovery")).is_some());
+    assert!(procedures.get(String::from_str(&env, "validation_recovery")).is_some());
+    assert!(procedures.get(String::from_str(&env, "system_recovery")).is_some());
+}
+
+#[test]
+fn test_error_recovery_scenarios() {
+    let env = Env::default();
+    let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+    
+    let context = errors::ErrorContext {
+        operation: String::from_str(&env, "test_scenario"),
+        user_address: Some(admin.clone()),
+        market_id: Some(Symbol::new(&env, "test_market")),
+        context_data: Map::new(&env),
+        timestamp: env.ledger().timestamp(),
+        call_chain: {
+            let mut chain = Vec::new(&env);
+            chain.push_back(String::from_str(&env, "test"));
+            chain
+        },
+    };
+
+    // Test different error recovery scenarios
+    let test_errors = Vec::from_array(&env, [
+        Error::OracleUnavailable,
+        Error::InvalidInput,
+        Error::MarketNotFound,
+        Error::AlreadyVoted,
+        Error::Unauthorized,
+    ]);
+
+    for error in test_errors {
+        let recovery = errors::ErrorHandler::recover_from_error(&env, error, context.clone()).unwrap();
+        
+        // Validate recovery structure
+        assert_eq!(recovery.original_error_code, error as u32);
+        assert!(recovery.recovery_attempts > 0);
+        assert!(recovery.max_recovery_attempts >= recovery.recovery_attempts);
+    }
+}
