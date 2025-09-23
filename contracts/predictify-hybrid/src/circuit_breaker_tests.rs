@@ -148,6 +148,7 @@ mod circuit_breaker_tests {
         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
         env.as_contract(&contract_id, || {
+            env.mock_all_auths();
             CircuitBreaker::initialize(&env).unwrap();
         
         // Configure shorter recovery timeout for testing
@@ -372,13 +373,13 @@ mod circuit_breaker_tests {
         
         // Initialize
         CircuitBreaker::initialize(&env).unwrap();
+        });
         
-        // Test unauthorized access
+        // Test unauthorized access (outside of mock_all_auths context)
         let unauthorized_admin = <soroban_sdk::Address as Address>::generate(&env);
         let reason = String::from_str(&env, "Test");
         assert!(CircuitBreaker::emergency_pause(&env, &unauthorized_admin, &reason).is_err());
         assert!(CircuitBreaker::circuit_breaker_recovery(&env, &unauthorized_admin).is_err());
-        });
     }
 
     #[test]

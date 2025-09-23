@@ -600,6 +600,7 @@ fn test_error_recovery_mechanisms() {
     let contract_id = env.register_contract(None, PredictifyHybrid);
     
     env.as_contract(&contract_id, || {
+        env.mock_all_auths();
         let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
     
     // Test error recovery for different error types
@@ -683,6 +684,7 @@ fn test_error_recovery_scenarios() {
     let contract_id = env.register_contract(None, PredictifyHybrid);
     
     env.as_contract(&contract_id, || {
+        env.mock_all_auths();
         let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
     
     let context = errors::ErrorContext {

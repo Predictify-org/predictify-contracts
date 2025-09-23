@@ -221,7 +221,10 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_utils() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            BatchProcessor::initialize(&env).unwrap();
         
         // Test batch processing enabled
         assert!(BatchUtils::is_batch_processing_enabled(&env).unwrap());
@@ -249,6 +252,7 @@ mod batch_operations_tests {
         
         let market_cost = BatchUtils::estimate_gas_cost(&BatchOperationType::CreateMarket, 3);
         assert_eq!(market_cost, 15000); // 5000 * 3
+        });
     }
 
     #[test]
@@ -474,13 +478,11 @@ mod batch_operations_tests {
         let initial_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
         assert_eq!(initial_stats.total_batches_processed, 0);
         
-        // Update statistics (this would be called internally)
-        // For testing, we'll simulate the update
-        let mut updated_stats = initial_stats.clone();
-        updated_stats.total_batches_processed += 1;
-        updated_stats.total_operations_processed += test_result.total_operations;
-        updated_stats.total_successful_operations += test_result.successful_operations;
-        updated_stats.total_failed_operations += test_result.failed_operations;
+        // Update statistics by calling the actual function
+        BatchProcessor::update_batch_statistics(&env, &test_result).unwrap();
+        
+        // Get updated statistics
+        let updated_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
         
         // Verify updated statistics
         assert_eq!(updated_stats.total_batches_processed, 1);
