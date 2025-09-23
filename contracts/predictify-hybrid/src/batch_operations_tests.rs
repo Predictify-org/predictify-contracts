@@ -1,8 +1,7 @@
 #[cfg(test)]
 mod batch_operations_tests {
-    use super::*;
     use crate::batch_operations::*;
-    use crate::admin::{AdminAccessControl, AdminRoleManager};
+    use crate::admin::AdminRoleManager;
     use crate::types::OracleProvider;
     use soroban_sdk::{Env, String, Vec, Symbol, testutils::Address, vec};
 
@@ -100,7 +99,7 @@ mod batch_operations_tests {
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         // Initialize admin system first
-        crate::admin::AdminRoleManager::initialize(&env).unwrap();
+        crate::admin::AdminAccessControl::initialize(&env, &admin).unwrap();
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Create test market data
@@ -536,7 +535,7 @@ mod batch_operations_tests {
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         // Initialize admin system first
-        crate::admin::AdminRoleManager::initialize(&env).unwrap();
+        crate::admin::AdminAccessControl::initialize(&env, &admin).unwrap();
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Test complete batch workflow

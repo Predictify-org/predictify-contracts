@@ -2,9 +2,9 @@
 mod circuit_breaker_tests {
     use super::*;
     use crate::circuit_breaker::*;
-    use crate::admin::{AdminRoleManager, AdminAccessControl};
+    use crate::admin::AdminRoleManager;
     use crate::errors::Error;
-    use soroban_sdk::{Env, String, Vec, Symbol, testutils::Address, vec};
+    use soroban_sdk::{Env, String, Vec, testutils::Address, vec};
 
     #[test]
     fn test_circuit_breaker_initialization() {
@@ -154,7 +154,7 @@ mod circuit_breaker_tests {
         // Configure shorter recovery timeout for testing
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         // Initialize admin system first
-        crate::admin::AdminRoleManager::initialize(&env).unwrap();
+        crate::admin::AdminAccessControl::initialize(&env, &admin).unwrap();
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         let mut config = CircuitBreaker::get_config(&env).unwrap();
