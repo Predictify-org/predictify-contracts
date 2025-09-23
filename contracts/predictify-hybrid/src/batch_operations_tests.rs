@@ -94,10 +94,11 @@ mod batch_operations_tests {
         let contract_id = env.register(crate::PredictifyHybrid, ());
         env.mock_all_auths();
         
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
+        
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
         
-        let admin = <soroban_sdk::Address as Address>::generate(&env);
         // Initialize admin system first
         crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
@@ -479,19 +480,19 @@ mod batch_operations_tests {
         let initial_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
         assert_eq!(initial_stats.total_batches_processed, 0);
         
-        // Update statistics by simulating the update (since update_batch_statistics is private)
-        let mut updated_stats = initial_stats.clone();
-        updated_stats.total_batches_processed += 1;
-        updated_stats.total_operations_processed += test_result.total_operations;
-        updated_stats.total_successful_operations += test_result.successful_operations;
-        updated_stats.total_failed_operations += test_result.failed_operations;
+        // Test a simple batch operation to trigger statistics update
+        let test_votes = vec![
+            &env,
+            BatchTesting::create_test_vote_data(&env),
+        ];
+        let _batch_result = BatchProcessor::batch_process_votes(&env, &admin, &test_votes);
         
-        // Verify updated statistics
-        assert_eq!(updated_stats.total_batches_processed, 1);
-        assert_eq!(updated_stats.total_operations_processed, 10);
-        assert_eq!(updated_stats.total_successful_operations, 8);
-        assert_eq!(updated_stats.total_failed_operations, 2);
-        assert_eq!(updated_stats.average_batch_size, 10);
+        // Get updated statistics
+        let updated_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
+        
+        // Verify statistics were updated
+        assert!(updated_stats.total_batches_processed > 0);
+        assert!(updated_stats.total_operations_processed > 0);
         });
     }
 
@@ -530,10 +531,11 @@ mod batch_operations_tests {
         let contract_id = env.register(crate::PredictifyHybrid, ());
         env.mock_all_auths();
         
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
+        
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
         
-        let admin = <soroban_sdk::Address as Address>::generate(&env);
         // Initialize admin system first
         crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();

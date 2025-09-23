@@ -600,8 +600,9 @@ fn test_error_recovery_mechanisms() {
     let contract_id = env.register(PredictifyHybrid, ());
     env.mock_all_auths();
     
+    let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
+    
     env.as_contract(&contract_id, || {
-        let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
         // Initialize admin system first
         crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
     
@@ -686,8 +687,9 @@ fn test_error_recovery_scenarios() {
     let contract_id = env.register(PredictifyHybrid, ());
     env.mock_all_auths();
     
+    let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
+    
     env.as_contract(&contract_id, || {
-        let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
         // Initialize admin system first
         crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
     
