@@ -21,7 +21,7 @@ use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::StellarAssetClient,
-    String, Symbol,
+    vec, String, Symbol,
 };
 
 // Test setup structures
