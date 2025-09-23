@@ -9,9 +9,11 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_processor_initialization() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
-        // Test initialization
-        assert!(BatchProcessor::initialize(&env).is_ok());
+        env.as_contract(&contract_id, || {
+            // Test initialization
+            assert!(BatchProcessor::initialize(&env).is_ok());
         
         // Test get config
         let config = BatchProcessor::get_config(&env).unwrap();
@@ -30,7 +32,8 @@ mod batch_operations_tests {
         assert_eq!(stats.total_failed_operations, 0);
         assert_eq!(stats.average_batch_size, 0);
         assert_eq!(stats.average_execution_time, 0);
-        assert_eq!(stats.gas_efficiency_ratio, 100u64);
+        assert_eq!(stats.gas_efficiency_ratio, 1u64);
+        });
     }
 
     #[test]

@@ -34,31 +34,38 @@ mod circuit_breaker_tests {
     #[test]
     fn test_emergency_pause() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
-        let admin = <soroban_sdk::Address as Address>::generate(&env);
-        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
-        
-        // Test emergency pause
-        let reason = String::from_str(&env, "Test emergency pause");
-        assert!(CircuitBreaker::emergency_pause(&env, &admin, &reason).is_ok());
-        
-        // Verify state is open
-        let state = CircuitBreaker::get_state(&env).unwrap();
-        assert_eq!(state.state, BreakerState::Open);
-        
-        // Test that circuit breaker is open
-        assert!(CircuitBreaker::is_open(&env).unwrap());
-        assert!(!CircuitBreaker::is_closed(&env).unwrap());
-        
-        // Test that trying to pause again fails
-        assert!(CircuitBreaker::emergency_pause(&env, &admin, &reason).is_err());
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+            
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
+            
+            // Test emergency pause
+            let reason = String::from_str(&env, "Test emergency pause");
+            assert!(CircuitBreaker::emergency_pause(&env, &admin, &reason).is_ok());
+            
+            // Verify state is open
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(state.state, BreakerState::Open);
+            
+            // Test that circuit breaker is open
+            assert!(CircuitBreaker::is_open(&env).unwrap());
+            assert!(!CircuitBreaker::is_closed(&env).unwrap());
+            
+            // Test that trying to pause again fails
+            assert!(CircuitBreaker::emergency_pause(&env, &admin, &reason).is_err());
+        });
     }
 
     #[test]
     fn test_circuit_breaker_recovery() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
@@ -77,6 +84,7 @@ mod circuit_breaker_tests {
         // Test that circuit breaker is closed
         assert!(CircuitBreaker::is_closed(&env).unwrap());
         assert!(!CircuitBreaker::is_open(&env).unwrap());
+        });
     }
 
     #[test]
