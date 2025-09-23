@@ -826,7 +826,7 @@ impl BatchTesting {
     pub fn create_test_vote_data(env: &Env, market_id: &Symbol) -> VoteData {
         VoteData {
             market_id: market_id.clone(),
-            voter: Address::from_string(&String::from_str(env, "test_voter")),
+            voter: <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env),
             outcome: String::from_str(env, "Yes"),
             stake_amount: 1_000_000_000, // 100 XLM
         }
@@ -836,7 +836,7 @@ impl BatchTesting {
     pub fn create_test_claim_data(env: &Env, market_id: &Symbol) -> ClaimData {
         ClaimData {
             market_id: market_id.clone(),
-            claimant: Address::from_string(&String::from_str(env, "test_claimant")),
+            claimant: <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env),
             expected_amount: 2_000_000_000, // 200 XLM
         }
     }
