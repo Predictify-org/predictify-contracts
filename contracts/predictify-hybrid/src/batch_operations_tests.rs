@@ -481,11 +481,12 @@ mod batch_operations_tests {
         assert_eq!(initial_stats.total_batches_processed, 0);
         
         // Test a simple batch operation to trigger statistics update
+        let market_id = Symbol::new(&env, "test_market");
         let test_votes = vec![
             &env,
-            BatchTesting::create_test_vote_data(&env),
+            BatchTesting::create_test_vote_data(&env, &market_id),
         ];
-        let _batch_result = BatchProcessor::batch_process_votes(&env, &admin, &test_votes);
+        let _batch_result = BatchProcessor::batch_vote(&env, &test_votes);
         
         // Get updated statistics
         let updated_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
