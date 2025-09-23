@@ -664,7 +664,7 @@ impl CircuitBreaker {
         );
 
         // Test 4: Status check
-        let status = Self::get_circuit_breaker_status(env)?;
+        let _status = Self::get_circuit_breaker_status(env)?;
         results.set(
             String::from_str(env, "status_check"),
             String::from_str(env, "success")
@@ -771,7 +771,7 @@ pub struct CircuitBreakerTesting;
 
 impl CircuitBreakerTesting {
     /// Create test circuit breaker configuration
-    pub fn create_test_config(env: &Env) -> CircuitBreakerConfig {
+    pub fn create_test_config(_env: &Env) -> CircuitBreakerConfig {
         CircuitBreakerConfig {
             max_error_rate: 5,            // 5% error rate threshold
             max_latency_ms: 1000,         // 1 second latency threshold

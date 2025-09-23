@@ -1019,7 +1019,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         additional_days: u32,
         reason: String,
-        fee_amount: i128,
+        _fee_amount: i128,
     ) -> Result<(), Error> {
         admin.require_auth();
 

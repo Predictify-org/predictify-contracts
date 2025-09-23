@@ -139,7 +139,7 @@ impl StorageOptimizer {
         let compressed_size = compressed_data.len() as u32;
         
         // Calculate compression ratio (as percentage * 100 for integer storage)
-        let compression_ratio = if original_size > 0 {
+        let _compression_ratio = if original_size > 0 {
             (compressed_size as i128 * 10000) / original_size as i128
         } else {
             0
@@ -505,7 +505,7 @@ impl StorageOptimizer {
     fn get_all_market_ids(env: &Env) -> Vec<Symbol> {
         // This is a simplified approach - in a real implementation,
         // you'd maintain a registry of all market IDs
-        let mut market_ids = Vec::new(env);
+        let market_ids = Vec::new(env);
         // For now, return empty vector - this would be populated from a registry
         market_ids
     }

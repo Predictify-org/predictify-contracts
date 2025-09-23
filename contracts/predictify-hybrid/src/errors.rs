@@ -431,7 +431,7 @@ pub struct ErrorHandler;
 
 impl ErrorHandler {
     /// Categorize an error with detailed information
-    pub fn categorize_error(env: &Env, error: Error, context: ErrorContext) -> DetailedError {
+    pub fn categorize_error(_env: &Env, error: Error, context: ErrorContext) -> DetailedError {
         let (severity, category, recovery_strategy) = Self::get_error_classification(&error);
         let detailed_message = Self::generate_detailed_error_message(&error, &context);
         let user_action = Self::get_user_action(&error, &category);
@@ -451,7 +451,7 @@ impl ErrorHandler {
 
     /// Generate detailed error message with context
     pub fn generate_detailed_error_message(error: &Error, context: &ErrorContext) -> String {
-        let base_message = error.description();
+        let _base_message = error.description();
         let _operation = &context.operation;
         
         match error {
@@ -1217,7 +1217,7 @@ mod tests {
             call_chain: Vec::new(&env),
         };
 
-        let message = ErrorHandler::generate_detailed_error_message(&Error::Unauthorized, &context);
+        let _message = ErrorHandler::generate_detailed_error_message(&Error::Unauthorized, &context);
         // Test that the message is generated correctly
         assert!(true); // Simplified test since to_string() is not available
     }

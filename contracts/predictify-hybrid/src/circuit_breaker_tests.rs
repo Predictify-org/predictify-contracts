@@ -36,7 +36,7 @@ mod circuit_breaker_tests {
         let env = Env::default();
         CircuitBreaker::initialize(&env).unwrap();
         
-        let admin = Address::generate(&env);
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Test emergency pause
@@ -60,7 +60,7 @@ mod circuit_breaker_tests {
         let env = Env::default();
         CircuitBreaker::initialize(&env).unwrap();
         
-        let admin = Address::generate(&env);
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // First pause the circuit breaker
@@ -129,7 +129,7 @@ mod circuit_breaker_tests {
         CircuitBreaker::initialize(&env).unwrap();
         
         // Configure shorter recovery timeout for testing
-        let admin = Address::generate(&env);
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         let mut config = CircuitBreaker::get_config(&env).unwrap();
@@ -182,7 +182,7 @@ mod circuit_breaker_tests {
         let env = Env::default();
         CircuitBreaker::initialize(&env).unwrap();
         
-        let admin = Address::generate(&env);
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Perform some actions to generate events
@@ -324,7 +324,7 @@ mod circuit_breaker_tests {
         CircuitBreaker::initialize(&env).unwrap();
         
         // Test unauthorized access
-        let unauthorized_admin = Address::generate(&env);
+        let unauthorized_admin = <soroban_sdk::Address as Address>::generate(&env);
         let reason = String::from_str(&env, "Test");
         assert!(CircuitBreaker::emergency_pause(&env, &unauthorized_admin, &reason).is_err());
         assert!(CircuitBreaker::circuit_breaker_recovery(&env, &unauthorized_admin).is_err());
@@ -335,7 +335,7 @@ mod circuit_breaker_tests {
         let env = Env::default();
         CircuitBreaker::initialize(&env).unwrap();
         
-        let admin = Address::generate(&env);
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Test complete workflow

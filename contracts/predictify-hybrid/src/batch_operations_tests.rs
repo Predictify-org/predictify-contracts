@@ -2,7 +2,7 @@
 mod batch_operations_tests {
     use super::*;
     use crate::batch_operations::*;
-    use crate::admin::AdminAccessControl;
+    use crate::admin::{AdminAccessControl, AdminRoleManager};
     use crate::types::OracleProvider;
     use soroban_sdk::{Env, String, Vec, Symbol, testutils::Address, vec};
 
@@ -83,8 +83,8 @@ mod batch_operations_tests {
         let env = Env::default();
         BatchProcessor::initialize(&env).unwrap();
         
-        let admin = Address::generate(&env);
-        AdminAccessControl::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin).unwrap();
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
+        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Create test market data
         let markets = vec![
@@ -314,7 +314,7 @@ mod batch_operations_tests {
         // Valid vote data
         let valid_vote = VoteData {
             market_id: market_id.clone(),
-            voter: Address::generate(&env),
+            voter: <soroban_sdk::Address as Address>::generate(&env),
             outcome: String::from_str(&env, "Yes"),
             stake_amount: 1_000_000_000,
         };
@@ -322,7 +322,7 @@ mod batch_operations_tests {
         // Invalid vote data - zero stake
         let invalid_vote = VoteData {
             market_id: market_id.clone(),
-            voter: Address::generate(&env),
+            voter: <soroban_sdk::Address as Address>::generate(&env),
             outcome: String::from_str(&env, "Yes"),
             stake_amount: 0,
         };
@@ -330,7 +330,7 @@ mod batch_operations_tests {
         // Invalid vote data - empty outcome
         let invalid_vote2 = VoteData {
             market_id: market_id.clone(),
-            voter: Address::generate(&env),
+            voter: <soroban_sdk::Address as Address>::generate(&env),
             outcome: String::from_str(&env, ""),
             stake_amount: 1_000_000_000,
         };
@@ -339,14 +339,14 @@ mod batch_operations_tests {
         // Valid claim data
         let valid_claim = ClaimData {
             market_id: market_id.clone(),
-            claimant: Address::generate(&env),
+            claimant: <soroban_sdk::Address as Address>::generate(&env),
             expected_amount: 2_000_000_000,
         };
         
         // Invalid claim data - zero amount
         let invalid_claim = ClaimData {
             market_id: market_id.clone(),
-            claimant: Address::generate(&env),
+            claimant: <soroban_sdk::Address as Address>::generate(&env),
             expected_amount: 0,
         };
         
@@ -356,7 +356,12 @@ mod batch_operations_tests {
             question: String::from_str(&env, "Test question?"),
             outcomes: vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")],
             duration_days: 30,
-            oracle_config: None,
+            oracle_config: crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                feed_id: String::from_str(&env, "BTC"),
+                threshold: 100_000_00,
+                comparison: String::from_str(&env, "gt"),
+            },
         };
         
         // Invalid market data - empty question
@@ -364,7 +369,12 @@ mod batch_operations_tests {
             question: String::from_str(&env, ""),
             outcomes: vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")],
             duration_days: 30,
-            oracle_config: None,
+            oracle_config: crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                feed_id: String::from_str(&env, "BTC"),
+                threshold: 100_000_00,
+                comparison: String::from_str(&env, "gt"),
+            },
         };
         
         // Invalid market data - insufficient outcomes
@@ -372,7 +382,12 @@ mod batch_operations_tests {
             question: String::from_str(&env, "Test question?"),
             outcomes: vec![&env, String::from_str(&env, "Yes")],
             duration_days: 30,
-            oracle_config: None,
+            oracle_config: crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                feed_id: String::from_str(&env, "BTC"),
+                threshold: 100_000_00,
+                comparison: String::from_str(&env, "gt"),
+            },
         };
         
         // Invalid market data - zero duration
@@ -380,7 +395,12 @@ mod batch_operations_tests {
             question: String::from_str(&env, "Test question?"),
             outcomes: vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")],
             duration_days: 0,
-            oracle_config: None,
+            oracle_config: crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                feed_id: String::from_str(&env, "BTC"),
+                threshold: 100_000_00,
+                comparison: String::from_str(&env, "gt"),
+            },
         };
         
         // Test oracle feed data validation
@@ -481,8 +501,8 @@ mod batch_operations_tests {
         let env = Env::default();
         BatchProcessor::initialize(&env).unwrap();
         
-        let admin = Address::generate(&env);
-        AdminAccessControl::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin).unwrap();
+        let admin = <soroban_sdk::Address as Address>::generate(&env);
+        AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         // Test complete batch workflow
         // 1. Create test data
