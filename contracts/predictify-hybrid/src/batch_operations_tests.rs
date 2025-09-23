@@ -39,7 +39,10 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_vote_operations() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            BatchProcessor::initialize(&env).unwrap();
         
         // Create test vote data
         let market_id = Symbol::new(&env, "test_market");
@@ -57,12 +60,16 @@ mod batch_operations_tests {
         let batch_result = result.unwrap();
         assert_eq!(batch_result.total_operations, 3);
         assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]
     fn test_batch_claim_operations() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            BatchProcessor::initialize(&env).unwrap();
         
         // Create test claim data
         let market_id = Symbol::new(&env, "test_market");
@@ -79,6 +86,7 @@ mod batch_operations_tests {
         let batch_result = result.unwrap();
         assert_eq!(batch_result.total_operations, 2);
         assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]

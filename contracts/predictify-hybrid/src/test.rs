@@ -597,7 +597,10 @@ fn test_oracle_provider_types() {
 #[test]
 fn test_error_recovery_mechanisms() {
     let env = Env::default();
-    let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+    let contract_id = env.register_contract(None, PredictifyHybrid);
+    
+    env.as_contract(&contract_id, || {
+        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
     
     // Test error recovery for different error types
     let context = errors::ErrorContext {
@@ -626,13 +629,16 @@ fn test_error_recovery_mechanisms() {
     // Test recovery status
     let status = errors::ErrorHandler::get_error_recovery_status(&env).unwrap();
     assert_eq!(status.total_attempts, 0); // No persistent storage in test
+    });
 }
 
 #[test]
 fn test_resilience_patterns_validation() {
     let env = Env::default();
+    let contract_id = env.register_contract(None, PredictifyHybrid);
     
-    let mut patterns = Vec::new(&env);
+    env.as_contract(&contract_id, || {
+        let mut patterns = Vec::new(&env);
     let mut pattern_config = Map::new(&env);
     pattern_config.set(String::from_str(&env, "max_attempts"), String::from_str(&env, "3"));
     pattern_config.set(String::from_str(&env, "delay_ms"), String::from_str(&env, "1000"));
@@ -651,13 +657,16 @@ fn test_resilience_patterns_validation() {
     
     let validation_result = errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
     assert!(validation_result);
+    });
 }
 
 #[test]
 fn test_error_recovery_procedures_documentation() {
     let env = Env::default();
+    let contract_id = env.register_contract(None, PredictifyHybrid);
     
-    let procedures = errors::ErrorHandler::document_error_recovery_procedures(&env).unwrap();
+    env.as_contract(&contract_id, || {
+        let procedures = errors::ErrorHandler::document_error_recovery_procedures(&env).unwrap();
     assert!(procedures.len() > 0);
     
     // Check that key procedures are documented
@@ -665,12 +674,16 @@ fn test_error_recovery_procedures_documentation() {
     assert!(procedures.get(String::from_str(&env, "oracle_recovery")).is_some());
     assert!(procedures.get(String::from_str(&env, "validation_recovery")).is_some());
     assert!(procedures.get(String::from_str(&env, "system_recovery")).is_some());
+    });
 }
 
 #[test]
 fn test_error_recovery_scenarios() {
     let env = Env::default();
-    let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+    let contract_id = env.register_contract(None, PredictifyHybrid);
+    
+    env.as_contract(&contract_id, || {
+        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
     
     let context = errors::ErrorContext {
         operation: String::from_str(&env, "test_scenario"),
@@ -702,4 +715,5 @@ fn test_error_recovery_scenarios() {
         assert!(recovery.recovery_attempts > 0);
         assert!(recovery.max_recovery_attempts >= recovery.recovery_attempts);
     }
+    });
 }
