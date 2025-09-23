@@ -9,7 +9,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_processor_initialization() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         
         env.as_contract(&contract_id, || {
             // Test initialization
@@ -39,7 +39,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_vote_operations() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
@@ -66,7 +66,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_claim_operations() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
@@ -92,10 +92,10 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_market_creation() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
         
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
             BatchProcessor::initialize(&env).unwrap();
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
@@ -121,7 +121,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_oracle_calls() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
@@ -221,7 +221,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_utils() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
@@ -459,7 +459,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_statistics_update() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
@@ -526,10 +526,10 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_integration() {
         let env = Env::default();
-        let contract_id = env.register(None, crate::PredictifyHybrid);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
         
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
             BatchProcessor::initialize(&env).unwrap();
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
