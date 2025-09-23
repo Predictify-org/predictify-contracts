@@ -92,7 +92,11 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_market_creation() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            env.mock_all_auths();
+            BatchProcessor::initialize(&env).unwrap();
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
@@ -111,12 +115,16 @@ mod batch_operations_tests {
         let batch_result = result.unwrap();
         assert_eq!(batch_result.total_operations, 2);
         assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]
     fn test_batch_oracle_calls() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            BatchProcessor::initialize(&env).unwrap();
         
         // Create test oracle feed data
         let market_id = Symbol::new(&env, "test_market");
@@ -133,6 +141,7 @@ mod batch_operations_tests {
         let batch_result = result.unwrap();
         assert_eq!(batch_result.total_operations, 2);
         assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]
@@ -446,7 +455,10 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_statistics_update() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            BatchProcessor::initialize(&env).unwrap();
         
         // Create test batch result
         let test_result = BatchResult {
@@ -476,6 +488,7 @@ mod batch_operations_tests {
         assert_eq!(updated_stats.total_successful_operations, 8);
         assert_eq!(updated_stats.total_failed_operations, 2);
         assert_eq!(updated_stats.average_batch_size, 10);
+        });
     }
 
     #[test]
@@ -510,7 +523,11 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_integration() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            env.mock_all_auths();
+            BatchProcessor::initialize(&env).unwrap();
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
@@ -570,5 +587,6 @@ mod batch_operations_tests {
         
         let efficiency = BatchUtils::calculate_gas_efficiency(4, 5, 1000);
         assert_eq!(efficiency, 0.8 * 0.005); // 80% success rate * 0.005 operations per gas
+        });
     }
 } 
