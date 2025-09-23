@@ -9,9 +9,11 @@ mod circuit_breaker_tests {
     #[test]
     fn test_circuit_breaker_initialization() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
-        // Test initialization
-        assert!(CircuitBreaker::initialize(&env).is_ok());
+        env.as_contract(&contract_id, || {
+            // Test initialization
+            assert!(CircuitBreaker::initialize(&env).is_ok());
         
         // Test get config
         let config = CircuitBreaker::get_config(&env).unwrap();
@@ -29,6 +31,7 @@ mod circuit_breaker_tests {
         assert_eq!(state.failure_count, 0);
         assert_eq!(state.total_requests, 0);
         assert_eq!(state.error_count, 0);
+        });
     }
 
     #[test]
@@ -90,7 +93,10 @@ mod circuit_breaker_tests {
     #[test]
     fn test_automatic_trigger() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         // Test automatic trigger with high error rate
         let condition = BreakerCondition::HighErrorRate;
@@ -109,12 +115,16 @@ mod circuit_breaker_tests {
         // Verify state is open
         let state = CircuitBreaker::get_state(&env).unwrap();
         assert_eq!(state.state, BreakerState::Open);
+        });
     }
 
     #[test]
     fn test_record_success_and_failure() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         // Test recording success
         assert!(CircuitBreaker::record_success(&env).is_ok());
@@ -129,12 +139,16 @@ mod circuit_breaker_tests {
         let state = CircuitBreaker::get_state(&env).unwrap();
         assert_eq!(state.total_requests, 2);
         assert_eq!(state.error_count, 1);
+        });
     }
 
     #[test]
     fn test_half_open_state() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         // Configure shorter recovery timeout for testing
         let admin = <soroban_sdk::Address as Address>::generate(&env);
@@ -165,12 +179,16 @@ mod circuit_breaker_tests {
             let state = CircuitBreaker::get_state(&env).unwrap();
             assert_eq!(state.state, BreakerState::Closed);
         }
+        });
     }
 
     #[test]
     fn test_circuit_breaker_status() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         // Get status
         let status = CircuitBreaker::get_circuit_breaker_status(&env).unwrap();
@@ -183,12 +201,16 @@ mod circuit_breaker_tests {
         assert!(status.get(String::from_str(&env, "max_error_rate")).is_some());
         assert!(status.get(String::from_str(&env, "failure_threshold")).is_some());
         assert!(status.get(String::from_str(&env, "auto_recovery_enabled")).is_some());
+        });
     }
 
     #[test]
     fn test_event_history() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
@@ -203,13 +225,16 @@ mod circuit_breaker_tests {
         
         // Should have at least 2 events (pause and recovery)
         assert!(events.len() >= 2);
+        });
     }
 
     #[test]
     fn test_validate_circuit_breaker_conditions() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
-        // Test valid conditions
+        env.as_contract(&contract_id, || {
+            // Test valid conditions
         let valid_conditions = vec![
             &env,
             BreakerCondition::HighErrorRate,
@@ -228,12 +253,16 @@ mod circuit_breaker_tests {
             BreakerCondition::HighErrorRate,
         ];
         assert!(CircuitBreaker::validate_circuit_breaker_conditions(&duplicate_conditions).is_err());
+        });
     }
 
     #[test]
     fn test_circuit_breaker_utils() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         // Test should_allow_operation when closed
         assert!(CircuitBreakerUtils::should_allow_operation(&env).unwrap());
@@ -249,13 +278,16 @@ mod circuit_breaker_tests {
         assert!(stats.get(String::from_str(&env, "total_requests")).is_some());
         assert!(stats.get(String::from_str(&env, "error_count")).is_some());
         assert!(stats.get(String::from_str(&env, "current_state")).is_some());
+        });
     }
 
     #[test]
     fn test_circuit_breaker_testing() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
-        // Test create test config
+        env.as_contract(&contract_id, || {
+            // Test create test config
         let test_config = CircuitBreakerTesting::create_test_config(&env);
         assert_eq!(test_config.max_error_rate, 5);
         assert_eq!(test_config.max_latency_ms, 1000);
@@ -271,12 +303,16 @@ mod circuit_breaker_tests {
         CircuitBreaker::initialize(&env).unwrap();
         assert!(CircuitBreakerTesting::simulate_success(&env).is_ok());
         assert!(CircuitBreakerTesting::simulate_failure(&env).is_ok());
+        });
     }
 
     #[test]
     fn test_circuit_breaker_scenarios() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         // Test circuit breaker scenarios
         let results = CircuitBreaker::test_circuit_breaker_scenarios(&env).unwrap();
@@ -287,13 +323,16 @@ mod circuit_breaker_tests {
         assert!(results.get(String::from_str(&env, "recovery")).is_some());
         assert!(results.get(String::from_str(&env, "status_check")).is_some());
         assert!(results.get(String::from_str(&env, "event_history")).is_some());
+        });
     }
 
     #[test]
     fn test_config_validation() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
-        // Test valid config
+        env.as_contract(&contract_id, || {
+            // Test valid config
         let valid_config = CircuitBreakerConfig {
             max_error_rate: 10,
             max_latency_ms: 5000,
@@ -316,13 +355,16 @@ mod circuit_breaker_tests {
         let mut invalid_config3 = valid_config.clone();
         invalid_config3.min_liquidity = -1; // < 0
         // This would fail validation in update_config
+        });
     }
 
     #[test]
     fn test_error_handling() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
         
-        // Test circuit breaker not initialized
+        env.as_contract(&contract_id, || {
+            // Test circuit breaker not initialized
         assert!(CircuitBreaker::get_config(&env).is_err());
         assert!(CircuitBreaker::get_state(&env).is_err());
         assert!(CircuitBreaker::is_open(&env).is_err());
@@ -336,12 +378,16 @@ mod circuit_breaker_tests {
         let reason = String::from_str(&env, "Test");
         assert!(CircuitBreaker::emergency_pause(&env, &unauthorized_admin, &reason).is_err());
         assert!(CircuitBreaker::circuit_breaker_recovery(&env, &unauthorized_admin).is_err());
+        });
     }
 
     #[test]
     fn test_circuit_breaker_integration() {
         let env = Env::default();
-        CircuitBreaker::initialize(&env).unwrap();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
         
         let admin = <soroban_sdk::Address as Address>::generate(&env);
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
@@ -371,5 +417,6 @@ mod circuit_breaker_tests {
         // 6. Check events
         let events = CircuitBreaker::get_event_history(&env).unwrap();
         assert!(events.len() >= 2); // At least pause and recovery events
+        });
     }
 } 

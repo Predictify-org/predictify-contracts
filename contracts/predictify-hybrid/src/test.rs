@@ -600,7 +600,7 @@ fn test_error_recovery_mechanisms() {
     let contract_id = env.register_contract(None, PredictifyHybrid);
     
     env.as_contract(&contract_id, || {
-        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+        let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
     
     // Test error recovery for different error types
     let context = errors::ErrorContext {
@@ -683,7 +683,7 @@ fn test_error_recovery_scenarios() {
     let contract_id = env.register_contract(None, PredictifyHybrid);
     
     env.as_contract(&contract_id, || {
-        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+        let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
     
     let context = errors::ErrorContext {
         operation: String::from_str(&env, "test_scenario"),
