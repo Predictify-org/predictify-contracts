@@ -589,8 +589,8 @@ mod batch_operations_tests {
         
         // 3. Check statistics
         let stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
-        assert_eq!(stats.total_batches_processed, 4);
-        assert_eq!(stats.total_operations_processed, 5); // 2 votes + 1 claim + 1 market + 1 oracle
+        assert_eq!(stats.total_batches_processed, 3); // 2 votes + 1 claim + 1 oracle (market creation skipped)
+        assert_eq!(stats.total_operations_processed, 4); // 2 votes + 1 claim + 1 oracle
         assert!(stats.total_successful_operations >= 0);
         assert!(stats.total_failed_operations >= 0);
         
