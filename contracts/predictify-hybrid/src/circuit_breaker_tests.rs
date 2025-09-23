@@ -153,6 +153,8 @@ mod circuit_breaker_tests {
         
         // Configure shorter recovery timeout for testing
         let admin = <soroban_sdk::Address as Address>::generate(&env);
+        // Initialize admin system first
+        crate::admin::AdminRoleManager::initialize(&env).unwrap();
         AdminRoleManager::assign_role(&env, &admin, crate::admin::AdminRole::SuperAdmin, &admin).unwrap();
         
         let mut config = CircuitBreaker::get_config(&env).unwrap();
@@ -373,13 +375,13 @@ mod circuit_breaker_tests {
         
         // Initialize
         CircuitBreaker::initialize(&env).unwrap();
-        });
         
-        // Test unauthorized access (outside of mock_all_auths context)
+        // Test unauthorized access (inside contract context but without proper admin role)
         let unauthorized_admin = <soroban_sdk::Address as Address>::generate(&env);
         let reason = String::from_str(&env, "Test");
         assert!(CircuitBreaker::emergency_pause(&env, &unauthorized_admin, &reason).is_err());
         assert!(CircuitBreaker::circuit_breaker_recovery(&env, &unauthorized_admin).is_err());
+        });
     }
 
     #[test]
