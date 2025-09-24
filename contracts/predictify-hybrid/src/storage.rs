@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::markets::{MarketStateLogic, MarketStateManager};
-use soroban_sdk::{contracttype, Symbol, Vec};
+use soroban_sdk::{contracttype, map, vec, Address, Env, Map, Symbol, Vec};
 
 // ===== STORAGE OPTIMIZATION TYPES =====
 

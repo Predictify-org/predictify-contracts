@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracterror, contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 /// Comprehensive error codes for the Predictify Hybrid prediction market contract.
 ///

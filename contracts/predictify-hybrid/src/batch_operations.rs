@@ -1,7 +1,5 @@
 use alloc::format;
 use alloc::string::ToString;
-#[cfg(test)]
-use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
@@ -45,8 +43,7 @@ pub struct MarketData {
     pub question: String,
     pub outcomes: Vec<String>,
     pub duration_days: u32,
-    /// Oracle configuration (using String to avoid trait bound issues)
-    pub oracle_config: Option<String>,
+    pub oracle_config: OracleConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -220,7 +217,7 @@ impl BatchProcessor {
         }
 
         for (index, vote_data) in votes.iter().enumerate() {
-            match Self::process_single_vote(env, vote_data.clone()) {
+            match Self::process_single_vote(env, &vote_data) {
                 Ok(_) => {
                     successful_operations += 1;
                 }
@@ -255,9 +252,9 @@ impl BatchProcessor {
     }
 
     /// Process single vote operation
-    fn process_single_vote(env: &Env, vote_data: VoteData) -> Result<(), Error> {
+    fn process_single_vote(env: &Env, vote_data: &VoteData) -> Result<(), Error> {
         // Validate vote data
-        Self::validate_vote_data(&vote_data)?;
+        Self::validate_vote_data(vote_data)?;
 
         // Check if market exists and is open
         let market = crate::markets::MarketStateManager::get_market(env, &vote_data.market_id)?;
@@ -269,9 +266,9 @@ impl BatchProcessor {
         // Process the vote using existing voting logic
         crate::voting::VotingManager::process_vote(
             env,
-            vote_data.voter,
-            vote_data.market_id,
-            vote_data.outcome,
+            vote_data.voter.clone(),
+            vote_data.market_id.clone(),
+            vote_data.outcome.clone(),
             vote_data.stake_amount,
         )?;
 
@@ -294,7 +291,7 @@ impl BatchProcessor {
         }
 
         for (index, claim_data) in claims.iter().enumerate() {
-            match Self::process_single_claim(env, claim_data.clone()) {
+            match Self::process_single_claim(env, &claim_data) {
                 Ok(_) => {
                     successful_operations += 1;
                 }
@@ -329,9 +326,9 @@ impl BatchProcessor {
     }
 
     /// Process single claim operation
-    fn process_single_claim(env: &Env, claim_data: ClaimData) -> Result<(), Error> {
+    fn process_single_claim(env: &Env, claim_data: &ClaimData) -> Result<(), Error> {
         // Validate claim data
-        Self::validate_claim_data(&claim_data)?;
+        Self::validate_claim_data(claim_data)?;
 
         // Check if market exists and is resolved
         let market = crate::markets::MarketStateManager::get_market(env, &claim_data.market_id)?;
@@ -340,9 +337,7 @@ impl BatchProcessor {
             return Err(Error::MarketNotResolved);
         }
 
-        // Process the claim using existing claim logic
-        // TODO: Implement claim winnings functionality
-        // For now, we'll skip this functionality
+        // TODO: Fix claim winnings - function doesn't exist
         // crate::markets::MarketStateManager::claim_winnings(
         //     env,
         //     &claim_data.market_id,
@@ -379,7 +374,7 @@ impl BatchProcessor {
         }
 
         for (index, market_data) in markets.iter().enumerate() {
-            match Self::process_single_market_creation(env, admin.clone(), market_data.clone()) {
+            match Self::process_single_market_creation(env, admin, &market_data) {
                 Ok(_) => {
                     successful_operations += 1;
                 }
@@ -415,28 +410,22 @@ impl BatchProcessor {
 
     /// Process single market creation operation
     fn process_single_market_creation(
-        _env: &Env,
-        _admin: Address,
-        market_data: MarketData,
+        env: &Env,
+        admin: &Address,
+        market_data: &MarketData,
     ) -> Result<(), Error> {
         // Validate market data
-        Self::validate_market_data(&market_data)?;
+        Self::validate_market_data(market_data)?;
 
         // Create market using existing market creation logic
-        // TODO: Fix oracle_config handling - currently using String instead of OracleConfig
-        // For now, we'll skip oracle configuration
-        // if let Some(oracle_config) = market_data.oracle_config {
-        //     crate::markets::MarketCreator::create_market(
-        //         env,
-        //         admin,
-        //         market_data.question,
-        //         market_data.outcomes,
-        //         market_data.duration_days,
-        //         oracle_config,
-        //     )?;
-        // } else {
-        //     return Err(Error::InvalidOracleConfig);
-        // }
+        crate::markets::MarketCreator::create_market(
+            env,
+            admin.clone(),
+            market_data.question.clone(),
+            market_data.outcomes.clone(),
+            market_data.duration_days,
+            market_data.oracle_config.clone(),
+        )?;
 
         Ok(())
     }
@@ -457,7 +446,7 @@ impl BatchProcessor {
         }
 
         for (index, feed_data) in feeds.iter().enumerate() {
-            match Self::process_single_oracle_call(env, feed_data.clone()) {
+            match Self::process_single_oracle_call(env, &feed_data) {
                 Ok(_) => {
                     successful_operations += 1;
                 }
@@ -492,9 +481,9 @@ impl BatchProcessor {
     }
 
     /// Process single oracle call
-    fn process_single_oracle_call(env: &Env, feed_data: OracleFeed) -> Result<(), Error> {
+    fn process_single_oracle_call(env: &Env, feed_data: &OracleFeed) -> Result<(), Error> {
         // Validate oracle feed data
-        Self::validate_oracle_feed_data(&feed_data)?;
+        Self::validate_oracle_feed_data(feed_data)?;
 
         // Check if market exists
         let market = crate::markets::MarketStateManager::get_market(env, &feed_data.market_id)?;
@@ -503,9 +492,7 @@ impl BatchProcessor {
             return Err(Error::MarketAlreadyResolved);
         }
 
-        // Process oracle call using existing oracle logic
-        // TODO: Implement oracle result fetching
-        // For now, we'll skip this functionality
+        // TODO: Fix oracle call - OracleManager doesn't exist
         // crate::oracles::OracleManager::fetch_oracle_result(
         //     env,
         //     &feed_data.market_id,
@@ -537,14 +524,14 @@ impl BatchProcessor {
 
         // Validate individual operations
         for operation in operations.iter() {
-            Self::validate_single_operation(operation.clone())?;
+            Self::validate_single_operation(&operation)?;
         }
 
         Ok(())
     }
 
     /// Validate single operation
-    fn validate_single_operation(operation: BatchOperation) -> Result<(), Error> {
+    fn validate_single_operation(operation: &BatchOperation) -> Result<(), Error> {
         // Validate operation type
         match operation.operation_type {
             BatchOperationType::Vote => {
@@ -835,16 +822,17 @@ impl BatchUtils {
 // ===== BATCH TESTING =====
 
 /// Batch operation testing utilities
-#[cfg(test)]
 pub struct BatchTesting;
 
-#[cfg(test)]
 impl BatchTesting {
     /// Create test vote data
     pub fn create_test_vote_data(env: &Env, market_id: &Symbol) -> VoteData {
         VoteData {
             market_id: market_id.clone(),
-            voter: Address::generate(env),
+            voter: Address::from_string(&String::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            )),
             outcome: String::from_str(env, "Yes"),
             stake_amount: 1_000_000_000, // 100 XLM
         }
@@ -854,7 +842,10 @@ impl BatchTesting {
     pub fn create_test_claim_data(env: &Env, market_id: &Symbol) -> ClaimData {
         ClaimData {
             market_id: market_id.clone(),
-            claimant: Address::generate(env),
+            claimant: Address::from_string(&String::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            )),
             expected_amount: 2_000_000_000, // 200 XLM
         }
     }
@@ -869,7 +860,12 @@ impl BatchTesting {
                 String::from_str(env, "No"),
             ],
             duration_days: 30,
-            oracle_config: None,
+            oracle_config: crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                feed_id: String::from_str(env, "BTC"),
+                threshold: 100_000_00, // $100,000
+                comparison: String::from_str(env, "gt"),
+            },
         }
     }
 
