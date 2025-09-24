@@ -867,12 +867,95 @@ pub struct CircuitBreakerEvent {
     pub admin: Option<Address>,
 }
 
+/// Governance proposal created event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceProposalCreatedEvent {
+    pub proposal_id: Symbol,
+    pub proposer: Address,
+    pub title: String,
+    pub description: String,
+    pub timestamp: u64,
+}
+
+/// Governance vote cast event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceVoteCastEvent {
+    pub proposal_id: Symbol,
+    pub voter: Address,
+    pub support: bool,
+    pub timestamp: u64,
+}
+
+/// Governance proposal executed event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceProposalExecutedEvent {
+    pub proposal_id: Symbol,
+    pub executor: Address,
+    pub timestamp: u64,
+}
+
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Event emission utilities
 pub struct EventEmitter;
 
 impl EventEmitter {
+    /// Emit governance proposal created event
+    pub fn emit_governance_proposal_created(
+        env: &Env,
+        proposal_id: &Symbol,
+        proposer: &Address,
+        title: &String,
+        description: &String,
+    ) {
+        let event = GovernanceProposalCreatedEvent {
+            proposal_id: proposal_id.clone(),
+            proposer: proposer.clone(),
+            title: title.clone(),
+            description: description.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("gov_prop"), &event);
+    }
+
+    /// Emit governance vote cast event
+    pub fn emit_governance_vote_cast(
+        env: &Env,
+        proposal_id: &Symbol,
+        voter: &Address,
+        support: bool,
+        timestamp: u64,
+    ) {
+        let event = GovernanceVoteCastEvent {
+            proposal_id: proposal_id.clone(),
+            voter: voter.clone(),
+            support,
+            timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("gov_vote"), &event);
+    }
+
+    /// Emit governance proposal executed event
+    pub fn emit_governance_proposal_executed(
+        env: &Env,
+        proposal_id: &Symbol,
+        executor: &Address,
+        timestamp: u64,
+    ) {
+        let event = GovernanceProposalExecutedEvent {
+            proposal_id: proposal_id.clone(),
+            executor: executor.clone(),
+            timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("gov_exec"), &event);
+    }
+
     /// Emit market created event
     pub fn emit_market_created(
         env: &Env,

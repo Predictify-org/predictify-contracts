@@ -8,7 +8,6 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
-mod audit;
 mod batch_operations;
 mod circuit_breaker;
 mod config;
@@ -17,6 +16,7 @@ mod errors;
 mod events;
 mod extensions;
 mod fees;
+mod governance;
 mod markets;
 mod oracles;
 mod resolution;
@@ -26,9 +26,6 @@ mod utils;
 mod validation;
 mod validation_tests;
 mod voting;
-
-#[cfg(test)]
-mod audit_tests;
 
 #[cfg(test)]
 mod circuit_breaker_tests;
@@ -1136,95 +1133,6 @@ impl PredictifyHybrid {
         };
 
         Ok(storage::StorageUtils::get_storage_recommendations(&market))
-    }
-
-    // ===== AUDIT FUNCTIONS =====
-
-    /// Initialize the audit system
-    pub fn initialize_audit_system(env: Env) -> Result<(), Error> {
-        audit::AuditManager::initialize(&env)
-    }
-
-    /// Create an audit checklist for a specific audit type
-    pub fn create_audit_checklist(
-        env: Env,
-        audit_type: audit::AuditType,
-        auditor: Address,
-    ) -> Result<audit::AuditChecklist, Error> {
-        audit::AuditManager::create_audit_checklist(&env, audit_type, auditor)
-    }
-
-    /// Get an existing audit checklist
-    pub fn get_audit_checklist(
-        env: Env,
-        audit_type: audit::AuditType,
-    ) -> Result<audit::AuditChecklist, Error> {
-        audit::AuditManager::get_audit_checklist(&env, &audit_type)
-    }
-
-    /// Update an audit item in a checklist
-    pub fn update_audit_item(
-        env: Env,
-        audit_type: audit::AuditType,
-        item_id: String,
-        status: audit::AuditStatus,
-        notes: Option<String>,
-        evidence: Option<String>,
-    ) -> Result<(), Error> {
-        audit::AuditManager::update_audit_item(&env, &audit_type, &item_id, status, notes, evidence)
-    }
-
-    /// Get audit status for all audit types
-    pub fn get_audit_status(env: Env) -> Result<Map<String, String>, Error> {
-        audit::AuditManager::get_audit_status(&env)
-    }
-
-    /// Validate audit completion for a checklist
-    pub fn validate_audit_completion(
-        env: Env,
-        checklist: audit::AuditChecklist,
-    ) -> Result<bool, Error> {
-        audit::AuditManager::validate_audit_completion(&env, &checklist)
-    }
-
-    /// Get security audit checklist
-    pub fn get_security_audit_checklist(env: Env) -> Result<Vec<audit::AuditItem>, Error> {
-        audit::AuditManager::security_audit_checklist(&env)
-    }
-
-    /// Get code review audit checklist
-    pub fn get_code_review_audit_checklist(env: Env) -> Result<Vec<audit::AuditItem>, Error> {
-        audit::AuditManager::code_review_checklist(&env)
-    }
-
-    /// Get testing audit checklist
-    pub fn get_testing_audit_checklist(env: Env) -> Result<Vec<audit::AuditItem>, Error> {
-        audit::AuditManager::testing_audit_checklist(&env)
-    }
-
-    /// Get documentation audit checklist
-    pub fn get_doc_audit_checklist(env: Env) -> Result<Vec<audit::AuditItem>, Error> {
-        audit::AuditManager::documentation_audit_checklist(&env)
-    }
-
-    /// Get deployment audit checklist
-    pub fn get_deployment_audit_checklist(env: Env) -> Result<Vec<audit::AuditItem>, Error> {
-        audit::AuditManager::deployment_audit_checklist(&env)
-    }
-
-    /// Get comprehensive audit checklist (all types combined)
-    pub fn get_comp_audit_checklist(env: Env) -> Result<Vec<audit::AuditItem>, Error> {
-        audit::AuditManager::comprehensive_audit_checklist(&env)
-    }
-
-    /// Update audit configuration
-    pub fn update_audit_config(env: Env, config: audit::AuditConfig) -> Result<(), Error> {
-        audit::AuditManager::update_config(&env, &config)
-    }
-
-    /// Get audit configuration
-    pub fn get_audit_config(env: Env) -> Result<audit::AuditConfig, Error> {
-        audit::AuditManager::get_config(&env)
     }
 }
 
