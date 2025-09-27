@@ -1,10 +1,12 @@
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{
+    contracttype, Address, Env, Map, String, Symbol, Vec,
+};
 
-use crate::admin::AdminAccessControl;
-use crate::errors::Error;
-use crate::events::{CircuitBreakerEvent, EventEmitter};
 use alloc::format;
 use alloc::string::ToString;
+use crate::errors::Error;
+use crate::events::{EventEmitter, CircuitBreakerEvent};
+use crate::admin::AdminAccessControl;
 
 // ===== CIRCUIT BREAKER TYPES =====
 
@@ -19,35 +21,35 @@ pub enum BreakerState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub enum BreakerAction {
-    Pause,   // Emergency pause
-    Resume,  // Resume operations
-    Trigger, // Automatic trigger
-    Reset,   // Reset circuit breaker
+    Pause,    // Emergency pause
+    Resume,   // Resume operations
+    Trigger,  // Automatic trigger
+    Reset,    // Reset circuit breaker
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub enum BreakerCondition {
-    HighErrorRate,      // Error rate exceeds threshold
-    HighLatency,        // Response time exceeds threshold
-    LowLiquidity,       // Insufficient liquidity
-    OracleFailure,      // Oracle service failure
-    NetworkCongestion,  // Network issues
-    SecurityThreat,     // Security concerns
-    ManualOverride,     // Manual intervention
-    SystemOverload,     // System overload
-    InvalidData,        // Invalid data detected
-    UnauthorizedAccess, // Unauthorized access attempts
+    HighErrorRate,           // Error rate exceeds threshold
+    HighLatency,            // Response time exceeds threshold
+    LowLiquidity,           // Insufficient liquidity
+    OracleFailure,          // Oracle service failure
+    NetworkCongestion,      // Network issues
+    SecurityThreat,         // Security concerns
+    ManualOverride,         // Manual intervention
+    SystemOverload,         // System overload
+    InvalidData,            // Invalid data detected
+    UnauthorizedAccess,     // Unauthorized access attempts
 }
 
 #[derive(Clone, Debug)]
 #[contracttype]
 pub struct CircuitBreakerConfig {
-    pub max_error_rate: u32,         // Maximum error rate percentage (0-100)
-    pub max_latency_ms: u64,         // Maximum latency in milliseconds
-    pub min_liquidity: i128,         // Minimum liquidity threshold
-    pub failure_threshold: u32,      // Number of failures before opening
-    pub recovery_timeout: u64,       // Time to wait before attempting recovery
+    pub max_error_rate: u32,        // Maximum error rate percentage (0-100)
+    pub max_latency_ms: u64,        // Maximum latency in milliseconds
+    pub min_liquidity: i128,        // Minimum liquidity threshold
+    pub failure_threshold: u32,     // Number of failures before opening
+    pub recovery_timeout: u64,      // Time to wait before attempting recovery
     pub half_open_max_requests: u32, // Max requests in half-open state
     pub auto_recovery_enabled: bool, // Whether to auto-recover
 }
@@ -64,6 +66,8 @@ pub struct CircuitBreakerState {
     pub total_requests: u32,
     pub error_count: u32,
 }
+
+
 
 // ===== CIRCUIT BREAKER IMPLEMENTATION =====
 
@@ -101,7 +105,7 @@ pub struct CircuitBreaker;
 
 impl CircuitBreaker {
     // ===== STORAGE KEYS =====
-
+    
     const CONFIG_KEY: &'static str = "circuit_breaker_config";
     const STATE_KEY: &'static str = "circuit_breaker_state";
     const EVENTS_KEY: &'static str = "circuit_breaker_events";
@@ -132,23 +136,15 @@ impl CircuitBreaker {
             error_count: 0,
         };
 
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::CONFIG_KEY), &config);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::STATE_KEY), &state);
-
+        env.storage().instance().set(&Symbol::new(env, Self::CONFIG_KEY), &config);
+        env.storage().instance().set(&Symbol::new(env, Self::STATE_KEY), &state);
+        
         // Initialize empty events and conditions
         let events: Vec<CircuitBreakerEvent> = Vec::new(env);
         let conditions: Map<String, bool> = Map::new(env);
-
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::EVENTS_KEY), &events);
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::CONDITIONS_KEY), &conditions);
+        
+        env.storage().instance().set(&Symbol::new(env, Self::EVENTS_KEY), &events);
+        env.storage().instance().set(&Symbol::new(env, Self::CONDITIONS_KEY), &conditions);
 
         Ok(())
     }
@@ -173,9 +169,7 @@ impl CircuitBreaker {
         // Validate configuration
         Self::validate_config(config)?;
 
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::CONFIG_KEY), config);
+        env.storage().instance().set(&Symbol::new(env, Self::CONFIG_KEY), config);
 
         // Emit configuration update event
         Self::emit_circuit_breaker_event(
@@ -201,22 +195,24 @@ impl CircuitBreaker {
 
     /// Update circuit breaker state
     fn update_state(env: &Env, state: &CircuitBreakerState) -> Result<(), Error> {
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::STATE_KEY), state);
+        env.storage().instance().set(&Symbol::new(env, Self::STATE_KEY), state);
         Ok(())
     }
 
     // ===== EMERGENCY PAUSE =====
 
     /// Emergency pause by admin
-    pub fn emergency_pause(env: &Env, admin: &Address, reason: &String) -> Result<(), Error> {
+    pub fn emergency_pause(
+        env: &Env,
+        admin: &Address,
+        reason: &String,
+    ) -> Result<(), Error> {
         // Validate admin permissions
         // TODO: Fix admin validation - need proper admin role and permission
         // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
 
         let mut state = Self::get_state(env)?;
-
+        
         // Check if already paused
         if state.state == BreakerState::Open {
             return Err(Error::CircuitBreakerAlreadyOpen);
@@ -356,13 +352,16 @@ impl CircuitBreaker {
     // ===== RECOVERY MECHANISMS =====
 
     /// Circuit breaker recovery by admin
-    pub fn circuit_breaker_recovery(env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn circuit_breaker_recovery(
+        env: &Env,
+        admin: &Address,
+    ) -> Result<(), Error> {
         // Validate admin permissions
         // TODO: Fix admin validation - need proper admin role and permission
         // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
 
         let mut state = Self::get_state(env)?;
-
+        
         // Check if circuit breaker is open
         if state.state != BreakerState::Open && state.state != BreakerState::HalfOpen {
             return Err(Error::CircuitBreakerNotOpen);
@@ -398,7 +397,7 @@ impl CircuitBreaker {
         // If in half-open state, check if we can close
         if state.state == BreakerState::HalfOpen {
             state.half_open_requests += 1;
-
+            
             let config = Self::get_config(env)?;
             if state.half_open_requests >= config.half_open_max_requests {
                 state.state = BreakerState::Closed;
@@ -459,29 +458,26 @@ impl CircuitBreaker {
     ) -> Result<(), Error> {
         let event = CircuitBreakerEvent {
             action,
-            condition: core::prelude::v1::Some(condition),
+            condition,
             reason: reason.clone(),
             timestamp: env.ledger().timestamp(),
             admin,
         };
 
         // Store event in history
-        let mut events: Vec<CircuitBreakerEvent> = env
-            .storage()
+        let mut events: Vec<CircuitBreakerEvent> = env.storage()
             .instance()
             .get(&Symbol::new(env, Self::EVENTS_KEY))
             .unwrap_or_else(|| Vec::new(env));
 
         events.push_back(event.clone());
-
+        
         // Keep only last 100 events
         if events.len() > 100 {
             events.remove(0);
         }
 
-        env.storage()
-            .instance()
-            .set(&Symbol::new(env, Self::EVENTS_KEY), &events);
+        env.storage().instance().set(&Symbol::new(env, Self::EVENTS_KEY), &events);
 
         // Emit event
         EventEmitter::emit_circuit_breaker_event(env, &event);
@@ -506,50 +502,50 @@ impl CircuitBreaker {
         let current_time = env.ledger().timestamp();
 
         let mut status = Map::new(env);
-
+        
         status.set(
             String::from_str(env, "state"),
-            String::from_str(env, &format!("{:?}", state.state)),
+            String::from_str(env, &format!("{:?}", state.state))
         );
-
+        
         status.set(
             String::from_str(env, "failure_count"),
-            String::from_str(env, &state.failure_count.to_string()),
+            String::from_str(env, &state.failure_count.to_string())
         );
-
+        
         status.set(
             String::from_str(env, "total_requests"),
-            String::from_str(env, &state.total_requests.to_string()),
+            String::from_str(env, &state.total_requests.to_string())
         );
-
+        
         status.set(
             String::from_str(env, "error_count"),
-            String::from_str(env, &state.error_count.to_string()),
+            String::from_str(env, &state.error_count.to_string())
         );
 
         if state.total_requests > 0 {
             let error_rate = (state.error_count * 100) / state.total_requests;
             status.set(
                 String::from_str(env, "error_rate_percent"),
-                String::from_str(env, &error_rate.to_string()),
+                String::from_str(env, &error_rate.to_string())
             );
         }
 
         status.set(
             String::from_str(env, "max_error_rate"),
-            String::from_str(env, &config.max_error_rate.to_string()),
+            String::from_str(env, &config.max_error_rate.to_string())
         );
 
         status.set(
             String::from_str(env, "failure_threshold"),
-            String::from_str(env, &config.failure_threshold.to_string()),
+            String::from_str(env, &config.failure_threshold.to_string())
         );
 
         if state.state == BreakerState::Open {
             let time_open = current_time - state.opened_time;
             status.set(
                 String::from_str(env, "time_open_seconds"),
-                String::from_str(env, &time_open.to_string()),
+                String::from_str(env, &time_open.to_string())
             );
 
             let time_until_recovery = if time_open < config.recovery_timeout {
@@ -557,28 +553,28 @@ impl CircuitBreaker {
             } else {
                 0
             };
-
+            
             status.set(
                 String::from_str(env, "time_until_recovery_seconds"),
-                String::from_str(env, &time_until_recovery.to_string()),
+                String::from_str(env, &time_until_recovery.to_string())
             );
         }
 
         if state.state == BreakerState::HalfOpen {
             status.set(
                 String::from_str(env, "half_open_requests"),
-                String::from_str(env, &state.half_open_requests.to_string()),
+                String::from_str(env, &state.half_open_requests.to_string())
             );
-
+            
             status.set(
                 String::from_str(env, "max_half_open_requests"),
-                String::from_str(env, &config.half_open_max_requests.to_string()),
+                String::from_str(env, &config.half_open_max_requests.to_string())
             );
         }
 
         status.set(
             String::from_str(env, "auto_recovery_enabled"),
-            String::from_str(env, &config.auto_recovery_enabled.to_string()),
+            String::from_str(env, &config.auto_recovery_enabled.to_string())
         );
 
         Ok(status)
@@ -645,43 +641,40 @@ impl CircuitBreaker {
         let is_closed = Self::is_closed(env)?;
         results.set(
             String::from_str(env, "normal_operation"),
-            String::from_str(env, &is_closed.to_string()),
+            String::from_str(env, &is_closed.to_string())
         );
 
         // Test 2: Emergency pause
-        let test_admin = Address::from_str(
-            env,
-            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-        );
+        let test_admin = Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
         let pause_result = Self::emergency_pause(
             env,
             &test_admin,
-            &String::from_str(env, "Test emergency pause"),
+            &String::from_str(env, "Test emergency pause")
         );
         results.set(
             String::from_str(env, "emergency_pause"),
-            String::from_str(env, &pause_result.is_ok().to_string()),
+            String::from_str(env, &pause_result.is_ok().to_string())
         );
 
         // Test 3: Recovery
         let recovery_result = Self::circuit_breaker_recovery(env, &test_admin);
         results.set(
             String::from_str(env, "recovery"),
-            String::from_str(env, &recovery_result.is_ok().to_string()),
+            String::from_str(env, &recovery_result.is_ok().to_string())
         );
 
         // Test 4: Status check
         let _status = Self::get_circuit_breaker_status(env)?;
         results.set(
             String::from_str(env, "status_check"),
-            String::from_str(env, "success"),
+            String::from_str(env, "success")
         );
 
         // Test 5: Event history
         let events = Self::get_event_history(env)?;
         results.set(
             String::from_str(env, "event_history"),
-            String::from_str(env, &events.len().to_string()),
+            String::from_str(env, &events.len().to_string())
         );
 
         Ok(results)
@@ -697,7 +690,7 @@ impl CircuitBreakerUtils {
     /// Check if operation should be allowed
     pub fn should_allow_operation(env: &Env) -> Result<bool, Error> {
         let state = CircuitBreaker::get_state(env)?;
-
+        
         match state.state {
             BreakerState::Closed => Ok(true),
             BreakerState::Open => Ok(false),
@@ -709,7 +702,10 @@ impl CircuitBreakerUtils {
     }
 
     /// Wrap operation with circuit breaker protection
-    pub fn with_circuit_breaker<F, T>(env: &Env, operation: F) -> Result<T, Error>
+    pub fn with_circuit_breaker<F, T>(
+        env: &Env,
+        operation: F,
+    ) -> Result<T, Error>
     where
         F: FnOnce() -> Result<T, Error>,
     {
@@ -738,30 +734,30 @@ impl CircuitBreakerUtils {
 
         stats.set(
             String::from_str(env, "total_requests"),
-            String::from_str(env, &state.total_requests.to_string()),
+            String::from_str(env, &state.total_requests.to_string())
         );
 
         stats.set(
             String::from_str(env, "error_count"),
-            String::from_str(env, &state.error_count.to_string()),
+            String::from_str(env, &state.error_count.to_string())
         );
 
         if state.total_requests > 0 {
             let error_rate = (state.error_count * 100) / state.total_requests;
             stats.set(
                 String::from_str(env, "error_rate_percent"),
-                String::from_str(env, &error_rate.to_string()),
+                String::from_str(env, &error_rate.to_string())
             );
         }
 
         stats.set(
             String::from_str(env, "failure_count"),
-            String::from_str(env, &state.failure_count.to_string()),
+            String::from_str(env, &state.failure_count.to_string())
         );
 
         stats.set(
             String::from_str(env, "current_state"),
-            String::from_str(env, &format!("{:?}", state.state)),
+            String::from_str(env, &format!("{:?}", state.state))
         );
 
         Ok(stats)
@@ -777,13 +773,13 @@ impl CircuitBreakerTesting {
     /// Create test circuit breaker configuration
     pub fn create_test_config(_env: &Env) -> CircuitBreakerConfig {
         CircuitBreakerConfig {
-            max_error_rate: 5,           // 5% error rate threshold
-            max_latency_ms: 1000,        // 1 second latency threshold
-            min_liquidity: 100_000_000,  // 10 XLM minimum liquidity
-            failure_threshold: 3,        // 3 failures before opening
-            recovery_timeout: 60,        // 1 minute recovery timeout
-            half_open_max_requests: 2,   // 2 requests in half-open state
-            auto_recovery_enabled: true, // Enable auto-recovery
+            max_error_rate: 5,            // 5% error rate threshold
+            max_latency_ms: 1000,         // 1 second latency threshold
+            min_liquidity: 100_000_000,   // 10 XLM minimum liquidity
+            failure_threshold: 3,         // 3 failures before opening
+            recovery_timeout: 60,         // 1 minute recovery timeout
+            half_open_max_requests: 2,    // 2 requests in half-open state
+            auto_recovery_enabled: true,  // Enable auto-recovery
         }
     }
 
@@ -823,4 +819,4 @@ impl CircuitBreakerTesting {
         CircuitBreaker::circuit_breaker_recovery(env, admin)?;
         Ok(())
     }
-}
+} 

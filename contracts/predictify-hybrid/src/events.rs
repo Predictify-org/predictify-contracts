@@ -587,6 +587,26 @@ pub struct ErrorLoggedEvent {
     pub timestamp: u64,
 }
 
+/// Error recovery event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ErrorRecoveryEvent {
+    /// Original error code
+    pub error_code: u32,
+    /// Recovery strategy used
+    pub recovery_strategy: String,
+    /// Recovery status
+    pub recovery_status: String,
+    /// Recovery attempts count
+    pub recovery_attempts: u32,
+    /// User address (if applicable)
+    pub user: Option<Address>,
+    /// Market ID (if applicable)
+    pub market_id: Option<Symbol>,
+    /// Recovery timestamp
+    pub timestamp: u64,
+}
+
 /// Performance metric event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -857,8 +877,7 @@ pub struct CircuitBreakerEvent {
     /// Action taken by circuit breaker
     pub action: crate::circuit_breaker::BreakerAction,
     /// Condition that triggered the action (if automatic)
-    /// Using String to avoid trait bound issues with Option<BreakerCondition>
-    pub condition: Option<String>,
+    pub condition: crate::circuit_breaker::BreakerCondition,
     /// Reason for the action
     pub reason: String,
     /// Event timestamp
@@ -867,95 +886,12 @@ pub struct CircuitBreakerEvent {
     pub admin: Option<Address>,
 }
 
-/// Governance proposal created event
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GovernanceProposalCreatedEvent {
-    pub proposal_id: Symbol,
-    pub proposer: Address,
-    pub title: String,
-    pub description: String,
-    pub timestamp: u64,
-}
-
-/// Governance vote cast event
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GovernanceVoteCastEvent {
-    pub proposal_id: Symbol,
-    pub voter: Address,
-    pub support: bool,
-    pub timestamp: u64,
-}
-
-/// Governance proposal executed event
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GovernanceProposalExecutedEvent {
-    pub proposal_id: Symbol,
-    pub executor: Address,
-    pub timestamp: u64,
-}
-
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Event emission utilities
 pub struct EventEmitter;
 
 impl EventEmitter {
-    /// Emit governance proposal created event
-    pub fn emit_governance_proposal_created(
-        env: &Env,
-        proposal_id: &Symbol,
-        proposer: &Address,
-        title: &String,
-        description: &String,
-    ) {
-        let event = GovernanceProposalCreatedEvent {
-            proposal_id: proposal_id.clone(),
-            proposer: proposer.clone(),
-            title: title.clone(),
-            description: description.clone(),
-            timestamp: env.ledger().timestamp(),
-        };
-
-        Self::store_event(env, &symbol_short!("gov_prop"), &event);
-    }
-
-    /// Emit governance vote cast event
-    pub fn emit_governance_vote_cast(
-        env: &Env,
-        proposal_id: &Symbol,
-        voter: &Address,
-        support: bool,
-        timestamp: u64,
-    ) {
-        let event = GovernanceVoteCastEvent {
-            proposal_id: proposal_id.clone(),
-            voter: voter.clone(),
-            support,
-            timestamp,
-        };
-
-        Self::store_event(env, &symbol_short!("gov_vote"), &event);
-    }
-
-    /// Emit governance proposal executed event
-    pub fn emit_governance_proposal_executed(
-        env: &Env,
-        proposal_id: &Symbol,
-        executor: &Address,
-        timestamp: u64,
-    ) {
-        let event = GovernanceProposalExecutedEvent {
-            proposal_id: proposal_id.clone(),
-            executor: executor.clone(),
-            timestamp,
-        };
-
-        Self::store_event(env, &symbol_short!("gov_exec"), &event);
-    }
-
     /// Emit market created event
     pub fn emit_market_created(
         env: &Env,
@@ -1164,6 +1100,29 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("err_log"), &event);
     }
 
+    /// Emit error recovery event
+    pub fn emit_error_recovery_event(
+        env: &Env,
+        error_code: u32,
+        recovery_strategy: &String,
+        recovery_status: String,
+        recovery_attempts: u32,
+        user: Option<Address>,
+        market_id: Option<Symbol>,
+    ) {
+        let event = ErrorRecoveryEvent {
+            error_code,
+            recovery_strategy: recovery_strategy.clone(),
+            recovery_status,
+            recovery_attempts,
+            user,
+            market_id,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("err_rec"), &event);
+    }
+
     /// Emit performance metric event
     pub fn emit_performance_metric(
         env: &Env,
@@ -1361,7 +1320,11 @@ impl EventEmitter {
     }
 
     /// Emit storage cleanup event
-    pub fn emit_storage_cleanup_event(env: &Env, market_id: &Symbol, cleanup_type: &String) {
+    pub fn emit_storage_cleanup_event(
+        env: &Env,
+        market_id: &Symbol,
+        cleanup_type: &String,
+    ) {
         let event = StorageCleanupEvent {
             market_id: market_id.clone(),
             cleanup_type: cleanup_type.clone(),
@@ -1406,7 +1369,10 @@ impl EventEmitter {
     }
 
     /// Emit circuit breaker event
-    pub fn emit_circuit_breaker_event(env: &Env, event: &CircuitBreakerEvent) {
+    pub fn emit_circuit_breaker_event(
+        env: &Env,
+        event: &CircuitBreakerEvent,
+    ) {
         Self::store_event(env, &symbol_short!("cb_event"), event);
     }
 
