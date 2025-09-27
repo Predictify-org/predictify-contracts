@@ -1,132 +1,163 @@
 #[cfg(test)]
 mod batch_operations_tests {
-    use super::*;
+    use crate::admin::AdminRoleManager;
     use crate::batch_operations::*;
-    use crate::admin::AdminAccessControl;
-    use soroban_sdk::testutils::Address;
+    use crate::types::OracleProvider;
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::Address;
+    use soroban_sdk::{vec, Env, String, Symbol, Vec};
+
+    fn with_contract_context<F, R>(env: &Env, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let contract_id = env.register(crate::PredictifyHybrid {}, ());
+        env.as_contract(&contract_id, f)
+    }
 
     #[test]
     fn test_batch_processor_initialization() {
         let env = Env::default();
-        
-        // Test initialization
-        assert!(BatchProcessor::initialize(&env).is_ok());
-        
-        // Test get config
-        let config = BatchProcessor::get_config(&env).unwrap();
-        assert_eq!(config.max_batch_size, 50);
-        assert_eq!(config.max_operations_per_batch, 100);
-        assert_eq!(config.gas_limit_per_batch, 1_000_000);
-        assert_eq!(config.timeout_per_batch, 30);
-        assert!(config.retry_failed_operations);
-        assert!(!config.parallel_processing_enabled);
-        
-        // Test get statistics
-        let stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
-        assert_eq!(stats.total_batches_processed, 0);
-        assert_eq!(stats.total_operations_processed, 0);
-        assert_eq!(stats.total_successful_operations, 0);
-        assert_eq!(stats.total_failed_operations, 0);
-        assert_eq!(stats.average_batch_size, 0);
-        assert_eq!(stats.average_execution_time, 0);
-        assert_eq!(stats.gas_efficiency_ratio, 1.0);
+
+        with_contract_context(&env, || {
+            // Test initialization
+            assert!(BatchProcessor::initialize(&env).is_ok());
+
+            // Test get config
+            let config = BatchProcessor::get_config(&env).unwrap();
+            assert_eq!(config.max_batch_size, 50);
+            assert_eq!(config.max_operations_per_batch, 100);
+            assert_eq!(config.gas_limit_per_batch, 1_000_000);
+            assert_eq!(config.timeout_per_batch, 30);
+            assert!(config.retry_failed_operations);
+            assert!(!config.parallel_processing_enabled);
+
+            // Test get statistics
+            let stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
+            assert_eq!(stats.total_batches_processed, 0);
+            assert_eq!(stats.total_operations_processed, 0);
+            assert_eq!(stats.total_successful_operations, 0);
+            assert_eq!(stats.total_failed_operations, 0);
+            assert_eq!(stats.average_batch_size, 0);
+            assert_eq!(stats.average_execution_time, 0);
+            assert_eq!(stats.gas_efficiency_ratio, 1);
+        });
     }
 
     #[test]
     fn test_batch_vote_operations() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
-        
-        // Create test vote data
-        let market_id = Symbol::new(&env, "test_market");
-        let votes = vec![
-            &env,
-            BatchTesting::create_test_vote_data(&env, &market_id),
-            BatchTesting::create_test_vote_data(&env, &market_id),
-            BatchTesting::create_test_vote_data(&env, &market_id),
-        ];
-        
-        // Test batch vote processing
-        let result = BatchProcessor::batch_vote(&env, &votes);
-        assert!(result.is_ok());
-        
-        let batch_result = result.unwrap();
-        assert_eq!(batch_result.total_operations, 3);
-        assert!(batch_result.execution_time >= 0);
+
+        with_contract_context(&env, || {
+            BatchProcessor::initialize(&env).unwrap();
+
+            // Create test vote data
+            let market_id = Symbol::new(&env, "test_market");
+            let votes = vec![
+                &env,
+                BatchTesting::create_test_vote_data(&env, &market_id),
+                BatchTesting::create_test_vote_data(&env, &market_id),
+                BatchTesting::create_test_vote_data(&env, &market_id),
+            ];
+
+            // Test batch vote processing
+            let result = BatchProcessor::batch_vote(&env, &votes);
+            assert!(result.is_ok());
+
+            let batch_result = result.unwrap();
+            assert_eq!(batch_result.total_operations, 3);
+            assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]
     fn test_batch_claim_operations() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
-        
-        // Create test claim data
-        let market_id = Symbol::new(&env, "test_market");
-        let claims = vec![
-            &env,
-            BatchTesting::create_test_claim_data(&env, &market_id),
-            BatchTesting::create_test_claim_data(&env, &market_id),
-        ];
-        
-        // Test batch claim processing
-        let result = BatchProcessor::batch_claim(&env, &claims);
-        assert!(result.is_ok());
-        
-        let batch_result = result.unwrap();
-        assert_eq!(batch_result.total_operations, 2);
-        assert!(batch_result.execution_time >= 0);
+
+        with_contract_context(&env, || {
+            BatchProcessor::initialize(&env).unwrap();
+
+            // Create test claim data
+            let market_id = Symbol::new(&env, "test_market");
+            let claims = vec![
+                &env,
+                BatchTesting::create_test_claim_data(&env, &market_id),
+                BatchTesting::create_test_claim_data(&env, &market_id),
+            ];
+
+            // Test batch claim processing
+            let result = BatchProcessor::batch_claim(&env, &claims);
+            assert!(result.is_ok());
+
+            let batch_result = result.unwrap();
+            assert_eq!(batch_result.total_operations, 2);
+            assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]
     fn test_batch_market_creation() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
-        
-        let admin = Address::generate(&env);
-        AdminAccessControl::assign_role(&env, &admin, crate::admin::AdminRole::Admin).unwrap();
-        
-        // Create test market data
-        let markets = vec![
-            &env,
-            BatchTesting::create_test_market_data(&env),
-            BatchTesting::create_test_market_data(&env),
-        ];
-        
-        // Test batch market creation
-        let result = BatchProcessor::batch_create_markets(&env, &admin, &markets);
-        assert!(result.is_ok());
-        
-        let batch_result = result.unwrap();
-        assert_eq!(batch_result.total_operations, 2);
-        assert!(batch_result.execution_time >= 0);
+
+        with_contract_context(&env, || {
+            BatchProcessor::initialize(&env).unwrap();
+
+            let admin = Address::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            // Create test market data
+            let markets = vec![
+                &env,
+                BatchTesting::create_test_market_data(&env),
+                BatchTesting::create_test_market_data(&env),
+            ];
+
+            // Test batch market creation
+            let result = BatchProcessor::batch_create_markets(&env, &admin, &markets);
+            assert!(result.is_ok());
+
+            let batch_result = result.unwrap();
+            assert_eq!(batch_result.total_operations, 2);
+            assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]
     fn test_batch_oracle_calls() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
-        
-        // Create test oracle feed data
-        let market_id = Symbol::new(&env, "test_market");
-        let feeds = vec![
-            &env,
-            BatchTesting::create_test_oracle_feed_data(&env, &market_id),
-            BatchTesting::create_test_oracle_feed_data(&env, &market_id),
-        ];
-        
-        // Test batch oracle calls
-        let result = BatchProcessor::batch_oracle_calls(&env, &feeds);
-        assert!(result.is_ok());
-        
-        let batch_result = result.unwrap();
-        assert_eq!(batch_result.total_operations, 2);
-        assert!(batch_result.execution_time >= 0);
+
+        with_contract_context(&env, || {
+            BatchProcessor::initialize(&env).unwrap();
+
+            // Create test oracle feed data
+            let market_id = Symbol::new(&env, "test_market");
+            let feeds = vec![
+                &env,
+                BatchTesting::create_test_oracle_feed_data(&env, &market_id),
+                BatchTesting::create_test_oracle_feed_data(&env, &market_id),
+            ];
+
+            // Test batch oracle calls
+            let result = BatchProcessor::batch_oracle_calls(&env, &feeds);
+            assert!(result.is_ok());
+
+            let batch_result = result.unwrap();
+            assert_eq!(batch_result.total_operations, 2);
+            assert!(batch_result.execution_time >= 0);
+        });
     }
 
     #[test]
     fn test_batch_operation_validation() {
         let env = Env::default();
-        
+
         // Test valid batch operations
         let valid_operations = vec![
             &env,
@@ -144,11 +175,11 @@ mod batch_operations_tests {
             },
         ];
         assert!(BatchProcessor::validate_batch_operations(&valid_operations).is_ok());
-        
+
         // Test empty operations
         let empty_operations = Vec::new(&env);
         assert!(BatchProcessor::validate_batch_operations(&empty_operations).is_err());
-        
+
         // Test duplicate operations
         let duplicate_operations = vec![
             &env,
@@ -171,7 +202,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_error_handling() {
         let env = Env::default();
-        
+
         // Create test batch errors
         let errors = vec![
             &env,
@@ -188,70 +219,83 @@ mod batch_operations_tests {
                 operation_type: BatchOperationType::Claim,
             },
         ];
-        
+
         // Test error handling
         let result = BatchProcessor::handle_batch_errors(&env, &errors);
         assert!(result.is_ok());
-        
+
         let error_summary = result.unwrap();
-        assert!(error_summary.get(String::from_str(&env, "total_errors")).is_some());
+        assert!(error_summary
+            .get(String::from_str(&env, "total_errors"))
+            .is_some());
     }
 
     #[test]
     fn test_batch_utils() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
-        
-        // Test batch processing enabled
-        assert!(BatchUtils::is_batch_processing_enabled(&env).unwrap());
-        
-        // Test optimal batch sizes
-        let vote_size = BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::Vote).unwrap();
-        assert!(vote_size <= 20);
-        
-        let claim_size = BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::Claim).unwrap();
-        assert!(claim_size <= 15);
-        
-        let market_size = BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::CreateMarket).unwrap();
-        assert!(market_size <= 10);
-        
-        let oracle_size = BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::OracleCall).unwrap();
-        assert!(oracle_size <= 25);
-        
-        // Test gas efficiency calculation
-        let efficiency = BatchUtils::calculate_gas_efficiency(8, 10, 1000);
-        assert_eq!(efficiency, 0.8 * 0.01); // 80% success rate * 0.01 operations per gas
-        
-        // Test gas cost estimation
-        let vote_cost = BatchUtils::estimate_gas_cost(&BatchOperationType::Vote, 5);
-        assert_eq!(vote_cost, 5000); // 1000 * 5
-        
-        let market_cost = BatchUtils::estimate_gas_cost(&BatchOperationType::CreateMarket, 3);
-        assert_eq!(market_cost, 15000); // 5000 * 3
+
+        with_contract_context(&env, || {
+            BatchProcessor::initialize(&env).unwrap();
+
+            // Test batch processing enabled
+            assert!(BatchUtils::is_batch_processing_enabled(&env).unwrap());
+
+            // Test optimal batch sizes
+            let vote_size =
+                BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::Vote).unwrap();
+            assert!(vote_size <= 20);
+
+            let claim_size =
+                BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::Claim).unwrap();
+            assert!(claim_size <= 15);
+
+            let market_size =
+                BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::CreateMarket)
+                    .unwrap();
+            assert!(market_size <= 10);
+
+            let oracle_size =
+                BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::OracleCall).unwrap();
+            assert!(oracle_size <= 25);
+
+            // Test gas efficiency calculation
+            let efficiency = BatchUtils::calculate_gas_efficiency(8, 10, 1000);
+            assert_eq!(efficiency, 0.8 * 0.01); // 80% success rate * 0.01 operations per gas
+
+            // Test gas cost estimation
+            let vote_cost = BatchUtils::estimate_gas_cost(&BatchOperationType::Vote, 5);
+            assert_eq!(vote_cost, 5000); // 1000 * 5
+
+            let market_cost = BatchUtils::estimate_gas_cost(&BatchOperationType::CreateMarket, 3);
+            assert_eq!(market_cost, 15000); // 5000 * 3
+        });
     }
 
     #[test]
     fn test_batch_testing() {
         let env = Env::default();
-        
+
         // Test create test vote data
         let market_id = Symbol::new(&env, "test_market");
         let vote_data = BatchTesting::create_test_vote_data(&env, &market_id);
         assert_eq!(vote_data.market_id, market_id);
         assert_eq!(vote_data.outcome, String::from_str(&env, "Yes"));
         assert_eq!(vote_data.stake_amount, 1_000_000_000);
-        
+
         // Test create test claim data
         let claim_data = BatchTesting::create_test_claim_data(&env, &market_id);
         assert_eq!(claim_data.market_id, market_id);
         assert_eq!(claim_data.expected_amount, 2_000_000_000);
-        
+
         // Test create test market data
         let market_data = BatchTesting::create_test_market_data(&env);
-        assert_eq!(market_data.question, String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?"));
+        assert_eq!(
+            market_data.question,
+            String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?")
+        );
         assert_eq!(market_data.outcomes.len(), 2);
         assert_eq!(market_data.duration_days, 30);
-        
+
         // Test create test oracle feed data
         let feed_data = BatchTesting::create_test_oracle_feed_data(&env, &market_id);
         assert_eq!(feed_data.market_id, market_id);
@@ -259,11 +303,11 @@ mod batch_operations_tests {
         assert_eq!(feed_data.provider, OracleProvider::Reflector);
         assert_eq!(feed_data.threshold, 100_000_000_000);
         assert_eq!(feed_data.comparison, String::from_str(&env, "gt"));
-        
+
         // Test simulate batch operation
         let result = BatchTesting::simulate_batch_operation(&env, &BatchOperationType::Vote, 10);
         assert!(result.is_ok());
-        
+
         let batch_result = result.unwrap();
         assert_eq!(batch_result.total_operations, 10);
         assert!(batch_result.successful_operations > 0);
@@ -275,7 +319,7 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_config_validation() {
         let env = Env::default();
-        
+
         // Test valid config
         let valid_config = BatchConfig {
             max_batch_size: 50,
@@ -285,20 +329,20 @@ mod batch_operations_tests {
             retry_failed_operations: true,
             parallel_processing_enabled: false,
         };
-        
+
         // Test invalid configs
         let mut invalid_config = valid_config.clone();
         invalid_config.max_batch_size = 0;
         // This would fail validation
-        
+
         let mut invalid_config2 = valid_config.clone();
         invalid_config2.max_operations_per_batch = 0;
         // This would fail validation
-        
+
         let mut invalid_config3 = valid_config.clone();
         invalid_config3.gas_limit_per_batch = 0;
         // This would fail validation
-        
+
         let mut invalid_config4 = valid_config.clone();
         invalid_config4.timeout_per_batch = 0;
         // This would fail validation
@@ -309,7 +353,7 @@ mod batch_operations_tests {
         // Test vote data validation
         let env = Env::default();
         let market_id = Symbol::new(&env, "test_market");
-        
+
         // Valid vote data
         let valid_vote = VoteData {
             market_id: market_id.clone(),
@@ -317,7 +361,7 @@ mod batch_operations_tests {
             outcome: String::from_str(&env, "Yes"),
             stake_amount: 1_000_000_000,
         };
-        
+
         // Invalid vote data - zero stake
         let invalid_vote = VoteData {
             market_id: market_id.clone(),
@@ -325,7 +369,7 @@ mod batch_operations_tests {
             outcome: String::from_str(&env, "Yes"),
             stake_amount: 0,
         };
-        
+
         // Invalid vote data - empty outcome
         let invalid_vote2 = VoteData {
             market_id: market_id.clone(),
@@ -333,7 +377,7 @@ mod batch_operations_tests {
             outcome: String::from_str(&env, ""),
             stake_amount: 1_000_000_000,
         };
-        
+
         // Test claim data validation
         // Valid claim data
         let valid_claim = ClaimData {
@@ -341,31 +385,39 @@ mod batch_operations_tests {
             claimant: Address::generate(&env),
             expected_amount: 2_000_000_000,
         };
-        
+
         // Invalid claim data - zero amount
         let invalid_claim = ClaimData {
             market_id: market_id.clone(),
             claimant: Address::generate(&env),
             expected_amount: 0,
         };
-        
+
         // Test market data validation
         // Valid market data
         let valid_market = MarketData {
             question: String::from_str(&env, "Test question?"),
-            outcomes: vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")],
+            outcomes: vec![
+                &env,
+                String::from_str(&env, "Yes"),
+                String::from_str(&env, "No"),
+            ],
             duration_days: 30,
             oracle_config: None,
         };
-        
+
         // Invalid market data - empty question
         let invalid_market = MarketData {
             question: String::from_str(&env, ""),
-            outcomes: vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")],
+            outcomes: vec![
+                &env,
+                String::from_str(&env, "Yes"),
+                String::from_str(&env, "No"),
+            ],
             duration_days: 30,
             oracle_config: None,
         };
-        
+
         // Invalid market data - insufficient outcomes
         let invalid_market2 = MarketData {
             question: String::from_str(&env, "Test question?"),
@@ -373,15 +425,19 @@ mod batch_operations_tests {
             duration_days: 30,
             oracle_config: None,
         };
-        
+
         // Invalid market data - zero duration
         let invalid_market3 = MarketData {
             question: String::from_str(&env, "Test question?"),
-            outcomes: vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")],
+            outcomes: vec![
+                &env,
+                String::from_str(&env, "Yes"),
+                String::from_str(&env, "No"),
+            ],
             duration_days: 0,
             oracle_config: None,
         };
-        
+
         // Test oracle feed data validation
         // Valid oracle feed data
         let valid_feed = OracleFeed {
@@ -391,7 +447,7 @@ mod batch_operations_tests {
             threshold: 100_000_000_000,
             comparison: String::from_str(&env, "gt"),
         };
-        
+
         // Invalid oracle feed data - empty feed ID
         let invalid_feed = OracleFeed {
             market_id: market_id.clone(),
@@ -400,7 +456,7 @@ mod batch_operations_tests {
             threshold: 100_000_000_000,
             comparison: String::from_str(&env, "gt"),
         };
-        
+
         // Invalid oracle feed data - zero threshold
         let invalid_feed2 = OracleFeed {
             market_id: market_id.clone(),
@@ -414,36 +470,43 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_statistics_update() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
-        
-        // Create test batch result
-        let test_result = BatchResult {
-            successful_operations: 8,
-            failed_operations: 2,
-            total_operations: 10,
-            errors: Vec::new(&env),
-            gas_used: 5000,
-            execution_time: 100,
-        };
-        
-        // Get initial statistics
-        let initial_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
-        assert_eq!(initial_stats.total_batches_processed, 0);
-        
-        // Update statistics (this would be called internally)
-        // For testing, we'll simulate the update
-        let mut updated_stats = initial_stats.clone();
-        updated_stats.total_batches_processed += 1;
-        updated_stats.total_operations_processed += test_result.total_operations;
-        updated_stats.total_successful_operations += test_result.successful_operations;
-        updated_stats.total_failed_operations += test_result.failed_operations;
-        
-        // Verify updated statistics
-        assert_eq!(updated_stats.total_batches_processed, 1);
-        assert_eq!(updated_stats.total_operations_processed, 10);
-        assert_eq!(updated_stats.total_successful_operations, 8);
-        assert_eq!(updated_stats.total_failed_operations, 2);
-        assert_eq!(updated_stats.average_batch_size, 10);
+
+        with_contract_context(&env, || {
+            BatchProcessor::initialize(&env).unwrap();
+
+            let admin = Address::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            // Get initial statistics
+            let initial_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
+            assert_eq!(initial_stats.total_batches_processed, 0);
+
+            // Create test market data and run actual batch operation
+            let markets = vec![
+                &env,
+                BatchTesting::create_test_market_data(&env),
+                BatchTesting::create_test_market_data(&env),
+            ];
+
+            // Run batch market creation to update statistics
+            let result = BatchProcessor::batch_create_markets(&env, &admin, &markets);
+            assert!(result.is_ok());
+
+            // Get updated statistics
+            let updated_stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
+            assert_eq!(updated_stats.total_batches_processed, 1);
+            assert_eq!(updated_stats.total_operations_processed, 2); // 2 markets created
+            assert_eq!(updated_stats.total_successful_operations, 2); // Both should succeed
+            assert_eq!(updated_stats.total_failed_operations, 0); // None should fail
+            assert_eq!(updated_stats.average_batch_size, 2); // Average of 2 operations per batch
+        });
     }
 
     #[test]
@@ -457,13 +520,13 @@ mod batch_operations_tests {
         let extension_type = BatchOperationType::Extension;
         let resolution_type = BatchOperationType::Resolution;
         let fee_collection_type = BatchOperationType::FeeCollection;
-        
+
         // Test that they are different
         assert_ne!(vote_type, claim_type);
         assert_ne!(create_market_type, oracle_call_type);
         assert_ne!(dispute_type, extension_type);
         assert_ne!(resolution_type, fee_collection_type);
-        
+
         // Test that they are equal to themselves
         assert_eq!(vote_type, BatchOperationType::Vote);
         assert_eq!(claim_type, BatchOperationType::Claim);
@@ -478,65 +541,83 @@ mod batch_operations_tests {
     #[test]
     fn test_batch_integration() {
         let env = Env::default();
-        BatchProcessor::initialize(&env).unwrap();
-        
-        let admin = Address::generate(&env);
-        AdminAccessControl::assign_role(&env, &admin, crate::admin::AdminRole::Admin).unwrap();
-        
-        // Test complete batch workflow
-        // 1. Create test data
-        let market_id = Symbol::new(&env, "test_market");
-        let votes = vec![
-            &env,
-            BatchTesting::create_test_vote_data(&env, &market_id),
-            BatchTesting::create_test_vote_data(&env, &market_id),
-        ];
-        
-        let claims = vec![
-            &env,
-            BatchTesting::create_test_claim_data(&env, &market_id),
-        ];
-        
-        let markets = vec![
-            &env,
-            BatchTesting::create_test_market_data(&env),
-        ];
-        
-        let feeds = vec![
-            &env,
-            BatchTesting::create_test_oracle_feed_data(&env, &market_id),
-        ];
-        
-        // 2. Process batch operations
-        let vote_result = BatchProcessor::batch_vote(&env, &votes);
-        assert!(vote_result.is_ok());
-        
-        let claim_result = BatchProcessor::batch_claim(&env, &claims);
-        assert!(claim_result.is_ok());
-        
-        let market_result = BatchProcessor::batch_create_markets(&env, &admin, &markets);
-        assert!(market_result.is_ok());
-        
-        let oracle_result = BatchProcessor::batch_oracle_calls(&env, &feeds);
-        assert!(oracle_result.is_ok());
-        
-        // 3. Check statistics
-        let stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
-        assert_eq!(stats.total_batches_processed, 4);
-        assert_eq!(stats.total_operations_processed, 5); // 2 votes + 1 claim + 1 market + 1 oracle
-        assert!(stats.total_successful_operations >= 0);
-        assert!(stats.total_failed_operations >= 0);
-        
-        // 4. Test utilities
-        assert!(BatchUtils::is_batch_processing_enabled(&env).unwrap());
-        
-        let optimal_vote_size = BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::Vote).unwrap();
-        assert!(optimal_vote_size > 0);
-        
-        let gas_cost = BatchUtils::estimate_gas_cost(&BatchOperationType::Vote, 5);
-        assert_eq!(gas_cost, 5000);
-        
-        let efficiency = BatchUtils::calculate_gas_efficiency(4, 5, 1000);
-        assert_eq!(efficiency, 0.8 * 0.005); // 80% success rate * 0.005 operations per gas
+
+        with_contract_context(&env, || {
+            BatchProcessor::initialize(&env).unwrap();
+
+            let admin = Address::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            // Test admin authentication
+            let auth_result = crate::admin::AdminAccessControl::validate_admin_for_action(
+                &env,
+                &admin,
+                "batch_create_markets",
+            );
+            if let Err(e) = auth_result {
+                panic!("Admin authentication failed: {:?}", e);
+            }
+
+            // Test complete batch workflow
+            // 1. Create test data
+            let market_id = Symbol::new(&env, "test_market");
+            let votes = vec![
+                &env,
+                BatchTesting::create_test_vote_data(&env, &market_id),
+                BatchTesting::create_test_vote_data(&env, &market_id),
+            ];
+
+            let claims = vec![&env, BatchTesting::create_test_claim_data(&env, &market_id)];
+
+            let markets = vec![&env, BatchTesting::create_test_market_data(&env)];
+
+            let feeds = vec![
+                &env,
+                BatchTesting::create_test_oracle_feed_data(&env, &market_id),
+            ];
+
+            // 2. Process batch operations
+            let vote_result = BatchProcessor::batch_vote(&env, &votes);
+            assert!(vote_result.is_ok());
+
+            let claim_result = BatchProcessor::batch_claim(&env, &claims);
+            assert!(claim_result.is_ok());
+
+            let market_result = BatchProcessor::batch_create_markets(&env, &admin, &markets);
+            if let Err(e) = &market_result {
+                panic!("Market creation failed: {:?}", e);
+            }
+            assert!(market_result.is_ok());
+
+            let oracle_result = BatchProcessor::batch_oracle_calls(&env, &feeds);
+            assert!(oracle_result.is_ok());
+
+            // 3. Check statistics
+            let stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
+            assert_eq!(stats.total_batches_processed, 4);
+            assert_eq!(stats.total_operations_processed, 5); // 2 votes + 1 claim + 1 market + 1 oracle
+            assert!(stats.total_successful_operations >= 0);
+            assert!(stats.total_failed_operations >= 0);
+
+            // 4. Test utilities
+            assert!(BatchUtils::is_batch_processing_enabled(&env).unwrap());
+
+            let optimal_vote_size =
+                BatchUtils::get_optimal_batch_size(&env, &BatchOperationType::Vote).unwrap();
+            assert!(optimal_vote_size > 0);
+
+            let gas_cost = BatchUtils::estimate_gas_cost(&BatchOperationType::Vote, 5);
+            assert_eq!(gas_cost, 5000);
+
+            let efficiency = BatchUtils::calculate_gas_efficiency(4, 5, 1000);
+            assert_eq!(efficiency, 0.8 * 0.005); // 80% success rate * 0.005 operations per gas
+        });
     }
-} 
+}

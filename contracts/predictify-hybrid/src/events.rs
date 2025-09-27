@@ -857,7 +857,8 @@ pub struct CircuitBreakerEvent {
     /// Action taken by circuit breaker
     pub action: crate::circuit_breaker::BreakerAction,
     /// Condition that triggered the action (if automatic)
-    pub condition: Option<crate::circuit_breaker::BreakerCondition>,
+    /// Using String to avoid trait bound issues with Option<BreakerCondition>
+    pub condition: Option<String>,
     /// Reason for the action
     pub reason: String,
     /// Event timestamp
@@ -1277,11 +1278,7 @@ impl EventEmitter {
     }
 
     /// Emit storage cleanup event
-    pub fn emit_storage_cleanup_event(
-        env: &Env,
-        market_id: &Symbol,
-        cleanup_type: &String,
-    ) {
+    pub fn emit_storage_cleanup_event(env: &Env, market_id: &Symbol, cleanup_type: &String) {
         let event = StorageCleanupEvent {
             market_id: market_id.clone(),
             cleanup_type: cleanup_type.clone(),
@@ -1326,10 +1323,7 @@ impl EventEmitter {
     }
 
     /// Emit circuit breaker event
-    pub fn emit_circuit_breaker_event(
-        env: &Env,
-        event: &CircuitBreakerEvent,
-    ) {
+    pub fn emit_circuit_breaker_event(env: &Env, event: &CircuitBreakerEvent) {
         Self::store_event(env, &symbol_short!("cb_event"), event);
     }
 

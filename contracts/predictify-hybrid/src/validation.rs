@@ -3366,7 +3366,7 @@ impl MarketParameterValidator {
             for j in (i + 1)..outcomes.len() {
                 let outcome1 = outcomes.get(i).unwrap();
                 let outcome2 = outcomes.get(j).unwrap();
-                
+
                 // Simple case-insensitive comparison by checking if they're equal
                 // or if one contains the other (for partial matches)
                 if outcome1 == outcome2 {
@@ -3523,9 +3523,9 @@ impl MarketParameterValidator {
             String::from_str(env, "gte"),
             String::from_str(env, "lt"),
             String::from_str(env, "lte"),
-            String::from_str(env, "eq")
+            String::from_str(env, "eq"),
         ];
-        
+
         if !valid_operators.contains(&comparison) {
             return Err(ValidationError::InvalidInput);
         }
@@ -3580,7 +3580,9 @@ impl MarketParameterValidator {
     /// let result = MarketParameterValidator::validate_market_parameters_all_together(&params);
     /// assert!(result.is_ok());
     /// ```
-    pub fn validate_market_parameters_all_together(params: &MarketParams) -> Result<(), ValidationError> {
+    pub fn validate_market_parameters_all_together(
+        params: &MarketParams,
+    ) -> Result<(), ValidationError> {
         // Validate duration limits
         MarketParameterValidator::validate_duration_limits(
             params.duration_days,
@@ -3606,7 +3608,7 @@ impl MarketParameterValidator {
         if params.threshold > 0 {
             MarketParameterValidator::validate_threshold_value(
                 params.threshold,
-                1_00, // $1.00 minimum
+                1_00,         // $1.00 minimum
                 1_000_000_00, // $1,000,000.00 maximum
             )?;
         }
@@ -3637,7 +3639,7 @@ impl MarketParameterValidator {
     /// # let env = Env::default();
     ///
     /// let rules = MarketParameterValidator::get_parameter_validation_rules(&env);
-    /// 
+    ///
     /// // Access specific rules
     /// let duration_rule = rules.get(&String::from_str(&env, "duration_limits")).unwrap();
     /// let stake_rule = rules.get(&String::from_str(&env, "stake_limits")).unwrap();
@@ -3645,37 +3647,37 @@ impl MarketParameterValidator {
     /// ```
     pub fn get_parameter_validation_rules(env: &Env) -> Map<String, String> {
         let mut rules = Map::new(env);
-        
+
         // Duration rules
         rules.set(
             String::from_str(env, "duration_limits"),
-            String::from_str(env, "1 to 365 days")
+            String::from_str(env, "1 to 365 days"),
         );
-        
+
         // Stake rules
         rules.set(
             String::from_str(env, "stake_limits"),
-            String::from_str(env, "100000 to 1000000000 base units")
+            String::from_str(env, "100000 to 1000000000 base units"),
         );
-        
+
         // Outcome rules
         rules.set(
             String::from_str(env, "outcome_limits"),
-            String::from_str(env, "2 to 10 outcomes")
+            String::from_str(env, "2 to 10 outcomes"),
         );
-        
+
         // Threshold rules
         rules.set(
             String::from_str(env, "threshold_limits"),
-            String::from_str(env, "1.00 to 1,000,000.00 base units")
+            String::from_str(env, "1.00 to 1,000,000.00 base units"),
         );
-        
+
         // Comparison operator rules
         rules.set(
             String::from_str(env, "comparison_operators"),
-            String::from_str(env, "gt, gte, lt, lte, eq")
+            String::from_str(env, "gt, gte, lt, lte, eq"),
         );
-        
+
         rules
     }
 }
@@ -3754,12 +3756,7 @@ impl MarketParams {
     ///     ]
     /// );
     /// ```
-    pub fn new(
-        env: &Env,
-        duration_days: u32,
-        stake: i128,
-        outcomes: Vec<String>,
-    ) -> Self {
+    pub fn new(env: &Env, duration_days: u32, stake: i128, outcomes: Vec<String>) -> Self {
         Self {
             duration_days,
             stake,
@@ -4028,7 +4025,7 @@ impl OracleConfigValidator {
                 // Reflector threshold validation (cents precision)
                 let min_threshold = 1; // $0.01 in cents
                 let max_threshold = 1_000_000_00; // $10,000,000 in cents
-                
+
                 if *threshold < min_threshold || *threshold > max_threshold {
                     return Err(ValidationError::InvalidOracle);
                 }
@@ -4039,7 +4036,7 @@ impl OracleConfigValidator {
                 // Pyth threshold validation (8 decimal precision)
                 let min_threshold = 1_000_000; // $0.01 in 8-decimal units
                 let max_threshold = 100_000_000_000_000; // $1,000,000 in 8-decimal units
-                
+
                 if *threshold < min_threshold || *threshold > max_threshold {
                     return Err(ValidationError::InvalidOracle);
                 }
@@ -4185,7 +4182,7 @@ impl OracleConfigValidator {
 
         // Get supported operators for the provider
         let supported_operators = Self::get_supported_operators_for_provider(&config.provider);
-        
+
         // Validate comparison operator
         Self::validate_comparison_operator(&config.comparison, &supported_operators)?;
 
@@ -4242,105 +4239,105 @@ impl OracleConfigValidator {
             OracleProvider::Reflector => {
                 rules.set(
                     String::from_str(env, "feed_id_format"),
-                    String::from_str(env, "ASSET/USD or ASSET (e.g., BTC/USD, ETH)")
+                    String::from_str(env, "ASSET/USD or ASSET (e.g., BTC/USD, ETH)"),
                 );
                 rules.set(
                     String::from_str(env, "threshold_range"),
-                    String::from_str(env, "$0.01 to $10,000,000 (in cents)")
+                    String::from_str(env, "$0.01 to $10,000,000 (in cents)"),
                 );
                 rules.set(
                     String::from_str(env, "supported_operators"),
-                    String::from_str(env, "gt, lt, eq")
+                    String::from_str(env, "gt, lt, eq"),
                 );
                 rules.set(
                     String::from_str(env, "precision"),
-                    String::from_str(env, "2 decimal places (cents)")
+                    String::from_str(env, "2 decimal places (cents)"),
                 );
                 rules.set(
                     String::from_str(env, "network_support"),
-                    String::from_str(env, "Full Stellar support")
+                    String::from_str(env, "Full Stellar support"),
                 );
                 rules.set(
                     String::from_str(env, "integration_status"),
-                    String::from_str(env, "Production ready")
+                    String::from_str(env, "Production ready"),
                 );
             }
             OracleProvider::Pyth => {
                 rules.set(
                     String::from_str(env, "feed_id_format"),
-                    String::from_str(env, "64-character hex string (0x...)")
+                    String::from_str(env, "64-character hex string (0x...)"),
                 );
                 rules.set(
                     String::from_str(env, "threshold_range"),
-                    String::from_str(env, "$0.01 to $1,000,000 (8-decimal precision)")
+                    String::from_str(env, "$0.01 to $1,000,000 (8-decimal precision)"),
                 );
                 rules.set(
                     String::from_str(env, "supported_operators"),
-                    String::from_str(env, "gt, gte, lt, lte, eq")
+                    String::from_str(env, "gt, gte, lt, lte, eq"),
                 );
                 rules.set(
                     String::from_str(env, "precision"),
-                    String::from_str(env, "8 decimal places")
+                    String::from_str(env, "8 decimal places"),
                 );
                 rules.set(
                     String::from_str(env, "network_support"),
-                    String::from_str(env, "Future Stellar support")
+                    String::from_str(env, "Future Stellar support"),
                 );
                 rules.set(
                     String::from_str(env, "integration_status"),
-                    String::from_str(env, "Placeholder implementation")
+                    String::from_str(env, "Placeholder implementation"),
                 );
             }
             OracleProvider::BandProtocol => {
                 rules.set(
                     String::from_str(env, "feed_id_format"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "threshold_range"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "supported_operators"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "precision"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "network_support"),
-                    String::from_str(env, "No Stellar integration")
+                    String::from_str(env, "No Stellar integration"),
                 );
                 rules.set(
                     String::from_str(env, "integration_status"),
-                    String::from_str(env, "Not available")
+                    String::from_str(env, "Not available"),
                 );
             }
             OracleProvider::DIA => {
                 rules.set(
                     String::from_str(env, "feed_id_format"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "threshold_range"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "supported_operators"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "precision"),
-                    String::from_str(env, "Not supported on Stellar")
+                    String::from_str(env, "Not supported on Stellar"),
                 );
                 rules.set(
                     String::from_str(env, "network_support"),
-                    String::from_str(env, "No Stellar integration")
+                    String::from_str(env, "No Stellar integration"),
                 );
                 rules.set(
                     String::from_str(env, "integration_status"),
-                    String::from_str(env, "Not available")
+                    String::from_str(env, "Not available"),
                 );
             }
         }
@@ -4374,7 +4371,9 @@ impl OracleConfigValidator {
     /// 3. **Threshold Range**: Threshold outside valid range
     /// 4. **Comparison Operator**: Unsupported comparison operator
     /// 5. **Configuration Consistency**: Cross-parameter issues
-    pub fn validate_oracle_config_all_together(config: &OracleConfig) -> Result<(), ValidationError> {
+    pub fn validate_oracle_config_all_together(
+        config: &OracleConfig,
+    ) -> Result<(), ValidationError> {
         // Step 1: Validate provider support
         Self::validate_oracle_provider(&config.provider)?;
 

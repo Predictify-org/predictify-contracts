@@ -36,57 +36,65 @@ mod market_parameter_validator_tests {
     fn test_validate_stake_amounts() {
         // Valid stake amounts
         assert!(MarketParameterValidator::validate_stake_amounts(
-            1_000_000, // 1 XLM
-            100_000,   // 0.1 XLM minimum
-            100_000_000 // 100 XLM maximum
-        ).is_ok());
+            1_000_000,   // 1 XLM
+            100_000,     // 0.1 XLM minimum
+            100_000_000  // 100 XLM maximum
+        )
+        .is_ok());
 
         assert!(MarketParameterValidator::validate_stake_amounts(
-            100_000,   // 0.1 XLM (minimum)
-            100_000,   // 0.1 XLM minimum
-            100_000_000 // 100 XLM maximum
-        ).is_ok());
+            100_000,     // 0.1 XLM (minimum)
+            100_000,     // 0.1 XLM minimum
+            100_000_000  // 100 XLM maximum
+        )
+        .is_ok());
 
         assert!(MarketParameterValidator::validate_stake_amounts(
             100_000_000, // 100 XLM (maximum)
             100_000,     // 0.1 XLM minimum
             100_000_000  // 100 XLM maximum
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid stake - zero
         assert!(MarketParameterValidator::validate_stake_amounts(
-            0,          // 0 XLM
-            100_000,    // 0.1 XLM minimum
-            100_000_000 // 100 XLM maximum
-        ).is_err());
+            0,           // 0 XLM
+            100_000,     // 0.1 XLM minimum
+            100_000_000  // 100 XLM maximum
+        )
+        .is_err());
 
         // Invalid stake - negative
         assert!(MarketParameterValidator::validate_stake_amounts(
-            -1_000_000, // -1 XLM
-            100_000,    // 0.1 XLM minimum
-            100_000_000 // 100 XLM maximum
-        ).is_err());
+            -1_000_000,  // -1 XLM
+            100_000,     // 0.1 XLM minimum
+            100_000_000  // 100 XLM maximum
+        )
+        .is_err());
 
         // Invalid stake - too low
         assert!(MarketParameterValidator::validate_stake_amounts(
-            50_000,     // 0.05 XLM
-            100_000,    // 0.1 XLM minimum
-            100_000_000 // 100 XLM maximum
-        ).is_err());
+            50_000,      // 0.05 XLM
+            100_000,     // 0.1 XLM minimum
+            100_000_000  // 100 XLM maximum
+        )
+        .is_err());
 
         // Invalid stake - too high
         assert!(MarketParameterValidator::validate_stake_amounts(
             200_000_000, // 200 XLM
             100_000,     // 0.1 XLM minimum
             100_000_000  // 100 XLM maximum
-        ).is_err());
+        )
+        .is_err());
 
         // Invalid bounds - min >= max
         assert!(MarketParameterValidator::validate_stake_amounts(
             1_000_000, // 1 XLM
             100_000,   // 0.1 XLM
             100_000    // 0.1 XLM (same as min)
-        ).is_err());
+        )
+        .is_err());
     }
 
     #[test]
@@ -97,36 +105,36 @@ mod market_parameter_validator_tests {
         let valid_outcomes = vec![
             &env,
             String::from_str(&env, "Yes"),
-            String::from_str(&env, "No")
+            String::from_str(&env, "No"),
         ];
         assert!(MarketParameterValidator::validate_outcome_count(
             &valid_outcomes,
             2,  // min_outcomes
             10  // max_outcomes
-        ).is_ok());
+        )
+        .is_ok());
 
         let valid_outcomes_3 = vec![
             &env,
             String::from_str(&env, "Yes"),
             String::from_str(&env, "No"),
-            String::from_str(&env, "Maybe")
+            String::from_str(&env, "Maybe"),
         ];
         assert!(MarketParameterValidator::validate_outcome_count(
             &valid_outcomes_3,
             2,  // min_outcomes
             10  // max_outcomes
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid outcomes - too few
-        let too_few_outcomes = vec![
-            &env,
-            String::from_str(&env, "Yes")
-        ];
+        let too_few_outcomes = vec![&env, String::from_str(&env, "Yes")];
         assert!(MarketParameterValidator::validate_outcome_count(
             &too_few_outcomes,
             2,  // min_outcomes
             10  // max_outcomes
-        ).is_err());
+        )
+        .is_err());
 
         // Invalid outcomes - too many
         let too_many_outcomes = vec![
@@ -141,94 +149,105 @@ mod market_parameter_validator_tests {
             String::from_str(&env, "H"),
             String::from_str(&env, "I"),
             String::from_str(&env, "J"),
-            String::from_str(&env, "K")
+            String::from_str(&env, "K"),
         ];
         assert!(MarketParameterValidator::validate_outcome_count(
             &too_many_outcomes,
             2,  // min_outcomes
             10  // max_outcomes
-        ).is_err());
+        )
+        .is_err());
 
         // Invalid outcomes - empty outcome
         let empty_outcome = vec![
             &env,
             String::from_str(&env, "Yes"),
-            String::from_str(&env, "")
+            String::from_str(&env, ""),
         ];
         assert!(MarketParameterValidator::validate_outcome_count(
             &empty_outcome,
             2,  // min_outcomes
             10  // max_outcomes
-        ).is_err());
+        )
+        .is_err());
 
         // Invalid outcomes - duplicate outcomes (exact match)
         let duplicate_outcomes = vec![
             &env,
             String::from_str(&env, "Yes"),
-            String::from_str(&env, "Yes")
+            String::from_str(&env, "Yes"),
         ];
         assert!(MarketParameterValidator::validate_outcome_count(
             &duplicate_outcomes,
             2,  // min_outcomes
             10  // max_outcomes
-        ).is_err());
+        )
+        .is_err());
     }
 
     #[test]
     fn test_validate_threshold_value() {
         // Valid threshold values
         assert!(MarketParameterValidator::validate_threshold_value(
-            50_000_00, // $50,000 with 2 decimal places
-            1_00,      // $1.00 minimum
-            1_000_000_00 // $1,000,000.00 maximum
-        ).is_ok());
+            50_000_00,    // $50,000 with 2 decimal places
+            1_00,         // $1.00 minimum
+            1_000_000_00  // $1,000,000.00 maximum
+        )
+        .is_ok());
 
         assert!(MarketParameterValidator::validate_threshold_value(
-            1_00,      // $1.00 (minimum)
-            1_00,      // $1.00 minimum
-            1_000_000_00 // $1,000,000.00 maximum
-        ).is_ok());
+            1_00,         // $1.00 (minimum)
+            1_00,         // $1.00 minimum
+            1_000_000_00  // $1,000,000.00 maximum
+        )
+        .is_ok());
 
         assert!(MarketParameterValidator::validate_threshold_value(
             1_000_000_00, // $1,000,000.00 (maximum)
             1_00,         // $1.00 minimum
             1_000_000_00  // $1,000,000.00 maximum
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid threshold - zero
         assert!(MarketParameterValidator::validate_threshold_value(
-            0,         // $0.00
-            1_00,      // $1.00 minimum
-            1_000_000_00 // $1,000,000.00 maximum
-        ).is_err());
+            0,            // $0.00
+            1_00,         // $1.00 minimum
+            1_000_000_00  // $1,000,000.00 maximum
+        )
+        .is_err());
 
         // Invalid threshold - negative
         assert!(MarketParameterValidator::validate_threshold_value(
-            -1_00,     // -$1.00
-            1_00,      // $1.00 minimum
-            1_000_000_00 // $1,000,000.00 maximum
-        ).is_err());
+            -1_00,        // -$1.00
+            1_00,         // $1.00 minimum
+            1_000_000_00  // $1,000,000.00 maximum
+        )
+        .is_err());
 
         // Invalid threshold - too low
         assert!(MarketParameterValidator::validate_threshold_value(
-            50,        // $0.50
-            1_00,      // $1.00 minimum
-            1_000_000_00 // $1,000,000.00 maximum
-        ).is_err());
+            50,           // $0.50
+            1_00,         // $1.00 minimum
+            1_000_000_00  // $1,000,000.00 maximum
+        )
+        .is_err());
 
         // Invalid threshold - too high
         assert!(MarketParameterValidator::validate_threshold_value(
             2_000_000_00, // $2,000,000.00
             1_00,         // $1.00 minimum
             1_000_000_00  // $1,000,000.00 maximum
-        ).is_err());
+        )
+        .is_err());
 
         // Invalid bounds - min >= max
         assert!(MarketParameterValidator::validate_threshold_value(
-            1_00,      // $1.00
-            1_00,      // $1.00 minimum
-            1_00       // $1.00 maximum (same as min)
-        ).is_err());
+            1_00, // $1.00
+            1_00, // $1.00 minimum
+            1_00  // $1.00 maximum (same as min)
+        )
+        .is_err());
     }
 
     #[test]
@@ -236,35 +255,49 @@ mod market_parameter_validator_tests {
         let env = Env::default();
 
         // Valid comparison operators
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "gt")
-        ).is_ok());
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "gte")
-        ).is_ok());
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "lt")
-        ).is_ok());
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "lte")
-        ).is_ok());
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "eq")
-        ).is_ok());
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(&env, "gt"))
+                .is_ok()
+        );
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(&env, "gte"))
+                .is_ok()
+        );
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(&env, "lt"))
+                .is_ok()
+        );
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(&env, "lte"))
+                .is_ok()
+        );
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(&env, "eq"))
+                .is_ok()
+        );
 
         // Invalid comparison operators
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "")
-        ).is_err());
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "invalid")
-        ).is_err());
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "GT")
-        ).is_err());
-        assert!(MarketParameterValidator::validate_comparison_operator(
-            String::from_str(&env, "greater_than")
-        ).is_err());
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(&env, ""))
+                .is_err()
+        );
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(
+                &env, "invalid"
+            ))
+            .is_err()
+        );
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(&env, "GT"))
+                .is_err()
+        );
+        assert!(
+            MarketParameterValidator::validate_comparison_operator(String::from_str(
+                &env,
+                "greater_than"
+            ))
+            .is_err()
+        );
     }
 
     #[test]
@@ -274,69 +307,89 @@ mod market_parameter_validator_tests {
         // Valid market parameters
         let valid_params = MarketParams::new(
             &env,
-            30, // duration_days
+            30,        // duration_days
             1_000_000, // stake
             vec![
                 &env,
                 String::from_str(&env, "Yes"),
-                String::from_str(&env, "No")
-            ]
+                String::from_str(&env, "No"),
+            ],
         );
-        assert!(MarketParameterValidator::validate_market_parameters_all_together(&valid_params).is_ok());
+        assert!(
+            MarketParameterValidator::validate_market_parameters_all_together(&valid_params)
+                .is_ok()
+        );
 
         // Valid oracle-based market parameters
         let valid_oracle_params = MarketParams::new_with_oracle(
             &env,
-            30, // duration_days
+            30,        // duration_days
             1_000_000, // stake
             vec![
                 &env,
                 String::from_str(&env, "Yes"),
-                String::from_str(&env, "No")
+                String::from_str(&env, "No"),
             ],
-            50_000_00, // threshold ($50,000)
-            String::from_str(&env, "gt") // comparison operator
+            50_000_00,                    // threshold ($50,000)
+            String::from_str(&env, "gt"), // comparison operator
         );
-        assert!(MarketParameterValidator::validate_market_parameters_all_together(&valid_oracle_params).is_ok());
+        assert!(
+            MarketParameterValidator::validate_market_parameters_all_together(&valid_oracle_params)
+                .is_ok()
+        );
 
         // Invalid parameters - duration too long
         let invalid_duration_params = MarketParams::new(
             &env,
-            400, // duration_days (too long)
+            400,       // duration_days (too long)
             1_000_000, // stake
             vec![
                 &env,
                 String::from_str(&env, "Yes"),
-                String::from_str(&env, "No")
-            ]
+                String::from_str(&env, "No"),
+            ],
         );
-        assert!(MarketParameterValidator::validate_market_parameters_all_together(&invalid_duration_params).is_err());
+        assert!(
+            MarketParameterValidator::validate_market_parameters_all_together(
+                &invalid_duration_params
+            )
+            .is_err()
+        );
 
         // Invalid parameters - stake too low
         let invalid_stake_params = MarketParams::new(
             &env,
-            30, // duration_days
+            30,     // duration_days
             50_000, // stake (too low)
             vec![
                 &env,
                 String::from_str(&env, "Yes"),
-                String::from_str(&env, "No")
-            ]
+                String::from_str(&env, "No"),
+            ],
         );
-        assert!(MarketParameterValidator::validate_market_parameters_all_together(&invalid_stake_params).is_err());
+        assert!(
+            MarketParameterValidator::validate_market_parameters_all_together(
+                &invalid_stake_params
+            )
+            .is_err()
+        );
 
         // Invalid parameters - too few outcomes
         let invalid_outcomes_params = MarketParams::new(
             &env,
-            30, // duration_days
+            30,        // duration_days
             1_000_000, // stake
             vec![
                 &env,
-                String::from_str(&env, "Yes")
-                // Only one outcome
-            ]
+                String::from_str(&env, "Yes"), // Only one outcome
+            ],
         );
-        assert!(MarketParameterValidator::validate_market_parameters_all_together(&invalid_outcomes_params).is_err());
+        assert!(
+            MarketParameterValidator::validate_market_parameters_all_together(
+                &invalid_outcomes_params
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -371,13 +424,13 @@ mod market_parameter_validator_tests {
         // Test basic MarketParams creation
         let params = MarketParams::new(
             &env,
-            30, // duration_days
+            30,        // duration_days
             1_000_000, // stake
             vec![
                 &env,
                 String::from_str(&env, "Yes"),
-                String::from_str(&env, "No")
-            ]
+                String::from_str(&env, "No"),
+            ],
         );
 
         assert_eq!(params.duration_days, 30);
@@ -389,15 +442,15 @@ mod market_parameter_validator_tests {
         // Test oracle-based MarketParams creation
         let oracle_params = MarketParams::new_with_oracle(
             &env,
-            60, // duration_days
+            60,        // duration_days
             2_000_000, // stake
             vec![
                 &env,
                 String::from_str(&env, "Yes"),
-                String::from_str(&env, "No")
+                String::from_str(&env, "No"),
             ],
-            100_000_00, // threshold ($100,000)
-            String::from_str(&env, "gte") // comparison operator
+            100_000_00,                    // threshold ($100,000)
+            String::from_str(&env, "gte"), // comparison operator
         );
 
         assert_eq!(oracle_params.duration_days, 60);
@@ -860,8 +913,8 @@ fn test_validation_error_messages() {
 #[cfg(test)]
 mod oracle_config_validator_tests {
     use super::*;
-    use crate::validation::OracleConfigValidator;
     use crate::types::{OracleConfig, OracleProvider};
+    use crate::validation::OracleConfigValidator;
 
     #[test]
     fn test_validate_feed_id_format() {
@@ -869,66 +922,80 @@ mod oracle_config_validator_tests {
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD"),
             &OracleProvider::Reflector
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "ETH"),
             &OracleProvider::Reflector
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "XLM/USD"),
             &OracleProvider::Reflector
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid Reflector feed IDs
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), ""),
             &OracleProvider::Reflector
-        ).is_err());
-        
+        )
+        .is_err());
+
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "A"),
             &OracleProvider::Reflector
-        ).is_err());
-        
+        )
+        .is_err());
+
         // Note: With simplified validation, this would pass
         // In full implementation, this should be rejected
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD/EXTRA"),
             &OracleProvider::Reflector
-        ).is_ok());
+        )
+        .is_ok());
 
         // Valid Pyth feed IDs
         // Note: With simplified validation, these should pass
         // In full implementation, we would validate hex format properly
         assert!(OracleConfigValidator::validate_feed_id_format(
-            &String::from_str(&soroban_sdk::Env::default(), "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"),
+            &String::from_str(
+                &soroban_sdk::Env::default(),
+                "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
+            ),
             &OracleProvider::Pyth
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid Pyth feed IDs
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "invalid_hex"),
             &OracleProvider::Pyth
-        ).is_err());
-        
+        )
+        .is_err());
+
         // Invalid Pyth feed ID - wrong length
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "0x123"),
             &OracleProvider::Pyth
-        ).is_err());
+        )
+        .is_err());
 
         // Unsupported providers
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD"),
             &OracleProvider::BandProtocol
-        ).is_err());
-        
+        )
+        .is_err());
+
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD"),
             &OracleProvider::DIA
-        ).is_err());
+        )
+        .is_err());
     }
 
     #[test]
@@ -937,72 +1004,79 @@ mod oracle_config_validator_tests {
         assert!(OracleConfigValidator::validate_threshold_range(
             &1, // $0.01
             &OracleProvider::Reflector
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000_00, // $10,000,000
             &OracleProvider::Reflector
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_threshold_range(
             &50_000_00, // $50,000
             &OracleProvider::Reflector
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid Reflector thresholds
-        assert!(OracleConfigValidator::validate_threshold_range(
-            &0,
-            &OracleProvider::Reflector
-        ).is_err());
-        
-        assert!(OracleConfigValidator::validate_threshold_range(
-            &-1,
-            &OracleProvider::Reflector
-        ).is_err());
-        
+        assert!(
+            OracleConfigValidator::validate_threshold_range(&0, &OracleProvider::Reflector)
+                .is_err()
+        );
+
+        assert!(
+            OracleConfigValidator::validate_threshold_range(&-1, &OracleProvider::Reflector)
+                .is_err()
+        );
+
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000_01, // Above max
             &OracleProvider::Reflector
-        ).is_err());
+        )
+        .is_err());
 
         // Valid Pyth thresholds
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000, // $0.01 in 8-decimal units
             &OracleProvider::Pyth
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_threshold_range(
             &100_000_000_000_000, // $1,000,000 in 8-decimal units
             &OracleProvider::Pyth
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid Pyth thresholds
-        assert!(OracleConfigValidator::validate_threshold_range(
-            &0,
-            &OracleProvider::Pyth
-        ).is_err());
-        
+        assert!(
+            OracleConfigValidator::validate_threshold_range(&0, &OracleProvider::Pyth).is_err()
+        );
+
         assert!(OracleConfigValidator::validate_threshold_range(
             &999_999, // Below min
             &OracleProvider::Pyth
-        ).is_err());
+        )
+        .is_err());
 
         // Unsupported providers
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000,
             &OracleProvider::BandProtocol
-        ).is_err());
-        
-        assert!(OracleConfigValidator::validate_threshold_range(
-            &1_000_000,
-            &OracleProvider::DIA
-        ).is_err());
+        )
+        .is_err());
+
+        assert!(
+            OracleConfigValidator::validate_threshold_range(&1_000_000, &OracleProvider::DIA)
+                .is_err()
+        );
     }
 
     #[test]
     fn test_validate_comparison_operator() {
         let env = soroban_sdk::Env::default();
-        
+
         // Valid operators for Reflector
         let reflector_operators = vec![
             &env,
@@ -1010,37 +1084,43 @@ mod oracle_config_validator_tests {
             String::from_str(&env, "lt"),
             String::from_str(&env, "eq"),
         ];
-        
+
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, "gt"),
             &reflector_operators
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, "lt"),
             &reflector_operators
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, "eq"),
             &reflector_operators
-        ).is_ok());
+        )
+        .is_ok());
 
         // Invalid operators for Reflector
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, "gte"),
             &reflector_operators
-        ).is_err());
-        
+        )
+        .is_err());
+
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, ""),
             &reflector_operators
-        ).is_err());
-        
+        )
+        .is_err());
+
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, "invalid"),
             &reflector_operators
-        ).is_err());
+        )
+        .is_err());
 
         // Valid operators for Pyth
         let pyth_operators = vec![
@@ -1051,43 +1131,41 @@ mod oracle_config_validator_tests {
             String::from_str(&env, "lte"),
             String::from_str(&env, "eq"),
         ];
-        
+
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, "gte"),
             &pyth_operators
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_comparison_operator(
             &String::from_str(&env, "lte"),
             &pyth_operators
-        ).is_ok());
+        )
+        .is_ok());
     }
 
     #[test]
     fn test_validate_oracle_provider() {
         // Supported provider
-        assert!(OracleConfigValidator::validate_oracle_provider(
-            &OracleProvider::Reflector
-        ).is_ok());
+        assert!(
+            OracleConfigValidator::validate_oracle_provider(&OracleProvider::Reflector).is_ok()
+        );
 
         // Unsupported providers
-        assert!(OracleConfigValidator::validate_oracle_provider(
-            &OracleProvider::Pyth
-        ).is_err());
-        
-        assert!(OracleConfigValidator::validate_oracle_provider(
-            &OracleProvider::BandProtocol
-        ).is_err());
-        
-        assert!(OracleConfigValidator::validate_oracle_provider(
-            &OracleProvider::DIA
-        ).is_err());
+        assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::Pyth).is_err());
+
+        assert!(
+            OracleConfigValidator::validate_oracle_provider(&OracleProvider::BandProtocol).is_err()
+        );
+
+        assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::DIA).is_err());
     }
 
     // #[test]
     // fn test_validate_config_consistency() {
     //     let env = soroban_sdk::Env::default();
-    //     
+    //
     //     // Valid Reflector configuration
     //     let valid_reflector_config = OracleConfig::new(
     //         OracleProvider::Reflector,
@@ -1095,7 +1173,7 @@ mod oracle_config_validator_tests {
     //         50_000_00, // $50,000
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_config_consistency(
     //         &valid_reflector_config
     //     ).is_ok());
@@ -1107,7 +1185,7 @@ mod oracle_config_validator_tests {
     //         50_000_00,
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_config_consistency(
     //         &invalid_feed_config
     //     ).is_err());
@@ -1119,7 +1197,7 @@ mod oracle_config_validator_tests {
     //         50_000_00,
     //         String::from_str(&env, "gte")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_config_consistency(
     //         &invalid_operator_config
     //     ).is_err());
@@ -1131,7 +1209,7 @@ mod oracle_config_validator_tests {
     //         50_000_00,
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_config_consistency(
     //         &invalid_operator_config
     //     ).is_err());
@@ -1140,43 +1218,63 @@ mod oracle_config_validator_tests {
     #[test]
     fn test_get_provider_specific_validation_rules() {
         let env = soroban_sdk::Env::default();
-        
+
         // Test Reflector rules
         let reflector_rules = OracleConfigValidator::get_provider_specific_validation_rules(
             &env,
-            &OracleProvider::Reflector
+            &OracleProvider::Reflector,
         );
-        
-        assert!(reflector_rules.get(String::from_str(&env, "feed_id_format")).is_some());
-        assert!(reflector_rules.get(String::from_str(&env, "threshold_range")).is_some());
-        assert!(reflector_rules.get(String::from_str(&env, "supported_operators")).is_some());
-        assert!(reflector_rules.get(String::from_str(&env, "network_support")).is_some());
-        assert!(reflector_rules.get(String::from_str(&env, "integration_status")).is_some());
+
+        assert!(reflector_rules
+            .get(String::from_str(&env, "feed_id_format"))
+            .is_some());
+        assert!(reflector_rules
+            .get(String::from_str(&env, "threshold_range"))
+            .is_some());
+        assert!(reflector_rules
+            .get(String::from_str(&env, "supported_operators"))
+            .is_some());
+        assert!(reflector_rules
+            .get(String::from_str(&env, "network_support"))
+            .is_some());
+        assert!(reflector_rules
+            .get(String::from_str(&env, "integration_status"))
+            .is_some());
 
         // Test Pyth rules
         let pyth_rules = OracleConfigValidator::get_provider_specific_validation_rules(
             &env,
-            &OracleProvider::Pyth
+            &OracleProvider::Pyth,
         );
-        
-        assert!(pyth_rules.get(String::from_str(&env, "feed_id_format")).is_some());
-        assert!(pyth_rules.get(String::from_str(&env, "threshold_range")).is_some());
-        assert!(pyth_rules.get(String::from_str(&env, "supported_operators")).is_some());
+
+        assert!(pyth_rules
+            .get(String::from_str(&env, "feed_id_format"))
+            .is_some());
+        assert!(pyth_rules
+            .get(String::from_str(&env, "threshold_range"))
+            .is_some());
+        assert!(pyth_rules
+            .get(String::from_str(&env, "supported_operators"))
+            .is_some());
 
         // Test unsupported provider rules
         let band_rules = OracleConfigValidator::get_provider_specific_validation_rules(
             &env,
-            &OracleProvider::BandProtocol
+            &OracleProvider::BandProtocol,
         );
-        
-        assert!(band_rules.get(String::from_str(&env, "network_support")).is_some());
-        assert!(band_rules.get(String::from_str(&env, "integration_status")).is_some());
+
+        assert!(band_rules
+            .get(String::from_str(&env, "network_support"))
+            .is_some());
+        assert!(band_rules
+            .get(String::from_str(&env, "integration_status"))
+            .is_some());
     }
 
     // #[test]
     // fn test_validate_oracle_config_all_together() {
     //     let env = soroban_sdk::Env::default();
-    //     
+    //
     //     // Valid complete configuration
     //     let valid_config = OracleConfig::new(
     //         OracleProvider::Reflector,
@@ -1184,7 +1282,7 @@ mod oracle_config_validator_tests {
     //         50_000_00, // $50,000
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &valid_config
     //     ).is_ok());
@@ -1196,7 +1294,7 @@ mod oracle_config_validator_tests {
     //         50_000_00,
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &invalid_provider_config
     //     ).is_err());
@@ -1208,7 +1306,7 @@ mod oracle_config_validator_tests {
     //         50_000_00,
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &invalid_feed_config
     //     ).is_err());
@@ -1220,7 +1318,7 @@ mod oracle_config_validator_tests {
     //         0, // Invalid threshold
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &invalid_threshold_config
     //     ).is_err());
@@ -1232,7 +1330,7 @@ mod oracle_config_validator_tests {
     //         50_000_00,
     //         String::from_str(&env, "gte") // Not supported by Reflector
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &invalid_operator_config
     //     ).is_err());
@@ -1241,7 +1339,7 @@ mod oracle_config_validator_tests {
     // #[test]
     // fn test_edge_cases() {
     //     let env = soroban_sdk::Env::default();
-    //     
+    //
     //     // Edge case: Minimum valid Reflector feed ID
     //     let min_feed_config = OracleConfig::new(
     //         OracleProvider::Reflector,
@@ -1249,7 +1347,7 @@ mod oracle_config_validator_tests {
     //         1, // Minimum threshold
     //         String::from_str(&env, "gt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &min_feed_config
     //     ).is_ok());
@@ -1261,7 +1359,7 @@ mod oracle_config_validator_tests {
     //         1_000_000_00, // Maximum threshold
     //         String::from_str(&env, "eq")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &max_threshold_config
     //     ).is_ok());
@@ -1273,7 +1371,7 @@ mod oracle_config_validator_tests {
     //         100_000_00, // $100,000
     //         String::from_str(&env, "lt")
     //     );
-    //     
+    //
     //     assert!(OracleConfigValidator::validate_oracle_config_all_together(
     //         &single_asset_config
     //     ).is_ok());
@@ -1282,46 +1380,51 @@ mod oracle_config_validator_tests {
     #[test]
     fn test_provider_specific_validation() {
         let env = soroban_sdk::Env::default();
-        
+
         // Test Reflector-specific validation
         let reflector_config = OracleConfig::new(
             OracleProvider::Reflector,
             String::from_str(&env, "BTC/USD"),
             50_000_00,
-            String::from_str(&env, "gt")
+            String::from_str(&env, "gt"),
         );
-        
+
         assert!(OracleConfigValidator::validate_feed_id_format(
             &reflector_config.feed_id,
             &reflector_config.provider
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_threshold_range(
             &reflector_config.threshold,
             &reflector_config.provider
-        ).is_ok());
+        )
+        .is_ok());
 
         // Test Pyth-specific validation (should fail for provider support but pass format validation)
         let pyth_config = OracleConfig::new(
             OracleProvider::Pyth,
-            String::from_str(&env, "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"),
+            String::from_str(
+                &env,
+                "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+            ),
             1_000_000, // $0.01 in 8-decimal units
-            String::from_str(&env, "gt")
+            String::from_str(&env, "gt"),
         );
-        
+
         assert!(OracleConfigValidator::validate_feed_id_format(
             &pyth_config.feed_id,
             &pyth_config.provider
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         assert!(OracleConfigValidator::validate_threshold_range(
             &pyth_config.threshold,
             &pyth_config.provider
-        ).is_ok());
-        
+        )
+        .is_ok());
+
         // Overall validation should fail due to provider not being supported
-        assert!(OracleConfigValidator::validate_oracle_config_all_together(
-            &pyth_config
-        ).is_err());
+        assert!(OracleConfigValidator::validate_oracle_config_all_together(&pyth_config).is_err());
     }
 }

@@ -484,9 +484,10 @@ impl OracleConfig {
             comparison,
         }
     }
+}
 
+impl OracleConfig {
     /// Validate the oracle configuration
-
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
         // Validate threshold
         if self.threshold <= 0 {

@@ -1,10 +1,8 @@
 #![cfg_attr(test, allow(dead_code))]
 
 use super::*;
-use soroban_sdk::{
-    contracttype, map, vec, Address, Env, Map, Symbol, Vec,
-};
-use crate::markets::{MarketStateManager, MarketStateLogic};
+use crate::markets::{MarketStateLogic, MarketStateManager};
+use soroban_sdk::{contracttype, Symbol, Vec};
 
 // ===== STORAGE OPTIMIZATION TYPES =====
 
@@ -132,22 +130,22 @@ impl StorageOptimizer {
     pub fn compress_market_data(env: &Env, market: &Market) -> Result<CompressedMarket, Error> {
         // Create a simple compression by removing unnecessary fields and optimizing structure
         let market_id = Self::generate_market_id(env, &market.question);
-        
+
         // Convert market to compressed format
         let compressed_data = Self::serialize_compressed_market(env, market)?;
         let original_size = Self::calculate_market_size(market);
         let compressed_size = compressed_data.len() as u32;
-        
+
         // Calculate compression ratio (as percentage * 100 for integer storage)
         let compression_ratio = if original_size > 0 {
             (compressed_size as i128 * 10000) / original_size as i128
         } else {
             0
         };
-        
+
         // Generate checksum for data integrity
         let checksum = Self::generate_checksum(&compressed_data);
-        
+
         Ok(CompressedMarket {
             market_id,
             compressed_data,
@@ -158,39 +156,39 @@ impl StorageOptimizer {
             checksum,
         })
     }
-    
+
     /// Clean up old market data based on age and state
     pub fn cleanup_old_market_data(env: &Env, market_id: &Symbol) -> Result<bool, Error> {
         let market = MarketStateManager::get_market(env, market_id)?;
         let current_time = env.ledger().timestamp();
-        
+
         // Check if market is old enough for cleanup
         let market_age_days = (current_time - market.end_time) / (24 * 60 * 60);
         let config = Self::get_storage_config(env);
-        
+
         if market_age_days > config.cleanup_threshold_days.into() {
             // Only cleanup closed or cancelled markets
             if market.state == MarketState::Closed || market.state == MarketState::Cancelled {
                 // Archive market data before deletion
                 Self::archive_market_data(env, market_id, &market)?;
-                
+
                 // Remove from storage
                 MarketStateManager::remove_market(env, market_id);
-                
+
                 // Emit cleanup event
                 events::EventEmitter::emit_storage_cleanup_event(
                     env,
                     market_id,
                     &String::from_str(env, "old_market_cleanup"),
                 );
-                
+
                 return Ok(true);
             }
         }
-        
+
         Ok(false)
     }
-    
+
     /// Migrate storage format from old to new format
     pub fn migrate_storage_format(
         env: &Env,
@@ -198,7 +196,7 @@ impl StorageOptimizer {
         to_format: StorageFormat,
     ) -> Result<StorageMigration, Error> {
         let migration_id = Symbol::new(env, &format!("migration_{}", env.ledger().timestamp()));
-        
+
         let mut migration = StorageMigration {
             migration_id: migration_id.clone(),
             from_format: from_format.clone(),
@@ -209,10 +207,10 @@ impl StorageOptimizer {
             status: String::from_str(env, "in_progress"),
             error_message: None,
         };
-        
+
         // Store migration record
         Self::store_migration_record(env, &migration_id, &migration);
-        
+
         match (from_format, to_format) {
             (StorageFormat::V1, StorageFormat::V2) => {
                 migration = Self::migrate_v1_to_v2(env, migration)?;
@@ -225,14 +223,14 @@ impl StorageOptimizer {
                 migration.error_message = Some(String::from_str(env, "Unsupported migration path"));
             }
         }
-        
+
         // Update migration record
         migration.completed_at = Some(env.ledger().timestamp());
         Self::store_migration_record(env, &migration_id, &migration);
-        
+
         Ok(migration)
     }
-    
+
     /// Monitor storage usage and return statistics
     pub fn monitor_storage_usage(env: &Env) -> Result<StorageUsageStats, Error> {
         let mut total_markets = 0;
@@ -241,17 +239,17 @@ impl StorageOptimizer {
         let mut storage_savings = 0u64;
         let mut oldest_timestamp = u64::MAX;
         let mut newest_timestamp = 0u64;
-        
+
         // Iterate through all markets (this is a simplified approach)
         // In a real implementation, you'd have a market registry
         let market_ids = Self::get_all_market_ids(env);
-        
+
         for market_id in market_ids.iter() {
             if let Ok(market) = MarketStateManager::get_market(env, &market_id) {
                 total_markets += 1;
                 let market_size = Self::calculate_market_size(&market);
                 total_storage_bytes += market_size as u64;
-                
+
                 // Track timestamps
                 if market.end_time < oldest_timestamp {
                     oldest_timestamp = market.end_time;
@@ -259,7 +257,7 @@ impl StorageOptimizer {
                 if market.end_time > newest_timestamp {
                     newest_timestamp = market.end_time;
                 }
-                
+
                 // Check if market is compressed
                 if Self::is_market_compressed(env, &market_id) {
                     compressed_markets += 1;
@@ -268,19 +266,19 @@ impl StorageOptimizer {
                 }
             }
         }
-        
+
         let avg_storage_per_market = if total_markets > 0 {
             total_storage_bytes / total_markets as u64
         } else {
             0
         };
-        
+
         let compression_ratio = if total_storage_bytes > 0 {
             (storage_savings as i128 * 10000) / total_storage_bytes as i128
         } else {
             0
         };
-        
+
         Ok(StorageUsageStats {
             total_markets,
             total_storage_bytes,
@@ -288,49 +286,56 @@ impl StorageOptimizer {
             compressed_markets,
             storage_savings,
             compression_ratio,
-            oldest_market_timestamp: if oldest_timestamp == u64::MAX { 0 } else { oldest_timestamp },
+            oldest_market_timestamp: if oldest_timestamp == u64::MAX {
+                0
+            } else {
+                oldest_timestamp
+            },
             newest_market_timestamp: newest_timestamp,
         })
     }
-    
+
     /// Optimize storage layout for a specific market
     pub fn optimize_storage_layout(env: &Env, market_id: &Symbol) -> Result<bool, Error> {
         let market = MarketStateManager::get_market(env, market_id)?;
-        
+
         // Check if optimization is needed
         let current_size = Self::calculate_market_size(&market);
         let config = Self::get_storage_config(env);
-        
+
         if current_size as u64 > config.max_storage_per_market {
             // Apply compression
             let compressed_market = Self::compress_market_data(env, &market)?;
-            
+
             // Store compressed version
             Self::store_compressed_market(env, &compressed_market)?;
-            
+
             // Update market reference to point to compressed data
             Self::update_market_to_compressed(env, market_id, &compressed_market.market_id)?;
-            
+
             // Emit optimization event
             events::EventEmitter::emit_storage_optimization_event(
                 env,
                 market_id,
                 &String::from_str(env, "compression_applied"),
             );
-            
+
             return Ok(true);
         }
-        
+
         Ok(false)
     }
-    
+
     /// Get storage usage statistics
     pub fn get_storage_usage_statistics(env: &Env) -> Result<StorageUsageStats, Error> {
         Self::monitor_storage_usage(env)
     }
-    
+
     /// Validate storage integrity for a specific market
-    pub fn validate_storage_integrity(env: &Env, market_id: &Symbol) -> Result<StorageIntegrityResult, Error> {
+    pub fn validate_storage_integrity(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Result<StorageIntegrityResult, Error> {
         let mut result = StorageIntegrityResult {
             market_id: market_id.clone(),
             is_valid: true,
@@ -340,7 +345,7 @@ impl StorageOptimizer {
             errors: Vec::new(env),
             warnings: Vec::new(env),
         };
-        
+
         // Try to get market data
         match MarketStateManager::get_market(env, market_id) {
             Ok(market) => {
@@ -348,33 +353,45 @@ impl StorageOptimizer {
                 if let Err(e) = market.validate(env) {
                     result.is_valid = false;
                     result.corruption_detected = true;
-                    result.errors.push_back(String::from_str(env, &format!("Validation failed: {:?}", e)));
+                    result.errors.push_back(String::from_str(
+                        env,
+                        &format!("Validation failed: {:?}", e),
+                    ));
                 }
-                
+
                 // Check for missing critical data
                 if market.question.is_empty() {
                     result.missing_data = true;
-                    result.warnings.push_back(String::from_str(env, "Empty market question"));
+                    result
+                        .warnings
+                        .push_back(String::from_str(env, "Empty market question"));
                 }
-                
+
                 if market.outcomes.is_empty() {
                     result.missing_data = true;
-                    result.errors.push_back(String::from_str(env, "No outcomes defined"));
+                    result
+                        .errors
+                        .push_back(String::from_str(env, "No outcomes defined"));
                 }
-                
+
                 // Validate state consistency
                 if let Err(e) = MarketStateLogic::validate_market_state_consistency(env, &market) {
                     result.is_valid = false;
-                    result.errors.push_back(String::from_str(env, &format!("State inconsistency: {:?}", e)));
+                    result.errors.push_back(String::from_str(
+                        env,
+                        &format!("State inconsistency: {:?}", e),
+                    ));
                 }
             }
             Err(e) => {
                 result.is_valid = false;
                 result.missing_data = true;
-                result.errors.push_back(String::from_str(env, &format!("Market not found: {:?}", e)));
+                result
+                    .errors
+                    .push_back(String::from_str(env, &format!("Market not found: {:?}", e)));
             }
         }
-        
+
         // Check compressed data if exists
         if Self::is_market_compressed(env, market_id) {
             if let Ok(compressed) = Self::get_compressed_market(env, market_id) {
@@ -383,17 +400,23 @@ impl StorageOptimizer {
                 if calculated_checksum != compressed.checksum {
                     result.checksum_valid = false;
                     result.corruption_detected = true;
-                    result.errors.push_back(String::from_str(env, "Checksum validation failed"));
+                    result
+                        .errors
+                        .push_back(String::from_str(env, "Checksum validation failed"));
                 }
             }
         }
-        
+
         Ok(result)
     }
-    
+
     /// Get storage configuration
     pub fn get_storage_config(env: &Env) -> StorageConfig {
-        match env.storage().persistent().get(&Symbol::new(env, "storage_config")) {
+        match env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "storage_config"))
+        {
             Some(config) => config,
             None => StorageConfig {
                 compression_enabled: true,
@@ -405,7 +428,7 @@ impl StorageOptimizer {
             },
         }
     }
-    
+
     /// Update storage configuration
     pub fn update_storage_config(env: &Env, config: &StorageConfig) -> Result<(), Error> {
         env.storage()
@@ -422,7 +445,7 @@ impl StorageOptimizer {
     fn serialize_compressed_market(env: &Env, market: &Market) -> Result<Vec<i128>, Error> {
         // Simple serialization - in a real implementation, you'd use a proper serialization library
         let mut data = Vec::new(env);
-        
+
         // Add essential fields only
         data.push_back(0); // Simplified - in real implementation, you'd properly serialize the address
         data.push_back(market.question.len() as i128);
@@ -437,10 +460,10 @@ impl StorageOptimizer {
         data.push_back(market.end_time as i128);
         data.push_back(market.total_staked);
         data.push_back(market.state as i128);
-        
+
         Ok(data)
     }
-    
+
     /// Calculate approximate size of market data
     fn calculate_market_size(market: &Market) -> u32 {
         // Simplified size calculation
@@ -449,10 +472,10 @@ impl StorageOptimizer {
         let outcomes_size = market.outcomes.len() as u32 * 50; // Average outcome size
         let votes_size = market.votes.len() as u32 * 100; // Average vote entry size
         let stakes_size = market.stakes.len() as u32 * 50; // Average stake entry size
-        
+
         base_size + question_size + outcomes_size + votes_size + stakes_size
     }
-    
+
     /// Generate checksum for data integrity
     fn generate_checksum(data: &Vec<i128>) -> String {
         // Simple checksum - in production, use a proper hash function
@@ -462,7 +485,7 @@ impl StorageOptimizer {
         }
         String::from_str(&data.env(), &format!("{:016x}", checksum))
     }
-    
+
     /// Generate market ID from question
     fn generate_market_id(env: &Env, question: &String) -> Symbol {
         // Simple hash-based ID generation
@@ -471,36 +494,45 @@ impl StorageOptimizer {
         hash = hash.wrapping_add(question.len() as i128);
         Symbol::new(env, &format!("market_{:016x}", hash))
     }
-    
+
     /// Archive market data before deletion
     fn archive_market_data(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
         // Store archived version with timestamp
-        let archive_key = Symbol::new(env, &format!("archive_{:?}_{}", market_id, env.ledger().timestamp()));
+        let archive_key = Symbol::new(
+            env,
+            &format!("archive_{:?}_{}", market_id, env.ledger().timestamp()),
+        );
         env.storage().persistent().set(&archive_key, market);
         Ok(())
     }
-    
+
     /// Store migration record
     fn store_migration_record(env: &Env, migration_id: &Symbol, migration: &StorageMigration) {
         env.storage().persistent().set(migration_id, migration);
     }
-    
+
     /// Migrate from V1 to V2 format
-    fn migrate_v1_to_v2(env: &Env, mut migration: StorageMigration) -> Result<StorageMigration, Error> {
+    fn migrate_v1_to_v2(
+        env: &Env,
+        mut migration: StorageMigration,
+    ) -> Result<StorageMigration, Error> {
         // Simplified migration - in real implementation, you'd migrate actual data
         migration.markets_migrated = 1;
         migration.status = String::from_str(env, "completed");
         Ok(migration)
     }
-    
+
     /// Migrate from V2 to V3 format
-    fn migrate_v2_to_v3(env: &Env, mut migration: StorageMigration) -> Result<StorageMigration, Error> {
+    fn migrate_v2_to_v3(
+        env: &Env,
+        mut migration: StorageMigration,
+    ) -> Result<StorageMigration, Error> {
         // Simplified migration - in real implementation, you'd migrate actual data
         migration.markets_migrated = 1;
         migration.status = String::from_str(env, "completed");
         Ok(migration)
     }
-    
+
     /// Get all market IDs (simplified - in real implementation, you'd have a registry)
     fn get_all_market_ids(env: &Env) -> Vec<Symbol> {
         // This is a simplified approach - in a real implementation,
@@ -509,21 +541,27 @@ impl StorageOptimizer {
         // For now, return empty vector - this would be populated from a registry
         market_ids
     }
-    
+
     /// Check if market is compressed
     fn is_market_compressed(env: &Env, market_id: &Symbol) -> bool {
         env.storage()
             .persistent()
             .has(&Symbol::new(env, &format!("compressed_{:?}", market_id)))
     }
-    
+
     /// Store compressed market
-    fn store_compressed_market(env: &Env, compressed_market: &CompressedMarket) -> Result<(), Error> {
-        let key = Symbol::new(env, &format!("compressed_{:?}", compressed_market.market_id));
+    fn store_compressed_market(
+        env: &Env,
+        compressed_market: &CompressedMarket,
+    ) -> Result<(), Error> {
+        let key = Symbol::new(
+            env,
+            &format!("compressed_{:?}", compressed_market.market_id),
+        );
         env.storage().persistent().set(&key, compressed_market);
         Ok(())
     }
-    
+
     /// Get compressed market
     fn get_compressed_market(env: &Env, market_id: &Symbol) -> Result<CompressedMarket, Error> {
         let key = Symbol::new(env, &format!("compressed_{:?}", market_id));
@@ -532,9 +570,13 @@ impl StorageOptimizer {
             .get(&key)
             .ok_or(Error::MarketNotFound)
     }
-    
+
     /// Update market to point to compressed data
-    fn update_market_to_compressed(env: &Env, market_id: &Symbol, compressed_id: &Symbol) -> Result<(), Error> {
+    fn update_market_to_compressed(
+        env: &Env,
+        market_id: &Symbol,
+        compressed_id: &Symbol,
+    ) -> Result<(), Error> {
         let key = Symbol::new(env, &format!("compressed_ref_{:?}", market_id));
         env.storage().persistent().set(&key, compressed_id);
         Ok(())
@@ -553,7 +595,7 @@ impl StorageUtils {
         // Simplified cost calculation - in real implementation, use actual blockchain costs
         size as u64 * 100 // 100 stroops per byte
     }
-    
+
     /// Get storage efficiency score (0-100)
     pub fn get_storage_efficiency_score(market: &Market) -> u32 {
         let size = StorageOptimizer::calculate_market_size(market);
@@ -566,30 +608,39 @@ impl StorageUtils {
         };
         efficiency
     }
-    
+
     /// Check if market needs optimization
     pub fn needs_optimization(market: &Market, config: &StorageConfig) -> bool {
         let size = StorageOptimizer::calculate_market_size(market);
         size as u64 > config.max_storage_per_market
     }
-    
+
     /// Get storage recommendations for a market
     pub fn get_storage_recommendations(market: &Market) -> Vec<String> {
         let mut recommendations = Vec::new(&market.question.env());
-        
+
         let size = StorageOptimizer::calculate_market_size(market);
         if size > 10000 {
-            recommendations.push_back(String::from_str(&market.question.env(), "Consider compression for large market data"));
+            recommendations.push_back(String::from_str(
+                &market.question.env(),
+                "Consider compression for large market data",
+            ));
         }
-        
+
         if market.votes.len() > 1000 {
-            recommendations.push_back(String::from_str(&market.question.env(), "High vote count - consider vote aggregation"));
+            recommendations.push_back(String::from_str(
+                &market.question.env(),
+                "High vote count - consider vote aggregation",
+            ));
         }
-        
+
         if market.question.len() > 200 {
-            recommendations.push_back(String::from_str(&market.question.env(), "Long question - consider shortening"));
+            recommendations.push_back(String::from_str(
+                &market.question.env(),
+                "Long question - consider shortening",
+            ));
         }
-        
+
         recommendations
     }
 }
@@ -600,7 +651,7 @@ impl StorageUtils {
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address;
-    
+
     #[test]
     fn test_storage_optimizer_compression() {
         let env = Env::default();
@@ -609,10 +660,10 @@ mod tests {
             &env,
             admin,
             String::from_str(&env, "Test market question"),
-            Vec::from_array(&env, [
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no")
-            ]),
+            Vec::from_array(
+                &env,
+                [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+            ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Reflector,
@@ -622,12 +673,15 @@ mod tests {
             ),
             MarketState::Active,
         );
-        
+
         let compressed = StorageOptimizer::compress_market_data(&env, &market).unwrap();
         assert!(compressed.compressed_size < compressed.original_size);
-        assert_eq!(compressed.compression_type, String::from_str(&env, "simple_optimization"));
+        assert_eq!(
+            compressed.compression_type,
+            String::from_str(&env, "simple_optimization")
+        );
     }
-    
+
     #[test]
     fn test_storage_usage_monitoring() {
         let env = Env::default();
@@ -635,7 +689,7 @@ mod tests {
         assert_eq!(stats.total_markets, 0);
         assert_eq!(stats.total_storage_bytes, 0);
     }
-    
+
     // #[test]
     // fn test_storage_config() {
     //     let env = Env::default();
@@ -649,7 +703,7 @@ mod tests {
     //         assert!(!config.auto_cleanup_enabled);
     //     });
     // }
-    
+
     #[test]
     fn test_storage_utils() {
         let env = Env::default();
@@ -658,10 +712,10 @@ mod tests {
             &env,
             admin,
             String::from_str(&env, "Test market"),
-            Vec::from_array(&env, [
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no")
-            ]),
+            Vec::from_array(
+                &env,
+                [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+            ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Reflector,
@@ -671,13 +725,13 @@ mod tests {
             ),
             MarketState::Active,
         );
-        
+
         let efficiency = StorageUtils::get_storage_efficiency_score(&market);
         assert!(efficiency > 0);
         assert!(efficiency <= 100);
-        
+
         let recommendations = StorageUtils::get_storage_recommendations(&market);
         // Recommendations may be empty for small markets, so we just check it doesn't panic
         assert!(recommendations.len() >= 0);
     }
-} 
+}
