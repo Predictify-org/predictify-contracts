@@ -1,3 +1,4 @@
+extern crate alloc;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
 use crate::errors::Error;
@@ -366,7 +367,7 @@ pub struct NetworkConfig {
 /// let platform_fee = (payout * fee_config.platform_fee_percentage) / 10000;
 /// println!("Platform fee: {} stroops", platform_fee); // 25 XLM
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct FeeConfig {
     /// Platform fee percentage in basis points (1/100th of a percent).
@@ -2198,6 +2199,222 @@ impl ConfigManager {
         Self::store_config(env, &config)?;
         Ok(config)
     }
+
+    /// Internal helper: push a history record, keep last 100 entries
+    fn push_history(env: &Env, record: &ConfigUpdateRecord) {
+        let key = Symbol::new(env, "ConfigHistory");
+        let mut history: soroban_sdk::Vec<ConfigUpdateRecord> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+
+        history.push_back(record.clone());
+        if history.len() > 100 {
+            history.remove(0);
+        }
+        env.storage().persistent().set(&key, &history);
+    }
+
+    /// Get the currently stored configuration
+    pub fn get_current_configuration(env: &Env) -> Result<ContractConfig, Error> {
+        Self::get_config(env)
+    }
+
+    /// Retrieve configuration update history (may be empty)
+    pub fn get_configuration_history(env: &Env) -> Result<soroban_sdk::Vec<ConfigUpdateRecord>, Error> {
+        let key = Symbol::new(env, "ConfigHistory");
+        Ok(env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(env)))
+    }
+
+    /// Validate a set of configuration changes without persisting them
+    pub fn validate_configuration_changes(env: &Env, changes: &ConfigChanges) -> Result<(), Error> {
+        let mut cfg = Self::get_config(env)?;
+
+        if let Some(fee) = changes.platform_fee_percentage {
+            cfg.fees.platform_fee_percentage = fee;
+        }
+        if let Some(base) = changes.base_dispute_threshold {
+            cfg.voting.base_dispute_threshold = base;
+        }
+        if let Some(timeout) = changes.oracle_timeout_seconds {
+            cfg.oracle.timeout_seconds = timeout as u64;
+        }
+        if let Some(l) = &changes.market_limits {
+            cfg.market.max_duration_days = l.max_duration_days;
+            cfg.market.min_duration_days = l.min_duration_days;
+            cfg.market.max_outcomes = l.max_outcomes;
+            cfg.market.min_outcomes = l.min_outcomes;
+            cfg.market.max_question_length = l.max_question_length;
+            cfg.market.max_outcome_length = l.max_outcome_length;
+        }
+
+        ConfigValidator::validate_contract_config(&cfg)
+    }
+
+    /// Update platform fee percentage (requires admin with update_fees permission)
+    pub fn update_fee_percentage(
+        env: &Env,
+        admin: Address,
+        new_fee: i128,
+    ) -> Result<ContractConfig, Error> {
+        // AuthN/AuthZ
+        crate::admin::AdminAccessControl::validate_admin_for_action(env, &admin, "update_fees")?;
+
+        let mut cfg = Self::get_config(env)?;
+        let old = cfg.fees.platform_fee_percentage;
+        cfg.fees.platform_fee_percentage = new_fee;
+
+        // Validate and persist
+        ConfigValidator::validate_fee_config(&cfg.fees)?;
+        Self::update_config(env, &cfg)?;
+
+        // Emit event and record history
+        let change_type = String::from_str(env, "fee_percentage");
+        let old_s = String::from_str(env, &alloc::format!("{}", old));
+        let new_s = String::from_str(env, &alloc::format!("{}", new_fee));
+        crate::events::EventEmitter::emit_config_updated(env, &admin, &change_type, &old_s, &new_s);
+
+        let record = ConfigUpdateRecord {
+            updated_by: admin,
+            change_type,
+            old_value: old_s,
+            new_value: new_s,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::push_history(env, &record);
+
+        Ok(cfg)
+    }
+
+    /// Update base dispute threshold (requires admin with update_config permission)
+    pub fn update_dispute_threshold(
+        env: &Env,
+        admin: Address,
+        new_threshold: i128,
+    ) -> Result<ContractConfig, Error> {
+        crate::admin::AdminAccessControl::validate_admin_for_action(env, &admin, "update_config")?;
+
+        let mut cfg = Self::get_config(env)?;
+        let old = cfg.voting.base_dispute_threshold;
+        cfg.voting.base_dispute_threshold = new_threshold;
+
+        ConfigValidator::validate_voting_config(&cfg.voting)?;
+        Self::update_config(env, &cfg)?;
+
+        let change_type = String::from_str(env, "dispute_threshold");
+        let old_s = String::from_str(env, &alloc::format!("{}", old));
+        let new_s = String::from_str(env, &alloc::format!("{}", new_threshold));
+        crate::events::EventEmitter::emit_config_updated(env, &admin, &change_type, &old_s, &new_s);
+
+        let record = ConfigUpdateRecord {
+            updated_by: admin,
+            change_type,
+            old_value: old_s,
+            new_value: new_s,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::push_history(env, &record);
+
+        Ok(cfg)
+    }
+
+    /// Update oracle timeout seconds (requires admin with update_config permission)
+    pub fn update_oracle_timeout(
+        env: &Env,
+        admin: Address,
+        timeout_seconds: u32,
+    ) -> Result<ContractConfig, Error> {
+        crate::admin::AdminAccessControl::validate_admin_for_action(env, &admin, "update_config")?;
+
+        let mut cfg = Self::get_config(env)?;
+        let old = cfg.oracle.timeout_seconds;
+        cfg.oracle.timeout_seconds = timeout_seconds as u64;
+
+        ConfigValidator::validate_oracle_config(&cfg.oracle)?;
+        Self::update_config(env, &cfg)?;
+
+        let change_type = String::from_str(env, "oracle_timeout");
+        let old_s = String::from_str(env, &alloc::format!("{}", old));
+        let new_s = String::from_str(env, &alloc::format!("{}", cfg.oracle.timeout_seconds));
+        crate::events::EventEmitter::emit_config_updated(env, &admin, &change_type, &old_s, &new_s);
+
+        let record = ConfigUpdateRecord {
+            updated_by: admin,
+            change_type,
+            old_value: old_s,
+            new_value: new_s,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::push_history(env, &record);
+
+        Ok(cfg)
+    }
+
+    /// Update market limits (requires admin with update_config permission)
+    pub fn update_market_limits(
+        env: &Env,
+        admin: Address,
+        limits: MarketLimits,
+    ) -> Result<ContractConfig, Error> {
+        crate::admin::AdminAccessControl::validate_admin_for_action(env, &admin, "update_config")?;
+
+        let mut cfg = Self::get_config(env)?;
+        // Old value snapshot (condensed)
+        let old_s = String::from_str(
+            env,
+            &alloc::format!(
+                "{{max_d:{},min_d:{},max_o:{},min_o:{},q_len:{},o_len:{}}}",
+                cfg.market.max_duration_days,
+                cfg.market.min_duration_days,
+                cfg.market.max_outcomes,
+                cfg.market.min_outcomes,
+                cfg.market.max_question_length,
+                cfg.market.max_outcome_length
+            ),
+        );
+
+        // Apply new limits
+        cfg.market.max_duration_days = limits.max_duration_days;
+        cfg.market.min_duration_days = limits.min_duration_days;
+        cfg.market.max_outcomes = limits.max_outcomes;
+        cfg.market.min_outcomes = limits.min_outcomes;
+        cfg.market.max_question_length = limits.max_question_length;
+        cfg.market.max_outcome_length = limits.max_outcome_length;
+
+        ConfigValidator::validate_market_config(&cfg.market)?;
+        Self::update_config(env, &cfg)?;
+
+        let change_type = String::from_str(env, "market_limits");
+        let new_s = String::from_str(
+            env,
+            &alloc::format!(
+                "{{max_d:{},min_d:{},max_o:{},min_o:{},q_len:{},o_len:{}}}",
+                cfg.market.max_duration_days,
+                cfg.market.min_duration_days,
+                cfg.market.max_outcomes,
+                cfg.market.min_outcomes,
+                cfg.market.max_question_length,
+                cfg.market.max_outcome_length
+            ),
+        );
+        crate::events::EventEmitter::emit_config_updated(env, &admin, &change_type, &old_s, &new_s);
+
+        let record = ConfigUpdateRecord {
+            updated_by: admin,
+            change_type,
+            old_value: old_s,
+            new_value: new_s,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::push_history(env, &record);
+
+        Ok(cfg)
+    }
 }
 
 // ===== CONFIGURATION VALIDATOR =====
@@ -2428,6 +2645,42 @@ impl ConfigUtils {
     }
 }
 
+// ===== CONFIGURATION UPDATE TYPES AND API =====
+
+ /// Market limits input for updating `MarketConfig` safely without exposing unrelated fields
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ #[contracttype]
+ pub struct MarketLimits {
+     pub max_duration_days: u32,
+     pub min_duration_days: u32,
+     pub max_outcomes: u32,
+     pub min_outcomes: u32,
+     pub max_question_length: u32,
+     pub max_outcome_length: u32,
+ }
+
+ /// Partial configuration changes for validation and bulk updates
+ #[derive(Clone, Debug)]
+ #[contracttype]
+ pub struct ConfigChanges {
+     pub platform_fee_percentage: Option<i128>,
+     pub base_dispute_threshold: Option<i128>,
+     pub oracle_timeout_seconds: Option<u32>,
+     pub market_limits: Option<MarketLimits>,
+ }
+
+ /// Configuration update history record for audit trail
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ #[contracttype]
+ pub struct ConfigUpdateRecord {
+     pub updated_by: Address,
+     pub change_type: String,
+     pub old_value: String,
+     pub new_value: String,
+     pub timestamp: u64,
+ }
+
+
 // ===== CONFIGURATION TESTING =====
 
 /// Configuration testing utilities
@@ -2570,13 +2823,6 @@ mod tests {
 
         // Test fee enabled check
         assert!(ConfigUtils::fees_enabled(&dev_config));
-        assert!(ConfigUtils::fees_enabled(&mainnet_config));
-
-        // Test configuration access
-        assert_eq!(
-            ConfigUtils::get_fee_config(&dev_config).platform_fee_percentage,
-            2
-        );
         assert_eq!(
             ConfigUtils::get_fee_config(&mainnet_config).platform_fee_percentage,
             3

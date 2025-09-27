@@ -449,25 +449,41 @@ impl MarketValidator {
             return Err(Error::InvalidQuestion);
         }
 
+        // Load dynamic configuration
+        let cfg = crate::config::ConfigManager::get_config(_env)
+            .map_err(|_| Error::ConfigurationNotFound)?;
+
         // Use the new MarketParameterValidator for comprehensive validation
         use crate::validation::MarketParameterValidator;
 
-        // Validate duration limits
+        // Validate duration limits from dynamic config
         if let Err(_) = MarketParameterValidator::validate_duration_limits(
             duration_days,
-            config::MIN_MARKET_DURATION_DAYS,
-            config::MAX_MARKET_DURATION_DAYS,
+            cfg.market.min_duration_days,
+            cfg.market.max_duration_days,
         ) {
             return Err(Error::InvalidDuration);
         }
 
-        // Validate outcome count and content
+        // Validate outcome count against dynamic config
         if let Err(_) = MarketParameterValidator::validate_outcome_count(
             outcomes,
-            config::MIN_MARKET_OUTCOMES,
-            config::MAX_MARKET_OUTCOMES,
+            cfg.market.min_outcomes,
+            cfg.market.max_outcomes,
         ) {
             return Err(Error::InvalidOutcomes);
+        }
+
+        // Enforce max question length from dynamic config
+        if question.len() as u32 > cfg.market.max_question_length {
+            return Err(Error::InvalidQuestion);
+        }
+
+        // Enforce max outcome length from dynamic config
+        for o in outcomes.iter() {
+            if o.len() as u32 > cfg.market.max_outcome_length {
+                return Err(Error::InvalidOutcomes);
+            }
         }
 
         Ok(())

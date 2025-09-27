@@ -342,15 +342,18 @@ impl VotingManager {
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         VotingValidator::validate_market_for_dispute(env, &market)?;
 
-        // Validate dispute stake
-        VotingValidator::validate_dispute_stake(stake)?;
+        // Validate dispute stake against dynamic config
+        let cfg = crate::config::ConfigManager::get_config(env)?;
+        if stake < cfg.voting.min_dispute_stake {
+            return Err(Error::InsufficientStake);
+        }
 
         // Process stake transfer
         VotingUtils::transfer_stake(env, &user, stake)?;
 
         // Add dispute stake and extend market (pass market_id for event emission)
         MarketStateManager::add_dispute_stake(&mut market, user, stake, Some(&market_id));
-        MarketStateManager::extend_for_dispute(&mut market, env, DISPUTE_EXTENSION_HOURS.into());
+        MarketStateManager::extend_for_dispute(&mut market, env, cfg.voting.dispute_extension_hours.into());
         MarketStateManager::update_market(env, &market_id, &market);
 
         Ok(())
@@ -387,25 +390,33 @@ impl VotingManager {
         crate::fees::FeeManager::collect_fees(env, admin, market_id)
     }
 
-    /// Calculate dynamic dispute threshold for a market
-
+    /// Calculate dynamic dispute threshold for a market using dynamic configuration
     pub fn calculate_dispute_threshold(
         env: &Env,
         market_id: Symbol,
     ) -> Result<DisputeThreshold, Error> {
         let _market = MarketStateManager::get_market(env, &market_id)?;
 
-        // Get adjustment factors
+        // Load dynamic voting config
+        let cfg = crate::config::ConfigManager::get_config(env)?;
+        let base = cfg.voting.base_dispute_threshold;
+
+        // Get adjustment factors (uses dynamic thresholds internally)
         let factors = ThresholdUtils::get_threshold_adjustment_factors(env, &market_id)?;
 
-        // Calculate adjusted threshold
-        let adjusted_threshold =
-            ThresholdUtils::calculate_adjusted_threshold(BASE_DISPUTE_THRESHOLD, &factors)?;
+        // Calculate adjusted threshold and enforce dynamic bounds
+        let mut adjusted_threshold = base + factors.total_adjustment;
+        if adjusted_threshold < cfg.voting.min_dispute_stake {
+            return Err(Error::ThresholdBelowMinimum);
+        }
+        if adjusted_threshold > cfg.voting.max_dispute_threshold {
+            adjusted_threshold = cfg.voting.max_dispute_threshold;
+        }
 
         // Create threshold data
         let threshold = DisputeThreshold {
             market_id: market_id.clone(),
-            base_threshold: BASE_DISPUTE_THRESHOLD,
+            base_threshold: base,
             adjusted_threshold,
             market_size_factor: factors.market_size_factor,
             activity_factor: factors.activity_factor,
@@ -545,16 +556,21 @@ impl ThresholdUtils {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Calculate market size factor
-        let market_size_factor =
-            Self::adjust_threshold_by_market_size(env, market_id, BASE_DISPUTE_THRESHOLD)?;
+        let market_size_factor = {
+            let base = crate::config::ConfigManager::get_config(env)?.voting.base_dispute_threshold;
+            Self::adjust_threshold_by_market_size(env, market_id, base)?
+        };
 
         // Calculate activity factor
+        let activity_factor = Self::modify_threshold_by_activity(
+            env,
+            market_id,
+            market.votes.len() as u32,
+        )?;
 
-        let activity_factor =
-            Self::modify_threshold_by_activity(env, market_id, market.votes.len() as u32)?;
-
-        // Calculate complexity factor (based on number of outcomes)
-        let complexity_factor = Self::calculate_complexity_factor(&market)?;
+        // Calculate complexity factor (based on number of outcomes) using dynamic base
+        let base = crate::config::ConfigManager::get_config(env)?.voting.base_dispute_threshold;
+        let complexity_factor = Self::calculate_complexity_factor(&market, base)?;
 
         let total_adjustment = market_size_factor + activity_factor + complexity_factor;
 
@@ -575,7 +591,8 @@ impl ThresholdUtils {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // For large markets, increase threshold
-        if market.total_staked > LARGE_MARKET_THRESHOLD {
+        let large_threshold = crate::config::ConfigManager::get_config(env)?.voting.large_market_threshold;
+        if market.total_staked > large_threshold {
             // Increase by 50% for large markets
             Ok((base_threshold * 150) / 100)
         } else {
@@ -592,23 +609,24 @@ impl ThresholdUtils {
         let _market = MarketStateManager::get_market(env, market_id)?;
 
         // For high activity markets, increase threshold
-        if activity_level > HIGH_ACTIVITY_THRESHOLD {
-            // Increase by 25% for high activity
-            Ok((BASE_DISPUTE_THRESHOLD * 25) / 100)
+        let cfg = crate::config::ConfigManager::get_config(env)?;
+        if activity_level > cfg.voting.high_activity_threshold {
+            // Increase by 25% for high activity based on dynamic base
+            Ok((cfg.voting.base_dispute_threshold * 25) / 100)
         } else {
             Ok(0) // No adjustment for lower activity
         }
     }
 
     /// Calculate complexity factor based on market characteristics
-    pub fn calculate_complexity_factor(market: &Market) -> Result<i128, Error> {
+    pub fn calculate_complexity_factor(market: &Market, base_threshold: i128) -> Result<i128, Error> {
         // More outcomes = higher complexity = higher threshold
         let outcome_count = market.outcomes.len() as i128;
 
         if outcome_count > 3 {
             // Increase by 10% per additional outcome beyond 3
             let additional_outcomes = outcome_count - 3;
-            Ok((BASE_DISPUTE_THRESHOLD * 10 * additional_outcomes) / 100)
+            Ok((base_threshold * 10 * additional_outcomes) / 100)
         } else {
             Ok(0)
         }
@@ -647,18 +665,22 @@ impl ThresholdUtils {
     /// Get dispute threshold
     pub fn get_dispute_threshold(env: &Env, market_id: &Symbol) -> Result<DisputeThreshold, Error> {
         let key = symbol_short!("dispute_t");
+        let cfg = crate::config::ConfigManager::get_config(env)?;
         Ok(env
             .storage()
             .persistent()
             .get(&key)
-            .unwrap_or(DisputeThreshold {
-                market_id: market_id.clone(),
-                base_threshold: BASE_DISPUTE_THRESHOLD,
-                adjusted_threshold: BASE_DISPUTE_THRESHOLD,
-                market_size_factor: 0,
-                activity_factor: 0,
-                complexity_factor: 0,
-                timestamp: env.ledger().timestamp(),
+            .unwrap_or_else(|| {
+                let base = cfg.voting.base_dispute_threshold;
+                DisputeThreshold {
+                    market_id: market_id.clone(),
+                    base_threshold: base,
+                    adjusted_threshold: base,
+                    market_size_factor: 0,
+                    activity_factor: 0,
+                    complexity_factor: 0,
+                    timestamp: env.ledger().timestamp(),
+                }
             }))
     }
 
@@ -963,8 +985,9 @@ impl VotingValidator {
             return Err(e);
         }
 
-        // Validate stake
-        if let Err(e) = MarketValidator::validate_stake(stake, MIN_VOTE_STAKE) {
+        // Validate stake against dynamic config
+        let min_vote = crate::config::ConfigManager::get_config(env)?.voting.min_vote_stake;
+        if let Err(e) = MarketValidator::validate_stake(stake, min_vote) {
             return Err(e);
         }
 
@@ -1098,7 +1121,7 @@ impl VotingUtils {
 
     /// Calculate user's payout
     pub fn calculate_user_payout(
-        _env: &Env,
+        env: &Env,
         market: &Market,
         user: &Address,
     ) -> Result<i128, Error> {
@@ -1123,11 +1146,13 @@ impl VotingUtils {
         let winning_stats = MarketAnalytics::calculate_winning_stats(market, winning_outcome);
 
         // Calculate payout
+        // Use dynamic platform fee percentage from current configuration
+        let cfg = crate::config::ConfigManager::get_config(env)?;
         let payout = MarketUtils::calculate_payout(
             user_stake,
             winning_stats.winning_total,
             winning_stats.total_pool,
-            FEE_PERCENTAGE,
+            cfg.fees.platform_fee_percentage,
         )?;
 
         Ok(payout)

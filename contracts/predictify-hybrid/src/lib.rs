@@ -45,6 +45,7 @@ use alloc::format;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
 };
+use crate::config::{ConfigManager, ContractConfig, ConfigChanges, MarketLimits, ConfigUpdateRecord};
 
 #[contract]
 pub struct PredictifyHybrid;
@@ -412,7 +413,14 @@ impl PredictifyHybrid {
             }
 
             if winning_total > 0 {
-                let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - FEE_PERCENTAGE))
+                // Use dynamic platform fee percentage from configuration
+                let cfg = match ConfigManager::get_config(&env) {
+                    Ok(c) => c,
+                    Err(_) => panic_with_error!(env, Error::ConfigurationNotFound),
+                };
+                let fee_percent = cfg.fees.platform_fee_percentage;
+                let user_share = (user_stake
+                    * (PERCENTAGE_DENOMINATOR - fee_percent))
                     / PERCENTAGE_DENOMINATOR;
                 let total_pool = market.total_staked;
                 let _payout = (user_share * total_pool) / winning_total;
@@ -1133,6 +1141,64 @@ impl PredictifyHybrid {
         };
 
         Ok(storage::StorageUtils::get_storage_recommendations(&market))
+    }
+
+    // ===== Configuration Entry Points =====
+
+    /// Get the current contract configuration
+    pub fn get_current_configuration(env: Env) -> Result<ContractConfig, Error> {
+        ConfigManager::get_current_configuration(&env)
+    }
+
+    /// Get configuration update history
+    pub fn get_configuration_history(
+        env: Env,
+    ) -> Result<Vec<ConfigUpdateRecord>, Error> {
+        ConfigManager::get_configuration_history(&env)
+    }
+
+    /// Validate a set of configuration changes without persisting
+    pub fn validate_configuration_changes(
+        env: Env,
+        changes: ConfigChanges,
+    ) -> Result<(), Error> {
+        ConfigManager::validate_configuration_changes(&env, &changes)
+    }
+
+    /// Update platform fee percentage (admin-only)
+    pub fn update_fee_percentage(
+        env: Env,
+        admin: Address,
+        new_fee: i128,
+    ) -> Result<ContractConfig, Error> {
+        ConfigManager::update_fee_percentage(&env, admin, new_fee)
+    }
+
+    /// Update base dispute threshold (admin-only)
+    pub fn update_dispute_threshold(
+        env: Env,
+        admin: Address,
+        new_threshold: i128,
+    ) -> Result<ContractConfig, Error> {
+        ConfigManager::update_dispute_threshold(&env, admin, new_threshold)
+    }
+
+    /// Update oracle timeout seconds (admin-only)
+    pub fn update_oracle_timeout(
+        env: Env,
+        admin: Address,
+        timeout_seconds: u32,
+    ) -> Result<ContractConfig, Error> {
+        ConfigManager::update_oracle_timeout(&env, admin, timeout_seconds)
+    }
+
+    /// Update market limits (admin-only)
+    pub fn update_market_limits(
+        env: Env,
+        admin: Address,
+        limits: MarketLimits,
+    ) -> Result<ContractConfig, Error> {
+        ConfigManager::update_market_limits(&env, admin, limits)
     }
 }
 

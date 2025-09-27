@@ -6,7 +6,8 @@ use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::extensions::ExtensionManager;
-use crate::fees::{FeeConfig, FeeManager};
+use crate::fees::{FeeManager};
+use crate::config::FeeConfig;
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
 
