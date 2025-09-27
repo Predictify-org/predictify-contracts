@@ -184,6 +184,12 @@ pub enum Error {
     CircuitBreakerNotOpen = 502,
     /// Circuit breaker is open (operations blocked)
     CircuitBreakerOpen = 503,
+
+    // ===== REENTRANCY AND EXTERNAL CALL ERRORS =====
+    /// Reentrancy guard is active (operation blocked to prevent reentry)
+    ReentrancyGuardActive = 600,
+    /// External call failed (e.g., token transfer or oracle invocation)
+    ExternalCallFailed = 601,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -775,6 +781,8 @@ impl Error {
             Error::CircuitBreakerAlreadyOpen => "Circuit breaker is already open (paused)",
             Error::CircuitBreakerNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CircuitBreakerOpen => "Circuit breaker is open (operations blocked)",
+            Error::ReentrancyGuardActive => "Reentrancy guard active (operation blocked)",
+            Error::ExternalCallFailed => "External call failed",
         }
     }
 
@@ -890,6 +898,8 @@ impl Error {
             Error::CircuitBreakerAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
             Error::CircuitBreakerNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CircuitBreakerOpen => "CIRCUIT_BREAKER_OPEN",
+            Error::ReentrancyGuardActive => "REENTRANCY_GUARD_ACTIVE",
+            Error::ExternalCallFailed => "EXTERNAL_CALL_FAILED",
         }
     }
 }

@@ -4,6 +4,7 @@ use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, IntoVal, String
 
 use crate::errors::Error;
 use crate::types::*;
+use crate::reentrancy_guard::ReentrancyGuard;
 
 /// Oracle management system for Predictify Hybrid contract
 ///
@@ -604,8 +605,14 @@ impl<'a> ReflectorOracleClient<'a> {
     /// Get the latest price for an asset
     pub fn lastprice(&self, asset: ReflectorAsset) -> Option<ReflectorPriceData> {
         let args = vec![self.env, asset.into_val(self.env)];
-        self.env
-            .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args)
+        if ReentrancyGuard::before_external_call(self.env).is_err() {
+            return None;
+        }
+        let res = self
+            .env
+            .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args);
+        ReentrancyGuard::after_external_call(self.env);
+        res
     }
 
     /// Get price for an asset at a specific timestamp
@@ -615,8 +622,14 @@ impl<'a> ReflectorOracleClient<'a> {
             asset.into_val(self.env),
             timestamp.into_val(self.env),
         ];
-        self.env
-            .invoke_contract(&self.contract_id, &symbol_short!("price"), args)
+        if ReentrancyGuard::before_external_call(self.env).is_err() {
+            return None;
+        }
+        let res = self
+            .env
+            .invoke_contract(&self.contract_id, &symbol_short!("price"), args);
+        ReentrancyGuard::after_external_call(self.env);
+        res
     }
 
     /// Get TWAP (Time-Weighted Average Price) for an asset
@@ -626,8 +639,14 @@ impl<'a> ReflectorOracleClient<'a> {
             asset.into_val(self.env),
             records.into_val(self.env),
         ];
-        self.env
-            .invoke_contract(&self.contract_id, &symbol_short!("twap"), args)
+        if ReentrancyGuard::before_external_call(self.env).is_err() {
+            return None;
+        }
+        let res = self
+            .env
+            .invoke_contract(&self.contract_id, &symbol_short!("twap"), args);
+        ReentrancyGuard::after_external_call(self.env);
+        res
     }
 
     /// Check if the Reflector oracle is healthy

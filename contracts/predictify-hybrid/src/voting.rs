@@ -5,6 +5,7 @@ use crate::{
     markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
     types::Market,
 };
+use crate::reentrancy_guard::ReentrancyGuard;
 
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
@@ -1100,15 +1101,20 @@ pub struct VotingUtils;
 impl VotingUtils {
     /// Transfer stake from user to contract
     pub fn transfer_stake(env: &Env, user: &Address, stake: i128) -> Result<(), Error> {
+        ReentrancyGuard::before_external_call(env)?;
         let token_client = MarketUtils::get_token_client(env)?;
+        // Soroban token transfer returns (), assume success if no panic
         token_client.transfer(user, &env.current_contract_address(), &stake);
+        ReentrancyGuard::after_external_call(env);
         Ok(())
     }
 
     /// Transfer winnings to user
     pub fn transfer_winnings(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
+        ReentrancyGuard::before_external_call(env)?;
         let token_client = MarketUtils::get_token_client(env)?;
         token_client.transfer(&env.current_contract_address(), user, &amount);
+        ReentrancyGuard::after_external_call(env);
         Ok(())
     }
 

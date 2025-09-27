@@ -1319,16 +1319,9 @@ impl MarketAnalytics {
     ///   - Total amount staked across all participants
     ///   - Total dispute stakes (if any)
     ///   - Distribution of votes across different outcomes
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use soroban_sdk::{Env, Symbol};
-    /// use crate::markets::{MarketAnalytics, MarketStateManager};
-    ///
-    /// let env = Env::default();
     /// let market_id = Symbol::new(&env, "active_market");
     /// let market = MarketStateManager::get_market(&env, &market_id)?;
+    ///
     ///
     /// let stats = MarketAnalytics::get_market_stats(&market);
     ///
@@ -2356,6 +2349,8 @@ impl MarketTestHelpers {
         // Transfer stake
         let token_client = MarketUtils::get_token_client(env)?;
         token_client.transfer(&user, &env.current_contract_address(), &stake);
+         // Transfer stake via centralized, guarded utility
+        //  VotingUtils::transfer_stake(env, &user, stake)?;
 
         // Add vote
         MarketStateManager::add_vote(&mut market, user, outcome, stake, None);
