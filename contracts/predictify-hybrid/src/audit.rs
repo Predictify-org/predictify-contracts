@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contracttype, testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec,
-};
+use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use alloc::format;
@@ -131,8 +129,6 @@ pub struct AuditConfig {
 pub struct AuditManager;
 
 impl AuditManager {
-    const AUDIT_CHECKLISTS_KEY: &'static str = "audit_checklists";
-    const AUDIT_REPORTS_KEY: &'static str = "audit_reports";
     const AUDIT_CONFIG_KEY: &'static str = "audit_config";
 
     /// Initialize audit system
@@ -1334,7 +1330,10 @@ impl AuditTesting {
         env: &Env,
         audit_type: AuditType,
     ) -> Result<AuditChecklist, Error> {
-        let auditor = Address::generate(env);
+        let auditor = Address::from_str(
+            env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        );
         AuditManager::create_audit_checklist(env, audit_type, auditor)
     }
 
