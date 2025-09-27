@@ -2244,13 +2244,23 @@ impl ConfigManager {
         if let Some(timeout) = changes.oracle_timeout_seconds {
             cfg.oracle.timeout_seconds = timeout as u64;
         }
-        if let Some(l) = &changes.market_limits {
-            cfg.market.max_duration_days = l.max_duration_days;
-            cfg.market.min_duration_days = l.min_duration_days;
-            cfg.market.max_outcomes = l.max_outcomes;
-            cfg.market.min_outcomes = l.min_outcomes;
-            cfg.market.max_question_length = l.max_question_length;
-            cfg.market.max_outcome_length = l.max_outcome_length;
+        if let Some(v) = changes.max_duration_days {
+            cfg.market.max_duration_days = v;
+        }
+        if let Some(v) = changes.min_duration_days {
+            cfg.market.min_duration_days = v;
+        }
+        if let Some(v) = changes.max_outcomes {
+            cfg.market.max_outcomes = v;
+        }
+        if let Some(v) = changes.min_outcomes {
+            cfg.market.min_outcomes = v;
+        }
+        if let Some(v) = changes.max_question_length {
+            cfg.market.max_question_length = v;
+        }
+        if let Some(v) = changes.max_outcome_length {
+            cfg.market.max_outcome_length = v;
         }
 
         ConfigValidator::validate_contract_config(&cfg)
@@ -2660,13 +2670,18 @@ impl ConfigUtils {
  }
 
  /// Partial configuration changes for validation and bulk updates
- #[derive(Clone, Debug)]
+ #[derive(Clone, Debug, Eq, PartialEq)]
  #[contracttype]
  pub struct ConfigChanges {
      pub platform_fee_percentage: Option<i128>,
      pub base_dispute_threshold: Option<i128>,
      pub oracle_timeout_seconds: Option<u32>,
-     pub market_limits: Option<MarketLimits>,
+     pub max_duration_days: Option<u32>,
+     pub min_duration_days: Option<u32>,
+     pub max_outcomes: Option<u32>,
+     pub min_outcomes: Option<u32>,
+     pub max_question_length: Option<u32>,
+     pub max_outcome_length: Option<u32>,
  }
 
  /// Configuration update history record for audit trail
