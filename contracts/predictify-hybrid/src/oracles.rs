@@ -3,7 +3,7 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, IntoVal, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::reentrancy_guard::ReentrancyGuard;
+// use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::types::*;
 
 /// Oracle management system for Predictify Hybrid contract
@@ -605,13 +605,10 @@ impl<'a> ReflectorOracleClient<'a> {
     /// Get the latest price for an asset
     pub fn lastprice(&self, asset: ReflectorAsset) -> Option<ReflectorPriceData> {
         let args = vec![self.env, asset.into_val(self.env)];
-        if ReentrancyGuard::before_external_call(self.env).is_err() {
-            return None;
-        }
+        // Reentrancy guard removed - external call protection no longer needed
         let res = self
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("lastprice"), args);
-        ReentrancyGuard::after_external_call(self.env);
         res
     }
 
@@ -622,13 +619,10 @@ impl<'a> ReflectorOracleClient<'a> {
             asset.into_val(self.env),
             timestamp.into_val(self.env),
         ];
-        if ReentrancyGuard::before_external_call(self.env).is_err() {
-            return None;
-        }
+        // Reentrancy guard removed - external call protection no longer needed
         let res = self
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("price"), args);
-        ReentrancyGuard::after_external_call(self.env);
         res
     }
 
@@ -639,13 +633,10 @@ impl<'a> ReflectorOracleClient<'a> {
             asset.into_val(self.env),
             records.into_val(self.env),
         ];
-        if ReentrancyGuard::before_external_call(self.env).is_err() {
-            return None;
-        }
+        // Reentrancy guard removed - external call protection no longer needed
         let res = self
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("twap"), args);
-        ReentrancyGuard::after_external_call(self.env);
         res
     }
 

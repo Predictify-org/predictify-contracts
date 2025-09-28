@@ -2467,13 +2467,13 @@ impl DisputeUtils {
 
     /// Check for expired timeouts
     pub fn check_expired_timeouts(env: &Env) -> Vec<Symbol> {
-        let mut expired_disputes = Vec::new(env);
-        let current_time = env.ledger().timestamp();
+        let _expired_disputes = Vec::new(env);
+        let _current_time = env.ledger().timestamp();
 
         // This is a simplified implementation
         // In a real system, you would iterate through all timeouts and check expiration
         // For now, return empty vector
-        expired_disputes
+        _expired_disputes
     }
 }
 
@@ -2604,7 +2604,7 @@ impl DisputeAnalytics {
     }
 
     /// Calculate timeout statistics
-    pub fn calculate_timeout_stats(env: &Env) -> TimeoutStats {
+    pub fn calculate_timeout_stats(_env: &Env) -> TimeoutStats {
         // This is a simplified implementation
         // In a real system, you would iterate through all timeouts and calculate statistics
         TimeoutStats {
