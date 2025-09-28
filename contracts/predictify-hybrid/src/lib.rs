@@ -43,6 +43,9 @@ mod batch_operations_tests;
 #[cfg(test)]
 mod integration_test;
 
+#[cfg(test)]
+mod property_based_tests;
+
 // Re-export commonly used items
 use admin::AdminInitializer;
 pub use errors::Error;
