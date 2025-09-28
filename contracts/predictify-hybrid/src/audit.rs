@@ -2,7 +2,6 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use alloc::format;
-use alloc::string::ToString;
 
 /// Comprehensive audit checklist system for Predictify contracts
 /// Provides structured audit procedures for security, code review, testing, documentation, and deployment
@@ -199,8 +198,14 @@ impl AuditManager {
         };
 
         // Store checklist
-        let audit_type_str = audit_type_to_string(env, &audit_type);
-        let key = Symbol::new(env, &format!("audit_{}", audit_type_str.to_string()));
+        let key = match audit_type {
+            AuditType::Security => Symbol::new(env, "audit_security"),
+            AuditType::CodeReview => Symbol::new(env, "audit_code_review"),
+            AuditType::Testing => Symbol::new(env, "audit_testing"),
+            AuditType::Documentation => Symbol::new(env, "audit_documentation"),
+            AuditType::Deployment => Symbol::new(env, "audit_deployment"),
+            AuditType::Comprehensive => Symbol::new(env, "audit_comprehensive"),
+        };
         env.storage().instance().set(&key, &checklist);
 
         Ok(checklist)
@@ -208,8 +213,14 @@ impl AuditManager {
 
     /// Get audit checklist by type
     pub fn get_audit_checklist(env: &Env, audit_type: &AuditType) -> Result<AuditChecklist, Error> {
-        let audit_type_str = audit_type_to_string(env, audit_type);
-        let key = Symbol::new(env, &format!("audit_{}", audit_type_str.to_string()));
+        let key = match audit_type {
+            AuditType::Security => Symbol::new(env, "audit_security"),
+            AuditType::CodeReview => Symbol::new(env, "audit_code_review"),
+            AuditType::Testing => Symbol::new(env, "audit_testing"),
+            AuditType::Documentation => Symbol::new(env, "audit_documentation"),
+            AuditType::Deployment => Symbol::new(env, "audit_deployment"),
+            AuditType::Comprehensive => Symbol::new(env, "audit_comprehensive"),
+        };
         env.storage()
             .instance()
             .get(&key)
@@ -247,8 +258,14 @@ impl AuditManager {
         checklist = Self::recalculate_checklist_status(env, checklist)?;
 
         // Store updated checklist
-        let audit_type_str = audit_type_to_string(env, audit_type);
-        let key = Symbol::new(env, &format!("audit_{}", audit_type_str.to_string()));
+        let key = match audit_type {
+            AuditType::Security => Symbol::new(env, "audit_security"),
+            AuditType::CodeReview => Symbol::new(env, "audit_code_review"),
+            AuditType::Testing => Symbol::new(env, "audit_testing"),
+            AuditType::Documentation => Symbol::new(env, "audit_documentation"),
+            AuditType::Deployment => Symbol::new(env, "audit_deployment"),
+            AuditType::Comprehensive => Symbol::new(env, "audit_comprehensive"),
+        };
         env.storage().instance().set(&key, &checklist);
 
         Ok(())
@@ -264,8 +281,14 @@ impl AuditManager {
                 Ok(checklist) => {
                     let status = format!("{:?}", checklist.overall_status);
                     let completion = format!("{}%", checklist.completion_percentage);
-                    let key = audit_type_to_string(env, &audit_type);
-                    let key_str = key.to_string();
+                    let key_str = match audit_type {
+                        AuditType::Security => "security",
+                        AuditType::CodeReview => "code_review",
+                        AuditType::Testing => "testing",
+                        AuditType::Documentation => "documentation",
+                        AuditType::Deployment => "deployment",
+                        AuditType::Comprehensive => "comprehensive",
+                    };
 
                     status_map.set(
                         String::from_str(env, &format!("{}_status", key_str)),
@@ -277,8 +300,14 @@ impl AuditManager {
                     );
                 }
                 Err(_) => {
-                    let key = audit_type_to_string(env, &audit_type);
-                    let key_str = key.to_string();
+                    let key_str = match audit_type {
+                        AuditType::Security => "security",
+                        AuditType::CodeReview => "code_review",
+                        AuditType::Testing => "testing",
+                        AuditType::Documentation => "documentation",
+                        AuditType::Deployment => "deployment",
+                        AuditType::Comprehensive => "comprehensive",
+                    };
                     status_map.set(
                         String::from_str(env, &format!("{}_status", key_str)),
                         String::from_str(env, "Not Started"),
