@@ -1,12 +1,10 @@
-use soroban_sdk::{
-    contracttype, Address, Env, Map, String, Symbol, Vec,
-};
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
+use crate::admin::AdminAccessControl;
+use crate::errors::Error;
+use crate::events::{CircuitBreakerEvent, EventEmitter};
 use alloc::format;
 use alloc::string::ToString;
-use crate::errors::Error;
-use crate::events::{EventEmitter, CircuitBreakerEvent};
-use crate::admin::AdminAccessControl;
 
 // ===== CIRCUIT BREAKER TYPES =====
 

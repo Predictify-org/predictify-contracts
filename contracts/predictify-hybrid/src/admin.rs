@@ -1,12 +1,13 @@
 extern crate alloc;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 // use alloc::string::ToString; // Unused import
 
+use crate::config::FeeConfig;
 use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::extensions::ExtensionManager;
-use crate::fees::{FeeConfig, FeeManager};
+use crate::fees::FeeManager;
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
 
