@@ -27,6 +27,7 @@ mod types;
 mod utils;
 mod validation;
 mod validation_tests;
+mod versioning;
 mod voting;
 
 #[cfg(test)]
@@ -1320,6 +1321,51 @@ impl PredictifyHybrid {
         limits: MarketLimits,
     ) -> Result<ContractConfig, Error> {
         ConfigManager::update_market_limits(&env, admin, limits)
+    }
+
+    // ===== VERSIONING FUNCTIONS =====
+
+    /// Track contract version for versioning system
+    pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
+        versioning::VersionManager::new(&env).track_contract_version(&env, version)
+    }
+
+    /// Migrate data between contract versions
+    pub fn migrate_data_between_versions(
+        env: Env,
+        old_version: versioning::Version,
+        new_version: versioning::Version,
+    ) -> Result<versioning::VersionMigration, Error> {
+        versioning::VersionManager::new(&env).migrate_data_between_versions(&env, old_version, new_version)
+    }
+
+    /// Validate version compatibility
+    pub fn validate_version_compatibility(
+        env: Env,
+        old_version: versioning::Version,
+        new_version: versioning::Version,
+    ) -> Result<bool, Error> {
+        versioning::VersionManager::new(&env).validate_version_compatibility(&env, &old_version, &new_version)
+    }
+
+    /// Upgrade to a specific version
+    pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
+        versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)
+    }
+
+    /// Rollback to a specific version
+    pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
+        versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)
+    }
+
+    /// Get version history
+    pub fn get_version_history(env: Env) -> Result<versioning::VersionHistory, Error> {
+        versioning::VersionManager::new(&env).get_version_history(&env)
+    }
+
+    /// Test version migration
+    pub fn test_version_migration(env: Env, migration: versioning::VersionMigration) -> Result<bool, Error> {
+        versioning::VersionManager::new(&env).test_version_migration(&env, migration)
     }
 }
 
