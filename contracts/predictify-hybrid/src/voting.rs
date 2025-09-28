@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
+use crate::reentrancy_guard::ReentrancyGuard;
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
     types::Market,
 };
-use crate::reentrancy_guard::ReentrancyGuard;
 
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
@@ -354,7 +354,11 @@ impl VotingManager {
 
         // Add dispute stake and extend market (pass market_id for event emission)
         MarketStateManager::add_dispute_stake(&mut market, user, stake, Some(&market_id));
-        MarketStateManager::extend_for_dispute(&mut market, env, cfg.voting.dispute_extension_hours.into());
+        MarketStateManager::extend_for_dispute(
+            &mut market,
+            env,
+            cfg.voting.dispute_extension_hours.into(),
+        );
         MarketStateManager::update_market(env, &market_id, &market);
 
         Ok(())
@@ -558,19 +562,20 @@ impl ThresholdUtils {
 
         // Calculate market size factor
         let market_size_factor = {
-            let base = crate::config::ConfigManager::get_config(env)?.voting.base_dispute_threshold;
+            let base = crate::config::ConfigManager::get_config(env)?
+                .voting
+                .base_dispute_threshold;
             Self::adjust_threshold_by_market_size(env, market_id, base)?
         };
 
         // Calculate activity factor
-        let activity_factor = Self::modify_threshold_by_activity(
-            env,
-            market_id,
-            market.votes.len() as u32,
-        )?;
+        let activity_factor =
+            Self::modify_threshold_by_activity(env, market_id, market.votes.len() as u32)?;
 
         // Calculate complexity factor (based on number of outcomes) using dynamic base
-        let base = crate::config::ConfigManager::get_config(env)?.voting.base_dispute_threshold;
+        let base = crate::config::ConfigManager::get_config(env)?
+            .voting
+            .base_dispute_threshold;
         let complexity_factor = Self::calculate_complexity_factor(&market, base)?;
 
         let total_adjustment = market_size_factor + activity_factor + complexity_factor;
@@ -592,7 +597,9 @@ impl ThresholdUtils {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // For large markets, increase threshold
-        let large_threshold = crate::config::ConfigManager::get_config(env)?.voting.large_market_threshold;
+        let large_threshold = crate::config::ConfigManager::get_config(env)?
+            .voting
+            .large_market_threshold;
         if market.total_staked > large_threshold {
             // Increase by 50% for large markets
             Ok((base_threshold * 150) / 100)
@@ -620,7 +627,10 @@ impl ThresholdUtils {
     }
 
     /// Calculate complexity factor based on market characteristics
-    pub fn calculate_complexity_factor(market: &Market, base_threshold: i128) -> Result<i128, Error> {
+    pub fn calculate_complexity_factor(
+        market: &Market,
+        base_threshold: i128,
+    ) -> Result<i128, Error> {
         // More outcomes = higher complexity = higher threshold
         let outcome_count = market.outcomes.len() as i128;
 
@@ -667,22 +677,18 @@ impl ThresholdUtils {
     pub fn get_dispute_threshold(env: &Env, market_id: &Symbol) -> Result<DisputeThreshold, Error> {
         let key = symbol_short!("dispute_t");
         let cfg = crate::config::ConfigManager::get_config(env)?;
-        Ok(env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| {
-                let base = cfg.voting.base_dispute_threshold;
-                DisputeThreshold {
-                    market_id: market_id.clone(),
-                    base_threshold: base,
-                    adjusted_threshold: base,
-                    market_size_factor: 0,
-                    activity_factor: 0,
-                    complexity_factor: 0,
-                    timestamp: env.ledger().timestamp(),
-                }
-            }))
+        Ok(env.storage().persistent().get(&key).unwrap_or_else(|| {
+            let base = cfg.voting.base_dispute_threshold;
+            DisputeThreshold {
+                market_id: market_id.clone(),
+                base_threshold: base,
+                adjusted_threshold: base,
+                market_size_factor: 0,
+                activity_factor: 0,
+                complexity_factor: 0,
+                timestamp: env.ledger().timestamp(),
+            }
+        }))
     }
 
     /// Add threshold history entry
@@ -987,7 +993,9 @@ impl VotingValidator {
         }
 
         // Validate stake against dynamic config
-        let min_vote = crate::config::ConfigManager::get_config(env)?.voting.min_vote_stake;
+        let min_vote = crate::config::ConfigManager::get_config(env)?
+            .voting
+            .min_vote_stake;
         if let Err(e) = MarketValidator::validate_stake(stake, min_vote) {
             return Err(e);
         }

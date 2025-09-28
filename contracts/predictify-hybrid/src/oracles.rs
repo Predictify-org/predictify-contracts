@@ -3,8 +3,8 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, IntoVal, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::types::*;
 use crate::reentrancy_guard::ReentrancyGuard;
+use crate::types::*;
 
 /// Oracle management system for Predictify Hybrid contract
 ///

@@ -2349,7 +2349,7 @@ impl MarketTestHelpers {
         // Transfer stake
         let token_client = MarketUtils::get_token_client(env)?;
         token_client.transfer(&user, &env.current_contract_address(), &stake);
-         // Transfer stake via centralized, guarded utility
+        // Transfer stake via centralized, guarded utility
         //  VotingUtils::transfer_stake(env, &user, stake)?;
 
         // Add vote
@@ -2877,10 +2877,13 @@ mod tests {
             .is_err());
 
             // Test invalid duration
-            assert!(
-                MarketValidator::validate_market_params(&env, &valid_question, &valid_outcomes, 0)
-                    .is_err()
-            );
+            assert!(MarketValidator::validate_market_params(
+                &env,
+                &valid_question,
+                &valid_outcomes,
+                0
+            )
+            .is_err());
             assert!(MarketValidator::validate_market_params(
                 &env,
                 &valid_question,

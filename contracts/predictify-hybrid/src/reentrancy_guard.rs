@@ -71,9 +71,9 @@ impl ReentrancyGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{Address, Env};
-    use soroban_sdk::testutils::{Address as _, };
     use crate::PredictifyHybrid;
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Address, Env};
 
     fn with_contract<F: FnOnce()>(env: &Env, f: F) {
         let addr = env.register_contract(None, PredictifyHybrid);

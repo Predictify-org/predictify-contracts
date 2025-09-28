@@ -2222,7 +2222,9 @@ impl ConfigManager {
     }
 
     /// Retrieve configuration update history (may be empty)
-    pub fn get_configuration_history(env: &Env) -> Result<soroban_sdk::Vec<ConfigUpdateRecord>, Error> {
+    pub fn get_configuration_history(
+        env: &Env,
+    ) -> Result<soroban_sdk::Vec<ConfigUpdateRecord>, Error> {
         let key = Symbol::new(env, "ConfigHistory");
         Ok(env
             .storage()
@@ -2657,44 +2659,43 @@ impl ConfigUtils {
 
 // ===== CONFIGURATION UPDATE TYPES AND API =====
 
- /// Market limits input for updating `MarketConfig` safely without exposing unrelated fields
- #[derive(Clone, Debug, Eq, PartialEq)]
- #[contracttype]
- pub struct MarketLimits {
-     pub max_duration_days: u32,
-     pub min_duration_days: u32,
-     pub max_outcomes: u32,
-     pub min_outcomes: u32,
-     pub max_question_length: u32,
-     pub max_outcome_length: u32,
- }
+/// Market limits input for updating `MarketConfig` safely without exposing unrelated fields
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct MarketLimits {
+    pub max_duration_days: u32,
+    pub min_duration_days: u32,
+    pub max_outcomes: u32,
+    pub min_outcomes: u32,
+    pub max_question_length: u32,
+    pub max_outcome_length: u32,
+}
 
- /// Partial configuration changes for validation and bulk updates
- #[derive(Clone, Debug, Eq, PartialEq)]
- #[contracttype]
- pub struct ConfigChanges {
-     pub platform_fee_percentage: Option<i128>,
-     pub base_dispute_threshold: Option<i128>,
-     pub oracle_timeout_seconds: Option<u32>,
-     pub max_duration_days: Option<u32>,
-     pub min_duration_days: Option<u32>,
-     pub max_outcomes: Option<u32>,
-     pub min_outcomes: Option<u32>,
-     pub max_question_length: Option<u32>,
-     pub max_outcome_length: Option<u32>,
- }
+/// Partial configuration changes for validation and bulk updates
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct ConfigChanges {
+    pub platform_fee_percentage: Option<i128>,
+    pub base_dispute_threshold: Option<i128>,
+    pub oracle_timeout_seconds: Option<u32>,
+    pub max_duration_days: Option<u32>,
+    pub min_duration_days: Option<u32>,
+    pub max_outcomes: Option<u32>,
+    pub min_outcomes: Option<u32>,
+    pub max_question_length: Option<u32>,
+    pub max_outcome_length: Option<u32>,
+}
 
- /// Configuration update history record for audit trail
- #[derive(Clone, Debug, Eq, PartialEq)]
- #[contracttype]
- pub struct ConfigUpdateRecord {
-     pub updated_by: Address,
-     pub change_type: String,
-     pub old_value: String,
-     pub new_value: String,
-     pub timestamp: u64,
- }
-
+/// Configuration update history record for audit trail
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct ConfigUpdateRecord {
+    pub updated_by: Address,
+    pub change_type: String,
+    pub old_value: String,
+    pub new_value: String,
+    pub timestamp: u64,
+}
 
 // ===== CONFIGURATION TESTING =====
 

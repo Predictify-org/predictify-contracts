@@ -5,8 +5,8 @@ use crate::errors::Error;
 use crate::markets::{CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils};
 
 use crate::oracles::{OracleFactory, OracleUtils};
-use crate::types::*;
 use crate::reentrancy_guard::ReentrancyGuard;
+use crate::types::*;
 
 /// Resolution management system for Predictify Hybrid contract
 ///

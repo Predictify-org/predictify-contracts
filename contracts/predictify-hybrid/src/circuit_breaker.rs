@@ -1,12 +1,9 @@
-use soroban_sdk::{
-    contracttype, Address, Env, Map, String, Symbol, Vec,
-};
-
+use crate::admin::AdminAccessControl;
+use crate::errors::Error;
+use crate::events::{CircuitBreakerEvent, EventEmitter};
 use alloc::format;
 use alloc::string::ToString;
-use crate::errors::Error;
-use crate::events::{EventEmitter, CircuitBreakerEvent};
-use crate::admin::AdminAccessControl;
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 // ===== CIRCUIT BREAKER TYPES =====
 
@@ -18,7 +15,7 @@ pub enum BreakerState {
     HalfOpen, // Testing if service has recovered
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[contracttype]
 pub enum BreakerAction {
     Pause,   // Emergency pause
@@ -27,7 +24,7 @@ pub enum BreakerAction {
     Reset,   // Reset circuit breaker
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[contracttype]
 pub enum BreakerCondition {
     HighErrorRate,      // Error rate exceeds threshold
@@ -180,10 +177,10 @@ impl CircuitBreaker {
             .set(&Symbol::new(env, Self::CONFIG_KEY), config);
 
         // Emit configuration update event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Reset,
-            BreakerCondition::ManualOverride,
+            Some(BreakerCondition::ManualOverride),
             &String::from_str(env, "Configuration updated"),
             Some(admin.clone()),
         );
@@ -214,8 +211,7 @@ impl CircuitBreaker {
     /// Emergency pause by admin
     pub fn emergency_pause(env: &Env, admin: &Address, reason: &String) -> Result<(), Error> {
         // Validate admin permissions
-        // TODO: Fix admin validation - need proper admin role and permission
-        // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
+        AdminAccessControl::validate_admin_for_action(env, admin, "emergency_pause")?;
 
         let mut state = Self::get_state(env)?;
 
@@ -230,10 +226,10 @@ impl CircuitBreaker {
         Self::update_state(env, &state)?;
 
         // Emit pause event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Pause,
-            BreakerCondition::ManualOverride,
+            Some(BreakerCondition::ManualOverride),
             reason,
             Some(admin.clone()),
         );
@@ -277,10 +273,10 @@ impl CircuitBreaker {
                 state.half_open_requests = 0;
                 Self::update_state(env, &state)?;
 
-                Self::emit_circuit_breaker_event(
+                let _ = Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Reset,
-                    BreakerCondition::ManualOverride,
+                    Some(BreakerCondition::ManualOverride),
                     &String::from_str(env, "Auto-recovery: transitioning to half-open"),
                     None,
                 );
@@ -341,10 +337,10 @@ impl CircuitBreaker {
             state.opened_time = current_time;
             Self::update_state(env, &state)?;
 
-            Self::emit_circuit_breaker_event(
+            let _ = Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
-                condition.clone(),
+                Some(condition.clone()),
                 &String::from_str(env, "Automatic circuit breaker triggered"),
                 None,
             );
@@ -360,8 +356,7 @@ impl CircuitBreaker {
     /// Circuit breaker recovery by admin
     pub fn circuit_breaker_recovery(env: &Env, admin: &Address) -> Result<(), Error> {
         // Validate admin permissions
-        // TODO: Fix admin validation - need proper admin role and permission
-        // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
+        AdminAccessControl::validate_admin_for_action(env, admin, "circuit_breaker_recovery")?;
 
         let mut state = Self::get_state(env)?;
 
@@ -378,10 +373,10 @@ impl CircuitBreaker {
         Self::update_state(env, &state)?;
 
         // Emit recovery event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Resume,
-            BreakerCondition::ManualOverride,
+            Some(BreakerCondition::ManualOverride),
             &String::from_str(env, "Circuit breaker recovered"),
             Some(admin.clone()),
         );
@@ -407,10 +402,10 @@ impl CircuitBreaker {
                 state.failure_count = 0;
                 state.half_open_requests = 0;
 
-                Self::emit_circuit_breaker_event(
+                let _ = Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Resume,
-                    BreakerCondition::ManualOverride,
+                    Some(BreakerCondition::ManualOverride),
                     &String::from_str(env, "Auto-recovery: circuit breaker closed"),
                     None,
                 );
@@ -436,10 +431,10 @@ impl CircuitBreaker {
             state.opened_time = current_time;
             state.half_open_requests = 0;
 
-            Self::emit_circuit_breaker_event(
+            let _ = Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
-                BreakerCondition::HighErrorRate,
+                Some(BreakerCondition::HighErrorRate),
                 &String::from_str(env, "Failure in half-open state, reopening circuit breaker"),
                 None,
             );
@@ -455,13 +450,13 @@ impl CircuitBreaker {
     pub fn emit_circuit_breaker_event(
         env: &Env,
         action: BreakerAction,
-        condition: BreakerCondition,
+        condition: Option<BreakerCondition>,
         reason: &String,
         admin: Option<Address>,
     ) -> Result<(), Error> {
         let event = CircuitBreakerEvent {
-            action,
-            condition: core::prelude::v1::Some(condition).unwrap(),
+            action: String::from_str(env, &format!("{:?}", action)),
+            condition: condition.map(|c| String::from_str(env, &format!("{:?}", c))),
             reason: reason.clone(),
             timestamp: env.ledger().timestamp(),
             admin,
