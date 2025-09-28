@@ -1,10 +1,7 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::config::{ConfigManager, ConfigValidator, FeeConfig};
 use crate::errors::Error;
-use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils};
-use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;
 
 /// Fee management system for Predictify Hybrid contract
@@ -54,6 +51,81 @@ pub const MARKET_SIZE_MEDIUM: i128 = 1_000_000_000; // 100 XLM
 pub const MARKET_SIZE_LARGE: i128 = 10_000_000_000; // 1000 XLM
 
 // ===== FEE TYPES =====
+
+/// Comprehensive fee configuration structure for market operations.
+///
+/// This structure defines all fee-related parameters that govern how fees are
+/// calculated, collected, and managed across the Predictify Hybrid platform.
+/// It provides flexible configuration for different market types and economic models.
+///
+/// # Fee Structure
+///
+/// The fee system supports multiple fee types:
+/// - **Platform Fees**: Percentage-based fees on market stakes
+/// - **Creation Fees**: Fixed fees for creating new markets
+/// - **Collection Thresholds**: Minimum amounts before fee collection
+/// - **Fee Limits**: Minimum and maximum fee boundaries
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # use predictify_hybrid::fees::FeeConfig;
+/// # let env = Env::default();
+///
+/// // Standard fee configuration
+/// let config = FeeConfig {
+///     platform_fee_percentage: 200, // 2.00% (basis points)
+///     creation_fee: 10_000_000, // 1.0 XLM
+///     min_fee_amount: 1_000_000, // 0.1 XLM minimum
+///     max_fee_amount: 1_000_000_000, // 100 XLM maximum
+///     collection_threshold: 100_000_000, // 10 XLM threshold
+///     fees_enabled: true,
+/// };
+///
+/// // Calculate platform fee for 50 XLM stake
+/// let stake_amount = 500_000_000; // 50 XLM
+/// let platform_fee = (stake_amount * config.platform_fee_percentage) / 10_000;
+/// println!("Platform fee: {} XLM", platform_fee / 10_000_000);
+///
+/// // Check if fees are collectible
+/// if config.fees_enabled && stake_amount >= config.collection_threshold {
+///     println!("Fees can be collected");
+/// }
+/// ```
+///
+/// # Configuration Parameters
+///
+/// - **platform_fee_percentage**: Fee percentage in basis points (100 = 1%)
+/// - **creation_fee**: Fixed fee for creating new markets (in stroops)
+/// - **min_fee_amount**: Minimum fee that can be charged (prevents dust)
+/// - **max_fee_amount**: Maximum fee that can be charged (prevents abuse)
+/// - **collection_threshold**: Minimum total stakes before fees can be collected
+/// - **fees_enabled**: Global fee system enable/disable flag
+///
+/// # Economic Model
+///
+/// Fee configuration supports platform sustainability:
+/// - **Revenue Generation**: Platform fees support ongoing operations
+/// - **Spam Prevention**: Creation fees prevent market spam
+/// - **Fair Pricing**: Configurable limits ensure reasonable fee levels
+/// - **Flexible Economics**: Adjustable parameters for different market conditions
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfig {
+    /// Platform fee percentage
+    pub platform_fee_percentage: i128,
+    /// Market creation fee
+    pub creation_fee: i128,
+    /// Minimum fee amount
+    pub min_fee_amount: i128,
+    /// Maximum fee amount
+    pub max_fee_amount: i128,
+    /// Fee collection threshold
+    pub collection_threshold: i128,
+    /// Whether fees are enabled
+    pub fees_enabled: bool,
+}
 
 /// Dynamic fee tier configuration based on market size
 ///
@@ -652,28 +724,19 @@ impl FeeManager {
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
-        // Use dynamic collection threshold from config
-        FeeValidator::validate_market_for_fee_collection_env(env, &market)?;
+        FeeValidator::validate_market_for_fee_collection(&market)?;
 
-        // Calculate fee amount using dynamic fee percentage from config
-        let fee_amount = Self::calculate_platform_fee_env(env, &market)?;
+        // Calculate fee amount
+        let fee_amount = FeeCalculator::calculate_platform_fee(&market)?;
 
         // Validate fee amount
-        FeeValidator::validate_fee_amount_env(env, fee_amount)?;
+        FeeValidator::validate_fee_amount(fee_amount)?;
 
         // Transfer fees to admin
         FeeUtils::transfer_fees_to_admin(env, &admin, fee_amount)?;
 
         // Record fee collection
-        // Include the actual fee percentage used from config
-        let cfg = ConfigManager::get_config(env)?;
-        Self::record_fee_collection_env(
-            env,
-            &market_id,
-            fee_amount,
-            &admin,
-            cfg.fees.platform_fee_percentage,
-        )?;
+        FeeTracker::record_fee_collection(env, &market_id, fee_amount, &admin)?;
 
         // Mark fees as collected
         MarketStateManager::mark_fees_collected(&mut market, Some(&market_id));
@@ -682,82 +745,19 @@ impl FeeManager {
         Ok(fee_amount)
     }
 
-    /// Calculate platform fee using dynamic configuration from ConfigManager
-    pub fn calculate_platform_fee_env(env: &Env, market: &Market) -> Result<i128, Error> {
-        if market.total_staked == 0 {
-            return Err(Error::NoFeesToCollect);
-        }
-
-        let cfg = ConfigManager::get_config(env)?;
-        let percent = cfg.fees.platform_fee_percentage; // interpreted as whole percent
-
-        let mut fee_amount = (market.total_staked * percent) / 100;
-
-        if fee_amount < cfg.fees.min_fee_amount {
-            // keep semantics consistent with existing code: treat as insufficient stake threshold
-            return Err(Error::InsufficientStake);
-        }
-
-        if fee_amount > cfg.fees.max_fee_amount {
-            fee_amount = cfg.fees.max_fee_amount;
-        }
-
-        Ok(fee_amount)
-    }
-
     /// Process market creation fee
     pub fn process_creation_fee(env: &Env, admin: &Address) -> Result<(), Error> {
-        // Use dynamic creation fee from central configuration
-        let cfg = ConfigManager::get_config(env)?;
-        let creation_fee = cfg.fees.creation_fee;
-        FeeValidator::validate_creation_fee_env(env, creation_fee)?;
+        // Validate creation fee
+        FeeValidator::validate_creation_fee(MARKET_CREATION_FEE)?;
 
         // Get token client
-        ReentrancyGuard::before_external_call(env)?;
         let token_client = MarketUtils::get_token_client(env)?;
+
         // Transfer creation fee from admin to contract
         token_client.transfer(admin, &env.current_contract_address(), &MARKET_CREATION_FEE);
-        ReentrancyGuard::after_external_call(env);
 
         // Record creation fee
-        FeeTracker::record_creation_fee(env, admin, creation_fee)?;
-
-        Ok(())
-    }
-
-    /// Record fee collection with explicit fee percentage (dynamic config-aware)
-    pub fn record_fee_collection_env(
-        env: &Env,
-        market_id: &Symbol,
-        amount: i128,
-        admin: &Address,
-        fee_percentage: i128,
-    ) -> Result<(), Error> {
-        let collection = FeeCollection {
-            market_id: market_id.clone(),
-            amount,
-            collected_by: admin.clone(),
-            timestamp: env.ledger().timestamp(),
-            fee_percentage,
-        };
-
-        // Store in fee collection history
-        let history_key = symbol_short!("fee_hist");
-        let mut history: Vec<FeeCollection> = env
-            .storage()
-            .persistent()
-            .get(&history_key)
-            .unwrap_or(vec![env]);
-
-        history.push_back(collection);
-        env.storage().persistent().set(&history_key, &history);
-
-        // Update total fees collected
-        let total_key = symbol_short!("tot_fees");
-        let current_total: i128 = env.storage().persistent().get(&total_key).unwrap_or(0);
-        env.storage()
-            .persistent()
-            .set(&total_key, &(current_total + amount));
+        FeeTracker::record_creation_fee(env, admin, MARKET_CREATION_FEE)?;
 
         Ok(())
     }
@@ -780,31 +780,20 @@ impl FeeManager {
         FeeValidator::validate_admin_permissions(env, &admin)?;
 
         // Validate new configuration
-        ConfigValidator::validate_fee_config(&new_config)?;
+        FeeValidator::validate_fee_config(&new_config)?;
 
-        // Load current contract configuration and update the fees block
-        let mut cfg = ConfigManager::get_config(env)?;
-        let old = cfg.fees.platform_fee_percentage;
-        cfg.fees = new_config.clone();
+        // Store new configuration
+        FeeConfigManager::store_fee_config(env, &new_config)?;
 
-        // Persist
-        ConfigManager::update_config(env, &cfg)?;
+        // Record configuration change
+        FeeTracker::record_config_change(env, &admin, &new_config)?;
 
-        // Emit simplified event and record a timestamp for audit (reuse FeeTracker helper)
-        let change_type = String::from_str(env, "fee_config");
-        let old_s = String::from_str(env, &alloc::format!("{}", old));
-        let new_s = String::from_str(env, &alloc::format!("{}", cfg.fees.platform_fee_percentage));
-        EventEmitter::emit_config_updated(env, &admin, &change_type, &old_s, &new_s);
-
-        // Lightweight audit record (timestamp only)
-        FeeTracker::record_config_change(env, &admin)?;
-
-        Ok(cfg.fees)
+        Ok(new_config)
     }
 
     /// Get current fee configuration
     pub fn get_fee_config(env: &Env) -> Result<FeeConfig, Error> {
-        Ok(ConfigManager::get_config(env)?.fees)
+        FeeConfigManager::get_fee_config(env)
     }
 
     /// Validate fee calculation for a market
@@ -897,47 +886,11 @@ impl FeeCalculator {
         Ok(payout)
     }
 
-    /// Calculate user payout after fees using dynamic configuration
-    pub fn calculate_user_payout_after_fees_env(
-        env: &Env,
-        user_stake: i128,
-        winning_total: i128,
-        total_pool: i128,
-    ) -> Result<i128, Error> {
-        if winning_total == 0 {
-            return Err(Error::NothingToClaim);
-        }
-
-        let cfg = ConfigManager::get_config(env)?;
-        let fee_pct = cfg.fees.platform_fee_percentage; // whole percent
-        let user_share = (user_stake * (100 - fee_pct)) / 100;
-        let payout = (user_share * total_pool) / winning_total;
-        Ok(payout)
-    }
-
     /// Calculate fee breakdown for a market
     pub fn calculate_fee_breakdown(market: &Market) -> Result<FeeBreakdown, Error> {
         let total_staked = market.total_staked;
         let fee_percentage = PLATFORM_FEE_PERCENTAGE;
         let fee_amount = Self::calculate_platform_fee(market)?;
-        let platform_fee = fee_amount;
-        let user_payout_amount = total_staked - fee_amount;
-
-        Ok(FeeBreakdown {
-            total_staked,
-            fee_percentage,
-            fee_amount,
-            platform_fee,
-            user_payout_amount,
-        })
-    }
-
-    /// Calculate fee breakdown using dynamic configuration
-    pub fn calculate_fee_breakdown_env(env: &Env, market: &Market) -> Result<FeeBreakdown, Error> {
-        let cfg = ConfigManager::get_config(env)?;
-        let total_staked = market.total_staked;
-        let fee_percentage = cfg.fees.platform_fee_percentage;
-        let fee_amount = FeeManager::calculate_platform_fee_env(env, market)?;
         let platform_fee = fee_amount;
         let user_payout_amount = total_staked - fee_amount;
 
@@ -1230,48 +1183,6 @@ impl FeeValidator {
         Ok(())
     }
 
-    /// Validate creation fee against dynamic configuration
-    pub fn validate_creation_fee_env(env: &Env, fee_amount: i128) -> Result<(), Error> {
-        let cfg = ConfigManager::get_config(env)?;
-        if fee_amount != cfg.fees.creation_fee {
-            return Err(Error::InvalidInput);
-        }
-        Ok(())
-    }
-
-    /// Validate market for fee collection using dynamic config (thresholds)
-    pub fn validate_market_for_fee_collection_env(env: &Env, market: &Market) -> Result<(), Error> {
-        // Check if market is resolved
-        if market.winning_outcome.is_none() {
-            return Err(Error::MarketNotResolved);
-        }
-
-        // Check if fees already collected
-        if market.fee_collected {
-            return Err(Error::FeeAlreadyCollected);
-        }
-
-        // Use dynamic collection threshold from config
-        let cfg = ConfigManager::get_config(env)?;
-        if market.total_staked < cfg.fees.collection_threshold {
-            return Err(Error::InsufficientStake);
-        }
-
-        Ok(())
-    }
-
-    /// Validate fee amount against dynamic config limits
-    pub fn validate_fee_amount_env(env: &Env, fee_amount: i128) -> Result<(), Error> {
-        let cfg = ConfigManager::get_config(env)?;
-        if fee_amount < cfg.fees.min_fee_amount {
-            return Err(Error::InsufficientStake);
-        }
-        if fee_amount > cfg.fees.max_fee_amount {
-            return Err(Error::InvalidInput);
-        }
-        Ok(())
-    }
-
     /// Validate fee configuration
     pub fn validate_fee_config(config: &FeeConfig) -> Result<(), Error> {
         if config.platform_fee_percentage < 0 || config.platform_fee_percentage > 10 {
@@ -1338,21 +1249,14 @@ pub struct FeeUtils;
 impl FeeUtils {
     /// Transfer fees to admin
     pub fn transfer_fees_to_admin(env: &Env, admin: &Address, amount: i128) -> Result<(), Error> {
-        ReentrancyGuard::before_external_call(env)?;
         let token_client = MarketUtils::get_token_client(env)?;
         token_client.transfer(&env.current_contract_address(), admin, &amount);
-        ReentrancyGuard::after_external_call(env);
         Ok(())
     }
 
     /// Get fee statistics for a market
     pub fn get_market_fee_stats(market: &Market) -> Result<FeeBreakdown, Error> {
         FeeCalculator::calculate_fee_breakdown(market)
-    }
-
-    /// Get fee statistics for a market using dynamic configuration
-    pub fn get_market_fee_stats_env(env: &Env, market: &Market) -> Result<FeeBreakdown, Error> {
-        FeeCalculator::calculate_fee_breakdown_env(env, market)
     }
 
     /// Check if fees can be collected for a market
@@ -1389,33 +1293,6 @@ impl FeeUtils {
             true,
             String::from_str(&Env::default(), "Eligible for fee collection"),
         )
-    }
-
-    /// Check if fees can be collected for a market using dynamic configuration
-    pub fn can_collect_fees_env(env: &Env, market: &Market) -> Result<bool, Error> {
-        if market.winning_outcome.is_none() {
-            return Ok(false);
-        }
-        if market.fee_collected {
-            return Ok(false);
-        }
-        let cfg = ConfigManager::get_config(env)?;
-        Ok(market.total_staked >= cfg.fees.collection_threshold)
-    }
-
-    /// Get fee collection eligibility for a market using dynamic configuration
-    pub fn get_fee_eligibility_env(env: &Env, market: &Market) -> Result<(bool, String), Error> {
-        if market.winning_outcome.is_none() {
-            return Ok((false, String::from_str(env, "Market not resolved")));
-        }
-        if market.fee_collected {
-            return Ok((false, String::from_str(env, "Fees already collected")));
-        }
-        let cfg = ConfigManager::get_config(env)?;
-        if market.total_staked < cfg.fees.collection_threshold {
-            return Ok((false, String::from_str(env, "Insufficient stakes")));
-        }
-        Ok((true, String::from_str(env, "Eligible for fee collection")))
     }
 }
 
@@ -1476,8 +1353,12 @@ impl FeeTracker {
         Ok(())
     }
 
-    /// Record configuration change (timestamp only)
-    pub fn record_config_change(env: &Env, _admin: &Address) -> Result<(), Error> {
+    /// Record configuration change
+    pub fn record_config_change(
+        env: &Env,
+        _admin: &Address,
+        _config: &FeeConfig,
+    ) -> Result<(), Error> {
         // Store configuration change timestamp
         let config_key = symbol_short!("cfg_time");
         env.storage()
