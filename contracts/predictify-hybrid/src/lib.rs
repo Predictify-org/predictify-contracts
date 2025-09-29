@@ -19,6 +19,7 @@ mod extensions;
 mod fees;
 mod governance;
 mod markets;
+mod monitoring;
 mod oracles;
 mod reentrancy_guard;
 mod resolution;
@@ -1366,6 +1367,43 @@ impl PredictifyHybrid {
     /// Test version migration
     pub fn test_version_migration(env: Env, migration: versioning::VersionMigration) -> Result<bool, Error> {
         versioning::VersionManager::new(&env).test_version_migration(&env, migration)
+    }
+
+    // ===== MONITORING FUNCTIONS =====
+
+    /// Monitor market health for a specific market
+    pub fn monitor_market_health(env: Env, market_id: Symbol) -> Result<monitoring::MarketHealthMetrics, Error> {
+        monitoring::ContractMonitor::monitor_market_health(&env, market_id)
+    }
+
+    /// Monitor oracle health for a specific oracle provider
+    pub fn monitor_oracle_health(env: Env, oracle: OracleProvider) -> Result<monitoring::OracleHealthMetrics, Error> {
+        monitoring::ContractMonitor::monitor_oracle_health(&env, oracle)
+    }
+
+    /// Monitor fee collection performance
+    pub fn monitor_fee_collection(env: Env, timeframe: monitoring::TimeFrame) -> Result<monitoring::FeeCollectionMetrics, Error> {
+        monitoring::ContractMonitor::monitor_fee_collection(&env, timeframe)
+    }
+
+    /// Monitor dispute resolution performance
+    pub fn monitor_dispute_resolution(env: Env, market_id: Symbol) -> Result<monitoring::DisputeResolutionMetrics, Error> {
+        monitoring::ContractMonitor::monitor_dispute_resolution(&env, market_id)
+    }
+
+    /// Get comprehensive contract performance metrics
+    pub fn get_contract_performance_metrics(env: Env, timeframe: monitoring::TimeFrame) -> Result<monitoring::PerformanceMetrics, Error> {
+        monitoring::ContractMonitor::get_contract_performance_metrics(&env, timeframe)
+    }
+
+    /// Emit monitoring alert
+    pub fn emit_monitoring_alert(env: Env, alert: monitoring::MonitoringAlert) -> Result<(), Error> {
+        monitoring::ContractMonitor::emit_monitoring_alert(&env, alert)
+    }
+
+    /// Validate monitoring data integrity
+    pub fn validate_monitoring_data(env: Env, data: monitoring::MonitoringData) -> Result<bool, Error> {
+        monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
     }
 }
 
