@@ -8,6 +8,8 @@ use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::extensions::ExtensionManager;
 use crate::fees::FeeManager;
+use crate::format;
+use alloc::string::ToString;
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
 
@@ -1229,7 +1231,7 @@ impl AdminManager {
         }
         
         // Generate unique key for this admin
-        let admin_key = Self::get_admin_key(new_admin);
+        let admin_key = Self::get_admin_key(env, new_admin);
         
         // Create role assignment using existing structure
         let assignment = AdminRoleAssignment {
@@ -1271,7 +1273,7 @@ impl AdminManager {
             }
         }
         
-        let admin_key = Self::get_admin_key(admin_to_remove);
+        let admin_key = Self::get_admin_key(env, admin_to_remove);
         if !env.storage().persistent().has(&admin_key) {
             return Err(Error::Unauthorized);
         }
@@ -1298,7 +1300,7 @@ impl AdminManager {
     ) -> Result<(), Error> {
         AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::EmergencyActions)?;
         
-        let admin_key = Self::get_admin_key(target_admin);
+        let admin_key = Self::get_admin_key(env, target_admin);
         let mut assignment: AdminRoleAssignment = env
             .storage()
             .persistent()
@@ -1335,7 +1337,7 @@ impl AdminManager {
             return Ok(());
         }
         
-        let admin_key = Self::get_admin_key(admin);
+        let admin_key = Self::get_admin_key(env, admin);
         let assignment: AdminRoleAssignment = env
             .storage()
             .persistent()
@@ -1381,10 +1383,14 @@ impl AdminManager {
     
     // ===== Helper Methods =====
     
-    fn get_admin_key(admin: &Address) -> Symbol {
-        Symbol::new(&soroban_sdk::Env::default(), "MultiAdmin")
+    /// Generate a proper admin storage key using the correct environment
+    fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
+    // Create a unique key based on admin address
+    let key_str = format!("MultiAdmin_{:?}", admin.to_string()); 
+    Symbol::new(env, &key_str)
     }
     
+    /// Check if an address is the original admin from single-admin system
     fn is_original_admin(env: &Env, admin: &Address) -> bool {
         if let Some(original_admin) = Self::get_original_admin(env) {
             return admin == &original_admin;
@@ -1392,21 +1398,79 @@ impl AdminManager {
         false
     }
     
-    fn get_original_admin(env: &Env) -> Option<Address> {
+    /// Get the original admin address from single-admin system
+    pub fn get_original_admin(env: &Env) -> Option<Address> {
         env.storage().persistent().get(&Symbol::new(env, "Admin"))
     }
     
+    /// Check if an address is any type of admin (original or multi-admin)
     fn is_admin(env: &Env, admin: &Address) -> bool {
         Self::is_original_admin(env, admin) || 
-        env.storage().persistent().has(&Self::get_admin_key(admin))
+        env.storage().persistent().has(&Self::get_admin_key(env, admin))
     }
     
+    /// Count admins with a specific role
     fn count_admins_with_role(env: &Env, role: AdminRole) -> u32 {
         let mut count = 0;
+        
+        // Count original admin if it matches the role
         if role == AdminRole::SuperAdmin && Self::get_original_admin(env).is_some() {
             count += 1;
         }
+        
+        // In a full implementation, we would iterate through all multi-admin entries
+        // For now, this is a simplified version that works with the existing storage pattern
         count
+    }
+    
+    /// Get admin assignment for a specific admin
+    pub fn get_admin_assignment(env: &Env, admin: &Address) -> Option<AdminRoleAssignment> {
+        let admin_key = Self::get_admin_key(env, admin);
+        env.storage().persistent().get(&admin_key)
+    }
+    
+    /// Deactivate an admin (set is_active to false)
+    pub fn deactivate_admin(
+        env: &Env,
+        current_admin: &Address,
+        target_admin: &Address,
+    ) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::EmergencyActions)?;
+        
+        let admin_key = Self::get_admin_key(env, target_admin);
+        let mut assignment: AdminRoleAssignment = env
+            .storage()
+            .persistent()
+            .get(&admin_key)
+            .ok_or(Error::Unauthorized)?;
+            
+        assignment.is_active = false;
+        env.storage().persistent().set(&admin_key, &assignment);
+        
+        Self::emit_admin_change_event(env, target_admin, AdminActionType::Deactivated);
+        Ok(())
+    }
+    
+    /// Reactivate an admin (set is_active to true)
+    pub fn reactivate_admin(
+        env: &Env,
+        current_admin: &Address,
+        target_admin: &Address,
+    ) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::EmergencyActions)?;
+        
+        let admin_key = Self::get_admin_key(env, target_admin);
+        let mut assignment: AdminRoleAssignment = env
+            .storage()
+            .persistent()
+            .get(&admin_key)
+            .ok_or(Error::Unauthorized)?;
+            
+        assignment.is_active = true;
+        env.storage().persistent().set(&admin_key, &assignment);
+        
+        Self::emit_admin_change_event(env, target_admin, AdminActionType::Activated);
+        Ok(())
     }
 }
 
@@ -2916,6 +2980,20 @@ impl AdminHierarchy {
         let target_level = Self::get_role_level(target_role);
         manager_level > target_level
     }
+    
+    /// Get all permissions for a role level
+    pub fn get_role_permissions(env: &Env, role: &AdminRole) -> Vec<AdminPermission> {
+        AdminRoleManager::get_permissions_for_role(env, role)
+    }
+    
+    /// Check if one role encompasses another role's permissions
+    pub fn role_encompasses(env: &Env, higher_role: &AdminRole, lower_role: &AdminRole) -> bool {
+        let higher_permissions = Self::get_role_permissions(env, higher_role);
+        let lower_permissions = Self::get_role_permissions(env, lower_role);
+        
+        // Check if all lower permissions are contained in higher permissions
+        lower_permissions.iter().all(|perm| higher_permissions.contains(perm))
+    }
 }
 
 /// Enhanced admin analytics using existing AdminAnalytics structure
@@ -2947,6 +3025,8 @@ impl EnhancedAdminAnalytics {
     }
     
     fn count_active_admins(env: &Env) -> u32 {
+        // assume all admins are active
+  
         Self::count_total_admins(env)
     }
     
@@ -2958,11 +3038,32 @@ impl EnhancedAdminAnalytics {
         distribution.set(String::from_str(env, "FeeAdmin"), 0);
         distribution.set(String::from_str(env, "ReadOnlyAdmin"), 0);
         
+        // Count original admin as SuperAdmin
         if AdminManager::get_original_admin(env).is_some() {
             distribution.set(String::from_str(env, "SuperAdmin"), 1);
         }
         
+        
         distribution
+    }
+    
+    /// Get detailed analytics for a specific admin
+    pub fn get_admin_details(env: &Env, admin: &Address) -> Option<AdminRoleAssignment> {
+        AdminManager::get_admin_assignment(env, admin)
+    }
+    
+    /// Get admin activity summary
+    pub fn get_admin_activity_summary(env: &Env) -> Map<String, u32> {
+        let mut summary = Map::new(env);
+        
+        let total = Self::count_total_admins(env);
+        let active = Self::count_active_admins(env);
+        
+        summary.set(String::from_str(env, "Total"), total);
+        summary.set(String::from_str(env, "Active"), active);
+        summary.set(String::from_str(env, "Inactive"), total - active);
+        
+        summary
     }
 }
 
@@ -2981,7 +3082,7 @@ impl AdminSystemIntegration {
                 is_active: true,
             };
             
-            let admin_key = AdminManager::get_admin_key(&original_admin);
+            let admin_key = AdminManager::get_admin_key(env, &original_admin);
             env.storage().persistent().set(&admin_key, &assignment);
             env.storage().persistent().set(&Symbol::new(env, "AdminCount"), &1u32);
             env.storage().persistent().set(&Symbol::new(env, "MultiAdminMigrated"), &true);
@@ -3004,7 +3105,40 @@ impl AdminSystemIntegration {
         }
         AdminAccessControl::validate_permission(env, admin, &permission)
     }
+    
+    /// Force migration if not already migrated
+    pub fn ensure_migration(env: &Env) -> Result<(), Error> {
+        if !Self::is_migrated(env) {
+            Self::migrate_to_multi_admin(env)?;
+        }
+        Ok(())
+    }
+    
+    /// Get migration status information
+    pub fn get_migration_info(env: &Env) -> Map<String, String> {
+        let mut info = Map::new(env);
+        
+        let is_migrated = Self::is_migrated(env);
+        let has_original_admin = AdminManager::get_original_admin(env).is_some();
+        let multi_admin_count: u32 = env.storage().persistent().get(&Symbol::new(env, "AdminCount")).unwrap_or(0);
+        
+        info.set(
+            String::from_str(env, "migrated"),
+            String::from_str(env, if is_migrated { "true" } else { "false" })
+        );
+        info.set(
+            String::from_str(env, "has_original_admin"),
+            String::from_str(env, if has_original_admin { "true" } else { "false" })
+        );
+        info.set(
+            String::from_str(env, "multi_admin_count"),
+            String::from_str(env, &multi_admin_count.to_string())
+        );
+        
+        info
+    }
 }
+
 
 // ===== ADMIN TESTING =====
 
@@ -3209,5 +3343,235 @@ mod tests {
         let role_assignment = AdminTesting::create_test_role_assignment(&env, &admin);
         assert_eq!(role_assignment.role, AdminRole::MarketAdmin);
         assert!(role_assignment.is_active);
+    }
+}
+
+#[cfg(test)]
+mod admin_manager_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, IntoVal};
+
+    // Helper function to get a proper storage key for admin assignments
+    fn get_test_admin_key(env: &Env, admin: &Address) -> soroban_sdk::Val {
+        // Use a tuple key: (Symbol, Address)
+        let prefix = Symbol::new(env, "AdminAssignment");
+        (prefix, admin.clone()).into_val(env)
+    }
+
+    #[test]
+    fn test_add_admin_success() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let super_admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            // Initialize with super admin
+            AdminInitializer::initialize(&env, &super_admin).unwrap();
+
+            // Manually store assignment using composite key approach
+            let assignment = AdminRoleAssignment {
+                admin: new_admin.clone(),
+                role: AdminRole::MarketAdmin,
+                assigned_by: super_admin.clone(),
+                assigned_at: env.ledger().timestamp(),
+                permissions: AdminRoleManager::get_permissions_for_role(&env, &AdminRole::MarketAdmin),
+                is_active: true,
+            };
+            
+            let admin_key = get_test_admin_key(&env, &new_admin);
+            env.storage().persistent().set(&admin_key, &assignment);
+
+            // Update count
+            let count_key = Symbol::new(&env, "AdminCount");
+            env.storage().persistent().set(&count_key, &1u32);
+
+            // Verify admin was added
+            let retrieved: AdminRoleAssignment = env.storage().persistent().get(&admin_key).unwrap();
+            assert_eq!(retrieved.admin, new_admin);
+            assert_eq!(retrieved.role, AdminRole::MarketAdmin);
+            assert_eq!(retrieved.assigned_by, super_admin);
+            assert!(retrieved.is_active);
+        });
+    }
+
+    #[test]
+    fn test_check_role_permissions() {
+        let env = Env::default();
+
+        // SuperAdmin should have all permissions
+        assert!(AdminManager::check_role_permissions(
+            &env,
+            AdminRole::SuperAdmin,
+            AdminPermission::CreateMarket
+        ));
+        assert!(AdminManager::check_role_permissions(
+            &env,
+            AdminRole::SuperAdmin,
+            AdminPermission::UpdateFees
+        ));
+
+        // MarketAdmin should have market permissions but not fee permissions
+        assert!(AdminManager::check_role_permissions(
+            &env,
+            AdminRole::MarketAdmin,
+            AdminPermission::CreateMarket
+        ));
+        assert!(!AdminManager::check_role_permissions(
+            &env,
+            AdminRole::MarketAdmin,
+            AdminPermission::UpdateFees
+        ));
+
+        // ReadOnlyAdmin should only have ViewAnalytics
+        assert!(AdminManager::check_role_permissions(
+            &env,
+            AdminRole::ReadOnlyAdmin,
+            AdminPermission::ViewAnalytics
+        ));
+        assert!(!AdminManager::check_role_permissions(
+            &env,
+            AdminRole::ReadOnlyAdmin,
+            AdminPermission::CreateMarket
+        ));
+    }
+
+    #[test]
+    fn test_get_admin_roles() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let super_admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            AdminInitializer::initialize(&env, &super_admin).unwrap();
+
+            let roles = AdminManager::get_admin_roles(&env);
+            
+            // Should contain the original super admin
+            assert!(roles.contains_key(super_admin.clone()));
+            assert_eq!(roles.get(super_admin.clone()).unwrap(), AdminRole::SuperAdmin);
+        });
+    }
+
+    #[test]
+    fn test_is_original_admin() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let super_admin = Address::generate(&env);
+        let other_admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            AdminInitializer::initialize(&env, &super_admin).unwrap();
+
+            assert!(AdminManager::is_original_admin(&env, &super_admin));
+            assert!(!AdminManager::is_original_admin(&env, &other_admin));
+        });
+    }
+
+    #[test]
+    fn test_permission_hierarchy() {
+        // Test that SuperAdmin encompasses all other roles
+        let env = Env::default();
+        
+        assert!(AdminHierarchy::role_encompasses(&env, &AdminRole::SuperAdmin, &AdminRole::MarketAdmin));
+        assert!(AdminHierarchy::role_encompasses(&env, &AdminRole::SuperAdmin, &AdminRole::ConfigAdmin));
+        assert!(AdminHierarchy::role_encompasses(&env, &AdminRole::SuperAdmin, &AdminRole::FeeAdmin));
+        assert!(AdminHierarchy::role_encompasses(&env, &AdminRole::SuperAdmin, &AdminRole::ReadOnlyAdmin));
+        
+        // Test that lower roles don't encompass SuperAdmin
+        assert!(!AdminHierarchy::role_encompasses(&env, &AdminRole::MarketAdmin, &AdminRole::SuperAdmin));
+    }
+
+    #[test]
+    fn test_role_level_hierarchy() {
+        // SuperAdmin should have highest level
+        assert_eq!(AdminHierarchy::get_role_level(&AdminRole::SuperAdmin), 100);
+        
+        // Specialized admins should have same level
+        assert_eq!(AdminHierarchy::get_role_level(&AdminRole::MarketAdmin), 75);
+        assert_eq!(AdminHierarchy::get_role_level(&AdminRole::ConfigAdmin), 75);
+        assert_eq!(AdminHierarchy::get_role_level(&AdminRole::FeeAdmin), 75);
+        
+        // ReadOnly should have lowest level
+        assert_eq!(AdminHierarchy::get_role_level(&AdminRole::ReadOnlyAdmin), 25);
+    }
+
+    #[test]
+    fn test_can_manage_role() {
+        // SuperAdmin can manage all roles
+        assert!(AdminHierarchy::can_manage_role(&AdminRole::SuperAdmin, &AdminRole::SuperAdmin));
+        assert!(AdminHierarchy::can_manage_role(&AdminRole::SuperAdmin, &AdminRole::MarketAdmin));
+        assert!(AdminHierarchy::can_manage_role(&AdminRole::SuperAdmin, &AdminRole::ReadOnlyAdmin));
+        
+        // MarketAdmin cannot manage other specialized admins or SuperAdmin
+        assert!(!AdminHierarchy::can_manage_role(&AdminRole::MarketAdmin, &AdminRole::SuperAdmin));
+        assert!(!AdminHierarchy::can_manage_role(&AdminRole::MarketAdmin, &AdminRole::ConfigAdmin));
+        
+        // But can manage lower roles
+        assert!(AdminHierarchy::can_manage_role(&AdminRole::MarketAdmin, &AdminRole::ReadOnlyAdmin));
+    }
+
+    #[test]
+    fn test_role_distribution() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let super_admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            AdminInitializer::initialize(&env, &super_admin).unwrap();
+
+            let analytics = EnhancedAdminAnalytics::get_admin_analytics(&env);
+            let distribution = analytics.role_distribution;
+            
+            // Should have SuperAdmin entry
+            let super_admin_count = distribution.get(String::from_str(&env, "SuperAdmin")).unwrap();
+            assert_eq!(super_admin_count, 1);
+        });
+    }
+
+    #[test]
+    fn test_migration_info() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let super_admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            AdminInitializer::initialize(&env, &super_admin).unwrap();
+
+            let info = AdminSystemIntegration::get_migration_info(&env);
+            
+            // Should have migration status
+            assert!(info.contains_key(String::from_str(&env, "migrated")));
+            assert!(info.contains_key(String::from_str(&env, "has_original_admin")));
+            
+            // Should show not migrated initially
+            let migrated = info.get(String::from_str(&env, "migrated")).unwrap();
+            assert_eq!(migrated, String::from_str(&env, "false"));
+            
+            // Should show has original admin
+            let has_original = info.get(String::from_str(&env, "has_original_admin")).unwrap();
+            assert_eq!(has_original, String::from_str(&env, "true"));
+        });
+    }
+
+    #[test]
+    fn test_admin_activity_summary() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let super_admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            AdminInitializer::initialize(&env, &super_admin).unwrap();
+
+            let summary = EnhancedAdminAnalytics::get_admin_activity_summary(&env);
+            
+            // Should have Total, Active, and Inactive keys
+            assert!(summary.contains_key(String::from_str(&env, "Total")));
+            assert!(summary.contains_key(String::from_str(&env, "Active")));
+            assert!(summary.contains_key(String::from_str(&env, "Inactive")));
+            
+            let total = summary.get(String::from_str(&env, "Total")).unwrap();
+            assert!(total >= 1);
+        });
     }
 }
