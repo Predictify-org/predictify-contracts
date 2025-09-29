@@ -19,6 +19,7 @@ mod extensions;
 mod fees;
 mod governance;
 mod markets;
+mod monitoring;
 mod oracles;
 mod reentrancy_guard;
 mod resolution;
@@ -28,6 +29,7 @@ mod types;
 mod utils;
 mod validation;
 mod validation_tests;
+mod versioning;
 mod voting;
 
 #[cfg(test)]
@@ -44,6 +46,9 @@ mod integration_test;
 
 #[cfg(test)]
 mod recovery_tests;
+
+#[cfg(test)]
+mod property_based_tests;
 
 // Re-export commonly used items
 use admin::AdminInitializer;
@@ -63,7 +68,6 @@ use soroban_sdk::{
 pub struct PredictifyHybrid;
 
 const PERCENTAGE_DENOMINATOR: i128 = 100;
-const FEE_PERCENTAGE: i128 = 2; // 2% fee for the platform
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -1064,7 +1068,6 @@ impl PredictifyHybrid {
         market_id: Symbol,
         additional_days: u32,
         reason: String,
-        fee_amount: i128,
     ) -> Result<(), Error> {
         if let Err(e) = ReentrancyGuard::check_reentrancy_state(&env) {
             return Err(e);
@@ -1370,6 +1373,88 @@ impl PredictifyHybrid {
     pub fn get_recovery_status(env: Env, market_id: Symbol) -> String {
         crate::recovery::RecoveryManager::get_recovery_status(&env, &market_id)
             .unwrap_or_else(|_| String::from_str(&env, "unknown"))
+    }
+
+    // ===== VERSIONING FUNCTIONS =====
+
+    /// Track contract version for versioning system
+    pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
+        versioning::VersionManager::new(&env).track_contract_version(&env, version)
+    }
+
+    /// Migrate data between contract versions
+    pub fn migrate_data_between_versions(
+        env: Env,
+        old_version: versioning::Version,
+        new_version: versioning::Version,
+    ) -> Result<versioning::VersionMigration, Error> {
+        versioning::VersionManager::new(&env).migrate_data_between_versions(&env, old_version, new_version)
+    }
+
+    /// Validate version compatibility
+    pub fn validate_version_compatibility(
+        env: Env,
+        old_version: versioning::Version,
+        new_version: versioning::Version,
+    ) -> Result<bool, Error> {
+        versioning::VersionManager::new(&env).validate_version_compatibility(&env, &old_version, &new_version)
+    }
+
+    /// Upgrade to a specific version
+    pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
+        versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)
+    }
+
+    /// Rollback to a specific version
+    pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
+        versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)
+    }
+
+    /// Get version history
+    pub fn get_version_history(env: Env) -> Result<versioning::VersionHistory, Error> {
+        versioning::VersionManager::new(&env).get_version_history(&env)
+    }
+
+    /// Test version migration
+    pub fn test_version_migration(env: Env, migration: versioning::VersionMigration) -> Result<bool, Error> {
+        versioning::VersionManager::new(&env).test_version_migration(&env, migration)
+    }
+
+    // ===== MONITORING FUNCTIONS =====
+
+    /// Monitor market health for a specific market
+    pub fn monitor_market_health(env: Env, market_id: Symbol) -> Result<monitoring::MarketHealthMetrics, Error> {
+        monitoring::ContractMonitor::monitor_market_health(&env, market_id)
+    }
+
+    /// Monitor oracle health for a specific oracle provider
+    pub fn monitor_oracle_health(env: Env, oracle: OracleProvider) -> Result<monitoring::OracleHealthMetrics, Error> {
+        monitoring::ContractMonitor::monitor_oracle_health(&env, oracle)
+    }
+
+    /// Monitor fee collection performance
+    pub fn monitor_fee_collection(env: Env, timeframe: monitoring::TimeFrame) -> Result<monitoring::FeeCollectionMetrics, Error> {
+        monitoring::ContractMonitor::monitor_fee_collection(&env, timeframe)
+    }
+
+    /// Monitor dispute resolution performance
+    pub fn monitor_dispute_resolution(env: Env, market_id: Symbol) -> Result<monitoring::DisputeResolutionMetrics, Error> {
+        monitoring::ContractMonitor::monitor_dispute_resolution(&env, market_id)
+    }
+
+    /// Get comprehensive contract performance metrics
+    pub fn get_contract_performance_metrics(env: Env, timeframe: monitoring::TimeFrame) -> Result<monitoring::PerformanceMetrics, Error> {
+        monitoring::ContractMonitor::get_contract_performance_metrics(&env, timeframe)
+    }
+
+    /// Emit monitoring alert
+    pub fn emit_monitoring_alert(env: Env, alert: monitoring::MonitoringAlert) -> Result<(), Error> {
+        monitoring::ContractMonitor::emit_monitoring_alert(&env, alert)
+    }
+
+    /// Validate monitoring data integrity
+    pub fn validate_monitoring_data(env: Env, data: monitoring::MonitoringData) -> Result<bool, Error> {
+        monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
     }
 }
 
