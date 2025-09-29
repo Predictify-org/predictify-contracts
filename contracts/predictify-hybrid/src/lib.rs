@@ -18,9 +18,7 @@ mod events;
 mod extensions;
 mod fees;
 mod governance;
-mod graceful_degradation;
 mod markets;
-mod monitoring;
 mod oracles;
 mod reentrancy_guard;
 mod resolution;
@@ -29,7 +27,6 @@ mod types;
 mod utils;
 mod validation;
 mod validation_tests;
-mod versioning;
 mod voting;
 
 #[cfg(test)]
@@ -44,18 +41,14 @@ mod batch_operations_tests;
 #[cfg(test)]
 mod integration_test;
 
-#[cfg(test)]
-mod property_based_tests;
-
 // Re-export commonly used items
-use admin::AdminInitializer;
+use admin::{AdminInitializer, AdminManager, AdminRole, AdminPermission, AdminAnalyticsResult};
 pub use errors::Error;
 pub use types::*;
 
 use crate::config::{
     ConfigChanges, ConfigManager, ConfigUpdateRecord, ContractConfig, MarketLimits,
 };
-use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::reentrancy_guard::ReentrancyGuard;
 use alloc::format;
 use soroban_sdk::{
@@ -1329,150 +1322,78 @@ impl PredictifyHybrid {
         ConfigManager::update_market_limits(&env, admin, limits)
     }
 
-    // ===== VERSIONING FUNCTIONS =====
+    // ===== MULTI-ADMIN MANAGEMENT FUNCTIONS =====
 
-    /// Track contract version for versioning system
-    pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).track_contract_version(&env, version)
-    }
+/// Add a new admin with specified role (SuperAdmin only)
+pub fn add_admin(
+    env: Env,
+    current_admin: Address,
+    new_admin: Address,
+    role: AdminRole,
+) -> Result<(), Error> {
+    current_admin.require_auth();
+    AdminManager::add_admin(&env, &current_admin, &new_admin, role)
+}
 
-    /// Migrate data between contract versions
-    pub fn migrate_data_between_versions(
-        env: Env,
-        old_version: versioning::Version,
-        new_version: versioning::Version,
-    ) -> Result<versioning::VersionMigration, Error> {
-        versioning::VersionManager::new(&env).migrate_data_between_versions(&env, old_version, new_version)
-    }
+/// Remove an admin from the system (SuperAdmin only)
+pub fn remove_admin(
+    env: Env,
+    current_admin: Address,
+    admin_to_remove: Address,
+) -> Result<(), Error> {
+    current_admin.require_auth();
+    AdminManager::remove_admin(&env, &current_admin, &admin_to_remove)
+}
 
-    /// Validate version compatibility
-    pub fn validate_version_compatibility(
-        env: Env,
-        old_version: versioning::Version,
-        new_version: versioning::Version,
-    ) -> Result<bool, Error> {
-        versioning::VersionManager::new(&env).validate_version_compatibility(&env, &old_version, &new_version)
-    }
+/// Update an admin's role (SuperAdmin only)
+pub fn update_admin_role(
+    env: Env,
+    current_admin: Address,
+    target_admin: Address,
+    new_role: AdminRole,
+) -> Result<(), Error> {
+    current_admin.require_auth();
+    AdminManager::update_admin_role(&env, &current_admin, &target_admin, new_role)
+}
 
-    /// Upgrade to a specific version
-    pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)
-    }
+/// Validate admin permission for specific action
+pub fn validate_admin_permission(
+    env: Env,
+    admin: Address,
+    permission: AdminPermission,
+) -> Result<(), Error> {
+    AdminManager::validate_admin_permission(&env, &admin, permission)
+}
 
-    /// Rollback to a specific version
-    pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)
-    }
+/// Get all admin roles in the system
+pub fn get_admin_roles(env: Env) -> Map<Address, AdminRole> {
+    AdminManager::get_admin_roles(&env)
+}
 
-    /// Get version history
-    pub fn get_version_history(env: Env) -> Result<versioning::VersionHistory, Error> {
-        versioning::VersionManager::new(&env).get_version_history(&env)
-    }
+/// Get comprehensive admin analytics
+pub fn get_admin_analytics(env: Env) -> AdminAnalyticsResult {
+    admin::EnhancedAdminAnalytics::get_admin_analytics(&env)
+}
 
-    /// Test version migration
-    pub fn test_version_migration(env: Env, migration: versioning::VersionMigration) -> Result<bool, Error> {
-        versioning::VersionManager::new(&env).test_version_migration(&env, migration)
-    }
+/// Migrate from single-admin to multi-admin system
+pub fn migrate_to_multi_admin(env: Env, admin: Address) -> Result<(), Error> {
+    admin.require_auth();
+    admin::AdminSystemIntegration::migrate_to_multi_admin(&env)
+}
 
-    // ===== MONITORING FUNCTIONS =====
+/// Check if multi-admin migration is complete
+pub fn is_multi_admin_migrated(env: Env) -> bool {
+    admin::AdminSystemIntegration::is_migrated(&env)
+}
 
-    /// Monitor market health for a specific market
-    pub fn monitor_market_health(env: Env, market_id: Symbol) -> Result<monitoring::MarketHealthMetrics, Error> {
-        monitoring::ContractMonitor::monitor_market_health(&env, market_id)
-    }
-
-    /// Monitor oracle health for a specific oracle provider
-    pub fn monitor_oracle_health(env: Env, oracle: OracleProvider) -> Result<monitoring::OracleHealthMetrics, Error> {
-        monitoring::ContractMonitor::monitor_oracle_health(&env, oracle)
-    }
-
-    /// Monitor fee collection performance
-    pub fn monitor_fee_collection(env: Env, timeframe: monitoring::TimeFrame) -> Result<monitoring::FeeCollectionMetrics, Error> {
-        monitoring::ContractMonitor::monitor_fee_collection(&env, timeframe)
-    }
-
-    /// Monitor dispute resolution performance
-    pub fn monitor_dispute_resolution(env: Env, market_id: Symbol) -> Result<monitoring::DisputeResolutionMetrics, Error> {
-        monitoring::ContractMonitor::monitor_dispute_resolution(&env, market_id)
-    }
-
-    /// Get comprehensive contract performance metrics
-    pub fn get_contract_performance_metrics(env: Env, timeframe: monitoring::TimeFrame) -> Result<monitoring::PerformanceMetrics, Error> {
-        monitoring::ContractMonitor::get_contract_performance_metrics(&env, timeframe)
-    }
-
-    /// Emit monitoring alert
-    pub fn emit_monitoring_alert(env: Env, alert: monitoring::MonitoringAlert) -> Result<(), Error> {
-        monitoring::ContractMonitor::emit_monitoring_alert(&env, alert)
-    }
-
-    /// Validate monitoring data integrity
-    pub fn validate_monitoring_data(env: Env, data: monitoring::MonitoringData) -> Result<bool, Error> {
-        monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
-    }
-
-    // ===== ORACLE FALLBACK FUNCTIONS =====
-
-    /// Get oracle data with backup if primary fails
-    pub fn get_oracle_with_backup(
-        env: Env,
-        market_id: Symbol,
-        oracle_contract: Address,
-        primary_oracle: OracleProvider,
-        backup_oracle: OracleProvider,
-    ) -> Result<String, Error> {
-        // Get market info
-        let market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Check if market ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
-            return Err(Error::MarketClosed);
-        }
-
-        // Try to get price with backup
-        let backup = OracleBackup::new(primary_oracle, backup_oracle);
-        match backup.get_price(&env, &oracle_contract, &market.oracle_config.feed_id) {
-            Ok(price) => {
-                // Simple comparison logic
-                let threshold = market.oracle_config.threshold;
-                let comparison = &market.oracle_config.comparison;
-                
-                let result = if comparison == &String::from_str(&env, "gt") {
-                    if price > threshold { "yes" } else { "no" }
-                } else if comparison == &String::from_str(&env, "lt") {
-                    if price < threshold { "yes" } else { "no" }
-                } else {
-                    if price == threshold { "yes" } else { "no" }
-                };
-                
-                Ok(String::from_str(&env, result))
-            }
-            Err(_) => {
-                // Both oracles failed
-                let reason = String::from_str(&env, "All oracles failed");
-                events::EventEmitter::emit_manual_resolution_required(&env, &market_id, &reason);
-                Err(Error::OracleUnavailable)
-            }
-        }
-    }
-
-    /// Check if oracle is working
-    pub fn check_oracle_status(
-        env: Env, 
-        oracle: OracleProvider,
-        oracle_contract: Address,
-    ) -> String {
-        let health = graceful_degradation::monitor_oracle_health(&env, oracle, &oracle_contract);
-        match health {
-            OracleHealth::Working => String::from_str(&env, "working"),
-            OracleHealth::Broken => String::from_str(&env, "broken"),
-        }
-    }
+/// Check role permissions against a specific permission
+pub fn check_role_permissions(
+    env: Env,
+    role: AdminRole,
+    permission: AdminPermission,
+) -> bool {
+    AdminManager::check_role_permissions(&env, role, permission)
+}
 }
 
 mod test;

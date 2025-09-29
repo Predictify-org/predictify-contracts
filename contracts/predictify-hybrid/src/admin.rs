@@ -108,6 +108,26 @@ pub struct AdminAnalytics {
     pub recent_actions: Vec<AdminAction>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum AdminActionType {
+    Added,
+    Removed, 
+    RoleUpdated,
+    Activated,
+    Deactivated,
+}
+
+/// Admin analytics result for multi-admin system
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct AdminAnalyticsResult {
+    pub total_admins: u32,
+    pub active_admins: u32,
+    pub role_distribution: Map<String, u32>,
+    pub last_updated: u64,
+}
+
 // ===== ADMIN INITIALIZATION =====
 
 /// Admin initialization management
@@ -437,20 +457,25 @@ impl AdminAccessControl {
     /// - **Batch Operations**: Validate permissions for multiple operations
     /// - **Audit Trails**: Log permission checks for security auditing
     pub fn validate_permission(
-        env: &Env,
-        admin: &Address,
-        permission: &AdminPermission,
-    ) -> Result<(), Error> {
-        // Get admin role
-        let role = AdminRoleManager::get_admin_role(env, admin)?;
-
-        // Check if admin has the required permission
-        if !AdminRoleManager::has_permission(env, &role, permission)? {
-            return Err(Error::Unauthorized);
-        }
-
-        Ok(())
+    env: &Env,
+    admin: &Address,
+    permission: &AdminPermission,
+) -> Result<(), Error> {
+    // Try new multi-admin system first if migrated
+    if AdminSystemIntegration::is_migrated(env) {
+        return AdminManager::validate_admin_permission(env, admin, *permission);
     }
+    
+    // Fall back to existing logic
+    let role = AdminRoleManager::get_admin_role(env, admin)?;
+
+    // Check if admin has the required permission
+    if !AdminRoleManager::has_permission(env, &role, permission)? {
+        return Err(Error::Unauthorized);
+    }
+
+    Ok(())
+}
 
     /// Requires admin authentication and validates admin status.
     ///
@@ -1179,6 +1204,209 @@ impl AdminRoleManager {
         EventEmitter::emit_admin_role_deactivated(env, admin, deactivated_by);
 
         Ok(())
+    }
+}
+
+// ===== MULTI-ADMIN MANAGER =====
+
+/// Multi-Admin Management System with comprehensive role-based access control
+pub struct AdminManager;
+
+impl AdminManager {
+    /// Adds a new admin with specified role
+    pub fn add_admin(
+        env: &Env,
+        current_admin: &Address,
+        new_admin: &Address,
+        role: AdminRole,
+    ) -> Result<(), Error> {
+        // Use existing AdminRoleManager for validation
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::EmergencyActions)?;
+        
+        // Prevent duplicate admin assignments
+        if Self::is_admin(env, new_admin) {
+            return Err(Error::InvalidState);
+        }
+        
+        // Generate unique key for this admin
+        let admin_key = Self::get_admin_key(new_admin);
+        
+        // Create role assignment using existing structure
+        let assignment = AdminRoleAssignment {
+            admin: new_admin.clone(),
+            role: role.clone(),
+            assigned_by: current_admin.clone(),
+            assigned_at: env.ledger().timestamp(),
+            permissions: AdminRoleManager::get_permissions_for_role(env, &role),
+            is_active: true,
+        };
+        
+        // Store in multi-admin storage
+        env.storage().persistent().set(&admin_key, &assignment);
+        
+        // Update admin count
+        let count_key = Symbol::new(env, "AdminCount");
+        let current_count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
+        env.storage().persistent().set(&count_key, &(current_count + 1));
+        
+        // Emit event using existing system
+        Self::emit_admin_change_event(env, new_admin, AdminActionType::Added);
+        
+        Ok(())
+    }
+    
+    /// Removes an admin from the system
+    pub fn remove_admin(
+        env: &Env,
+        current_admin: &Address,
+        admin_to_remove: &Address,
+    ) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::EmergencyActions)?;
+        
+        // Prevent self-removal of last super admin
+        if current_admin == admin_to_remove {
+            let super_admin_count = Self::count_admins_with_role(env, AdminRole::SuperAdmin);
+            if super_admin_count <= 1 {
+                return Err(Error::InvalidState);
+            }
+        }
+        
+        let admin_key = Self::get_admin_key(admin_to_remove);
+        if !env.storage().persistent().has(&admin_key) {
+            return Err(Error::Unauthorized);
+        }
+        
+        env.storage().persistent().remove(&admin_key);
+        
+        // Update count
+        let count_key = Symbol::new(env, "AdminCount");
+        let current_count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
+        if current_count > 0 {
+            env.storage().persistent().set(&count_key, &(current_count - 1));
+        }
+        
+        Self::emit_admin_change_event(env, admin_to_remove, AdminActionType::Removed);
+        Ok(())
+    }
+    
+    /// Updates an admin's role  
+    pub fn update_admin_role(
+        env: &Env,
+        current_admin: &Address,
+        target_admin: &Address,
+        new_role: AdminRole,
+    ) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::EmergencyActions)?;
+        
+        let admin_key = Self::get_admin_key(target_admin);
+        let mut assignment: AdminRoleAssignment = env
+            .storage()
+            .persistent()
+            .get(&admin_key)
+            .ok_or(Error::Unauthorized)?;
+            
+        // Prevent downgrading last super admin
+        if assignment.role == AdminRole::SuperAdmin && new_role != AdminRole::SuperAdmin {
+            let super_admin_count = Self::count_admins_with_role(env, AdminRole::SuperAdmin);
+            if super_admin_count <= 1 {
+                return Err(Error::InvalidState);
+            }
+        }
+        
+        assignment.role = new_role.clone();
+        assignment.permissions = AdminRoleManager::get_permissions_for_role(env, &new_role);
+        assignment.assigned_by = current_admin.clone();
+        assignment.assigned_at = env.ledger().timestamp();
+        
+        env.storage().persistent().set(&admin_key, &assignment);
+        Self::emit_admin_change_event(env, target_admin, AdminActionType::RoleUpdated);
+        
+        Ok(())
+    }
+    
+    /// Validates if an admin has a specific permission
+    pub fn validate_admin_permission(
+        env: &Env,
+        admin: &Address,
+        permission: AdminPermission,
+    ) -> Result<(), Error> {
+        // Check original admin for backward compatibility
+        if Self::is_original_admin(env, admin) {
+            return Ok(());
+        }
+        
+        let admin_key = Self::get_admin_key(admin);
+        let assignment: AdminRoleAssignment = env
+            .storage()
+            .persistent()
+            .get(&admin_key)
+            .ok_or(Error::Unauthorized)?;
+            
+        if !assignment.is_active || !assignment.permissions.contains(&permission) {
+            return Err(Error::Unauthorized);
+        }
+        
+        Ok(())
+    }
+    
+    /// Gets all admin roles in the system
+    pub fn get_admin_roles(env: &Env) -> Map<Address, AdminRole> {
+        let mut roles = Map::new(env);
+        
+        // Add original admin if exists
+        if let Some(original_admin) = Self::get_original_admin(env) {
+            roles.set(original_admin, AdminRole::SuperAdmin);
+        }
+        
+        roles
+    }
+    
+    /// Emits admin change events using existing AdminActionType
+    pub fn emit_admin_change_event(env: &Env, admin: &Address, action: AdminActionType) {
+        let action_str = match action {
+            AdminActionType::Added => "Added",
+            AdminActionType::Removed => "Removed", 
+            AdminActionType::RoleUpdated => "RoleUpdated",
+            AdminActionType::Activated => "Activated",
+            AdminActionType::Deactivated => "Deactivated",
+        };
+        EventEmitter::emit_admin_action_logged(env, admin, action_str, &true);
+    }
+    
+    /// Check role permissions against a specific permission
+    pub fn check_role_permissions(env: &Env, role: AdminRole, permission: AdminPermission) -> bool {
+        let permissions = AdminRoleManager::get_permissions_for_role(env, &role);
+        permissions.contains(&permission)
+    }
+    
+    // ===== Helper Methods =====
+    
+    fn get_admin_key(admin: &Address) -> Symbol {
+        Symbol::new(&soroban_sdk::Env::default(), "MultiAdmin")
+    }
+    
+    fn is_original_admin(env: &Env, admin: &Address) -> bool {
+        if let Some(original_admin) = Self::get_original_admin(env) {
+            return admin == &original_admin;
+        }
+        false
+    }
+    
+    fn get_original_admin(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&Symbol::new(env, "Admin"))
+    }
+    
+    fn is_admin(env: &Env, admin: &Address) -> bool {
+        Self::is_original_admin(env, admin) || 
+        env.storage().persistent().has(&Self::get_admin_key(admin))
+    }
+    
+    fn count_admins_with_role(env: &Env, role: AdminRole) -> u32 {
+        let mut count = 0;
+        if role == AdminRole::SuperAdmin && Self::get_original_admin(env).is_some() {
+            count += 1;
+        }
+        count
     }
 }
 
@@ -2660,6 +2888,121 @@ impl AdminUtils {
                 String::from_str(&soroban_sdk::Env::default(), "EmergencyActions")
             }
         }
+    }
+}
+
+
+// ===== ADMIN HIERARCHY AND ANALYTICS =====
+
+/// Admin hierarchy management for role inheritance and precedence
+pub struct AdminHierarchy;
+
+impl AdminHierarchy {
+    pub fn get_role_level(role: &AdminRole) -> u8 {
+        match role {
+            AdminRole::SuperAdmin => 100,
+            AdminRole::MarketAdmin => 75,
+            AdminRole::ConfigAdmin => 75,
+            AdminRole::FeeAdmin => 75,
+            AdminRole::ReadOnlyAdmin => 25,
+        }
+    }
+    
+    pub fn can_manage_role(manager_role: &AdminRole, target_role: &AdminRole) -> bool {
+        if *manager_role == AdminRole::SuperAdmin {
+            return true;
+        }
+        let manager_level = Self::get_role_level(manager_role);
+        let target_level = Self::get_role_level(target_role);
+        manager_level > target_level
+    }
+}
+
+/// Enhanced admin analytics using existing AdminAnalytics structure
+pub struct EnhancedAdminAnalytics;
+
+impl EnhancedAdminAnalytics {
+    pub fn get_admin_analytics(env: &Env) -> AdminAnalyticsResult {
+        let total_admins = Self::count_total_admins(env);
+        let active_admins = Self::count_active_admins(env);
+        let role_distribution = Self::get_role_distribution(env);
+        
+        AdminAnalyticsResult {
+            total_admins,
+            active_admins,
+            role_distribution,
+            last_updated: env.ledger().timestamp(),
+        }
+    }
+    
+    fn count_total_admins(env: &Env) -> u32 {
+        let multi_admin_count: u32 = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "AdminCount"))
+            .unwrap_or(0);
+        
+        let original_admin_count = if AdminManager::get_original_admin(env).is_some() { 1 } else { 0 };
+        multi_admin_count + original_admin_count
+    }
+    
+    fn count_active_admins(env: &Env) -> u32 {
+        Self::count_total_admins(env)
+    }
+    
+    fn get_role_distribution(env: &Env) -> Map<String, u32> {
+        let mut distribution = Map::new(env);
+        distribution.set(String::from_str(env, "SuperAdmin"), 0);
+        distribution.set(String::from_str(env, "MarketAdmin"), 0);
+        distribution.set(String::from_str(env, "ConfigAdmin"), 0);
+        distribution.set(String::from_str(env, "FeeAdmin"), 0);
+        distribution.set(String::from_str(env, "ReadOnlyAdmin"), 0);
+        
+        if AdminManager::get_original_admin(env).is_some() {
+            distribution.set(String::from_str(env, "SuperAdmin"), 1);
+        }
+        
+        distribution
+    }
+}
+
+/// Integration utilities for seamless migration
+pub struct AdminSystemIntegration;
+
+impl AdminSystemIntegration {
+    pub fn migrate_to_multi_admin(env: &Env) -> Result<(), Error> {
+        if let Some(original_admin) = AdminManager::get_original_admin(env) {
+            let assignment = AdminRoleAssignment {
+                admin: original_admin.clone(),
+                role: AdminRole::SuperAdmin,
+                assigned_by: original_admin.clone(),
+                assigned_at: env.ledger().timestamp(),
+                permissions: AdminRoleManager::get_permissions_for_role(env, &AdminRole::SuperAdmin),
+                is_active: true,
+            };
+            
+            let admin_key = AdminManager::get_admin_key(&original_admin);
+            env.storage().persistent().set(&admin_key, &assignment);
+            env.storage().persistent().set(&Symbol::new(env, "AdminCount"), &1u32);
+            env.storage().persistent().set(&Symbol::new(env, "MultiAdminMigrated"), &true);
+            
+            EventEmitter::emit_admin_action_logged(env, &original_admin, "MigratedToMultiAdmin", &true);
+        }
+        Ok(())
+    }
+    
+    pub fn is_migrated(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, "MultiAdminMigrated"))
+            .unwrap_or(false)
+    }
+    
+    pub fn validate_admin_unified(env: &Env, admin: &Address, permission: AdminPermission) -> Result<(), Error> {
+        if Self::is_migrated(env) {
+            return AdminManager::validate_admin_permission(env, admin, permission);
+        }
+        AdminAccessControl::validate_permission(env, admin, &permission)
     }
 }
 
