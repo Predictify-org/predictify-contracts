@@ -18,6 +18,7 @@ mod events;
 mod extensions;
 mod fees;
 mod governance;
+mod graceful_degradation;
 mod markets;
 mod monitoring;
 mod oracles;
@@ -54,6 +55,7 @@ pub use types::*;
 use crate::config::{
     ConfigChanges, ConfigManager, ConfigUpdateRecord, ContractConfig, MarketLimits,
 };
+use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::reentrancy_guard::ReentrancyGuard;
 use alloc::format;
 use soroban_sdk::{
@@ -1407,6 +1409,69 @@ impl PredictifyHybrid {
     /// Validate monitoring data integrity
     pub fn validate_monitoring_data(env: Env, data: monitoring::MonitoringData) -> Result<bool, Error> {
         monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
+    }
+
+    // ===== ORACLE FALLBACK FUNCTIONS =====
+
+    /// Get oracle data with backup if primary fails
+    pub fn get_oracle_with_backup(
+        env: Env,
+        market_id: Symbol,
+        oracle_contract: Address,
+        primary_oracle: OracleProvider,
+        backup_oracle: OracleProvider,
+    ) -> Result<String, Error> {
+        // Get market info
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        // Check if market ended
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            return Err(Error::MarketClosed);
+        }
+
+        // Try to get price with backup
+        let backup = OracleBackup::new(primary_oracle, backup_oracle);
+        match backup.get_price(&env, &oracle_contract, &market.oracle_config.feed_id) {
+            Ok(price) => {
+                // Simple comparison logic
+                let threshold = market.oracle_config.threshold;
+                let comparison = &market.oracle_config.comparison;
+                
+                let result = if comparison == &String::from_str(&env, "gt") {
+                    if price > threshold { "yes" } else { "no" }
+                } else if comparison == &String::from_str(&env, "lt") {
+                    if price < threshold { "yes" } else { "no" }
+                } else {
+                    if price == threshold { "yes" } else { "no" }
+                };
+                
+                Ok(String::from_str(&env, result))
+            }
+            Err(_) => {
+                // Both oracles failed
+                let reason = String::from_str(&env, "All oracles failed");
+                events::EventEmitter::emit_manual_resolution_required(&env, &market_id, &reason);
+                Err(Error::OracleUnavailable)
+            }
+        }
+    }
+
+    /// Check if oracle is working
+    pub fn check_oracle_status(
+        env: Env, 
+        oracle: OracleProvider,
+        oracle_contract: Address,
+    ) -> String {
+        let health = graceful_degradation::monitor_oracle_health(&env, oracle, &oracle_contract);
+        match health {
+            OracleHealth::Working => String::from_str(&env, "working"),
+            OracleHealth::Broken => String::from_str(&env, "broken"),
+        }
     }
 }
 

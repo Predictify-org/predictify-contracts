@@ -2,6 +2,7 @@ extern crate alloc;
 
 use crate::config::Environment;
 use crate::errors::Error;
+use crate::types::OracleProvider;
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
 // Define AdminRole locally since it's not available in the crate root
@@ -817,6 +818,42 @@ pub struct StorageMigrationEvent {
     pub timestamp: u64,
 }
 
+/// Oracle degradation event - emitted when oracle service fails or becomes unavailable
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OracleDegradationEvent {
+    /// Oracle provider that failed
+    pub oracle: OracleProvider,
+    /// Reason for degradation
+    pub reason: String,
+    /// Degradation timestamp
+    pub timestamp: u64,
+}
+
+/// Oracle recovery event - emitted when oracle service recovers
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OracleRecoveryEvent {
+    /// Oracle provider that recovered
+    pub oracle: OracleProvider,
+    /// Recovery message
+    pub recovery_message: String,
+    /// Recovery timestamp
+    pub timestamp: u64,
+}
+
+/// Manual resolution required event - emitted when automatic resolution fails
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ManualResolutionRequiredEvent {
+    /// Market that requires manual resolution
+    pub market_id: Symbol,
+    /// Reason manual resolution is needed
+    pub reason: String,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 /// Event emitted when circuit breaker state changes
 ///
 /// This event provides comprehensive information about circuit breaker
@@ -1448,6 +1485,48 @@ impl EventEmitter {
     /// Emit circuit breaker event
     pub fn emit_circuit_breaker_event(env: &Env, event: &CircuitBreakerEvent) {
         Self::store_event(env, &symbol_short!("cb_event"), event);
+    }
+
+    /// Emit oracle degradation event when oracle service fails
+    pub fn emit_oracle_degradation(
+        env: &Env,
+        oracle: &OracleProvider,
+        reason: &String,
+    ) {
+        let event = OracleDegradationEvent {
+            oracle: oracle.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ora_deg"), &event);
+    }
+
+    /// Emit oracle recovery event when oracle service recovers
+    pub fn emit_oracle_recovery(
+        env: &Env,
+        oracle: &OracleProvider,
+        message: &String,
+    ) {
+        let event = OracleRecoveryEvent {
+            oracle: oracle.clone(),
+            recovery_message: message.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ora_rec"), &event);
+    }
+
+    /// Emit manual resolution required event when automatic resolution fails
+    pub fn emit_manual_resolution_required(
+        env: &Env,
+        market_id: &Symbol,
+        reason: &String,
+    ) {
+        let event = ManualResolutionRequiredEvent {
+            market_id: market_id.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("man_res"), &event);
     }
 
     /// Store event in persistent storage
