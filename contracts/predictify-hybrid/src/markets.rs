@@ -2946,3 +2946,335 @@ mod tests {
         assert_eq!(consensus.percentage, 0);
     }
 }
+
+/////////////////////////////////////////////////////////////////////////////////
+/// Market pause management system for emergency controls and maintenance.//////
+/// ////////////////////////////////////////////////////////////////////////////
+///
+/// This module provides comprehensive market pause functionality with:
+/// - Temporary market suspension capabilities
+/// - Automatic resume on expiry
+/// - Pause duration enforcement
+/// - State preservation and restoration
+/// - Pause event tracking and notifications
+pub struct MarketPauseManager;
+
+impl MarketPauseManager {
+    /// Maximum allowed pause duration in hours (7 days)
+    const MAX_PAUSE_DURATION_HOURS: u32 = 168;
+
+    /// Minimum allowed pause duration in hours (1 hour)
+    const MIN_PAUSE_DURATION_HOURS: u32 = 1;
+
+    /// Pauses a market temporarily for maintenance or emergency situations.
+    ///
+    /// This function allows administrators to temporarily suspend market operations
+    /// while preserving the market state. The market will automatically resume
+    /// after the specified duration expires.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - Address of the administrator pausing the market
+    /// * `market_id` - Unique identifier of the market to pause
+    /// * `duration_hours` - Duration of the pause in hours (1-168 hours)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Market paused successfully
+    /// * `Err(Error)` - Pause operation failed
+    ///
+    /// # Errors
+    ///
+    /// * `Error::Unauthorized` - Caller is not an authorized administrator
+    /// * `Error::MarketNotFound` - Market doesn't exist
+    /// * `Error::InvalidState` - Market is already paused or in invalid state
+    /// * `Error::InvalidDuration` - Duration is outside allowed range
+    ///
+    /// # State Requirements
+    ///
+    /// * Market must not already be paused
+    /// * Market must be in Active, Ended, or Disputed state
+    /// * Caller must be contract admin
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::{Env, Address, Symbol};
+    /// use crate::pause::MarketPauseManager;
+    ///
+    /// let env = Env::default();
+    /// let admin = Address::generate(&env);
+    /// let market_id = Symbol::new(&env, "market_123");
+    ///
+    /// // Pause market for 24 hours
+    /// MarketPauseManager::pause_market(&env, admin, &market_id, 24)?;
+    /// ```
+    pub fn pause_market(
+        env: &Env,
+        admin: Address,
+        market_id: &Symbol,
+        duration_hours: u32,
+    ) -> Result<(), Error> {
+        Self::verify_admin(env, &admin)?;
+
+        // Validate pause duration
+        Self::validate_pause_duration(duration_hours)?;
+
+        // Get market and validate pause conditions
+        let market = MarketStateManager::get_market(env, market_id)?;
+        Self::validate_pause_conditions(env, market_id, &market)?;
+
+        // Calculate pause end time
+        let current_time = env.ledger().timestamp();
+        let pause_duration_seconds = (duration_hours as u64) * 3600;
+        let pause_end_time = current_time + pause_duration_seconds;
+
+        let pause_info = MarketPauseInfo {
+            is_paused: true,
+            paused_at: current_time,
+            pause_duration_hours: duration_hours,
+            paused_by: admin.clone(),
+            pause_end_time,
+            original_state: market.state,
+        };
+
+        env.storage().persistent().set(&market_id, &pause_info);
+        Self::emit_pause_event(env, market_id, duration_hours, &admin);
+
+        Ok(())
+    }
+
+    /// Resumes a paused market, restoring its original state.
+    ///
+    /// This function manually resumes a paused market before its automatic
+    /// resume time. It validates that the caller is authorized and restores
+    /// the market to its pre-pause state.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - Address of the administrator resuming the market
+    /// * `market_id` - Unique identifier of the market to resume
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Market resumed successfully
+    /// * `Err(Error)` - Resume operation failed
+    ///
+    /// # Errors
+    ///
+    /// * `Error::Unauthorized` - Caller is not an authorized administrator
+    /// * `Error::MarketNotFound` - Market doesn't exist
+    /// * `Error::InvalidState` - Market is not currently paused
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::{Env, Address, Symbol};
+    /// use crate::pause::MarketPauseManager;
+    ///
+    /// let env = Env::default();
+    /// let admin = Address::generate(&env);
+    /// let market_id = Symbol::new(&env, "market_123");
+    ///
+    /// // Resume paused market
+    /// MarketPauseManager::resume_market(&env, admin, &market_id)?;
+    /// ```
+    pub fn resume_market(env: &Env, admin: Address, market_id: &Symbol) -> Result<(), Error> {
+        Self::verify_admin(env, &admin)?;
+
+        let pause_info: MarketPauseInfo = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::InvalidState)?;
+
+        if !pause_info.is_paused {
+            return Err(Error::InvalidState);
+        }
+
+        env.storage().persistent().remove(&market_id);
+        Self::emit_resume_event(env, market_id, &admin);
+
+        Ok(())
+    }
+
+    /// Validates that pause conditions are met for the market.
+    ///
+    /// This function checks if a market can be paused based on its current
+    /// state and pause status.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Market identifier to validate
+    /// * `market` - Market data to validate
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Market can be paused
+    /// * `Err(Error)` - Market cannot be paused
+    ///
+    /// # Errors
+    ///
+    /// * `Error::InvalidState` - Market is already paused or in invalid state
+    ///
+    /// # Valid States for Pausing
+    ///
+    /// * Active - Market is accepting votes
+    /// * Ended - Market has ended but not resolved
+    /// * Disputed - Market is under dispute
+    pub fn validate_pause_conditions(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<(), Error> {
+        if Self::is_market_paused(env, market_id)? {
+            return Err(Error::InvalidState);
+        }
+
+        match market.state {
+            MarketState::Active | MarketState::Ended | MarketState::Disputed => Ok(()),
+            _ => Err(Error::InvalidState),
+        }
+    }
+
+    /// Checks if a market is currently paused.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `market_id` - Market identifier to check
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(bool)` - true if paused, false otherwise
+    /// * `Err(Error)` - Check failed
+    pub fn is_market_paused(env: &Env, market_id: &Symbol) -> Result<bool, Error> {
+        if let Some(pause_info) = env
+            .storage()
+            .persistent()
+            .get::<_, MarketPauseInfo>(&market_id)
+        {
+            Ok(pause_info.is_paused)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Checks and automatically resumes a market if pause duration has expired.
+    ///
+    /// This function should be called before any market operation to ensure
+    /// that expired pauses are automatically resolved.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `market_id` - Market identifier to check
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(bool)` - true if market was auto-resumed, false otherwise
+    pub fn auto_resume_on_expiry(env: &Env, market_id: &Symbol) -> Result<bool, Error> {
+        if let Some(pause_info) = env
+            .storage()
+            .persistent()
+            .get::<_, MarketPauseInfo>(&market_id)
+        {
+            if pause_info.is_paused {
+                let current_time = env.ledger().timestamp();
+
+                if current_time >= pause_info.pause_end_time {
+                    // Pause has expired, auto-resume
+                    env.storage().persistent().remove(&market_id);
+
+                    // Emit auto-resume event
+                    env.events()
+                        .publish(("market_auto_resumed", market_id), current_time);
+
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Retrieves the current pause status of a market.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `market_id` - Market identifier
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Option<MarketPauseInfo>)` - Pause info if paused, None otherwise
+    pub fn get_market_pause_status(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Result<Option<MarketPauseInfo>, Error> {
+        Ok(env.storage().persistent().get(&market_id))
+    }
+
+    /// Validates pause duration is within allowed limits.
+    ///
+    /// # Parameters
+    ///
+    /// * `duration_hours` - Requested pause duration in hours
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Duration is valid
+    /// * `Err(Error)` - Duration is invalid
+    fn validate_pause_duration(duration_hours: u32) -> Result<(), Error> {
+        if duration_hours < Self::MIN_PAUSE_DURATION_HOURS
+            || duration_hours > Self::MAX_PAUSE_DURATION_HOURS
+        {
+            return Err(Error::InvalidDuration);
+        }
+        Ok(())
+    }
+
+    /// Verifies that the caller is an authorized administrator.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `admin` - Address to verify
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Admin is authorized
+    /// * `Err(Error)` - Admin is not authorized
+    fn verify_admin(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::Unauthorized)?;
+
+        if admin != &stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        Ok(())
+    }
+
+    fn emit_pause_event(env: &Env, market_id: &Symbol, duration: u32, admin: &Address) {
+        env.events().publish(
+            ("market_paused", market_id),
+            (duration, admin, env.ledger().timestamp()),
+        );
+    }
+
+    fn emit_resume_event(env: &Env, market_id: &Symbol, admin: &Address) {
+        env.events().publish(
+            ("market_resumed", market_id),
+            (admin, env.ledger().timestamp()),
+        );
+    }
+}

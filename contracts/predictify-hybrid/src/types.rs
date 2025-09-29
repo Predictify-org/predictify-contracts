@@ -2279,3 +2279,17 @@ pub struct CommunityConsensus {
     /// Percentage of votes for this outcome
     pub percentage: i128,
 }
+
+///////////////////////////////////////////////////
+/// Market pause information tracking   //////////
+/////////////////////////////////////////////////
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct MarketPauseInfo {
+    pub is_paused: bool,
+    pub paused_at: u64,
+    pub pause_duration_hours: u32,
+    pub paused_by: Address,
+    pub pause_end_time: u64,
+    pub original_state: MarketState,
+}
