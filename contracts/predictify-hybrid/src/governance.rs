@@ -55,7 +55,7 @@ impl GovernanceContract {
             // Already initialized; nothing to do
             return;
         }
-        if voting_period_seconds <= 0 || quorum_votes < 0 {
+        if voting_period_seconds == 0 || quorum_votes == 0 {
             panic!("invalid params");
         }
         env.storage().persistent().set(&StorageKey::Admin, &admin);

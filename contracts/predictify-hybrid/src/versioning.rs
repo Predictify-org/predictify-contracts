@@ -100,19 +100,19 @@ impl Version {
         if self.major == other.major {
             return self.minor >= other.minor;
         }
-        
+
         // Allow upgrade from 0.0.0 to any version (initial setup)
         if other.major == 0 && other.minor == 0 && other.patch == 0 {
             return true;
         }
-        
+
         // Check if other version is in compatible versions list
         for compatible_version in self.compatible_versions.iter() {
             if compatible_version == other.to_string() {
                 return true;
             }
         }
-        
+
         false
     }
 
@@ -458,7 +458,7 @@ impl VersionHistory {
 /// // Validate compatibility
 /// let v1_0_0 = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
 /// let v1_1_0 = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
-/// 
+///
 /// if version_manager.validate_version_compatibility(&env, &v1_0_0, &v1_1_0)? {
 ///     println!("Versions are compatible");
 /// } else {
@@ -479,9 +479,9 @@ impl VersionManager {
         // Get or create version history
         let mut history = match self.get_version_history(env) {
             Ok(h) => h,
-            Err(_) => VersionHistory::new(env)
+            Err(_) => VersionHistory::new(env),
         };
-        
+
         // If this is the first version (replacing initial 0.0.0), replace it
         if history.versions.len() == 1 && history.current_version.version_number() == 0 {
             history.current_version = version.clone();
@@ -492,10 +492,10 @@ impl VersionManager {
             // Add version to history
             history.add_version(env, version);
         }
-        
+
         // Store updated history
         self.store_version_history(env, &history)?;
-        
+
         Ok(())
     }
 
@@ -535,14 +535,14 @@ impl VersionManager {
     ) -> Result<bool, Error> {
         // Check if upgrade is valid (new version should be higher than old version)
         let valid_upgrade = new_version.version_number() > old_version.version_number();
-        
+
         // Check if versions are compatible
         let compatible = new_version.is_compatible_with(old_version);
-        
+
         // Check if migration is required
-        let migration_required = new_version.migration_required || 
-                                new_version.is_breaking_change_from(old_version);
-        
+        let migration_required =
+            new_version.migration_required || new_version.is_breaking_change_from(old_version);
+
         Ok(valid_upgrade && compatible && !migration_required)
     }
 
@@ -550,7 +550,7 @@ impl VersionManager {
     pub fn upgrade_to_version(&self, env: &Env, target_version: Version) -> Result<(), Error> {
         // Get current version
         let current_version = self.get_current_version(env)?;
-        
+
         // Validate compatibility
         if !self.validate_version_compatibility(env, &current_version, &target_version)? {
             return Err(Error::InvalidInput);
@@ -568,7 +568,7 @@ impl VersionManager {
     pub fn rollback_to_version(&self, env: &Env, target_version: Version) -> Result<(), Error> {
         // Get current version
         let current_version = self.get_current_version(env)?;
-        
+
         // Check if rollback is possible
         if current_version.version_number() <= target_version.version_number() {
             return Err(Error::InvalidInput);
@@ -595,7 +595,7 @@ impl VersionManager {
         {
             match env.storage().persistent().get(&storage_key) {
                 Some(history) => Ok(history),
-                None => Ok(VersionHistory::new(env))
+                None => Ok(VersionHistory::new(env)),
             }
         }
     }
@@ -607,7 +607,11 @@ impl VersionManager {
     }
 
     /// Test version migration
-    pub fn test_version_migration(&self, env: &Env, migration: VersionMigration) -> Result<bool, Error> {
+    pub fn test_version_migration(
+        &self,
+        env: &Env,
+        migration: VersionMigration,
+    ) -> Result<bool, Error> {
         // Validate migration
         migration.validate(env)?;
 
@@ -649,14 +653,7 @@ mod tests {
     #[test]
     fn test_version_creation() {
         let env = Env::default();
-        let version = Version::new(
-            &env,
-            1,
-            2,
-            3,
-            String::from_str(&env, "Test version"),
-            false,
-        );
+        let version = Version::new(&env, 1, 2, 3, String::from_str(&env, "Test version"), false);
 
         assert_eq!(version.major, 1);
         assert_eq!(version.minor, 2);
@@ -726,14 +723,25 @@ mod tests {
         assert_eq!(v1_1_0.version_number(), 1_001_000);
 
         // Test compatibility
-        assert!(v1_1_0.is_compatible_with(&v1_0_0), "Version 1.1.0 should be compatible with 1.0.0");
-        assert!(!v1_1_0.is_breaking_change_from(&v1_0_0), "Version 1.1.0 should not be a breaking change from 1.0.0");
+        assert!(
+            v1_1_0.is_compatible_with(&v1_0_0),
+            "Version 1.1.0 should be compatible with 1.0.0"
+        );
+        assert!(
+            !v1_1_0.is_breaking_change_from(&v1_0_0),
+            "Version 1.1.0 should not be a breaking change from 1.0.0"
+        );
 
         // Test version comparison
-        assert!(v1_1_0.version_number() > v1_0_0.version_number(), "Version 1.1.0 should be higher than 1.0.0");
+        assert!(
+            v1_1_0.version_number() > v1_0_0.version_number(),
+            "Version 1.1.0 should be higher than 1.0.0"
+        );
 
         // Test version validation
-        let compatible = version_manager.validate_version_compatibility(&env, &v1_0_0, &v1_1_0).unwrap();
+        let compatible = version_manager
+            .validate_version_compatibility(&env, &v1_0_0, &v1_1_0)
+            .unwrap();
         assert!(compatible, "Version compatibility validation should pass");
 
         // Test that the version manager can be created and basic functions work

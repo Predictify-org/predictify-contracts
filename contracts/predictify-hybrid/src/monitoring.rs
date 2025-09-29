@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 use alloc::format;
+use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::types::{Market, MarketState, OracleProvider, OracleConfig};
+use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 
 /// Comprehensive monitoring system for Predictify contract health and performance.
 ///
@@ -92,11 +92,11 @@ pub struct OracleHealthMetrics {
     pub provider: OracleProvider,
     pub status: MonitoringStatus,
     pub response_time: u64, // milliseconds
-    pub success_rate: u32, // percentage
+    pub success_rate: u32,  // percentage
     pub last_response: u64,
     pub total_requests: u32,
     pub failed_requests: u32,
-    pub availability: u32, // percentage
+    pub availability: u32,     // percentage
     pub confidence_score: u32, // 0-100
 }
 
@@ -110,7 +110,7 @@ pub struct FeeCollectionMetrics {
     pub successful_collections: u32,
     pub failed_collections: u32,
     pub average_fee_per_market: i128,
-    pub revenue_growth: i32, // percentage change
+    pub revenue_growth: i32,        // percentage change
     pub collection_efficiency: u32, // percentage
 }
 
@@ -138,8 +138,8 @@ pub struct PerformanceMetrics {
     pub failed_operations: u32,
     pub average_execution_time: u64, // milliseconds
     pub gas_usage: u64,
-    pub throughput: u32, // operations per second
-    pub error_rate: u32, // percentage
+    pub throughput: u32,         // operations per second
+    pub error_rate: u32,         // percentage
     pub optimization_score: u32, // 0-100
 }
 
@@ -180,10 +180,13 @@ pub struct ContractMonitor;
 
 impl ContractMonitor {
     /// Monitor market health for a specific market
-    pub fn monitor_market_health(env: &Env, market_id: Symbol) -> Result<MarketHealthMetrics, Error> {
+    pub fn monitor_market_health(
+        env: &Env,
+        market_id: Symbol,
+    ) -> Result<MarketHealthMetrics, Error> {
         // Get market data (this would be implemented with actual market retrieval)
         let market = Self::get_market_data(env, &market_id)?;
-        
+
         // Calculate health metrics
         let total_votes = Self::calculate_total_votes(env, &market_id)?;
         let total_stake = Self::calculate_total_stake(env, &market_id)?;
@@ -218,7 +221,10 @@ impl ContractMonitor {
     }
 
     /// Monitor oracle health for a specific oracle provider
-    pub fn monitor_oracle_health(env: &Env, oracle: OracleProvider) -> Result<OracleHealthMetrics, Error> {
+    pub fn monitor_oracle_health(
+        env: &Env,
+        oracle: OracleProvider,
+    ) -> Result<OracleHealthMetrics, Error> {
         // Get oracle performance data
         let response_time = Self::get_average_response_time(env, &oracle)?;
         let success_rate = Self::calculate_success_rate(env, &oracle)?;
@@ -249,9 +255,12 @@ impl ContractMonitor {
     }
 
     /// Monitor fee collection performance
-    pub fn monitor_fee_collection(env: &Env, timeframe: TimeFrame) -> Result<FeeCollectionMetrics, Error> {
+    pub fn monitor_fee_collection(
+        env: &Env,
+        timeframe: TimeFrame,
+    ) -> Result<FeeCollectionMetrics, Error> {
         let start_time = Self::calculate_start_time(env, &timeframe)?;
-        
+
         let total_fees_collected = Self::calculate_total_fees_collected(env, start_time)?;
         let total_markets = Self::count_markets_in_timeframe(env, start_time)?;
         let successful_collections = Self::count_successful_collections(env, start_time)?;
@@ -281,21 +290,26 @@ impl ContractMonitor {
     }
 
     /// Monitor dispute resolution performance
-    pub fn monitor_dispute_resolution(env: &Env, market_id: Symbol) -> Result<DisputeResolutionMetrics, Error> {
+    pub fn monitor_dispute_resolution(
+        env: &Env,
+        market_id: Symbol,
+    ) -> Result<DisputeResolutionMetrics, Error> {
         let timeframe = TimeFrame::LastWeek; // Default timeframe
         let start_time = Self::calculate_start_time(env, &timeframe)?;
-        
+
         let total_disputes = Self::count_total_disputes(env, &market_id, start_time)?;
         let resolved_disputes = Self::count_resolved_disputes(env, &market_id, start_time)?;
         let pending_disputes = total_disputes.saturating_sub(resolved_disputes);
-        let average_resolution_time = Self::calculate_average_resolution_time(env, &market_id, start_time)?;
+        let average_resolution_time =
+            Self::calculate_average_resolution_time(env, &market_id, start_time)?;
         let resolution_success_rate = if total_disputes > 0 {
             (resolved_disputes * 100) / total_disputes
         } else {
             0
         };
         let escalation_count = Self::count_escalations(env, &market_id, start_time)?;
-        let community_consensus_rate = Self::calculate_community_consensus_rate(env, &market_id, start_time)?;
+        let community_consensus_rate =
+            Self::calculate_community_consensus_rate(env, &market_id, start_time)?;
 
         Ok(DisputeResolutionMetrics {
             timeframe,
@@ -310,9 +324,12 @@ impl ContractMonitor {
     }
 
     /// Get comprehensive contract performance metrics
-    pub fn get_contract_performance_metrics(env: &Env, timeframe: TimeFrame) -> Result<PerformanceMetrics, Error> {
+    pub fn get_contract_performance_metrics(
+        env: &Env,
+        timeframe: TimeFrame,
+    ) -> Result<PerformanceMetrics, Error> {
         let start_time = Self::calculate_start_time(env, &timeframe)?;
-        
+
         let total_operations = Self::count_total_operations(env, start_time)?;
         let successful_operations = Self::count_successful_operations(env, start_time)?;
         let failed_operations = total_operations.saturating_sub(successful_operations);
@@ -345,10 +362,7 @@ impl ContractMonitor {
     }
 
     /// Emit monitoring alert
-    pub fn emit_monitoring_alert(
-        env: &Env,
-        alert: MonitoringAlert,
-    ) -> Result<(), Error> {
+    pub fn emit_monitoring_alert(env: &Env, alert: MonitoringAlert) -> Result<(), Error> {
         // Emit alert event
         env.events().publish(
             (Symbol::new(env, "monitoring_alert"),),
@@ -418,7 +432,10 @@ impl ContractMonitor {
         // This would retrieve actual market data from storage
         // For now, return a placeholder
         Ok(Market {
-            admin: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            admin: Address::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ),
             question: String::from_str(env, "Sample Market"),
             outcomes: Vec::new(env),
             end_time: env.ledger().timestamp() + 86400,
@@ -522,7 +539,11 @@ impl ContractMonitor {
         score.min(100)
     }
 
-    fn determine_market_status(health_score: &u32, dispute_count: &u32, time_to_end: &u64) -> MonitoringStatus {
+    fn determine_market_status(
+        health_score: &u32,
+        dispute_count: &u32,
+        time_to_end: &u64,
+    ) -> MonitoringStatus {
         if *dispute_count > 3 {
             MonitoringStatus::Critical
         } else if *health_score < 30 {
@@ -597,7 +618,11 @@ impl ContractMonitor {
         confidence.min(100)
     }
 
-    fn determine_oracle_status(confidence_score: &u32, success_rate: &u32, availability: &u32) -> MonitoringStatus {
+    fn determine_oracle_status(
+        confidence_score: &u32,
+        success_rate: &u32,
+        availability: &u32,
+    ) -> MonitoringStatus {
         if *confidence_score < 30 || *success_rate < 70 || *availability < 90 {
             MonitoringStatus::Critical
         } else if *confidence_score < 60 || *success_rate < 85 || *availability < 95 {
@@ -648,12 +673,20 @@ impl ContractMonitor {
         Ok(10)
     }
 
-    fn count_resolved_disputes(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    fn count_resolved_disputes(
+        env: &Env,
+        market_id: &Symbol,
+        start_time: u64,
+    ) -> Result<u32, Error> {
         // This would count actual resolved disputes
         Ok(8)
     }
 
-    fn calculate_average_resolution_time(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u64, Error> {
+    fn calculate_average_resolution_time(
+        env: &Env,
+        market_id: &Symbol,
+        start_time: u64,
+    ) -> Result<u64, Error> {
         // This would calculate actual resolution time
         Ok(86400) // 1 day default
     }
@@ -663,7 +696,11 @@ impl ContractMonitor {
         Ok(2)
     }
 
-    fn calculate_community_consensus_rate(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    fn calculate_community_consensus_rate(
+        env: &Env,
+        market_id: &Symbol,
+        start_time: u64,
+    ) -> Result<u32, Error> {
         // This would calculate actual consensus rate
         Ok(80) // 80% default
     }
@@ -756,7 +793,7 @@ impl MonitoringUtils {
         affected_component: String,
     ) -> MonitoringAlert {
         let alert_id = Self::generate_alert_id(env);
-        
+
         MonitoringAlert {
             alert_id,
             alert_type,
@@ -788,14 +825,18 @@ impl MonitoringUtils {
     pub fn calculate_freshness_score(env: &Env, data_timestamp: u64) -> u32 {
         let current_time = env.ledger().timestamp();
         let age = current_time - data_timestamp;
-        
-        if age < 300 { // Less than 5 minutes
+
+        if age < 300 {
+            // Less than 5 minutes
             100
-        } else if age < 1800 { // Less than 30 minutes
+        } else if age < 1800 {
+            // Less than 30 minutes
             80
-        } else if age < 3600 { // Less than 1 hour
+        } else if age < 3600 {
+            // Less than 1 hour
             60
-        } else if age < 86400 { // Less than 1 day
+        } else if age < 86400 {
+            // Less than 1 day
             40
         } else {
             20
@@ -841,7 +882,10 @@ impl MonitoringTestingUtils {
     }
 
     /// Create test oracle health metrics
-    pub fn create_test_oracle_health_metrics(env: &Env, provider: OracleProvider) -> OracleHealthMetrics {
+    pub fn create_test_oracle_health_metrics(
+        env: &Env,
+        provider: OracleProvider,
+    ) -> OracleHealthMetrics {
         OracleHealthMetrics {
             provider,
             status: MonitoringStatus::Healthy,
@@ -870,7 +914,10 @@ impl MonitoringTestingUtils {
     }
 
     /// Create test dispute resolution metrics
-    pub fn create_test_dispute_resolution_metrics(env: &Env, market_id: Symbol) -> DisputeResolutionMetrics {
+    pub fn create_test_dispute_resolution_metrics(
+        env: &Env,
+        market_id: Symbol,
+    ) -> DisputeResolutionMetrics {
         DisputeResolutionMetrics {
             timeframe: TimeFrame::LastWeek,
             total_disputes: 5,
@@ -926,17 +973,17 @@ impl MonitoringTestingUtils {
             Self::create_test_oracle_health_metrics(env, OracleProvider::Reflector),
         ];
 
-        let active_alerts = vec![
-            &env,
-            Self::create_test_monitoring_alert(env),
-        ];
+        let active_alerts = vec![&env, Self::create_test_monitoring_alert(env)];
 
         MonitoringData {
             timestamp: env.ledger().timestamp(),
             market_health,
             oracle_health,
             fee_metrics: Self::create_test_fee_collection_metrics(env),
-            dispute_metrics: Self::create_test_dispute_resolution_metrics(env, Symbol::new(env, "test_market")),
+            dispute_metrics: Self::create_test_dispute_resolution_metrics(
+                env,
+                Symbol::new(env, "test_market"),
+            ),
             performance_metrics: Self::create_test_performance_metrics(env),
             active_alerts,
             system_status: MonitoringStatus::Healthy,
@@ -1001,7 +1048,10 @@ mod tests {
 
         let metrics = ContractMonitor::monitor_dispute_resolution(&env, market_id).unwrap();
 
-        assert_eq!(metrics.total_disputes, metrics.resolved_disputes + metrics.pending_disputes);
+        assert_eq!(
+            metrics.total_disputes,
+            metrics.resolved_disputes + metrics.pending_disputes
+        );
         assert!(metrics.resolution_success_rate <= 100);
     }
 
@@ -1010,10 +1060,14 @@ mod tests {
         let env = Env::default();
         let timeframe = TimeFrame::LastHour;
 
-        let metrics = ContractMonitor::get_contract_performance_metrics(&env, timeframe.clone()).unwrap();
+        let metrics =
+            ContractMonitor::get_contract_performance_metrics(&env, timeframe.clone()).unwrap();
 
         assert_eq!(metrics.timeframe, timeframe);
-        assert_eq!(metrics.total_operations, metrics.successful_operations + metrics.failed_operations);
+        assert_eq!(
+            metrics.total_operations,
+            metrics.successful_operations + metrics.failed_operations
+        );
         assert!(metrics.error_rate <= 100);
         assert!(metrics.optimization_score <= 100);
     }
@@ -1052,7 +1106,11 @@ mod tests {
 
         // Test data staleness
         // In test environment, current_time might be 0, so we need to test with actual values
-        let old_timestamp = if current_time > 500 { current_time.saturating_sub(400) } else { 0 };
+        let old_timestamp = if current_time > 500 {
+            current_time.saturating_sub(400)
+        } else {
+            0
+        };
         let is_stale = MonitoringUtils::is_data_stale(&env, old_timestamp, 300);
         // If current_time is 0, then old_timestamp is also 0, so the difference is 0, which is not > 300
         if current_time > 500 {
@@ -1061,12 +1119,17 @@ mod tests {
             assert!(!is_stale); // When current_time is 0, old_timestamp is 0, so difference is 0, not stale
         }
 
-        let recent_timestamp = if current_time > 200 { current_time.saturating_sub(100) } else { current_time };
+        let recent_timestamp = if current_time > 200 {
+            current_time.saturating_sub(100)
+        } else {
+            current_time
+        };
         let is_fresh = MonitoringUtils::is_data_stale(&env, recent_timestamp, 300);
         assert!(!is_fresh);
 
         // Test freshness score
-        let score = MonitoringUtils::calculate_freshness_score(&env, current_time.saturating_sub(100));
+        let score =
+            MonitoringUtils::calculate_freshness_score(&env, current_time.saturating_sub(100));
         assert_eq!(score, 100);
 
         // Test threshold validation
