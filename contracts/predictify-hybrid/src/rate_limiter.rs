@@ -325,7 +325,7 @@ impl RateLimiterContract {
 mod tests {
     use super::*;
     use soroban_sdk::{
-        testutils::{Address as _,  AuthorizedInvocation},
+        testutils::{Address as _, AuthorizedInvocation},
         Env,
     };
 
@@ -349,57 +349,37 @@ mod tests {
 
         let config = create_test_config();
 
-        // Initialize
-        let result =
-            RateLimiterContract::init_rate_limiter(env.clone(), admin.clone(), config.clone());
-        assert!(result.is_ok());
+        // Deploy & init
+        let contract_id = env.register_contract(None, RateLimiterContract);
+        let client = RateLimiterContractClient::new(&env, &contract_id);
+        client.init_rate_limiter(&admin, &config);
 
         // Test voting rate limit
         for i in 0..config.voting_limit {
-            let result = RateLimiterContract::check_voting_rate_limit(
-                env.clone(),
-                user.clone(),
-                market_id.clone(),
-            );
-            assert!(result.is_ok(), "Vote {} should succeed", i + 1);
+            client.check_voting_rate_limit(&user, &market_id);
         }
 
-        // Next vote should fail
-        let result = RateLimiterContract::check_voting_rate_limit(
-            env.clone(),
-            user.clone(),
-            market_id.clone(),
-        );
-        assert_eq!(result, Err(RateLimiterError::RateLimitExceeded));
+        // Next vote should exceed limit
+        let res = client.try_check_voting_rate_limit(&user, &market_id);
+        assert_eq!(res, Err(Ok(RateLimiterError::RateLimitExceeded.into())));
 
         // Test dispute rate limit
-        for i in 0..config.dispute_limit {
-            let result = RateLimiterContract::check_dispute_rate_limit(
-                env.clone(),
-                user.clone(),
-                market_id.clone(),
-            );
-            assert!(result.is_ok(), "Dispute {} should succeed", i + 1);
+        for _ in 0..config.dispute_limit {
+            client.check_dispute_rate_limit(&user, &market_id);
         }
 
-        // Next dispute should fail
-        let result = RateLimiterContract::check_dispute_rate_limit(
-            env.clone(),
-            user.clone(),
-            market_id.clone(),
-        );
-        assert_eq!(result, Err(RateLimiterError::RateLimitExceeded));
+        // Next dispute should exceed limit
+        let res = client.try_check_dispute_rate_limit(&user, &market_id);
+        assert_eq!(res, Err(Ok(RateLimiterError::RateLimitExceeded.into())));
 
         // Test oracle call rate limit
-        for i in 0..config.oracle_call_limit {
-            let result =
-                RateLimiterContract::check_oracle_rate_limit(env.clone(), market_id.clone());
-            assert!(result.is_ok(), "Oracle call {} should succeed", i + 1);
+        for _ in 0..config.oracle_call_limit {
+            client.check_oracle_rate_limit(&market_id);
         }
 
-        // Next oracle call should fail
-        let result = RateLimiterContract::check_oracle_rate_limit(env.clone(), market_id.clone());
-        assert_eq!(result, Err(RateLimiterError::RateLimitExceeded));
+        // Next oracle call should exceed limit
+        let res = client.try_check_oracle_rate_limit(&market_id);
+        assert_eq!(res, Err(Ok(RateLimiterError::RateLimitExceeded.into())));
     }
 
     #[test]
@@ -413,25 +393,19 @@ mod tests {
 
         let config = create_test_config();
 
-        RateLimiterContract::init_rate_limiter(env.clone(), admin.clone(), config.clone()).unwrap();
+        let contract_id = env.register_contract(None, RateLimiterContract);
+        let client = RateLimiterContractClient::new(&env, &contract_id);
+
+        // Init
+        client.init_rate_limiter(&admin, &config);
 
         // Make some votes
         for _ in 0..3 {
-            RateLimiterContract::check_voting_rate_limit(
-                env.clone(),
-                user.clone(),
-                market_id.clone(),
-            )
-            .unwrap();
+            client.check_voting_rate_limit(&user, &market_id);
         }
 
         // Check status
-        let status = RateLimiterContract::get_rate_limit_status(
-            env.clone(),
-            user.clone(),
-            market_id.clone(),
-        )
-        .unwrap();
+        let status = client.get_rate_limit_status(&user, &market_id);
 
         assert_eq!(status.voting_remaining, config.voting_limit - 3);
         assert_eq!(status.dispute_remaining, config.dispute_limit);
@@ -476,7 +450,11 @@ mod tests {
         let admin = Address::generate(&env);
 
         let initial_config = create_test_config();
-        RateLimiterContract::init_rate_limiter(env.clone(), admin.clone(), initial_config).unwrap();
+        let contract_id = env.register_contract(None, RateLimiterContract);
+        let client = RateLimiterContractClient::new(&env, &contract_id);
+
+        // Init with initial config
+        client.init_rate_limiter(&admin, &initial_config);
 
         // Update with new limits
         let new_config = RateLimitConfig {
@@ -486,9 +464,7 @@ mod tests {
             time_window_seconds: 7200,
         };
 
-        let result =
-            RateLimiterContract::update_rate_limits(env.clone(), admin.clone(), new_config.clone());
-        assert!(result.is_ok());
+        client.update_rate_limits(&admin, &new_config);
     }
 
     #[test]
@@ -502,24 +478,18 @@ mod tests {
         let market2 = Symbol::new(&env, "market2");
 
         let config = create_test_config();
-        RateLimiterContract::init_rate_limiter(env.clone(), admin.clone(), config.clone()).unwrap();
+        let contract_id = env.register_contract(None, RateLimiterContract);
+        let client = RateLimiterContractClient::new(&env, &contract_id);
+
+        // Init with client
+        client.init_rate_limiter(&admin, &config);
 
         // Use up limit on market1
         for _ in 0..config.voting_limit {
-            RateLimiterContract::check_voting_rate_limit(
-                env.clone(),
-                user.clone(),
-                market1.clone(),
-            )
-            .unwrap();
+            client.check_voting_rate_limit(&user, &market1);
         }
 
         // Should still be able to vote on market2
-        let result = RateLimiterContract::check_voting_rate_limit(
-            env.clone(),
-            user.clone(),
-            market2.clone(),
-        );
-        assert!(result.is_ok());
+        client.check_voting_rate_limit(&user, &market2);
     }
 }
