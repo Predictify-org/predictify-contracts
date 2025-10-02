@@ -156,7 +156,7 @@ impl EdgeCaseHandler {
     /// ```
     pub fn handle_zero_stake_scenario(env: &Env, market_id: Symbol) -> Result<(), Error> {
         // Check reentrancy protection
-        ReentrancyGuard::check_reentrancy_state(env)?;
+        ReentrancyGuard::check_reentrancy_state(env);
 
         // Get market data
         let market = MarketStateManager::get_market(env, &market_id)?;
