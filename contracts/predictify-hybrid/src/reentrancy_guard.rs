@@ -1,6 +1,12 @@
-use soroban_sdk::{symbol_short, Env};
+use soroban_sdk::{contracterror, symbol_short, Env};
 
-use crate::errors::Error;
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum GuardError {
+    ReentrancyGuardActive = 1,
+    ExternalCallFailed = 2,
+}
 
 /// Global cross-function reentrancy guard.
 ///
@@ -24,9 +30,9 @@ impl ReentrancyGuard {
     }
 
     /// Checks current reentrancy state. Returns an error if locked.
-    pub fn check_reentrancy_state(env: &Env) -> Result<(), Error> {
+    pub fn check_reentrancy_state(env: &Env) -> Result<(), GuardError> {
         if Self::is_locked(env) {
-            return Err(Error::ReentrancyGuardActive);
+            return Err(GuardError::ReentrancyGuardActive);
         }
         Ok(())
     }
@@ -34,9 +40,9 @@ impl ReentrancyGuard {
     /// Sets the reentrancy lock before making an external call.
     ///
     /// If the lock is already set, returns `Error::ReentrancyGuardActive`.
-    pub fn before_external_call(env: &Env) -> Result<(), Error> {
+    pub fn before_external_call(env: &Env) -> Result<(), GuardError> {
         if Self::is_locked(env) {
-            return Err(Error::ReentrancyGuardActive);
+            return Err(GuardError::ReentrancyGuardActive);
         }
         env.storage().persistent().set(&Self::key(), &true);
         Ok(())
@@ -51,11 +57,11 @@ impl ReentrancyGuard {
     ///
     /// This helper standardizes call-site validation and returns a specific
     /// `ExternalCallFailed` error when `ok` is false.
-    pub fn validate_external_call_success(_env: &Env, ok: bool) -> Result<(), Error> {
+    pub fn validate_external_call_success(_env: &Env, ok: bool) -> Result<(), GuardError> {
         if ok {
             Ok(())
         } else {
-            Err(Error::ExternalCallFailed)
+            Err(GuardError::ExternalCallFailed)
         }
     }
     ///
@@ -109,7 +115,7 @@ mod tests {
             // Lock and verify it blocks
             assert!(ReentrancyGuard::before_external_call(&env).is_ok());
             let err = ReentrancyGuard::check_reentrancy_state(&env).unwrap_err();
-            assert_eq!(err, Error::ReentrancyGuardActive);
+            assert_eq!(err, GuardError::ReentrancyGuardActive);
 
             // Unlock and verify allowed again
             ReentrancyGuard::after_external_call(&env);
