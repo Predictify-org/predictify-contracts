@@ -6,6 +6,7 @@ use crate::errors::Error;
 use crate::markets::{MarketStateManager};
 // ReentrancyGuard module not required here; removed stale import.
 use crate::types::*;
+use crate::reentrancy_guard::ReentrancyGuard;
 
 /// Edge case management system for Predictify Hybrid contract
 ///
