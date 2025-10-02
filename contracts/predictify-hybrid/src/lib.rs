@@ -17,9 +17,13 @@ mod errors;
 mod events;
 mod extensions;
 mod fees;
+mod governance;
+mod graceful_degradation;
 mod markets;
 mod monitoring;
 mod oracles;
+mod rate_limiter;
+mod reentrancy_guard;
 mod resolution;
 mod recovery;
 mod storage;
@@ -46,10 +50,15 @@ mod recovery_tests;
 mod property_based_tests;
 
 // Re-export commonly used items
-use admin::AdminInitializer;
+use admin::{AdminInitializer, AdminManager, AdminRole, AdminPermission, AdminAnalyticsResult};
 pub use errors::Error;
 pub use types::*;
 
+use crate::config::{
+    ConfigChanges, ConfigManager, ConfigUpdateRecord, ContractConfig, MarketLimits,
+};
+use crate::graceful_degradation::{OracleBackup, OracleHealth};
+use crate::reentrancy_guard::ReentrancyGuard;
 use alloc::format;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
@@ -1396,6 +1405,142 @@ impl PredictifyHybrid {
         data: monitoring::MonitoringData,
     ) -> Result<bool, Error> {
         monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
+    }
+
+    // ===== ORACLE FALLBACK FUNCTIONS =====
+
+    /// Get oracle data with backup if primary fails
+    pub fn get_oracle_with_backup(
+        env: Env,
+        market_id: Symbol,
+        oracle_contract: Address,
+        primary_oracle: OracleProvider,
+        backup_oracle: OracleProvider,
+    ) -> Result<String, Error> {
+        // Get market info
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        // Check if market ended
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            return Err(Error::MarketClosed);
+        }
+
+        // Try to get price with backup
+        let backup = OracleBackup::new(primary_oracle, backup_oracle);
+        match backup.get_price(&env, &oracle_contract, &market.oracle_config.feed_id) {
+            Ok(price) => {
+                // Simple comparison logic
+                let threshold = market.oracle_config.threshold;
+                let comparison = &market.oracle_config.comparison;
+                
+                let result = if comparison == &String::from_str(&env, "gt") {
+                    if price > threshold { "yes" } else { "no" }
+                } else if comparison == &String::from_str(&env, "lt") {
+                    if price < threshold { "yes" } else { "no" }
+                } else {
+                    if price == threshold { "yes" } else { "no" }
+                };
+                
+                Ok(String::from_str(&env, result))
+            }
+            Err(_) => {
+                // Both oracles failed
+                let reason = String::from_str(&env, "All oracles failed");
+                events::EventEmitter::emit_manual_resolution_required(&env, &market_id, &reason);
+                Err(Error::OracleUnavailable)
+            }
+        }
+    }
+
+    /// Check if oracle is working
+    pub fn check_oracle_status(
+        env: Env, 
+        oracle: OracleProvider,
+        oracle_contract: Address,
+    ) -> String {
+        let health = graceful_degradation::monitor_oracle_health(&env, oracle, &oracle_contract);
+        match health {
+            OracleHealth::Working => String::from_str(&env, "working"),
+            OracleHealth::Broken => String::from_str(&env, "broken"),
+        }
+    }
+
+    // ===== MULTI-ADMIN MANAGEMENT FUNCTIONS =====
+
+    /// Add a new admin with specified role (SuperAdmin only)
+    pub fn add_admin(
+        env: Env,
+        current_admin: Address,
+        new_admin: Address,
+        role: AdminRole,
+    ) -> Result<(), Error> {
+        current_admin.require_auth();
+        AdminManager::add_admin(&env, &current_admin, &new_admin, role)
+    }
+
+    /// Remove an admin from the system (SuperAdmin only)
+    pub fn remove_admin(
+        env: Env,
+        current_admin: Address,
+        admin_to_remove: Address,
+    ) -> Result<(), Error> {
+        current_admin.require_auth();
+        AdminManager::remove_admin(&env, &current_admin, &admin_to_remove)
+    }
+
+    /// Update an admin's role (SuperAdmin only)
+    pub fn update_admin_role(
+        env: Env,
+        current_admin: Address,
+        target_admin: Address,
+        new_role: AdminRole,
+    ) -> Result<(), Error> {
+        current_admin.require_auth();
+        AdminManager::update_admin_role(&env, &current_admin, &target_admin, new_role)
+    }
+
+    /// Validate admin permission for specific action
+    pub fn validate_admin_permission(
+        env: Env,
+        admin: Address,
+        permission: AdminPermission,
+    ) -> Result<(), Error> {
+        AdminManager::validate_admin_permission(&env, &admin, permission)
+    }
+
+    /// Get all admin roles in the system
+    pub fn get_admin_roles(env: Env) -> Map<Address, AdminRole> {
+        AdminManager::get_admin_roles(&env)
+    }
+
+    /// Get comprehensive admin analytics
+    pub fn get_admin_analytics(env: Env) -> AdminAnalyticsResult {
+        admin::EnhancedAdminAnalytics::get_admin_analytics(&env)
+    }
+
+    /// Migrate from single-admin to multi-admin system
+    pub fn migrate_to_multi_admin(env: Env, admin: Address) -> Result<(), Error> {
+        admin.require_auth();
+        admin::AdminSystemIntegration::migrate_to_multi_admin(&env)
+    }
+
+    /// Check if multi-admin migration is complete
+    pub fn is_multi_admin_migrated(env: Env) -> bool {
+        admin::AdminSystemIntegration::is_migrated(&env)
+    }
+
+    /// Check role permissions against a specific permission
+    pub fn check_role_permissions(
+        env: Env,
+        role: AdminRole,
+        permission: AdminPermission,
+    ) -> bool {
+        AdminManager::check_role_permissions(&env, role, permission)
     }
 }
 

@@ -5,6 +5,7 @@ use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Sy
 
 use crate::config::Environment;
 use crate::errors::Error;
+use crate::types::OracleProvider;
 
 // Define AdminRole locally since it's not available in the crate root
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -767,6 +768,36 @@ pub struct DisputeAutoResolvedEvent {
     pub timestamp: u64,
 }
 
+/// Governance proposal created event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceProposalCreatedEvent {
+    pub proposal_id: Symbol,
+    pub proposer: Address,
+    pub title: String,
+    pub description: String,
+    pub timestamp: u64,
+}
+
+/// Governance vote cast event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceVoteCastEvent {
+    pub proposal_id: Symbol,
+    pub voter: Address,
+    pub support: bool,
+    pub timestamp: u64,
+}
+
+/// Governance proposal executed event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceProposalExecutedEvent {
+    pub proposal_id: Symbol,
+    pub executor: Address,
+    pub timestamp: u64,
+}
+
 /// Config initialized event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -816,6 +847,42 @@ pub struct StorageMigrationEvent {
     /// Number of markets migrated
     pub markets_migrated: u32,
     /// Migration timestamp
+    pub timestamp: u64,
+}
+
+/// Oracle degradation event - emitted when oracle service fails or becomes unavailable
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OracleDegradationEvent {
+    /// Oracle provider that failed
+    pub oracle: OracleProvider,
+    /// Reason for degradation
+    pub reason: String,
+    /// Degradation timestamp
+    pub timestamp: u64,
+}
+
+/// Oracle recovery event - emitted when oracle service recovers
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OracleRecoveryEvent {
+    /// Oracle provider that recovered
+    pub oracle: OracleProvider,
+    /// Recovery message
+    pub recovery_message: String,
+    /// Recovery timestamp
+    pub timestamp: u64,
+}
+
+/// Manual resolution required event - emitted when automatic resolution fails
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ManualResolutionRequiredEvent {
+    /// Market that requires manual resolution
+    pub market_id: Symbol,
+    /// Reason manual resolution is needed
+    pub reason: String,
+    /// Event timestamp
     pub timestamp: u64,
 }
 
@@ -1374,6 +1441,101 @@ impl EventEmitter {
         event: &CircuitBreakerEvent,
     ) {
         Self::store_event(env, &symbol_short!("cb_event"), event);
+    }
+
+    /// Emit oracle degradation event when oracle service fails
+    pub fn emit_oracle_degradation(
+        env: &Env,
+        oracle: &OracleProvider,
+        reason: &String,
+    ) {
+        let event = OracleDegradationEvent {
+            oracle: oracle.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ora_deg"), &event);
+    }
+
+    /// Emit oracle recovery event when oracle service recovers
+    pub fn emit_oracle_recovery(
+        env: &Env,
+        oracle: &OracleProvider,
+        message: &String,
+    ) {
+        let event = OracleRecoveryEvent {
+            oracle: oracle.clone(),
+            recovery_message: message.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ora_rec"), &event);
+    }
+
+    /// Emit manual resolution required event when automatic resolution fails
+    pub fn emit_manual_resolution_required(
+        env: &Env,
+        market_id: &Symbol,
+        reason: &String,
+    ) {
+        let event = ManualResolutionRequiredEvent {
+            market_id: market_id.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("man_res"), &event);
+    }
+
+    /// Emit governance proposal created event
+    pub fn emit_governance_proposal_created(
+        env: &Env,
+        proposal_id: &Symbol,
+        proposer: &Address,
+        title: &String,
+        description: &String,
+    ) {
+        let event = GovernanceProposalCreatedEvent {
+            proposal_id: proposal_id.clone(),
+            proposer: proposer.clone(),
+            title: title.clone(),
+            description: description.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("gov_prop"), &event);
+    }
+
+    /// Emit governance vote cast event
+    pub fn emit_governance_vote_cast(
+        env: &Env,
+        proposal_id: &Symbol,
+        voter: &Address,
+        support: bool,
+    ) {
+        let timestamp = env.ledger().timestamp();
+        let event = GovernanceVoteCastEvent {
+            proposal_id: proposal_id.clone(),
+            voter: voter.clone(),
+            support,
+            timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("gov_vote"), &event);
+    }
+
+    /// Emit governance proposal executed event
+    pub fn emit_governance_proposal_executed(
+        env: &Env,
+        proposal_id: &Symbol,
+        executor: &Address,
+    ) {
+        let timestamp = env.ledger().timestamp();
+        let event = GovernanceProposalExecutedEvent {
+            proposal_id: proposal_id.clone(),
+            executor: executor.clone(),
+            timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("gov_exec"), &event);
     }
 
     /// Store event in persistent storage

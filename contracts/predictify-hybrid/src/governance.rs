@@ -195,7 +195,6 @@ impl GovernanceContract {
             &proposal_id,
             &voter,
             support,
-            env.ledger().timestamp(),
         );
 
         Ok(())
@@ -293,7 +292,6 @@ impl GovernanceContract {
             &env,
             &proposal_id,
             &caller,
-            env.ledger().timestamp(),
         );
 
         Ok(())
