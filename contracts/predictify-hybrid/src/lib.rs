@@ -23,9 +23,9 @@ mod markets;
 mod monitoring;
 mod oracles;
 mod rate_limiter;
+mod recovery;
 mod reentrancy_guard;
 mod resolution;
-mod recovery;
 mod storage;
 mod types;
 mod utils;
@@ -33,6 +33,10 @@ mod validation;
 mod validation_tests;
 mod versioning;
 mod voting;
+// THis is the band protocol wasm std_reference.wasm 
+mod bandprotocol {
+    soroban_sdk::contractimport!(file = "./std_reference.wasm");
+}
 
 #[cfg(test)]
 mod circuit_breaker_tests;
@@ -50,7 +54,7 @@ mod recovery_tests;
 mod property_based_tests;
 
 // Re-export commonly used items
-use admin::{AdminInitializer, AdminManager, AdminRole, AdminPermission, AdminAnalyticsResult};
+use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
 pub use errors::Error;
 pub use types::*;
 
@@ -436,8 +440,8 @@ impl PredictifyHybrid {
                     Err(_) => panic_with_error!(env, Error::ConfigurationNotFound),
                 };
                 let fee_percent = cfg.fees.platform_fee_percentage;
-                let user_share = (user_stake * (PERCENTAGE_DENOMINATOR - fee_percent))
-                    / PERCENTAGE_DENOMINATOR;
+                let user_share =
+                    (user_stake * (PERCENTAGE_DENOMINATOR - fee_percent)) / PERCENTAGE_DENOMINATOR;
                 let total_pool = market.total_staked;
                 let _payout = (user_share * total_pool) / winning_total;
 
@@ -611,9 +615,6 @@ impl PredictifyHybrid {
         market.state = MarketState::Resolved;
         env.storage().persistent().set(&market_id, &market);
     }
-
-
-
 
     /// Fetches oracle result for a market from external oracle contracts.
     ///
@@ -1068,19 +1069,20 @@ impl PredictifyHybrid {
             additional_days,
             reason,
         )
-
-
     }
 
     // ===== STORAGE OPTIMIZATION FUNCTIONS =====
 
     /// Compress market data for storage optimization
-    pub fn compress_market_data(env: Env, market_id: Symbol) -> Result<storage::CompressedMarket, Error> {
+    pub fn compress_market_data(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<storage::CompressedMarket, Error> {
         let market = match markets::MarketStateManager::get_market(&env, &market_id) {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
+
         storage::StorageOptimizer::compress_market_data(&env, &market)
     }
 
@@ -1114,7 +1116,10 @@ impl PredictifyHybrid {
     }
 
     /// Validate storage integrity for a specific market
-    pub fn validate_storage_integrity(env: Env, market_id: Symbol) -> Result<storage::StorageIntegrityResult, Error> {
+    pub fn validate_storage_integrity(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<storage::StorageIntegrityResult, Error> {
         storage::StorageOptimizer::validate_storage_integrity(&env, &market_id)
     }
 
@@ -1134,7 +1139,7 @@ impl PredictifyHybrid {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
+
         Ok(storage::StorageUtils::calculate_storage_cost(&market))
     }
 
@@ -1144,7 +1149,7 @@ impl PredictifyHybrid {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
+
         Ok(storage::StorageUtils::get_storage_efficiency_score(&market))
     }
 
@@ -1154,9 +1159,8 @@ impl PredictifyHybrid {
             Ok(m) => m,
             Err(e) => return Err(e),
         };
-        
-        Ok(storage::StorageUtils::get_storage_recommendations(&market))
 
+        Ok(storage::StorageUtils::get_storage_recommendations(&market))
     }
 
     // ===== ERROR RECOVERY FUNCTIONS =====
@@ -1437,15 +1441,27 @@ impl PredictifyHybrid {
                 // Simple comparison logic
                 let threshold = market.oracle_config.threshold;
                 let comparison = &market.oracle_config.comparison;
-                
+
                 let result = if comparison == &String::from_str(&env, "gt") {
-                    if price > threshold { "yes" } else { "no" }
+                    if price > threshold {
+                        "yes"
+                    } else {
+                        "no"
+                    }
                 } else if comparison == &String::from_str(&env, "lt") {
-                    if price < threshold { "yes" } else { "no" }
+                    if price < threshold {
+                        "yes"
+                    } else {
+                        "no"
+                    }
                 } else {
-                    if price == threshold { "yes" } else { "no" }
+                    if price == threshold {
+                        "yes"
+                    } else {
+                        "no"
+                    }
                 };
-                
+
                 Ok(String::from_str(&env, result))
             }
             Err(_) => {
@@ -1459,7 +1475,7 @@ impl PredictifyHybrid {
 
     /// Check if oracle is working
     pub fn check_oracle_status(
-        env: Env, 
+        env: Env,
         oracle: OracleProvider,
         oracle_contract: Address,
     ) -> String {
@@ -1535,11 +1551,7 @@ impl PredictifyHybrid {
     }
 
     /// Check role permissions against a specific permission
-    pub fn check_role_permissions(
-        env: Env,
-        role: AdminRole,
-        permission: AdminPermission,
-    ) -> bool {
+    pub fn check_role_permissions(env: Env, role: AdminRole, permission: AdminPermission) -> bool {
         AdminManager::check_role_permissions(&env, role, permission)
     }
 }
