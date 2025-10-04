@@ -886,6 +886,76 @@ pub struct ManualResolutionRequiredEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when market state changes
+///
+/// This event tracks all market state transitions throughout the market lifecycle,
+/// providing transparency and audit trail for state changes. Critical for monitoring
+/// market progression and detecting anomalies.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous state (Active, Ended, Disputed, Resolved, Closed, Cancelled)
+/// - New state after transition
+/// - Reason for state change
+/// - Timestamp of transition
+///
+/// # State Transitions
+///
+/// Common transitions:
+/// - Active → Ended (voting period completed)
+/// - Ended → Disputed (dispute filed)
+/// - Disputed → Resolved (dispute resolved)
+/// - Ended → Resolved (normal resolution)
+/// - Resolved → Closed (market finalized)
+/// - Any → Cancelled (emergency cancellation)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateChangeEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Previous state
+    pub old_state: crate::types::MarketState,
+    /// New state
+    pub new_state: crate::types::MarketState,
+    /// Reason for state change
+    pub reason: String,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when user claims winnings
+///
+/// This event tracks all winnings claims, providing transparency for payouts
+/// and audit trail for financial operations. Essential for monitoring market
+/// economics and user engagement.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - User address claiming winnings
+/// - Amount claimed
+/// - Timestamp of claim
+///
+/// # Use Cases
+///
+/// - **Financial Tracking**: Monitor total payouts
+/// - **User Analytics**: Track winning users and amounts
+/// - **Audit Trail**: Maintain complete payout records
+/// - **Tax Reporting**: Generate user earning reports
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WinningsClaimedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// User claiming winnings
+    pub user: Address,
+    /// Amount claimed
+    pub amount: i128,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 /// Event emitted when circuit breaker state changes
 ///
 /// This event provides comprehensive information about circuit breaker
@@ -1387,11 +1457,7 @@ impl EventEmitter {
     }
 
     /// Emit storage cleanup event
-    pub fn emit_storage_cleanup_event(
-        env: &Env,
-        market_id: &Symbol,
-        cleanup_type: &String,
-    ) {
+    pub fn emit_storage_cleanup_event(env: &Env, market_id: &Symbol, cleanup_type: &String) {
         let event = StorageCleanupEvent {
             market_id: market_id.clone(),
             cleanup_type: cleanup_type.clone(),
@@ -1436,19 +1502,12 @@ impl EventEmitter {
     }
 
     /// Emit circuit breaker event
-    pub fn emit_circuit_breaker_event(
-        env: &Env,
-        event: &CircuitBreakerEvent,
-    ) {
+    pub fn emit_circuit_breaker_event(env: &Env, event: &CircuitBreakerEvent) {
         Self::store_event(env, &symbol_short!("cb_event"), event);
     }
 
     /// Emit oracle degradation event when oracle service fails
-    pub fn emit_oracle_degradation(
-        env: &Env,
-        oracle: &OracleProvider,
-        reason: &String,
-    ) {
+    pub fn emit_oracle_degradation(env: &Env, oracle: &OracleProvider, reason: &String) {
         let event = OracleDegradationEvent {
             oracle: oracle.clone(),
             reason: reason.clone(),
@@ -1458,11 +1517,7 @@ impl EventEmitter {
     }
 
     /// Emit oracle recovery event when oracle service recovers
-    pub fn emit_oracle_recovery(
-        env: &Env,
-        oracle: &OracleProvider,
-        message: &String,
-    ) {
+    pub fn emit_oracle_recovery(env: &Env, oracle: &OracleProvider, message: &String) {
         let event = OracleRecoveryEvent {
             oracle: oracle.clone(),
             recovery_message: message.clone(),
@@ -1472,17 +1527,145 @@ impl EventEmitter {
     }
 
     /// Emit manual resolution required event when automatic resolution fails
-    pub fn emit_manual_resolution_required(
-        env: &Env,
-        market_id: &Symbol,
-        reason: &String,
-    ) {
+    pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &String) {
         let event = ManualResolutionRequiredEvent {
             market_id: market_id.clone(),
             reason: reason.clone(),
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("man_res"), &event);
+    }
+
+    /// Emit state change event when market state transitions
+    ///
+    /// This function emits an event whenever a market transitions between states,
+    /// providing complete transparency and audit trail for state changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_state` - Previous market state
+    /// - `new_state` - New market state after transition
+    /// - `reason` - Reason for state change
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_state_change_event(
+    ///     &env,
+    ///     &market_id,
+    ///     &MarketState::Active,
+    ///     &MarketState::Ended,
+    ///     &String::from_str(&env, "Voting period completed")
+    /// );
+    /// ```
+    pub fn emit_state_change_event(
+        env: &Env,
+        market_id: &Symbol,
+        old_state: &crate::types::MarketState,
+        new_state: &crate::types::MarketState,
+        reason: &String,
+    ) {
+        let event = StateChangeEvent {
+            market_id: market_id.clone(),
+            old_state: old_state.clone(),
+            new_state: new_state.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("st_chng"), &event);
+    }
+
+    /// Emit winnings claimed event when user claims payout
+    ///
+    /// This function emits an event whenever a user successfully claims their
+    /// winnings from a resolved market, providing transparency for all payouts.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `user` - User address claiming winnings
+    /// - `amount` - Amount claimed
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_winnings_claimed(
+    ///     &env,
+    ///     &market_id,
+    ///     &user_address,
+    ///     1_500_000_000 // 150 tokens
+    /// );
+    /// ```
+    pub fn emit_winnings_claimed(env: &Env, market_id: &Symbol, user: &Address, amount: i128) {
+        let event = WinningsClaimedEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("win_clm"), &event);
+    }
+
+    /// Emit error event with full error context
+    ///
+    /// This function emits an event when errors occur, providing detailed context
+    /// for debugging, monitoring, and error recovery. Complies with ticket spec
+    /// requiring emit_error_event(error: Error, context: ErrorContext).
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `error` - Error that occurred
+    /// - `context` - Full error context with operation, user, market details
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let context = ErrorContext {
+    ///     operation: String::from_str(&env, "claim_winnings"),
+    ///     user_address: Some(user.clone()),
+    ///     market_id: Some(market_id.clone()),
+    ///     context_data: Map::new(&env),
+    ///     timestamp: env.ledger().timestamp(),
+    ///     call_chain: vec![&env, String::from_str(&env, "lib::claim_winnings")],
+    /// };
+    ///
+    /// EventEmitter::emit_error_event(&env, Error::NothingToClaim, &context);
+    /// ```
+    pub fn emit_error_event(
+        env: &Env,
+        error: crate::errors::Error,
+        context: &crate::errors::ErrorContext,
+    ) {
+        let error_code = error as u32;
+
+        // Convert error enum to message string
+        let error_msg = match error {
+            crate::errors::Error::Unauthorized => "Unauthorized access",
+            crate::errors::Error::MarketNotFound => "Market not found",
+            crate::errors::Error::MarketClosed => "Market closed",
+            crate::errors::Error::InvalidOutcome => "Invalid outcome",
+            crate::errors::Error::AlreadyVoted => "Already voted",
+            crate::errors::Error::AlreadyClaimed => "Already claimed",
+            crate::errors::Error::MarketNotResolved => "Market not resolved",
+            crate::errors::Error::NothingToClaim => "Nothing to claim",
+            _ => "Unknown error",
+        };
+        let message = String::from_str(env, error_msg);
+
+        let event = ErrorLoggedEvent {
+            error_code,
+            message,
+            context: context.operation.clone(),
+            user: context.user_address.clone(),
+            market_id: context.market_id.clone(),
+            timestamp: context.timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("err_evt"), &event);
     }
 
     /// Emit governance proposal created event
@@ -1523,11 +1706,7 @@ impl EventEmitter {
     }
 
     /// Emit governance proposal executed event
-    pub fn emit_governance_proposal_executed(
-        env: &Env,
-        proposal_id: &Symbol,
-        executor: &Address,
-    ) {
+    pub fn emit_governance_proposal_executed(env: &Env, proposal_id: &Symbol, executor: &Address) {
         let timestamp = env.ledger().timestamp();
         let event = GovernanceProposalExecutedEvent {
             proposal_id: proposal_id.clone(),

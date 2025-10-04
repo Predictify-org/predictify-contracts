@@ -1,5 +1,5 @@
 #![cfg(test)]
-use crate::{PredictifyHybridClient, test::PredictifyTest};
+use crate::{test::PredictifyTest, PredictifyHybridClient};
 
 #[test]
 fn test_recovery_mechanisms() {

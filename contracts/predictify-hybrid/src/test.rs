@@ -502,9 +502,6 @@ fn test_market_creation_data() {
     let test = PredictifyTest::setup();
     let market_id = test.create_test_market();
 
-
-
-
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -602,38 +599,42 @@ fn test_error_recovery_mechanisms() {
     let env = Env::default();
     let contract_id = env.register(PredictifyHybrid, ());
     env.mock_all_auths();
-    
-    let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
-    
+
+    let admin = Address::from_string(&String::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    ));
+
     env.as_contract(&contract_id, || {
         // Initialize admin system first
         crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-    
-    // Test error recovery for different error types
-    let context = errors::ErrorContext {
-        operation: String::from_str(&env, "test_operation"),
-        user_address: Some(admin.clone()),
-        market_id: Some(Symbol::new(&env, "test_market")),
-        context_data: Map::new(&env),
-        timestamp: env.ledger().timestamp(),
-        call_chain: {
-            let mut chain = Vec::new(&env);
-            chain.push_back(String::from_str(&env, "test"));
-            chain
-        },
-    };
 
-    // Test basic error recovery functions exist (simplified to avoid object reference issues)
-    // Skip complex error recovery test that causes "mis-tagged object reference" errors
-    
-    // Test that error recovery functions are callable
-    let status = errors::ErrorHandler::get_error_recovery_status(&env).unwrap();
-    assert_eq!(status.total_attempts, 0); // No persistent storage in test
-    
-    // Test that resilience patterns can be validated
-    let patterns = Vec::new(&env);
-    let validation_result = errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
-    assert!(validation_result);
+        // Test error recovery for different error types
+        let context = errors::ErrorContext {
+            operation: String::from_str(&env, "test_operation"),
+            user_address: Some(admin.clone()),
+            market_id: Some(Symbol::new(&env, "test_market")),
+            context_data: Map::new(&env),
+            timestamp: env.ledger().timestamp(),
+            call_chain: {
+                let mut chain = Vec::new(&env);
+                chain.push_back(String::from_str(&env, "test"));
+                chain
+            },
+        };
+
+        // Test basic error recovery functions exist (simplified to avoid object reference issues)
+        // Skip complex error recovery test that causes "mis-tagged object reference" errors
+
+        // Test that error recovery functions are callable
+        let status = errors::ErrorHandler::get_error_recovery_status(&env).unwrap();
+        assert_eq!(status.total_attempts, 0); // No persistent storage in test
+
+        // Test that resilience patterns can be validated
+        let patterns = Vec::new(&env);
+        let validation_result =
+            errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
+        assert!(validation_result);
     });
 }
 
@@ -641,27 +642,34 @@ fn test_error_recovery_mechanisms() {
 fn test_resilience_patterns_validation() {
     let env = Env::default();
     let contract_id = env.register(PredictifyHybrid, ());
-    
+
     env.as_contract(&contract_id, || {
         let mut patterns = Vec::new(&env);
-    let mut pattern_config = Map::new(&env);
-    pattern_config.set(String::from_str(&env, "max_attempts"), String::from_str(&env, "3"));
-    pattern_config.set(String::from_str(&env, "delay_ms"), String::from_str(&env, "1000"));
-    
-    let pattern = errors::ResiliencePattern {
-        pattern_name: String::from_str(&env, "retry_pattern"),
-        pattern_type: errors::ResiliencePatternType::RetryWithBackoff,
-        pattern_config,
-        enabled: true,
-        priority: 50,
-        last_used: None,
-        success_rate: 8500, // 85%
-    };
-    
-    patterns.push_back(pattern);
-    
-    let validation_result = errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
-    assert!(validation_result);
+        let mut pattern_config = Map::new(&env);
+        pattern_config.set(
+            String::from_str(&env, "max_attempts"),
+            String::from_str(&env, "3"),
+        );
+        pattern_config.set(
+            String::from_str(&env, "delay_ms"),
+            String::from_str(&env, "1000"),
+        );
+
+        let pattern = errors::ResiliencePattern {
+            pattern_name: String::from_str(&env, "retry_pattern"),
+            pattern_type: errors::ResiliencePatternType::RetryWithBackoff,
+            pattern_config,
+            enabled: true,
+            priority: 50,
+            last_used: None,
+            success_rate: 8500, // 85%
+        };
+
+        patterns.push_back(pattern);
+
+        let validation_result =
+            errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
+        assert!(validation_result);
     });
 }
 
@@ -669,16 +677,24 @@ fn test_resilience_patterns_validation() {
 fn test_error_recovery_procedures_documentation() {
     let env = Env::default();
     let contract_id = env.register(PredictifyHybrid, ());
-    
+
     env.as_contract(&contract_id, || {
         let procedures = errors::ErrorHandler::document_error_recovery_procedures(&env).unwrap();
-    assert!(procedures.len() > 0);
-    
-    // Check that key procedures are documented
-    assert!(procedures.get(String::from_str(&env, "retry_procedure")).is_some());
-    assert!(procedures.get(String::from_str(&env, "oracle_recovery")).is_some());
-    assert!(procedures.get(String::from_str(&env, "validation_recovery")).is_some());
-    assert!(procedures.get(String::from_str(&env, "system_recovery")).is_some());
+        assert!(procedures.len() > 0);
+
+        // Check that key procedures are documented
+        assert!(procedures
+            .get(String::from_str(&env, "retry_procedure"))
+            .is_some());
+        assert!(procedures
+            .get(String::from_str(&env, "oracle_recovery"))
+            .is_some());
+        assert!(procedures
+            .get(String::from_str(&env, "validation_recovery"))
+            .is_some());
+        assert!(procedures
+            .get(String::from_str(&env, "system_recovery"))
+            .is_some());
     });
 }
 
@@ -687,36 +703,40 @@ fn test_error_recovery_scenarios() {
     let env = Env::default();
     let contract_id = env.register(PredictifyHybrid, ());
     env.mock_all_auths();
-    
-    let admin = Address::from_string(&String::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
-    
+
+    let admin = Address::from_string(&String::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    ));
+
     env.as_contract(&contract_id, || {
         // Initialize admin system first
         crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-    
-    let context = errors::ErrorContext {
-        operation: String::from_str(&env, "test_scenario"),
-        user_address: Some(admin.clone()),
-        market_id: Some(Symbol::new(&env, "test_market")),
-        context_data: Map::new(&env),
-        timestamp: env.ledger().timestamp(),
-        call_chain: {
-            let mut chain = Vec::new(&env);
-            chain.push_back(String::from_str(&env, "test"));
-            chain
-        },
-    };
 
-    // Test different error recovery scenarios (simplified to avoid object reference issues)
-    // Skip complex error recovery test that causes "mis-tagged object reference" errors
-    
-    // Test that error recovery functions are callable
-    let status = errors::ErrorHandler::get_error_recovery_status(&env).unwrap();
-    assert_eq!(status.total_attempts, 0); // No persistent storage in test
-    
-    // Test that resilience patterns can be validated
-    let patterns = Vec::new(&env);
-    let validation_result = errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
-    assert!(validation_result);
+        let context = errors::ErrorContext {
+            operation: String::from_str(&env, "test_scenario"),
+            user_address: Some(admin.clone()),
+            market_id: Some(Symbol::new(&env, "test_market")),
+            context_data: Map::new(&env),
+            timestamp: env.ledger().timestamp(),
+            call_chain: {
+                let mut chain = Vec::new(&env);
+                chain.push_back(String::from_str(&env, "test"));
+                chain
+            },
+        };
+
+        // Test different error recovery scenarios (simplified to avoid object reference issues)
+        // Skip complex error recovery test that causes "mis-tagged object reference" errors
+
+        // Test that error recovery functions are callable
+        let status = errors::ErrorHandler::get_error_recovery_status(&env).unwrap();
+        assert_eq!(status.total_attempts, 0); // No persistent storage in test
+
+        // Test that resilience patterns can be validated
+        let patterns = Vec::new(&env);
+        let validation_result =
+            errors::ErrorHandler::validate_resilience_patterns(&env, &patterns).unwrap();
+        assert!(validation_result);
     });
 }

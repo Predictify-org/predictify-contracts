@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec, Map};
 use alloc::format;
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;
@@ -38,9 +38,13 @@ pub struct RecoveryData {
 pub struct RecoveryStorage;
 impl RecoveryStorage {
     #[inline(always)]
-    fn records_key(env: &Env) -> Symbol { Symbol::new(env, "recovery_records") }
+    fn records_key(env: &Env) -> Symbol {
+        Symbol::new(env, "recovery_records")
+    }
     #[inline(always)]
-    fn status_key(env: &Env) -> Symbol { Symbol::new(env, "recovery_status_map") }
+    fn status_key(env: &Env) -> Symbol {
+        Symbol::new(env, "recovery_status_map")
+    }
 
     pub fn load(env: &Env, market_id: &Symbol) -> Option<MarketRecovery> {
         let records: Map<Symbol, MarketRecovery> = env
@@ -95,16 +99,26 @@ impl RecoveryValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Simple integrity checks (extend as needed)
-        if market.total_staked < 0 { return Err(Error::InvalidState); }
-        if market.outcomes.len() < 2 { return Err(Error::InvalidOutcomes); }
-        if market.end_time == 0 { return Err(Error::InvalidState); }
+        if market.total_staked < 0 {
+            return Err(Error::InvalidState);
+        }
+        if market.outcomes.len() < 2 {
+            return Err(Error::InvalidOutcomes);
+        }
+        if market.end_time == 0 {
+            return Err(Error::InvalidState);
+        }
 
         Ok(())
     }
 
     pub fn validate_recovery_safety(_env: &Env, data: &RecoveryData) -> Result<(), Error> {
-        if !data.can_recover { return Err(Error::InvalidState); }
-        if data.safety_score < 0 { return Err(Error::InvalidState); }
+        if !data.can_recover {
+            return Err(Error::InvalidState);
+        }
+        if data.safety_score < 0 {
+            return Err(Error::InvalidState);
+        }
         Ok(())
     }
 }
@@ -118,7 +132,9 @@ impl RecoveryManager {
             .persistent()
             .get(&Symbol::new(env, "Admin"))
             .ok_or(Error::AdminNotSet)?;
-        if &stored_admin != admin { return Err(Error::Unauthorized); }
+        if &stored_admin != admin {
+            return Err(Error::Unauthorized);
+        }
         Ok(())
     }
 
@@ -129,9 +145,21 @@ impl RecoveryManager {
     pub fn recover_market_state(env: &Env, market_id: &Symbol) -> Result<bool, Error> {
         // Validate integrity first; if valid skip
         if RecoveryValidator::validate_market_state_integrity(env, market_id).is_ok() {
-            let rec = MarketRecovery { market_id: market_id.clone(), actions: Vec::new(env), issues_detected: Vec::new(env), recovered: false, partial_refund_total: 0, last_action: Some(String::from_str(env, "no_action_needed")) };
+            let rec = MarketRecovery {
+                market_id: market_id.clone(),
+                actions: Vec::new(env),
+                issues_detected: Vec::new(env),
+                recovered: false,
+                partial_refund_total: 0,
+                last_action: Some(String::from_str(env, "no_action_needed")),
+            };
             RecoveryStorage::save(env, &rec);
-            EventEmitter::emit_recovery_event(env, market_id, &String::from_str(env, "skip"), &String::from_str(env, "integrity_ok"));
+            EventEmitter::emit_recovery_event(
+                env,
+                market_id,
+                &String::from_str(env, "skip"),
+                &String::from_str(env, "integrity_ok"),
+            );
             return Ok(false);
         }
 
@@ -144,21 +172,41 @@ impl RecoveryManager {
 
         // Example heuristic: ensure total_staked matches sum of stakes map
         let mut recomputed: i128 = 0;
-        for (_, v) in market.stakes.iter() { recomputed += v; }
-        if recomputed != market.total_staked { market.total_staked = recomputed; }
+        for (_, v) in market.stakes.iter() {
+            recomputed += v;
+        }
+        if recomputed != market.total_staked {
+            market.total_staked = recomputed;
+        }
 
         MarketStateManager::update_market(env, market_id, &market);
 
         let mut actions = Vec::new(env);
         actions.push_back(String::from_str(env, "reconstructed_totals"));
 
-        let rec = MarketRecovery { market_id: market_id.clone(), actions, issues_detected: Vec::new(env), recovered: true, partial_refund_total: 0, last_action: Some(String::from_str(env, "reconstructed")) };
+        let rec = MarketRecovery {
+            market_id: market_id.clone(),
+            actions,
+            issues_detected: Vec::new(env),
+            recovered: true,
+            partial_refund_total: 0,
+            last_action: Some(String::from_str(env, "reconstructed")),
+        };
         RecoveryStorage::save(env, &rec);
-        EventEmitter::emit_recovery_event(env, market_id, &String::from_str(env, "recover"), &String::from_str(env, "reconstructed"));
+        EventEmitter::emit_recovery_event(
+            env,
+            market_id,
+            &String::from_str(env, "recover"),
+            &String::from_str(env, "reconstructed"),
+        );
         Ok(true)
     }
 
-    pub fn partial_refund_mechanism(env: &Env, market_id: &Symbol, users: &Vec<Address>) -> Result<i128, Error> {
+    pub fn partial_refund_mechanism(
+        env: &Env,
+        market_id: &Symbol,
+        users: &Vec<Address>,
+    ) -> Result<i128, Error> {
         let mut market = MarketStateManager::get_market(env, market_id)?;
         let mut total_refunded: i128 = 0;
 
@@ -175,12 +223,25 @@ impl RecoveryManager {
         MarketStateManager::update_market(env, market_id, &market);
 
         // Update recovery record
-        let mut rec = RecoveryStorage::load(env, market_id).unwrap_or(MarketRecovery { market_id: market_id.clone(), actions: Vec::new(env), issues_detected: Vec::new(env), recovered: false, partial_refund_total: 0, last_action: None });
+        let mut rec = RecoveryStorage::load(env, market_id).unwrap_or(MarketRecovery {
+            market_id: market_id.clone(),
+            actions: Vec::new(env),
+            issues_detected: Vec::new(env),
+            recovered: false,
+            partial_refund_total: 0,
+            last_action: None,
+        });
         rec.partial_refund_total += total_refunded;
-        rec.actions.push_back(String::from_str(env, "partial_refund"));
+        rec.actions
+            .push_back(String::from_str(env, "partial_refund"));
         rec.last_action = Some(String::from_str(env, "partial_refund"));
         RecoveryStorage::save(env, &rec);
-        EventEmitter::emit_recovery_event(env, market_id, &String::from_str(env, "partial_refund"), &String::from_str(env, "executed"));
+        EventEmitter::emit_recovery_event(
+            env,
+            market_id,
+            &String::from_str(env, "partial_refund"),
+            &String::from_str(env, "executed"),
+        );
         Ok(total_refunded)
     }
 }
@@ -191,8 +252,8 @@ impl EventEmitter {
         let topic = Symbol::new(env, "recovery_evt");
         let mut data = Vec::new(env);
         data.push_back(String::from_str(env, "market_id"));
-    let mid = symbol_to_string(env, market_id);
-    data.push_back(mid);
+        let mid = symbol_to_string(env, market_id);
+        data.push_back(mid);
         data.push_back(String::from_str(env, "action"));
         data.push_back(action.clone());
         data.push_back(String::from_str(env, "status"));

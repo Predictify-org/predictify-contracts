@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracttype, Env, Map, String, Symbol, Vec, vec};
+use soroban_sdk::{contracttype, vec, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::markets::{MarketStateManager};
+use crate::markets::MarketStateManager;
 // ReentrancyGuard module not required here; removed stale import.
-use crate::types::*;
 use crate::reentrancy_guard::ReentrancyGuard;
+use crate::types::*;
 
 /// Edge case management system for Predictify Hybrid contract
 ///

@@ -190,12 +190,7 @@ impl GovernanceContract {
             .set(&StorageKey::Proposal(proposal_id.clone()), &p);
 
         // Emit governance vote event
-        EventEmitter::emit_governance_vote_cast(
-            &env,
-            &proposal_id,
-            &voter,
-            support,
-        );
+        EventEmitter::emit_governance_vote_cast(&env, &proposal_id, &voter, support);
 
         Ok(())
     }
@@ -288,11 +283,7 @@ impl GovernanceContract {
             .set(&StorageKey::Proposal(proposal_id.clone()), &p);
 
         // Emit governance execution event
-        EventEmitter::emit_governance_proposal_executed(
-            &env,
-            &proposal_id,
-            &caller,
-        );
+        EventEmitter::emit_governance_proposal_executed(&env, &proposal_id, &caller);
 
         Ok(())
     }

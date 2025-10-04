@@ -820,6 +820,13 @@ impl DisputeManager {
         // Process stake transfer
         VotingUtils::transfer_stake(env, &user, stake)?;
 
+        // Prepare reason for event emission before moving dispute
+        let reason_for_event = if reason.is_some() {
+            reason.clone()
+        } else {
+            Some(soroban_sdk::String::from_str(env, "No reason provided"))
+        };
+
         // Create dispute record
         let dispute = Dispute {
             user: user.clone(),
@@ -838,6 +845,15 @@ impl DisputeManager {
 
         // Update market in storage
         MarketStateManager::update_market(env, &market_id, &market);
+
+        // Emit dispute created event
+        crate::events::EventEmitter::emit_dispute_created(
+            env,
+            &market_id,
+            &user,
+            stake,
+            reason_for_event,
+        );
 
         Ok(())
     }

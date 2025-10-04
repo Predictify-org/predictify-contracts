@@ -990,6 +990,22 @@ impl OracleResolutionManager {
         MarketStateManager::set_oracle_result(&mut market, outcome.clone());
         MarketStateManager::update_market(env, market_id, &market);
 
+        // Emit oracle result event
+        let provider_str = soroban_sdk::String::from_str(env, "Oracle");
+        let feed_str = market.oracle_config.feed_id.clone();
+        let comparison_str = market.oracle_config.comparison.clone();
+
+        crate::events::EventEmitter::emit_oracle_result(
+            env,
+            market_id,
+            &outcome,
+            &provider_str,
+            &feed_str,
+            price,
+            market.oracle_config.threshold,
+            &comparison_str,
+        );
+
         Ok(resolution)
     }
 
@@ -1263,9 +1279,46 @@ impl MarketResolutionManager {
             confidence_score,
         };
 
+        // Capture old state for event
+        let old_state = market.state.clone();
+
         // Set winning outcome
         MarketStateManager::set_winning_outcome(&mut market, final_result.clone(), Some(market_id));
         MarketStateManager::update_market(env, market_id, &market);
+
+        // Emit market resolved event
+        let oracle_result_str = market
+            .oracle_result
+            .clone()
+            .unwrap_or_else(|| soroban_sdk::String::from_str(env, "N/A"));
+        let community_consensus_str = soroban_sdk::String::from_str(env, "Consensus");
+        let method_str = match resolution_method {
+            ResolutionMethod::OracleOnly => "OracleOnly",
+            ResolutionMethod::CommunityOnly => "CommunityOnly",
+            ResolutionMethod::Hybrid => "Hybrid",
+            ResolutionMethod::AdminOverride => "AdminOverride",
+            ResolutionMethod::DisputeResolution => "DisputeResolution",
+        };
+        let resolution_method_str = soroban_sdk::String::from_str(env, method_str);
+
+        crate::events::EventEmitter::emit_market_resolved(
+            env,
+            market_id,
+            &final_result,
+            &oracle_result_str,
+            &community_consensus_str,
+            &resolution_method_str,
+            confidence_score as i128,
+        );
+
+        // Emit state change event
+        crate::events::EventEmitter::emit_state_change_event(
+            env,
+            market_id,
+            &old_state,
+            &crate::types::MarketState::Resolved,
+            &soroban_sdk::String::from_str(env, "Automated resolution completed"),
+        );
 
         Ok(resolution)
     }

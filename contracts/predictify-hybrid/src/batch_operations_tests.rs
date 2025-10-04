@@ -494,6 +494,7 @@ mod batch_operations_tests {
     fn test_batch_statistics_update() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
+
         env.as_contract(&contract_id, || {
             BatchProcessor::initialize(&env).unwrap();
 

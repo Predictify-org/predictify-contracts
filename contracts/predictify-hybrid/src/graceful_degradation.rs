@@ -18,7 +18,12 @@ impl OracleBackup {
     }
 
     // Get price, try backup if primary fails
-    pub fn get_price(&self, env: &Env, oracle_address: &Address, feed_id: &String) -> Result<i128, Error> {
+    pub fn get_price(
+        &self,
+        env: &Env,
+        oracle_address: &Address,
+        feed_id: &String,
+    ) -> Result<i128, Error> {
         // Try primary oracle
         if let Ok(price) = self.call_oracle(env, &self.primary, oracle_address, feed_id) {
             return Ok(price);
@@ -27,12 +32,18 @@ impl OracleBackup {
         // Primary failed, notify and try backup
         let msg = String::from_str(env, "Primary oracle failed");
         EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
-        
+
         self.call_oracle(env, &self.backup, oracle_address, feed_id)
     }
 
     // Call a single oracle
-    fn call_oracle(&self, env: &Env, oracle: &OracleProvider, address: &Address, feed_id: &String) -> Result<i128, Error> {
+    fn call_oracle(
+        &self,
+        env: &Env,
+        oracle: &OracleProvider,
+        address: &Address,
+        feed_id: &String,
+    ) -> Result<i128, Error> {
         match oracle {
             OracleProvider::Reflector => {
                 let reflector = ReflectorOracle::new(address.clone());
@@ -45,7 +56,8 @@ impl OracleBackup {
     // Is oracle working?
     pub fn is_working(&self, env: &Env, oracle_address: &Address) -> bool {
         let test_feed = String::from_str(env, "BTC/USD");
-        self.call_oracle(env, &self.primary, oracle_address, &test_feed).is_ok()
+        self.call_oracle(env, &self.primary, oracle_address, &test_feed)
+            .is_ok()
     }
 }
 
@@ -88,7 +100,11 @@ pub fn emit_degradation_event(env: &Env, oracle: OracleProvider, reason: String)
     EventEmitter::emit_oracle_degradation(env, &oracle, &reason);
 }
 
-pub fn monitor_oracle_health(env: &Env, oracle: OracleProvider, oracle_address: &Address) -> OracleHealth {
+pub fn monitor_oracle_health(
+    env: &Env,
+    oracle: OracleProvider,
+    oracle_address: &Address,
+) -> OracleHealth {
     let backup = OracleBackup::new(oracle.clone(), oracle);
     if backup.is_working(env, oracle_address) {
         OracleHealth::Working
@@ -97,7 +113,11 @@ pub fn monitor_oracle_health(env: &Env, oracle: OracleProvider, oracle_address: 
     }
 }
 
-pub fn get_degradation_status(oracle: OracleProvider, env: &Env, oracle_address: &Address) -> OracleHealth {
+pub fn get_degradation_status(
+    oracle: OracleProvider,
+    env: &Env,
+    oracle_address: &Address,
+) -> OracleHealth {
     monitor_oracle_health(env, oracle, oracle_address)
 }
 
@@ -146,7 +166,10 @@ mod tests {
         let env = Env::default();
         let addr = Address::generate(&env);
         let health = monitor_oracle_health(&env, OracleProvider::Reflector, &addr);
-        assert!(matches!(health, OracleHealth::Working | OracleHealth::Broken));
+        assert!(matches!(
+            health,
+            OracleHealth::Working | OracleHealth::Broken
+        ));
     }
 
     #[test]

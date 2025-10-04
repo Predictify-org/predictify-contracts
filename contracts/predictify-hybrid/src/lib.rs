@@ -33,7 +33,7 @@ mod validation;
 mod validation_tests;
 mod versioning;
 mod voting;
-// THis is the band protocol wasm std_reference.wasm 
+// THis is the band protocol wasm std_reference.wasm
 mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
 }
@@ -61,6 +61,7 @@ pub use types::*;
 use crate::config::{
     ConfigChanges, ConfigManager, ConfigUpdateRecord, ContractConfig, MarketLimits,
 };
+use crate::events::EventEmitter;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::reentrancy_guard::ReentrancyGuard;
 use alloc::format;
@@ -227,8 +228,8 @@ impl PredictifyHybrid {
         // Create a new market
         let market = Market {
             admin: admin.clone(),
-            question,
-            outcomes,
+            question: question.clone(),
+            outcomes: outcomes.clone(),
             end_time,
             oracle_config,
             oracle_result: None,
@@ -247,6 +248,9 @@ impl PredictifyHybrid {
 
         // Store the market
         env.storage().persistent().set(&market_id, &market);
+
+        // Emit market created event
+        EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, end_time);
 
         market_id
     }
@@ -331,11 +335,14 @@ impl PredictifyHybrid {
         }
 
         // Store the vote and stake
-        market.votes.set(user.clone(), outcome);
+        market.votes.set(user.clone(), outcome.clone());
         market.stakes.set(user.clone(), stake);
         market.total_staked += stake;
 
         env.storage().persistent().set(&market_id, &market);
+
+        // Emit vote cast event
+        EventEmitter::emit_vote_cast(&env, &market_id, &user, &outcome, stake);
     }
 
     /// Allows users to claim their winnings from resolved prediction markets.
@@ -443,14 +450,21 @@ impl PredictifyHybrid {
                 let user_share =
                     (user_stake * (PERCENTAGE_DENOMINATOR - fee_percent)) / PERCENTAGE_DENOMINATOR;
                 let total_pool = market.total_staked;
-                let _payout = (user_share * total_pool) / winning_total;
+                let payout = (user_share * total_pool) / winning_total;
+
+                // Mark as claimed
+                market.claimed.set(user.clone(), true);
+                env.storage().persistent().set(&market_id, &market);
+
+                // Emit winnings claimed event
+                EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
 
                 // In a real implementation, transfer tokens here
-                // For now, we just mark as claimed
+                return;
             }
         }
 
-        // Mark as claimed
+        // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
         market.claimed.set(user.clone(), true);
         env.storage().persistent().set(&market_id, &market);
     }
@@ -610,10 +624,39 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidOutcome);
         }
 
+        // Capture old state for event
+        let old_state = market.state.clone();
+
         // Set winning outcome and update state
-        market.winning_outcome = Some(winning_outcome);
+        market.winning_outcome = Some(winning_outcome.clone());
         market.state = MarketState::Resolved;
         env.storage().persistent().set(&market_id, &market);
+
+        // Emit market resolved event
+        let oracle_result_str = market
+            .oracle_result
+            .clone()
+            .unwrap_or_else(|| String::from_str(&env, "N/A"));
+        let community_consensus_str = String::from_str(&env, "Manual");
+
+        EventEmitter::emit_market_resolved(
+            &env,
+            &market_id,
+            &winning_outcome,
+            &oracle_result_str,
+            &community_consensus_str,
+            &String::from_str(&env, "Manual"),
+            100, // confidence score for manual resolution
+        );
+
+        // Emit state change event
+        EventEmitter::emit_state_change_event(
+            &env,
+            &market_id,
+            &old_state,
+            &MarketState::Resolved,
+            &String::from_str(&env, "Manual resolution by admin"),
+        );
     }
 
     /// Fetches oracle result for a market from external oracle contracts.

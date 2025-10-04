@@ -679,6 +679,15 @@ impl FeeManager {
         MarketStateManager::mark_fees_collected(&mut market, Some(&market_id));
         MarketStateManager::update_market(env, &market_id, &market);
 
+        // Emit fee collected event
+        crate::events::EventEmitter::emit_fee_collected(
+            env,
+            &market_id,
+            &admin,
+            fee_amount,
+            &soroban_sdk::String::from_str(env, "platform_fee"),
+        );
+
         Ok(fee_amount)
     }
 
