@@ -1,11 +1,11 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, String};
-
-use crate::upgrade_manager::{
-    UpgradeManager, UpgradeProposal,
-    ValidationResult,
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, BytesN, Env, String,
 };
+
+use crate::upgrade_manager::{UpgradeManager, UpgradeProposal, ValidationResult};
 use crate::versioning::{Version, VersionManager};
 
 /// Test helper to create a test environment with initialized contract
@@ -18,14 +18,22 @@ fn setup_test_env() -> (Env, Address, Address) {
 
     // Initialize contract with admin in contract context
     env.as_contract(&contract_id, || {
-        env.storage().instance().set(&soroban_sdk::Symbol::new(&env, "admin"), &admin);
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::Symbol::new(&env, "admin"), &admin);
     });
 
     (env, admin, contract_id)
 }
 
 /// Test helper to create a sample upgrade proposal with unique timestamp
-fn create_sample_proposal(env: &Env, major: u32, minor: u32, patch: u32, seed: u8) -> UpgradeProposal {
+fn create_sample_proposal(
+    env: &Env,
+    major: u32,
+    minor: u32,
+    patch: u32,
+    seed: u8,
+) -> UpgradeProposal {
     let new_wasm_hash = BytesN::from_array(env, &[seed; 32]);
     let target_version = Version::new(
         env,
@@ -317,14 +325,7 @@ fn test_get_contract_version() {
     env.as_contract(&contract_id, || {
         // Initialize version
         let version_manager = VersionManager::new(&env);
-        let initial_version = Version::new(
-            &env,
-            1,
-            0,
-            0,
-            String::from_str(&env, "Initial"),
-            false,
-        );
+        let initial_version = Version::new(&env, 1, 0, 0, String::from_str(&env, "Initial"), false);
         version_manager
             .track_contract_version(&env, initial_version.clone())
             .unwrap();

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec};
 use alloc::format;
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::events::EventEmitter;
@@ -355,7 +355,8 @@ impl UpgradeManager {
         let upgrade_id = Symbol::new(env, &format!("upgrade_{}", env.ledger().timestamp()));
 
         // Perform the upgrade using Soroban's deployer
-        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
 
         // Record successful upgrade
         let upgrade_record = UpgradeRecord {
@@ -436,13 +437,15 @@ impl UpgradeManager {
         }
 
         // Check for breaking changes
-        if proposal.target_version.is_breaking_change_from(&current_version) {
+        if proposal
+            .target_version
+            .is_breaking_change_from(&current_version)
+        {
             result.breaking_changes = true;
             result.compatibility_score = result.compatibility_score.saturating_sub(30);
-            result.warnings.push_back(String::from_str(
-                env,
-                "Upgrade contains breaking changes",
-            ));
+            result
+                .warnings
+                .push_back(String::from_str(env, "Upgrade contains breaking changes"));
             result.recommendations.push_back(String::from_str(
                 env,
                 "Review breaking changes and plan migration strategy",
@@ -460,9 +463,7 @@ impl UpgradeManager {
         }
 
         // Validate proposal has rollback plan for major upgrades
-        if proposal.target_version.major > current_version.major
-            && !proposal.has_rollback_hash
-        {
+        if proposal.target_version.major > current_version.major && !proposal.has_rollback_hash {
             result.compatibility_score = result.compatibility_score.saturating_sub(10);
             result.warnings.push_back(String::from_str(
                 env,
@@ -514,7 +515,8 @@ impl UpgradeManager {
         let current_wasm_hash = Self::get_current_wasm_hash(env);
 
         // Perform rollback
-        env.deployer().update_current_contract_wasm(rollback_wasm_hash.clone());
+        env.deployer()
+            .update_current_contract_wasm(rollback_wasm_hash.clone());
 
         // Update current Wasm hash
         Self::store_current_wasm_hash(env, &rollback_wasm_hash);
@@ -527,11 +529,7 @@ impl UpgradeManager {
         }
 
         // Emit rollback event
-        EventEmitter::emit_contract_rollback_event(
-            env,
-            &current_wasm_hash,
-            &rollback_wasm_hash,
-        );
+        EventEmitter::emit_contract_rollback_event(env, &current_wasm_hash, &rollback_wasm_hash);
 
         Ok(())
     }
@@ -632,7 +630,8 @@ impl UpgradeManager {
 
         // Calculate average time between upgrades
         if history.len() > 1 {
-            stats.avg_time_between_upgrades = total_time_between_upgrades / (history.len() as u64 - 1);
+            stats.avg_time_between_upgrades =
+                total_time_between_upgrades / (history.len() as u64 - 1);
         }
 
         Ok(stats)
@@ -780,14 +779,7 @@ mod tests {
     fn test_upgrade_proposal_validation() {
         let env = Env::default();
         let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-        let target_version = Version::new(
-            &env,
-            1,
-            1,
-            0,
-            String::from_str(&env, "Upgrade"),
-            false,
-        );
+        let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
 
         let mut proposal = UpgradeProposal::new(
             &env,
@@ -819,26 +811,16 @@ mod tests {
         env.as_contract(&contract_id, || {
             // Initialize version
             let version_manager = VersionManager::new(&env);
-            let current_version = Version::new(
-                &env,
-                1,
-                0,
-                0,
-                String::from_str(&env, "Current"),
-                false,
-            );
-            version_manager.track_contract_version(&env, current_version).unwrap();
+            let current_version =
+                Version::new(&env, 1, 0, 0, String::from_str(&env, "Current"), false);
+            version_manager
+                .track_contract_version(&env, current_version)
+                .unwrap();
 
             // Create upgrade proposal
             let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-            let target_version = Version::new(
-                &env,
-                1,
-                1,
-                0,
-                String::from_str(&env, "Upgrade"),
-                false,
-            );
+            let target_version =
+                Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
 
             let proposal = UpgradeProposal::new(
                 &env,
