@@ -956,6 +956,46 @@ pub struct WinningsClaimedEvent {
     pub timestamp: u64,
 }
 
+/// Contract upgraded event - emitted when contract Wasm is upgraded
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractUpgradedEvent {
+    /// Previous Wasm hash
+    pub old_wasm_hash: soroban_sdk::BytesN<32>,
+    /// New Wasm hash
+    pub new_wasm_hash: soroban_sdk::BytesN<32>,
+    /// Upgrade ID
+    pub upgrade_id: Symbol,
+    /// Upgrade timestamp
+    pub timestamp: u64,
+}
+
+/// Contract rollback event - emitted when contract is rolled back to previous version
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractRollbackEvent {
+    /// Current Wasm hash (before rollback)
+    pub current_wasm_hash: soroban_sdk::BytesN<32>,
+    /// Rollback Wasm hash (after rollback)
+    pub rollback_wasm_hash: soroban_sdk::BytesN<32>,
+    /// Rollback timestamp
+    pub timestamp: u64,
+}
+
+/// Upgrade proposal created event - emitted when a new upgrade proposal is created
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeProposalCreatedEvent {
+    /// Proposal ID
+    pub proposal_id: Symbol,
+    /// Proposer address
+    pub proposer: Address,
+    /// Target version
+    pub target_version: String,
+    /// Proposal timestamp
+    pub timestamp: u64,
+}
+
 /// Event emitted when circuit breaker state changes
 ///
 /// This event provides comprehensive information about circuit breaker
@@ -1715,6 +1755,55 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("gov_exec"), &event);
+    }
+
+    /// Emit contract upgraded event when contract Wasm is upgraded
+    pub fn emit_contract_upgraded_event(
+        env: &Env,
+        old_wasm_hash: &soroban_sdk::BytesN<32>,
+        new_wasm_hash: &soroban_sdk::BytesN<32>,
+        upgrade_id: &Symbol,
+    ) {
+        let event = ContractUpgradedEvent {
+            old_wasm_hash: old_wasm_hash.clone(),
+            new_wasm_hash: new_wasm_hash.clone(),
+            upgrade_id: upgrade_id.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("up_grade"), &event);
+    }
+
+    /// Emit contract rollback event when contract is rolled back
+    pub fn emit_contract_rollback_event(
+        env: &Env,
+        current_wasm_hash: &soroban_sdk::BytesN<32>,
+        rollback_wasm_hash: &soroban_sdk::BytesN<32>,
+    ) {
+        let event = ContractRollbackEvent {
+            current_wasm_hash: current_wasm_hash.clone(),
+            rollback_wasm_hash: rollback_wasm_hash.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("rollback"), &event);
+    }
+
+    /// Emit upgrade proposal created event
+    pub fn emit_upgrade_proposal_created_event(
+        env: &Env,
+        proposal_id: &Symbol,
+        proposer: &Address,
+        target_version: &String,
+    ) {
+        let event = UpgradeProposalCreatedEvent {
+            proposal_id: proposal_id.clone(),
+            proposer: proposer.clone(),
+            target_version: target_version.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("up_prop"), &event);
     }
 
     /// Store event in persistent storage

@@ -483,9 +483,8 @@ impl VersionManager {
         };
 
         // If this is the first version (replacing initial 0.0.0), replace it
-        if history.versions.len() == 1 && history.current_version.version_number() == 0 {
+        if history.versions.len() == 0 && history.current_version.version_number() == 0 {
             history.current_version = version.clone();
-            history.versions = Vec::new(env);
             history.versions.push_back(version);
             history.last_updated = env.ledger().timestamp();
         } else {
@@ -586,17 +585,9 @@ impl VersionManager {
     pub fn get_version_history(&self, env: &Env) -> Result<VersionHistory, Error> {
         // Read version history from persistent storage
         let storage_key = Symbol::new(env, "VERSION_HISTORY");
-        #[cfg(test)]
-        {
-            // For tests, always return a new history since we can't use persistent storage
-            Ok(VersionHistory::new(env))
-        }
-        #[cfg(not(test))]
-        {
-            match env.storage().persistent().get(&storage_key) {
-                Some(history) => Ok(history),
-                None => Ok(VersionHistory::new(env)),
-            }
+        match env.storage().persistent().get(&storage_key) {
+            Some(history) => Ok(history),
+            None => Ok(VersionHistory::new(env)),
         }
     }
 
@@ -625,17 +616,8 @@ impl VersionManager {
     fn store_version_history(&self, env: &Env, history: &VersionHistory) -> Result<(), Error> {
         // Store version history in persistent storage
         let storage_key = Symbol::new(env, "VERSION_HISTORY");
-        // In test environment, we can't use persistent storage, so we'll use temporary storage
-        #[cfg(test)]
-        {
-            // For tests, we'll use a different approach
-            Ok(())
-        }
-        #[cfg(not(test))]
-        {
-            env.storage().persistent().set(&storage_key, history);
-            Ok(())
-        }
+        env.storage().persistent().set(&storage_key, history);
+        Ok(())
     }
 
     /// Execute migration logic
@@ -712,44 +694,48 @@ mod tests {
     #[test]
     fn test_version_manager() {
         let env = Env::default();
-        let version_manager = VersionManager::new(&env);
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
 
-        // Test version creation and basic functionality
-        let v1_0_0 = Version::new(&env, 1, 0, 0, String::from_str(&env, "Initial"), false);
-        let v1_1_0 = Version::new(&env, 1, 1, 0, String::from_str(&env, "Update"), false);
+        env.as_contract(&contract_id, || {
+            let version_manager = VersionManager::new(&env);
 
-        // Test version number calculation
-        assert_eq!(v1_0_0.version_number(), 1_000_000);
-        assert_eq!(v1_1_0.version_number(), 1_001_000);
+            // Test version creation and basic functionality
+            let v1_0_0 = Version::new(&env, 1, 0, 0, String::from_str(&env, "Initial"), false);
+            let v1_1_0 = Version::new(&env, 1, 1, 0, String::from_str(&env, "Update"), false);
 
-        // Test compatibility
-        assert!(
-            v1_1_0.is_compatible_with(&v1_0_0),
-            "Version 1.1.0 should be compatible with 1.0.0"
-        );
-        assert!(
-            !v1_1_0.is_breaking_change_from(&v1_0_0),
-            "Version 1.1.0 should not be a breaking change from 1.0.0"
-        );
+            // Test version number calculation
+            assert_eq!(v1_0_0.version_number(), 1_000_000);
+            assert_eq!(v1_1_0.version_number(), 1_001_000);
 
-        // Test version comparison
-        assert!(
-            v1_1_0.version_number() > v1_0_0.version_number(),
-            "Version 1.1.0 should be higher than 1.0.0"
-        );
+            // Test compatibility
+            assert!(
+                v1_1_0.is_compatible_with(&v1_0_0),
+                "Version 1.1.0 should be compatible with 1.0.0"
+            );
+            assert!(
+                !v1_1_0.is_breaking_change_from(&v1_0_0),
+                "Version 1.1.0 should not be a breaking change from 1.0.0"
+            );
 
-        // Test version validation
-        let compatible = version_manager
-            .validate_version_compatibility(&env, &v1_0_0, &v1_1_0)
-            .unwrap();
-        assert!(compatible, "Version compatibility validation should pass");
+            // Test version comparison
+            assert!(
+                v1_1_0.version_number() > v1_0_0.version_number(),
+                "Version 1.1.0 should be higher than 1.0.0"
+            );
 
-        // Test that the version manager can be created and basic functions work
-        let history = version_manager.get_version_history(&env).unwrap();
-        assert_eq!(history.get_current_version().version_number(), 0); // Initial version is 0.0.0
+            // Test version validation
+            let compatible = version_manager
+                .validate_version_compatibility(&env, &v1_0_0, &v1_1_0)
+                .unwrap();
+            assert!(compatible, "Version compatibility validation should pass");
 
-        // Test that we can get the current version
-        let current_version = version_manager.get_current_version(&env).unwrap();
-        assert_eq!(current_version.version_number(), 0); // Should be initial version 0.0.0
+            // Test that the version manager can be created and basic functions work
+            let history = version_manager.get_version_history(&env).unwrap();
+            assert_eq!(history.get_current_version().version_number(), 0); // Initial version is 0.0.0
+
+            // Test that we can get the current version
+            let current_version = version_manager.get_current_version(&env).unwrap();
+            assert_eq!(current_version.version_number(), 0); // Should be initial version 0.0.0
+        });
     }
 }

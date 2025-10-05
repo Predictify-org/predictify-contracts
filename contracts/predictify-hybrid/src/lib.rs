@@ -28,6 +28,7 @@ mod reentrancy_guard;
 mod resolution;
 mod storage;
 mod types;
+mod upgrade_manager;
 mod utils;
 mod validation;
 mod validation_tests;
@@ -52,6 +53,9 @@ mod recovery_tests;
 
 #[cfg(test)]
 mod property_based_tests;
+
+#[cfg(test)]
+mod upgrade_manager_tests;
 
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
@@ -1596,6 +1600,162 @@ impl PredictifyHybrid {
     /// Check role permissions against a specific permission
     pub fn check_role_permissions(env: Env, role: AdminRole, permission: AdminPermission) -> bool {
         AdminManager::check_role_permissions(&env, role, permission)
+    }
+
+    // ===== CONTRACT UPGRADE METHODS =====
+
+    /// Upgrade the contract to new Wasm bytecode
+    ///
+    /// This function allows authorized admins to upgrade the contract to a new
+    /// version by replacing the Wasm bytecode. It includes comprehensive validation,
+    /// version checking, and event logging.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `admin` - The admin performing the upgrade (must be authorized)
+    /// * `new_wasm_hash` - Hash of the new Wasm bytecode to deploy
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if upgrade succeeds
+    /// * `Err(Error)` if authorization fails or upgrade is incompatible
+    ///
+    /// # Security
+    ///
+    /// - Requires admin authentication via `require_auth()`
+    /// - Validates version compatibility
+    /// - Performs safety checks before upgrade
+    /// - Logs all upgrade attempts for audit trail
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, BytesN};
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+    ///
+    /// // Perform upgrade with admin authorization
+    /// admin.require_auth();
+    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash)?;
+    /// # Ok::<(), predictify_hybrid::errors::Error>(())
+    /// ```
+    pub fn upgrade_contract(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: soroban_sdk::BytesN<32>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash)
+    }
+
+    /// Rollback contract to previous version
+    ///
+    /// Reverts the contract to a previous Wasm version. This is a critical
+    /// recovery mechanism for failed upgrades.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `admin` - The admin performing the rollback (must be authorized)
+    /// * `rollback_wasm_hash` - Hash of the Wasm bytecode to rollback to
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if rollback succeeds
+    /// * `Err(Error)` if authorization fails or rollback is invalid
+    pub fn rollback_upgrade(
+        env: Env,
+        admin: Address,
+        rollback_wasm_hash: soroban_sdk::BytesN<32>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash)
+    }
+
+    /// Get current contract version
+    ///
+    /// Returns the currently active contract version information.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Version)` - Current contract version
+    /// * `Err(Error)` - If version cannot be retrieved
+    pub fn get_contract_version(env: Env) -> Result<versioning::Version, Error> {
+        upgrade_manager::UpgradeManager::get_contract_version(&env)
+    }
+
+    /// Check if upgrade is available
+    ///
+    /// Checks if there are approved upgrade proposals ready for execution.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(bool)` - True if upgrade is available
+    pub fn check_upgrade_available(env: Env) -> Result<bool, Error> {
+        upgrade_manager::UpgradeManager::check_upgrade_available(&env)
+    }
+
+    /// Get upgrade history
+    ///
+    /// Retrieves complete history of all contract upgrades.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<UpgradeRecord>)` - List of all upgrade records
+    pub fn get_upgrade_history(env: Env) -> Result<Vec<upgrade_manager::UpgradeRecord>, Error> {
+        upgrade_manager::UpgradeManager::get_upgrade_history(&env)
+    }
+
+    /// Get upgrade statistics
+    ///
+    /// Calculates and returns comprehensive upgrade statistics.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(UpgradeStats)` - Upgrade statistics and analytics
+    pub fn get_upgrade_statistics(env: Env) -> Result<upgrade_manager::UpgradeStats, Error> {
+        upgrade_manager::UpgradeManager::get_upgrade_statistics(&env)
+    }
+
+    /// Validate upgrade compatibility
+    ///
+    /// Performs comprehensive validation of an upgrade proposal without
+    /// executing the upgrade. Useful for testing and validation.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `proposal` - The upgrade proposal to validate
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(CompatibilityCheckResult)` - Detailed compatibility analysis
+    pub fn validate_upgrade_compatibility(
+        env: Env,
+        proposal: upgrade_manager::UpgradeProposal,
+    ) -> Result<upgrade_manager::CompatibilityCheckResult, Error> {
+        upgrade_manager::UpgradeManager::validate_upgrade_compatibility(&env, &proposal)
+    }
+
+    /// Test upgrade safety
+    ///
+    /// Performs dry-run validation of an upgrade proposal without executing.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `proposal` - The upgrade proposal to test
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(bool)` - True if upgrade would succeed
+    pub fn test_upgrade_safety(
+        env: Env,
+        proposal: upgrade_manager::UpgradeProposal,
+    ) -> Result<bool, Error> {
+        upgrade_manager::UpgradeManager::test_upgrade_safety(&env, &proposal)
     }
 }
 
