@@ -1667,3 +1667,683 @@ mod tests {
         assert_eq!(outcome.unwrap(), String::from_str(&env, "yes"));
     }
 }
+
+// ===== ORACLE WHITELIST AND VALIDATION =====
+
+/// Storage keys for oracle whitelist management
+#[derive(Clone)]
+#[contracttype]
+pub enum OracleWhitelistKey {
+    WhitelistedOracle(Address),
+    WhitelistAdmin(Address),
+    OracleMetadata(Address),
+    OracleList,
+}
+
+/// Metadata stored for each whitelisted oracle
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct OracleMetadata {
+    pub provider: OracleProvider,
+    pub contract_address: Address,
+    pub added_at: u64,
+    pub added_by: Address,
+    pub last_health_check: u64,
+    pub is_active: bool,
+    pub description: String,
+}
+
+/// Oracle whitelist management system
+///
+/// Provides centralized oracle validation, approval, and monitoring functionality
+/// to protect against malicious oracle contracts and ensure oracle reliability.
+///
+/// # Security Features
+///
+/// - **Whitelist-based Access**: Only approved oracles can be used
+/// - **Admin Authorization**: Multi-admin support for oracle management
+/// - **Health Monitoring**: Track oracle availability and responsiveness
+/// - **Audit Trail**: Complete history of oracle additions and removals
+/// - **Metadata Tracking**: Store oracle information for monitoring
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String};
+/// # use predictify_hybrid::oracles::{OracleWhitelist, OracleMetadata};
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+/// # let admin = Address::generate(&env);
+/// # let oracle_address = Address::generate(&env);
+///
+/// // Initialize whitelist with admin
+/// OracleWhitelist::initialize(&env, admin.clone())?;
+///
+/// // Add Reflector oracle to whitelist
+/// let metadata = OracleMetadata {
+///     provider: OracleProvider::Reflector,
+///     contract_address: oracle_address.clone(),
+///     added_at: env.ledger().timestamp(),
+///     added_by: admin.clone(),
+///     last_health_check: env.ledger().timestamp(),
+///     is_active: true,
+///     description: String::from_str(&env, "Primary Reflector Oracle"),
+/// };
+///
+/// OracleWhitelist::add_oracle_to_whitelist(
+///     &env,
+///     admin.clone(),
+///     oracle_address.clone(),
+///     metadata
+/// )?;
+///
+/// // Validate oracle before use
+/// if OracleWhitelist::validate_oracle_contract(&env, &oracle_address)? {
+///     println!("Oracle is approved and can be used");
+/// }
+///
+/// // Get all approved oracles
+/// let approved_oracles = OracleWhitelist::get_approved_oracles(&env)?;
+/// println!("Total approved oracles: {}", approved_oracles.len());
+/// # Ok::<(), predictify_hybrid::errors::Error>(())
+/// ```
+pub struct OracleWhitelist;
+
+impl OracleWhitelist {
+    /// Initialize the oracle whitelist system with an initial admin
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `admin` - Address to set as initial whitelist administrator
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn initialize(env: &Env, admin: Address) -> Result<(), Error> {
+        if env
+            .storage()
+            .instance()
+            .has(&OracleWhitelistKey::WhitelistAdmin(admin.clone()))
+        {
+            return Err(Error::AlreadyInitialized);
+        }
+
+        // Set initial admin
+        env.storage()
+            .instance()
+            .set(&OracleWhitelistKey::WhitelistAdmin(admin.clone()), &true);
+
+        env.events().publish(
+            (Symbol::new(env, "whitelist_init"),),
+            (admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+
+    /// Add an admin to the whitelist management system
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `current_admin` - Address of existing admin authorizing the addition
+    /// * `new_admin` - Address to add as new admin
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn add_admin(env: &Env, current_admin: Address, new_admin: Address) -> Result<(), Error> {
+        Self::require_admin(env, &current_admin)?;
+
+        env.storage().instance().set(
+            &OracleWhitelistKey::WhitelistAdmin(new_admin.clone()),
+            &true,
+        );
+
+        env.events().publish(
+            (Symbol::new(env, "admin_added"),),
+            (new_admin, current_admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+
+    /// Remove an admin from the whitelist management system
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `current_admin` - Address of admin authorizing the removal
+    /// * `admin_to_remove` - Address of admin to remove
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn remove_admin(
+        env: &Env,
+        current_admin: Address,
+        admin_to_remove: Address,
+    ) -> Result<(), Error> {
+        Self::require_admin(env, &current_admin)?;
+
+        if current_admin == admin_to_remove {
+            return Err(Error::Unauthorized);
+        }
+
+        env.storage()
+            .instance()
+            .remove(&OracleWhitelistKey::WhitelistAdmin(admin_to_remove.clone()));
+
+        env.events().publish(
+            (Symbol::new(env, "admin_removed"),),
+            (admin_to_remove, current_admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+
+    /// Verify that an address is an authorized admin
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `address` - Address to verify
+    ///
+    /// # Returns
+    /// Result indicating if address is admin or error
+    pub fn require_admin(env: &Env, address: &Address) -> Result<(), Error> {
+        let is_admin: bool = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::WhitelistAdmin(address.clone()))
+            .unwrap_or(false);
+
+        if !is_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        Ok(())
+    }
+
+    /// Check if an address is an authorized admin
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `address` - Address to check
+    ///
+    /// # Returns
+    /// True if address is an admin, false otherwise
+    pub fn is_admin(env: &Env, address: &Address) -> bool {
+        env.storage()
+            .instance()
+            .get(&OracleWhitelistKey::WhitelistAdmin(address.clone()))
+            .unwrap_or(false)
+    }
+
+    /// Add an oracle to the approved whitelist
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin address authorizing the addition
+    /// * `oracle_address` - Oracle contract address to whitelist
+    /// * `metadata` - Oracle metadata including provider type and description
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn add_oracle_to_whitelist(
+        env: &Env,
+        admin: Address,
+        oracle_address: Address,
+        metadata: OracleMetadata,
+    ) -> Result<(), Error> {
+        Self::require_admin(env, &admin)?;
+
+        if env
+            .storage()
+            .instance()
+            .has(&OracleWhitelistKey::WhitelistedOracle(
+                oracle_address.clone(),
+            ))
+        {
+            return Err(Error::InvalidOracleConfig);
+        }
+
+        if !OracleFactory::is_provider_supported(&metadata.provider) {
+            return Err(Error::InvalidOracleConfig);
+        }
+
+        env.storage().instance().set(
+            &OracleWhitelistKey::WhitelistedOracle(oracle_address.clone()),
+            &true,
+        );
+
+        env.storage().instance().set(
+            &OracleWhitelistKey::OracleMetadata(oracle_address.clone()),
+            &metadata,
+        );
+
+        let mut oracle_list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleList)
+            .unwrap_or(Vec::new(env));
+
+        oracle_list.push_back(oracle_address.clone());
+
+        env.storage()
+            .instance()
+            .set(&OracleWhitelistKey::OracleList, &oracle_list);
+
+        env.events().publish(
+            (Symbol::new(env, "oracle_whitelisted"),),
+            (oracle_address, metadata.provider, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+
+    /// Remove an oracle from the approved whitelist
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin address authorizing the removal
+    /// * `oracle_address` - Oracle contract address to remove
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn remove_oracle_from_whitelist(
+        env: &Env,
+        admin: Address,
+        oracle_address: Address,
+    ) -> Result<(), Error> {
+        Self::require_admin(env, &admin)?;
+
+        // Check if oracle exists in whitelist
+        if !env
+            .storage()
+            .instance()
+            .has(&OracleWhitelistKey::WhitelistedOracle(
+                oracle_address.clone(),
+            ))
+        {
+            return Err(Error::InvalidOracleFeed);
+        }
+
+        env.storage()
+            .instance()
+            .remove(&OracleWhitelistKey::WhitelistedOracle(
+                oracle_address.clone(),
+            ));
+
+        env.storage()
+            .instance()
+            .remove(&OracleWhitelistKey::OracleMetadata(oracle_address.clone()));
+
+        let mut oracle_list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleList)
+            .unwrap_or(Vec::new(env));
+
+        let mut new_list = Vec::new(env);
+        for addr in oracle_list.iter() {
+            if addr != oracle_address {
+                new_list.push_back(addr);
+            }
+        }
+
+        env.storage()
+            .instance()
+            .set(&OracleWhitelistKey::OracleList, &new_list);
+
+        env.events().publish(
+            (Symbol::new(env, "oracle_removed"),),
+            (oracle_address, admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+
+    /// Validate that an oracle contract is approved and active
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `oracle_address` - Oracle contract address to validate
+    ///
+    /// # Returns
+    /// Result containing true if oracle is valid, false otherwise, or error
+    pub fn validate_oracle_contract(env: &Env, oracle_address: &Address) -> Result<bool, Error> {
+        let is_whitelisted: bool = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::WhitelistedOracle(
+                oracle_address.clone(),
+            ))
+            .unwrap_or(false);
+
+        if !is_whitelisted {
+            return Ok(false);
+        }
+
+        // Check if oracle metadata exists and is active
+        let metadata: Option<OracleMetadata> = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleMetadata(oracle_address.clone()));
+
+        match metadata {
+            Some(meta) => Ok(meta.is_active),
+            None => Ok(false),
+        }
+    }
+
+    /// Verify oracle health and update health check timestamp
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `oracle_address` - Oracle contract address to check
+    ///
+    /// # Returns
+    /// Result containing true if oracle is healthy, false otherwise, or error
+    pub fn verify_oracle_health(env: &Env, oracle_address: &Address) -> Result<bool, Error> {
+        let mut metadata: OracleMetadata = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleMetadata(oracle_address.clone()))
+            .ok_or(Error::InvalidOracleFeed)?;
+
+        let oracle_instance =
+            OracleFactory::create_oracle(metadata.provider.clone(), oracle_address.clone())?;
+
+        let is_healthy = oracle_instance.is_healthy(env)?;
+
+        if is_healthy {
+            metadata.last_health_check = env.ledger().timestamp();
+            env.storage().instance().set(
+                &OracleWhitelistKey::OracleMetadata(oracle_address.clone()),
+                &metadata,
+            );
+
+            env.events().publish(
+                (Symbol::new(env, "oracle_health_ok"),),
+                (oracle_address.clone(), env.ledger().timestamp()),
+            );
+        } else {
+            env.events().publish(
+                (Symbol::new(env, "oracle_unhealthy"),),
+                (oracle_address.clone(), env.ledger().timestamp()),
+            );
+        }
+
+        Ok(is_healthy)
+    }
+
+    /// Get all approved oracle addresses
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    ///
+    /// # Returns
+    /// Result containing vector of approved oracle addresses or error
+    pub fn get_approved_oracles(env: &Env) -> Result<Vec<Address>, Error> {
+        let oracle_list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleList)
+            .unwrap_or(Vec::new(env));
+
+        Ok(oracle_list)
+    }
+
+    /// Get oracle metadata for a specific oracle
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `oracle_address` - Oracle contract address
+    ///
+    /// # Returns
+    /// Result containing oracle metadata or error
+    pub fn get_oracle_metadata(
+        env: &Env,
+        oracle_address: &Address,
+    ) -> Result<OracleMetadata, Error> {
+        env.storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleMetadata(oracle_address.clone()))
+            .ok_or(Error::InvalidOracleFeed)
+    }
+
+    /// Deactivate an oracle without removing it from whitelist
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin address authorizing the deactivation
+    /// * `oracle_address` - Oracle contract address to deactivate
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn deactivate_oracle(
+        env: &Env,
+        admin: Address,
+        oracle_address: Address,
+    ) -> Result<(), Error> {
+        Self::require_admin(env, &admin)?;
+
+        // Get and update metadata
+        let mut metadata: OracleMetadata = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleMetadata(oracle_address.clone()))
+            .ok_or(Error::InvalidOracleFeed)?;
+
+        metadata.is_active = false;
+
+        env.storage().instance().set(
+            &OracleWhitelistKey::OracleMetadata(oracle_address.clone()),
+            &metadata,
+        );
+
+        env.events().publish(
+            (Symbol::new(env, "oracle_deactivated"),),
+            (oracle_address, admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+
+    /// Reactivate a previously deactivated oracle
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin address authorizing the reactivation
+    /// * `oracle_address` - Oracle contract address to reactivate
+    ///
+    /// # Returns
+    /// Result indicating success or error
+    pub fn reactivate_oracle(
+        env: &Env,
+        admin: Address,
+        oracle_address: Address,
+    ) -> Result<(), Error> {
+        Self::require_admin(env, &admin)?;
+
+        let mut metadata: OracleMetadata = env
+            .storage()
+            .instance()
+            .get(&OracleWhitelistKey::OracleMetadata(oracle_address.clone()))
+            .ok_or(Error::InvalidOracleFeed)?;
+
+        metadata.is_active = true;
+
+        env.storage().instance().set(
+            &OracleWhitelistKey::OracleMetadata(oracle_address.clone()),
+            &metadata,
+        );
+
+        env.events().publish(
+            (Symbol::new(env, "oracle_reactivated"),),
+            (oracle_address, admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+}
+
+// ===== WHITELIST TESTS =====
+
+#[cfg(test)]
+mod whitelist_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn test_whitelist_initialization() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let result = OracleWhitelist::initialize(&env, admin.clone());
+            assert!(result.is_ok());
+            assert!(OracleWhitelist::is_admin(&env, &admin));
+        });
+    }
+
+    #[test]
+    fn test_add_oracle_to_whitelist() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let admin = Address::generate(&env);
+        let oracle_address = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            OracleWhitelist::initialize(&env, admin.clone()).unwrap();
+
+            let metadata = OracleMetadata {
+                provider: OracleProvider::Reflector,
+                contract_address: oracle_address.clone(),
+                added_at: env.ledger().timestamp(),
+                added_by: admin.clone(),
+                last_health_check: env.ledger().timestamp(),
+                is_active: true,
+                description: String::from_str(&env, "Test Oracle"),
+            };
+
+            let result = OracleWhitelist::add_oracle_to_whitelist(
+                &env,
+                admin,
+                oracle_address.clone(),
+                metadata,
+            );
+            assert!(result.is_ok());
+
+            let is_valid =
+                OracleWhitelist::validate_oracle_contract(&env, &oracle_address).unwrap();
+            assert!(is_valid);
+        });
+    }
+
+    #[test]
+    fn test_remove_oracle_from_whitelist() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let admin = Address::generate(&env);
+        let oracle_address = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            OracleWhitelist::initialize(&env, admin.clone()).unwrap();
+
+            let metadata = OracleMetadata {
+                provider: OracleProvider::Reflector,
+                contract_address: oracle_address.clone(),
+                added_at: env.ledger().timestamp(),
+                added_by: admin.clone(),
+                last_health_check: env.ledger().timestamp(),
+                is_active: true,
+                description: String::from_str(&env, "Test Oracle"),
+            };
+
+            OracleWhitelist::add_oracle_to_whitelist(
+                &env,
+                admin.clone(),
+                oracle_address.clone(),
+                metadata,
+            )
+            .unwrap();
+
+            let result =
+                OracleWhitelist::remove_oracle_from_whitelist(&env, admin, oracle_address.clone());
+            assert!(result.is_ok());
+
+            let is_valid =
+                OracleWhitelist::validate_oracle_contract(&env, &oracle_address).unwrap();
+            assert!(!is_valid);
+        });
+    }
+
+    #[test]
+    fn test_deactivate_and_reactivate_oracle() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let admin = Address::generate(&env);
+        let oracle_address = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            OracleWhitelist::initialize(&env, admin.clone()).unwrap();
+
+            let metadata = OracleMetadata {
+                provider: OracleProvider::Reflector,
+                contract_address: oracle_address.clone(),
+                added_at: env.ledger().timestamp(),
+                added_by: admin.clone(),
+                last_health_check: env.ledger().timestamp(),
+                is_active: true,
+                description: String::from_str(&env, "Test Oracle"),
+            };
+
+            OracleWhitelist::add_oracle_to_whitelist(
+                &env,
+                admin.clone(),
+                oracle_address.clone(),
+                metadata,
+            )
+            .unwrap();
+
+            // Deactivate
+            OracleWhitelist::deactivate_oracle(&env, admin.clone(), oracle_address.clone())
+                .unwrap();
+            let is_valid =
+                OracleWhitelist::validate_oracle_contract(&env, &oracle_address).unwrap();
+            assert!(!is_valid);
+
+            // Reactivate
+            OracleWhitelist::reactivate_oracle(&env, admin.clone(), oracle_address.clone())
+                .unwrap();
+            let is_valid =
+                OracleWhitelist::validate_oracle_contract(&env, &oracle_address).unwrap();
+            assert!(is_valid);
+        });
+    }
+
+    #[test]
+    fn test_unauthorized_access() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let admin = Address::generate(&env);
+        let non_admin = Address::generate(&env);
+        let oracle_address = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            OracleWhitelist::initialize(&env, admin).unwrap();
+
+            let metadata = OracleMetadata {
+                provider: OracleProvider::Reflector,
+                contract_address: oracle_address.clone(),
+                added_at: env.ledger().timestamp(),
+                added_by: non_admin.clone(),
+                last_health_check: env.ledger().timestamp(),
+                is_active: true,
+                description: String::from_str(&env, "Test Oracle"),
+            };
+
+            let result =
+                OracleWhitelist::add_oracle_to_whitelist(&env, non_admin, oracle_address, metadata);
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), Error::Unauthorized);
+        });
+    }
+}

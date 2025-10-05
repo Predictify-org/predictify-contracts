@@ -186,6 +186,8 @@ pub enum Error {
     CircuitBreakerNotOpen = 502,
     /// Circuit breaker is open (operations blocked)
     CircuitBreakerOpen = 503,
+
+    AlreadyInitialized = 504,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1178,6 +1180,7 @@ impl Error {
             Error::CircuitBreakerAlreadyOpen => "Circuit breaker is already open (paused)",
             Error::CircuitBreakerNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CircuitBreakerOpen => "Circuit breaker is open (operations blocked)",
+            Error::AlreadyInitialized => "Already Initialized",
         }
     }
 
@@ -1293,6 +1296,7 @@ impl Error {
             Error::CircuitBreakerAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
             Error::CircuitBreakerNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CircuitBreakerOpen => "CIRCUIT_BREAKER_OPEN",
+            Error::AlreadyInitialized => "Already_Initialized",
         }
     }
 }
