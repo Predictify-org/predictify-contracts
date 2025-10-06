@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 use crate::errors::Error;
 use crate::types::*;
+use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 /// Market Analytics module for comprehensive data analysis and insights
 ///
@@ -164,11 +164,11 @@ impl MarketAnalyticsManager {
 
         for (user, outcome) in market.votes.iter() {
             let stake = market.stakes.get(user.clone()).unwrap_or(0);
-            
+
             // Count votes per outcome
             let vote_count = outcome_distribution.get(outcome.clone()).unwrap_or(0);
             outcome_distribution.set(outcome.clone(), vote_count + 1);
-            
+
             // Sum stakes per outcome
             let outcome_stake = total_stake_by_outcome.get(outcome.clone()).unwrap_or(0);
             total_stake_by_outcome.set(outcome.clone(), outcome_stake + stake);
@@ -338,7 +338,11 @@ impl MarketAnalyticsManager {
             .ok_or(Error::MarketNotFound)?;
 
         let total_disputes = market.dispute_stakes.len() as u32;
-        let resolved_disputes = if market.state == MarketState::Resolved { total_disputes } else { 0 };
+        let resolved_disputes = if market.state == MarketState::Resolved {
+            total_disputes
+        } else {
+            0
+        };
         let pending_disputes = total_disputes - resolved_disputes;
         let dispute_stakes = market.total_dispute_stakes();
 
@@ -372,7 +376,10 @@ impl MarketAnalyticsManager {
     }
 
     /// Get participation metrics for a specific market
-    pub fn get_participation_metrics(env: &Env, market_id: Symbol) -> Result<ParticipationMetrics, Error> {
+    pub fn get_participation_metrics(
+        env: &Env,
+        market_id: Symbol,
+    ) -> Result<ParticipationMetrics, Error> {
         let market = env
             .storage()
             .persistent()
@@ -431,7 +438,7 @@ impl MarketAnalyticsManager {
             if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&market_id) {
                 let participants = market.votes.len() as u32;
                 let stake = market.total_staked;
-                
+
                 total_participation += participants;
                 total_stake += stake;
 
@@ -441,7 +448,7 @@ impl MarketAnalyticsManager {
 
                 // Rank markets by participation
                 market_performance_ranking.set(market_id.clone(), participants);
-                
+
                 // Categorize markets (simplified)
                 market_categories.set(market_id.clone(), String::from_str(env, "prediction"));
             }
@@ -467,7 +474,10 @@ impl MarketAnalyticsManager {
 
         let resolution_efficiency = 90; // Placeholder
 
-        comparative_metrics.set(String::from_str(env, "avg_participation"), average_participation as i128);
+        comparative_metrics.set(
+            String::from_str(env, "avg_participation"),
+            average_participation as i128,
+        );
         comparative_metrics.set(String::from_str(env, "avg_stake"), average_stake);
         comparative_metrics.set(String::from_str(env, "success_rate"), success_rate as i128);
 
@@ -507,13 +517,13 @@ impl MarketAnalyticsManager {
         // Simplified volatility calculation
         let total_stake = market.total_staked;
         let average_stake = total_stake / market.votes.len() as i128;
-        
+
         let mut variance = 0;
         for stake in stake_values.iter() {
             let diff = stake - average_stake;
             variance += diff * diff;
         }
-        
+
         let volatility = (variance / market.votes.len() as i128) / 1000; // Scale down
         volatility as u32
     }
@@ -558,7 +568,7 @@ impl MarketAnalyticsManager {
                 } else {
                     String::from_str(&market.votes.env(), "manual")
                 }
-            },
+            }
             _ => String::from_str(&market.votes.env(), "pending"),
         }
     }
@@ -571,7 +581,7 @@ impl MarketAnalyticsManager {
         } else {
             0
         };
-        
+
         (participation + stake_ratio) / 2
     }
 }

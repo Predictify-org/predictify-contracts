@@ -20,6 +20,7 @@ mod fees;
 mod governance;
 mod graceful_degradation;
 mod market_analytics;
+mod market_id_generator;
 mod markets;
 mod monitoring;
 mod oracles;
@@ -69,6 +70,7 @@ use crate::config::{
 };
 use crate::events::EventEmitter;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
+use crate::market_id_generator::MarketIdGenerator;
 use crate::reentrancy_guard::ReentrancyGuard;
 use alloc::format;
 use soroban_sdk::{
@@ -218,13 +220,8 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidQuestion);
         }
 
-        // Generate a unique market ID
-        let counter_key = Symbol::new(&env, "MarketCounter");
-        let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
-        let new_counter = counter + 1;
-        env.storage().persistent().set(&counter_key, &new_counter);
-
-        let market_id = Symbol::new(&env, &format!("market_{}", new_counter));
+        // Generate a unique collision-resistant market ID
+        let market_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
         // Calculate end time
         let seconds_per_day: u64 = 24 * 60 * 60;
@@ -2099,7 +2096,9 @@ impl PredictifyHybrid {
         function: String,
         inputs: Vec<String>,
     ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
-        performance_benchmarks::PerformanceBenchmarkManager::benchmark_gas_usage(&env, function, inputs)
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_gas_usage(
+            &env, function, inputs,
+        )
     }
 
     /// Benchmark storage usage for a specific operation
@@ -2145,7 +2144,9 @@ impl PredictifyHybrid {
         env: Env,
         operation: performance_benchmarks::StorageOperation,
     ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
-        performance_benchmarks::PerformanceBenchmarkManager::benchmark_storage_usage(&env, operation)
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_storage_usage(
+            &env, operation,
+        )
     }
 
     /// Benchmark oracle call performance for a specific oracle provider
@@ -2187,7 +2188,9 @@ impl PredictifyHybrid {
         env: Env,
         oracle: OracleProvider,
     ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
-        performance_benchmarks::PerformanceBenchmarkManager::benchmark_oracle_call_performance(&env, oracle)
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_oracle_call_performance(
+            &env, oracle,
+        )
     }
 
     /// Benchmark batch operations performance
@@ -2235,7 +2238,9 @@ impl PredictifyHybrid {
         env: Env,
         operations: Vec<performance_benchmarks::BatchOperation>,
     ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
-        performance_benchmarks::PerformanceBenchmarkManager::benchmark_batch_operations(&env, operations)
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_batch_operations(
+            &env, operations,
+        )
     }
 
     /// Benchmark scalability with large markets and user counts
@@ -2277,7 +2282,11 @@ impl PredictifyHybrid {
         market_size: u32,
         user_count: u32,
     ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
-        performance_benchmarks::PerformanceBenchmarkManager::benchmark_scalability(&env, market_size, user_count)
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_scalability(
+            &env,
+            market_size,
+            user_count,
+        )
     }
 
     /// Generate comprehensive performance report
@@ -2318,7 +2327,10 @@ impl PredictifyHybrid {
         env: Env,
         benchmark_suite: performance_benchmarks::PerformanceBenchmarkSuite,
     ) -> Result<performance_benchmarks::PerformanceReport, Error> {
-        performance_benchmarks::PerformanceBenchmarkManager::generate_performance_report(&env, benchmark_suite)
+        performance_benchmarks::PerformanceBenchmarkManager::generate_performance_report(
+            &env,
+            benchmark_suite,
+        )
     }
 
     /// Validate performance against thresholds
@@ -2360,7 +2372,9 @@ impl PredictifyHybrid {
         metrics: performance_benchmarks::PerformanceMetrics,
         thresholds: performance_benchmarks::PerformanceThresholds,
     ) -> Result<bool, Error> {
-        performance_benchmarks::PerformanceBenchmarkManager::validate_performance_thresholds(&env, metrics, thresholds)
+        performance_benchmarks::PerformanceBenchmarkManager::validate_performance_thresholds(
+            &env, metrics, thresholds,
+        )
     }
 }
 

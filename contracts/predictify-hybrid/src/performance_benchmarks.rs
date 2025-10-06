@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracttype, Env, Map, String, Symbol, Vec};
 use crate::errors::Error;
 use crate::types::OracleProvider;
+use soroban_sdk::{contracttype, Env, Map, String, Symbol, Vec};
 
 /// Performance Benchmark module for gas usage and execution time testing
 ///
@@ -132,23 +132,23 @@ impl PerformanceBenchmarkManager {
     ) -> Result<BenchmarkResult, Error> {
         let start_gas = 1000u64; // Mock gas measurement
         let start_time = env.ledger().timestamp();
-        
+
         // Simulate function execution based on function name
         let result = Self::simulate_function_execution(env, &function, &inputs);
-        
+
         let end_gas = 1500u64; // Mock gas measurement
         let end_time = env.ledger().timestamp();
-        
+
         let gas_usage = end_gas - start_gas;
         let execution_time = end_time - start_time;
-        
+
         let (success, error_message) = match result {
             Ok(_) => (true, None),
             Err(_e) => (false, Some(String::from_str(env, "Benchmark failed"))),
         };
-        
+
         let performance_score = Self::calculate_performance_score(gas_usage, execution_time, 0);
-        
+
         Ok(BenchmarkResult {
             function_name: function,
             gas_usage,
@@ -170,24 +170,25 @@ impl PerformanceBenchmarkManager {
     ) -> Result<BenchmarkResult, Error> {
         let start_gas = 1000u64; // Mock gas measurement
         let start_time = env.ledger().timestamp();
-        
+
         // Simulate storage operations
         let result = Self::simulate_storage_operations(env, &operation);
-        
+
         let end_gas = 1500u64; // Mock gas measurement
         let end_time = env.ledger().timestamp();
-        
+
         let gas_usage = end_gas - start_gas;
         let execution_time = end_time - start_time;
         let storage_usage = operation.data_size as u64 * operation.operation_count as u64;
-        
+
         let (success, error_message) = match result {
             Ok(_) => (true, None),
             Err(_e) => (false, Some(String::from_str(env, "Benchmark failed"))),
         };
-        
-        let performance_score = Self::calculate_performance_score(gas_usage, execution_time, storage_usage);
-        
+
+        let performance_score =
+            Self::calculate_performance_score(gas_usage, execution_time, storage_usage);
+
         Ok(BenchmarkResult {
             function_name: String::from_str(env, "storage_operation"),
             gas_usage,
@@ -209,23 +210,23 @@ impl PerformanceBenchmarkManager {
     ) -> Result<BenchmarkResult, Error> {
         let start_gas = 1000u64; // Mock gas measurement
         let start_time = env.ledger().timestamp();
-        
+
         // Simulate oracle call
         let result = Self::simulate_oracle_call(env, &oracle);
-        
+
         let end_gas = 1500u64; // Mock gas measurement
         let end_time = env.ledger().timestamp();
-        
+
         let gas_usage = end_gas - start_gas;
         let execution_time = end_time - start_time;
-        
+
         let (success, error_message) = match result {
             Ok(_) => (true, None),
             Err(_e) => (false, Some(String::from_str(env, "Benchmark failed"))),
         };
-        
+
         let performance_score = Self::calculate_performance_score(gas_usage, execution_time, 0);
-        
+
         Ok(BenchmarkResult {
             function_name: String::from_str(env, "oracle_call"),
             gas_usage,
@@ -247,26 +248,27 @@ impl PerformanceBenchmarkManager {
     ) -> Result<BenchmarkResult, Error> {
         let start_gas = 1000u64; // Mock gas measurement
         let start_time = env.ledger().timestamp();
-        
+
         // Simulate batch operations
         let result = Self::simulate_batch_operations(env, &operations);
-        
+
         let end_gas = 1500u64; // Mock gas measurement
         let end_time = env.ledger().timestamp();
-        
+
         let gas_usage = end_gas - start_gas;
         let execution_time = end_time - start_time;
-        
+
         let total_operations = operations.iter().map(|op| op.operation_count).sum::<u32>();
         let total_data_size = operations.iter().map(|op| op.data_size).sum::<u32>();
-        
+
         let (success, error_message) = match result {
             Ok(_) => (true, None),
             Err(_e) => (false, Some(String::from_str(env, "Benchmark failed"))),
         };
-        
-        let performance_score = Self::calculate_performance_score(gas_usage, execution_time, total_data_size as u64);
-        
+
+        let performance_score =
+            Self::calculate_performance_score(gas_usage, execution_time, total_data_size as u64);
+
         Ok(BenchmarkResult {
             function_name: String::from_str(env, "batch_operations"),
             gas_usage,
@@ -289,24 +291,25 @@ impl PerformanceBenchmarkManager {
     ) -> Result<BenchmarkResult, Error> {
         let start_gas = 1000u64; // Mock gas measurement
         let start_time = env.ledger().timestamp();
-        
+
         // Simulate scalability test
         let result = Self::simulate_scalability_test(env, market_size, user_count);
-        
+
         let end_gas = 1500u64; // Mock gas measurement
         let end_time = env.ledger().timestamp();
-        
+
         let gas_usage = end_gas - start_gas;
         let execution_time = end_time - start_time;
         let storage_usage = (market_size * user_count) as u64;
-        
+
         let (success, error_message) = match result {
             Ok(_) => (true, None),
             Err(_e) => (false, Some(String::from_str(env, "Benchmark failed"))),
         };
-        
-        let performance_score = Self::calculate_performance_score(gas_usage, execution_time, storage_usage);
-        
+
+        let performance_score =
+            Self::calculate_performance_score(gas_usage, execution_time, storage_usage);
+
         Ok(BenchmarkResult {
             function_name: String::from_str(env, "scalability_test"),
             gas_usage,
@@ -328,9 +331,10 @@ impl PerformanceBenchmarkManager {
     ) -> Result<PerformanceReport, Error> {
         let performance_metrics = Self::calculate_performance_metrics(&benchmark_suite);
         let recommendations = Self::generate_recommendations(env, &performance_metrics);
-        let optimization_opportunities = Self::identify_optimization_opportunities(env, &benchmark_suite);
+        let optimization_opportunities =
+            Self::identify_optimization_opportunities(env, &benchmark_suite);
         let performance_trends = Self::calculate_performance_trends(&benchmark_suite);
-        
+
         Ok(PerformanceReport {
             report_id: Symbol::new(env, "perf_report"),
             benchmark_suite: benchmark_suite.clone(),
@@ -352,7 +356,7 @@ impl PerformanceBenchmarkManager {
         let time_valid = metrics.average_time_per_operation <= thresholds.max_execution_time;
         let storage_valid = metrics.total_storage_usage <= thresholds.max_storage_usage;
         let efficiency_valid = metrics.overall_performance_score >= thresholds.min_overall_score;
-        
+
         Ok(gas_valid && time_valid && storage_valid && efficiency_valid)
     }
 
@@ -369,20 +373,14 @@ impl PerformanceBenchmarkManager {
     }
 
     /// Simulate storage operations for benchmarking
-    fn simulate_storage_operations(
-        _env: &Env,
-        operation: &StorageOperation,
-    ) -> Result<(), Error> {
+    fn simulate_storage_operations(_env: &Env, operation: &StorageOperation) -> Result<(), Error> {
         // Simulate storage operations based on type
         // Simple operation simulation - always succeed
         Ok(())
     }
 
     /// Simulate oracle call for benchmarking
-    fn simulate_oracle_call(
-        _env: &Env,
-        _oracle: &OracleProvider,
-    ) -> Result<(), Error> {
+    fn simulate_oracle_call(_env: &Env, _oracle: &OracleProvider) -> Result<(), Error> {
         // Simulate oracle call
         Ok(())
     }
@@ -409,34 +407,96 @@ impl PerformanceBenchmarkManager {
     /// Calculate performance score based on metrics
     fn calculate_performance_score(gas_usage: u64, execution_time: u64, storage_usage: u64) -> u32 {
         // Simple scoring algorithm (0-100)
-        let gas_score = if gas_usage < 1000 { 100 } else if gas_usage < 5000 { 80 } else if gas_usage < 10000 { 60 } else { 40 };
-        let time_score = if execution_time < 100 { 100 } else if execution_time < 500 { 80 } else if execution_time < 1000 { 60 } else { 40 };
-        let storage_score = if storage_usage < 1000 { 100 } else if storage_usage < 5000 { 80 } else if storage_usage < 10000 { 60 } else { 40 };
-        
+        let gas_score = if gas_usage < 1000 {
+            100
+        } else if gas_usage < 5000 {
+            80
+        } else if gas_usage < 10000 {
+            60
+        } else {
+            40
+        };
+        let time_score = if execution_time < 100 {
+            100
+        } else if execution_time < 500 {
+            80
+        } else if execution_time < 1000 {
+            60
+        } else {
+            40
+        };
+        let storage_score = if storage_usage < 1000 {
+            100
+        } else if storage_usage < 5000 {
+            80
+        } else if storage_usage < 10000 {
+            60
+        } else {
+            40
+        };
+
         (gas_score + time_score + storage_score) / 3
     }
 
     /// Calculate comprehensive performance metrics
     fn calculate_performance_metrics(suite: &PerformanceBenchmarkSuite) -> PerformanceMetrics {
-        let total_gas = suite.benchmark_results.iter().map(|(_, result)| result.gas_usage).sum::<u64>();
-        let total_time = suite.benchmark_results.iter().map(|(_, result)| result.execution_time).sum::<u64>();
-        let total_storage = suite.benchmark_results.iter().map(|(_, result)| result.storage_usage).sum::<u64>();
-        
+        let total_gas = suite
+            .benchmark_results
+            .iter()
+            .map(|(_, result)| result.gas_usage)
+            .sum::<u64>();
+        let total_time = suite
+            .benchmark_results
+            .iter()
+            .map(|(_, result)| result.execution_time)
+            .sum::<u64>();
+        let total_storage = suite
+            .benchmark_results
+            .iter()
+            .map(|(_, result)| result.storage_usage)
+            .sum::<u64>();
+
         let benchmark_count = suite.benchmark_results.len() as u32;
-        let average_gas = if benchmark_count > 0 { total_gas / benchmark_count as u64 } else { 0 };
-        let average_time = if benchmark_count > 0 { total_time / benchmark_count as u64 } else { 0 };
-        
-        let gas_efficiency = if average_gas < 1000 { 100 } else if average_gas < 5000 { 80 } else { 60 };
-        let time_efficiency = if average_time < 100 { 100 } else if average_time < 500 { 80 } else { 60 };
-        let storage_efficiency = if total_storage < 10000 { 100 } else if total_storage < 50000 { 80 } else { 60 };
-        
+        let average_gas = if benchmark_count > 0 {
+            total_gas / benchmark_count as u64
+        } else {
+            0
+        };
+        let average_time = if benchmark_count > 0 {
+            total_time / benchmark_count as u64
+        } else {
+            0
+        };
+
+        let gas_efficiency = if average_gas < 1000 {
+            100
+        } else if average_gas < 5000 {
+            80
+        } else {
+            60
+        };
+        let time_efficiency = if average_time < 100 {
+            100
+        } else if average_time < 500 {
+            80
+        } else {
+            60
+        };
+        let storage_efficiency = if total_storage < 10000 {
+            100
+        } else if total_storage < 50000 {
+            80
+        } else {
+            60
+        };
+
         let overall_score = (gas_efficiency + time_efficiency + storage_efficiency) / 3;
         let success_rate = if suite.total_benchmarks > 0 {
             (suite.successful_benchmarks * 100) / suite.total_benchmarks
         } else {
             0
         };
-        
+
         PerformanceMetrics {
             total_gas_usage: total_gas,
             total_execution_time: total_time,
@@ -459,7 +519,10 @@ impl PerformanceBenchmarkManager {
     }
 
     /// Identify optimization opportunities
-    fn identify_optimization_opportunities(env: &Env, _suite: &PerformanceBenchmarkSuite) -> Vec<String> {
+    fn identify_optimization_opportunities(
+        env: &Env,
+        _suite: &PerformanceBenchmarkSuite,
+    ) -> Vec<String> {
         // Return empty opportunities for now
         Vec::new(env)
     }
@@ -467,11 +530,20 @@ impl PerformanceBenchmarkManager {
     /// Calculate performance trends
     fn calculate_performance_trends(suite: &PerformanceBenchmarkSuite) -> Map<String, u32> {
         let mut trends = Map::new(&Env::default());
-        
-        trends.set(String::from_str(&Env::default(), "gas_trend"), suite.average_gas_usage as u32);
-        trends.set(String::from_str(&Env::default(), "time_trend"), suite.average_execution_time as u32);
-        trends.set(String::from_str(&Env::default(), "success_trend"), suite.successful_benchmarks);
-        
+
+        trends.set(
+            String::from_str(&Env::default(), "gas_trend"),
+            suite.average_gas_usage as u32,
+        );
+        trends.set(
+            String::from_str(&Env::default(), "time_trend"),
+            suite.average_execution_time as u32,
+        );
+        trends.set(
+            String::from_str(&Env::default(), "success_trend"),
+            suite.successful_benchmarks,
+        );
+
         trends
     }
 }
