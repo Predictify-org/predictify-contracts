@@ -19,6 +19,7 @@ mod extensions;
 mod fees;
 mod governance;
 mod graceful_degradation;
+mod market_analytics;
 mod markets;
 mod monitoring;
 mod oracles;
@@ -1756,6 +1757,299 @@ impl PredictifyHybrid {
         proposal: upgrade_manager::UpgradeProposal,
     ) -> Result<bool, Error> {
         upgrade_manager::UpgradeManager::test_upgrade_safety(&env, &proposal)
+    }
+
+    // ===== MARKET ANALYTICS FUNCTIONS =====
+
+    /// Get comprehensive market statistics for data analysis and insights
+    ///
+    /// This function provides detailed statistics about a specific market including
+    /// participation metrics, stake distribution, outcome analysis, and performance
+    /// indicators. It's essential for market monitoring and user interfaces.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<MarketStatistics, Error>` where:
+    /// - `Ok(MarketStatistics)` - Complete market statistics and analytics
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Errors
+    ///
+    /// This function returns:
+    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_market_statistics(env.clone(), market_id) {
+    ///     Ok(stats) => {
+    ///         println!("Total participants: {}", stats.total_participants);
+    ///         println!("Total stake: {}", stats.total_stake);
+    ///         println!("Consensus strength: {}%", stats.consensus_strength);
+    ///     },
+    ///     Err(e) => println!("Analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_market_statistics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::MarketStatistics, Error> {
+        market_analytics::MarketAnalyticsManager::get_market_statistics(&env, market_id)
+    }
+
+    /// Get voting analytics and participation metrics for a market
+    ///
+    /// This function provides detailed analysis of voting patterns, participation
+    /// trends, and community engagement within a specific market. It's useful
+    /// for understanding market dynamics and user behavior.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<VotingAnalytics, Error>` where:
+    /// - `Ok(VotingAnalytics)` - Complete voting analytics and metrics
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_voting_analytics(env.clone(), market_id) {
+    ///     Ok(analytics) => {
+    ///         println!("Total votes: {}", analytics.total_votes);
+    ///         println!("Unique voters: {}", analytics.unique_voters);
+    ///     },
+    ///     Err(e) => println!("Voting analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_voting_analytics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::VotingAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_voting_analytics(&env, market_id)
+    }
+
+    /// Get oracle performance statistics for a specific oracle provider
+    ///
+    /// This function provides comprehensive performance metrics for oracle providers,
+    /// including accuracy rates, response times, uptime statistics, and reliability
+    /// scores. It's essential for oracle monitoring and optimization.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `oracle` - The oracle provider to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<OraclePerformanceStats, Error>` where:
+    /// - `Ok(OraclePerformanceStats)` - Complete oracle performance statistics
+    /// - `Err(Error)` - Error if oracle data unavailable
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::get_oracle_performance_stats(env.clone(), OracleProvider::Reflector) {
+    ///     Ok(stats) => {
+    ///         println!("Oracle accuracy: {}%", stats.accuracy_rate);
+    ///         println!("Uptime: {}%", stats.uptime_percentage);
+    ///         println!("Reliability score: {}", stats.reliability_score);
+    ///     },
+    ///     Err(e) => println!("Oracle stats unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_oracle_performance_stats(
+        env: Env,
+        oracle: OracleProvider,
+    ) -> Result<market_analytics::OraclePerformanceStats, Error> {
+        market_analytics::MarketAnalyticsManager::get_oracle_performance_stats(&env, oracle)
+    }
+
+    /// Get fee analytics and revenue tracking for a specific timeframe
+    ///
+    /// This function provides comprehensive fee collection analytics including
+    /// revenue tracking, fee distribution analysis, and collection efficiency
+    /// metrics. It's essential for financial monitoring and optimization.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `timeframe` - The time period for fee analysis
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<FeeAnalytics, Error>` where:
+    /// - `Ok(FeeAnalytics)` - Complete fee analytics and revenue data
+    /// - `Err(Error)` - Error if fee data unavailable
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, TimeFrame};
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::get_fee_analytics(env.clone(), TimeFrame::Month) {
+    ///     Ok(analytics) => {
+    ///         println!("Total fees collected: {}", analytics.total_fees_collected);
+    ///         println!("Collection rate: {}%", analytics.fee_collection_rate);
+    ///     },
+    ///     Err(e) => println!("Fee analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_fee_analytics(
+        env: Env,
+        timeframe: market_analytics::TimeFrame,
+    ) -> Result<market_analytics::FeeAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_fee_analytics(&env, timeframe)
+    }
+
+    /// Get dispute analytics and resolution metrics for a market
+    ///
+    /// This function provides detailed analysis of dispute patterns, resolution
+    /// efficiency, and dispute-related metrics for a specific market. It's
+    /// essential for understanding dispute dynamics and improving resolution processes.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<DisputeAnalytics, Error>` where:
+    /// - `Ok(DisputeAnalytics)` - Complete dispute analytics and metrics
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_dispute_analytics(env.clone(), market_id) {
+    ///     Ok(analytics) => {
+    ///         println!("Total disputes: {}", analytics.total_disputes);
+    ///         println!("Success rate: {}%", analytics.dispute_success_rate);
+    ///     },
+    ///     Err(e) => println!("Dispute analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_dispute_analytics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::DisputeAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_dispute_analytics(&env, market_id)
+    }
+
+    /// Get participation metrics for a specific market
+    ///
+    /// This function provides comprehensive participation analysis including
+    /// user engagement, retention rates, and activity patterns for a specific
+    /// market. It's essential for understanding user behavior and market health.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<ParticipationMetrics, Error>` where:
+    /// - `Ok(ParticipationMetrics)` - Complete participation metrics and analysis
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_participation_metrics(env.clone(), market_id) {
+    ///     Ok(metrics) => {
+    ///         println!("Total participants: {}", metrics.total_participants);
+    ///         println!("Engagement score: {}", metrics.engagement_score);
+    ///         println!("Retention rate: {}%", metrics.retention_rate);
+    ///     },
+    ///     Err(e) => println!("Participation metrics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_participation_metrics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::ParticipationMetrics, Error> {
+        market_analytics::MarketAnalyticsManager::get_participation_metrics(&env, market_id)
+    }
+
+    /// Get market comparison analytics for multiple markets
+    ///
+    /// This function provides comparative analysis across multiple markets,
+    /// including performance rankings, comparative metrics, and market insights.
+    /// It's essential for understanding market trends and performance patterns.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `markets` - Vector of market identifiers to compare
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<MarketComparisonAnalytics, Error>` where:
+    /// - `Ok(MarketComparisonAnalytics)` - Complete comparative analytics
+    /// - `Err(Error)` - Error if analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol, vec};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let markets = vec![
+    /// #     &env,
+    /// #     Symbol::new(&env, "market_1"),
+    /// #     Symbol::new(&env, "market_2"),
+    /// # ];
+    ///
+    /// match PredictifyHybrid::get_market_comparison_analytics(env.clone(), markets) {
+    ///     Ok(comparison) => {
+    ///         println!("Total markets: {}", comparison.total_markets);
+    ///         println!("Average participation: {}", comparison.average_participation);
+    ///         println!("Success rate: {}%", comparison.success_rate);
+    ///     },
+    ///     Err(e) => println!("Comparison analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_market_comparison_analytics(
+        env: Env,
+        markets: Vec<Symbol>,
+    ) -> Result<market_analytics::MarketComparisonAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_market_comparison_analytics(&env, markets)
     }
 }
 
