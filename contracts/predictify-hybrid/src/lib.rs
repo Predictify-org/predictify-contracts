@@ -23,6 +23,7 @@ mod market_analytics;
 mod markets;
 mod monitoring;
 mod oracles;
+mod performance_benchmarks;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
@@ -2050,6 +2051,316 @@ impl PredictifyHybrid {
         markets: Vec<Symbol>,
     ) -> Result<market_analytics::MarketComparisonAnalytics, Error> {
         market_analytics::MarketAnalyticsManager::get_market_comparison_analytics(&env, markets)
+    }
+
+    // ===== PERFORMANCE BENCHMARK FUNCTIONS =====
+
+    /// Benchmark gas usage for a specific function with given inputs
+    ///
+    /// This function measures the gas consumption and execution time for a specific
+    /// contract function with provided inputs. It's essential for performance
+    /// optimization and gas cost analysis.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `function` - Name of the function to benchmark
+    /// * `inputs` - Vector of input parameters for the function
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete benchmark results including gas usage and execution time
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let inputs = vec![&env, String::from_str(&env, "test_input")];
+    ///
+    /// match PredictifyHybrid::benchmark_gas_usage(
+    ///     env.clone(),
+    ///     String::from_str(&env, "create_market"),
+    ///     inputs
+    /// ) {
+    ///     Ok(result) => {
+    ///         println!("Gas usage: {}", result.gas_usage);
+    ///         println!("Execution time: {}", result.execution_time);
+    ///         println!("Performance score: {}", result.performance_score);
+    ///     },
+    ///     Err(e) => println!("Benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_gas_usage(
+        env: Env,
+        function: String,
+        inputs: Vec<String>,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_gas_usage(&env, function, inputs)
+    }
+
+    /// Benchmark storage usage for a specific operation
+    ///
+    /// This function measures storage consumption and performance for various
+    /// storage operations including read, write, and delete operations.
+    /// It's essential for storage optimization and cost analysis.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `operation` - Storage operation configuration to benchmark
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete storage benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, StorageOperation};
+    /// # let env = Env::default();
+    /// # let operation = StorageOperation {
+    /// #     operation_type: String::from_str(&env, "write"),
+    /// #     data_size: 1024,
+    /// #     key_count: 10,
+    /// #     value_count: 10,
+    /// #     operation_count: 100,
+    /// # };
+    ///
+    /// match PredictifyHybrid::benchmark_storage_usage(env.clone(), operation) {
+    ///     Ok(result) => {
+    ///         println!("Storage usage: {}", result.storage_usage);
+    ///         println!("Gas usage: {}", result.gas_usage);
+    ///     },
+    ///     Err(e) => println!("Storage benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_storage_usage(
+        env: Env,
+        operation: performance_benchmarks::StorageOperation,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_storage_usage(&env, operation)
+    }
+
+    /// Benchmark oracle call performance for a specific oracle provider
+    ///
+    /// This function measures the performance characteristics of oracle calls
+    /// including response time, gas usage, and reliability metrics.
+    /// It's essential for oracle performance monitoring and optimization.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `oracle` - The oracle provider to benchmark
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete oracle performance benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::benchmark_oracle_call_performance(
+    ///     env.clone(),
+    ///     OracleProvider::Reflector
+    /// ) {
+    ///     Ok(result) => {
+    ///         println!("Oracle response time: {}", result.execution_time);
+    ///         println!("Oracle gas usage: {}", result.gas_usage);
+    ///     },
+    ///     Err(e) => println!("Oracle benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_oracle_performance(
+        env: Env,
+        oracle: OracleProvider,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_oracle_call_performance(&env, oracle)
+    }
+
+    /// Benchmark batch operations performance
+    ///
+    /// This function measures the performance of batch operations including
+    /// gas efficiency, execution time, and throughput characteristics.
+    /// It's essential for batch operation optimization and scalability analysis.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `operations` - Vector of batch operations to benchmark
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete batch operation benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, vec};
+    /// # use predictify_hybrid::{PredictifyHybrid, BatchOperation};
+    /// # let env = Env::default();
+    /// # let operations = vec![
+    /// #     &env,
+    /// #     BatchOperation {
+    /// #         operation_type: String::from_str(&env, "batch_vote"),
+    /// #         batch_size: 100,
+    /// #         operation_count: 10,
+    /// #         data_size: 1024,
+    /// #     }
+    /// # ];
+    ///
+    /// match PredictifyHybrid::benchmark_batch_operations(env.clone(), operations) {
+    ///     Ok(result) => {
+    ///         println!("Batch execution time: {}", result.execution_time);
+    ///         println!("Batch gas usage: {}", result.gas_usage);
+    ///     },
+    ///     Err(e) => println!("Batch benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_batch_operations(
+        env: Env,
+        operations: Vec<performance_benchmarks::BatchOperation>,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_batch_operations(&env, operations)
+    }
+
+    /// Benchmark scalability with large markets and user counts
+    ///
+    /// This function measures the contract's performance under high load
+    /// scenarios with large numbers of markets and users. It's essential
+    /// for scalability testing and performance validation.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_size` - Number of markets to simulate
+    /// * `user_count` - Number of users to simulate
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete scalability benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::benchmark_scalability(env.clone(), 1000, 10000) {
+    ///     Ok(result) => {
+    ///         println!("Scalability test completed");
+    ///         println!("Total gas usage: {}", result.gas_usage);
+    ///         println!("Total execution time: {}", result.execution_time);
+    ///     },
+    ///     Err(e) => println!("Scalability benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_scalability(
+        env: Env,
+        market_size: u32,
+        user_count: u32,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_scalability(&env, market_size, user_count)
+    }
+
+    /// Generate comprehensive performance report
+    ///
+    /// This function creates a detailed performance report including metrics,
+    /// recommendations, and optimization opportunities based on benchmark results.
+    /// It's essential for performance analysis and optimization planning.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `benchmark_suite` - The benchmark suite to generate report for
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<PerformanceReport, Error>` where:
+    /// - `Ok(PerformanceReport)` - Complete performance report with analysis
+    /// - `Err(Error)` - Error if report generation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceBenchmarkSuite};
+    /// # let env = Env::default();
+    /// # let suite = PerformanceBenchmarkSuite::default(); // Placeholder
+    ///
+    /// match PredictifyHybrid::generate_performance_report(env.clone(), suite) {
+    ///     Ok(report) => {
+    ///         println!("Performance report generated");
+    ///         println!("Overall score: {}", report.performance_metrics.overall_performance_score);
+    ///         println!("Recommendations: {}", report.recommendations.len());
+    ///     },
+    ///     Err(e) => println!("Report generation failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn generate_performance_report(
+        env: Env,
+        benchmark_suite: performance_benchmarks::PerformanceBenchmarkSuite,
+    ) -> Result<performance_benchmarks::PerformanceReport, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::generate_performance_report(&env, benchmark_suite)
+    }
+
+    /// Validate performance against thresholds
+    ///
+    /// This function validates performance metrics against predefined thresholds
+    /// to ensure the contract meets performance requirements. It's essential
+    /// for performance validation and quality assurance.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `metrics` - Performance metrics to validate
+    /// * `thresholds` - Performance thresholds to validate against
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<bool, Error>` where:
+    /// - `Ok(true)` - Performance meets all thresholds
+    /// - `Ok(false)` - Performance does not meet thresholds
+    /// - `Err(Error)` - Error if validation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceMetrics, PerformanceThresholds};
+    /// # let env = Env::default();
+    /// # let metrics = PerformanceMetrics::default(); // Placeholder
+    /// # let thresholds = PerformanceThresholds::default(); // Placeholder
+    ///
+    /// match PredictifyHybrid::validate_performance_thresholds(env.clone(), metrics, thresholds) {
+    ///     Ok(true) => println!("Performance meets all thresholds"),
+    ///     Ok(false) => println!("Performance does not meet thresholds"),
+    ///     Err(e) => println!("Validation failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn validate_performance_thresholds(
+        env: Env,
+        metrics: performance_benchmarks::PerformanceMetrics,
+        thresholds: performance_benchmarks::PerformanceThresholds,
+    ) -> Result<bool, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::validate_performance_thresholds(&env, metrics, thresholds)
     }
 }
 
