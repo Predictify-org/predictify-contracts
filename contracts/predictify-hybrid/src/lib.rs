@@ -19,9 +19,12 @@ mod extensions;
 mod fees;
 mod governance;
 mod graceful_degradation;
+mod market_analytics;
+mod market_id_generator;
 mod markets;
 mod monitoring;
 mod oracles;
+mod performance_benchmarks;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
@@ -67,6 +70,7 @@ use crate::config::{
 };
 use crate::events::EventEmitter;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
+use crate::market_id_generator::MarketIdGenerator;
 use crate::reentrancy_guard::ReentrancyGuard;
 use alloc::format;
 use soroban_sdk::{
@@ -216,13 +220,8 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidQuestion);
         }
 
-        // Generate a unique market ID
-        let counter_key = Symbol::new(&env, "MarketCounter");
-        let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
-        let new_counter = counter + 1;
-        env.storage().persistent().set(&counter_key, &new_counter);
-
-        let market_id = Symbol::new(&env, &format!("market_{}", new_counter));
+        // Generate a unique collision-resistant market ID
+        let market_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
         // Calculate end time
         let seconds_per_day: u64 = 24 * 60 * 60;
@@ -1756,6 +1755,626 @@ impl PredictifyHybrid {
         proposal: upgrade_manager::UpgradeProposal,
     ) -> Result<bool, Error> {
         upgrade_manager::UpgradeManager::test_upgrade_safety(&env, &proposal)
+    }
+
+    // ===== MARKET ANALYTICS FUNCTIONS =====
+
+    /// Get comprehensive market statistics for data analysis and insights
+    ///
+    /// This function provides detailed statistics about a specific market including
+    /// participation metrics, stake distribution, outcome analysis, and performance
+    /// indicators. It's essential for market monitoring and user interfaces.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<MarketStatistics, Error>` where:
+    /// - `Ok(MarketStatistics)` - Complete market statistics and analytics
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Errors
+    ///
+    /// This function returns:
+    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_market_statistics(env.clone(), market_id) {
+    ///     Ok(stats) => {
+    ///         println!("Total participants: {}", stats.total_participants);
+    ///         println!("Total stake: {}", stats.total_stake);
+    ///         println!("Consensus strength: {}%", stats.consensus_strength);
+    ///     },
+    ///     Err(e) => println!("Analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_market_statistics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::MarketStatistics, Error> {
+        market_analytics::MarketAnalyticsManager::get_market_statistics(&env, market_id)
+    }
+
+    /// Get voting analytics and participation metrics for a market
+    ///
+    /// This function provides detailed analysis of voting patterns, participation
+    /// trends, and community engagement within a specific market. It's useful
+    /// for understanding market dynamics and user behavior.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<VotingAnalytics, Error>` where:
+    /// - `Ok(VotingAnalytics)` - Complete voting analytics and metrics
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_voting_analytics(env.clone(), market_id) {
+    ///     Ok(analytics) => {
+    ///         println!("Total votes: {}", analytics.total_votes);
+    ///         println!("Unique voters: {}", analytics.unique_voters);
+    ///     },
+    ///     Err(e) => println!("Voting analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_voting_analytics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::VotingAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_voting_analytics(&env, market_id)
+    }
+
+    /// Get oracle performance statistics for a specific oracle provider
+    ///
+    /// This function provides comprehensive performance metrics for oracle providers,
+    /// including accuracy rates, response times, uptime statistics, and reliability
+    /// scores. It's essential for oracle monitoring and optimization.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `oracle` - The oracle provider to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<OraclePerformanceStats, Error>` where:
+    /// - `Ok(OraclePerformanceStats)` - Complete oracle performance statistics
+    /// - `Err(Error)` - Error if oracle data unavailable
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::get_oracle_performance_stats(env.clone(), OracleProvider::Reflector) {
+    ///     Ok(stats) => {
+    ///         println!("Oracle accuracy: {}%", stats.accuracy_rate);
+    ///         println!("Uptime: {}%", stats.uptime_percentage);
+    ///         println!("Reliability score: {}", stats.reliability_score);
+    ///     },
+    ///     Err(e) => println!("Oracle stats unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_oracle_performance_stats(
+        env: Env,
+        oracle: OracleProvider,
+    ) -> Result<market_analytics::OraclePerformanceStats, Error> {
+        market_analytics::MarketAnalyticsManager::get_oracle_performance_stats(&env, oracle)
+    }
+
+    /// Get fee analytics and revenue tracking for a specific timeframe
+    ///
+    /// This function provides comprehensive fee collection analytics including
+    /// revenue tracking, fee distribution analysis, and collection efficiency
+    /// metrics. It's essential for financial monitoring and optimization.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `timeframe` - The time period for fee analysis
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<FeeAnalytics, Error>` where:
+    /// - `Ok(FeeAnalytics)` - Complete fee analytics and revenue data
+    /// - `Err(Error)` - Error if fee data unavailable
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, TimeFrame};
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::get_fee_analytics(env.clone(), TimeFrame::Month) {
+    ///     Ok(analytics) => {
+    ///         println!("Total fees collected: {}", analytics.total_fees_collected);
+    ///         println!("Collection rate: {}%", analytics.fee_collection_rate);
+    ///     },
+    ///     Err(e) => println!("Fee analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_fee_analytics(
+        env: Env,
+        timeframe: market_analytics::TimeFrame,
+    ) -> Result<market_analytics::FeeAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_fee_analytics(&env, timeframe)
+    }
+
+    /// Get dispute analytics and resolution metrics for a market
+    ///
+    /// This function provides detailed analysis of dispute patterns, resolution
+    /// efficiency, and dispute-related metrics for a specific market. It's
+    /// essential for understanding dispute dynamics and improving resolution processes.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<DisputeAnalytics, Error>` where:
+    /// - `Ok(DisputeAnalytics)` - Complete dispute analytics and metrics
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_dispute_analytics(env.clone(), market_id) {
+    ///     Ok(analytics) => {
+    ///         println!("Total disputes: {}", analytics.total_disputes);
+    ///         println!("Success rate: {}%", analytics.dispute_success_rate);
+    ///     },
+    ///     Err(e) => println!("Dispute analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_dispute_analytics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::DisputeAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_dispute_analytics(&env, market_id)
+    }
+
+    /// Get participation metrics for a specific market
+    ///
+    /// This function provides comprehensive participation analysis including
+    /// user engagement, retention rates, and activity patterns for a specific
+    /// market. It's essential for understanding user behavior and market health.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to analyze
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<ParticipationMetrics, Error>` where:
+    /// - `Ok(ParticipationMetrics)` - Complete participation metrics and analysis
+    /// - `Err(Error)` - Error if market not found or analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// match PredictifyHybrid::get_participation_metrics(env.clone(), market_id) {
+    ///     Ok(metrics) => {
+    ///         println!("Total participants: {}", metrics.total_participants);
+    ///         println!("Engagement score: {}", metrics.engagement_score);
+    ///         println!("Retention rate: {}%", metrics.retention_rate);
+    ///     },
+    ///     Err(e) => println!("Participation metrics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_participation_metrics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<market_analytics::ParticipationMetrics, Error> {
+        market_analytics::MarketAnalyticsManager::get_participation_metrics(&env, market_id)
+    }
+
+    /// Get market comparison analytics for multiple markets
+    ///
+    /// This function provides comparative analysis across multiple markets,
+    /// including performance rankings, comparative metrics, and market insights.
+    /// It's essential for understanding market trends and performance patterns.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `markets` - Vector of market identifiers to compare
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<MarketComparisonAnalytics, Error>` where:
+    /// - `Ok(MarketComparisonAnalytics)` - Complete comparative analytics
+    /// - `Err(Error)` - Error if analysis fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol, vec};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let markets = vec![
+    /// #     &env,
+    /// #     Symbol::new(&env, "market_1"),
+    /// #     Symbol::new(&env, "market_2"),
+    /// # ];
+    ///
+    /// match PredictifyHybrid::get_market_comparison_analytics(env.clone(), markets) {
+    ///     Ok(comparison) => {
+    ///         println!("Total markets: {}", comparison.total_markets);
+    ///         println!("Average participation: {}", comparison.average_participation);
+    ///         println!("Success rate: {}%", comparison.success_rate);
+    ///     },
+    ///     Err(e) => println!("Comparison analytics unavailable: {:?}", e),
+    /// }
+    /// ```
+    pub fn get_market_comparison_analytics(
+        env: Env,
+        markets: Vec<Symbol>,
+    ) -> Result<market_analytics::MarketComparisonAnalytics, Error> {
+        market_analytics::MarketAnalyticsManager::get_market_comparison_analytics(&env, markets)
+    }
+
+    // ===== PERFORMANCE BENCHMARK FUNCTIONS =====
+
+    /// Benchmark gas usage for a specific function with given inputs
+    ///
+    /// This function measures the gas consumption and execution time for a specific
+    /// contract function with provided inputs. It's essential for performance
+    /// optimization and gas cost analysis.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `function` - Name of the function to benchmark
+    /// * `inputs` - Vector of input parameters for the function
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete benchmark results including gas usage and execution time
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let inputs = vec![&env, String::from_str(&env, "test_input")];
+    ///
+    /// match PredictifyHybrid::benchmark_gas_usage(
+    ///     env.clone(),
+    ///     String::from_str(&env, "create_market"),
+    ///     inputs
+    /// ) {
+    ///     Ok(result) => {
+    ///         println!("Gas usage: {}", result.gas_usage);
+    ///         println!("Execution time: {}", result.execution_time);
+    ///         println!("Performance score: {}", result.performance_score);
+    ///     },
+    ///     Err(e) => println!("Benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_gas_usage(
+        env: Env,
+        function: String,
+        inputs: Vec<String>,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_gas_usage(
+            &env, function, inputs,
+        )
+    }
+
+    /// Benchmark storage usage for a specific operation
+    ///
+    /// This function measures storage consumption and performance for various
+    /// storage operations including read, write, and delete operations.
+    /// It's essential for storage optimization and cost analysis.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `operation` - Storage operation configuration to benchmark
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete storage benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, StorageOperation};
+    /// # let env = Env::default();
+    /// # let operation = StorageOperation {
+    /// #     operation_type: String::from_str(&env, "write"),
+    /// #     data_size: 1024,
+    /// #     key_count: 10,
+    /// #     value_count: 10,
+    /// #     operation_count: 100,
+    /// # };
+    ///
+    /// match PredictifyHybrid::benchmark_storage_usage(env.clone(), operation) {
+    ///     Ok(result) => {
+    ///         println!("Storage usage: {}", result.storage_usage);
+    ///         println!("Gas usage: {}", result.gas_usage);
+    ///     },
+    ///     Err(e) => println!("Storage benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_storage_usage(
+        env: Env,
+        operation: performance_benchmarks::StorageOperation,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_storage_usage(
+            &env, operation,
+        )
+    }
+
+    /// Benchmark oracle call performance for a specific oracle provider
+    ///
+    /// This function measures the performance characteristics of oracle calls
+    /// including response time, gas usage, and reliability metrics.
+    /// It's essential for oracle performance monitoring and optimization.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `oracle` - The oracle provider to benchmark
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete oracle performance benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::benchmark_oracle_call_performance(
+    ///     env.clone(),
+    ///     OracleProvider::Reflector
+    /// ) {
+    ///     Ok(result) => {
+    ///         println!("Oracle response time: {}", result.execution_time);
+    ///         println!("Oracle gas usage: {}", result.gas_usage);
+    ///     },
+    ///     Err(e) => println!("Oracle benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_oracle_performance(
+        env: Env,
+        oracle: OracleProvider,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_oracle_call_performance(
+            &env, oracle,
+        )
+    }
+
+    /// Benchmark batch operations performance
+    ///
+    /// This function measures the performance of batch operations including
+    /// gas efficiency, execution time, and throughput characteristics.
+    /// It's essential for batch operation optimization and scalability analysis.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `operations` - Vector of batch operations to benchmark
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete batch operation benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, vec};
+    /// # use predictify_hybrid::{PredictifyHybrid, BatchOperation};
+    /// # let env = Env::default();
+    /// # let operations = vec![
+    /// #     &env,
+    /// #     BatchOperation {
+    /// #         operation_type: String::from_str(&env, "batch_vote"),
+    /// #         batch_size: 100,
+    /// #         operation_count: 10,
+    /// #         data_size: 1024,
+    /// #     }
+    /// # ];
+    ///
+    /// match PredictifyHybrid::benchmark_batch_operations(env.clone(), operations) {
+    ///     Ok(result) => {
+    ///         println!("Batch execution time: {}", result.execution_time);
+    ///         println!("Batch gas usage: {}", result.gas_usage);
+    ///     },
+    ///     Err(e) => println!("Batch benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_batch_operations(
+        env: Env,
+        operations: Vec<performance_benchmarks::BatchOperation>,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_batch_operations(
+            &env, operations,
+        )
+    }
+
+    /// Benchmark scalability with large markets and user counts
+    ///
+    /// This function measures the contract's performance under high load
+    /// scenarios with large numbers of markets and users. It's essential
+    /// for scalability testing and performance validation.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_size` - Number of markets to simulate
+    /// * `user_count` - Number of users to simulate
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<BenchmarkResult, Error>` where:
+    /// - `Ok(BenchmarkResult)` - Complete scalability benchmark results
+    /// - `Err(Error)` - Error if benchmarking fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    ///
+    /// match PredictifyHybrid::benchmark_scalability(env.clone(), 1000, 10000) {
+    ///     Ok(result) => {
+    ///         println!("Scalability test completed");
+    ///         println!("Total gas usage: {}", result.gas_usage);
+    ///         println!("Total execution time: {}", result.execution_time);
+    ///     },
+    ///     Err(e) => println!("Scalability benchmark failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn benchmark_scalability(
+        env: Env,
+        market_size: u32,
+        user_count: u32,
+    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::benchmark_scalability(
+            &env,
+            market_size,
+            user_count,
+        )
+    }
+
+    /// Generate comprehensive performance report
+    ///
+    /// This function creates a detailed performance report including metrics,
+    /// recommendations, and optimization opportunities based on benchmark results.
+    /// It's essential for performance analysis and optimization planning.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `benchmark_suite` - The benchmark suite to generate report for
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<PerformanceReport, Error>` where:
+    /// - `Ok(PerformanceReport)` - Complete performance report with analysis
+    /// - `Err(Error)` - Error if report generation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceBenchmarkSuite};
+    /// # let env = Env::default();
+    /// # let suite = PerformanceBenchmarkSuite::default(); // Placeholder
+    ///
+    /// match PredictifyHybrid::generate_performance_report(env.clone(), suite) {
+    ///     Ok(report) => {
+    ///         println!("Performance report generated");
+    ///         println!("Overall score: {}", report.performance_metrics.overall_performance_score);
+    ///         println!("Recommendations: {}", report.recommendations.len());
+    ///     },
+    ///     Err(e) => println!("Report generation failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn generate_performance_report(
+        env: Env,
+        benchmark_suite: performance_benchmarks::PerformanceBenchmarkSuite,
+    ) -> Result<performance_benchmarks::PerformanceReport, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::generate_performance_report(
+            &env,
+            benchmark_suite,
+        )
+    }
+
+    /// Validate performance against thresholds
+    ///
+    /// This function validates performance metrics against predefined thresholds
+    /// to ensure the contract meets performance requirements. It's essential
+    /// for performance validation and quality assurance.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `metrics` - Performance metrics to validate
+    /// * `thresholds` - Performance thresholds to validate against
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<bool, Error>` where:
+    /// - `Ok(true)` - Performance meets all thresholds
+    /// - `Ok(false)` - Performance does not meet thresholds
+    /// - `Err(Error)` - Error if validation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceMetrics, PerformanceThresholds};
+    /// # let env = Env::default();
+    /// # let metrics = PerformanceMetrics::default(); // Placeholder
+    /// # let thresholds = PerformanceThresholds::default(); // Placeholder
+    ///
+    /// match PredictifyHybrid::validate_performance_thresholds(env.clone(), metrics, thresholds) {
+    ///     Ok(true) => println!("Performance meets all thresholds"),
+    ///     Ok(false) => println!("Performance does not meet thresholds"),
+    ///     Err(e) => println!("Validation failed: {:?}", e),
+    /// }
+    /// ```
+    pub fn validate_performance_thresholds(
+        env: Env,
+        metrics: performance_benchmarks::PerformanceMetrics,
+        thresholds: performance_benchmarks::PerformanceThresholds,
+    ) -> Result<bool, Error> {
+        performance_benchmarks::PerformanceBenchmarkManager::validate_performance_thresholds(
+            &env, metrics, thresholds,
+        )
     }
 }
 

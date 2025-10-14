@@ -8,6 +8,7 @@ use crate::validation::{
     ValidationDocumentation, ValidationError, ValidationErrorHandler, ValidationResult,
     ValidationTestingUtils, VoteValidator,
 };
+use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
 
 #[cfg(test)]
@@ -1427,4 +1428,534 @@ mod oracle_config_validator_tests {
         // Overall validation should fail due to provider not being supported
         assert!(OracleConfigValidator::validate_oracle_config_all_together(&pyth_config).is_err());
     }
+}
+
+// ===== COMPREHENSIVE INPUT VALIDATION TESTS =====
+
+#[test]
+fn test_validate_string_length_range() {
+    let env = Env::default();
+
+    // Valid string within range
+    let valid_string = String::from_str(&env, "Valid question");
+    assert!(InputValidator::validate_string_length_range(&valid_string, 5, 50).is_ok());
+
+    // String too short
+    let short_string = String::from_str(&env, "Hi");
+    assert!(InputValidator::validate_string_length_range(&short_string, 5, 50).is_err());
+
+    // String too long
+    let long_string = String::from_str(
+        &env,
+        "This is a very long string that exceeds the maximum length limit",
+    );
+    assert!(InputValidator::validate_string_length_range(&long_string, 5, 20).is_err());
+
+    // Boundary test - minimum
+    let min_boundary = String::from_str(&env, "12345");
+    assert!(InputValidator::validate_string_length_range(&min_boundary, 5, 50).is_ok());
+
+    // Boundary test - maximum
+    let max_boundary = String::from_str(&env, "12345678901234567890");
+    assert!(InputValidator::validate_string_length_range(&max_boundary, 5, 20).is_ok());
+}
+
+#[test]
+fn test_validate_numeric_range_comprehensive() {
+    // Valid values
+    assert!(InputValidator::validate_numeric_range(50, 0, 100).is_ok());
+    assert!(InputValidator::validate_numeric_range(0, 0, 100).is_ok());
+    assert!(InputValidator::validate_numeric_range(100, 0, 100).is_ok());
+
+    // Invalid values - below minimum
+    assert!(InputValidator::validate_numeric_range(-1, 0, 100).is_err());
+    assert!(InputValidator::validate_numeric_range(-1000, 0, 100).is_err());
+
+    // Invalid values - above maximum
+    assert!(InputValidator::validate_numeric_range(101, 0, 100).is_err());
+    assert!(InputValidator::validate_numeric_range(1000, 0, 100).is_err());
+
+    // Large numbers
+    assert!(InputValidator::validate_numeric_range(1_000_000_000, 0, 10_000_000_000).is_ok());
+
+    // Negative ranges
+    assert!(InputValidator::validate_numeric_range(-50, -100, 0).is_ok());
+    assert!(InputValidator::validate_numeric_range(-101, -100, 0).is_err());
+}
+
+#[test]
+fn test_validate_address_format_comprehensive() {
+    let env = Env::default();
+
+    // Valid addresses
+    let valid_address1 = Address::generate(&env);
+    assert!(InputValidator::validate_address_format(&valid_address1).is_ok());
+
+    let valid_address2 = Address::generate(&env);
+    assert!(InputValidator::validate_address_format(&valid_address2).is_ok());
+
+    // Multiple addresses
+    for _ in 0..10 {
+        let addr = Address::generate(&env);
+        assert!(InputValidator::validate_address_format(&addr).is_ok());
+    }
+}
+
+#[test]
+fn test_validate_timestamp_bounds_comprehensive() {
+    let current_time = 1_000_000_u64;
+    let min_time = current_time - 1000;
+    let max_time = current_time + 1000;
+
+    // Valid timestamps
+    assert!(InputValidator::validate_timestamp_bounds(current_time, min_time, max_time).is_ok());
+    assert!(InputValidator::validate_timestamp_bounds(min_time, min_time, max_time).is_ok());
+    assert!(InputValidator::validate_timestamp_bounds(max_time, min_time, max_time).is_ok());
+
+    // Invalid timestamps - too early
+    assert!(InputValidator::validate_timestamp_bounds(min_time - 1, min_time, max_time).is_err());
+
+    // Invalid timestamps - too late
+    assert!(InputValidator::validate_timestamp_bounds(max_time + 1, min_time, max_time).is_err());
+
+    // Edge cases
+    assert!(InputValidator::validate_timestamp_bounds(0, 0, 1000).is_ok());
+    assert!(InputValidator::validate_timestamp_bounds(u64::MAX, 0, u64::MAX).is_ok());
+}
+
+#[test]
+fn test_validate_array_size_comprehensive() {
+    let env = Env::default();
+
+    // Valid array sizes
+    let valid_array = vec![
+        &env,
+        String::from_str(&env, "Option 1"),
+        String::from_str(&env, "Option 2"),
+    ];
+    assert!(InputValidator::validate_array_size(&valid_array, 10).is_ok());
+
+    // Boundary - minimum size (1 element)
+    let min_array = vec![&env, String::from_str(&env, "Single")];
+    assert!(InputValidator::validate_array_size(&min_array, 10).is_ok());
+
+    // Boundary - maximum size
+    let max_array = vec![
+        &env,
+        String::from_str(&env, "1"),
+        String::from_str(&env, "2"),
+        String::from_str(&env, "3"),
+        String::from_str(&env, "4"),
+        String::from_str(&env, "5"),
+    ];
+    assert!(InputValidator::validate_array_size(&max_array, 5).is_ok());
+
+    // Invalid - empty array
+    let empty_array = Vec::new(&env);
+    assert!(InputValidator::validate_array_size(&empty_array, 10).is_err());
+
+    // Invalid - array too large
+    let large_array = vec![
+        &env,
+        String::from_str(&env, "1"),
+        String::from_str(&env, "2"),
+        String::from_str(&env, "3"),
+        String::from_str(&env, "4"),
+    ];
+    assert!(InputValidator::validate_array_size(&large_array, 3).is_err());
+}
+
+#[test]
+fn test_validate_question_format_comprehensive() {
+    let env = Env::default();
+
+    // Valid questions
+    let valid_question1 = String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?");
+    assert!(InputValidator::validate_question_format(&valid_question1).is_ok());
+
+    let valid_question2 = String::from_str(&env, "Will Ethereum surpass Bitcoin in market cap?");
+    assert!(InputValidator::validate_question_format(&valid_question2).is_ok());
+
+    // Boundary - minimum length (10 characters)
+    let min_question = String::from_str(&env, "1234567890");
+    assert!(InputValidator::validate_question_format(&min_question).is_ok());
+
+    // Invalid - too short
+    let short_question = String::from_str(&env, "Short?");
+    assert!(InputValidator::validate_question_format(&short_question).is_err());
+
+    // Invalid - empty
+    let empty_question = String::from_str(&env, "");
+    assert!(InputValidator::validate_question_format(&empty_question).is_err());
+
+    // Invalid - too long (over MAX_QUESTION_LENGTH)
+    let long_question = String::from_str(&env, &"A".repeat(600));
+    assert!(InputValidator::validate_question_format(&long_question).is_err());
+}
+
+#[test]
+fn test_validate_outcome_format_comprehensive() {
+    let env = Env::default();
+
+    // Valid outcomes
+    let valid_outcome1 = String::from_str(&env, "Yes");
+    assert!(InputValidator::validate_outcome_format(&valid_outcome1).is_ok());
+
+    let valid_outcome2 = String::from_str(&env, "No");
+    assert!(InputValidator::validate_outcome_format(&valid_outcome2).is_ok());
+
+    let valid_outcome3 = String::from_str(&env, "Maybe - depends on market conditions");
+    assert!(InputValidator::validate_outcome_format(&valid_outcome3).is_ok());
+
+    // Boundary - minimum length (2 characters)
+    let min_outcome = String::from_str(&env, "AB");
+    assert!(InputValidator::validate_outcome_format(&min_outcome).is_ok());
+
+    // Invalid - too short (1 character)
+    let short_outcome = String::from_str(&env, "A");
+    assert!(InputValidator::validate_outcome_format(&short_outcome).is_err());
+
+    // Invalid - empty
+    let empty_outcome = String::from_str(&env, "");
+    assert!(InputValidator::validate_outcome_format(&empty_outcome).is_err());
+
+    // Invalid - too long (over MAX_OUTCOME_LENGTH)
+    let long_outcome = String::from_str(&env, &"A".repeat(150));
+    assert!(InputValidator::validate_outcome_format(&long_outcome).is_err());
+}
+
+#[test]
+fn test_validate_all_inputs_comprehensive() {
+    let env = Env::default();
+
+    let admin = Address::generate(&env);
+    let question = String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?");
+    let outcomes = vec![
+        &env,
+        String::from_str(&env, "Yes"),
+        String::from_str(&env, "No"),
+    ];
+    let duration_days = 30;
+    let stake_amount = 10_000_000; // 1 XLM
+
+    // Valid inputs
+    assert!(InputValidator::validate_all_inputs(
+        &env,
+        &admin,
+        &question,
+        &outcomes,
+        duration_days,
+        stake_amount
+    )
+    .is_ok());
+
+    // Invalid - question too short
+    let short_question = String::from_str(&env, "Short?");
+    assert!(InputValidator::validate_all_inputs(
+        &env,
+        &admin,
+        &short_question,
+        &outcomes,
+        duration_days,
+        stake_amount
+    )
+    .is_err());
+
+    // Invalid - empty outcomes
+    let empty_outcomes = Vec::new(&env);
+    assert!(InputValidator::validate_all_inputs(
+        &env,
+        &admin,
+        &question,
+        &empty_outcomes,
+        duration_days,
+        stake_amount
+    )
+    .is_err());
+
+    // Invalid - duration too short
+    assert!(InputValidator::validate_all_inputs(
+        &env,
+        &admin,
+        &question,
+        &outcomes,
+        0,
+        stake_amount
+    )
+    .is_err());
+
+    // Invalid - negative stake
+    assert!(InputValidator::validate_all_inputs(
+        &env,
+        &admin,
+        &question,
+        &outcomes,
+        duration_days,
+        -1000
+    )
+    .is_err());
+
+    // Invalid - stake too low
+    assert!(InputValidator::validate_all_inputs(
+        &env,
+        &admin,
+        &question,
+        &outcomes,
+        duration_days,
+        100 // Below MIN_VOTE_STAKE
+    )
+    .is_err());
+}
+
+#[test]
+fn test_validate_market_creation_comprehensive() {
+    let env = Env::default();
+
+    let admin = Address::generate(&env);
+    let question = String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?");
+    let outcomes = vec![
+        &env,
+        String::from_str(&env, "Yes"),
+        String::from_str(&env, "No"),
+    ];
+    let duration_days = 30;
+
+    // Valid market creation - no oracle
+    let result = InputValidator::validate_market_creation_comprehensive(
+        &env,
+        &admin,
+        &question,
+        &outcomes,
+        duration_days,
+        None,
+    );
+    assert!(result.is_valid);
+    assert_eq!(result.error_count, 0);
+
+    // Valid market creation - with oracle
+    let result_with_oracle = InputValidator::validate_market_creation_comprehensive(
+        &env,
+        &admin,
+        &question,
+        &outcomes,
+        duration_days,
+        Some(100_000_000),
+    );
+    assert!(result_with_oracle.is_valid);
+    assert_eq!(result_with_oracle.error_count, 0);
+
+    // Short question - should have warning
+    let short_question = String::from_str(&env, "BTC to 100k?");
+    let result_short = InputValidator::validate_market_creation_comprehensive(
+        &env,
+        &admin,
+        &short_question,
+        &outcomes,
+        duration_days,
+        None,
+    );
+    assert!(result_short.is_valid);
+    assert!(result_short.has_warnings());
+
+    // Short duration - should have recommendation
+    let result_short_duration = InputValidator::validate_market_creation_comprehensive(
+        &env, &admin, &question, &outcomes, 3, // Less than 7 days
+        None,
+    );
+    assert!(result_short_duration.is_valid);
+    assert!(result_short_duration.recommendation_count > 0);
+
+    // Invalid question
+    let invalid_question = String::from_str(&env, "Short");
+    let result_invalid = InputValidator::validate_market_creation_comprehensive(
+        &env,
+        &admin,
+        &invalid_question,
+        &outcomes,
+        duration_days,
+        None,
+    );
+    assert!(!result_invalid.is_valid);
+    assert!(result_invalid.has_errors());
+
+    // Invalid oracle threshold
+    let result_invalid_oracle = InputValidator::validate_market_creation_comprehensive(
+        &env,
+        &admin,
+        &question,
+        &outcomes,
+        duration_days,
+        Some(-1000), // Negative threshold
+    );
+    assert!(!result_invalid_oracle.is_valid);
+    assert!(result_invalid_oracle.has_errors());
+}
+
+#[test]
+fn test_validation_with_malicious_inputs() {
+    let env = Env::default();
+
+    // Test with extremely long strings
+    let very_long_question = String::from_str(&env, &"A".repeat(1000));
+    assert!(InputValidator::validate_question_format(&very_long_question).is_err());
+
+    // Test with extremely large numbers
+    assert!(InputValidator::validate_numeric_range(i128::MAX, 0, 1_000_000).is_err());
+
+    // Test with extremely small numbers
+    assert!(InputValidator::validate_numeric_range(i128::MIN, 0, 1_000_000).is_err());
+
+    // Test with many outcomes
+    let many_outcomes = vec![
+        &env,
+        String::from_str(&env, "1"),
+        String::from_str(&env, "2"),
+        String::from_str(&env, "3"),
+        String::from_str(&env, "4"),
+        String::from_str(&env, "5"),
+        String::from_str(&env, "6"),
+        String::from_str(&env, "7"),
+        String::from_str(&env, "8"),
+        String::from_str(&env, "9"),
+        String::from_str(&env, "10"),
+        String::from_str(&env, "11"),
+    ];
+    assert!(InputValidator::validate_array_size(&many_outcomes, 10).is_err());
+}
+
+#[test]
+fn test_validation_boundary_conditions() {
+    let env = Env::default();
+
+    // Test exact boundary for question length (10 characters minimum)
+    let boundary_question = String::from_str(&env, "1234567890");
+    assert!(InputValidator::validate_question_format(&boundary_question).is_ok());
+
+    let below_boundary = String::from_str(&env, "123456789");
+    assert!(InputValidator::validate_question_format(&below_boundary).is_err());
+
+    // Test exact boundary for outcome length (2 characters minimum)
+    let boundary_outcome = String::from_str(&env, "AB");
+    assert!(InputValidator::validate_outcome_format(&boundary_outcome).is_ok());
+
+    let below_outcome_boundary = String::from_str(&env, "A");
+    assert!(InputValidator::validate_outcome_format(&below_outcome_boundary).is_err());
+
+    // Test numeric boundaries
+    assert!(InputValidator::validate_numeric_range(0, 0, 100).is_ok());
+    assert!(InputValidator::validate_numeric_range(100, 0, 100).is_ok());
+    assert!(InputValidator::validate_numeric_range(-1, 0, 100).is_err());
+    assert!(InputValidator::validate_numeric_range(101, 0, 100).is_err());
+
+    // Test duration boundaries
+    assert!(InputValidator::validate_duration(&1).is_ok()); // MIN_MARKET_DURATION_DAYS
+    assert!(InputValidator::validate_duration(&365).is_ok()); // MAX_MARKET_DURATION_DAYS
+    assert!(InputValidator::validate_duration(&0).is_err());
+    assert!(InputValidator::validate_duration(&366).is_err());
+}
+
+#[test]
+fn test_validation_error_propagation() {
+    let env = Env::default();
+
+    let admin = Address::generate(&env);
+    let invalid_question = String::from_str(&env, "");
+    let outcomes = vec![
+        &env,
+        String::from_str(&env, "Yes"),
+        String::from_str(&env, "No"),
+    ];
+
+    // Test that errors propagate correctly
+    let result = InputValidator::validate_all_inputs(
+        &env,
+        &admin,
+        &invalid_question,
+        &outcomes,
+        30,
+        10_000_000,
+    );
+
+    assert!(result.is_err());
+    match result {
+        Err(ValidationError::InvalidQuestionFormat) => {
+            // Expected error
+        }
+        _ => panic!("Expected InvalidQuestionFormat error"),
+    }
+}
+
+#[test]
+fn test_validation_result_accumulation() {
+    let env = Env::default();
+
+    let admin = Address::generate(&env);
+    let short_question = String::from_str(&env, "BTC to 100k?"); // Valid but short
+    let outcomes = vec![
+        &env,
+        String::from_str(&env, "Yes"),
+        String::from_str(&env, "No"),
+    ];
+
+    let result = InputValidator::validate_market_creation_comprehensive(
+        &env,
+        &admin,
+        &short_question,
+        &outcomes,
+        3, // Short duration
+        None,
+    );
+
+    // Should be valid but have warnings and recommendations
+    assert!(result.is_valid);
+    assert!(result.has_warnings());
+    assert!(result.recommendation_count > 0);
+    assert_eq!(result.error_count, 0);
+}
+
+#[test]
+fn test_multiple_validation_errors() {
+    let env = Env::default();
+
+    let admin = Address::generate(&env);
+    let invalid_question = String::from_str(&env, "Bad"); // Too short
+    let invalid_outcomes = vec![&env, String::from_str(&env, "A")]; // Too few and too short
+
+    let result = InputValidator::validate_market_creation_comprehensive(
+        &env,
+        &admin,
+        &invalid_question,
+        &invalid_outcomes,
+        0,          // Invalid duration
+        Some(-100), // Invalid threshold
+    );
+
+    // Should have multiple errors
+    assert!(!result.is_valid);
+    assert!(result.error_count >= 3); // At least question, outcomes, duration, threshold errors
+}
+
+#[test]
+fn test_validation_performance_with_large_inputs() {
+    let env = Env::default();
+
+    // Test with maximum allowed question length
+    let max_question = String::from_str(&env, &"A".repeat(500));
+    assert!(InputValidator::validate_question_format(&max_question).is_ok());
+
+    // Test with maximum allowed outcomes
+    let max_outcomes = vec![
+        &env,
+        String::from_str(&env, "Outcome 1"),
+        String::from_str(&env, "Outcome 2"),
+        String::from_str(&env, "Outcome 3"),
+        String::from_str(&env, "Outcome 4"),
+        String::from_str(&env, "Outcome 5"),
+        String::from_str(&env, "Outcome 6"),
+        String::from_str(&env, "Outcome 7"),
+        String::from_str(&env, "Outcome 8"),
+        String::from_str(&env, "Outcome 9"),
+        String::from_str(&env, "Outcome 10"),
+    ];
+    assert!(InputValidator::validate_array_size(&max_outcomes, 10).is_ok());
 }
