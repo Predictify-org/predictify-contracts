@@ -10,6 +10,9 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 mod admin;
 mod batch_operations;
 mod circuit_breaker;
+mod fuzzing_test_suite;
+mod mainnet_test_suite;
+mod security_hardening;
 mod config;
 mod disputes;
 mod edge_cases;
@@ -43,7 +46,16 @@ mod bandprotocol {
 }
 
 #[cfg(test)]
+mod security_hardening;
+
+#[cfg(test)]
 mod circuit_breaker_tests;
+
+#[cfg(test)]
+mod mainnet_test_suite;
+
+#[cfg(test)]
+mod fuzzing_test_suite;
 
 #[cfg(test)]
 mod batch_operations_tests;
