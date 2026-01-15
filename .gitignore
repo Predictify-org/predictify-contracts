@@ -4,13 +4,9 @@ target
 # Local settings
 .soroban
 .stellar
-
-# Environment files
-.env
-.env*.local
-
-# macOS
-.DS_Store
-
-# Test snapshots
 contracts/predictify-hybrid/test_snapshots
+
+# Environment variables (never commit secrets!)
+.env
+.env.*
+*.env
