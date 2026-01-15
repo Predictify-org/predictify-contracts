@@ -1,227 +1,489 @@
-# Predictify Contracts Mainnet Deployment Guide
+# Predictify Contracts
 
-> **Platform:** Stellar Soroban Mainnet  
-> **Audience:** Developers, DevOps, and maintainers deploying Predictify contracts to production
+> **Platform:** Stellar Soroban  
+> **Language:** Rust  
+> **License:** MIT
+
+## 📖 About
+
+Predictify Contracts is a comprehensive prediction market platform built on Stellar's Soroban smart contract platform. The system enables users to create and participate in prediction markets with hybrid resolution mechanisms that combine real-time oracle data (from Pyth Network and Reflector oracles) with community voting. This platform is designed for developers, traders, and organizations looking to build decentralized prediction markets with institutional-grade oracle integration, dispute resolution, and governance features.
+
+The project is ideal for developers building on Stellar, smart contract auditors, and teams creating prediction market applications that require reliable price feeds, community governance, and robust dispute resolution mechanisms.
 
 ---
 
 ## 📋 Table of Contents
-1. [Project Summary](#project-summary)  
-2. [API Documentation](#api-documentation)  
-3. [Prerequisites](#prerequisites)  
-4. [Configuration for Mainnet](#configuration-for-mainnet)  
-5. [Deployment Instructions](#deployment-instructions)  
-6. [Oracle Setup](#oracle-setup)  
-7. [Testing Deployment](#testing-deployment)  
-8. [Monitoring and Alerts](#monitoring-and-alerts)  
-9. [Security Checklist](#security-checklist)  
-10. [Rollback Procedures](#rollback-procedures)  
-11. [Maintenance Procedures](#maintenance-procedures)
+1. [Quick Start](#-quick-start)
+2. [Project Structure](#-project-structure)
+3. [Setup Instructions](#-setup-instructions)
+4. [Development](#-development)
+5. [Testing](#-testing)
+6. [Deployment](#-deployment)
+7. [Documentation](#-documentation)
+8. [Contributing](#-contributing)
 
 ---
 
-## 🧠 Project Summary
-This repository contains smart contracts for Stellar's Soroban platform, organized in a Rust workspace. Key components include:
+## 🚀 Quick Start
 
-- `hello-world`: A basic example contract for testing and structure reference.
-- `predictify-hybrid`: A hybrid prediction market with oracle integration (Reflector, Pyth), staking, dispute resolution, and community voting.
-
----
-
-## 📚 Documentation
-
-For comprehensive documentation, please refer to our organized documentation structure:
-
-**📖 [Documentation Index](./docs/README.md)**
-
-### 🚀 API Documentation
-Complete API reference and integration guides: **[API Documentation](./docs/api/API_DOCUMENTATION.md)**
-
-### ⛽ Gas Optimization
-Performance optimization and cost analysis: **[Gas Documentation](./docs/gas/)**
-
-### 🔒 Security
-Security audits, best practices, and threat analysis: **[Security Documentation](./docs/security/)**
-
-### 🛠️ Operations
-Deployment, maintenance, and incident management: **[Operations Documentation](./docs/operations/)**
-
----
-
-
-
----
-
-## 🛠️ Prerequisites
-- [Rust](https://www.rust-lang.org/tools/install)
-- [Soroban CLI](https://github.com/stellar/soroban-tools)
-- Stellar-funded deployer account (mainnet)
-- Admin account (preferably multisig-secured)
-
-Install tools:
 ```bash
-rustup update
-cargo install --locked --version 20.0.0 soroban-cli
+# Clone the repository
+git clone <repository-url>
+cd predictify-contracts
+
+# Install dependencies (Rust and Soroban CLI)
+# See Setup Instructions below
+
+# Build contracts
+cd contracts/predictify-hybrid
+make build
+
+# Run tests
+make test
 ```
 
 ---
 
-## ⚙️ Configuration for Mainnet
+## 📁 Project Structure
 
-Add Stellar mainnet config:
+```
+predictify-contracts/
+├── contracts/
+│   ├── hello-world/          # Example contract for reference
+│   └── predictify-hybrid/    # Main prediction market contract
+│       ├── src/              # Contract source code
+│       └── Makefile          # Build and test commands
+├── docs/                     # Comprehensive documentation
+│   ├── api/                  # API reference
+│   ├── contracts/            # Contract-specific docs
+│   ├── gas/                  # Gas optimization guides
+│   ├── operations/           # Deployment and operations
+│   └── security/             # Security documentation
+├── Cargo.toml                # Workspace configuration
+└── README.md                 # This file
+```
+
+**Key Components:**
+- **`predictify-hybrid`**: Main prediction market contract with oracle integration, voting, disputes, and governance
+- **`hello-world`**: Reference contract demonstrating basic Soroban patterns
+
+---
+
+## 🛠️ Setup Instructions
+
+### Requirements
+
+- **Rust** (latest stable version)
+- **Soroban CLI** (version 20.0.0 or later)
+- **Stellar Account** (for deployment and testing)
+- **Git** (for cloning the repository)
+
+### Installation
+
+#### 1. Install Rust
+
 ```bash
+# Install Rust using rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Verify installation
+rustc --version
+cargo --version
+```
+
+#### 2. Install Soroban CLI
+
+```bash
+# Install Soroban CLI
+cargo install --locked --version 20.0.0 soroban-cli
+
+# Verify installation
+soroban --version
+```
+
+#### 3. Install Stellar Contract Tools
+
+```bash
+# Install Stellar contract build tools
+cargo install --locked stellar-cli
+
+# Verify installation
+stellar --version
+```
+
+### Environment Setup
+
+#### Configure Stellar Networks
+
+```bash
+# Add testnet (recommended for development)
+soroban config network add testnet \
+  --rpc-url https://soroban-testnet.stellar.org:443 \
+  --network-passphrase "Test SDF Network ; September 2015"
+
+# Add futurenet (for testing new features)
+soroban config network add futurenet \
+  --rpc-url https://rpc-futurenet.stellar.org:443 \
+  --network-passphrase "Test SDF Future Network ; October 2022"
+
+# Add mainnet (for production deployment)
 soroban config network add mainnet \
   --rpc-url https://rpc.mainnet.stellar.org:443 \
   --network-passphrase "Public Global Stellar Network ; September 2015"
 ```
 
-Create a `.env.mainnet` file:
-```env
-NETWORK=mainnet
-DEPLOYER_SECRET_KEY="SB..."
-ADMIN_ADDRESS="GB..."
-ORACLE_CONTRACT="..."
+#### Set Default Network
+
+```bash
+# Use testnet for development
+soroban config network use testnet
+```
+
+#### Environment Variables
+
+Create a `.env` file in the project root (or `.env.testnet` for testnet):
+
+```bash
+# .env.testnet
+NETWORK=testnet
+DEPLOYER_SECRET_KEY="SB..."  # Your deployer account secret key
+ADMIN_ADDRESS="GB..."        # Admin account address
+ORACLE_CONTRACT="..."        # Oracle contract address (optional for testing)
+```
+
+**⚠️ Security Note:** Never commit `.env` files to version control. Add them to `.gitignore`.
+
+### Build the Project
+
+```bash
+# From project root
+cd contracts/predictify-hybrid
+
+# Build the contract
+make build
+
+# Or use cargo directly
+cargo build --target wasm32-unknown-unknown --release
+```
+
+The compiled WASM file will be at:
+```
+target/wasm32-unknown-unknown/release/predictify_hybrid.wasm
 ```
 
 ---
 
-## 🚀 Deployment Instructions
+## 🧪 Testing
 
-### Build Contracts
+### Run All Tests
+
 ```bash
+# From contract directory
 cd contracts/predictify-hybrid
-make build
+make test
+
+# Or use cargo directly
+cargo test
 ```
 
-### Deploy to Mainnet
+### Run Specific Test Suites
+
 ```bash
+# Unit tests only
+cargo test --lib
+
+# Integration tests
+cargo test --test integration_test
+
+# Property-based tests
+cargo test --test property_based_tests
+```
+
+### Test on Testnet
+
+```bash
+# Deploy to testnet for integration testing
 soroban contract deploy \
   --wasm target/wasm32-unknown-unknown/release/predictify_hybrid.wasm \
-  --network $NETWORK \
+  --network testnet \
   --source $DEPLOYER_SECRET_KEY
-```
 
-### Initialize Contract
-```bash
+# Initialize the contract
 soroban contract invoke \
   --id <contract_id> \
   --fn initialize \
-  --network $NETWORK \
+  --network testnet \
   --source $DEPLOYER_SECRET_KEY \
   --arg admin=$ADMIN_ADDRESS
 ```
 
-Record and store the contract ID securely.
+---
+
+## 🚀 Deployment
+
+### Deploy to Testnet (Recommended First Step)
+
+```bash
+# Ensure you're on testnet
+soroban config network use testnet
+
+# Deploy contract
+soroban contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/predictify_hybrid.wasm \
+  --network testnet \
+  --source $DEPLOYER_SECRET_KEY
+
+# Save the contract ID from the output
+CONTRACT_ID="<contract_id_from_output>"
+
+# Initialize contract
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn initialize \
+  --network testnet \
+  --source $DEPLOYER_SECRET_KEY \
+  --arg admin=$ADMIN_ADDRESS
+```
+
+### Deploy to Mainnet
+
+**⚠️ Production Deployment Checklist:**
+
+- [ ] All tests passing
+- [ ] Security audit completed
+- [ ] Testnet deployment verified
+- [ ] Admin keys secured (preferably multisig)
+- [ ] Oracle contracts configured
+- [ ] Monitoring setup ready
+
+```bash
+# Switch to mainnet
+soroban config network use mainnet
+
+# Deploy contract
+soroban contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/predictify_hybrid.wasm \
+  --network mainnet \
+  --source $DEPLOYER_SECRET_KEY
+
+# Initialize contract
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn initialize \
+  --network mainnet \
+  --source $DEPLOYER_SECRET_KEY \
+  --arg admin=$ADMIN_ADDRESS
+
+# Record contract ID securely
+echo "Mainnet Contract ID: $CONTRACT_ID" >> deployment.log
+```
+
+### Verify Deployment
+
+```bash
+# Inspect deployed contract
+soroban contract inspect \
+  --id $CONTRACT_ID \
+  --network $NETWORK
+```
+
+---
+
+## 📚 Documentation
+
+### Quick Links
+
+- **[📖 Documentation Index](./docs/README.md)** - Complete documentation overview
+- **[🚀 API Documentation](./docs/api/API_DOCUMENTATION.md)** - Complete API reference and integration guides
+- **[📋 Contract README](./contracts/predictify-hybrid/README.md)** - Detailed contract documentation
+
+### Documentation Categories
+
+#### 🔒 Security
+- **[Security Best Practices](./docs/security/SECURITY_BEST_PRACTICES.md)** - Development security guidelines
+- **[Attack Vectors](./docs/security/ATTACK-VECTORS.md)** - Known threats and mitigations
+- **[Audit Checklist](./docs/security/AUDIT_CHECKLIST.md)** - Security audit requirements
+- **[Security Testing Guide](./docs/security/SECURITY_TESTING_GUIDE.md)** - Security testing procedures
+
+#### ⛽ Gas Optimization
+- **[Gas Optimization](./docs/gas/GAS_OPTIMIZATION.md)** - Optimization strategies
+- **[Gas Cost Analysis](./docs/gas/GAS_COST_ANALYSIS.md)** - Detailed cost breakdown
+- **[Gas Monitoring](./docs/gas/GAS_MONITORING.md)** - Monitoring tools and techniques
+- **[Gas Benchmarking](./docs/gas/GAS_BENCHMARKING.md)** - Performance benchmarks
+
+#### 🛠️ Operations
+- **[Incident Response](./docs/operations/INCIDENT_RESPONSE.md)** - Incident management procedures
+
+#### 📋 Contracts
+- **[Types System](./docs/contracts/TYPES_SYSTEM.md)** - Data structures and types
+- **[Voting System](./docs/contracts/VOTING_SYSTEM.md)** - Voting and dispute resolution
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how to get started:
+
+### Development Workflow
+
+1. **Fork the repository**
+2. **Create a feature branch**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. **Make your changes**
+   - Follow Rust formatting: `cargo fmt --all`
+   - Ensure tests pass: `make test`
+   - Update documentation as needed
+4. **Commit your changes**
+   ```bash
+   git commit -m "Add: description of your changes"
+   ```
+5. **Push and create a Pull Request**
+
+### Code Standards
+
+- **Formatting**: Use `cargo fmt --all` before committing
+- **Testing**: All new features must include tests
+- **Documentation**: Update relevant docs for new features
+- **Security**: Review security implications of changes
+
+### Contribution Guidelines
+
+- **Issues**: Use GitHub issues for bug reports and feature requests
+- **Pull Requests**: Include description of changes and test results
+- **Code Review**: All PRs require review before merging
+- **Testing**: Ensure all tests pass and add tests for new features
+
+### Getting Help
+
+- **Documentation**: Check the [docs](./docs/) directory
+- **Issues**: Search existing issues or create a new one
+- **Discussions**: Use GitHub Discussions for questions
 
 ---
 
 ## 🔮 Oracle Setup
 
-### Oracle Options
-- Primary support: Reflector Oracle
-- Others: Pyth or custom signed payloads
+The Predictify Hybrid contract supports multiple oracle providers for price feeds:
 
-### Setup Steps
-1. Deploy the oracle contract (if required).
-2. Ensure oracle contract ID is stored in the main contract via admin call.
-3. Off-chain oracle should:
-   - Sign market outcomes
-   - Submit results via `fetch_oracle_result()` or similar entrypoints
+### Supported Oracles
 
-Oracle JSON Payload Example:
-```json
-{
-  "market_id": "001",
-  "result": "yes",
-  "timestamp": "2025-07-04T12:00:00Z"
-}
-```
+- **Pyth Network**: Institutional-grade price feeds with high-frequency updates (400ms)
+- **Reflector Oracle**: Stellar-native oracle with proven track record
+- **Custom Oracles**: Extensible architecture for additional providers
+
+### Oracle Configuration
+
+See the [Contract README](./contracts/predictify-hybrid/README.md) for detailed oracle setup instructions and integration examples.
 
 ---
 
-## 🧪 Testing Deployment
+## 🔍 Development
 
-### Unit and Integration Tests
+### Code Formatting
+
 ```bash
+# Format all code
+cargo fmt --all
+
+# Or from contract directory
+cd contracts/predictify-hybrid
+make fmt
+```
+
+### Running Tests
+
+```bash
+# Run all tests
 make test
+
+# Run with output
+cargo test -- --nocapture
+
+# Run specific test
+cargo test test_name
 ```
 
-### Dry-Run on Futurenet
-```bash
-soroban config network use futurenet
-soroban contract deploy ...
-```
+### Project Structure
 
-### Post-Mainnet Checks
-- Use `soroban contract inspect` to verify deployment
-- Validate end-to-end market creation, voting, oracle submission, and claiming
+- **`contracts/predictify-hybrid/src/`**: Main contract source code
+  - `lib.rs`: Contract entry point and main implementation
+  - `markets.rs`: Market creation and management
+  - `oracles.rs`: Oracle integration (Pyth, Reflector)
+  - `voting.rs`: Community voting system
+  - `disputes.rs`: Dispute resolution mechanism
+  - `governance.rs`: Governance and admin functions
+  - `types.rs`: Core data structures
+  - `errors.rs`: Error definitions
 
----
+### Adding New Features
 
-## 📊 Monitoring and Alerts
-
-### Tools:
-- [Stellar Expert](https://stellar.expert/explorer/public)
-- Custom CLI scripts to watch tx status
-- Error tracking via logs + alerting via Slack/Discord/Webhooks
-
-### Metrics to Monitor:
-- Oracle submission frequency and failures
-- Market volume anomalies
-- Dispute activations and unresolved markets
+1. Create feature branch
+2. Implement feature with tests
+3. Update documentation
+4. Run full test suite
+5. Submit PR with description
 
 ---
 
-## 🔐 Security Checklist
+## 📊 Monitoring
 
-### ✅ Account Security
-- [ ] Admin/deployer keys stored in hardware wallets or secure key vaults
-- [ ] Avoid deploying from hot wallets or CLI-stored keys
-- [ ] Multisig setup for critical contract ownership (if supported)
+### Tools
 
-### ✅ Smart Contract Safeguards
-- [ ] All admin functions require `require_auth(admin)`
-- [ ] Oracle IDs must be validated against allowlist
-- [ ] Reentrancy protected via Soroban execution model
-- [ ] Input sanitization for all string, numeric, and enum arguments
-- [ ] Dispute logic isolated from oracle resolution path
-- [ ] `initialize()` callable once only; enforce init guard
+- **[Stellar Expert](https://stellar.expert/explorer/public)**: Blockchain explorer
+- **Soroban CLI**: Contract inspection and interaction
+- **Custom Scripts**: Monitor transactions and events
 
-### ✅ Network and Deployment
-- [ ] Contract ID recorded and versioned
-- [ ] Use Soroban’s `--network` config to prevent misdeployments
-- [ ] Securely store and manage all `.env` files
-- [ ] Validate deployed WASM checksum matches build artifact
+### Key Metrics
+
+- Oracle submission frequency and reliability
+- Market creation and resolution rates
+- Dispute activations and resolution times
+- Gas costs and optimization opportunities
 
 ---
 
-## 🔁 Rollback Procedures
-- Use pausable logic if available (e.g., freeze all markets via admin call)
-- Deploy new contract instance if bug is unpatchable
-- Migrate state via admin oracles (if implemented)
-- Revoke oracle privileges for breached sources
+## 🔐 Security
+
+### Security Best Practices
+
+- Review [Security Documentation](./docs/security/) before deployment
+- Complete security audit checklist
+- Use hardware wallets for admin keys
+- Implement multisig for critical operations
+- Monitor for suspicious activity
+
+### Reporting Security Issues
+
+**⚠️ Do not open public issues for security vulnerabilities.**
+
+Please report security issues privately to the maintainers. See [Security Best Practices](./docs/security/SECURITY_BEST_PRACTICES.md) for details.
 
 ---
 
-## 🛠️ Maintenance Procedures
-- Monitor oracle reliability and submission cadence
-- Add/remove oracles via controlled admin processes
-- Periodically test and patch contracts via redeployments
-- Log usage metrics for governance and market integrity
-- Respond to disputes in <48 hours using automated + manual review
+## 📝 License
+
+This project is open source and available under the **MIT License**.
 
 ---
 
-## 📎 Suggested Enhancements
-- GitHub Actions for CI + testnet deploy
-- Soroban integration test suite with mocked oracles
-- Publish deployed contract IDs in README
-- Oracle dashboard or visual monitor tool (Grafana, etc.)
+## 🔗 Additional Resources
 
+- **[Stellar Documentation](https://developers.stellar.org/)**: Stellar platform docs
+- **[Soroban Documentation](https://soroban.stellar.org/docs)**: Soroban smart contract platform
+- **[Pyth Network](https://pyth.network/)**: Oracle provider documentation
+- **[Stellar Developer Discord](https://discord.gg/stellar)**: Community support
 
+---
 
-For deployment support or technical questions, please open an issue or contact the Predictify core team.
+## 💬 Support
 
-## License
-This project is open source and available under the MIT License.
+- **Issues**: [GitHub Issues](https://github.com/your-org/predictify-contracts/issues)
+- **Documentation**: [Documentation Index](./docs/README.md)
+- **Questions**: Use GitHub Discussions
+
+---
+
+*Last updated: 2025*
 
