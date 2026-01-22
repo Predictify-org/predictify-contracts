@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAppStore } from './src/store';
 import socketService from './src/services/socket';
+import "./global.css";
 
 export default function App() {
   const theme = useAppStore((state) => state.theme);

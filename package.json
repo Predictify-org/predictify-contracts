@@ -17,10 +17,12 @@
     "expo-asset": "~12.0.12",
     "expo-status-bar": "~3.0.9",
     "nativewind": "^4.2.1",
+    "prettier-plugin-tailwindcss": "^0.5.14",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-dotenv": "^3.4.11",
-    "react-native-safe-area-context": "~5.6.0",
+    "react-native-reanimated": "~4.1.1",
+    "react-native-safe-area-context": "^5.4.0",
     "react-native-screens": "~4.16.0",
     "socket.io-client": "^4.8.3",
     "zustand": "^5.0.10"
@@ -29,7 +31,7 @@
     "@types/react": "~19.1.0",
     "@types/react-native-dotenv": "^0.2.2",
     "babel-preset-expo": "^54.0.10",
-    "tailwindcss": "^3.3.2",
+    "tailwindcss": "^3.4.19",
     "typescript": "~5.9.2"
   },
   "private": true
