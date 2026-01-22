@@ -1,6 +1,6 @@
 ### 📱 `mobile/README.md`
 
-```md
+
 # Teachme Mobile
 
 The mobile application for the Teachme platform — giving technocrats a way to share and consume knowledge on the go.
@@ -21,18 +21,17 @@ cd teachme-mobile
 cp .env.example .env
 npm install
 npx expo start
+```
+
 🔥 Features
-Cross-platform (iOS & Android)
-
-Share and browse knowledge content
-
-Live chat and push notifications
-
-Earn from your contributions
-
-Dark/light mode
+- **Cross-platform (iOS & Android)**
+- **Share and browse knowledge content**
+- **Live chat and push notifications**
+- **Earn from your contributions**
+- **Dark/light mode**
 
 📁 Folder Structure
+```bash
 css
 Copy
 Edit
@@ -42,4 +41,5 @@ src/
 ├── navigation/
 ├── services/
 └── store/
+```
 [Figma Link](https://www.figma.com/design/0RX6a19AbtemWmq8GLX1Y4/TeachLink-Project?node-id=0-1&t=gfrhW9c55Pxnfrl1-0)
