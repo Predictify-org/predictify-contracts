@@ -1291,6 +1291,272 @@ impl InputValidator {
     }
 }
 
+// ===== EVENT VALIDATION =====
+
+/// Comprehensive event validation utilities for prediction event operations.
+///
+/// This utility class provides specialized validation operations for prediction events,
+/// including end time validation, outcomes validation, description validation,
+/// and comprehensive event creation parameter validation.
+///
+/// # Core Functionality
+///
+/// **End Time Validation:**
+/// - Validate end time is in the future
+/// - Check for reasonable time bounds
+///
+/// **Outcomes Validation:**
+/// - Validate minimum outcome count (at least 2)
+/// - Validate each outcome is non-empty
+/// - Check for unique outcomes
+///
+/// **Description Validation:**
+/// - Validate description is non-empty
+/// - Check for minimum and maximum length
+///
+/// **Comprehensive Validation:**
+/// - Validate all event creation parameters at once
+/// - Return detailed validation results
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String, Vec};
+/// # use predictify_hybrid::validation::{EventValidator, ValidationError};
+/// # use predictify_hybrid::types::{OracleConfig, OracleProvider};
+/// # let env = Env::default();
+///
+/// // Validate end time
+/// let future_time = env.ledger().timestamp() + 86400; // 1 day from now
+/// match EventValidator::validate_end_time(&env, future_time) {
+///     Ok(()) => println!("End time is valid"),
+///     Err(e) => println!("End time validation failed: {:?}", e),
+/// }
+///
+/// // Validate outcomes
+/// let outcomes = Vec::from_array(&env, [
+///     String::from_str(&env, "Yes"),
+///     String::from_str(&env, "No")
+/// ]);
+/// match EventValidator::validate_outcomes(&env, &outcomes) {
+///     Ok(()) => println!("Outcomes are valid"),
+///     Err(e) => println!("Outcomes validation failed: {:?}", e),
+/// }
+/// ```
+pub struct EventValidator;
+
+impl EventValidator {
+    /// Validate that event end time is in the future.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `end_time` - Unix timestamp when event should end
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if end time is in the future, `Err(ValidationError)` otherwise.
+    ///
+    /// # Validation Rules
+    ///
+    /// - End time must be strictly greater than current timestamp
+    /// - End time should be reasonable (not too far in the future)
+    pub fn validate_end_time(env: &Env, end_time: u64) -> Result<(), ValidationError> {
+        let current_time = env.ledger().timestamp();
+
+        // End time must be in the future
+        if end_time <= current_time {
+            return Err(ValidationError::InvalidTimestamp);
+        }
+
+        // Optional: Check if end time is not unreasonably far in the future
+        // (e.g., more than 365 days)
+        let max_future = current_time + (365 * 24 * 60 * 60);
+        if end_time > max_future {
+            return Err(ValidationError::TimestampOutOfBounds);
+        }
+
+        Ok(())
+    }
+
+    /// Validate event outcomes list.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `outcomes` - Vector of possible outcomes for the event
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if outcomes are valid, `Err(ValidationError)` otherwise.
+    ///
+    /// # Validation Rules
+    ///
+    /// - Must have at least 2 outcomes
+    /// - Each outcome must be non-empty
+    /// - Maximum 10 outcomes allowed
+    pub fn validate_outcomes(env: &Env, outcomes: &Vec<String>) -> Result<(), ValidationError> {
+        // Must have at least 2 outcomes
+        if outcomes.len() < 2 {
+            return Err(ValidationError::ArrayTooSmall);
+        }
+
+        // Maximum 10 outcomes
+        if outcomes.len() > 10 {
+            return Err(ValidationError::ArrayTooLarge);
+        }
+
+        // Each outcome must be non-empty
+        for outcome in outcomes.iter() {
+            if outcome.is_empty() {
+                return Err(ValidationError::InvalidOutcomeFormat);
+            }
+            // Minimum 1 character
+            if outcome.len() < 1 {
+                return Err(ValidationError::InvalidOutcomeFormat);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate event description.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `description` - Event description/question string
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if description is valid, `Err(ValidationError)` otherwise.
+    ///
+    /// # Validation Rules
+    ///
+    /// - Description must not be empty
+    /// - Minimum length of 10 characters
+    /// - Maximum length of 500 characters
+    pub fn validate_description(env: &Env, description: &String) -> Result<(), ValidationError> {
+        // Must not be empty
+        if description.is_empty() {
+            return Err(ValidationError::InvalidQuestionFormat);
+        }
+
+        // Minimum 10 characters
+        if description.len() < 10 {
+            return Err(ValidationError::StringTooShort);
+        }
+
+        // Maximum 500 characters
+        if description.len() > 500 {
+            return Err(ValidationError::StringTooLong);
+        }
+
+        Ok(())
+    }
+
+    /// Comprehensive event creation parameter validation.
+    ///
+    /// This function validates all parameters required for event creation,
+    /// providing a single entry point for complete validation.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `description` - Event description/question string
+    /// * `end_time` - Unix timestamp when event should end
+    /// * `outcomes` - Vector of possible outcomes for the event
+    /// * `oracle_config` - Oracle configuration for result verification
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all parameters are valid, `Err(ValidationError)` otherwise.
+    ///
+    /// # Validation Performed
+    ///
+    /// 1. Description validation (non-empty, proper length)
+    /// 2. End time validation (must be in the future)
+    /// 3. Outcomes validation (at least 2, all non-empty)
+    /// 4. Oracle configuration validation
+    pub fn validate_event_creation_params(
+        env: &Env,
+        description: &String,
+        end_time: u64,
+        outcomes: &Vec<String>,
+        oracle_config: &OracleConfig,
+    ) -> Result<(), ValidationError> {
+        // Validate description
+        Self::validate_description(env, description)?;
+
+        // Validate end time
+        Self::validate_end_time(env, end_time)?;
+
+        // Validate outcomes
+        Self::validate_outcomes(env, outcomes)?;
+
+        // Validate oracle configuration
+        oracle_config.validate(env).map_err(|_| ValidationError::InvalidOracle)?;
+
+        Ok(())
+    }
+
+    /// Validate event creation parameters and return detailed result.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `description` - Event description/question string
+    /// * `end_time` - Unix timestamp when event should end
+    /// * `outcomes` - Vector of possible outcomes for the event
+    /// * `oracle_config` - Oracle configuration for result verification
+    ///
+    /// # Returns
+    ///
+    /// A ValidationResult with detailed error, warning, and recommendation counts.
+    pub fn validate_event_creation_comprehensive(
+        env: &Env,
+        description: &String,
+        end_time: u64,
+        outcomes: &Vec<String>,
+        oracle_config: &OracleConfig,
+    ) -> ValidationResult {
+        let mut result = ValidationResult::valid();
+
+        // Validate description
+        if Self::validate_description(env, description).is_err() {
+            result.add_error();
+        } else if description.len() < 20 {
+            result.add_warning(); // Description is quite short
+        }
+
+        // Validate end time
+        if Self::validate_end_time(env, end_time).is_err() {
+            result.add_error();
+        } else {
+            // Check if end time is less than 1 day away
+            let current_time = env.ledger().timestamp();
+            if end_time < current_time + (24 * 60 * 60) {
+                result.add_warning(); // Very short event duration
+            }
+        }
+
+        // Validate outcomes
+        if Self::validate_outcomes(env, outcomes).is_err() {
+            result.add_error();
+        } else if outcomes.len() == 2 {
+            // Binary outcome is fine, but more options might provide more granularity
+            result.add_recommendation();
+        }
+
+        // Validate oracle configuration
+        if oracle_config.validate(env).is_err() {
+            result.add_error();
+        }
+
+        result
+    }
+}
+
 // ===== MARKET VALIDATION =====
 /// Comprehensive market validation utilities for prediction market operations.
 ///

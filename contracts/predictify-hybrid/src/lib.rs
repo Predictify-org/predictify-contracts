@@ -305,6 +305,195 @@ impl PredictifyHybrid {
         market_id
     }
 
+    /// Creates a new prediction event with specified parameters and oracle configuration.
+    ///
+    /// This function allows authorized administrators to create prediction events
+    /// with custom descriptions, possible outcomes, end time, and oracle integration.
+    /// Each event gets a unique identifier and is stored in persistent contract storage.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address creating the event (must be authorized)
+    /// * `description` - The event description/question (must be non-empty, 10-500 chars)
+    /// * `end_time` - Unix timestamp when the event ends (must be in the future)
+    /// * `outcomes` - Vector of possible outcomes (minimum 2 required, all non-empty)
+    /// * `oracle_config` - Configuration for oracle integration (Reflector, Pyth, etc.)
+    ///
+    /// # Returns
+    ///
+    /// Returns a unique `Symbol` that serves as the event identifier for all future operations.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic with specific errors if:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::InvalidQuestion` - Description is empty or invalid length
+    /// - `Error::InvalidOutcomes` - Less than 2 outcomes or any outcome is empty
+    /// - `Error::InvalidDuration` - End time is not in the future
+    /// - `Error::InvalidOracleConfig` - Oracle configuration is invalid
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, String, Vec};
+    /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleProvider};
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    ///
+    /// let description = String::from_str(&env, "Will Bitcoin reach $100,000 by 2024?");
+    /// let outcomes = vec![
+    ///     String::from_str(&env, "Yes"),
+    ///     String::from_str(&env, "No")
+    /// ];
+    /// let end_time = env.ledger().timestamp() + (30 * 24 * 60 * 60); // 30 days
+    /// let oracle_config = OracleConfig {
+    ///     provider: OracleProvider::Reflector,
+    ///     feed_id: String::from_str(&env, "BTC/USD"),
+    ///     threshold: 100_000_00,
+    ///     comparison: String::from_str(&env, "gt"),
+    /// };
+    ///
+    /// let event_id = PredictifyHybrid::create_event(
+    ///     env.clone(),
+    ///     admin,
+    ///     description,
+    ///     end_time,
+    ///     outcomes,
+    ///     oracle_config
+    /// );
+    /// ```
+    ///
+    /// # Event State
+    ///
+    /// New events are created in `EventStatus::Active` state, allowing immediate betting.
+    /// The event will automatically transition to `EventStatus::Pending` when the end time expires.
+    ///
+    /// # Security
+    ///
+    /// - Only authenticated admins can create events
+    /// - All input parameters are validated before storage
+    /// - End time must be strictly in the future
+    /// - Oracle configuration is validated for supported providers
+    pub fn create_event(
+        env: Env,
+        admin: Address,
+        description: String,
+        end_time: u64,
+        outcomes: Vec<String>,
+        oracle_config: OracleConfig,
+    ) -> Symbol {
+        // Authenticate that the caller is the admin
+        admin.require_auth();
+
+        // Verify the caller is an admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| {
+                panic!("Admin not set");
+            });
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        // Validate description
+        if description.is_empty() {
+            panic_with_error!(env, Error::InvalidQuestion);
+        }
+        if description.len() < 10 {
+            panic_with_error!(env, Error::InvalidQuestion);
+        }
+
+        // Validate outcomes
+        if outcomes.len() < 2 {
+            panic_with_error!(env, Error::InvalidOutcomes);
+        }
+
+        // Validate each outcome is non-empty
+        for outcome in outcomes.iter() {
+            if outcome.is_empty() {
+                panic_with_error!(env, Error::InvalidOutcome);
+            }
+        }
+
+        // Validate end time is in the future
+        if end_time <= env.ledger().timestamp() {
+            panic_with_error!(env, Error::InvalidDuration);
+        }
+
+        // Validate oracle configuration
+        if let Err(e) = oracle_config.validate(&env) {
+            panic_with_error!(env, e);
+        }
+
+        // Generate unique event ID
+        let event_id = storage::EventStorage::generate_event_id(&env, &admin);
+
+        // Create the event
+        let event = types::Event::new(
+            &env,
+            event_id.clone(),
+            admin.clone(),
+            description.clone(),
+            end_time,
+            outcomes.clone(),
+            oracle_config.clone(),
+        );
+
+        // Store the event
+        if let Err(e) = storage::EventStorage::store_event(&env, &event) {
+            panic_with_error!(env, e);
+        }
+
+        // Get oracle provider name
+        let oracle_provider = match oracle_config.provider {
+            types::OracleProvider::Reflector => String::from_str(&env, "Reflector"),
+            types::OracleProvider::Pyth => String::from_str(&env, "Pyth"),
+            types::OracleProvider::BandProtocol => String::from_str(&env, "BandProtocol"),
+            types::OracleProvider::DIA => String::from_str(&env, "DIA"),
+        };
+
+        // Emit event created event
+        EventEmitter::emit_event_created(
+            &env,
+            &event_id,
+            &description,
+            &outcomes,
+            &admin,
+            end_time,
+            &oracle_provider,
+        );
+
+        event_id
+    }
+
+    /// Retrieves a prediction event by its unique identifier.
+    ///
+    /// This function provides read-only access to event data including
+    /// description, outcomes, status, and oracle configuration.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `event_id` - Unique identifier of the event to retrieve
+    ///
+    /// # Returns
+    ///
+    /// Returns the `Event` struct if found, panics if event doesn't exist.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic with `Error::MarketNotFound` if the event doesn't exist.
+    pub fn get_event(env: Env, event_id: Symbol) -> types::Event {
+        match storage::EventStorage::get_event(&env, &event_id) {
+            Ok(event) => event,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
     /// Allows users to vote on a market outcome by staking tokens.
     ///
     /// This function enables users to participate in prediction markets by voting

@@ -645,6 +645,170 @@ impl StorageUtils {
     }
 }
 
+// ===== EVENT STORAGE =====
+
+/// Event storage manager for prediction events.
+///
+/// This struct provides storage operations for prediction events, including
+/// storing new events, retrieving events by ID, checking event existence,
+/// and generating unique event IDs.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+/// # use predictify_hybrid::storage::EventStorage;
+/// # use predictify_hybrid::types::{Event, OracleConfig, OracleProvider};
+/// # let env = Env::default();
+/// # let admin = Address::generate(&env);
+///
+/// // Generate a unique event ID
+/// let event_id = EventStorage::generate_event_id(&env, &admin);
+///
+/// // Store an event
+/// let event = Event::new(
+///     &env,
+///     event_id.clone(),
+///     admin.clone(),
+///     String::from_str(&env, "Will BTC reach $100k?"),
+///     env.ledger().timestamp() + 86400,
+///     Vec::from_array(&env, [
+///         String::from_str(&env, "Yes"),
+///         String::from_str(&env, "No")
+///     ]),
+///     OracleConfig::new(
+///         OracleProvider::Reflector,
+///         String::from_str(&env, "BTC/USD"),
+///         100_000_00,
+///         String::from_str(&env, "gt")
+///     ),
+/// );
+///
+/// EventStorage::store_event(&env, &event).expect("Failed to store event");
+///
+/// // Retrieve the event
+/// let retrieved = EventStorage::get_event(&env, &event_id).expect("Event not found");
+/// ```
+pub struct EventStorage;
+
+impl EventStorage {
+    /// Store a new prediction event in persistent storage.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `event` - The event to store
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if event was stored successfully, `Err(Error)` otherwise.
+    ///
+    /// # Storage Key
+    ///
+    /// Events are stored using their event_id as the key with an "evt_" prefix.
+    pub fn store_event(env: &Env, event: &crate::types::Event) -> Result<(), Error> {
+        let key = Symbol::new(env, &format!("evt_{:?}", event.event_id));
+        env.storage().persistent().set(&key, event);
+        Ok(())
+    }
+
+    /// Retrieve a prediction event by its ID.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `event_id` - The unique event identifier
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Event)` if event exists, `Err(Error::MarketNotFound)` otherwise.
+    pub fn get_event(env: &Env, event_id: &Symbol) -> Result<crate::types::Event, Error> {
+        let key = Symbol::new(env, &format!("evt_{:?}", event_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::MarketNotFound)
+    }
+
+    /// Check if an event exists in storage.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `event_id` - The unique event identifier
+    ///
+    /// # Returns
+    ///
+    /// `true` if event exists, `false` otherwise.
+    pub fn event_exists(env: &Env, event_id: &Symbol) -> bool {
+        let key = Symbol::new(env, &format!("evt_{:?}", event_id));
+        env.storage().persistent().has(&key)
+    }
+
+    /// Generate a unique event ID.
+    ///
+    /// Generates a unique event ID using the creator's address and current timestamp.
+    /// This ensures collision resistance for event identifiers.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `creator` - The admin address creating the event
+    ///
+    /// # Returns
+    ///
+    /// A unique Symbol to be used as the event ID.
+    pub fn generate_event_id(env: &Env, creator: &soroban_sdk::Address) -> Symbol {
+        // Get a counter for uniqueness
+        let counter_key = Symbol::new(env, "event_counter");
+        let counter: u64 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+
+        // Increment and store the counter
+        env.storage().persistent().set(&counter_key, &(counter + 1));
+
+        // Generate ID using timestamp and counter
+        let timestamp = env.ledger().timestamp();
+        Symbol::new(env, &format!("evt_{}_{}", timestamp, counter))
+    }
+
+    /// Update an existing event in storage.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `event` - The updated event
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if event was updated successfully, `Err(Error::MarketNotFound)` if event doesn't exist.
+    pub fn update_event(env: &Env, event: &crate::types::Event) -> Result<(), Error> {
+        let key = Symbol::new(env, &format!("evt_{:?}", event.event_id));
+
+        // Check if event exists
+        if !env.storage().persistent().has(&key) {
+            return Err(Error::MarketNotFound);
+        }
+
+        env.storage().persistent().set(&key, event);
+        Ok(())
+    }
+
+    /// Remove an event from storage.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `event_id` - The unique event identifier
+    ///
+    /// # Note
+    ///
+    /// This permanently removes the event from storage. Use with caution.
+    pub fn remove_event(env: &Env, event_id: &Symbol) {
+        let key = Symbol::new(env, &format!("evt_{:?}", event_id));
+        env.storage().persistent().remove(&key);
+    }
+}
+
 // ===== STORAGE TESTING =====
 
 #[cfg(test)]

@@ -139,6 +139,263 @@ pub enum MarketState {
     Cancelled,
 }
 
+// ===== PREDICTION EVENT TYPES =====
+
+/// Status of a prediction event throughout its lifecycle.
+///
+/// This enum defines the various states a prediction event can be in, from initial
+/// creation through final resolution and closure. Each state represents a distinct
+/// phase with specific business rules and available operations.
+///
+/// # State Lifecycle
+///
+/// The typical event progression follows this pattern:
+/// ```text
+/// Active → Pending → Resolved
+/// ```
+///
+/// **Alternative flows:**
+/// - **Cancellation**: `Active → Cancelled` (admin cancellation)
+///
+/// # State Descriptions
+///
+/// **Active**: Event is live and accepting user predictions
+/// - Users can place bets and votes
+/// - Event parameters are fixed
+/// - Prediction period is ongoing
+///
+/// **Pending**: Event prediction period has ended
+/// - No new predictions accepted
+/// - Oracle resolution can be triggered
+/// - Waiting for outcome determination
+///
+/// **Resolved**: Event outcome has been determined
+/// - Final outcome is established
+/// - Payouts can be calculated and distributed
+/// - Resolution method recorded
+///
+/// **Cancelled**: Event has been cancelled
+/// - Administrative cancellation
+/// - Stakes returned to participants
+/// - No winner determination
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EventStatus {
+    /// Event is active and accepting predictions
+    Active,
+    /// Event has ended, waiting for resolution
+    Pending,
+    /// Event has been resolved with final outcome
+    Resolved,
+    /// Event was cancelled by admin
+    Cancelled,
+}
+
+/// Comprehensive prediction event structure for managing prediction markets.
+///
+/// This structure contains all data necessary to manage a prediction event throughout
+/// its entire lifecycle, from creation through resolution and payout distribution.
+/// It represents a single prediction question that users can bet on.
+///
+/// # Core Event Components
+///
+/// **Event Identity:**
+/// - **event_id**: Unique identifier for the event
+/// - **creator**: Admin who created the event
+/// - **description**: The prediction question being resolved
+/// - **outcomes**: Available outcomes users can predict
+///
+/// **Timing:**
+/// - **end_time**: When the prediction period concludes
+/// - **created_at**: When the event was created
+///
+/// **Resolution:**
+/// - **oracle_source**: Configuration for oracle-based resolution
+/// - **status**: Current lifecycle state
+/// - **resolved_outcome**: Final outcome (if resolved)
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, Vec, Symbol};
+/// # use predictify_hybrid::types::{Event, EventStatus, OracleConfig, OracleProvider};
+/// # let env = Env::default();
+/// # let admin = Address::generate(&env);
+///
+/// // Create a new prediction event
+/// let event = Event::new(
+///     &env,
+///     Symbol::new(&env, "evt_btc_100k"),
+///     admin.clone(),
+///     String::from_str(&env, "Will BTC reach $100,000 by December 31, 2024?"),
+///     env.ledger().timestamp() + (30 * 24 * 60 * 60), // 30 days
+///     Vec::from_array(&env, [
+///         String::from_str(&env, "Yes"),
+///         String::from_str(&env, "No")
+///     ]),
+///     OracleConfig::new(
+///         OracleProvider::Reflector,
+///         String::from_str(&env, "BTC/USD"),
+///         100_000_00, // $100,000
+///         String::from_str(&env, "gt")
+///     ),
+/// );
+///
+/// // Check event status
+/// if event.is_active(env.ledger().timestamp()) {
+///     println!("Event is active and accepting predictions");
+/// }
+/// ```
+///
+/// # Security Considerations
+///
+/// - Events can only be created by authorized admins
+/// - End time must be validated as future timestamp
+/// - Outcomes must be non-empty and contain at least 2 options
+/// - Oracle configuration must be valid for the network
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Event {
+    /// Unique event identifier
+    pub event_id: Symbol,
+    /// Event creator (admin address)
+    pub creator: Address,
+    /// Event description/prediction question
+    pub description: String,
+    /// Unix timestamp when prediction period ends
+    pub end_time: u64,
+    /// Possible outcomes for this event
+    pub outcomes: Vec<String>,
+    /// Oracle configuration for result verification
+    pub oracle_source: OracleConfig,
+    /// Current event status
+    pub status: EventStatus,
+    /// Resolved outcome (set after resolution)
+    pub resolved_outcome: Option<String>,
+    /// Event creation timestamp
+    pub created_at: u64,
+}
+
+impl Event {
+    /// Create a new prediction event.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `event_id` - Unique event identifier
+    /// * `creator` - Admin address creating the event
+    /// * `description` - Event description/question
+    /// * `end_time` - Unix timestamp when event ends
+    /// * `outcomes` - Vector of possible outcomes
+    /// * `oracle_source` - Oracle configuration
+    ///
+    /// # Returns
+    ///
+    /// A new Event instance with Active status.
+    pub fn new(
+        env: &Env,
+        event_id: Symbol,
+        creator: Address,
+        description: String,
+        end_time: u64,
+        outcomes: Vec<String>,
+        oracle_source: OracleConfig,
+    ) -> Self {
+        Self {
+            event_id,
+            creator,
+            description,
+            end_time,
+            outcomes,
+            oracle_source,
+            status: EventStatus::Active,
+            resolved_outcome: None,
+            created_at: env.ledger().timestamp(),
+        }
+    }
+
+    /// Check if the event is currently active (accepting predictions).
+    ///
+    /// # Parameters
+    ///
+    /// * `current_time` - Current blockchain timestamp
+    ///
+    /// # Returns
+    ///
+    /// `true` if event is active and not past end time, `false` otherwise.
+    pub fn is_active(&self, current_time: u64) -> bool {
+        self.status == EventStatus::Active && current_time < self.end_time
+    }
+
+    /// Check if the event has ended (past end time).
+    ///
+    /// # Parameters
+    ///
+    /// * `current_time` - Current blockchain timestamp
+    ///
+    /// # Returns
+    ///
+    /// `true` if current time is past event end time, `false` otherwise.
+    pub fn has_ended(&self, current_time: u64) -> bool {
+        current_time >= self.end_time
+    }
+
+    /// Check if the event has been resolved.
+    ///
+    /// # Returns
+    ///
+    /// `true` if event has a resolved outcome, `false` otherwise.
+    pub fn is_resolved(&self) -> bool {
+        self.resolved_outcome.is_some() && self.status == EventStatus::Resolved
+    }
+
+    /// Validate event parameters.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all parameters are valid, `Err(Error)` otherwise.
+    ///
+    /// # Validation Rules
+    ///
+    /// - Description must not be empty
+    /// - Must have at least 2 outcomes
+    /// - All outcomes must be non-empty
+    /// - End time must be in the future
+    /// - Oracle configuration must be valid
+    pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+        // Validate description
+        if self.description.is_empty() {
+            return Err(crate::Error::InvalidQuestion);
+        }
+
+        // Validate outcomes (minimum 2)
+        if self.outcomes.len() < 2 {
+            return Err(crate::Error::InvalidOutcomes);
+        }
+
+        // Validate each outcome is non-empty
+        for outcome in self.outcomes.iter() {
+            if outcome.is_empty() {
+                return Err(crate::Error::InvalidOutcome);
+            }
+        }
+
+        // Validate end time is in the future
+        if self.end_time <= env.ledger().timestamp() {
+            return Err(crate::Error::InvalidDuration);
+        }
+
+        // Validate oracle config
+        self.oracle_source.validate(env)?;
+
+        Ok(())
+    }
+}
+
 // ===== ORACLE TYPES =====
 
 /// Enumeration of supported oracle providers for price feed data.

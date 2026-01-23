@@ -1487,3 +1487,174 @@ fn test_manual_dispute_resolution_triggers_payout() {
     // since votes and bets are separate systems. This test verifies the resolution works.
     assert_eq!(market_after.state, MarketState::Resolved);
 }
+
+// ===== PREDICTION EVENT TESTS =====
+
+#[test]
+fn test_create_event_successful() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    let description = String::from_str(&test.env, "Will ETH flip BTC by 2030?");
+    let end_time = test.env.ledger().timestamp() + (365 * 24 * 60 * 60);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "Yes"),
+        String::from_str(&test.env, "No"),
+    ];
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&test.env, "ETH/BTC"),
+        threshold: 100_000_000, 
+        comparison: String::from_str(&test.env, "gt"),
+    };
+
+    test.env.mock_all_auths();
+    let event_id = client.create_event(
+        &test.admin,
+        &description,
+        &end_time,
+        &outcomes,
+        &oracle_config,
+    );
+
+    // Verify event storage
+    let event = client.get_event(&event_id);
+    assert_eq!(event.description, description);
+    assert_eq!(event.outcomes.len(), 2);
+    assert_eq!(event.creator, test.admin);
+    assert_eq!(event.status, types::EventStatus::Active);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #100)")] // Unauthorized
+fn test_create_event_unauthorized() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    let description = String::from_str(&test.env, "Test Event");
+    let end_time = test.env.ledger().timestamp() + 86400;
+    let outcomes = vec![&test.env, String::from_str(&test.env, "A"), String::from_str(&test.env, "B")];
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&test.env, "TEST"),
+        threshold: 100,
+        comparison: String::from_str(&test.env, "eq"),
+    };
+
+    // Use non-admin user
+    test.env.mock_all_auths();
+    client.create_event(
+        &test.user, // Not admin
+        &description,
+        &end_time,
+        &outcomes,
+        &oracle_config,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #300)")] // InvalidQuestion
+fn test_create_event_invalid_description() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    let end_time = test.env.ledger().timestamp() + 86400;
+    let outcomes = vec![&test.env, String::from_str(&test.env, "A"), String::from_str(&test.env, "B")];
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&test.env, "TEST"),
+        threshold: 100,
+        comparison: String::from_str(&test.env, "eq"),
+    };
+
+    test.env.mock_all_auths();
+    client.create_event(
+        &test.admin,
+        &String::from_str(&test.env, ""), // Empty description
+        &end_time,
+        &outcomes,
+        &oracle_config,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #302)")] // InvalidDuration
+fn test_create_event_invalid_end_time() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    let description = String::from_str(&test.env, "Valid Description");
+    // Past timestamp
+    let end_time = test.env.ledger().timestamp() - 1;
+    let outcomes = vec![&test.env, String::from_str(&test.env, "A"), String::from_str(&test.env, "B")];
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&test.env, "TEST"),
+        threshold: 100,
+        comparison: String::from_str(&test.env, "eq"),
+    };
+
+    test.env.mock_all_auths();
+    client.create_event(
+        &test.admin,
+        &description,
+        &end_time,
+        &outcomes,
+        &oracle_config,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #301)")] // InvalidOutcomes
+fn test_create_event_invalid_outcomes() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    let description = String::from_str(&test.env, "Valid Description");
+    let end_time = test.env.ledger().timestamp() + 86400;
+    // Single outcome (need at least 2)
+    let outcomes = vec![&test.env, String::from_str(&test.env, "A")];
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&test.env, "TEST"),
+        threshold: 100,
+        comparison: String::from_str(&test.env, "eq"),
+    };
+
+    test.env.mock_all_auths();
+    client.create_event(
+        &test.admin,
+        &description,
+        &end_time,
+        &outcomes,
+        &oracle_config,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #201)")] // InvalidOracleConfig
+fn test_create_event_invalid_oracle() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    let description = String::from_str(&test.env, "Valid Description");
+    let end_time = test.env.ledger().timestamp() + 86400;
+    let outcomes = vec![&test.env, String::from_str(&test.env, "A"), String::from_str(&test.env, "B")];
+    // Invalid comparison operator
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&test.env, "TEST"),
+        threshold: 100,
+        comparison: String::from_str(&test.env, "invalid_op"),
+    };
+
+    test.env.mock_all_auths();
+    client.create_event(
+        &test.admin,
+        &description,
+        &end_time,
+        &outcomes,
+        &oracle_config,
+    );
+}

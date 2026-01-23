@@ -102,6 +102,86 @@ pub struct MarketCreatedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a new prediction event is successfully created.
+///
+/// This event provides comprehensive information about newly created prediction events,
+/// including event parameters, outcomes, administrative details, oracle configuration,
+/// and timing. Essential for tracking event creation activity and building event indices.
+///
+/// # Event Data
+///
+/// Contains all critical event creation parameters:
+/// - Event identification and description details
+/// - Available outcomes for prediction
+/// - Administrative and timing information
+/// - Oracle provider information
+/// - Creation timestamp for chronological ordering
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+/// # use predictify_hybrid::events::EventCreatedEvent;
+/// # let env = Env::default();
+/// # let admin = Address::generate(&env);
+///
+/// // Event creation event data
+/// let event = EventCreatedEvent {
+///     event_id: Symbol::new(&env, "evt_btc_100k"),
+///     description: String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?"),
+///     outcomes: vec![
+///         &env,
+///         String::from_str(&env, "Yes"),
+///         String::from_str(&env, "No")
+///     ],
+///     creator: admin.clone(),
+///     end_time: 1735689600, // Dec 31, 2024
+///     oracle_provider: String::from_str(&env, "Reflector"),
+///     timestamp: env.ledger().timestamp(),
+/// };
+///
+/// // Event provides complete event context
+/// println!("New event: {}", event.description.to_string());
+/// println!("Event ID: {}", event.event_id.to_string());
+/// println!("Outcomes: {} options", event.outcomes.len());
+/// println!("Ends: {}", event.end_time);
+/// println!("Oracle: {}", event.oracle_provider.to_string());
+/// ```
+///
+/// # Integration Points
+///
+/// - **Event Indexing**: Build searchable event directories
+/// - **Activity Feeds**: Display recent event creation activity
+/// - **Analytics**: Track event creation patterns and trends
+/// - **Notifications**: Alert users about new events in categories of interest
+/// - **Audit Trails**: Maintain complete record of event creation
+///
+/// # Event Timing
+///
+/// Emitted immediately after successful event creation, providing:
+/// - Real-time notification of new events
+/// - Chronological ordering via timestamp
+/// - Immediate availability for user interfaces
+/// - Historical record for analytics and reporting
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventCreatedEvent {
+    /// Unique event ID
+    pub event_id: Symbol,
+    /// Event description/question
+    pub description: String,
+    /// Available outcomes for prediction
+    pub outcomes: Vec<String>,
+    /// Event creator (admin)
+    pub creator: Address,
+    /// Event end time (Unix timestamp)
+    pub end_time: u64,
+    /// Oracle provider type (e.g., "Reflector", "Pyth")
+    pub oracle_provider: String,
+    /// Creation timestamp
+    pub timestamp: u64,
+}
+
 /// Event emitted when a user successfully casts a vote on a prediction market.
 ///
 /// This event captures all details of voting activity, including voter identity,
@@ -1235,6 +1315,56 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_crt"), &event);
+    }
+
+    /// Emit event created event when a new prediction event is created.
+    ///
+    /// This function emits an event when an admin successfully creates a new
+    /// prediction event, recording all relevant details for transparency and indexing.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `event_id` - Unique event identifier
+    /// - `description` - Event description/question
+    /// - `outcomes` - Vector of possible outcomes
+    /// - `creator` - Admin address that created the event
+    /// - `end_time` - Unix timestamp when event ends
+    /// - `oracle_provider` - Name of the oracle provider (e.g., "Reflector")
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_event_created(
+    ///     &env,
+    ///     &event_id,
+    ///     &description,
+    ///     &outcomes,
+    ///     &admin,
+    ///     end_time,
+    ///     &String::from_str(&env, "Reflector"),
+    /// );
+    /// ```
+    pub fn emit_event_created(
+        env: &Env,
+        event_id: &Symbol,
+        description: &String,
+        outcomes: &Vec<String>,
+        creator: &Address,
+        end_time: u64,
+        oracle_provider: &String,
+    ) {
+        let event = EventCreatedEvent {
+            event_id: event_id.clone(),
+            description: description.clone(),
+            outcomes: outcomes.clone(),
+            creator: creator.clone(),
+            end_time,
+            oracle_provider: oracle_provider.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("evt_crt"), &event);
     }
 
     /// Emit vote cast event
