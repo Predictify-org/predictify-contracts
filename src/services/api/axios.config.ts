@@ -23,7 +23,6 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-<<<<<<< HEAD
     // Only log API errors in development, and make network errors less noisy
     if (__DEV__) {
       if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
@@ -33,10 +32,6 @@ apiClient.interceptors.response.use(
         console.error("API Error:", error.response?.data || error.message);
       }
     }
-=======
-    // Handle errors globally
-    console.error("API Error:", error.response?.data || error.message);
->>>>>>> b932655445289cc6885ffad4b922c05b464845b2
     return Promise.reject(error);
   },
 );
