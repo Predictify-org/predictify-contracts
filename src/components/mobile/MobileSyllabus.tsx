@@ -73,73 +73,68 @@ export default function MobileSyllabus({
 
   return (
     <ScrollView
-      className="flex-1 bg-background-light dark:bg-slate-900"
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={true}
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
     >
-      <View className="px-4 py-4 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 shadow-sm">
-        <Text className="text-2xl font-bold text-gray-900 dark:text-white">
-          📚 Course Syllabus
-        </Text>
-        <Text className="text-sm text-gray-600 dark:text-gray-400 mt-2 font-medium">
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>📚 Course Syllabus</Text>
+        <Text style={styles.headerSubtitle}>
           {sections.length} sections • {sections.reduce((acc, s) => acc + s.lessons.length, 0)} lessons
         </Text>
       </View>
 
+      {/* Sections */}
       {sections.map((section) => {
         const isExpanded = expandedSections.has(section.id);
         const sectionProgress = getSectionProgress(section);
 
         return (
-          <View
-            key={section.id}
-            className="mb-3 mx-3 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden shadow-sm mt-3"
-          >
+          <View key={section.id} style={styles.sectionCard}>
             {/* Section Header */}
             <TouchableOpacity
               onPress={() => toggleSection(section.id)}
-              className="flex-row items-center justify-between px-4 py-4 bg-gradient-to-r from-gradient-start/5 to-gradient-end/5 dark:from-slate-700 dark:to-slate-800 active:bg-gradient-start/10"
+              style={styles.sectionHeader}
             >
-              <View className="flex-1 mr-3">
-                <View className="flex-row items-center mb-2">
-                  <Text className="text-lg font-bold text-gray-900 dark:text-white flex-1">
-                    {section.title}
-                  </Text>
-                  <View className="px-2.5 py-1 bg-primary/15 rounded-full ml-2">
-                    <Text className="text-xs font-semibold text-primary">
-                      {section.lessons.length}
-                    </Text>
+              <View style={styles.sectionHeaderContent}>
+                <View style={styles.sectionTitleContainer}>
+                  <Text style={styles.sectionTitle}>{section.title}</Text>
+                  <View style={styles.lessonCountBadge}>
+                    <Text style={styles.lessonCountText}>{section.lessons.length}</Text>
                   </View>
                 </View>
                 
                 {/* Progress Bar */}
-                <View className="h-1.5 bg-gray-200 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
-                  <View
-                    className="h-full bg-gradient-to-r from-gradient-start via-gradient-mid to-gradient-end"
-                    style={{ width: `${sectionProgress}%` }}
-                  />
+                <View style={styles.progressBarContainer}>
+                  <View style={styles.progressBarBackground}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        { width: `${sectionProgress}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.progressText}>{sectionProgress}% complete</Text>
                 </View>
-                <Text className="text-xs font-semibold text-primary mt-1.5">
-                  {sectionProgress}% complete
-                </Text>
               </View>
 
               {/* Expand/Collapse Icon */}
-              <View>
-                <Text 
-                  className="text-2xl text-primary"
-                  style={{
+              <Text
+                style={[
+                  styles.expandIcon,
+                  {
                     transform: [{ rotate: isExpanded ? '180deg' : '0deg' }],
-                  }}
-                >
-                  ▼
-                </Text>
-              </View>
+                  },
+                ]}
+              >
+                ▼
+              </Text>
             </TouchableOpacity>
 
             {/* Section Lessons */}
             {isExpanded && (
-              <View className="border-t border-gray-200 dark:border-slate-700">
+              <View style={styles.lessonsContainer}>
                 {section.lessons.map((lesson, lessonIndex) => {
                   const status = getLessonStatus(lesson);
                   const isCurrent = lesson.id === currentLessonId;
@@ -149,63 +144,53 @@ export default function MobileSyllabus({
                     <TouchableOpacity
                       key={lesson.id}
                       onPress={() => onLessonSelect(lesson.id, section.id)}
-                      className={`px-4 py-3 border-l-4 flex-row items-start ${
-                        isCurrent
-                          ? 'bg-primary/10 dark:bg-primary/5 border-primary'
-                          : 'bg-white dark:bg-slate-800 border-transparent'
-                      } active:bg-gray-50 dark:active:bg-slate-700`}
+                      style={[
+                        styles.lessonItem,
+                        isCurrent && styles.lessonItemCurrent,
+                      ]}
                     >
                       {/* Lesson Status Icon */}
-                      <View className="mr-3 mt-0.5">
+                      <View style={styles.lessonStatusIcon}>
                         {status === 'completed' ? (
-                          <View className="w-6 h-6 rounded-full bg-green-500 items-center justify-center shadow-sm">
-                            <Text className="text-white text-sm font-bold">✓</Text>
+                          <View style={styles.statusIconCompleted}>
+                            <Text style={styles.statusIconText}>✓</Text>
                           </View>
                         ) : status === 'in-progress' ? (
-                          <View className="w-6 h-6 rounded-full bg-primary items-center justify-center shadow-sm">
-                            <View className="w-2 h-2 rounded-full bg-white" />
+                          <View style={styles.statusIconInProgress}>
+                            <View style={styles.statusIconDot} />
                           </View>
                         ) : (
-                          <View className="w-6 h-6 rounded-full border-2 border-gray-300 dark:border-slate-600 items-center justify-center bg-gray-50 dark:bg-slate-700">
-                            <Text className="text-xs font-bold text-gray-500 dark:text-gray-400">
-                              {lessonIndex + 1}
-                            </Text>
+                          <View style={styles.statusIconNotStarted}>
+                            <Text style={styles.statusIconNumber}>{lessonIndex + 1}</Text>
                           </View>
                         )}
                       </View>
 
                       {/* Lesson Info */}
-                      <View className="flex-1">
+                      <View style={styles.lessonContent}>
                         <Text
-                          className={`text-base font-semibold mb-1 ${
-                            isCurrent
-                              ? 'text-primary'
-                              : 'text-gray-900 dark:text-white'
-                          }`}
+                          style={[
+                            styles.lessonTitle,
+                            isCurrent && styles.lessonTitleCurrent,
+                          ]}
                         >
                           {lesson.title}
                         </Text>
                         
-                        <View className="flex-row items-center flex-wrap gap-2">
-                          <View className="flex-row items-center bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">
-                            <Text className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                              ⏱️ {lesson.duration} min
-                            </Text>
+                        <View style={styles.lessonMetadata}>
+                          <View style={styles.durationBadge}>
+                            <Text style={styles.durationText}>⏱️ {lesson.duration} min</Text>
                           </View>
                           
-                          {lessonProgress?.lastPosition > 0 && !status === 'completed' && (
-                            <View className="flex-row items-center bg-primary/10 px-2 py-1 rounded">
-                              <Text className="text-xs font-semibold text-primary">
-                                📌 Resume
-                              </Text>
+                          {lessonProgress?.lastPosition && lessonProgress.lastPosition > 0 && status !== 'completed' && (
+                            <View style={styles.resumeBadge}>
+                              <Text style={styles.resumeText}>📌 Resume</Text>
                             </View>
                           )}
                           
                           {progress?.bookmarks.includes(lesson.id) && (
-                            <View className="flex-row items-center bg-yellow-50 dark:bg-yellow-900/20 px-2 py-1 rounded">
-                              <Text className="text-xs font-semibold text-yellow-600 dark:text-yellow-400">
-                                ⭐ Bookmarked
-                              </Text>
+                            <View style={styles.bookmarkBadge}>
+                              <Text style={styles.bookmarkText}>⭐ Bookmarked</Text>
                             </View>
                           )}
                         </View>
@@ -213,10 +198,8 @@ export default function MobileSyllabus({
 
                       {/* Current Lesson Badge */}
                       {isCurrent && (
-                        <View className="ml-2 px-2.5 py-1 bg-primary rounded-full">
-                          <Text className="text-xs font-bold text-white">
-                            Current
-                          </Text>
+                        <View style={styles.currentBadge}>
+                          <Text style={styles.currentBadgeText}>Current</Text>
                         </View>
                       )}
                     </TouchableOpacity>
@@ -233,6 +216,246 @@ export default function MobileSyllabus({
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#f0f1f5',
+  },
+  contentContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 16,
     paddingBottom: 32,
+  },
+  header: {
+    paddingHorizontal: 12,
+    paddingVertical: 16,
+    marginBottom: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  sectionCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginBottom: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionHeaderContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    flex: 1,
+  },
+  lessonCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#19c3e6',
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  lessonCountText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  progressBarContainer: {
+    gap: 6,
+  },
+  progressBarBackground: {
+    height: 6,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#19c3e6',
+  },
+  progressText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#19c3e6',
+  },
+  expandIcon: {
+    fontSize: 20,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  lessonsContainer: {
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  lessonItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
+    backgroundColor: '#ffffff',
+  },
+  lessonItemCurrent: {
+    backgroundColor: 'rgba(25, 195, 230, 0.05)',
+    borderLeftColor: '#19c3e6',
+  },
+  lessonStatusIcon: {
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusIconCompleted: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#10b981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  statusIconInProgress: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#19c3e6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  statusIconDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ffffff',
+  },
+  statusIconNotStarted: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+    backgroundColor: '#f9fafb',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusIconText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  statusIconNumber: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6b7280',
+  },
+  lessonContent: {
+    flex: 1,
+  },
+  lessonTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  lessonTitleCurrent: {
+    color: '#19c3e6',
+    fontWeight: '700',
+  },
+  lessonMetadata: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  durationBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 4,
+  },
+  durationText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#4b5563',
+  },
+  resumeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(25, 195, 230, 0.15)',
+    borderRadius: 4,
+  },
+  resumeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#19c3e6',
+  },
+  bookmarkBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#fef3c7',
+    borderRadius: 4,
+  },
+  bookmarkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#b45309',
+  },
+  currentBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#19c3e6',
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  currentBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

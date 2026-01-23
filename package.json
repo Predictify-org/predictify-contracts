@@ -28,6 +28,11 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@types/babel__core": "^7.20.5",
+    "@types/babel__generator": "^7.27.0",
+    "@types/babel__template": "^7.4.4",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/node": "^25.0.10",
     "@types/react": "~19.1.0",
     "@types/react-native-dotenv": "^0.2.2",
     "babel-preset-expo": "^54.0.10",
