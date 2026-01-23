@@ -1,0 +1,83 @@
+import * as Haptics from 'expo-haptics';
+
+type HapticType = 'light' | 'medium' | 'heavy';
+
+export const useHapticFeedback = (intensity: HapticType = 'medium') => {
+  const impactMap = {
+    light: Haptics.ImpactFeedbackStyle.Light,
+    medium: Haptics.ImpactFeedbackStyle.Medium,
+    heavy: Haptics.ImpactFeedbackStyle.Heavy,
+  };
+
+  return Haptics.impactAsync(impactMap[intensity]);
+};
+
+/**
+ * Use Cases:
+ *
+ * 1. Button Press (Light)
+ * ```tsx
+ * const handleButtonPress = () => {
+ *   useHapticFeedback('light');
+ *   // Button logic
+ * };
+ *
+ * <Pressable onPress={handleButtonPress}>
+ *   <Text>Button</Text>
+ * </Pressable>
+ * ```
+ *
+ * 2. Form Submit (Medium - default)
+ * ```tsx
+ * const handleFormSubmit = () => {
+ *   useHapticFeedback(); // defaults to 'medium'
+ *   // Form submission logic
+ * };
+ *
+ * <TouchableOpacity onPress={handleFormSubmit}>
+ *   <Text>Submit</Text>
+ * </TouchableOpacity>
+ * ```
+ *
+ * 3. Inline Usage
+ * ```tsx
+ * <TouchableOpacity onPress={() => useHapticFeedback('light')}>
+ *   <Text>Tap Me</Text>
+ * </TouchableOpacity>
+ * ```
+ *
+ * 4. Error/Alert (Heavy)
+ * ```tsx
+ * const handleError = () => {
+ *   useHapticFeedback('heavy');
+ *   Alert.alert('Error', 'Something went wrong');
+ * };
+ * ```
+ *
+ * 5. Toggle/Switch
+ * ```tsx
+ * const handleToggle = () => {
+ *   useHapticFeedback('light');
+ *   setToggle(!toggle);
+ * };
+ *
+ * <Switch value={toggle} onValueChange={handleToggle} />
+ * ```
+ *
+ * 6. List Item Selection
+ * ```tsx
+ * const handleItemPress = (itemId: string) => {
+ *   useHapticFeedback('medium');
+ *   navigation.navigate('Details', { id: itemId });
+ * };
+ *
+ * <FlatList
+ *   data={items}
+ *   renderItem={({ item }) => (
+ *     <TouchableOpacity onPress={() => handleItemPress(item.id)}>
+ *       <Text>{item.name}</Text>
+ *     </TouchableOpacity>
+ *   )}
+ * />
+ * ```
+ */
