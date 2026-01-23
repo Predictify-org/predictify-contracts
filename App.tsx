@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+<<<<<<< HEAD
 import { LogBox } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
 import { useAppStore } from './src/store';
@@ -22,6 +23,13 @@ if (__DEV__) {
   ]);
 }
 
+=======
+import AppNavigator from './src/navigation/AppNavigator';
+import { useAppStore } from './src/store';
+import socketService from './src/services/socket';
+import "./global.css";
+
+>>>>>>> b932655445289cc6885ffad4b922c05b464845b2
 export default function App() {
   const theme = useAppStore((state) => state.theme);
 
@@ -36,9 +44,16 @@ export default function App() {
   }, []);
 
   return (
+<<<<<<< HEAD
     <ErrorBoundary>
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       <AppNavigator />
     </ErrorBoundary>
+=======
+    <>
+      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      <AppNavigator />
+    </>
+>>>>>>> b932655445289cc6885ffad4b922c05b464845b2
   );
 }

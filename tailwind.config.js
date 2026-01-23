@@ -7,6 +7,7 @@ module.exports = {
   ],
   presets: [require("nativewind/preset")],
   theme: {
+<<<<<<< HEAD
     extend: {
       colors: {
         primary: {
@@ -35,6 +36,9 @@ module.exports = {
         'btn-gradient': ['90deg', '#20afe7 0%', '#2c8aec 50%', '#586ce9 100%'],
       },
     },
+=======
+    extend: {},
+>>>>>>> b932655445289cc6885ffad4b922c05b464845b2
   },
   plugins: [],
 };
