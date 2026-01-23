@@ -7,6 +7,7 @@ import { RootStackParamList } from './types';
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import CourseViewerScreen from '../screens/CourseViewerScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -21,6 +22,11 @@ export default function AppNavigator() {
                 />
                 <Stack.Screen name="Profile" component={ProfileScreen} />
                 <Stack.Screen name="Settings" component={SettingsScreen} />
+                <Stack.Screen
+                    name="CourseViewer"
+                    component={CourseViewerScreen}
+                    options={{ title: 'Course', headerShown: false }}
+                />
             </Stack.Navigator>
         </NavigationContainer>
     );

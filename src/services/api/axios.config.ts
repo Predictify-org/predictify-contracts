@@ -23,8 +23,15 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle errors globally
-    console.error("API Error:", error.response?.data || error.message);
+    // Only log API errors in development, and make network errors less noisy
+    if (__DEV__) {
+      if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+        // Network errors are expected when backend isn't running - just warn
+        console.warn("⚠️ API not available (running in offline mode)");
+      } else {
+        console.error("API Error:", error.response?.data || error.message);
+      }
+    }
     return Promise.reject(error);
   },
 );

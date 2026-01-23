@@ -2,15 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "src/*"
-      ]
-    },
-    "types": [
-      "nativewind/types"
-    ]
+      "@/*": ["src/*"]
+    }
   },
   "include": [
     "**/*.ts",
