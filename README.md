@@ -1,5 +1,4 @@
-### 📱 `mobile/README.md`
-
+### 📱 `mobile/README.m
 ```md
 # Teachme Mobile
 
