@@ -36,13 +36,7 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-app-example
-
 # generated native folders
 /ios
 /android
 .env
-
-# Documentation files (except README.md)
-*.md
-!README.md
