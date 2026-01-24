@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,9 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Course, Lesson, Note } from '../../types/course';
+import { Course, Lesson, Note, Quiz } from '../../types/course';
+import { RootStackParamList } from '../../navigation/types';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCourseProgress } from '../../hooks/useCourseProgress';
 import LessonCarousel from './LessonCarousel';
 import MobileSyllabus from './MobileSyllabus';
@@ -23,7 +24,9 @@ import logger from '../../utils/logger';
 interface MobileCourseViewerProps {
   course: Course;
   initialLessonId?: string;
+  initialViewMode?: ViewMode;
   onBack?: () => void;
+  navigation?: NativeStackNavigationProp<RootStackParamList>;
 }
 
 type ViewMode = 'lesson' | 'syllabus' | 'notes';
@@ -31,9 +34,11 @@ type ViewMode = 'lesson' | 'syllabus' | 'notes';
 export default function MobileCourseViewer({
   course,
   initialLessonId,
+  initialViewMode,
   onBack,
+  navigation,
 }: MobileCourseViewerProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('lesson');
+  const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode || 'lesson');
   const [currentLessonId, setCurrentLessonId] = useState<string>(
     initialLessonId || course.sections[0]?.lessons[0]?.id || ''
   );
@@ -44,6 +49,7 @@ export default function MobileCourseViewer({
   const [noteContent, setNoteContent] = useState('');
   const [noteTimestamp, setNoteTimestamp] = useState(0);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [showQuizPromptModal, setShowQuizPromptModal] = useState(false);
 
   const {
     progress,
@@ -81,6 +87,27 @@ export default function MobileCourseViewer({
 
   const currentLesson = allLessons.find((l) => l.id === currentLessonId);
   const isBookmarked = progress?.bookmarks.includes(currentLessonId) || false;
+
+  // Check if current lesson is last in its section
+  const isLastLessonInSection = useMemo(() => {
+    const currentSection = course.sections.find((s) => s.id === currentSectionId);
+    if (!currentSection || currentSection.lessons.length === 0) return false;
+    
+    const lastLessonInSection = currentSection.lessons[currentSection.lessons.length - 1];
+    return currentLessonId === lastLessonInSection?.id;
+  }, [currentLessonId, currentSectionId, course]);
+
+  // Check if current section has a quiz
+  const sectionHasQuiz = useMemo(() => {
+    const currentSection = course.sections.find((s) => s.id === currentSectionId);
+    return currentSection?.quizzes && currentSection.quizzes.length > 0;
+  }, [currentSectionId, course]);
+
+  // Get the quiz for current section (if exists)
+  const currentSectionQuiz = useMemo(() => {
+    const currentSection = course.sections.find((s) => s.id === currentSectionId);
+    return currentSection?.quizzes?.[0] || null; // Get first quiz if multiple exist
+  }, [currentSectionId, course]);
 
   // Resume from last position
   useEffect(() => {
@@ -207,6 +234,35 @@ export default function MobileCourseViewer({
     },
     [currentLessonId, deleteNote]
   );
+
+  // Handle "Next" button click on last lesson
+  const handleLastLessonNext = useCallback(() => {
+    if (isLastLessonInSection && sectionHasQuiz) {
+      // Show quiz prompt modal
+      setShowQuizPromptModal(true);
+    } else {
+      // No quiz, just go to syllabus
+      setViewMode('syllabus');
+    }
+  }, [isLastLessonInSection, sectionHasQuiz]);
+
+  // Handle "Take Quiz" button - using navigation prop (React Navigation)
+  const handleTakeQuiz = useCallback(() => {
+    if (!currentSectionQuiz || !navigation) return;
+    
+    setShowQuizPromptModal(false);
+    navigation.navigate('Quiz', {
+      quiz: currentSectionQuiz,
+      courseId: course.id,
+      course: course, // Pass course for navigation back to syllabus
+    });
+  }, [currentSectionQuiz, course, navigation]);
+
+  // Handle "Skip" button
+  const handleSkipQuiz = useCallback(() => {
+    setShowQuizPromptModal(false);
+    setViewMode('syllabus');
+  }, []);
 
   const renderLessonContent = useCallback(
     (lesson: Lesson) => {
@@ -377,6 +433,8 @@ export default function MobileCourseViewer({
             onLessonChange={handleLessonChange}
             onProgressUpdate={updateLastPosition}
             renderLessonContent={renderLessonContent}
+            onLastLessonNext={handleLastLessonNext}
+            isLastLessonInSection={isLastLessonInSection}
           />
 
           {/* Action Buttons */}
@@ -409,6 +467,55 @@ export default function MobileCourseViewer({
           onLessonSelect={handleLessonSelect}
         />
       )}
+
+      {/* Quiz Prompt Modal */}
+      <Modal
+        visible={showQuizPromptModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={handleSkipQuiz}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Section Complete! 🎉</Text>
+              <TouchableOpacity onPress={handleSkipQuiz}>
+                <Text style={styles.closeButton}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              You've finished all lessons in this section. Ready to test your knowledge with a quiz?
+            </Text>
+
+            {currentSectionQuiz && (
+              <View style={styles.quizInfoContainer}>
+                <Text style={styles.quizInfoTitle}>{currentSectionQuiz.title}</Text>
+                <Text style={styles.quizInfoSubtitle}>
+                  {currentSectionQuiz.questions.length} questions
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.modalButtonContainer}>
+              <TouchableOpacity
+                onPress={handleSkipQuiz}
+                style={styles.cancelButton}
+              >
+                <Text style={styles.cancelButtonText}>Skip for Now</Text>
+              </TouchableOpacity>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <PrimaryButton
+                  onPress={handleTakeQuiz}
+                  title="Take Quiz"
+                  variant="gradient"
+                  size="medium"
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Note Modal */}
       <Modal
@@ -626,6 +733,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
     fontSize: 16,
+  },
+  modalDescription: {
+    fontSize: 16,
+    color: '#4b5563',
+    lineHeight: 24,
+    marginBottom: 20,
+    fontWeight: '500',
+  },
+  quizInfoContainer: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  quizInfoTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  quizInfoSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontWeight: '500',
   },
   lessonContentWrapper: {
     flex: 1,
