@@ -1,4 +1,5 @@
 import { Course } from '../types/course';
+import { getQuizzesForSection } from './sampleQuizzes';
 
 /**
  * Sample course data for demoing the Mobile Course Viewer.
@@ -39,6 +40,7 @@ export const sampleCourse: Course = {
           order: 2,
         },
       ],
+      quizzes: getQuizzesForSection('section-1'),
     },
     {
       id: 'section-2',
@@ -78,6 +80,7 @@ export const sampleCourse: Course = {
           order: 6,
         },
       ],
+      quizzes: getQuizzesForSection('section-2'),
     },
   ],
 };

@@ -1,8 +1,9 @@
-import { Course } from '../types/course';
+import { Course, Quiz } from '../types/course';
 
 export type RootStackParamList = {
   Home: undefined;
   Profile: { userId: string };
   Settings: undefined;
-  CourseViewer: { course: Course; initialLessonId?: string };
+  CourseViewer: { course: Course; initialLessonId?: string; initialViewMode?: 'lesson' | 'syllabus' | 'notes' };
+  Quiz: { quiz: Quiz; courseId: string; course?: Course };
 };

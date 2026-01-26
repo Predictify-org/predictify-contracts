@@ -6,13 +6,15 @@ import MobileCourseViewer from '../components/mobile/MobileCourseViewer';
 type Props = NativeStackScreenProps<RootStackParamList, 'CourseViewer'>;
 
 export default function CourseViewerScreen({ route, navigation }: Props) {
-  const { course, initialLessonId } = route.params;
+  const { course, initialLessonId, initialViewMode } = route.params;
 
   return (
     <MobileCourseViewer
       course={course}
       initialLessonId={initialLessonId}
+      initialViewMode={initialViewMode}
       onBack={() => navigation.goBack()}
+      navigation={navigation}
     />
   );
 }

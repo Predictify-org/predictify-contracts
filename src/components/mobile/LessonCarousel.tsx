@@ -21,6 +21,8 @@ interface LessonCarouselProps {
   onLessonChange: (lessonId: string, index: number) => void;
   onProgressUpdate?: (lessonId: string, position: number) => void;
   renderLessonContent: (lesson: Lesson) => React.ReactNode;
+  onLastLessonNext?: () => void; // Callback when "Next" is clicked on last lesson
+  isLastLessonInSection?: boolean; // Whether current lesson is last in its section
 }
 
 export default function LessonCarousel({
@@ -30,6 +32,8 @@ export default function LessonCarousel({
   onLessonChange,
   onProgressUpdate,
   renderLessonContent,
+  onLastLessonNext,
+  isLastLessonInSection = false,
 }: LessonCarouselProps) {
   const scrollViewRef = useRef<ScrollView>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -224,12 +228,19 @@ export default function LessonCarousel({
 
         {currentIndex === lessons.length - 1 ? (
           <TouchableOpacity
-            disabled
-            style={[styles.navButton, styles.navButtonDisabled]}
+            onPress={onLastLessonNext}
+            style={styles.navButton}
           >
-            <Text style={styles.navButtonTextDisabled}>
-              Next →
-            </Text>
+            <LinearGradient
+              colors={['#20afe7', '#2c8aec', '#586ce9']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.nextButtonGradient}
+            >
+              <Text style={styles.nextButtonText}>
+                {isLastLessonInSection ? 'Continue →' : 'Next →'}
+              </Text>
+            </LinearGradient>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity

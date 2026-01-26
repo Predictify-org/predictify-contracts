@@ -19,6 +19,7 @@ export interface Section {
   id: string;
   title: string;
   lessons: Lesson[];
+  quizzes?: Quiz[]; // Quizzes for this section
   order: number;
 }
 
@@ -47,11 +48,42 @@ export interface LessonProgress {
   timeSpent: number; // in seconds
 }
 
+export interface Quiz {
+  id: string;
+  sectionId: string;
+  title: string;
+  questions: Question[];
+  order: number;
+  passingScore?: number; // e.g., 70
+}
+
+export interface Question {
+  id: string;
+  type: 'multiple-choice' | 'true-false' | 'short-answer';
+  question: string;
+  options?: string[]; // for multiple choice
+  multiple?: boolean; // true for multi-select questions
+  correctAnswer: string | number | (string | number)[]; // single answer or array for multi-select
+  explanation?: string;
+  points: number;
+}
+
+export interface QuizProgress {
+  quizId: string;
+  sectionId: string;
+  completed: boolean;
+  score?: number; // Percentage score (0-100)
+  answers: Record<string, string | number | (string | number)[]>; // questionId -> selected answer(s)
+  completedAt?: string;
+  attempts: number;
+}
+
 export interface CourseProgress {
   courseId: string;
   currentLessonId: string;
   currentSectionId: string;
   lessons: Record<string, LessonProgress>;
+  quizzes: Record<string, QuizProgress>; // quizId -> QuizProgress
   overallProgress: number; // 0-100
   lastAccessed: string;
   bookmarks: string[]; // lesson IDs
