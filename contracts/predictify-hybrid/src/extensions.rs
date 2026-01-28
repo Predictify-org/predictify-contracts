@@ -577,15 +577,15 @@ impl ExtensionValidator {
         // Get market and validate state
         let market = MarketStateManager::get_market(env, market_id)?;
 
+        // Check if market is already resolved
+        if market.state == MarketState::Resolved {
+            return Err(Error::MarketAlreadyResolved);
+        }
+
         // Check if market is still active
         let current_time = env.ledger().timestamp();
         if current_time >= market.end_time {
             return Err(Error::MarketClosed);
-        }
-
-        // Check if market is already resolved
-        if market.oracle_result.is_some() {
-            return Err(Error::MarketAlreadyResolved);
         }
 
         Ok(())

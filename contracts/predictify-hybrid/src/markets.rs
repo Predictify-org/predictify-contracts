@@ -789,6 +789,33 @@ impl MarketStateManager {
         _env.storage().persistent().set(market_id, market);
     }
 
+    /// Updates the market question/description.
+    ///
+    /// This function allows the admin to update the market question only if
+    /// no votes/bets have been placed yet.
+    ///
+    /// # Parameters
+    ///
+    /// * `_env` - The Soroban environment
+    /// * `market_id` - The market identifier
+    /// * `new_description` - The new question/description
+    pub fn update_description(
+        _env: &Env,
+        market_id: &Symbol,
+        new_description: String,
+    ) -> Result<(), Error> {
+        let mut market = Self::get_market(_env, market_id)?;
+
+        // Ensure no votes have been placed
+        if !market.votes.is_empty() {
+            return Err(Error::InvalidState);
+        }
+
+        market.question = new_description;
+        Self::update_market(_env, market_id, &market);
+        Ok(())
+    }
+
     /// Removes a market from persistent storage after proper closure.
     ///
     /// This function safely removes a market from storage, ensuring it's

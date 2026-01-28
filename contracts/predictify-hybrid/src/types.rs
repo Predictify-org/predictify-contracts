@@ -2425,13 +2425,7 @@ impl Bet {
     /// # Returns
     ///
     /// A new `Bet` instance with `Active` status and current timestamp
-    pub fn new(
-        env: &Env,
-        user: Address,
-        market_id: Symbol,
-        outcome: String,
-        amount: i128,
-    ) -> Self {
+    pub fn new(env: &Env, user: Address, market_id: Symbol, outcome: String, amount: i128) -> Self {
         Self {
             user,
             market_id,

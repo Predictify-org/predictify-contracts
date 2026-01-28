@@ -1579,25 +1579,24 @@ impl EventEmitter {
     }
 
     /// Emit contract initialized event (full initialization with platform fee)
-    pub fn emit_contract_initialized(env: &Env, admin: &Address, platform_fee_percentage: i128) {
+    pub fn emit_contract_initialized(env: &Env, admin: &Address, fee: i128) {
         let event = ContractInitializedEvent {
-            admin: admin.clone(),
-            platform_fee_percentage,
+            admin: admin.clone(), // Clone because the struct owns the Address
+            platform_fee_percentage: fee,
             timestamp: env.ledger().timestamp(),
         };
-
-        Self::store_event(env, &symbol_short!("init"), &event);
+        env.events()
+            .publish((Symbol::new(env, "contract_initialized"),), event);
     }
 
-    /// Emit platform fee set event
-    pub fn emit_platform_fee_set(env: &Env, fee_percentage: i128, set_by: &Address) {
+    pub fn emit_platform_fee_set(env: &Env, fee: i128, admin: &Address) {
         let event = PlatformFeeSetEvent {
-            fee_percentage,
-            set_by: set_by.clone(),
+            fee_percentage: fee,
+            set_by: admin.clone(),
             timestamp: env.ledger().timestamp(),
         };
-
-        Self::store_event(env, &symbol_short!("fee_set"), &event);
+        env.events()
+            .publish((Symbol::new(env, "platform_fee_set"),), event);
     }
 
     /// Emit config initialized event
