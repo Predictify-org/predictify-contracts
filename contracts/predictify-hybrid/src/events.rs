@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::format;
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
@@ -2285,6 +2286,78 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("up_prop"), &event);
+    }
+
+    /// Emit statistics updated event when platform statistics change.
+    ///
+    /// This function emits an event whenever platform-wide statistics are updated,
+    /// providing transparency for analytics tracking.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `metric_name` - Name of the metric updated (e.g., "markets_created", "bets_placed")
+    /// - `new_value` - New value of the metric
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_statistics_updated(
+    ///     &env,
+    ///     &Symbol::new(&env, "markets_created"),
+    ///     100 // Total markets created
+    /// );
+    /// ```
+    pub fn emit_statistics_updated(env: &Env, metric_name: &Symbol, new_value: i128) {
+        let event = PerformanceMetricEvent {
+            metric_name: String::from_str(env, "statistics"),
+            value: new_value,
+            unit: String::from_str(env, "count"),
+            context: String::from_str(env, &format!("metric:{:?}", metric_name)),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("stat_upd"), &event);
+    }
+
+    /// Emit user statistics updated event when user statistics change.
+    ///
+    /// This function emits an event whenever user-specific statistics are updated,
+    /// providing transparency for user activity tracking.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `user` - User's address
+    /// - `event_type` - Type of event (e.g., "bet_placed", "winnings_claimed")
+    /// - `value` - Associated value (e.g., bet amount, winnings amount)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_user_statistics_updated(
+    ///     &env,
+    ///     &user_address,
+    ///     &Symbol::new(&env, "bet_placed"),
+    ///     10_000_000 // 1 XLM
+    /// );
+    /// ```
+    pub fn emit_user_statistics_updated(
+        env: &Env,
+        user: &Address,
+        event_type: &Symbol,
+        value: i128,
+    ) {
+        let event = PerformanceMetricEvent {
+            metric_name: String::from_str(env, "user_statistics"),
+            value,
+            unit: String::from_str(env, "stroops"),
+            context: String::from_str(
+                env,
+                &format!("user:{:?},event:{:?}", user, event_type),
+            ),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("usr_stat"), &event);
     }
 
     /// Store event in persistent storage

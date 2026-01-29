@@ -2506,3 +2506,174 @@ pub struct BetStats {
     /// Total amount locked per outcome
     pub outcome_totals: Map<String, i128>,
 }
+
+// ===== PLATFORM STATISTICS =====
+
+/// Platform-wide statistics tracking for comprehensive analytics and insights.
+///
+/// This structure maintains aggregate statistics across all markets on the platform,
+/// providing insights into platform usage, user activity, market performance, and
+/// economic metrics. Essential for monitoring platform health, growth trends, and
+/// operational efficiency.
+///
+/// # Statistics Categories
+///
+/// **Market Statistics:**
+/// - Total number of markets created
+/// - Number of currently active markets
+/// - Resolved markets count
+/// - Market creation trends
+///
+/// **Betting Activity:**
+/// - Total number of bets placed across all markets
+/// - Total volume locked in active bets
+/// - Average bet size and participation rates
+///
+/// **Economic Metrics:**
+/// - Total trading volume (XLM/tokens)
+/// - Total platform fees collected
+/// - Payout distributions
+///
+/// **User Engagement:**
+/// - Active user count
+/// - User retention metrics
+/// - Participation trends
+///
+/// # Gas Efficiency
+///
+/// All query functions for platform statistics are read-only operations,
+/// ensuring gas-efficient access to analytics data without modifying state.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # use predictify_hybrid::types::PlatformStatistics;
+/// # let env = Env::default();
+///
+/// // Query platform statistics
+/// let stats = PlatformStatistics::get(&env)?;
+///
+/// println!("Total markets created: {}", stats.total_markets_created);
+/// println!("Active markets: {}", stats.active_markets_count);
+/// println!("Total bets placed: {}", stats.total_bets_placed);
+/// println!("Total volume: {} XLM", stats.total_volume / 10_000_000);
+/// println!("Total fees collected: {} XLM", stats.total_fees_collected / 10_000_000);
+/// ```
+///
+/// # Analytics Applications
+///
+/// - **Dashboard Metrics**: Real-time platform performance monitoring
+/// - **Growth Tracking**: Historical trend analysis and forecasting
+/// - **Health Monitoring**: Platform health and activity indicators
+/// - **Economic Analysis**: Revenue tracking and fee optimization
+/// - **User Analytics**: Engagement and retention metrics
+///
+/// # Security Considerations
+///
+/// Statistics are updated atomically during market operations to ensure
+/// consistency. Read operations are gas-efficient and non-blocking.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PlatformStatistics {
+    /// Total number of markets created on the platform
+    pub total_markets_created: u64,
+    /// Number of currently active markets
+    pub active_markets_count: u64,
+    /// Total number of bets placed across all markets
+    pub total_bets_placed: u64,
+    /// Total volume of funds locked and traded (in stroops)
+    pub total_volume: i128,
+    /// Total platform fees collected (in stroops)
+    pub total_fees_collected: i128,
+    /// Last update timestamp
+    pub last_updated: u64,
+}
+
+/// User-specific statistics tracking for individual performance analytics.
+///
+/// This structure maintains comprehensive statistics for each user's activity
+/// on the platform, including betting history, performance metrics, and
+/// financial outcomes. Essential for user dashboards, leaderboards, and
+/// personalized analytics.
+///
+/// # User Metrics
+///
+/// **Betting Activity:**
+/// - Total number of bets placed by user
+/// - Total amount wagered across all markets
+/// - Active bet count and exposure
+///
+/// **Performance Metrics:**
+/// - Total winnings accumulated
+/// - Win rate (percentage of successful bets)
+/// - Return on investment (ROI)
+///
+/// **Participation History:**
+/// - Markets participated in
+/// - Betting patterns and preferences
+/// - Activity timeline
+///
+/// # Win Rate Calculation
+///
+/// Win rate is calculated as:
+/// ```text
+/// win_rate = (winning_bets / total_resolved_bets) * 100
+/// ```
+///
+/// Only resolved markets are included in win rate calculations to ensure
+/// accurate performance metrics.
+///
+/// # Gas Efficiency
+///
+/// User statistics are stored per-user with efficient retrieval through
+/// indexed lookups. All query operations are read-only for gas efficiency.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::types::UserStatistics;
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+///
+/// // Query user statistics
+/// let stats = UserStatistics::get(&env, &user)?;
+///
+/// println!("Total bets: {}", stats.total_bets);
+/// println!("Total winnings: {} XLM", stats.total_winnings / 10_000_000);
+/// println!("Win rate: {}%", stats.win_rate);
+/// println!("Net profit: {} XLM", (stats.total_winnings - stats.total_wagered) / 10_000_000);
+/// ```
+///
+/// # Privacy Considerations
+///
+/// User statistics are publicly queryable on the blockchain, enabling
+/// transparent performance tracking and leaderboard functionality. Users
+/// should be aware that their betting activity is public.
+///
+/// # Analytics Applications
+///
+/// - **User Dashboards**: Personalized performance tracking
+/// - **Leaderboards**: Community rankings and competitions
+/// - **Achievement Systems**: Milestone tracking and rewards
+/// - **Risk Assessment**: Betting pattern analysis
+/// - **Reputation Systems**: User credibility and expertise tracking
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct UserStatistics {
+    /// User's address
+    pub user: Address,
+    /// Total number of bets placed by this user
+    pub total_bets: u64,
+    /// Total amount wagered by this user (in stroops)
+    pub total_wagered: i128,
+    /// Total winnings accumulated by this user (in stroops)
+    pub total_winnings: i128,
+    /// User's win rate as percentage (0-100)
+    pub win_rate: u32,
+    /// Number of markets user has participated in
+    pub markets_participated: u64,
+    /// Last activity timestamp
+    pub last_activity: u64,
+}

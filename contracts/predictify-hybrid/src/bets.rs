@@ -217,6 +217,11 @@ impl BetManager {
 
         MarketStateManager::update_market(env, &market_id, &market);
 
+        // Update platform and user statistics
+        crate::statistics::PlatformStatisticsManager::increment_bets_placed(env);
+        crate::statistics::PlatformStatisticsManager::add_volume(env, amount);
+        crate::statistics::UserStatisticsManager::record_bet_placed(env, &user, amount);
+
         // Emit bet placed event
         EventEmitter::emit_bet_placed(env, &market_id, &user, &outcome, amount);
 

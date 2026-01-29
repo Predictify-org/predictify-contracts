@@ -30,6 +30,7 @@ mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
 mod resolution;
+mod statistics;
 mod storage;
 mod types;
 mod upgrade_manager;
@@ -183,6 +184,9 @@ impl PredictifyHybrid {
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
 
+        // Initialize platform statistics
+        statistics::PlatformStatisticsManager::initialize(&env);
+
         // Emit contract initialized event
         EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
 
@@ -315,6 +319,9 @@ impl PredictifyHybrid {
 
         // Store the market
         env.storage().persistent().set(&market_id, &market);
+
+        // Update platform statistics
+        statistics::PlatformStatisticsManager::increment_markets_created(&env);
 
         // Emit market created event
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, end_time);
@@ -789,6 +796,9 @@ impl PredictifyHybrid {
                 market.claimed.set(user.clone(), true);
                 env.storage().persistent().set(&market_id, &market);
 
+                // Update user statistics - record winnings
+                statistics::UserStatisticsManager::record_winnings(&env, &user, payout);
+
                 // Emit winnings claimed event
                 EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
 
@@ -965,6 +975,10 @@ impl PredictifyHybrid {
         market.state = MarketState::Resolved;
         env.storage().persistent().set(&market_id, &market);
 
+        // Update platform statistics - decrement active markets
+        statistics::PlatformStatisticsManager::decrement_active_markets(&env);
+
+        // Emit market resolved event
         // Note: Bet resolution is skipped to avoid segfaults
         // Since place_bet syncs votes/stakes, distribute_payouts works via vote-based system
         // Individual bet status can be updated separately if needed
@@ -3596,6 +3610,153 @@ impl PredictifyHybrid {
         performance_benchmarks::PerformanceBenchmarkManager::validate_performance_thresholds(
             &env, metrics, thresholds,
         )
+    }
+
+    // ===== STATISTICS AND ANALYTICS FUNCTIONS =====
+
+    /// Get platform-wide statistics.
+    ///
+    /// Returns aggregate statistics across all markets on the platform, including
+    /// total markets created, active markets count, total bets placed, total volume,
+    /// and total fees collected. This is a read-only query function.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<PlatformStatistics, Error>` where:
+    /// - `Ok(PlatformStatistics)` - Platform statistics with all aggregate metrics
+    /// - `Err(Error)` - Error if statistics are not initialized
+    ///
+    /// # Gas Efficiency
+    ///
+    /// This is a read-only operation that does not modify state, making it
+    /// gas-efficient for querying platform analytics.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    ///
+    /// let stats = PredictifyHybrid::get_platform_statistics(env.clone())?;
+    /// println!("Total markets: {}", stats.total_markets_created);
+    /// println!("Active markets: {}", stats.active_markets_count);
+    /// println!("Total bets: {}", stats.total_bets_placed);
+    /// println!("Total volume: {} XLM", stats.total_volume / 10_000_000);
+    /// println!("Total fees: {} XLM", stats.total_fees_collected / 10_000_000);
+    /// ```
+    pub fn get_platform_statistics(env: Env) -> Result<PlatformStatistics, Error> {
+        statistics::PlatformStatisticsManager::get_statistics(&env)
+    }
+
+    /// Get user-specific statistics.
+    ///
+    /// Returns comprehensive statistics for a specific user, including total bets
+    /// placed, total amount wagered, total winnings, win rate percentage, and
+    /// participation history. This is a read-only query function.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - The address of the user to query statistics for
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<UserStatistics, Error>` where:
+    /// - `Ok(UserStatistics)` - User statistics with performance metrics
+    /// - `Err(Error)` - Error if statistics retrieval fails
+    ///
+    /// # Gas Efficiency
+    ///
+    /// This is a read-only operation that does not modify state, making it
+    /// gas-efficient for querying user analytics.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let user = Address::generate(&env);
+    ///
+    /// let stats = PredictifyHybrid::get_user_statistics(env.clone(), user.clone())?;
+    /// println!("Total bets: {}", stats.total_bets);
+    /// println!("Total wagered: {} XLM", stats.total_wagered / 10_000_000);
+    /// println!("Total winnings: {} XLM", stats.total_winnings / 10_000_000);
+    /// println!("Win rate: {}%", stats.win_rate);
+    /// println!("Markets participated: {}", stats.markets_participated);
+    /// ```
+    pub fn get_user_statistics(env: Env, user: Address) -> Result<UserStatistics, Error> {
+        statistics::UserStatisticsManager::get_user_statistics(&env, &user)
+    }
+
+    /// Calculate average bet size across the platform.
+    ///
+    /// Returns the average bet size calculated from total volume divided by
+    /// total bets placed. Useful for analytics and market insights.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    ///
+    /// # Returns
+    ///
+    /// Returns average bet size in stroops (7 decimal places for XLM).
+    /// Returns 0 if no bets have been placed yet.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    ///
+    /// let avg_bet = PredictifyHybrid::get_average_bet_size(env.clone());
+    /// println!("Average bet size: {} XLM", avg_bet / 10_000_000);
+    /// ```
+    pub fn get_average_bet_size(env: Env) -> i128 {
+        statistics::StatisticsUtils::calculate_average_bet_size(&env)
+    }
+
+    /// Get platform health score.
+    ///
+    /// Returns a health score (0-100) based on active markets, betting activity,
+    /// and trading volume. Higher scores indicate a more active and healthy platform.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    ///
+    /// # Returns
+    ///
+    /// Returns health score as u32 (0-100) where:
+    /// - 0-25: Low activity/unhealthy
+    /// - 26-50: Moderate activity
+    /// - 51-75: Good activity
+    /// - 76-100: Very high activity/healthy
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    ///
+    /// let health = PredictifyHybrid::get_platform_health_score(env.clone());
+    /// if health >= 75 {
+    ///     println!("Platform is very healthy!");
+    /// } else if health >= 50 {
+    ///     println!("Platform is moderately healthy");
+    /// } else {
+    ///     println!("Platform needs more activity");
+    /// }
+    /// ```
+    pub fn get_platform_health_score(env: Env) -> u32 {
+        statistics::StatisticsUtils::calculate_platform_health_score(&env)
     }
 }
 

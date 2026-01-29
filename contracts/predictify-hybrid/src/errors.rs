@@ -192,6 +192,10 @@ pub enum Error {
     CircuitBreakerOpen = 503,
 
     AlreadyInitialized = 504,
+
+    // ===== STATISTICS ERRORS =====
+    /// Statistics not initialized
+    StatisticsNotInitialized = 600,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1194,6 +1198,7 @@ impl Error {
             Error::CircuitBreakerNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CircuitBreakerOpen => "Circuit breaker is open (operations blocked)",
             Error::AlreadyInitialized => "Already Initialized",
+            Error::StatisticsNotInitialized => "Statistics not initialized",
         }
     }
 
@@ -1312,6 +1317,7 @@ impl Error {
             Error::CircuitBreakerNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CircuitBreakerOpen => "CIRCUIT_BREAKER_OPEN",
             Error::AlreadyInitialized => "Already_Initialized",
+            Error::StatisticsNotInitialized => "STATISTICS_NOT_INITIALIZED",
         }
     }
 }
