@@ -65,6 +65,9 @@ mod upgrade_manager_tests;
 #[cfg(test)]
 mod bet_tests;
 
+#[cfg(test)]
+mod event_management_tests;
+
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
 pub use errors::Error;
@@ -1009,8 +1012,8 @@ impl PredictifyHybrid {
             &reason,
         );
 
-        // Note: Payout distribution should be called separately via distribute_payouts()
-        // This allows for better control and testing of the payout process
+        // Automatically distribute payouts
+        let _ = Self::distribute_payouts(env.clone(), market_id);
     }
 
     /// Fetches oracle result for a market from external oracle contracts.
@@ -1733,6 +1736,425 @@ impl PredictifyHybrid {
         // For now, we'll just track the withdrawal
 
         Ok(withdrawal_amount)
+    }
+
+    /// Extends the deadline of an active market by a specified number of days (admin only).
+    ///
+    /// This function allows contract administrators to extend the voting/betting period
+    /// of active markets. Extensions can be used to allow more time for participation,
+    /// respond to unforeseen circumstances, or adjust to market conditions. The function
+    /// enforces maximum extension limits and validates market state before applying changes.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address performing the extension (must be authorized)
+    /// * `market_id` - Unique identifier of the market to extend
+    /// * `additional_days` - Number of days to add to the current end time
+    /// * `reason` - Explanation for why the extension is needed
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Market deadline extended successfully
+    /// - `Err(Error)` - Specific error if extension fails
+    ///
+    /// # Errors
+    ///
+    /// This function returns specific errors:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
+    /// - `Error::MarketAlreadyResolved` - Cannot extend a resolved market
+    /// - `Error::InvalidDuration` - Extension would exceed maximum allowed limit
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol, String};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// // Extend market by 7 days
+    /// match PredictifyHybrid::extend_deadline(
+    ///     env.clone(),
+    ///     admin,
+    ///     market_id,
+    ///     7,
+    ///     String::from_str(&env, "Low participation - extending to allow more votes")
+    /// ) {
+    ///     Ok(()) => println!("Market deadline extended successfully"),
+    ///     Err(e) => println!("Extension failed: {:?}", e),
+    /// }
+    /// ```
+    ///
+    /// # Extension Rules
+    ///
+    /// - Market must be in Active or Ended state (not Resolved, Closed, or Cancelled)
+    /// - Total extensions cannot exceed `max_extension_days` (default 30 days)
+    /// - Extensions are recorded in market's extension history
+    /// - Admin must pay extension fee if configured
+    ///
+    /// # Security
+    ///
+    /// This function requires admin authentication and should be used carefully.
+    /// Excessive extensions may affect user trust and market integrity. All
+    /// extensions are logged with timestamps and reasons for transparency.
+    pub fn extend_deadline(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        additional_days: u32,
+        reason: String,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        // Get market
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        // Validate market state - cannot extend resolved, closed, or cancelled markets
+        if market.state == MarketState::Resolved
+            || market.state == MarketState::Closed
+            || market.state == MarketState::Cancelled
+        {
+            return Err(Error::MarketAlreadyResolved);
+        }
+
+        // Validate extension limit
+        let new_total_extension_days = market.total_extension_days + additional_days;
+        if new_total_extension_days > market.max_extension_days {
+            return Err(Error::InvalidDuration);
+        }
+
+        // Calculate new end time
+        let seconds_per_day: u64 = 24 * 60 * 60;
+        let extension_seconds: u64 = (additional_days as u64) * seconds_per_day;
+        let old_end_time = market.end_time;
+        let new_end_time = old_end_time + extension_seconds;
+
+        // Calculate extension fee (could be configured per market or globally)
+        let extension_fee = 0i128; // No fee for now, but can be configured
+
+        // Create extension record
+        let extension = MarketExtension::new(
+            &env,
+            additional_days,
+            admin.clone(),
+            reason.clone(),
+            extension_fee,
+        );
+
+        // Update market
+        market.end_time = new_end_time;
+        market.total_extension_days = new_total_extension_days;
+        market.extension_history.push_back(extension);
+
+        // Save market
+        env.storage().persistent().set(&market_id, &market);
+
+        // Emit extension event
+        EventEmitter::emit_market_deadline_extended(
+            &env,
+            &market_id,
+            old_end_time,
+            new_end_time,
+            additional_days,
+            &admin,
+            &reason,
+            extension_fee,
+        );
+
+        Ok(())
+    }
+
+    /// Updates the description/question of a market (admin only, before betting starts).
+    ///
+    /// This function allows contract administrators to update the market question
+    /// or description before any bets have been placed. This ensures that market
+    /// parameters can be corrected or clarified without affecting existing user
+    /// commitments or predictions.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address performing the update (must be authorized)
+    /// * `market_id` - Unique identifier of the market to update
+    /// * `new_description` - The updated market question or description
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Market description updated successfully
+    /// - `Err(Error)` - Specific error if update fails
+    ///
+    /// # Errors
+    ///
+    /// This function returns specific errors:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
+    /// - `Error::MarketAlreadyResolved` - Cannot update a resolved market
+    /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
+    /// - `Error::InvalidQuestion` - New description is empty or invalid
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol, String};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// // Update market description
+    /// match PredictifyHybrid::update_event_description(
+    ///     env.clone(),
+    ///     admin,
+    ///     market_id,
+    ///     String::from_str(&env, "Will Bitcoin reach $100,000 by December 31, 2024?")
+    /// ) {
+    ///     Ok(()) => println!("Market description updated successfully"),
+    ///     Err(e) => println!("Update failed: {:?}", e),
+    /// }
+    /// ```
+    ///
+    /// # Update Rules
+    ///
+    /// - Market must be in Active state
+    /// - No bets can have been placed yet
+    /// - Market must not be resolved
+    /// - New description must be non-empty and meet length requirements
+    ///
+    /// # Security
+    ///
+    /// This function requires admin authentication and validates that no user
+    /// funds are at risk. Updates are only allowed before any betting activity
+    /// to maintain fairness and transparency.
+    pub fn update_event_description(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        new_description: String,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        // Validate new description
+        if new_description.is_empty() {
+            return Err(Error::InvalidQuestion);
+        }
+
+        // Get market
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        // Validate market state - cannot update resolved, closed, or cancelled markets
+        if market.state != MarketState::Active {
+            return Err(Error::MarketAlreadyResolved);
+        }
+
+        // Check if any bets have been placed
+        let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
+        if bet_stats.total_bets > 0 {
+            return Err(Error::BetsAlreadyPlaced);
+        }
+
+        // Check if any votes have been placed
+        if market.total_staked > 0 {
+            return Err(Error::AlreadyVoted);
+        }
+
+        // Store old description for event
+        let old_description = market.question.clone();
+
+        // Update market description
+        market.question = new_description.clone();
+
+        // Save market
+        env.storage().persistent().set(&market_id, &market);
+
+        // Emit description update event
+        EventEmitter::emit_market_description_updated(
+            &env,
+            &market_id,
+            &old_description,
+            &new_description,
+            &admin,
+        );
+
+        Ok(())
+    }
+
+    /// Updates the outcomes of a market (admin only, before betting starts).
+    ///
+    /// This function allows contract administrators to update the available
+    /// outcomes for a market before any bets have been placed. This ensures
+    /// that market parameters can be corrected or adjusted without affecting
+    /// existing user commitments.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address performing the update (must be authorized)
+    /// * `market_id` - Unique identifier of the market to update
+    /// * `new_outcomes` - The updated list of possible outcomes
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Market outcomes updated successfully
+    /// - `Err(Error)` - Specific error if update fails
+    ///
+    /// # Errors
+    ///
+    /// This function returns specific errors:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
+    /// - `Error::MarketAlreadyResolved` - Cannot update a resolved market
+    /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
+    /// - `Error::InvalidOutcomes` - New outcomes list is invalid (< 2 outcomes or empty strings)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "market_1");
+    ///
+    /// // Update market outcomes
+    /// let new_outcomes = Vec::from_array(&env, [
+    ///     String::from_str(&env, "Yes"),
+    ///     String::from_str(&env, "No"),
+    ///     String::from_str(&env, "Uncertain")
+    /// ]);
+    ///
+    /// match PredictifyHybrid::update_event_outcomes(
+    ///     env.clone(),
+    ///     admin,
+    ///     market_id,
+    ///     new_outcomes
+    /// ) {
+    ///     Ok(()) => println!("Market outcomes updated successfully"),
+    ///     Err(e) => println!("Update failed: {:?}", e),
+    /// }
+    /// ```
+    ///
+    /// # Update Rules
+    ///
+    /// - Market must be in Active state
+    /// - No bets can have been placed yet
+    /// - Market must not be resolved
+    /// - New outcomes must have at least 2 options
+    /// - All outcome strings must be non-empty
+    ///
+    /// # Security
+    ///
+    /// This function requires admin authentication and validates that no user
+    /// funds are at risk. Updates are only allowed before any betting activity
+    /// to maintain fairness and transparency.
+    pub fn update_event_outcomes(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        new_outcomes: Vec<String>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        // Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        // Validate new outcomes
+        if new_outcomes.len() < 2 {
+            return Err(Error::InvalidOutcomes);
+        }
+
+        // Check all outcomes are non-empty
+        for outcome in new_outcomes.iter() {
+            if outcome.is_empty() {
+                return Err(Error::InvalidOutcome);
+            }
+        }
+
+        // Get market
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        // Validate market state - cannot update resolved, closed, or cancelled markets
+        if market.state != MarketState::Active {
+            return Err(Error::MarketAlreadyResolved);
+        }
+
+        // Check if any bets have been placed
+        let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
+        if bet_stats.total_bets > 0 {
+            return Err(Error::BetsAlreadyPlaced);
+        }
+
+        // Check if any votes have been placed
+        if market.total_staked > 0 {
+            return Err(Error::AlreadyVoted);
+        }
+
+        // Store old outcomes for event
+        let old_outcomes = market.outcomes.clone();
+
+        // Update market outcomes
+        market.outcomes = new_outcomes.clone();
+
+        // Save market
+        env.storage().persistent().set(&market_id, &market);
+
+        // Emit outcomes update event
+        EventEmitter::emit_market_outcomes_updated(
+            &env,
+            &market_id,
+            &old_outcomes,
+            &new_outcomes,
+            &admin,
+        );
+
+        Ok(())
     }
 
     /// Cancel an event and automatically refund all placed bets (admin only).

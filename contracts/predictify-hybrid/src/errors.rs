@@ -106,6 +106,8 @@ pub enum Error {
     AlreadyVoted = 109,
     /// User has already placed a bet on this market
     AlreadyBet = 110,
+    /// Bets have already been placed on this market (cannot update)
+    BetsAlreadyPlaced = 111,
 
     // ===== ORACLE ERRORS =====
     /// Oracle is unavailable
@@ -1157,6 +1159,7 @@ impl Error {
             Error::InvalidOutcome => "Invalid outcome choice",
             Error::AlreadyVoted => "User has already voted",
             Error::AlreadyBet => "User has already placed a bet on this market",
+            Error::BetsAlreadyPlaced => "Bets have already been placed on this market (cannot update)",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::InvalidQuestion => "Invalid question format",
@@ -1275,6 +1278,7 @@ impl Error {
             Error::InvalidOutcome => "INVALID_OUTCOME",
             Error::AlreadyVoted => "ALREADY_VOTED",
             Error::AlreadyBet => "ALREADY_BET",
+            Error::BetsAlreadyPlaced => "BETS_ALREADY_PLACED",
             Error::OracleUnavailable => "ORACLE_UNAVAILABLE",
             Error::InvalidOracleConfig => "INVALID_ORACLE_CONFIG",
             Error::InvalidQuestion => "INVALID_QUESTION",

@@ -1118,6 +1118,96 @@ pub struct ContractUpgradedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when market deadline is extended
+///
+/// This event tracks market deadline extensions, providing transparency
+/// for extension requests and their impact on market timeline.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous end time
+/// - New end time after extension
+/// - Additional days added
+/// - Admin who performed the extension
+/// - Reason for extension
+/// - Extension fee (if applicable)
+/// - Timestamp of extension
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketDeadlineExtendedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Previous end time
+    pub old_end_time: u64,
+    /// New end time
+    pub new_end_time: u64,
+    /// Additional days
+    pub additional_days: u32,
+    /// Admin who extended
+    pub admin: Address,
+    /// Reason for extension
+    pub reason: String,
+    /// Extension fee
+    pub fee: i128,
+    /// Extension timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when market description is updated
+///
+/// This event tracks market description updates, providing transparency
+/// for changes to market questions and parameters.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous description
+/// - New description
+/// - Admin who performed the update
+/// - Update timestamp
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketDescriptionUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Old description
+    pub old_description: String,
+    /// New description
+    pub new_description: String,
+    /// Admin who updated
+    pub admin: Address,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when market outcomes are updated
+///
+/// This event tracks market outcome updates, providing transparency
+/// for changes to available market outcomes.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous outcomes
+/// - New outcomes
+/// - Admin who performed the update
+/// - Update timestamp
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketOutcomesUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Old outcomes
+    pub old_outcomes: Vec<String>,
+    /// New outcomes
+    pub new_outcomes: Vec<String>,
+    /// Admin who updated
+    pub admin: Address,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
 /// Contract rollback event - emitted when contract is rolled back to previous version
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1904,6 +1994,141 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_clm"), &event);
+    }
+
+    /// Emit market deadline extended event
+    ///
+    /// This function emits an event when a market's deadline is extended,
+    /// providing transparency for extension operations and their parameters.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_end_time` - Previous end time
+    /// - `new_end_time` - New end time after extension
+    /// - `additional_days` - Number of days added
+    /// - `admin` - Admin who performed the extension
+    /// - `reason` - Reason for the extension
+    /// - `fee` - Extension fee paid
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_market_deadline_extended(
+    ///     &env,
+    ///     &market_id,
+    ///     old_end_time,
+    ///     new_end_time,
+    ///     7, // 7 additional days
+    ///     &admin_address,
+    ///     &String::from_str(&env, "Low participation"),
+    ///     1_000_000 // 1 XLM fee
+    /// );
+    /// ```
+    pub fn emit_market_deadline_extended(
+        env: &Env,
+        market_id: &Symbol,
+        old_end_time: u64,
+        new_end_time: u64,
+        additional_days: u32,
+        admin: &Address,
+        reason: &String,
+        fee: i128,
+    ) {
+        let event = MarketDeadlineExtendedEvent {
+            market_id: market_id.clone(),
+            old_end_time,
+            new_end_time,
+            additional_days,
+            admin: admin.clone(),
+            reason: reason.clone(),
+            fee,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_ext"), &event);
+    }
+
+    /// Emit market description updated event
+    ///
+    /// This function emits an event when a market's description is updated,
+    /// providing transparency for market parameter changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_description` - Previous market description
+    /// - `new_description` - New market description
+    /// - `admin` - Admin who performed the update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_market_description_updated(
+    ///     &env,
+    ///     &market_id,
+    ///     &String::from_str(&env, "Old question"),
+    ///     &String::from_str(&env, "Updated question"),
+    ///     &admin_address
+    /// );
+    /// ```
+    pub fn emit_market_description_updated(
+        env: &Env,
+        market_id: &Symbol,
+        old_description: &String,
+        new_description: &String,
+        admin: &Address,
+    ) {
+        let event = MarketDescriptionUpdatedEvent {
+            market_id: market_id.clone(),
+            old_description: old_description.clone(),
+            new_description: new_description.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_dsc"), &event);
+    }
+
+    /// Emit market outcomes updated event
+    ///
+    /// This function emits an event when a market's outcomes are updated,
+    /// providing transparency for outcome changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_outcomes` - Previous market outcomes
+    /// - `new_outcomes` - New market outcomes
+    /// - `admin` - Admin who performed the update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_market_outcomes_updated(
+    ///     &env,
+    ///     &market_id,
+    ///     &old_outcomes_vec,
+    ///     &new_outcomes_vec,
+    ///     &admin_address
+    /// );
+    /// ```
+    pub fn emit_market_outcomes_updated(
+        env: &Env,
+        market_id: &Symbol,
+        old_outcomes: &Vec<String>,
+        new_outcomes: &Vec<String>,
+        admin: &Address,
+    ) {
+        let event = MarketOutcomesUpdatedEvent {
+            market_id: market_id.clone(),
+            old_outcomes: old_outcomes.clone(),
+            new_outcomes: new_outcomes.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_out"), &event);
     }
 
     /// Emit error event with full error context
