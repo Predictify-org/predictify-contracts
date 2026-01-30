@@ -1627,6 +1627,57 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("up_prop"), &event);
     }
 
+    /// Emit winnings claimed event
+    pub fn emit_winnings_claimed(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        amount: i128,
+    ) {
+        let mut event_data = Map::new(env);
+        event_data.set(
+            String::from_str(env, "market_id"),
+            String::from_str(env, "market"),
+        );
+        event_data.set(
+            String::from_str(env, "user"),
+            String::from_str(env, "user"),
+        );
+        event_data.set(
+            String::from_str(env, "amount"),
+            String::from_str(env, "amount"),
+        );
+        event_data.set(
+            String::from_str(env, "timestamp"),
+            String::from_str(env, "ts"),
+        );
+        Self::store_event(env, &symbol_short!("claimed"), &event_data);
+    }
+
+    /// Emit state change event
+    pub fn emit_state_change_event(
+        env: &Env,
+        market_id: &Symbol,
+        old_state: &crate::types::MarketState,
+        new_state: &crate::types::MarketState,
+        reason: &String,
+    ) {
+        let mut event_data = Map::new(env);
+        event_data.set(
+            String::from_str(env, "market_id"),
+            String::from_str(env, "market"),
+        );
+        event_data.set(
+            String::from_str(env, "reason"),
+            reason.clone(),
+        );
+        event_data.set(
+            String::from_str(env, "timestamp"),
+            String::from_str(env, "ts"),
+        );
+        Self::store_event(env, &symbol_short!("st_chng"), &event_data);
+    }
+
     /// Store event in persistent storage
     fn store_event<T>(env: &Env, event_key: &Symbol, event_data: &T)
     where

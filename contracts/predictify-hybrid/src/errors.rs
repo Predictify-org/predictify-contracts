@@ -190,6 +190,16 @@ pub enum Error {
     AlreadyInitialized = 504,
 }
 
+impl From<crate::reentrancy_guard::GuardError> for Error {
+    fn from(e: crate::reentrancy_guard::GuardError) -> Self {
+        match e {
+            crate::reentrancy_guard::GuardError::ReentrancyGuardActive => Error::InvalidState,
+            crate::reentrancy_guard::GuardError::ExternalCallFailed => Error::InvalidState,
+            _ => Error::InvalidState,
+        }
+    }
+}
+
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
 
 /// Error severity levels for categorization and prioritization
