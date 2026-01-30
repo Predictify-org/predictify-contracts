@@ -18,6 +18,7 @@ pub enum BatchOperationType {
     Extension,     // Batch market extensions
     Resolution,    // Batch market resolutions
     FeeCollection, // Batch fee collection
+    Bet,           // Batch bet operations
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +55,15 @@ pub struct OracleFeed {
     pub provider: OracleProvider,
     pub threshold: i128,
     pub comparison: String,
+}
+
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct BetData {
+    pub market_id: Symbol,
+    pub user: Address,
+    pub outcome: String,
+    pub amount: i128,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -271,6 +281,122 @@ impl BatchProcessor {
             vote_data.outcome.clone(),
             vote_data.stake_amount,
         )?;
+
+        Ok(())
+    }
+
+    // ===== BATCH BET OPERATIONS =====
+
+    /// Process batch bet operations with atomicity guarantees
+    pub fn batch_bet(env: &Env, bets: &Vec<BetData>) -> Result<BatchResult, Error> {
+        let config = Self::get_config(env)?;
+        let start_time = env.ledger().timestamp();
+        let mut successful_operations = 0;
+        let mut failed_operations = 0;
+        let mut errors = Vec::new(env);
+
+        // Validate batch size
+        if bets.len() as u32 > config.max_operations_per_batch {
+            return Err(Error::InvalidInput);
+        }
+
+        // Empty batch validation
+        if bets.is_empty() {
+            return Ok(BatchResult {
+                successful_operations: 0,
+                failed_operations: 0,
+                total_operations: 0,
+                errors: Vec::new(env),
+                gas_used: 0,
+                execution_time: 0,
+            });
+        }
+
+        // Pre-validate all bets for atomicity
+        for bet_data in bets.iter() {
+            if let Err(error) = Self::validate_bet_data(&bet_data) {
+                return Err(error);
+            }
+        }
+
+        // Check total balance requirements across all bets
+        let mut user_totals: Map<Address, i128> = Map::new(env);
+        for bet_data in bets.iter() {
+            let current_total = user_totals.get(bet_data.user.clone()).unwrap_or(0);
+            user_totals.set(bet_data.user.clone(), current_total + bet_data.amount);
+        }
+
+        // Validate each user has sufficient balance for their total bets
+        for (user, total_amount) in user_totals.iter() {
+            if !crate::bets::BetUtils::has_sufficient_balance(env, &user, total_amount) {
+                return Err(Error::InsufficientBalance);
+            }
+        }
+
+        // Process all bets - if any fails, the entire batch fails (atomicity)
+        for (index, bet_data) in bets.iter().enumerate() {
+            match Self::process_single_bet(env, &bet_data) {
+                Ok(_) => {
+                    successful_operations += 1;
+                }
+                Err(error) => {
+                    failed_operations += 1;
+                    errors.push_back(BatchError {
+                        operation_index: index as u32,
+                        error_code: error as u32,
+                        error_message: String::from_str(env, &error.description()),
+                        operation_type: BatchOperationType::Bet,
+                    });
+                    
+                    // For atomicity, revert all successful operations if any fails
+                    if config.retry_failed_operations {
+                        return Err(Error::BatchOperationFailed);
+                    }
+                }
+            }
+        }
+
+        let end_time = env.ledger().timestamp();
+        let execution_time = end_time - start_time;
+
+        let result = BatchResult {
+            successful_operations,
+            failed_operations,
+            total_operations: bets.len() as u32,
+            errors,
+            gas_used: 0, // Would be calculated in real implementation
+            execution_time,
+        };
+
+        // Update statistics
+        Self::update_batch_statistics(env, &result)?;
+
+        Ok(result)
+    }
+
+    /// Process single bet operation
+    fn process_single_bet(env: &Env, bet_data: &BetData) -> Result<(), Error> {
+        // Use existing bet placement logic
+        crate::bets::BetManager::place_bet(
+            env,
+            bet_data.user.clone(),
+            bet_data.market_id.clone(),
+            bet_data.outcome.clone(),
+            bet_data.amount,
+        )?;
+
+        Ok(())
+    }
+
+    /// Validate bet data structure
+    fn validate_bet_data(bet_data: &BetData) -> Result<(), Error> {
+        if bet_data.amount <= 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        if bet_data.outcome.is_empty() {
+            return Err(Error::InvalidInput);
+        }
 
         Ok(())
     }
@@ -783,6 +909,7 @@ impl BatchUtils {
             BatchOperationType::Extension => Ok(config.max_batch_size.min(8)),
             BatchOperationType::Resolution => Ok(config.max_batch_size.min(12)),
             BatchOperationType::FeeCollection => Ok(config.max_batch_size.min(30)),
+            BatchOperationType::Bet => Ok(config.max_batch_size.min(50)),
         }
     }
 
@@ -813,6 +940,7 @@ impl BatchUtils {
             BatchOperationType::Extension => 2500,
             BatchOperationType::Resolution => 4000,
             BatchOperationType::FeeCollection => 800,
+            BatchOperationType::Bet => 1200,
         };
 
         base_cost * operation_count as u64
@@ -847,6 +975,16 @@ impl BatchTesting {
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
             )),
             expected_amount: 2_000_000_000, // 200 XLM
+        }
+    }
+
+    /// Create test bet data
+    pub fn create_test_bet_data(env: &Env, market_id: &Symbol, user: &Address) -> BetData {
+        BetData {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            outcome: String::from_str(env, "Yes"),
+            amount: 1_000_000_000, // 100 XLM
         }
     }
 

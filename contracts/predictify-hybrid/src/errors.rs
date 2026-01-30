@@ -192,6 +192,10 @@ pub enum Error {
     CircuitBreakerOpen = 503,
 
     AlreadyInitialized = 504,
+
+    // ===== BATCH OPERATION ERRORS =====
+    /// Batch operation failed
+    BatchOperationFailed = 505,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
