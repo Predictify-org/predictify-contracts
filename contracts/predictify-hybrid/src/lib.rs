@@ -14,7 +14,7 @@ mod circuit_breaker;
 mod config;
 mod disputes;
 mod edge_cases;
-mod errors;
+mod errors_simple;
 mod event_archive;
 mod events;
 mod extensions;
@@ -70,7 +70,7 @@ mod event_management_tests;
 
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
-pub use errors::Error;
+pub use errors_simple::Error;
 pub use types::*;
 
 use crate::config::{

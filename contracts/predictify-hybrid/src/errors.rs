@@ -108,6 +108,14 @@ pub enum Error {
     AlreadyBet = 110,
     /// Bets have already been placed on this market (cannot update)
     BetsAlreadyPlaced = 111,
+    /// Market is not resolved yet
+    MarketNotResolved = 112,
+    /// User has nothing to claim
+    NothingToClaim = 113,
+    /// User has already claimed
+    AlreadyClaimed = 114,
+    /// Insufficient stake amount
+    InsufficientStake = 115,
 
     // ===== ORACLE ERRORS =====
     /// Oracle is unavailable
@@ -134,52 +142,56 @@ pub enum Error {
     InvalidInput = 401,
     /// Invalid fee configuration
     InvalidFeeConfig = 402,
+    /// Insufficient balance
+    InsufficientBalance = 403,
     /// Configuration not found
-    ConfigurationNotFound = 403,
+    ConfigurationNotFound = 404,
+    /// Configuration not found
+    ConfigurationNotFound = 404,
     /// Already disputed
-    AlreadyDisputed = 404,
+    AlreadyDisputed = 405,
     /// Dispute voting period expired
-    DisputeVotingPeriodExpired = 405,
+    DisputeVotingPeriodExpired = 406,
     /// Dispute voting not allowed
-    DisputeVotingNotAllowed = 406,
+    DisputeVotingNotAllowed = 407,
     /// Already voted in dispute
-    DisputeAlreadyVoted = 407,
+    DisputeAlreadyVoted = 408,
     /// Dispute resolution conditions not met
-    DisputeResolutionConditionsNotMet = 408,
+    DisputeResolutionConditionsNotMet = 409,
     /// Dispute fee distribution failed
-    DisputeFeeDistributionFailed = 409,
+    DisputeFeeDistributionFailed = 410,
     /// Dispute escalation not allowed
-    DisputeEscalationNotAllowed = 410,
+    DisputeEscalationNotAllowed = 411,
     /// Threshold below minimum
-    ThresholdBelowMinimum = 411,
+    ThresholdBelowMinimum = 412,
     /// Threshold exceeds maximum
-    ThresholdExceedsMaximum = 412,
+    ThresholdExceedsMaximum = 413,
     /// Fee already collected
-    FeeAlreadyCollected = 413,
+    FeeAlreadyCollected = 414,
     /// Invalid oracle feed
-    InvalidOracleFeed = 414,
+    InvalidOracleFeed = 415,
     /// No fees to collect
-    NoFeesToCollect = 415,
+    NoFeesToCollect = 416,
     /// Invalid extension days
-    InvalidExtensionDays = 416,
+    InvalidExtensionDays = 417,
     /// Extension days exceeded
-    ExtensionDaysExceeded = 417,
+    ExtensionDaysExceeded = 418,
     /// Market extension not allowed
-    MarketExtensionNotAllowed = 418,
+    MarketExtensionNotAllowed = 419,
     /// Extension fee insufficient
-    ExtensionFeeInsufficient = 419,
+    ExtensionFeeInsufficient = 420,
     /// Admin address is not set (initialization missing)
-    AdminNotSet = 420,
+    AdminNotSet = 421,
     /// Dispute timeout not set
-    DisputeTimeoutNotSet = 421,
+    DisputeTimeoutNotSet = 422,
     /// Dispute timeout expired
-    DisputeTimeoutExpired = 422,
+    DisputeTimeoutExpired = 423,
     /// Dispute timeout not expired
-    DisputeTimeoutNotExpired = 423,
+    DisputeTimeoutNotExpired = 424,
     /// Invalid timeout hours
-    InvalidTimeoutHours = 424,
+    InvalidTimeoutHours = 425,
     /// Dispute timeout extension not allowed
-    DisputeTimeoutExtensionNotAllowed = 425,
+    DisputeTimeoutExtensionNotAllowed = 426,
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker not initialized
@@ -192,6 +204,10 @@ pub enum Error {
     CircuitBreakerOpen = 503,
 
     AlreadyInitialized = 504,
+
+    // ===== BATCH OPERATION ERRORS =====
+    /// Batch operation failed
+    BatchOperationFailed = 505,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

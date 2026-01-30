@@ -14,7 +14,8 @@
 
 #![cfg(test)]
 
-use crate::bets::{BetManager, BetStorage, BetValidator, MAX_BET_AMOUNT, MIN_BET_AMOUNT};
+use crate::bets::{BetValidator, MAX_BET_AMOUNT, MIN_BET_AMOUNT};
+use crate::errors_simple::Error;
 use crate::types::{Bet, BetStats, BetStatus, Market, MarketState, OracleConfig, OracleProvider};
 use crate::{Error, PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
@@ -397,31 +398,31 @@ fn test_place_bet_double_betting_prevented() {
 #[test]
 fn test_place_bet_on_ended_market() {
     // Placing bet after market ended would return MarketClosed (#102).
-    assert_eq!(crate::errors::Error::MarketClosed as i128, 102);
+    assert_eq!(Error::MarketClosed as i128, 102);
 }
 
 #[test]
 fn test_place_bet_invalid_outcome() {
     // Betting on invalid outcome would return InvalidOutcome (#108).
-    assert_eq!(crate::errors::Error::InvalidOutcome as i128, 108);
+    assert_eq!(Error::InvalidOutcome as i128, 108);
 }
 
 #[test]
 fn test_place_bet_below_minimum() {
     // Betting below minimum would return InsufficientStake (#107).
-    assert_eq!(crate::errors::Error::InsufficientStake as i128, 107);
+    assert_eq!(Error::InsufficientStake as i128, 115);
 }
 
 #[test]
 fn test_place_bet_above_maximum() {
     // Betting above maximum would return InvalidInput (#401).
-    assert_eq!(crate::errors::Error::InvalidInput as i128, 401);
+    assert_eq!(Error::InvalidInput as i128, 401);
 }
 
 #[test]
 fn test_place_bet_nonexistent_market() {
     // Betting on non-existent market would return MarketNotFound (#101).
-    assert_eq!(crate::errors::Error::MarketNotFound as i128, 101);
+    assert_eq!(Error::MarketNotFound as i128, 101);
 }
 
 // ===== BET STATUS TESTS =====
