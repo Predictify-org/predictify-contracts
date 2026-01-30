@@ -42,7 +42,7 @@ impl PropertyBasedTestSuite {
         let admin = Address::generate(&env);
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin);
+        client.initialize(&admin, &None);
 
         // Generate multiple test users for comprehensive testing
         let users = (0..10).map(|_| Address::generate(&env)).collect();

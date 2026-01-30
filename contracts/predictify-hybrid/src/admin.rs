@@ -6,8 +6,7 @@ use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::extensions::ExtensionManager;
-use crate::config::FeeConfig;
-use crate::fees::FeeManager;
+use crate::fees::{FeeConfig, FeeManager};
 use crate::format;
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
@@ -202,6 +201,9 @@ impl AdminInitializer {
     /// control over the contract. Consider using a multi-signature wallet
     /// or governance contract for production deployments.
     pub fn initialize(env: &Env, admin: &Address) -> Result<(), Error> {
+        // Check for re-initialization attempt (critical security check)
+        AdminValidator::validate_contract_not_initialized(env)?;
+
         // Validate admin address
         AdminValidator::validate_admin_address(env, admin)?;
 
@@ -463,7 +465,12 @@ impl AdminAccessControl {
         admin: &Address,
         permission: &AdminPermission,
     ) -> Result<(), Error> {
-        // Try new multi-admin system first if migrated
+        // Check original admin for backward compatibility first
+        if AdminManager::is_original_admin(env, admin) {
+            return Ok(());
+        }
+
+        // Try new multi-admin system if migrated
         if AdminSystemIntegration::is_migrated(env) {
             return AdminManager::validate_admin_permission(env, admin, *permission);
         }
@@ -1251,6 +1258,16 @@ impl AdminManager {
             .persistent()
             .set(&count_key, &(current_count + 1));
 
+        // Maintain a list of admin addresses for iteration
+        let list_key = Symbol::new(env, "AdminList");
+        let mut admin_list: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&list_key)
+            .unwrap_or_else(|| Vec::new(env));
+        admin_list.push_back(new_admin.clone());
+        env.storage().persistent().set(&list_key, &admin_list);
+
         // Emit event using existing system
         Self::emit_admin_change_event(env, new_admin, AdminActionType::Added);
 
@@ -1291,6 +1308,18 @@ impl AdminManager {
             env.storage()
                 .persistent()
                 .set(&count_key, &(current_count - 1));
+        }
+
+        // Remove from admin list
+        let list_key = Symbol::new(env, "AdminList");
+        if let Some(admin_list) = env.storage().persistent().get::<_, Vec<Address>>(&list_key) {
+            let mut new_list: Vec<Address> = Vec::new(env);
+            for addr in admin_list.iter() {
+                if &addr != admin_to_remove {
+                    new_list.push_back(addr.clone());
+                }
+            }
+            env.storage().persistent().set(&list_key, &new_list);
         }
 
         Self::emit_admin_change_event(env, admin_to_remove, AdminActionType::Removed);
@@ -1370,7 +1399,46 @@ impl AdminManager {
             roles.set(original_admin, AdminRole::SuperAdmin);
         }
 
+        // Iterate over admin list to get all multi-admin entries
+        let list_key = Symbol::new(env, "AdminList");
+        if let Some(admin_list) = env.storage().persistent().get::<_, Vec<Address>>(&list_key) {
+            for admin_addr in admin_list.iter() {
+                let admin_key = Self::get_admin_key(env, &admin_addr);
+                if let Some(assignment) = env
+                    .storage()
+                    .persistent()
+                    .get::<_, AdminRoleAssignment>(&admin_key)
+                {
+                    if assignment.is_active {
+                        roles.set(admin_addr.clone(), assignment.role);
+                    }
+                }
+            }
+        }
+
         roles
+    }
+
+    /// Check if an admin exists in the multi-admin system
+    pub fn get_admin_role_for_address(env: &Env, admin: &Address) -> Option<AdminRole> {
+        // Check original admin first
+        if Self::is_original_admin(env, admin) {
+            return Some(AdminRole::SuperAdmin);
+        }
+
+        // Check multi-admin storage
+        let admin_key = Self::get_admin_key(env, admin);
+        if let Some(assignment) = env
+            .storage()
+            .persistent()
+            .get::<_, AdminRoleAssignment>(&admin_key)
+        {
+            if assignment.is_active {
+                return Some(assignment.role);
+            }
+        }
+
+        None
     }
 
     /// Emits admin change events using existing AdminActionType
@@ -1394,10 +1462,10 @@ impl AdminManager {
     // ===== Helper Methods =====
 
     /// Generate a proper admin storage key using the correct environment
-    fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
-        // Create a unique key based on admin address
-        let key_str = format!("MultiAdmin_{:?}", admin.to_string());
-        Symbol::new(env, &key_str)
+    fn get_admin_key(env: &Env, admin: &Address) -> (Symbol, Address) {
+        // Use a tuple key for per-admin storage
+        // This avoids Symbol character limitations by using Address directly
+        (Symbol::new(env, "MultiAdmin"), admin.clone())
     }
 
     /// Check if an address is the original admin from single-admin system
@@ -2343,7 +2411,7 @@ impl AdminValidator {
         let admin_exists = env.storage().persistent().has(&Symbol::new(env, "Admin"));
 
         if admin_exists {
-            return Err(Error::InvalidState);
+            return Err(Error::AlreadyInitialized);
         }
 
         Ok(())

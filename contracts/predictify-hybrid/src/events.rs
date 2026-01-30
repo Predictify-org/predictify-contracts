@@ -178,6 +178,131 @@ pub struct VoteCastEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a user places a bet on a prediction market event.
+///
+/// This event captures all details of bet placement activity, including bettor identity,
+/// selected outcome, locked amount, and timing. Critical for tracking market
+/// activity, calculating payouts, and maintaining betting transparency.
+///
+/// # Bet vs Vote Distinction
+///
+/// - **Bet**: Financial wager on predicted outcome with locked funds for payout
+/// - **Vote**: Participation in community consensus for market resolution
+///
+/// Bets represent a user's prediction and financial commitment, while votes
+/// contribute to the community resolution mechanism.
+///
+/// # Bet Information
+///
+/// Records complete betting context:
+/// - Market and bettor identification
+/// - Selected outcome prediction
+/// - Amount of funds locked in the contract
+/// - Precise timing for chronological analysis
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::events::BetPlacedEvent;
+/// # let env = Env::default();
+/// # let bettor = Address::generate(&env);
+///
+/// // Bet placement event data
+/// let event = BetPlacedEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     bettor: bettor.clone(),
+///     outcome: String::from_str(&env, "Yes"),
+///     amount: 10_000_000, // 1.0 XLM locked
+///     timestamp: env.ledger().timestamp(),
+/// };
+///
+/// // Event provides complete betting context
+/// println!("Bet placed by: {}", event.bettor.to_string());
+/// println!("Market: {}", event.market_id.to_string());
+/// println!("Outcome prediction: {}", event.outcome.to_string());
+/// println!("Amount locked: {} XLM", event.amount / 10_000_000);
+/// ```
+///
+/// # Fund Locking
+///
+/// When a bet is placed:
+/// 1. User's funds are transferred to the contract
+/// 2. Funds remain locked until market resolution
+/// 3. Upon resolution:
+///    - Winners receive proportional share of betting pool (minus fees)
+///    - Losers forfeit their locked funds
+///    - Refunds issued if market is cancelled
+///
+/// # Economic Tracking
+///
+/// Enables comprehensive economic analysis:
+/// - **Pool Distribution**: Track total locked funds across outcomes
+/// - **Bettor Activity**: Analyze betting patterns and amounts
+/// - **Market Liquidity**: Monitor total bets and participation levels
+/// - **Implied Odds**: Calculate implied probabilities from bet amounts
+///
+/// # Integration Applications
+///
+/// - **Real-time Updates**: Live market activity feeds
+/// - **Analytics Dashboards**: Betting pattern analysis and visualization
+/// - **Payout Calculation**: Amount-weighted payout distributions
+/// - **User Portfolios**: Track individual betting history and performance
+/// - **Market Sentiment**: Aggregate betting trends and momentum analysis
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BetPlacedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Bettor address
+    pub bettor: Address,
+    /// Selected outcome
+    pub outcome: String,
+    /// Amount locked
+    pub amount: i128,
+    /// Bet placement timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when a bet's status is updated (won, lost, refunded).
+///
+/// This event tracks bet resolution status changes, providing transparency
+/// for payout processing and user notification.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::events::BetStatusUpdatedEvent;
+/// # let env = Env::default();
+/// # let bettor = Address::generate(&env);
+///
+/// let event = BetStatusUpdatedEvent {
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     bettor: bettor.clone(),
+///     old_status: String::from_str(&env, "Active"),
+///     new_status: String::from_str(&env, "Won"),
+///     payout_amount: Some(15_000_000), // 1.5 XLM payout
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BetStatusUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Bettor address
+    pub bettor: Address,
+    /// Previous bet status
+    pub old_status: String,
+    /// New bet status
+    pub new_status: String,
+    /// Payout amount (if won)
+    pub payout_amount: Option<i128>,
+    /// Status update timestamp
+    pub timestamp: u64,
+}
+
 /// Event emitted when oracle data is successfully fetched for market resolution.
 ///
 /// This event captures comprehensive oracle data retrieval information, including
@@ -704,6 +829,28 @@ pub struct AdminInitializedEvent {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractInitializedEvent {
+    /// Admin address
+    pub admin: Address,
+    /// Platform fee percentage
+    pub platform_fee_percentage: i128,
+    /// Initialization timestamp
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformFeeSetEvent {
+    /// Fee percentage
+    pub fee_percentage: i128,
+    /// Set by admin
+    pub set_by: Address,
+    /// Set timestamp
+    pub timestamp: u64,
+}
+
 /// Dispute timeout set event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -886,6 +1033,76 @@ pub struct ManualResolutionRequiredEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when market state changes
+///
+/// This event tracks all market state transitions throughout the market lifecycle,
+/// providing transparency and audit trail for state changes. Critical for monitoring
+/// market progression and detecting anomalies.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous state (Active, Ended, Disputed, Resolved, Closed, Cancelled)
+/// - New state after transition
+/// - Reason for state change
+/// - Timestamp of transition
+///
+/// # State Transitions
+///
+/// Common transitions:
+/// - Active → Ended (voting period completed)
+/// - Ended → Disputed (dispute filed)
+/// - Disputed → Resolved (dispute resolved)
+/// - Ended → Resolved (normal resolution)
+/// - Resolved → Closed (market finalized)
+/// - Any → Cancelled (emergency cancellation)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateChangeEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Previous state
+    pub old_state: crate::types::MarketState,
+    /// New state
+    pub new_state: crate::types::MarketState,
+    /// Reason for state change
+    pub reason: String,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when user claims winnings
+///
+/// This event tracks all winnings claims, providing transparency for payouts
+/// and audit trail for financial operations. Essential for monitoring market
+/// economics and user engagement.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - User address claiming winnings
+/// - Amount claimed
+/// - Timestamp of claim
+///
+/// # Use Cases
+///
+/// - **Financial Tracking**: Monitor total payouts
+/// - **User Analytics**: Track winning users and amounts
+/// - **Audit Trail**: Maintain complete payout records
+/// - **Tax Reporting**: Generate user earning reports
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WinningsClaimedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// User claiming winnings
+    pub user: Address,
+    /// Amount claimed
+    pub amount: i128,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 /// Contract upgraded event - emitted when contract Wasm is upgraded
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -897,6 +1114,96 @@ pub struct ContractUpgradedEvent {
     /// Upgrade ID
     pub upgrade_id: Symbol,
     /// Upgrade timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when market deadline is extended
+///
+/// This event tracks market deadline extensions, providing transparency
+/// for extension requests and their impact on market timeline.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous end time
+/// - New end time after extension
+/// - Additional days added
+/// - Admin who performed the extension
+/// - Reason for extension
+/// - Extension fee (if applicable)
+/// - Timestamp of extension
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketDeadlineExtendedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Previous end time
+    pub old_end_time: u64,
+    /// New end time
+    pub new_end_time: u64,
+    /// Additional days
+    pub additional_days: u32,
+    /// Admin who extended
+    pub admin: Address,
+    /// Reason for extension
+    pub reason: String,
+    /// Extension fee
+    pub fee: i128,
+    /// Extension timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when market description is updated
+///
+/// This event tracks market description updates, providing transparency
+/// for changes to market questions and parameters.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous description
+/// - New description
+/// - Admin who performed the update
+/// - Update timestamp
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketDescriptionUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Old description
+    pub old_description: String,
+    /// New description
+    pub new_description: String,
+    /// Admin who updated
+    pub admin: Address,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when market outcomes are updated
+///
+/// This event tracks market outcome updates, providing transparency
+/// for changes to available market outcomes.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous outcomes
+/// - New outcomes
+/// - Admin who performed the update
+/// - Update timestamp
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketOutcomesUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Old outcomes
+    pub old_outcomes: Vec<String>,
+    /// New outcomes
+    pub new_outcomes: Vec<String>,
+    /// Admin who updated
+    pub admin: Address,
+    /// Update timestamp
     pub timestamp: u64,
 }
 
@@ -1037,6 +1344,94 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("vote"), &event);
+    }
+
+    /// Emit bet placed event when a user places a bet on a market
+    ///
+    /// This function emits an event when a user successfully places a bet,
+    /// locking their funds in the contract for the duration of the market.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `bettor` - Address of the user placing the bet
+    /// - `outcome` - The outcome the user is betting on
+    /// - `amount` - The amount of funds locked for this bet
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_bet_placed(
+    ///     &env,
+    ///     &market_id,
+    ///     &user_address,
+    ///     &String::from_str(&env, "Yes"),
+    ///     10_000_000 // 1.0 XLM
+    /// );
+    /// ```
+    pub fn emit_bet_placed(
+        env: &Env,
+        market_id: &Symbol,
+        bettor: &Address,
+        outcome: &String,
+        amount: i128,
+    ) {
+        let event = BetPlacedEvent {
+            market_id: market_id.clone(),
+            bettor: bettor.clone(),
+            outcome: outcome.clone(),
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("bet_plc"), &event);
+    }
+
+    /// Emit bet status updated event when a bet's status changes
+    ///
+    /// This function emits an event when a bet's status is updated
+    /// (e.g., Active → Won, Active → Lost, Active → Refunded).
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `bettor` - Address of the bettor
+    /// - `old_status` - Previous bet status
+    /// - `new_status` - New bet status
+    /// - `payout_amount` - Optional payout amount (if bet won)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_bet_status_updated(
+    ///     &env,
+    ///     &market_id,
+    ///     &user_address,
+    ///     &String::from_str(&env, "Active"),
+    ///     &String::from_str(&env, "Won"),
+    ///     Some(15_000_000) // 1.5 XLM payout
+    /// );
+    /// ```
+    pub fn emit_bet_status_updated(
+        env: &Env,
+        market_id: &Symbol,
+        bettor: &Address,
+        old_status: &String,
+        new_status: &String,
+        payout_amount: Option<i128>,
+    ) {
+        let event = BetStatusUpdatedEvent {
+            market_id: market_id.clone(),
+            bettor: bettor.clone(),
+            old_status: old_status.clone(),
+            new_status: new_status.clone(),
+            payout_amount,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("bet_upd"), &event);
     }
 
     /// Emit oracle result event
@@ -1272,6 +1667,27 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("adm_init"), &event);
     }
 
+    /// Emit contract initialized event (full initialization with platform fee)
+    pub fn emit_contract_initialized(env: &Env, admin: &Address, fee: i128) {
+        let event = ContractInitializedEvent {
+            admin: admin.clone(), // Clone because the struct owns the Address
+            platform_fee_percentage: fee,
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((Symbol::new(env, "contract_initialized"),), event);
+    }
+
+    pub fn emit_platform_fee_set(env: &Env, fee: i128, admin: &Address) {
+        let event = PlatformFeeSetEvent {
+            fee_percentage: fee,
+            set_by: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((Symbol::new(env, "platform_fee_set"),), event);
+    }
+
     /// Emit config initialized event
     pub fn emit_config_initialized(env: &Env, admin: &Address, environment: &Environment) {
         let event = ConfigInitializedEvent {
@@ -1427,11 +1843,7 @@ impl EventEmitter {
     }
 
     /// Emit storage cleanup event
-    pub fn emit_storage_cleanup_event(
-        env: &Env,
-        market_id: &Symbol,
-        cleanup_type: &String,
-    ) {
+    pub fn emit_storage_cleanup_event(env: &Env, market_id: &Symbol, cleanup_type: &String) {
         let event = StorageCleanupEvent {
             market_id: market_id.clone(),
             cleanup_type: cleanup_type.clone(),
@@ -1476,19 +1888,12 @@ impl EventEmitter {
     }
 
     /// Emit circuit breaker event
-    pub fn emit_circuit_breaker_event(
-        env: &Env,
-        event: &CircuitBreakerEvent,
-    ) {
+    pub fn emit_circuit_breaker_event(env: &Env, event: &CircuitBreakerEvent) {
         Self::store_event(env, &symbol_short!("cb_event"), event);
     }
 
     /// Emit oracle degradation event when oracle service fails
-    pub fn emit_oracle_degradation(
-        env: &Env,
-        oracle: &OracleProvider,
-        reason: &String,
-    ) {
+    pub fn emit_oracle_degradation(env: &Env, oracle: &OracleProvider, reason: &String) {
         let event = OracleDegradationEvent {
             oracle: oracle.clone(),
             reason: reason.clone(),
@@ -1498,11 +1903,7 @@ impl EventEmitter {
     }
 
     /// Emit oracle recovery event when oracle service recovers
-    pub fn emit_oracle_recovery(
-        env: &Env,
-        oracle: &OracleProvider,
-        message: &String,
-    ) {
+    pub fn emit_oracle_recovery(env: &Env, oracle: &OracleProvider, message: &String) {
         let event = OracleRecoveryEvent {
             oracle: oracle.clone(),
             recovery_message: message.clone(),
@@ -1512,17 +1913,280 @@ impl EventEmitter {
     }
 
     /// Emit manual resolution required event when automatic resolution fails
-    pub fn emit_manual_resolution_required(
-        env: &Env,
-        market_id: &Symbol,
-        reason: &String,
-    ) {
+    pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &String) {
         let event = ManualResolutionRequiredEvent {
             market_id: market_id.clone(),
             reason: reason.clone(),
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("man_res"), &event);
+    }
+
+    /// Emit state change event when market state transitions
+    ///
+    /// This function emits an event whenever a market transitions between states,
+    /// providing complete transparency and audit trail for state changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_state` - Previous market state
+    /// - `new_state` - New market state after transition
+    /// - `reason` - Reason for state change
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_state_change_event(
+    ///     &env,
+    ///     &market_id,
+    ///     &MarketState::Active,
+    ///     &MarketState::Ended,
+    ///     &String::from_str(&env, "Voting period completed")
+    /// );
+    /// ```
+    pub fn emit_state_change_event(
+        env: &Env,
+        market_id: &Symbol,
+        old_state: &crate::types::MarketState,
+        new_state: &crate::types::MarketState,
+        reason: &String,
+    ) {
+        let event = StateChangeEvent {
+            market_id: market_id.clone(),
+            old_state: old_state.clone(),
+            new_state: new_state.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("st_chng"), &event);
+    }
+
+    /// Emit winnings claimed event when user claims payout
+    ///
+    /// This function emits an event whenever a user successfully claims their
+    /// winnings from a resolved market, providing transparency for all payouts.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `user` - User address claiming winnings
+    /// - `amount` - Amount claimed
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_winnings_claimed(
+    ///     &env,
+    ///     &market_id,
+    ///     &user_address,
+    ///     1_500_000_000 // 150 tokens
+    /// );
+    /// ```
+    pub fn emit_winnings_claimed(env: &Env, market_id: &Symbol, user: &Address, amount: i128) {
+        let event = WinningsClaimedEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("win_clm"), &event);
+    }
+
+    /// Emit market deadline extended event
+    ///
+    /// This function emits an event when a market's deadline is extended,
+    /// providing transparency for extension operations and their parameters.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_end_time` - Previous end time
+    /// - `new_end_time` - New end time after extension
+    /// - `additional_days` - Number of days added
+    /// - `admin` - Admin who performed the extension
+    /// - `reason` - Reason for the extension
+    /// - `fee` - Extension fee paid
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_market_deadline_extended(
+    ///     &env,
+    ///     &market_id,
+    ///     old_end_time,
+    ///     new_end_time,
+    ///     7, // 7 additional days
+    ///     &admin_address,
+    ///     &String::from_str(&env, "Low participation"),
+    ///     1_000_000 // 1 XLM fee
+    /// );
+    /// ```
+    pub fn emit_market_deadline_extended(
+        env: &Env,
+        market_id: &Symbol,
+        old_end_time: u64,
+        new_end_time: u64,
+        additional_days: u32,
+        admin: &Address,
+        reason: &String,
+        fee: i128,
+    ) {
+        let event = MarketDeadlineExtendedEvent {
+            market_id: market_id.clone(),
+            old_end_time,
+            new_end_time,
+            additional_days,
+            admin: admin.clone(),
+            reason: reason.clone(),
+            fee,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_ext"), &event);
+    }
+
+    /// Emit market description updated event
+    ///
+    /// This function emits an event when a market's description is updated,
+    /// providing transparency for market parameter changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_description` - Previous market description
+    /// - `new_description` - New market description
+    /// - `admin` - Admin who performed the update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_market_description_updated(
+    ///     &env,
+    ///     &market_id,
+    ///     &String::from_str(&env, "Old question"),
+    ///     &String::from_str(&env, "Updated question"),
+    ///     &admin_address
+    /// );
+    /// ```
+    pub fn emit_market_description_updated(
+        env: &Env,
+        market_id: &Symbol,
+        old_description: &String,
+        new_description: &String,
+        admin: &Address,
+    ) {
+        let event = MarketDescriptionUpdatedEvent {
+            market_id: market_id.clone(),
+            old_description: old_description.clone(),
+            new_description: new_description.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_dsc"), &event);
+    }
+
+    /// Emit market outcomes updated event
+    ///
+    /// This function emits an event when a market's outcomes are updated,
+    /// providing transparency for outcome changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_outcomes` - Previous market outcomes
+    /// - `new_outcomes` - New market outcomes
+    /// - `admin` - Admin who performed the update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_market_outcomes_updated(
+    ///     &env,
+    ///     &market_id,
+    ///     &old_outcomes_vec,
+    ///     &new_outcomes_vec,
+    ///     &admin_address
+    /// );
+    /// ```
+    pub fn emit_market_outcomes_updated(
+        env: &Env,
+        market_id: &Symbol,
+        old_outcomes: &Vec<String>,
+        new_outcomes: &Vec<String>,
+        admin: &Address,
+    ) {
+        let event = MarketOutcomesUpdatedEvent {
+            market_id: market_id.clone(),
+            old_outcomes: old_outcomes.clone(),
+            new_outcomes: new_outcomes.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_out"), &event);
+    }
+
+    /// Emit error event with full error context
+    ///
+    /// This function emits an event when errors occur, providing detailed context
+    /// for debugging, monitoring, and error recovery. Complies with ticket spec
+    /// requiring emit_error_event(error: Error, context: ErrorContext).
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `error` - Error that occurred
+    /// - `context` - Full error context with operation, user, market details
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let context = ErrorContext {
+    ///     operation: String::from_str(&env, "claim_winnings"),
+    ///     user_address: Some(user.clone()),
+    ///     market_id: Some(market_id.clone()),
+    ///     context_data: Map::new(&env),
+    ///     timestamp: env.ledger().timestamp(),
+    ///     call_chain: vec![&env, String::from_str(&env, "lib::claim_winnings")],
+    /// };
+    ///
+    /// EventEmitter::emit_error_event(&env, Error::NothingToClaim, &context);
+    /// ```
+    pub fn emit_error_event(
+        env: &Env,
+        error: crate::errors::Error,
+        context: &crate::errors::ErrorContext,
+    ) {
+        let error_code = error as u32;
+
+        // Convert error enum to message string
+        let error_msg = match error {
+            crate::errors::Error::Unauthorized => "Unauthorized access",
+            crate::errors::Error::MarketNotFound => "Market not found",
+            crate::errors::Error::MarketClosed => "Market closed",
+            crate::errors::Error::InvalidOutcome => "Invalid outcome",
+            crate::errors::Error::AlreadyVoted => "Already voted",
+            crate::errors::Error::AlreadyClaimed => "Already claimed",
+            crate::errors::Error::MarketNotResolved => "Market not resolved",
+            crate::errors::Error::NothingToClaim => "Nothing to claim",
+            _ => "Unknown error",
+        };
+        let message = String::from_str(env, error_msg);
+
+        let event = ErrorLoggedEvent {
+            error_code,
+            message,
+            context: context.operation.clone(),
+            user: context.user_address.clone(),
+            market_id: context.market_id.clone(),
+            timestamp: context.timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("err_evt"), &event);
     }
 
     /// Emit governance proposal created event
@@ -1563,11 +2227,7 @@ impl EventEmitter {
     }
 
     /// Emit governance proposal executed event
-    pub fn emit_governance_proposal_executed(
-        env: &Env,
-        proposal_id: &Symbol,
-        executor: &Address,
-    ) {
+    pub fn emit_governance_proposal_executed(env: &Env, proposal_id: &Symbol, executor: &Address) {
         let timestamp = env.ledger().timestamp();
         let event = GovernanceProposalExecutedEvent {
             proposal_id: proposal_id.clone(),
@@ -1625,57 +2285,6 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("up_prop"), &event);
-    }
-
-    /// Emit winnings claimed event
-    pub fn emit_winnings_claimed(
-        env: &Env,
-        market_id: &Symbol,
-        user: &Address,
-        amount: i128,
-    ) {
-        let mut event_data = Map::new(env);
-        event_data.set(
-            String::from_str(env, "market_id"),
-            String::from_str(env, "market"),
-        );
-        event_data.set(
-            String::from_str(env, "user"),
-            String::from_str(env, "user"),
-        );
-        event_data.set(
-            String::from_str(env, "amount"),
-            String::from_str(env, "amount"),
-        );
-        event_data.set(
-            String::from_str(env, "timestamp"),
-            String::from_str(env, "ts"),
-        );
-        Self::store_event(env, &symbol_short!("claimed"), &event_data);
-    }
-
-    /// Emit state change event
-    pub fn emit_state_change_event(
-        env: &Env,
-        market_id: &Symbol,
-        old_state: &crate::types::MarketState,
-        new_state: &crate::types::MarketState,
-        reason: &String,
-    ) {
-        let mut event_data = Map::new(env);
-        event_data.set(
-            String::from_str(env, "market_id"),
-            String::from_str(env, "market"),
-        );
-        event_data.set(
-            String::from_str(env, "reason"),
-            reason.clone(),
-        );
-        event_data.set(
-            String::from_str(env, "timestamp"),
-            String::from_str(env, "ts"),
-        );
-        Self::store_event(env, &symbol_short!("st_chng"), &event_data);
     }
 
     /// Store event in persistent storage

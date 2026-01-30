@@ -738,6 +738,37 @@ pub struct Market {
     pub extension_history: Vec<MarketExtension>,
 }
 
+// ===== EVENT ARCHIVE / HISTORICAL QUERY TYPES =====
+
+/// Summary of an event (market) for historical queries and analytics.
+///
+/// Contains only public metadata and outcome; no sensitive data (no votes, stakes, or addresses).
+/// Used by `query_events_history`, `query_events_by_resolution_status`, and `query_events_by_category`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventHistoryEntry {
+    /// Market/event ID
+    pub market_id: Symbol,
+    /// Question text (public)
+    pub question: String,
+    /// Outcome names (public)
+    pub outcomes: Vec<String>,
+    /// Market end time (Unix timestamp)
+    pub end_time: u64,
+    /// Creation timestamp (from registry)
+    pub created_at: u64,
+    /// Current market state (Active, Resolved, Cancelled, etc.)
+    pub state: MarketState,
+    /// Winning outcome if resolved
+    pub winning_outcome: Option<String>,
+    /// Total amount staked (public aggregate)
+    pub total_staked: i128,
+    /// When archived (if any); None if not archived
+    pub archived_at: Option<u64>,
+    /// Category / feed identifier (e.g. oracle feed_id) for filtering
+    pub category: String,
+}
+
 impl Market {
     /// Create a new market
     pub fn new(
@@ -2292,4 +2323,217 @@ pub struct MarketPauseInfo {
     pub paused_by: Address,
     pub pause_end_time: u64,
     pub original_state: MarketState,
+}
+
+// ===== BET PLACEMENT TYPES =====
+
+/// Status of a bet placed on a prediction market.
+///
+/// This enum tracks the lifecycle of a bet from placement through resolution:
+/// - `Active`: Bet is placed and funds are locked, awaiting market resolution
+/// - `Won`: Market resolved in favor of user's predicted outcome, winnings claimable
+/// - `Lost`: Market resolved against user's predicted outcome, funds forfeited
+/// - `Refunded`: Bet was refunded due to market cancellation or special circumstances
+/// - `Cancelled`: Bet was cancelled before market resolution (if allowed)
+///
+/// # State Transitions
+///
+/// ```text
+/// Active → Won (market resolved in user's favor)
+/// Active → Lost (market resolved against user)
+/// Active → Refunded (market cancelled)
+/// Active → Cancelled (bet cancelled before resolution, if permitted)
+/// ```
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BetStatus {
+    /// Bet is active with funds locked
+    Active,
+    /// Bet won - user predicted correctly
+    Won,
+    /// Bet lost - user predicted incorrectly
+    Lost,
+    /// Bet was refunded (market cancelled)
+    Refunded,
+    /// Bet was cancelled by user (if allowed)
+    Cancelled,
+}
+
+/// Represents a user's bet on a prediction market event.
+///
+/// This structure encapsulates all information about a user's bet placement,
+/// including the selected outcome, locked funds amount, and bet status.
+/// Bets are distinct from votes in that they represent a financial wager
+/// on the predicted outcome rather than a governance/consensus vote.
+///
+/// # Bet vs Vote Distinction
+///
+/// - **Bet**: Financial wager on predicted outcome with locked funds
+/// - **Vote**: Participation in community consensus for market resolution
+///
+/// # Fund Locking
+///
+/// When a bet is placed:
+/// 1. User's funds (XLM or Stellar tokens) are transferred to the contract
+/// 2. Funds remain locked until market resolution
+/// 3. Upon resolution:
+///    - Winners receive proportional share of total bet pool (minus fees)
+///    - Losers forfeit their locked funds
+///    - Refunds issued if market is cancelled
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, String, Symbol};
+/// # use predictify_hybrid::types::{Bet, BetStatus};
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+///
+/// // Create a new bet
+/// let bet = Bet {
+///     user: user.clone(),
+///     market_id: Symbol::new(&env, "btc_50k_2024"),
+///     outcome: String::from_str(&env, "yes"),
+///     amount: 10_000_000, // 1.0 XLM locked
+///     timestamp: env.ledger().timestamp(),
+///     status: BetStatus::Active,
+/// };
+///
+/// // Bet provides complete bet context
+/// println!("Bet placed by: {:?}", bet.user);
+/// println!("Market: {:?}", bet.market_id);
+/// println!("Outcome: {}", bet.outcome.to_string());
+/// println!("Amount locked: {} stroops", bet.amount);
+/// println!("Status: {:?}", bet.status);
+/// ```
+///
+/// # Integration Points
+///
+/// Bet structures integrate with:
+/// - **Market System**: Validates market exists and is active
+/// - **Token System**: Handles fund locking and payout distribution
+/// - **Resolution System**: Updates bet status upon market resolution
+/// - **Payout System**: Calculates and distributes winnings
+/// - **Event System**: Emits bet placement and resolution events
+///
+/// # Validation Rules
+///
+/// Before a bet is placed, the following validations occur:
+/// - Market exists and is in Active state
+/// - Market has not ended (current time < end_time)
+/// - User has not already placed a bet on this market
+/// - User has sufficient balance for the bet amount
+/// - Bet amount meets minimum stake requirements
+/// - Selected outcome is valid for the market
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Bet {
+    /// Address of the user who placed the bet
+    pub user: Address,
+    /// Market ID this bet is placed on
+    pub market_id: Symbol,
+    /// Selected outcome the user is betting on
+    pub outcome: String,
+    /// Amount of funds locked for this bet (in stroops)
+    pub amount: i128,
+    /// Timestamp when the bet was placed
+    pub timestamp: u64,
+    /// Current status of the bet
+    pub status: BetStatus,
+}
+
+impl Bet {
+    /// Create a new active bet
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `user` - Address of the user placing the bet
+    /// * `market_id` - Symbol identifying the market
+    /// * `outcome` - The outcome the user is betting on
+    /// * `amount` - The amount to lock for this bet
+    ///
+    /// # Returns
+    ///
+    /// A new `Bet` instance with `Active` status and current timestamp
+    pub fn new(env: &Env, user: Address, market_id: Symbol, outcome: String, amount: i128) -> Self {
+        Self {
+            user,
+            market_id,
+            outcome,
+            amount,
+            timestamp: env.ledger().timestamp(),
+            status: BetStatus::Active,
+        }
+    }
+
+    /// Check if the bet is still active (funds locked, awaiting resolution)
+    pub fn is_active(&self) -> bool {
+        self.status == BetStatus::Active
+    }
+
+    /// Check if the bet has been resolved (won or lost)
+    pub fn is_resolved(&self) -> bool {
+        matches!(self.status, BetStatus::Won | BetStatus::Lost)
+    }
+
+    /// Check if the user won this bet
+    pub fn is_winner(&self) -> bool {
+        self.status == BetStatus::Won
+    }
+
+    /// Mark the bet as won
+    pub fn mark_as_won(&mut self) {
+        self.status = BetStatus::Won;
+    }
+
+    /// Mark the bet as lost
+    pub fn mark_as_lost(&mut self) {
+        self.status = BetStatus::Lost;
+    }
+
+    /// Mark the bet as refunded
+    pub fn mark_as_refunded(&mut self) {
+        self.status = BetStatus::Refunded;
+    }
+}
+
+/// Statistics for bets placed on a specific market.
+///
+/// This structure provides aggregate information about betting activity
+/// on a market, useful for analytics, UI display, and market health assessment.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Map, String};
+/// # use predictify_hybrid::types::BetStats;
+/// # let env = Env::default();
+///
+/// let mut outcome_totals = Map::new(&env);
+/// outcome_totals.set(String::from_str(&env, "yes"), 50_000_000i128);
+/// outcome_totals.set(String::from_str(&env, "no"), 30_000_000i128);
+///
+/// let stats = BetStats {
+///     total_bets: 15,
+///     total_amount_locked: 80_000_000, // 8 XLM
+///     unique_bettors: 12,
+///     outcome_totals,
+/// };
+///
+/// println!("Total bets: {}", stats.total_bets);
+/// println!("Total locked: {} stroops", stats.total_amount_locked);
+/// println!("Unique bettors: {}", stats.unique_bettors);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct BetStats {
+    /// Total number of bets placed on this market
+    pub total_bets: u32,
+    /// Total amount of funds locked across all bets
+    pub total_amount_locked: i128,
+    /// Number of unique users who placed bets
+    pub unique_bettors: u32,
+    /// Total amount locked per outcome
+    pub outcome_totals: Map<String, i128>,
 }

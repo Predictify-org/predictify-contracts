@@ -1150,10 +1150,10 @@ impl ConfigManager {
                 passphrase: String::from_str(env, "Test SDF Network ; September 2015"),
                 rpc_url: String::from_str(env, "https://soroban-testnet.stellar.org"),
                 network_id: String::from_str(env, "testnet"),
-                contract_address: Address::from_str(
+                contract_address: Address::from_string(&String::from_str(
                     env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                ),
+                )),
             },
             fees: Self::get_default_fee_config(),
             voting: Self::get_default_voting_config(),
@@ -2068,10 +2068,15 @@ impl ConfigManager {
     /// - Admin operations and updates
     pub fn get_config(env: &Env) -> Result<ContractConfig, Error> {
         let key = Symbol::new(env, "ContractConfig");
-        env.storage()
+        // Check if key exists before trying to get it to avoid segfaults
+        match env
+            .storage()
             .persistent()
             .get::<Symbol, ContractConfig>(&key)
-            .ok_or(Error::ConfigurationNotFound)
+        {
+            Some(config) => Ok(config),
+            None => Err(Error::ConfigurationNotFound),
+        }
     }
 
     /// Updates the contract configuration in persistent storage.
