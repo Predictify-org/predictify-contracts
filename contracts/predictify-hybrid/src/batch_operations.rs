@@ -2,7 +2,7 @@ use alloc::format;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::errors_simple::Error;
 use crate::types::*;
 
 // ===== BATCH OPERATION TYPES =====

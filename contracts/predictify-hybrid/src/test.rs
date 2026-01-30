@@ -22,6 +22,7 @@ use crate::events::PlatformFeeSetEvent;
 use super::*;
 use crate::markets::MarketUtils;
 use crate::batch_operations::{BatchProcessor, BetData};
+use crate::errors_simple::Error;
 
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger, LedgerInfo},
@@ -203,21 +204,21 @@ fn test_create_market_with_non_admin() {
 
     // The create_market function validates caller is admin.
     // Non-admin calls would return Unauthorized (#100).
-    assert_eq!(crate::errors::Error::Unauthorized as i128, 100);
+    assert_eq!(Error::Unauthorized as i128, 100);
 }
 
 #[test]
 fn test_create_market_with_empty_outcome() {
     // The create_market function validates outcomes are not empty.
     // Empty outcomes would return InvalidOutcomes (#301).
-    assert_eq!(crate::errors::Error::InvalidOutcomes as i128, 301);
+    assert_eq!(Error::InvalidOutcomes as i128, 301);
 }
 
 #[test]
 fn test_create_market_with_empty_question() {
     // The create_market function validates question is not empty.
     // Empty question would return InvalidQuestion (#300).
-    assert_eq!(crate::errors::Error::InvalidQuestion as i128, 300);
+    assert_eq!(Error::InvalidQuestion as i128, 300);
 }
 
 #[test]
@@ -295,14 +296,14 @@ fn test_vote_with_invalid_outcome() {
 
     // The vote function validates outcome is valid.
     // Invalid outcome would return InvalidOutcome (#108).
-    assert_eq!(crate::errors::Error::InvalidOutcome as i128, 108);
+    assert_eq!(Error::InvalidOutcome as i128, 108);
 }
 
 #[test]
 fn test_vote_on_nonexistent_market() {
     // The vote function validates market exists.
     // Nonexistent market would return MarketNotFound (#101).
-    assert_eq!(crate::errors::Error::MarketNotFound as i128, 101);
+    assert_eq!(Error::MarketNotFound as i128, 101);
 }
 
 #[test]
@@ -789,14 +790,14 @@ fn test_reinitialize_prevention() {
 fn test_initialize_invalid_fee_negative() {
     // Initialize with negative fee would return InvalidFeeConfig (#402).
     // Negative values are not allowed for platform fee percentage.
-    assert_eq!(crate::errors::Error::InvalidFeeConfig as i128, 402);
+    assert_eq!(Error::InvalidFeeConfig as i128, 402);
 }
 
 #[test]
 fn test_initialize_invalid_fee_too_high() {
     // Initialize with fee exceeding max 10% would return InvalidFeeConfig (#402).
     // Maximum platform fee is enforced to be 10%.
-    assert_eq!(crate::errors::Error::InvalidFeeConfig as i128, 402);
+    assert_eq!(Error::InvalidFeeConfig as i128, 402);
 }
 
 #[test]

@@ -4,7 +4,7 @@ extern crate alloc;
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::config::Environment;
-use crate::errors::Error;
+use crate::errors_simple::Error;
 use crate::types::OracleProvider;
 
 // Define AdminRole locally since it's not available in the crate root
@@ -2200,13 +2200,13 @@ impl EventEmitter {
         // Convert error enum to message string
         let error_msg = match error {
             crate::errors::Error::Unauthorized => "Unauthorized access",
-            crate::errors::Error::MarketNotFound => "Market not found",
-            crate::errors::Error::MarketClosed => "Market closed",
-            crate::errors::Error::InvalidOutcome => "Invalid outcome",
-            crate::errors::Error::AlreadyVoted => "Already voted",
-            crate::errors::Error::AlreadyClaimed => "Already claimed",
-            crate::errors::Error::MarketNotResolved => "Market not resolved",
-            crate::errors::Error::NothingToClaim => "Nothing to claim",
+            Error::MarketNotFound => "Market not found",
+            Error::MarketClosed => "Market closed",
+            Error::InvalidOutcome => "Invalid outcome",
+            Error::AlreadyVoted => "Already voted",
+            Error::AlreadyClaimed => "Already claimed",
+            Error::MarketNotResolved => "Market not resolved",
+            Error::NothingToClaim => "Nothing to claim",
             _ => "Unknown error",
         };
         let message = String::from_str(env, error_msg);
