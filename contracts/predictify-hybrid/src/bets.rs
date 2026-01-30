@@ -24,15 +24,22 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol}
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
-use crate::types::{Bet, BetStats, BetStatus, Market, MarketState};
+use crate::reentrancy_guard::ReentrancyGuard;
+use crate::types::{Bet, BetLimits, BetStats, BetStatus, Market, MarketState};
+use crate::validation;
 
 // ===== CONSTANTS =====
 
-/// Minimum bet amount (0.1 XLM = 1,000,000 stroops)
+/// Minimum bet amount (0.1 XLM = 1,000,000 stroops). Absolute floor for any configured limit.
 pub const MIN_BET_AMOUNT: i128 = 1_000_000;
 
-/// Maximum bet amount (10,000 XLM = 100,000,000,000 stroops)
+/// Maximum bet amount (10,000 XLM = 100,000,000,000 stroops). Absolute ceiling for any configured limit.
 pub const MAX_BET_AMOUNT: i128 = 100_000_000_000;
+
+/// Storage key for global bet limits.
+const GLOBAL_BET_LIMITS_KEY: &str = "bet_limits_global";
+/// Storage key for per-event bet limits map (Symbol -> BetLimits).
+const PER_EVENT_BET_LIMITS_KEY: &str = "bet_limits_evt";
 
 // ===== STORAGE KEY TYPES =====
 
@@ -57,6 +64,65 @@ pub struct MarketBetsKey {
 pub struct BetRegistryKey {
     pub tag: Symbol,
     pub market_id: Symbol,
+}
+
+// ===== BET LIMITS STORAGE =====
+
+/// Get effective bet limits for a market: per-event if set, else global, else default constants.
+pub fn get_effective_bet_limits(env: &Env, market_id: &Symbol) -> BetLimits {
+    let key_evt = Symbol::new(env, PER_EVENT_BET_LIMITS_KEY);
+    let per_event: soroban_sdk::Map<Symbol, BetLimits> = env
+        .storage()
+        .persistent()
+        .get(&key_evt)
+        .unwrap_or(soroban_sdk::Map::new(env));
+    if let Some(limits) = per_event.get(market_id.clone()) {
+        return limits;
+    }
+    let key_global = Symbol::new(env, GLOBAL_BET_LIMITS_KEY);
+    env.storage()
+        .persistent()
+        .get::<Symbol, BetLimits>(&key_global)
+        .unwrap_or(BetLimits {
+            min_bet: MIN_BET_AMOUNT,
+            max_bet: MAX_BET_AMOUNT,
+        })
+}
+
+/// Set global bet limits (admin only; validation of bounds done by caller).
+pub fn set_global_bet_limits(env: &Env, limits: &BetLimits) -> Result<(), Error> {
+    validate_limits_bounds(limits)?;
+    let key = Symbol::new(env, GLOBAL_BET_LIMITS_KEY);
+    env.storage().persistent().set(&key, limits);
+    Ok(())
+}
+
+/// Set per-event bet limits (admin only; validation of bounds done by caller).
+pub fn set_event_bet_limits(env: &Env, market_id: &Symbol, limits: &BetLimits) -> Result<(), Error> {
+    validate_limits_bounds(limits)?;
+    let key = Symbol::new(env, PER_EVENT_BET_LIMITS_KEY);
+    let mut per_event: soroban_sdk::Map<Symbol, BetLimits> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(soroban_sdk::Map::new(env));
+    per_event.set(market_id.clone(), limits.clone());
+    env.storage().persistent().set(&key, &per_event);
+    Ok(())
+}
+
+/// Validate that min <= max and both are within absolute bounds.
+fn validate_limits_bounds(limits: &BetLimits) -> Result<(), Error> {
+    if limits.min_bet > limits.max_bet {
+        return Err(Error::InvalidInput);
+    }
+    if limits.min_bet < MIN_BET_AMOUNT {
+        return Err(Error::InsufficientStake);
+    }
+    if limits.max_bet > MAX_BET_AMOUNT {
+        return Err(Error::InvalidInput);
+    }
+    Ok(())
 }
 
 // ===== BET MANAGER =====
@@ -181,8 +247,8 @@ impl BetManager {
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         BetValidator::validate_market_for_betting(env, &market)?;
 
-        // Validate bet parameters
-        BetValidator::validate_bet_parameters(env, &outcome, &market.outcomes, amount)?;
+        // Validate bet parameters (uses configurable min/max limits per event or global)
+        BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
 
         // Check if user has already bet on this market
         if Self::has_user_bet(env, &market_id, &user) {
@@ -599,59 +665,37 @@ impl BetValidator {
 
     /// Validate bet parameters.
     ///
-    /// # Validation Rules
-    ///
-    /// - Outcome must be one of the valid market outcomes
-    /// - Amount must be within allowed range
-    ///
-    /// # Parameters
-    ///
-    /// - `env` - The Soroban environment
-    /// - `outcome` - The selected outcome
-    /// - `valid_outcomes` - List of valid outcomes for the market
-    /// - `amount` - The bet amount
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if parameters are valid, `Err(Error)` otherwise.
+    /// Uses effective bet limits (per-event if set, else global, else default min/max).
+    /// Rejects bets below min with InsufficientStake, above max with InvalidInput.
     pub fn validate_bet_parameters(
         env: &Env,
+        market_id: &Symbol,
         outcome: &String,
         valid_outcomes: &soroban_sdk::Vec<String>,
         amount: i128,
     ) -> Result<(), Error> {
-        // Validate outcome
         MarketValidator::validate_outcome(env, outcome, valid_outcomes)?;
-
-        // Validate amount
-        Self::validate_bet_amount(amount)?;
-
-        Ok(())
+        Self::validate_bet_amount_against_limits(env, market_id, amount)
     }
 
-    /// Validate bet amount.
-    ///
-    /// # Validation Rules
-    ///
-    /// - Amount must be greater than or equal to MIN_BET_AMOUNT
-    /// - Amount must be less than or equal to MAX_BET_AMOUNT
-    ///
-    /// # Parameters
-    ///
-    /// - `amount` - The bet amount to validate
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if amount is valid, `Err(Error)` otherwise.
+    /// Validate bet amount against effective limits (per-event or global or defaults).
+    pub fn validate_bet_amount_against_limits(
+        env: &Env,
+        market_id: &Symbol,
+        amount: i128,
+    ) -> Result<(), Error> {
+        let limits = get_effective_bet_limits(env, market_id);
+        validation::validate_bet_amount_against_limits(amount, &limits)
+    }
+
+    /// Validate bet amount using default constants (for tests / backward compatibility).
     pub fn validate_bet_amount(amount: i128) -> Result<(), Error> {
         if amount < MIN_BET_AMOUNT {
             return Err(Error::InsufficientStake);
         }
-
         if amount > MAX_BET_AMOUNT {
             return Err(Error::InvalidInput);
         }
-
         Ok(())
     }
 }
@@ -680,9 +724,14 @@ impl BetUtils {
     /// # Returns
     ///
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
+    ///
+    /// Reentrancy: takes the reentrancy lock before the token transfer and
+    /// releases it after. Prevents reentrant calls into the contract during transfer.
     pub fn lock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
+        ReentrancyGuard::before_external_call(env).map_err(|_| Error::InvalidState)?;
         let token_client = MarketUtils::get_token_client(env)?;
         token_client.transfer(user, &env.current_contract_address(), &amount);
+        ReentrancyGuard::after_external_call(env);
         Ok(())
     }
 
@@ -700,6 +749,10 @@ impl BetUtils {
     /// # Returns
     ///
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
+    ///
+    /// Reentrancy: caller must hold the reentrancy lock (e.g. cancel_event holds
+    /// the lock for the entire refund_market_bets batch). Do not call
+    /// before_external_call/after_external_call here to allow batch refunds.
     pub fn unlock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
         token_client.transfer(&env.current_contract_address(), user, &amount);

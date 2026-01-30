@@ -738,6 +738,21 @@ pub struct Market {
     pub extension_history: Vec<MarketExtension>,
 }
 
+// ===== BET LIMITS =====
+
+/// Configurable minimum and maximum bet amount for an event or globally.
+///
+/// Used to bound bets so markets remain fair and liquid. Admin can set
+/// global defaults or per-event limits at creation or via set_bet_limits.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BetLimits {
+    /// Minimum bet amount (in base token units, e.g. stroops)
+    pub min_bet: i128,
+    /// Maximum bet amount (in base token units)
+    pub max_bet: i128,
+}
+
 // ===== EVENT ARCHIVE / HISTORICAL QUERY TYPES =====
 
 /// Summary of an event (market) for historical queries and analytics.

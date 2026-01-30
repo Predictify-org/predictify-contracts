@@ -1881,8 +1881,14 @@ impl MarketUtils {
             return Err(Error::NothingToClaim);
         }
 
-        let user_share = (user_stake * (100 - fee_percentage)) / 100;
-        let payout = (user_share * total_pool) / winning_total;
+        let user_share = (user_stake
+            .checked_mul(100 - fee_percentage)
+            .ok_or(Error::InvalidInput)?)
+            / 100;
+        let payout = (user_share
+            .checked_mul(total_pool)
+            .ok_or(Error::InvalidInput)?)
+            / winning_total;
 
         Ok(payout)
     }

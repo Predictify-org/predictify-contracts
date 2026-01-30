@@ -793,3 +793,158 @@ fn test_bet_equality() {
     assert_eq!(bet1.amount, bet2.amount);
     assert_eq!(bet1.status, bet2.status);
 }
+
+// ===== BET LIMITS TESTS =====
+
+#[test]
+fn test_set_global_bet_limits_and_place_bet_exactly_min_max() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    let min = 5_000000i128; // 0.5 XLM
+    let max = 50_000000i128; // 5 XLM
+
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.admin, &min, &max);
+
+    // Exactly min: must succeed
+    let bet_min = client.place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &min,
+    );
+    assert_eq!(bet_min.amount, min);
+
+    // Exactly max: need second user (first already bet)
+    let stellar_client = StellarAssetClient::new(&setup.env, &setup.token_id);
+    stellar_client.mint(&setup.user2, &max);
+    setup.env.mock_all_auths();
+    let bet_max = client.place_bet(
+        &setup.user2,
+        &setup.market_id,
+        &String::from_str(&setup.env, "no"),
+        &max,
+    );
+    assert_eq!(bet_max.amount, max);
+}
+
+#[test]
+#[should_panic]
+fn test_place_bet_below_configured_min_rejects() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    let min = 10_000000i128;
+    let max = 100_000000i128;
+
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.admin, &min, &max);
+
+    setup.env.mock_all_auths();
+    client.place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &(min - 1),
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_place_bet_above_configured_max_rejects() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    let min = 1_000000i128;
+    let max = 20_000000i128;
+
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.admin, &min, &max);
+
+    setup.env.mock_all_auths();
+    client.place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &(max + 1),
+    );
+}
+
+#[test]
+fn test_set_event_bet_limits_overrides_global() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    let global_min = 1_000000i128;
+    let global_max = 100_000000i128;
+    let event_min = 15_000000i128;
+    let event_max = 25_000000i128;
+
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.admin, &global_min, &global_max);
+    setup.env.mock_all_auths();
+    client.set_event_bet_limits(&setup.admin, &setup.market_id, &event_min, &event_max);
+
+    // Exactly event min must succeed (below event min tested in separate should_panic test)
+    setup.env.mock_all_auths();
+    let bet = client.place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &event_min,
+    );
+    assert_eq!(bet.amount, event_min);
+}
+
+#[test]
+#[should_panic]
+fn test_place_bet_below_event_min_rejects() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    let event_min = 15_000000i128;
+    let event_max = 25_000000i128;
+
+    setup.env.mock_all_auths();
+    client.set_event_bet_limits(&setup.admin, &setup.market_id, &event_min, &event_max);
+
+    setup.env.mock_all_auths();
+    client.place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &(event_min - 1),
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_set_global_bet_limits_unauthorized() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.user, &MIN_BET_AMOUNT, &MAX_BET_AMOUNT);
+}
+
+#[test]
+#[should_panic]
+fn test_set_global_bet_limits_min_above_max_rejects() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.admin, &10_000000i128, &5_000000i128);
+}
+
+#[test]
+#[should_panic]
+fn test_set_global_bet_limits_below_absolute_min_rejects() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.admin, &(MIN_BET_AMOUNT - 1), &MAX_BET_AMOUNT);
+}
+
+#[test]
+#[should_panic]
+fn test_set_global_bet_limits_above_absolute_max_rejects() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+    setup.env.mock_all_auths();
+    client.set_global_bet_limits(&setup.admin, &MIN_BET_AMOUNT, &(MAX_BET_AMOUNT + 1));
+}

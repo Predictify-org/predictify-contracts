@@ -17,7 +17,7 @@
 
 #![cfg(test)]
 
-use crate::events::PlatformFeeSetEvent;
+use crate::events::{BetPlacedEvent, PlatformFeeSetEvent};
 
 use super::*;
 use crate::markets::MarketUtils;
@@ -2444,6 +2444,200 @@ fn test_reentrancy_protection_claim() {
     // Note: Claimed field tracking is implementation-specific
     // assert!(market.claimed.get(test.user.clone()).unwrap_or(false));
     assert_eq!(market.state, MarketState::Resolved);
+}
+
+// ===== REENTRANCY GUARD AND SECURITY HARDENING TESTS =====
+// Tests for reentrancy protection and overflow/underflow safety
+
+/// Sets the reentrancy lock in contract storage (same key as ReentrancyGuard).
+fn set_reentrancy_lock(env: &Env, contract_id: &Address) {
+    env.as_contract(contract_id, || {
+        let key = Symbol::new(env, "reent_lk");
+        env.storage().persistent().set(&key, &true);
+    });
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #400)")] // InvalidState (reentrancy guard active)
+fn test_reentrancy_guard_blocks_place_bet_when_locked() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    set_reentrancy_lock(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    let outcome = String::from_str(&test.env, "yes");
+    let amount = 10_000_000;
+    client.place_bet(&test.user, &market_id, &outcome, &amount);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #400)")] // InvalidState (reentrancy guard active)
+fn test_reentrancy_guard_blocks_claim_winnings_when_locked() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+    set_reentrancy_lock(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #400)")] // InvalidState (reentrancy guard active)
+fn test_reentrancy_guard_blocks_distribute_payouts_when_locked() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+    set_reentrancy_lock(&test.env, &test.contract_id);
+    let _ = client.distribute_payouts(&market_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #400)")] // InvalidState (reentrancy guard active)
+fn test_reentrancy_guard_blocks_withdraw_fees_when_locked() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .set(&Symbol::new(&test.env, "tot_fees"), &50_000_000);
+    });
+    set_reentrancy_lock(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.withdraw_collected_fees(&test.admin, &0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #400)")] // InvalidState (reentrancy guard active)
+fn test_reentrancy_guard_blocks_cancel_event_when_locked() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    set_reentrancy_lock(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.cancel_event(
+        &test.admin,
+        &market_id,
+        &Some(String::from_str(&test.env, "test")),
+    );
+}
+
+#[test]
+fn test_overflow_protection_calculate_payout() {
+    use crate::markets::MarketUtils;
+    let env = Env::default();
+    let max_i128 = i128::MAX;
+    let result = MarketUtils::calculate_payout(max_i128, 1, max_i128, 0);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), Error::InvalidInput);
+}
+
+#[test]
+fn test_checks_effects_before_interactions_claim() {
+    // After resolve_market_manual, distribute_payouts runs and sets claimed for winners
+    // before any external interaction (checks-effects-interactions). Verify winner is marked claimed.
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert!(market_after.claimed.get(test.user.clone()).unwrap_or(false));
+}
+
+#[test]
+fn test_guard_allows_place_bet_when_unlocked() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    let outcome = String::from_str(&test.env, "yes");
+    let amount = 10_000_000;
+    let bet = client.place_bet(&test.user, &market_id, &outcome, &amount);
+    assert_eq!(bet.amount, amount);
+    assert_eq!(bet.outcome, outcome);
 }
 
 // ===== COMPREHENSIVE QUERY FUNCTION TESTS =====

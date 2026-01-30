@@ -5,7 +5,7 @@ extern crate alloc;
 use crate::{
     config,
     errors::Error,
-    types::{Market, OracleConfig, OracleProvider},
+    types::{BetLimits, Market, OracleConfig, OracleProvider},
 };
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
 use soroban_sdk::{contracttype, vec, Address, Env, IntoVal, Map, String, Symbol, Vec};
@@ -2303,6 +2303,23 @@ impl VoteValidator {
 
         Ok(())
     }
+}
+
+// ===== BET LIMITS VALIDATION =====
+
+/// Validates bet amount against min/max limits. Used by place_bet.
+/// Returns InsufficientStake if below min, InvalidInput if above max.
+pub fn validate_bet_amount_against_limits(
+    amount: i128,
+    limits: &BetLimits,
+) -> Result<(), Error> {
+    if amount < limits.min_bet {
+        return Err(Error::InsufficientStake);
+    }
+    if amount > limits.max_bet {
+        return Err(Error::InvalidInput);
+    }
+    Ok(())
 }
 
 // ===== DISPUTE VALIDATION =====

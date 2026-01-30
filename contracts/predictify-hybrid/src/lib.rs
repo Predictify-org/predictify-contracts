@@ -489,7 +489,7 @@ impl PredictifyHybrid {
     /// - User authentication via `require_auth()`
     /// - Balance validation before fund transfer
     /// - Atomic fund locking with bet creation
-    /// - Reentrancy protection via Soroban's design
+    /// - Reentrancy protection via reentrancy guard (guard flag in storage)
     pub fn place_bet(
         env: Env,
         user: Address,
@@ -497,6 +497,9 @@ impl PredictifyHybrid {
         outcome: String,
         amount: i128,
     ) -> crate::types::Bet {
+        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+            panic_with_error!(env, Error::InvalidState);
+        }
         // Use the BetManager to handle the bet placement
         match bets::BetManager::place_bet(&env, user, market_id, outcome, amount) {
             Ok(bet) => bet,
@@ -736,6 +739,9 @@ impl PredictifyHybrid {
     /// - User must not have previously claimed winnings
     pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
         user.require_auth();
+        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+            panic_with_error!(env, Error::InvalidState);
+        }
 
         let mut market: Market = env
             .storage()
@@ -781,10 +787,15 @@ impl PredictifyHybrid {
                     Err(_) => panic_with_error!(env, Error::ConfigurationNotFound),
                 };
                 let fee_percent = cfg.fees.platform_fee_percentage;
-                let user_share =
-                    (user_stake * (PERCENTAGE_DENOMINATOR - fee_percent)) / PERCENTAGE_DENOMINATOR;
+                let user_share = (user_stake
+                    .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
+                    / PERCENTAGE_DENOMINATOR;
                 let total_pool = market.total_staked;
-                let payout = (user_share * total_pool) / winning_total;
+                let product = user_share
+                    .checked_mul(total_pool)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput));
+                let payout = product / winning_total;
 
                 // Mark as claimed
                 market.claimed.set(user.clone(), true);
@@ -1480,6 +1491,9 @@ impl PredictifyHybrid {
     ///
     /// This function emits `WinningsClaimedEvent` for each user who receives a payout.
     pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
+        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+            return Err(Error::InvalidState);
+        }
         let mut market: Market = env
             .storage()
             .persistent()
@@ -1545,15 +1559,22 @@ impl PredictifyHybrid {
                 let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
                 if user_stake > 0 {
                     let fee_denominator = 10000i128;
-                    let user_share =
-                        (user_stake * (fee_denominator - fee_percent)) / fee_denominator;
-                    let payout = (user_share * total_pool) / winning_total;
+                    let user_share = (user_stake
+                        .checked_mul(fee_denominator - fee_percent)
+                        .ok_or(Error::InvalidInput)?)
+                        / fee_denominator;
+                    let payout = (user_share
+                        .checked_mul(total_pool)
+                        .ok_or(Error::InvalidInput)?)
+                        / winning_total;
 
                     if payout >= 0 {
                         // Allow 0 payout but mark as claimed
                         market.claimed.set(user.clone(), true);
                         if payout > 0 {
-                            total_distributed += payout;
+                            total_distributed = total_distributed
+                                .checked_add(payout)
+                                .ok_or(Error::InvalidInput)?;
                             EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                         }
                     }
@@ -1680,6 +1701,60 @@ impl PredictifyHybrid {
         Ok(())
     }
 
+    /// Set global minimum and maximum bet limits (admin only).
+    /// Applies to all events that do not have per-event limits.
+    /// Rejects if min > max or outside absolute bounds (MIN_BET_AMOUNT..=MAX_BET_AMOUNT).
+    pub fn set_global_bet_limits(
+        env: Env,
+        admin: Address,
+        min_bet: i128,
+        max_bet: i128,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+        let limits = BetLimits { min_bet, max_bet };
+        crate::bets::set_global_bet_limits(&env, &limits)?;
+        let scope = Symbol::new(&env, "global");
+        EventEmitter::emit_bet_limits_updated(&env, &admin, &scope, min_bet, max_bet);
+        Ok(())
+    }
+
+    /// Set per-event minimum and maximum bet limits (admin only).
+    /// Overrides global limits for the given market.
+    pub fn set_event_bet_limits(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        min_bet: i128,
+        max_bet: i128,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+        let limits = BetLimits { min_bet, max_bet };
+        crate::bets::set_event_bet_limits(&env, &market_id, &limits)?;
+        EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, min_bet, max_bet);
+        Ok(())
+    }
+
+    /// Get effective bet limits for a market (per-event if set, else global, else defaults).
+    pub fn get_effective_bet_limits(env: Env, market_id: Symbol) -> BetLimits {
+        crate::bets::get_effective_bet_limits(&env, &market_id)
+    }
+
     /// Withdraw collected platform fees (admin only).
     ///
     /// This function allows the admin to withdraw fees that have been collected
@@ -1720,6 +1795,9 @@ impl PredictifyHybrid {
     /// ```
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
         admin.require_auth();
+        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+            return Err(Error::InvalidState);
+        }
 
         // Verify admin
         let stored_admin: Address = env
@@ -1749,8 +1827,10 @@ impl PredictifyHybrid {
             amount
         };
 
-        // Update collected fees
-        let remaining_fees = collected_fees - withdrawal_amount;
+        // Update collected fees (checked to prevent underflow)
+        let remaining_fees = collected_fees
+            .checked_sub(withdrawal_amount)
+            .ok_or(Error::InvalidInput)?;
         env.storage().persistent().set(&fees_key, &remaining_fees);
 
         // Emit fee withdrawal event
@@ -2300,8 +2380,16 @@ impl PredictifyHybrid {
         market.state = MarketState::Cancelled;
         env.storage().persistent().set(&market_id, &market);
 
-        // Refund all bets
-        bets::BetManager::refund_market_bets(&env, &market_id)?;
+        // Refund all bets under reentrancy lock (batch of token transfers)
+        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+            return Err(Error::InvalidState);
+        }
+        if ReentrancyGuard::before_external_call(&env).is_err() {
+            return Err(Error::InvalidState);
+        }
+        let refund_result = bets::BetManager::refund_market_bets(&env, &market_id);
+        ReentrancyGuard::after_external_call(&env);
+        refund_result?;
 
         // Calculate total refunded (sum of all bets)
         let total_refunded = market.total_staked;

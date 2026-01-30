@@ -695,6 +695,22 @@ pub struct ConfigUpdatedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when bet limits are updated (global or per-event).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BetLimitsUpdatedEvent {
+    /// Admin who updated the limits
+    pub admin: Address,
+    /// Market ID or "global" for global limits
+    pub scope: Symbol,
+    /// New minimum bet amount
+    pub min_bet: i128,
+    /// New maximum bet amount
+    pub max_bet: i128,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
 /// Error logged event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1579,6 +1595,24 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("cfg_upd"), &event);
+    }
+
+    /// Emit bet limits updated event (global or per-event).
+    pub fn emit_bet_limits_updated(
+        env: &Env,
+        admin: &Address,
+        scope: &Symbol,
+        min_bet: i128,
+        max_bet: i128,
+    ) {
+        let event = BetLimitsUpdatedEvent {
+            admin: admin.clone(),
+            scope: scope.clone(),
+            min_bet,
+            max_bet,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("bet_lim"), &event);
     }
 
     /// Emit error logged event
