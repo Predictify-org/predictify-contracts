@@ -2238,3 +2238,23 @@ fn test_claim_by_loser() {
             .unwrap()
     });
 
+    test.env.ledger().set(soroban_sdk::ledger::LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // 3. Resolve market
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+
+    // 4. Claim (should return 0 as user lost)
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+}
+

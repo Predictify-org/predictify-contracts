@@ -1,0 +1,509 @@
+52:mod bandprotocol {
+97:use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
+102:use crate::config::{
+106:use crate::graceful_degradation::{OracleBackup, OracleHealth};
+111:use soroban_sdk::{
+121:impl PredictifyHybrid {
+147:    /// # use soroban_sdk::{Env, Address};
+177:    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>) {
+184:        {
+189:        match AdminInitializer::initialize(&env, &admin) {
+218:    ) -> Result<Balance, Error> {
+234:    ) -> Result<Balance, Error> {
+244:    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
+287:    /// # use soroban_sdk::{Env, Address, String, Vec};
+288:    /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleType};
+297:    /// let oracle_config = OracleConfig {
+317:    /// # use soroban_sdk::{Env, Address, String, Vec};
+318:    /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleProvider};
+360:    ) -> Symbol {
+369:            .unwrap_or_else(|| {
+373:        if admin != stored_admin {
+378:        if outcomes.len() < 2 {
+382:        if question.len() == 0 {
+395:        let market = Market {
+464:    ) -> Symbol {
+473:            .unwrap_or_else(|| {
+477:        if admin != stored_admin {
+488:        ) {
+496:        let event = Event {
+538:    pub fn get_event(env: Env, event_id: Symbol) -> Option<Event> {
+567:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+594:    pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
+598:        if let Err(e) = admin::UserRestrictionManager::check_restrictions(&env, &user, &market_id) {
+606:            .unwrap_or_else(|| {
+611:        if env.ledger().timestamp() >= market.end_time {
+617:        if !outcome_exists {
+622:        if market.votes.get(user.clone()).is_some() {
+627:        match bets::BetUtils::lock_funds(&env, &user, stake) {
+628:            Ok(_) => {}
+676:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+757:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+778:    ) -> crate::types::Bet {
+779:        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+783:        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
+784:            Ok(bet) => {
+826:    /// # use soroban_sdk::{Env, Address, String, Symbol, Vec};
+851:    ) -> Vec<crate::types::Bet> {
+852:        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+855:        match bets::BetManager::place_bets(&env, user, bets) {
+880:    /// # use soroban_sdk::{Env, Address, Symbol};
+886:    /// match PredictifyHybrid::get_bet(env.clone(), market_id, user) {
+887:    ///     Some(bet) => {
+889:    ///         println!("Bet amount: {}", bet.amount);
+890:    ///         println!("Selected outcome: {:?}", bet.outcome);
+891:    ///         println!("Status: {:?}", bet.status);
+893:    ///     None => {
+898:    pub fn get_bet(env: Env, market_id: Symbol, user: Address) -> Option<crate::types::Bet> {
+920:    /// # use soroban_sdk::{Env, Address, Symbol};
+926:    /// if PredictifyHybrid::has_user_bet(env.clone(), market_id.clone(), user.clone()) {
+928:    /// } else {
+932:    pub fn has_user_bet(env: Env, market_id: Symbol, user: Address) -> bool {
+953:    /// # use soroban_sdk::{Env, Symbol};
+959:    /// println!("Total bets: {}", stats.total_bets);
+960:    /// println!("Total locked: {} stroops", stats.total_amount_locked);
+961:    /// println!("Unique bettors: {}", stats.unique_bettors);
+963:    pub fn get_market_bet_stats(env: Env, market_id: Symbol) -> crate::types::BetStats {
+993:    /// # use soroban_sdk::{Env, Address, Symbol};
+999:    /// match PredictifyHybrid::calculate_bet_payout(env.clone(), market_id, user) {
+1000:    ///     Ok(payout) => println!("User will receive {} stroops", payout),
+1001:    ///     Err(e) => println!("Calculation failed: {:?}", e),
+1047:    /// # use soroban_sdk::{Env, Address, Symbol};
+1054:    /// match PredictifyHybrid::calculate_bet_payout(env.clone(), market_id, user) {
+1055:    ///     Ok(payout) => println!("Payout: {}", payout),
+1056:    ///     Err(e) => println!("Error: {:?}", e),
+1059:    pub fn calculate_bet_payout(env: Env, market_id: Symbol, user: Address) -> Result<i128, Error> {
+1081:    /// # use soroban_sdk::{Env, Symbol, String};
+1091:    /// println!("Implied probability for 'Yes': {}%", prob);
+1093:    pub fn get_implied_probability(env: Env, market_id: Symbol, outcome: String) -> i128 {
+1115:    /// # use soroban_sdk::{Env, Symbol, String};
+1126:    /// println!("Payout multiplier for 'Yes': {:.2}x", actual_multiplier);
+1128:    pub fn get_payout_multiplier(env: Env, market_id: Symbol, outcome: String) -> i128 {
+1155:    /// # use soroban_sdk::{Env, Address, Symbol};
+1187:    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
+1189:        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+1197:            .unwrap_or_else(|| {
+1202:        if market.claimed.get(user.clone()).unwrap_or(false) {
+1207:        let winning_outcomes = match &market.winning_outcomes {
+1221:        if winning_outcomes.contains(&user_outcome) {
+1224:            for (voter, outcome) in market.votes.iter() {
+1225:                if winning_outcomes.contains(&outcome) {
+1230:            if winning_total > 0 {
+1232:                let cfg = match crate::config::ConfigManager::get_config(&env) {
+1292:                ) {
+1293:                    Ok(_) => {}
+1330:    /// # use soroban_sdk::{Env, Symbol};
+1335:    /// match PredictifyHybrid::get_market(env.clone(), market_id) {
+1336:    ///     Some(market) => {
+1342:    ///     None => {
+1359:    pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
+1388:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+1426:    ) {
+1434:            .unwrap_or_else(|| {
+1438:        if admin != stored_admin {
+1446:            .unwrap_or_else(|| {
+1451:        if env.ledger().timestamp() < market.end_time {
+1457:        if !outcome_exists {
+1532:    /// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+1564:    ) {
+1572:            .unwrap_or_else(|| {
+1576:        if admin != stored_admin {
+1581:        if winning_outcomes.len() == 0 {
+1589:            .unwrap_or_else(|| {
+1594:        if env.ledger().timestamp() < market.end_time {
+1599:        for outcome in winning_outcomes.iter() {
+1601:            if !outcome_exists {
+1679:    /// # use soroban_sdk::{Env, Address, Symbol};
+1689:    /// ) {
+1690:    ///     Ok(result) => {
+1692:    ///         println!("Oracle result: {}", result);
+1694:    ///     Err(e) => {
+1696:    ///         println!("Failed to fetch oracle result: {:?}", e);
+1717:    ) -> Result<String, Error> {
+1726:        if market.oracle_result.is_some() {
+1732:        if current_time < market.end_time {
+1746:    pub fn fetch_oracle_result_basic(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
+1793:    /// # use soroban_sdk::{Env, Address, Symbol};
+1800:    /// match PredictifyHybrid::verify_result(env.clone(), caller, market_id) {
+1801:    ///     Ok(result) => {
+1802:    ///         println!("Outcome: {}", result.outcome);
+1803:    ///         println!("Price: ${}", result.price / 100);
+1804:    ///         println!("Confidence: {}%", result.confidence_score);
+1805:    ///         println!("Sources consulted: {}", result.sources_count);
+1807:    ///         if result.is_verified {
+1811:    ///     Err(e) => {
+1812:    ///         println!("Verification failed: {:?}", e);
+1857:    ) -> Result<OracleResult, Error> {
+1885:    /// # use soroban_sdk::{Env, Address, Symbol};
+1904:    ) -> Result<OracleResult, Error> {
+1934:    /// # use soroban_sdk::{Env, Symbol};
+1939:    /// match PredictifyHybrid::get_verified_result(env.clone(), market_id) {
+1940:    ///     Some(result) => {
+1941:    ///         println!("Market verified with outcome: {}", result.outcome);
+1943:    ///     None => {
+1948:    pub fn get_verified_result(env: Env, market_id: Symbol) -> Option<OracleResult> {
+1962:    pub fn is_result_verified(env: Env, market_id: Symbol) -> bool {
+1998:    ) -> Result<(), Error> {
+2038:    /// # use soroban_sdk::{Env, Symbol};
+2043:    /// match PredictifyHybrid::resolve_market(env.clone(), market_id) {
+2044:    ///     Ok(()) => {
+2048:    ///     Err(e) => {
+2050:    ///         println!("Resolution failed: {:?}", e);
+2078:    pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
+2125:    /// match PredictifyHybrid::get_resolution_analytics(env.clone()) {
+2126:    ///     Ok(analytics) => {
+2132:    ///         println!("Resolved markets: {}", total_resolved);
+2133:    ///         println!("Oracle accuracy: {}%", oracle_accuracy);
+2135:    ///     Err(e) => {
+2136:    ///         println!("Analytics unavailable: {:?}", e);
+2163:    pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
+2200:    /// # use soroban_sdk::{Env, Symbol};
+2205:    /// match PredictifyHybrid::get_market_analytics(env.clone(), market_id) {
+2206:    ///     Ok(stats) => {
+2212:    ///         println!("Participants: {}", total_participants);
+2213:    ///         println!("Total stake: {}", total_stake);
+2214:    ///         println!("Leading outcome: {:?}", leading_outcome);
+2216:    ///     Err(e) => {
+2217:    ///         println!("Analytics unavailable: {:?}", e);
+2253:    ) -> Result<markets::MarketStats, Error> {
+2273:    ) -> Result<(), Error> {
+2287:    ) -> Result<(), Error> {
+2299:    ) -> Result<disputes::DisputeResolution, Error> {
+2307:            .unwrap_or_else(|| {
+2311:        if admin != stored_admin {
+2319:    pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
+2327:            .unwrap_or_else(|| {
+2331:        if admin != stored_admin {
+2365:    /// # use soroban_sdk::{Env, Symbol};
+2370:    /// match PredictifyHybrid::distribute_payouts(env.clone(), market_id) {
+2371:    ///     Ok(total) => println!("Distributed {} stroops to winners", total),
+2372:    ///     Err(e) => println!("Distribution failed: {:?}", e),
+2392:    pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
+2393:        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+2400:            .unwrap_or_else(|| {
+2405:        let winning_outcomes = match &market.winning_outcomes {
+2428:        for (user, outcome) in market.votes.iter() {
+2429:            if winning_outcomes.contains(&outcome) {
+2430:                if !market.claimed.get(user.clone()).unwrap_or(false) {
+2438:        if !has_unclaimed_winners {
+2439:            for user in bettors.iter() {
+2440:                if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+2443:                    {
+2451:        if !has_unclaimed_winners {
+2460:        for (voter, outcome) in market.votes.iter() {
+2461:            if winning_outcomes.contains(&outcome) {
+2467:        for user in bettors.iter() {
+2469:            if market.votes.contains_key(user.clone()) {
+2473:            if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+2474:                if winning_outcomes.contains(&bet.outcome) {
+2480:        if winning_total == 0 {
+2492:        for (user, outcome) in market.votes.iter() {
+2493:            if winning_outcomes.contains(&outcome) {
+2494:                if market.claimed.get(user.clone()).unwrap_or(false) {
+2499:                if user_stake > 0 {
+2512:                    if payout >= 0 {
+2515:                        if payout > 0 {
+2537:        for user in bettors.iter() {
+2538:            if let Some(mut bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+2539:                if winning_outcomes.contains(&bet.outcome) {
+2540:                    if market.claimed.get(user.clone()).unwrap_or(false) {
+2547:                    if bet.amount > 0 {
+2552:                        if payout > 0 {
+2566:                            ) {
+2567:                                Ok(_) => {}
+2573:                } else {
+2575:                    if bet.status == BetStatus::Active {
+2594:    pub fn archive_event(env: Env, admin: Address, market_id: Symbol) -> Result<(), Error> {
+2606:    ) -> (Vec<EventHistoryEntry>, u32) {
+2618:    ) -> (Vec<EventHistoryEntry>, u32) {
+2630:    ) -> (Vec<EventHistoryEntry>, u32) {
+2660:    /// # use soroban_sdk::{Env, Address};
+2666:    /// match PredictifyHybrid::set_platform_fee(env.clone(), admin, 250) {
+2668:    ///     Err(e) => println!("Fee update failed: {:?}", e),
+2677:    pub fn set_platform_fee(env: Env, admin: Address, fee_percentage: i128) -> Result<(), Error> {
+2683:        if !env.storage().persistent().has(&admin_key) {
+2688:        if admin != stored_admin {
+2693:        if fee_percentage < 0 || fee_percentage > 1000 {
+2712:    ) -> Result<(), Error> {
+2719:        if admin != stored_admin {
+2722:        let limits = BetLimits { min_bet, max_bet };
+2737:    ) -> Result<(), Error> {
+2744:        if admin != stored_admin {
+2747:        let limits = BetLimits { min_bet, max_bet };
+2754:    pub fn get_effective_bet_limits(env: Env, market_id: Symbol) -> BetLimits {
+2785:    /// # use soroban_sdk::{Env, Address};
+2791:    /// match PredictifyHybrid::withdraw_collected_fees(env.clone(), admin, 0) {
+2792:    ///     Ok(amount) => println!("Withdrew {} stroops", amount),
+2793:    ///     Err(e) => println!("Withdrawal failed: {:?}", e),
+2796:    pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
+2798:        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+2807:            .unwrap_or_else(|| {
+2811:        if admin != stored_admin {
+2819:        if collected_fees == 0 {
+2824:        let withdrawal_amount = if amount == 0 || amount > collected_fees {
+2826:        } else {
+2883:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+2896:    /// ) {
+2898:    ///     Err(e) => println!("Extension failed: {:?}", e),
+2920:    ) -> Result<(), Error> {
+2930:        if admin != stored_admin {
+2945:        {
+2951:        if new_total_extension_days > market.max_extension_days {
+3028:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+3040:    /// ) {
+3042:    ///     Err(e) => println!("Update failed: {:?}", e),
+3063:    ) -> Result<(), Error> {
+3073:        if admin != stored_admin {
+3078:        if new_description.is_empty() {
+3090:        if market.state != MarketState::Active {
+3096:        if bet_stats.total_bets > 0 {
+3101:        if market.total_staked > 0 {
+3158:    /// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+3176:    /// ) {
+3178:    ///     Err(e) => println!("Update failed: {:?}", e),
+3200:    ) -> Result<(), Error> {
+3210:        if admin != stored_admin {
+3215:        if new_outcomes.len() < 2 {
+3220:        for outcome in new_outcomes.iter() {
+3221:            if outcome.is_empty() {
+3234:        if market.state != MarketState::Active {
+3240:        if bet_stats.total_bets > 0 {
+3245:        if market.total_staked > 0 {
+3300:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+3312:    /// ) {
+3314:    ///     Err(e) => println!("Update failed: {:?}", e),
+3322:    ) -> Result<(), Error> {
+3332:        if admin != stored_admin {
+3344:        if market.state != MarketState::Active {
+3350:        if bet_stats.total_bets > 0 {
+3355:        if market.total_staked > 0 {
+3405:    /// # use soroban_sdk::{Env, Address, Symbol, String, vec};
+3424:    /// ) {
+3426:    ///     Err(e) => println!("Update failed: {:?}", e),
+3434:    ) -> Result<(), Error> {
+3444:        if admin != stored_admin {
+3449:        for tag in tags.iter() {
+3450:            if tag.is_empty() {
+3463:        if market.state != MarketState::Active {
+3469:        if bet_stats.total_bets > 0 {
+3474:        if market.total_staked > 0 {
+3512:    ) -> (Vec<EventHistoryEntry>, u32) {
+3546:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+3557:    /// ) {
+3558:    ///     Ok(total) => println!("Refunded {} stroops", total),
+3559:    ///     Err(e) => println!("Cancellation failed: {:?}", e),
+3582:    ) -> Result<i128, Error> {
+3590:            .unwrap_or_else(|| {
+3594:        if admin != stored_admin {
+3603:            .unwrap_or_else(|| {
+3608:        if market.state == MarketState::Resolved {
+3612:        if market.state == MarketState::Cancelled {
+3618:        if !matches!(market.state, MarketState::Active | MarketState::Ended) {
+3630:        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+3633:        if ReentrancyGuard::before_external_call(&env).is_err() {
+3668:    ) -> Result<i128, Error> {
+3677:        if market.state == MarketState::Cancelled {
+3680:        if market.winning_outcomes.is_some() {
+3683:        if market.oracle_result.is_some() {
+3687:        if current_time < market.end_time {
+3696:        if !is_admin && !timeout_passed {
+3704:        if reentrancy_guard::ReentrancyGuard::check_reentrancy_state(&env).is_err() {
+3707:        if reentrancy_guard::ReentrancyGuard::before_external_call(&env).is_err() {
+3735:    ) -> Result<(), Error> {
+3743:            .unwrap_or_else(|| {
+3747:        if admin != stored_admin {
+3766:    ) -> Result<storage::CompressedMarket, Error> {
+3767:        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+3776:    pub fn cleanup_old_market_data(env: Env, market_id: Symbol) -> Result<bool, Error> {
+3785:    ) -> Result<storage::StorageMigration, Error> {
+3790:    pub fn monitor_storage_usage(env: Env) -> Result<storage::StorageUsageStats, Error> {
+3795:    pub fn optimize_storage_layout(env: Env, market_id: Symbol) -> Result<bool, Error> {
+3800:    pub fn get_storage_usage_statistics(env: Env) -> Result<storage::StorageUsageStats, Error> {
+3808:    ) -> Result<storage::StorageIntegrityResult, Error> {
+3813:    pub fn get_storage_config(env: Env) -> storage::StorageConfig {
+3818:    pub fn update_storage_config(env: Env, config: storage::StorageConfig) -> Result<(), Error> {
+3823:    pub fn calculate_storage_cost(env: Env, market_id: Symbol) -> Result<u64, Error> {
+3824:        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+3833:    pub fn get_storage_efficiency_score(env: Env, market_id: Symbol) -> Result<u32, Error> {
+3834:        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+3843:    pub fn get_storage_recommendations(env: Env, market_id: Symbol) -> Result<Vec<String>, Error> {
+3844:        let market = match markets::MarketStateManager::get_market(&env, &market_id) {
+3859:    ) -> Result<errors::ErrorRecovery, Error> {
+3867:    ) -> Result<bool, Error> {
+3872:    pub fn get_error_recovery_status(env: Env) -> Result<errors::ErrorRecoveryStatus, Error> {
+3877:    pub fn emit_error_recovery_event(env: Env, recovery: errors::ErrorRecovery) {
+3885:    ) -> Result<bool, Error> {
+3890:    pub fn document_error_recovery(env: Env) -> Result<soroban_sdk::Map<String, String>, Error> {
+3897:    pub fn handle_zero_stake_scenario(env: Env, market_id: Symbol) -> Result<(), Error> {
+3905:    ) -> Result<String, Error> {
+3910:    pub fn detect_orphaned_markets(env: Env) -> Result<Vec<Symbol>, Error> {
+3919:    ) -> Result<(), Error> {
+3927:    ) -> Result<(), Error> {
+3932:    pub fn test_edge_case_scenarios(env: Env) -> Result<(), Error> {
+3937:    pub fn get_edge_case_statistics(env: Env) -> Result<edge_cases::EdgeCaseStats, Error> {
+3943:    pub fn recover_market_state(env: Env, admin: Address, market_id: Symbol) -> bool {
+3945:        if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
+3948:        match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id) {
+3960:    ) -> i128 {
+3962:        if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
+3965:        match crate::recovery::RecoveryManager::partial_refund_mechanism(&env, &market_id, &users) {
+3972:    pub fn validate_market_state_integrity(env: Env, market_id: Symbol) -> bool {
+3974:        {
+3981:    pub fn get_recovery_status(env: Env, market_id: Symbol) -> String {
+3989:    pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
+3998:    ) -> Result<versioning::VersionMigration, Error> {
+4011:    ) -> Result<bool, Error> {
+4020:    pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
+4025:    pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
+4030:    pub fn get_version_history(env: Env) -> Result<versioning::VersionHistory, Error> {
+4038:    ) -> Result<bool, Error> {
+4048:    ) -> Result<monitoring::MarketHealthMetrics, Error> {
+4056:    ) -> Result<monitoring::OracleHealthMetrics, Error> {
+4064:    ) -> Result<monitoring::FeeCollectionMetrics, Error> {
+4072:    ) -> Result<monitoring::DisputeResolutionMetrics, Error> {
+4080:    ) -> Result<monitoring::PerformanceMetrics, Error> {
+4088:    ) -> Result<(), Error> {
+4096:    ) -> Result<bool, Error> {
+4109:    ) -> Result<String, Error> {
+4119:        if current_time < market.end_time {
+4125:        match backup.get_price(&env, &oracle_contract, &market.oracle_config.feed_id) {
+4126:            Ok(price) => {
+4131:                let result = if comparison == &String::from_str(&env, "gt") {
+4132:                    if price > threshold {
+4134:                    } else {
+4137:                } else if comparison == &String::from_str(&env, "lt") {
+4138:                    if price < threshold {
+4140:                    } else {
+4143:                } else {
+4144:                    if price == threshold {
+4146:                    } else {
+4153:            Err(_) => {
+4167:    ) -> String {
+4169:        match health {
+4183:    ) -> Result<(), Error> {
+4193:    ) -> Result<(), Error> {
+4204:    ) -> Result<(), Error> {
+4214:    ) -> Result<(), Error> {
+4219:    pub fn get_admin_roles(env: Env) -> Map<Address, AdminRole> {
+4224:    pub fn get_admin_analytics(env: Env) -> AdminAnalyticsResult {
+4229:    pub fn migrate_to_multi_admin(env: Env, admin: Address) -> Result<(), Error> {
+4235:    pub fn is_multi_admin_migrated(env: Env) -> bool {
+4240:    pub fn check_role_permissions(env: Env, role: AdminRole, permission: AdminPermission) -> bool {
+4252:    ) -> Result<(), Error> {
+4266:    ) -> Result<(), Error> {
+4279:    ) -> Result<(), Error> {
+4293:    ) -> Result<(), Error> {
+4306:    ) -> Result<(), Error> {
+4342:    /// # use soroban_sdk::{Env, Address, BytesN};
+4356:    ) -> Result<(), Error> {
+4380:    ) -> Result<(), Error> {
+4393:    pub fn get_contract_version(env: Env) -> Result<versioning::Version, Error> {
+4404:    pub fn check_upgrade_available(env: Env) -> Result<bool, Error> {
+4415:    pub fn get_upgrade_history(env: Env) -> Result<Vec<upgrade_manager::UpgradeRecord>, Error> {
+4426:    pub fn get_upgrade_statistics(env: Env) -> Result<upgrade_manager::UpgradeStats, Error> {
+4446:    ) -> Result<upgrade_manager::CompatibilityCheckResult, Error> {
+4465:    ) -> Result<bool, Error> {
+4496:    /// # use soroban_sdk::{Env, Symbol};
+4501:    /// match PredictifyHybrid::get_market_statistics(env.clone(), market_id) {
+4502:    ///     Ok(stats) => {
+4503:    ///         println!("Total participants: {}", stats.total_participants);
+4504:    ///         println!("Total stake: {}", stats.total_stake);
+4505:    ///         println!("Consensus strength: {}%", stats.consensus_strength);
+4507:    ///     Err(e) => println!("Analytics unavailable: {:?}", e),
+4513:    ) -> Result<market_analytics::MarketStatistics, Error> {
+4537:    /// # use soroban_sdk::{Env, Symbol};
+4542:    /// match PredictifyHybrid::get_voting_analytics(env.clone(), market_id) {
+4543:    ///     Ok(analytics) => {
+4544:    ///         println!("Total votes: {}", analytics.total_votes);
+4545:    ///         println!("Unique voters: {}", analytics.unique_voters);
+4547:    ///     Err(e) => println!("Voting analytics unavailable: {:?}", e),
+4553:    ) -> Result<market_analytics::VotingAnalytics, Error> {
+4578:    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+4581:    /// match PredictifyHybrid::get_oracle_performance_stats(env.clone(), OracleProvider::Reflector) {
+4582:    ///     Ok(stats) => {
+4583:    ///         println!("Oracle accuracy: {}%", stats.accuracy_rate);
+4584:    ///         println!("Uptime: {}%", stats.uptime_percentage);
+4585:    ///         println!("Reliability score: {}", stats.reliability_score);
+4587:    ///     Err(e) => println!("Oracle stats unavailable: {:?}", e),
+4593:    ) -> Result<market_analytics::OraclePerformanceStats, Error> {
+4618:    /// # use predictify_hybrid::{PredictifyHybrid, TimeFrame};
+4621:    /// match PredictifyHybrid::get_fee_analytics(env.clone(), TimeFrame::Month) {
+4622:    ///     Ok(analytics) => {
+4623:    ///         println!("Total fees collected: {}", analytics.total_fees_collected);
+4624:    ///         println!("Collection rate: {}%", analytics.fee_collection_rate);
+4626:    ///     Err(e) => println!("Fee analytics unavailable: {:?}", e),
+4632:    ) -> Result<market_analytics::FeeAnalytics, Error> {
+4656:    /// # use soroban_sdk::{Env, Symbol};
+4661:    /// match PredictifyHybrid::get_dispute_analytics(env.clone(), market_id) {
+4662:    ///     Ok(analytics) => {
+4663:    ///         println!("Total disputes: {}", analytics.total_disputes);
+4664:    ///         println!("Success rate: {}%", analytics.dispute_success_rate);
+4666:    ///     Err(e) => println!("Dispute analytics unavailable: {:?}", e),
+4672:    ) -> Result<market_analytics::DisputeAnalytics, Error> {
+4696:    /// # use soroban_sdk::{Env, Symbol};
+4701:    /// match PredictifyHybrid::get_participation_metrics(env.clone(), market_id) {
+4702:    ///     Ok(metrics) => {
+4703:    ///         println!("Total participants: {}", metrics.total_participants);
+4704:    ///         println!("Engagement score: {}", metrics.engagement_score);
+4705:    ///         println!("Retention rate: {}%", metrics.retention_rate);
+4707:    ///     Err(e) => println!("Participation metrics unavailable: {:?}", e),
+4713:    ) -> Result<market_analytics::ParticipationMetrics, Error> {
+4737:    /// # use soroban_sdk::{Env, Symbol, vec};
+4746:    /// match PredictifyHybrid::get_market_comparison_analytics(env.clone(), markets) {
+4747:    ///     Ok(comparison) => {
+4748:    ///         println!("Total markets: {}", comparison.total_markets);
+4749:    ///         println!("Average participation: {}", comparison.average_participation);
+4750:    ///         println!("Success rate: {}%", comparison.success_rate);
+4752:    ///     Err(e) => println!("Comparison analytics unavailable: {:?}", e),
+4758:    ) -> Result<market_analytics::MarketComparisonAnalytics, Error> {
+4785:    /// # use soroban_sdk::{Env, String, vec};
+4794:    /// ) {
+4795:    ///     Ok(result) => {
+4796:    ///         println!("Gas usage: {}", result.gas_usage);
+4797:    ///         println!("Execution time: {}", result.execution_time);
+4798:    ///         println!("Performance score: {}", result.performance_score);
+4800:    ///     Err(e) => println!("Benchmark failed: {:?}", e),
+4807:    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+4834:    /// # use predictify_hybrid::{PredictifyHybrid, StorageOperation};
+4836:    /// # let operation = StorageOperation {
+4844:    /// match PredictifyHybrid::benchmark_storage_usage(env.clone(), operation) {
+4845:    ///     Ok(result) => {
+4846:    ///         println!("Storage usage: {}", result.storage_usage);
+4847:    ///         println!("Gas usage: {}", result.gas_usage);
+4849:    ///     Err(e) => println!("Storage benchmark failed: {:?}", e),
+4855:    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+4882:    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+4888:    /// ) {
+4889:    ///     Ok(result) => {
+4890:    ///         println!("Oracle response time: {}", result.execution_time);
+4891:    ///         println!("Oracle gas usage: {}", result.gas_usage);
+4893:    ///     Err(e) => println!("Oracle benchmark failed: {:?}", e),
+4899:    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+4925:    /// # use soroban_sdk::{Env, vec};
+4926:    /// # use predictify_hybrid::{PredictifyHybrid, BatchOperation};
+4930:    /// #     BatchOperation {
+4938:    /// match PredictifyHybrid::benchmark_batch_operations(env.clone(), operations) {
+4939:    ///     Ok(result) => {
+4940:    ///         println!("Batch execution time: {}", result.execution_time);
+4941:    ///         println!("Batch gas usage: {}", result.gas_usage);
+4943:    ///     Err(e) => println!("Batch benchmark failed: {:?}", e),
+4949:    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+4980:    /// match PredictifyHybrid::benchmark_scalability(env.clone(), 1000, 10000) {
+4981:    ///     Ok(result) => {
+4983:    ///         println!("Total gas usage: {}", result.gas_usage);
+4984:    ///         println!("Total execution time: {}", result.execution_time);
+4986:    ///     Err(e) => println!("Scalability benchmark failed: {:?}", e),
+4993:    ) -> Result<performance_benchmarks::BenchmarkResult, Error> {
+5022:    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceBenchmarkSuite};
+5026:    /// match PredictifyHybrid::generate_performance_report(env.clone(), suite) {
+5027:    ///     Ok(report) => {
+5029:    ///         println!("Overall score: {}", report.performance_metrics.overall_performance_score);
+5030:    ///         println!("Recommendations: {}", report.recommendations.len());
+5032:    ///     Err(e) => println!("Report generation failed: {:?}", e),
+5038:    ) -> Result<performance_benchmarks::PerformanceReport, Error> {
+5068:    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceMetrics, PerformanceThresholds};
+5073:    /// match PredictifyHybrid::validate_performance_thresholds(env.clone(), metrics, thresholds) {
+5076:    ///     Err(e) => println!("Validation failed: {:?}", e),
+5083:    ) -> Result<bool, Error> {
+5089:    pub fn get_platform_statistics(env: Env) -> PlatformStatistics {
+5094:    pub fn get_user_statistics(env: Env, user: Address) -> UserStatistics {

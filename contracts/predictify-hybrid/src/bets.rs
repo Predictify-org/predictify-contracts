@@ -251,6 +251,9 @@ impl BetManager {
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         BetValidator::validate_market_for_betting(env, &market)?;
 
+        // Check user restrictions (whitelist/blacklist)
+        crate::admin::UserRestrictionManager::check_restrictions(env, &user, &market_id)?;
+
         // Validate bet parameters (uses configurable min/max limits per event or global)
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
 
@@ -351,6 +354,9 @@ impl BetManager {
             // Get and validate market
             let market = MarketStateManager::get_market(env, &market_id)?;
             BetValidator::validate_market_for_betting(env, &market)?;
+
+            // Check user restrictions (whitelist/blacklist)
+            crate::admin::UserRestrictionManager::check_restrictions(env, &user, &market_id)?;
 
             // Validate bet parameters
             BetValidator::validate_bet_parameters(

@@ -39,6 +39,10 @@ pub enum Error {
     BetsAlreadyPlaced = 111,
     /// Insufficient balance
     InsufficientBalance = 112,
+    /// User is blacklisted and cannot perform this action
+    Blacklist = 113,
+    /// User is not on the required whitelist for this action
+    NoWhitelist = 114,
     // FundsLocked removed to save space
 
     // ===== ORACLE ERRORS =====
@@ -54,12 +58,12 @@ pub enum Error {
     OracleVerified = 204,
     /// Market not ready for oracle verification
     MarketNotReady = 205,
-    /// Fallback oracle is unavailable or unhealthy
-    FallbackOracleUnavailable = 202,
-    /// Resolution timeout has been reached
-    ResolutionTimeoutReached = 203,
+    /// FallbackUnavail or unhealthy
+    FallbackUnavail = 206,
+    /// ResTimeoutas been reached
+    ResTimeout = 207,
     /// Refund process has been initiated
-    RefundStarted = 204,
+    RefundStarted = 208,
 
     // ===== VALIDATION ERRORS =====
     /// Invalid question format
@@ -827,6 +831,8 @@ impl ErrorHandler {
             Error::DisputeFeeFailed => 0,
             Error::InvalidState => 0,
             Error::InvalidOracleConfig => 0,
+            Error::Blacklist => 0,
+            Error::NoWhitelist => 0,
             _ => 1,
         }
     }
@@ -836,8 +842,9 @@ impl ErrorHandler {
         let recovery_key = Symbol::new(
             env,
             &format!(
-                "recovery_{}_{}",
-                recovery.original_error_code, recovery.recovery_timestamp
+                "rec_{}_{}",
+                recovery.original_error_code,
+                recovery.recovery_timestamp % 1000000
             ),
         );
         env.storage().persistent().set(&recovery_key, recovery);
@@ -864,6 +871,8 @@ impl ErrorHandler {
             }
             Error::InvalidState => String::from_str(&Env::default(), "no_recovery"),
             Error::InvalidOracleConfig => String::from_str(&Env::default(), "no_recovery"),
+            Error::Blacklist => String::from_str(&Env::default(), "abort"),
+            Error::NoWhitelist => String::from_str(&Env::default(), "abort"),
             _ => String::from_str(&Env::default(), "abort"),
         }
     }
@@ -958,6 +967,16 @@ impl ErrorHandler {
                 ErrorCategory::UserOperation,
                 RecoveryStrategy::Skip,
             ),
+            Error::Blacklist => (
+                ErrorSeverity::High,
+                ErrorCategory::Authentication,
+                RecoveryStrategy::Abort,
+            ),
+            Error::NoWhitelist => (
+                ErrorSeverity::High,
+                ErrorCategory::Authentication,
+                RecoveryStrategy::Abort,
+            ),
 
             // Default classification
             _ => (
@@ -998,6 +1017,14 @@ impl ErrorHandler {
             (Error::InvalidInput, _) => String::from_str(
                 &Env::default(),
                 "Please check your input parameters and try again.",
+            ),
+            (Error::Blacklist, _) => String::from_str(
+                &Env::default(),
+                "Your address has been blacklisted from this operation.",
+            ),
+            (Error::NoWhitelist, _) => String::from_str(
+                &Env::default(),
+                "Your address is not whitelisted for this operation.",
             ),
             (_, ErrorCategory::Validation) => {
                 String::from_str(&Env::default(), "Please review and correct the input data.")
@@ -1095,6 +1122,8 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
+            Error::Blacklist => "User is blacklisted",
+            Error::NoWhitelist => "User is not whitelisted",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::InvalidQuestion => "Invalid question format",
@@ -1213,6 +1242,8 @@ impl Error {
             Error::AlreadyBet => "ALREADY_BET",
             Error::BetsAlreadyPlaced => "BETS_ALREADY_PLACED",
             Error::InsufficientBalance => "INSUFFICIENT_BALANCE",
+            Error::Blacklist => "USER_BLACKLISTED",
+            Error::NoWhitelist => "USER_NOT_WHITELISTED",
             Error::OracleUnavailable => "ORACLE_UNAVAILABLE",
             Error::InvalidOracleConfig => "INVALID_ORACLE_CONFIG",
             Error::InvalidQuestion => "INVALID_QUESTION",
