@@ -1229,7 +1229,7 @@ impl PredictifyHybrid {
     ///         let total_resolved = analytics.total_markets_resolved;
     ///         let oracle_accuracy = analytics.oracle_accuracy_rate;
     ///         let avg_resolution_time = analytics.average_resolution_time;
-    ///         
+    ///
     ///         println!("Resolved markets: {}", total_resolved);
     ///         println!("Oracle accuracy: {}%", oracle_accuracy);
     ///     },
@@ -1309,7 +1309,7 @@ impl PredictifyHybrid {
     ///         let total_participants = stats.total_participants;
     ///         let total_stake = stats.total_stake;
     ///         let leading_outcome = stats.leading_outcome;
-    ///         
+    ///
     ///         println!("Participants: {}", total_participants);
     ///         println!("Total stake: {}", total_stake);
     ///         println!("Leading outcome: {:?}", leading_outcome);
@@ -1606,7 +1606,9 @@ impl PredictifyHybrid {
         cursor: u32,
         limit: u32,
     ) -> (Vec<EventHistoryEntry>, u32) {
-        crate::event_archive::EventArchive::query_events_history(&env, from_ts, to_ts, cursor, limit)
+        crate::event_archive::EventArchive::query_events_history(
+            &env, from_ts, to_ts, cursor, limit,
+        )
     }
 
     /// Query events by resolution status (e.g. Resolved, Cancelled). Paginated.

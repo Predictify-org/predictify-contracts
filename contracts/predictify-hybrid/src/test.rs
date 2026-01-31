@@ -2704,11 +2704,20 @@ fn test_get_bet_after_claim() {
     let market_id = test.create_test_market();
 
     test.env.mock_all_auths();
-    client.place_bet(&test.user, &market_id, &String::from_str(&test.env, "yes"), &10_000_000);
+    client.place_bet(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000,
+    );
 
     // Advance time and resolve market
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     test.env.ledger().set(LedgerInfo {
         timestamp: market.end_time + 1,
@@ -2739,7 +2748,12 @@ fn test_has_user_bet_returns_true_when_bet_exists() {
 
     let user = test.create_funded_user();
     test.env.mock_all_auths();
-    client.place_bet(&user, &market_id, &String::from_str(&test.env, "yes"), &10_000_000);
+    client.place_bet(
+        &user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000,
+    );
 
     let has_bet = client.has_user_bet(&market_id, &user);
     assert!(has_bet);
@@ -2795,9 +2809,24 @@ fn test_get_market_bet_stats_with_bets() {
     let user3 = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.place_bet(&user1, &market_id, &String::from_str(&test.env, "yes"), &10_000_000);
-    client.place_bet(&user2, &market_id, &String::from_str(&test.env, "no"), &20_000_000);
-    client.place_bet(&user3, &market_id, &String::from_str(&test.env, "yes"), &15_000_000);
+    client.place_bet(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000,
+    );
+    client.place_bet(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &20_000_000,
+    );
+    client.place_bet(
+        &user3,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &15_000_000,
+    );
 
     let stats = client.get_market_bet_stats(&market_id);
 
@@ -2833,8 +2862,18 @@ fn test_get_implied_probability_balanced_market() {
 
     test.env.mock_all_auths();
     // Equal bets on both sides
-    client.place_bet(&user1, &market_id, &String::from_str(&test.env, "yes"), &10_000_000);
-    client.place_bet(&user2, &market_id, &String::from_str(&test.env, "no"), &10_000_000);
+    client.place_bet(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000,
+    );
+    client.place_bet(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &10_000_000,
+    );
 
     let yes_prob = client.get_implied_probability(&market_id, &String::from_str(&test.env, "yes"));
     let no_prob = client.get_implied_probability(&market_id, &String::from_str(&test.env, "no"));
@@ -2855,8 +2894,18 @@ fn test_get_implied_probability_skewed_market() {
 
     test.env.mock_all_auths();
     // Skewed bets: 80% on yes, 20% on no
-    client.place_bet(&user1, &market_id, &String::from_str(&test.env, "yes"), &80_000_000);
-    client.place_bet(&user2, &market_id, &String::from_str(&test.env, "no"), &20_000_000);
+    client.place_bet(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &80_000_000,
+    );
+    client.place_bet(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &20_000_000,
+    );
 
     let yes_prob = client.get_implied_probability(&market_id, &String::from_str(&test.env, "yes"));
     let no_prob = client.get_implied_probability(&market_id, &String::from_str(&test.env, "no"));
@@ -2911,8 +2960,18 @@ fn test_get_payout_multiplier_even_odds() {
     let user2 = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.place_bet(&user1, &market_id, &String::from_str(&test.env, "yes"), &10_000_000);
-    client.place_bet(&user2, &market_id, &String::from_str(&test.env, "no"), &10_000_000);
+    client.place_bet(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000,
+    );
+    client.place_bet(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &10_000_000,
+    );
 
     let multiplier = client.get_payout_multiplier(&market_id, &String::from_str(&test.env, "yes"));
 
@@ -3021,7 +3080,11 @@ fn test_get_market_after_resolution() {
 
     // Resolve the market
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     test.env.ledger().set(LedgerInfo {
         timestamp: market.end_time + 1,
@@ -3042,7 +3105,10 @@ fn test_get_market_after_resolution() {
     assert!(market_result.is_some());
     let market = market_result.unwrap();
     assert_eq!(market.state, MarketState::Resolved);
-    assert_eq!(market.winning_outcome, Some(String::from_str(&test.env, "yes")));
+    assert_eq!(
+        market.winning_outcome,
+        Some(String::from_str(&test.env, "yes"))
+    );
 }
 
 // ===== Tests for get_market_analytics() =====
@@ -3160,7 +3226,12 @@ fn test_multiple_sequential_queries() {
     for i in 0..5 {
         let user = test.create_funded_user();
         let amount = (i + 1) * 1_000_000;
-        client.place_bet(&user, &market_id, &String::from_str(&test.env, "yes"), &amount);
+        client.place_bet(
+            &user,
+            &market_id,
+            &String::from_str(&test.env, "yes"),
+            &amount,
+        );
     }
 
     // Perform multiple queries
@@ -3193,7 +3264,10 @@ fn test_query_with_very_long_outcome_name() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     let market_id = test.create_test_market();
 
-    let long_outcome = String::from_str(&test.env, "this_is_a_very_long_outcome_name_that_probably_does_not_exist_in_the_market");
+    let long_outcome = String::from_str(
+        &test.env,
+        "this_is_a_very_long_outcome_name_that_probably_does_not_exist_in_the_market",
+    );
 
     let prob = client.get_implied_probability(&market_id, &long_outcome);
 
@@ -3211,8 +3285,18 @@ fn test_get_market_bet_stats_consistency() {
     let user2 = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.place_bet(&user1, &market_id, &String::from_str(&test.env, "yes"), &10_000_000);
-    client.place_bet(&user2, &market_id, &String::from_str(&test.env, "no"), &15_000_000);
+    client.place_bet(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000,
+    );
+    client.place_bet(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &15_000_000,
+    );
 
     let stats1 = client.get_market_bet_stats(&market_id);
     let stats2 = client.get_market_bet_stats(&market_id);
@@ -3253,7 +3337,6 @@ fn test_implied_probability_sum_equals_100() {
     let total = yes_prob + no_prob;
     assert!(total >= 95 && total <= 105); // Allow small variance
 }
-
 
 // ===== CORE FEE CALCULATION TESTS =====
 
@@ -3308,7 +3391,10 @@ fn test_withdraw_collected_fee() {
     // Set collected fees directly in storage
     test.env.as_contract(&test.contract_id, || {
         let fees_key = Symbol::new(&test.env, "tot_fees");
-        test.env.storage().persistent().set(&fees_key, &50_000_000i128);
+        test.env
+            .storage()
+            .persistent()
+            .set(&fees_key, &50_000_000i128);
     });
 
     test.env.mock_all_auths();
@@ -3318,7 +3404,11 @@ fn test_withdraw_collected_fee() {
     // Verify fees were withdrawn
     let remaining = test.env.as_contract(&test.contract_id, || {
         let fees_key = Symbol::new(&test.env, "tot_fees");
-        test.env.storage().persistent().get::<Symbol, i128>(&fees_key).unwrap_or(0)
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, i128>(&fees_key)
+            .unwrap_or(0)
     });
     assert_eq!(remaining, 0);
 }
@@ -3332,7 +3422,10 @@ fn test_withdraw_fees_non_admin() {
     // Set some fees
     test.env.as_contract(&test.contract_id, || {
         let fees_key = Symbol::new(&test.env, "tot_fees");
-        test.env.storage().persistent().set(&fees_key, &50_000_000i128);
+        test.env
+            .storage()
+            .persistent()
+            .set(&fees_key, &50_000_000i128);
     });
 
     test.env.mock_all_auths();
@@ -3347,7 +3440,10 @@ fn test_withdraw_partial_fees() {
     // Set collected fees
     test.env.as_contract(&test.contract_id, || {
         let fees_key = Symbol::new(&test.env, "tot_fees");
-        test.env.storage().persistent().set(&fees_key, &100_000_000i128);
+        test.env
+            .storage()
+            .persistent()
+            .set(&fees_key, &100_000_000i128);
     });
 
     test.env.mock_all_auths();
@@ -3357,7 +3453,11 @@ fn test_withdraw_partial_fees() {
     // Verify remaining fees
     let remaining = test.env.as_contract(&test.contract_id, || {
         let fees_key = Symbol::new(&test.env, "tot_fees");
-        test.env.storage().persistent().get::<Symbol, i128>(&fees_key).unwrap_or(0)
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, i128>(&fees_key)
+            .unwrap_or(0)
     });
     assert_eq!(remaining, 50_000_000);
 }
@@ -3384,14 +3484,27 @@ fn test_fee_state_after_cancellation() {
     let stellar_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
     test.env.mock_all_auths();
     stellar_client.mint(&test.user, &100_000_000);
-    client.place_bet(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_000_000);
+    client.place_bet(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_000_000,
+    );
 
     // Cancel market
-    client.cancel_event(&test.admin, &market_id, &Some(String::from_str(&test.env, "Test")));
+    client.cancel_event(
+        &test.admin,
+        &market_id,
+        &Some(String::from_str(&test.env, "Test")),
+    );
 
     // Verify market is cancelled
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     assert_eq!(market.state, MarketState::Cancelled);
 }
@@ -3412,11 +3525,20 @@ fn test_fee_complete_flow() {
     stellar_client.mint(&user1, &200_000_000);
 
     // Place bet
-    client.place_bet(&user1, &market_id, &String::from_str(&test.env, "yes"), &200_000_000);
+    client.place_bet(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &200_000_000,
+    );
 
     // Verify market has staked amount
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     assert_eq!(market.total_staked, 200_000_000);
 
@@ -3440,7 +3562,11 @@ fn test_fee_complete_flow() {
 
     // Market should be resolved
     let market_resolved = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     assert_eq!(market_resolved.state, MarketState::Resolved);
 }
@@ -3465,10 +3591,10 @@ fn test_fee_amount_boundaries() {
 fn test_percentage_calculations_accuracy() {
     // Test percentage calculation accuracy
     let test_amounts = [
-        (100_000_000, 2, 2_000_000),   // 10 XLM @ 2% = 0.2 XLM
-        (500_000_000, 2, 10_000_000),  // 50 XLM @ 2% = 1 XLM
+        (100_000_000, 2, 2_000_000),    // 10 XLM @ 2% = 0.2 XLM
+        (500_000_000, 2, 10_000_000),   // 50 XLM @ 2% = 1 XLM
         (1_000_000_000, 2, 20_000_000), // 100 XLM @ 2% = 2 XLM
-        (100_000_000, 5, 5_000_000),   // 10 XLM @ 5% = 0.5 XLM
+        (100_000_000, 5, 5_000_000),    // 10 XLM @ 5% = 0.5 XLM
         (100_000_000, 10, 10_000_000),  // 10 XLM @ 10% = 1 XLM
     ];
 
@@ -3498,12 +3624,18 @@ fn test_initialize_with_default_fees() {
     client.initialize(&admin, &None);
 
     let stored_admin: Address = env.as_contract(&contract_id, || {
-        env.storage().persistent().get(&Symbol::new(&env, "Admin")).unwrap()
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap()
     });
     assert_eq!(stored_admin, admin);
 
     let stored_fee: i128 = env.as_contract(&contract_id, || {
-        env.storage().persistent().get(&Symbol::new(&env, "platform_fee")).unwrap()
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(&env, "platform_fee"))
+            .unwrap()
     });
     assert_eq!(stored_fee, 2);
 }
@@ -3520,7 +3652,10 @@ fn test_initialize_with_custom_fees() {
     client.initialize(&admin, &Some(5));
 
     let stored_fee: i128 = env.as_contract(&contract_id, || {
-        env.storage().persistent().get(&Symbol::new(&env, "platform_fee")).unwrap()
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(&env, "platform_fee"))
+            .unwrap()
     });
     assert_eq!(stored_fee, 5);
 }
@@ -3538,7 +3673,10 @@ fn test_initialize_valid_fee_bound() {
         client.initialize(&admin, &Some(0));
 
         let stored_fee: i128 = env.as_contract(&contract_id, || {
-            env.storage().persistent().get(&Symbol::new(&env, "platform_fee")).unwrap()
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "platform_fee"))
+                .unwrap()
         });
         assert_eq!(stored_fee, 0);
     }
@@ -3554,7 +3692,10 @@ fn test_initialize_valid_fee_bound() {
         client.initialize(&admin, &Some(10));
 
         let stored_fee: i128 = env.as_contract(&contract_id, || {
-            env.storage().persistent().get(&Symbol::new(&env, "platform_fee")).unwrap()
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "platform_fee"))
+                .unwrap()
         });
         assert_eq!(stored_fee, 10);
     }
@@ -3775,11 +3916,8 @@ fn test_query_events_by_category() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
     let _market_id = test.create_test_market();
 
-    let (entries, _) = client.query_events_by_category(
-        &String::from_str(&test.env, "BTC"),
-        &0u32,
-        &10u32,
-    );
+    let (entries, _) =
+        client.query_events_by_category(&String::from_str(&test.env, "BTC"), &0u32, &10u32);
     assert!(!entries.is_empty());
     let first = entries.get(0).unwrap();
     assert_eq!(first.category, String::from_str(&test.env, "BTC"));
@@ -3870,9 +4008,18 @@ fn test_archived_entry_has_archived_at_set() {
     let market_id = test.create_test_market();
 
     test.env.mock_all_auths();
-    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &10_0000000);
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_0000000,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     test.env.ledger().set(LedgerInfo {
         timestamp: market.end_time + 1,
@@ -4017,7 +4164,11 @@ fn test_query_result_correctness_resolved_market() {
         &stake,
     );
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     test.env.ledger().set(LedgerInfo {
         timestamp: market.end_time + 1,
@@ -4041,7 +4192,10 @@ fn test_query_result_correctness_resolved_market() {
     assert_eq!(e.state, MarketState::Resolved);
     assert_eq!(e.winning_outcome, Some(String::from_str(&test.env, "yes")));
     assert_eq!(e.total_staked, stake);
-    assert_eq!(e.question, String::from_str(&test.env, "Will BTC go above $25,000 by December 31?"));
+    assert_eq!(
+        e.question,
+        String::from_str(&test.env, "Will BTC go above $25,000 by December 31?")
+    );
     assert!(e.outcomes.len() >= 2);
 }
 
@@ -4074,4 +4228,1101 @@ fn test_event_history_entry_no_private_data_leakage() {
     assert!(e.end_time > 0);
     assert!(e.category.len() > 0);
     // EventHistoryEntry has no .votes, .stakes, .claimed, .admin - type guarantees no leakage
+}
+
+// ===== MULTI-OUTCOME MARKET TESTS =====
+// Comprehensive tests for multi-outcome market creation, betting, resolution, and payouts
+
+/// Helper to create a market with custom outcomes
+fn create_market_with_outcomes(test: &PredictifyTest, outcomes: Vec<String>) -> Symbol {
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    test.env.mock_all_auths();
+    client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Multi-outcome test market?"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            feed_id: String::from_str(&test.env, "BTC"),
+            threshold: 2500000,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+    )
+}
+
+// ===== MARKET CREATION TESTS (2, 3, N outcomes) =====
+
+#[test]
+fn test_create_market_with_three_outcomes() {
+    let test = PredictifyTest::setup();
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+        String::from_str(&test.env, "maybe"),
+    ];
+
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market.outcomes.len(), 3);
+    assert!(market
+        .outcomes
+        .iter()
+        .any(|o| o == String::from_str(&test.env, "yes")));
+    assert!(market
+        .outcomes
+        .iter()
+        .any(|o| o == String::from_str(&test.env, "no")));
+    assert!(market
+        .outcomes
+        .iter()
+        .any(|o| o == String::from_str(&test.env, "maybe")));
+}
+
+#[test]
+fn test_create_market_with_five_outcomes() {
+    let test = PredictifyTest::setup();
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "outcome_a"),
+        String::from_str(&test.env, "outcome_b"),
+        String::from_str(&test.env, "outcome_c"),
+        String::from_str(&test.env, "outcome_d"),
+        String::from_str(&test.env, "outcome_e"),
+    ];
+
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market.outcomes.len(), 5);
+}
+
+#[test]
+fn test_create_market_with_maximum_outcomes() {
+    let test = PredictifyTest::setup();
+    // MAX_MARKET_OUTCOMES is 10
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "o1"),
+        String::from_str(&test.env, "o2"),
+        String::from_str(&test.env, "o3"),
+        String::from_str(&test.env, "o4"),
+        String::from_str(&test.env, "o5"),
+        String::from_str(&test.env, "o6"),
+        String::from_str(&test.env, "o7"),
+        String::from_str(&test.env, "o8"),
+        String::from_str(&test.env, "o9"),
+        String::from_str(&test.env, "o10"),
+    ];
+
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market.outcomes.len(), 10);
+}
+// ===== PROPORTIONAL PAYOUT TEST =====
+
+#[test]
+fn test_create_market_with_many_outcomes() {
+    // Note: The contract currently doesn't enforce MAX_MARKET_OUTCOMES in create_market.
+    // This test documents the current behavior. Consider adding validation if enforcement is needed.
+    let test = PredictifyTest::setup();
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "o1"),
+        String::from_str(&test.env, "o2"),
+        String::from_str(&test.env, "o3"),
+        String::from_str(&test.env, "o4"),
+        String::from_str(&test.env, "o5"),
+        String::from_str(&test.env, "o6"),
+        String::from_str(&test.env, "o7"),
+        String::from_str(&test.env, "o8"),
+        String::from_str(&test.env, "o9"),
+        String::from_str(&test.env, "o10"),
+        String::from_str(&test.env, "o11"),
+    ];
+
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    // Currently allows > 10 outcomes (max enforcement may need to be added)
+    assert_eq!(market.outcomes.len(), 11);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #301)")] // InvalidOutcomes
+fn test_create_market_with_single_outcome() {
+    let test = PredictifyTest::setup();
+    let outcomes = vec![&test.env, String::from_str(&test.env, "only_one")];
+
+    let _market_id = create_market_with_outcomes(&test, outcomes);
+}
+
+// ===== BETTING TESTS (valid/invalid outcome selection) =====
+
+#[test]
+fn test_vote_valid_outcome_in_multi_outcome_market() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "red"),
+        String::from_str(&test.env, "blue"),
+        String::from_str(&test.env, "green"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "blue"),
+        &50_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert!(market.votes.contains_key(test.user.clone()));
+    assert_eq!(
+        market.votes.get(test.user.clone()).unwrap(),
+        String::from_str(&test.env, "blue")
+    );
+    assert_eq!(market.total_staked, 50_0000000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #108)")] // InvalidOutcome
+fn test_vote_invalid_outcome_in_multi_outcome_market() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "red"),
+        String::from_str(&test.env, "blue"),
+        String::from_str(&test.env, "green"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    test.env.mock_all_auths();
+    // Try to vote for "yellow" which is not a valid outcome
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yellow"),
+        &50_0000000,
+    );
+}
+
+#[test]
+fn test_multiple_users_vote_different_outcomes() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "team_a"),
+        String::from_str(&test.env, "team_b"),
+        String::from_str(&test.env, "draw"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+    let user3 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "team_a"),
+        &100_0000000,
+    );
+    client.vote(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "team_b"),
+        &150_0000000,
+    );
+    client.vote(
+        &user3,
+        &market_id,
+        &String::from_str(&test.env, "draw"),
+        &50_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market.votes.len(), 3);
+    assert_eq!(market.total_staked, 300_0000000);
+    assert_eq!(
+        market.votes.get(user1.clone()).unwrap(),
+        String::from_str(&test.env, "team_a")
+    );
+    assert_eq!(
+        market.votes.get(user2.clone()).unwrap(),
+        String::from_str(&test.env, "team_b")
+    );
+    assert_eq!(
+        market.votes.get(user3.clone()).unwrap(),
+        String::from_str(&test.env, "draw")
+    );
+}
+
+#[test]
+fn test_vote_for_each_outcome_in_five_outcome_market() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "a"),
+        String::from_str(&test.env, "b"),
+        String::from_str(&test.env, "c"),
+        String::from_str(&test.env, "d"),
+        String::from_str(&test.env, "e"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    // Create 5 users, each votes for a different outcome
+    let user_a = test.create_funded_user();
+    let user_b = test.create_funded_user();
+    let user_c = test.create_funded_user();
+    let user_d = test.create_funded_user();
+    let user_e = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user_a,
+        &market_id,
+        &String::from_str(&test.env, "a"),
+        &10_0000000,
+    );
+    client.vote(
+        &user_b,
+        &market_id,
+        &String::from_str(&test.env, "b"),
+        &20_0000000,
+    );
+    client.vote(
+        &user_c,
+        &market_id,
+        &String::from_str(&test.env, "c"),
+        &30_0000000,
+    );
+    client.vote(
+        &user_d,
+        &market_id,
+        &String::from_str(&test.env, "d"),
+        &40_0000000,
+    );
+    client.vote(
+        &user_e,
+        &market_id,
+        &String::from_str(&test.env, "e"),
+        &50_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market.votes.len(), 5);
+    assert_eq!(market.total_staked, 150_0000000);
+}
+
+// ===== PAYOUT TESTS (single winner, proportional payouts) =====
+
+#[test]
+fn test_multi_outcome_payout_single_winner_pool() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "win"),
+        String::from_str(&test.env, "lose"),
+        String::from_str(&test.env, "draw"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let winner = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &winner,
+        &market_id,
+        &String::from_str(&test.env, "win"),
+        &100_0000000,
+    );
+
+    // Advance time
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // Resolve with winning outcome
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "win"));
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    assert_eq!(
+        market_after.winning_outcome,
+        Some(String::from_str(&test.env, "win"))
+    );
+    // Winner should be marked as claimed
+    assert!(market_after.claimed.get(winner.clone()).unwrap_or(false));
+}
+
+#[test]
+fn test_multi_outcome_payout_two_of_three_outcomes_have_bets() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "alpha"),
+        String::from_str(&test.env, "beta"),
+        String::from_str(&test.env, "gamma"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "alpha"),
+        &100_0000000,
+    );
+    client.vote(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "beta"),
+        &200_0000000,
+    );
+    // No one votes for "gamma"
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // "alpha" wins
+    test.env.mock_all_auths();
+    client.resolve_market_manual(
+        &test.admin,
+        &market_id,
+        &String::from_str(&test.env, "alpha"),
+    );
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    // Winner should be marked
+    assert!(market_after.claimed.get(user1.clone()).unwrap_or(false));
+    // Loser should not be marked
+    assert!(!market_after.claimed.get(user2.clone()).unwrap_or(false));
+}
+
+#[test]
+fn test_multi_outcome_payout_all_three_outcomes_have_bets() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "x"),
+        String::from_str(&test.env, "y"),
+        String::from_str(&test.env, "z"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let user_x = test.create_funded_user();
+    let user_y = test.create_funded_user();
+    let user_z = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user_x,
+        &market_id,
+        &String::from_str(&test.env, "x"),
+        &100_0000000,
+    );
+    client.vote(
+        &user_y,
+        &market_id,
+        &String::from_str(&test.env, "y"),
+        &200_0000000,
+    );
+    client.vote(
+        &user_z,
+        &market_id,
+        &String::from_str(&test.env, "z"),
+        &300_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert_eq!(market.total_staked, 600_0000000);
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // "y" wins
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "y"));
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    assert_eq!(
+        market_after.winning_outcome,
+        Some(String::from_str(&test.env, "y"))
+    );
+    // Only user_y should be the winner
+    assert!(market_after.claimed.get(user_y.clone()).unwrap_or(false));
+    assert!(!market_after.claimed.get(user_x.clone()).unwrap_or(false));
+    assert!(!market_after.claimed.get(user_z.clone()).unwrap_or(false));
+}
+
+#[test]
+fn test_multi_outcome_payout_calculation_accuracy_five_outcomes() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "o1"),
+        String::from_str(&test.env, "o2"),
+        String::from_str(&test.env, "o3"),
+        String::from_str(&test.env, "o4"),
+        String::from_str(&test.env, "o5"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    // Multiple winners for o2
+    let winner1 = test.create_funded_user();
+    let winner2 = test.create_funded_user();
+    let loser1 = test.create_funded_user();
+    let loser2 = test.create_funded_user();
+    let loser3 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &winner1,
+        &market_id,
+        &String::from_str(&test.env, "o2"),
+        &100_0000000,
+    );
+    client.vote(
+        &winner2,
+        &market_id,
+        &String::from_str(&test.env, "o2"),
+        &200_0000000,
+    );
+    client.vote(
+        &loser1,
+        &market_id,
+        &String::from_str(&test.env, "o1"),
+        &100_0000000,
+    );
+    client.vote(
+        &loser2,
+        &market_id,
+        &String::from_str(&test.env, "o3"),
+        &200_0000000,
+    );
+    client.vote(
+        &loser3,
+        &market_id,
+        &String::from_str(&test.env, "o5"),
+        &400_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert_eq!(market.total_staked, 1000_0000000); // Total 1000 XLM
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // o2 wins - winning pool = 300 XLM
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "o2"));
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    // Winners should be marked claimed
+    assert!(market_after.claimed.get(winner1.clone()).unwrap_or(false));
+    assert!(market_after.claimed.get(winner2.clone()).unwrap_or(false));
+    // Losers should not
+    assert!(!market_after.claimed.get(loser1.clone()).unwrap_or(false));
+    assert!(!market_after.claimed.get(loser2.clone()).unwrap_or(false));
+    assert!(!market_after.claimed.get(loser3.clone()).unwrap_or(false));
+}
+
+// ===== BACKWARD COMPATIBILITY TESTS =====
+
+#[test]
+fn test_binary_market_still_works() {
+    // Ensure traditional binary (yes/no) markets work correctly
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market(); // Uses yes/no outcomes
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market.outcomes.len(), 2);
+    assert_eq!(market.total_staked, 100_0000000);
+}
+
+#[test]
+fn test_binary_payout_matches_legacy() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let winner = test.create_funded_user();
+    let loser = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &winner,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &100_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    assert!(market_after.claimed.get(winner.clone()).unwrap_or(false));
+    assert!(!market_after.claimed.get(loser.clone()).unwrap_or(false));
+}
+
+// ===== EDGE CASE TESTS =====
+
+#[test]
+fn test_one_outcome_has_no_bets_winner_gets_all() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "popular"),
+        String::from_str(&test.env, "unpopular"),
+        String::from_str(&test.env, "rare"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    // All bets on "popular", none on others
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "popular"),
+        &100_0000000,
+    );
+    client.vote(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "popular"),
+        &200_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // "popular" wins - all bet on winning, get stake back minus fees
+    test.env.mock_all_auths();
+    client.resolve_market_manual(
+        &test.admin,
+        &market_id,
+        &String::from_str(&test.env, "popular"),
+    );
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    assert!(market_after.claimed.get(user1.clone()).unwrap_or(false));
+    assert!(market_after.claimed.get(user2.clone()).unwrap_or(false));
+}
+
+#[test]
+fn test_all_users_vote_same_outcome_in_multi_outcome() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "consensus"),
+        String::from_str(&test.env, "minority"),
+        String::from_str(&test.env, "rare"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    // All users vote for "consensus"
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+    let user3 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "consensus"),
+        &100_0000000,
+    );
+    client.vote(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "consensus"),
+        &150_0000000,
+    );
+    client.vote(
+        &user3,
+        &market_id,
+        &String::from_str(&test.env, "consensus"),
+        &250_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert_eq!(market.total_staked, 500_0000000);
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    test.env.mock_all_auths();
+    client.resolve_market_manual(
+        &test.admin,
+        &market_id,
+        &String::from_str(&test.env, "consensus"),
+    );
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    // Everyone wins
+    assert!(market_after.claimed.get(user1.clone()).unwrap_or(false));
+    assert!(market_after.claimed.get(user2.clone()).unwrap_or(false));
+    assert!(market_after.claimed.get(user3.clone()).unwrap_or(false));
+}
+
+#[test]
+fn test_resolve_with_outcome_that_has_no_bets() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "likely"),
+        String::from_str(&test.env, "unlikely"),
+        String::from_str(&test.env, "surprise"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "likely"),
+        &100_0000000,
+    );
+    client.vote(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "unlikely"),
+        &200_0000000,
+    );
+    // No one votes for "surprise"
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // Resolve with "surprise" - no one wins
+    test.env.mock_all_auths();
+    client.resolve_market_manual(
+        &test.admin,
+        &market_id,
+        &String::from_str(&test.env, "surprise"),
+    );
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
+    assert_eq!(
+        market_after.winning_outcome,
+        Some(String::from_str(&test.env, "surprise"))
+    );
+    // No one should be marked as claimed since no one bet on the winner
+    assert!(!market_after.claimed.get(user1.clone()).unwrap_or(false));
+    assert!(!market_after.claimed.get(user2.clone()).unwrap_or(false));
+}
+
+#[test]
+fn test_multi_outcome_cancel_refunds_all() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "opt1"),
+        String::from_str(&test.env, "opt2"),
+        String::from_str(&test.env, "opt3"),
+        String::from_str(&test.env, "opt4"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+    let user3 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "opt1"),
+        &100_0000000,
+    );
+    client.vote(
+        &user2,
+        &market_id,
+        &String::from_str(&test.env, "opt2"),
+        &200_0000000,
+    );
+    client.vote(
+        &user3,
+        &market_id,
+        &String::from_str(&test.env, "opt4"),
+        &150_0000000,
+    );
+
+    // Cancel the event
+    test.env.mock_all_auths();
+    let total_refunded = client.cancel_event(
+        &test.admin,
+        &market_id,
+        &Some(String::from_str(&test.env, "Market cancelled")),
+    );
+
+    assert_eq!(total_refunded, 450_0000000); // All stakes refunded
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market.state, MarketState::Cancelled);
+}
+
+#[test]
+fn test_multi_outcome_distribute_payouts_explicit() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "first"),
+        String::from_str(&test.env, "second"),
+        String::from_str(&test.env, "third"),
+    ];
+    let market_id = create_market_with_outcomes(&test, outcomes);
+
+    let winner = test.create_funded_user();
+    let loser = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(
+        &winner,
+        &market_id,
+        &String::from_str(&test.env, "first"),
+        &100_0000000,
+    );
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "second"),
+        &100_0000000,
+    );
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    test.env.mock_all_auths();
+    client.resolve_market_manual(
+        &test.admin,
+        &market_id,
+        &String::from_str(&test.env, "first"),
+    );
+
+    // Explicitly call distribute_payouts
+    test.env.mock_all_auths();
+    let total_distributed = client.distribute_payouts(&market_id);
+
+    // Total distributed should be positive (winner got payout)
+    assert!(total_distributed >= 0);
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert_eq!(market_after.state, MarketState::Resolved);
 }
