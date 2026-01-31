@@ -102,6 +102,24 @@ pub struct MarketCreatedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a new prediction event is successfully created.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventCreatedEvent {
+    /// Unique event ID
+    pub event_id: Symbol,
+    /// Event description
+    pub description: String,
+    /// Event outcomes
+    pub outcomes: Vec<String>,
+    /// Event end time
+    pub end_time: u64,
+    /// Event admin
+    pub admin: Address,
+    /// Creation timestamp
+    pub timestamp: u64,
+}
+
 /// Event emitted when a user successfully casts a vote on a prediction market.
 ///
 /// This event captures all details of voting activity, including voter identity,
@@ -761,6 +779,202 @@ pub struct FeeCollectedEvent {
     pub timestamp: u64,
 }
 
+// ===== ORACLE RESULT VERIFICATION EVENTS =====
+
+/// Event emitted when oracle result verification is initiated for a market.
+///
+/// This event marks the start of the automatic result verification process,
+/// providing transparency about when and how oracle data is being fetched.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String, Address};
+/// # use predictify_hybrid::events::OracleVerificationInitiatedEvent;
+/// # let env = Env::default();
+///
+/// let event = OracleVerificationInitiatedEvent {
+///     market_id: Symbol::new(&env, \"btc_50k\"),
+///     initiator: Address::generate(&env),
+///     feed_id: String::from_str(&env, \"BTC/USD\"),
+///     oracle_count: 2,
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleVerificationInitiatedEvent {
+    /// Market ID being verified
+    pub market_id: Symbol,
+    /// Address that initiated verification
+    pub initiator: Address,
+    /// Feed ID being queried
+    pub feed_id: String,
+    /// Number of oracle sources being queried
+    pub oracle_count: u32,
+    /// Initiation timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when oracle result verification is completed successfully.
+///
+/// This comprehensive event captures all details of the verification process
+/// including the final outcome, price data, confidence scores, and validation status.
+/// Critical for transparency, auditability, and dispute resolution.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String, Address};
+/// # use predictify_hybrid::events::OracleResultVerifiedEvent;
+/// # use predictify_hybrid::types::OracleVerificationStatus;
+/// # let env = Env::default();
+///
+/// let event = OracleResultVerifiedEvent {
+///     market_id: Symbol::new(&env, \"btc_50k\"),
+///     outcome: String::from_str(&env, \"yes\"),
+///     price: 52_000_00,
+///     threshold: 50_000_00,
+///     comparison: String::from_str(&env, \"gt\"),
+///     provider: String::from_str(&env, \"Reflector\"),
+///     feed_id: String::from_str(&env, \"BTC/USD\"),
+///     confidence_score: 95,
+///     sources_consulted: 2,
+///     verification_status: String::from_str(&env, \"Verified\"),
+///     is_final: true,
+///     timestamp: env.ledger().timestamp(),
+///     block_number: env.ledger().sequence(),
+/// };
+/// ```
+///
+/// # Verification Details
+///
+/// Captures comprehensive verification context:
+/// - **Price Data**: Actual fetched price and configured threshold
+/// - **Outcome Determination**: How the outcome was derived
+/// - **Source Information**: Oracle provider and feed details
+/// - **Confidence Metrics**: Statistical confidence in the result
+/// - **Validation Status**: Whether verification passed all checks
+///
+/// # Integration Applications
+///
+/// - **Market Resolution**: Trigger payout calculations
+/// - **Dispute Evidence**: Provide data for potential disputes
+/// - **Analytics**: Track oracle accuracy and performance
+/// - **Transparency**: Public record of verification process
+/// - **Audit Trail**: Complete verification history
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleResultVerifiedEvent {
+    /// Market ID that was verified
+    pub market_id: Symbol,
+    /// Determined outcome (\"yes\"/\"no\" or custom)
+    pub outcome: String,
+    /// Price fetched from oracle
+    pub price: i128,
+    /// Threshold configured for market
+    pub threshold: i128,
+    /// Comparison operator used
+    pub comparison: String,
+    /// Oracle provider name
+    pub provider: String,
+    /// Feed ID used
+    pub feed_id: String,
+    /// Confidence score (0-100)
+    pub confidence_score: u32,
+    /// Number of oracle sources consulted
+    pub sources_consulted: u32,
+    /// Verification status (\"Verified\", \"Failed\", etc.)
+    pub verification_status: String,
+    /// Whether this is the final verified result
+    pub is_final: bool,
+    /// Verification timestamp
+    pub timestamp: u64,
+    /// Block number at verification
+    pub block_number: u32,
+}
+
+/// Event emitted when oracle verification fails.
+///
+/// This event captures failure details for debugging, monitoring, and
+/// triggering fallback mechanisms.
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String};
+/// # use predictify_hybrid::events::OracleVerificationFailedEvent;
+/// # let env = Env::default();
+///
+/// let event = OracleVerificationFailedEvent {
+///     market_id: Symbol::new(&env, \"btc_50k\"),
+///     error_code: 200,
+///     error_message: String::from_str(&env, \"Oracle unavailable\"),
+///     attempted_providers: 2,
+///     fallback_available: true,
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleVerificationFailedEvent {
+    /// Market ID that failed verification
+    pub market_id: Symbol,
+    /// Error code
+    pub error_code: u32,
+    /// Error message describing the failure
+    pub error_message: String,
+    /// Number of providers attempted
+    pub attempted_providers: u32,
+    /// Whether fallback sources are available
+    pub fallback_available: bool,
+    /// Failure timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when multi-oracle consensus is reached.
+///
+/// This event is emitted when multiple oracle sources agree on an outcome,
+/// providing enhanced security through consensus-based verification.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleConsensusReachedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Consensus outcome
+    pub consensus_outcome: String,
+    /// Number of agreeing sources
+    pub agreeing_sources: u32,
+    /// Total sources consulted
+    pub total_sources: u32,
+    /// Agreement percentage
+    pub agreement_percentage: u32,
+    /// Average price across sources
+    pub average_price: i128,
+    /// Price variance (deviation indicator)
+    pub price_variance: i128,
+    /// Consensus timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when oracle source health status changes.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleHealthStatusEvent {
+    /// Oracle contract address
+    pub oracle_address: Address,
+    /// Provider name
+    pub provider: String,
+    /// Previous health status
+    pub previous_status: bool,
+    /// Current health status
+    pub current_status: bool,
+    /// Consecutive failures (if unhealthy)
+    pub consecutive_failures: u32,
+    /// Status change timestamp
+    pub timestamp: u64,
+}
+
 /// Extension requested event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -935,6 +1149,21 @@ pub struct MarketClosedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a market is refunded due to oracle resolution failure or timeout.
+///
+/// Emitted after all bets are refunded in full (no fee deduction). The market is marked
+/// as cancelled and no further resolution is possible.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefundOnOracleFailureEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Total amount refunded to all participants
+    pub total_refunded: i128,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 /// Market finalized event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1064,6 +1293,30 @@ pub struct GovernanceVoteCastEvent {
     pub voter: Address,
     pub support: bool,
     pub timestamp: u64,
+}
+
+/// Event emitted when a fallback oracle is used for market resolution.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FallbackUsedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Primary oracle address
+    pub primary_oracle: Address,
+    /// Fallback oracle address
+    pub fallback_oracle: Address,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when a market resolution timeout is reached.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolutionTimeoutEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Timeout timestamp
+    pub timeout_timestamp: u64,
 }
 
 /// Governance proposal executed event
@@ -1337,6 +1590,60 @@ pub struct MarketOutcomesUpdatedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when market category is updated
+///
+/// This event tracks market category updates, providing transparency
+/// for changes to market categorization.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous category (None if not set)
+/// - New category (None to clear)
+/// - Admin who performed the update
+/// - Update timestamp
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CategoryUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Old category (None if not previously set)
+    pub old_category: Option<String>,
+    /// New category (None to clear category)
+    pub new_category: Option<String>,
+    /// Admin who updated
+    pub admin: Address,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when market tags are updated
+///
+/// This event tracks market tags updates, providing transparency
+/// for changes to market tagging.
+///
+/// # Event Data
+///
+/// - Market identifier
+/// - Previous tags
+/// - New tags
+/// - Admin who performed the update
+/// - Update timestamp
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TagsUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Old tags
+    pub old_tags: Vec<String>,
+    /// New tags
+    pub new_tags: Vec<String>,
+    /// Admin who updated
+    pub admin: Address,
+    /// Update timestamp
+    pub timestamp: u64,
+}
+
 /// Contract rollback event - emitted when contract is rolled back to previous version
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1455,6 +1762,54 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_crt"), &event);
+    }
+
+    /// Emit fallback used event
+    pub fn emit_fallback_used(
+        env: &Env,
+        market_id: &Symbol,
+        primary_oracle: &Address,
+        fallback_oracle: &Address,
+    ) {
+        let event = FallbackUsedEvent {
+            market_id: market_id.clone(),
+            primary_oracle: primary_oracle.clone(),
+            fallback_oracle: fallback_oracle.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("fbk_used"), &event);
+    }
+
+    /// Emit resolution timeout event
+    pub fn emit_resolution_timeout(env: &Env, market_id: &Symbol, timeout_timestamp: u64) {
+        let event = ResolutionTimeoutEvent {
+            market_id: market_id.clone(),
+            timeout_timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("res_tmo"), &event);
+    }
+
+    /// Emit event created event
+    pub fn emit_event_created(
+        env: &Env,
+        event_id: &Symbol,
+        description: &String,
+        outcomes: &Vec<String>,
+        admin: &Address,
+        end_time: u64,
+    ) {
+        let event = EventCreatedEvent {
+            event_id: event_id.clone(),
+            description: description.clone(),
+            outcomes: outcomes.clone(),
+            admin: admin.clone(),
+            end_time,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("evt_crt"), &event);
     }
 
     /// Emit vote cast event
@@ -1604,6 +1959,197 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("oracle_rs"), &event);
+    }
+
+    // ===== ORACLE RESULT VERIFICATION EVENT EMISSION METHODS =====
+
+    /// Emit oracle verification initiated event
+    ///
+    /// This event is emitted when automatic oracle result verification begins
+    /// for a market that has ended.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market being verified
+    /// - `initiator` - Address that initiated verification
+    /// - `feed_id` - Oracle feed being queried
+    /// - `oracle_count` - Number of oracle sources to query
+    pub fn emit_oracle_verification_initiated(
+        env: &Env,
+        market_id: &Symbol,
+        initiator: &Address,
+        feed_id: &String,
+        oracle_count: u32,
+    ) {
+        let event = OracleVerificationInitiatedEvent {
+            market_id: market_id.clone(),
+            initiator: initiator.clone(),
+            feed_id: feed_id.clone(),
+            oracle_count,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("orc_init"), &event);
+    }
+
+    /// Emit oracle result verified event
+    ///
+    /// This event is emitted when oracle result verification completes successfully,
+    /// capturing the full verification details for transparency and auditability.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market that was verified
+    /// - `outcome` - Determined outcome
+    /// - `price` - Fetched price from oracle
+    /// - `threshold` - Configured threshold
+    /// - `comparison` - Comparison operator used
+    /// - `provider` - Oracle provider name
+    /// - `feed_id` - Feed ID used
+    /// - `confidence_score` - Confidence score (0-100)
+    /// - `sources_consulted` - Number of oracle sources consulted
+    /// - `is_final` - Whether this is the final verified result
+    pub fn emit_oracle_result_verified(
+        env: &Env,
+        market_id: &Symbol,
+        outcome: &String,
+        price: i128,
+        threshold: i128,
+        comparison: &String,
+        provider: &String,
+        feed_id: &String,
+        confidence_score: u32,
+        sources_consulted: u32,
+        is_final: bool,
+    ) {
+        let event = OracleResultVerifiedEvent {
+            market_id: market_id.clone(),
+            outcome: outcome.clone(),
+            price,
+            threshold,
+            comparison: comparison.clone(),
+            provider: provider.clone(),
+            feed_id: feed_id.clone(),
+            confidence_score,
+            sources_consulted,
+            verification_status: String::from_str(env, "Verified"),
+            is_final,
+            timestamp: env.ledger().timestamp(),
+            block_number: env.ledger().sequence(),
+        };
+
+        Self::store_event(env, &symbol_short!("orc_ver"), &event);
+    }
+
+    /// Emit oracle verification failed event
+    ///
+    /// This event is emitted when oracle verification fails, capturing
+    /// error details for debugging and fallback triggering.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market that failed verification
+    /// - `error_code` - Error code
+    /// - `error_message` - Description of the failure
+    /// - `attempted_providers` - Number of providers attempted
+    /// - `fallback_available` - Whether fallback is available
+    pub fn emit_oracle_verification_failed(
+        env: &Env,
+        market_id: &Symbol,
+        error_code: u32,
+        error_message: &String,
+        attempted_providers: u32,
+        fallback_available: bool,
+    ) {
+        let event = OracleVerificationFailedEvent {
+            market_id: market_id.clone(),
+            error_code,
+            error_message: error_message.clone(),
+            attempted_providers,
+            fallback_available,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("orc_fail"), &event);
+    }
+
+    /// Emit oracle consensus reached event
+    ///
+    /// This event is emitted when multiple oracle sources reach consensus
+    /// on an outcome, providing enhanced security through agreement.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market being verified
+    /// - `consensus_outcome` - The agreed-upon outcome
+    /// - `agreeing_sources` - Number of sources that agreed
+    /// - `total_sources` - Total sources consulted
+    /// - `average_price` - Average price across sources
+    /// - `price_variance` - Price variance/deviation
+    pub fn emit_oracle_consensus_reached(
+        env: &Env,
+        market_id: &Symbol,
+        consensus_outcome: &String,
+        agreeing_sources: u32,
+        total_sources: u32,
+        average_price: i128,
+        price_variance: i128,
+    ) {
+        let agreement_percentage = if total_sources > 0 {
+            (agreeing_sources * 100) / total_sources
+        } else {
+            0
+        };
+
+        let event = OracleConsensusReachedEvent {
+            market_id: market_id.clone(),
+            consensus_outcome: consensus_outcome.clone(),
+            agreeing_sources,
+            total_sources,
+            agreement_percentage,
+            average_price,
+            price_variance,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("orc_cons"), &event);
+    }
+
+    /// Emit oracle health status event
+    ///
+    /// This event is emitted when an oracle's health status changes,
+    /// enabling monitoring and alerting for oracle availability.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `oracle_address` - Oracle contract address
+    /// - `provider` - Provider name
+    /// - `previous_status` - Previous health status
+    /// - `current_status` - Current health status
+    /// - `consecutive_failures` - Number of consecutive failures
+    pub fn emit_oracle_health_status(
+        env: &Env,
+        oracle_address: &Address,
+        provider: &String,
+        previous_status: bool,
+        current_status: bool,
+        consecutive_failures: u32,
+    ) {
+        let event = OracleHealthStatusEvent {
+            oracle_address: oracle_address.clone(),
+            provider: provider.clone(),
+            previous_status,
+            current_status,
+            consecutive_failures,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("orc_hlth"), &event);
     }
 
     /// Emit market resolved event
@@ -2012,6 +2558,16 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("mkt_close"), &event);
     }
 
+    /// Emit refund on oracle failure event (market cancelled, all bets refunded in full).
+    pub fn emit_refund_on_oracle_failure(env: &Env, market_id: &Symbol, total_refunded: i128) {
+        let event = RefundOnOracleFailureEvent {
+            market_id: market_id.clone(),
+            total_refunded,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ref_oracl"), &event);
+    }
+
     /// Emit market finalized event
     pub fn emit_market_finalized(env: &Env, market_id: &Symbol, admin: &Address, outcome: &String) {
         let event = MarketFinalizedEvent {
@@ -2388,6 +2944,88 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("mkt_out"), &event);
     }
 
+    /// Emit market category updated event
+    ///
+    /// This function emits an event when a market's category is updated,
+    /// providing transparency for category changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_category` - Previous market category (None if not set)
+    /// - `new_category` - New market category (None to clear)
+    /// - `admin` - Admin who performed the update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_category_updated(
+    ///     &env,
+    ///     &market_id,
+    ///     &None,
+    ///     &Some(String::from_str(&env, "sports")),
+    ///     &admin_address
+    /// );
+    /// ```
+    pub fn emit_category_updated(
+        env: &Env,
+        market_id: &Symbol,
+        old_category: &Option<String>,
+        new_category: &Option<String>,
+        admin: &Address,
+    ) {
+        let event = CategoryUpdatedEvent {
+            market_id: market_id.clone(),
+            old_category: old_category.clone(),
+            new_category: new_category.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_cat"), &event);
+    }
+
+    /// Emit market tags updated event
+    ///
+    /// This function emits an event when a market's tags are updated,
+    /// providing transparency for tagging changes.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `old_tags` - Previous market tags
+    /// - `new_tags` - New market tags
+    /// - `admin` - Admin who performed the update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// EventEmitter::emit_tags_updated(
+    ///     &env,
+    ///     &market_id,
+    ///     &Vec::new(&env),
+    ///     &vec![&env, String::from_str(&env, "crypto"), String::from_str(&env, "bitcoin")],
+    ///     &admin_address
+    /// );
+    /// ```
+    pub fn emit_tags_updated(
+        env: &Env,
+        market_id: &Symbol,
+        old_tags: &Vec<String>,
+        new_tags: &Vec<String>,
+        admin: &Address,
+    ) {
+        let event = TagsUpdatedEvent {
+            market_id: market_id.clone(),
+            old_tags: old_tags.clone(),
+            new_tags: new_tags.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_tag"), &event);
+    }
+
     /// Emit error event with full error context
     ///
     /// This function emits an event when errors occur, providing detailed context
@@ -2414,23 +3052,19 @@ impl EventEmitter {
     ///
     /// EventEmitter::emit_error_event(&env, Error::NothingToClaim, &context);
     /// ```
-    pub fn emit_error_event(
-        env: &Env,
-        error: crate::errors::Error,
-        context: &crate::errors::ErrorContext,
-    ) {
+    pub fn emit_diagnostic_event(env: &Env, error: Error, context: &crate::errors::ErrorContext) {
         let error_code = error as u32;
 
         // Convert error enum to message string
         let error_msg = match error {
-            crate::errors::Error::Unauthorized => "Unauthorized access",
-            crate::errors::Error::MarketNotFound => "Market not found",
-            crate::errors::Error::MarketClosed => "Market closed",
-            crate::errors::Error::InvalidOutcome => "Invalid outcome",
-            crate::errors::Error::AlreadyVoted => "Already voted",
-            crate::errors::Error::AlreadyClaimed => "Already claimed",
-            crate::errors::Error::MarketNotResolved => "Market not resolved",
-            crate::errors::Error::NothingToClaim => "Nothing to claim",
+            Error::Unauthorized => "Unauthorized access",
+            Error::MarketNotFound => "Market not found",
+            Error::MarketClosed => "Market closed",
+            Error::InvalidOutcome => "Invalid outcome",
+            Error::AlreadyVoted => "Already voted",
+            Error::AlreadyClaimed => "Already claimed",
+            Error::MarketNotResolved => "Market not resolved",
+            Error::NothingToClaim => "Nothing to claim",
             _ => "Unknown error",
         };
         let message = String::from_str(env, error_msg);
@@ -2543,6 +3177,26 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("up_prop"), &event);
+    }
+
+    /// Emit balance changed event for deposits and withdrawals
+    pub fn emit_balance_changed(
+        env: &Env,
+        user: &Address,
+        asset: &crate::types::ReflectorAsset,
+        operation: &String,
+        amount: i128,
+        new_balance: i128,
+    ) {
+        env.events().publish(
+            (symbol_short!("bal_chg"), user, asset.clone()),
+            (
+                operation.clone(),
+                amount,
+                new_balance,
+                env.ledger().timestamp(),
+            ),
+        );
     }
 
     /// Store event in persistent storage

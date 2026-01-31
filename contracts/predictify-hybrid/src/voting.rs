@@ -412,7 +412,7 @@ impl VotingManager {
         // Calculate adjusted threshold and enforce dynamic bounds
         let mut adjusted_threshold = base + factors.total_adjustment;
         if adjusted_threshold < cfg.voting.min_dispute_stake {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
         if adjusted_threshold > cfg.voting.max_dispute_threshold {
             adjusted_threshold = cfg.voting.max_dispute_threshold;
@@ -652,11 +652,11 @@ impl ThresholdUtils {
 
         // Ensure within limits
         if adjusted < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
 
         if adjusted > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::ThresholdTooHigh);
         }
 
         Ok(adjusted)
@@ -742,11 +742,11 @@ impl ThresholdUtils {
     /// Validate dispute threshold
     pub fn validate_dispute_threshold(threshold: i128, _market_id: &Symbol) -> Result<bool, Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::ThresholdTooHigh);
         }
 
         Ok(true)
@@ -808,11 +808,11 @@ impl ThresholdValidator {
     /// Validate threshold limits
     pub fn validate_threshold_limits(threshold: i128) -> Result<(), Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::ThresholdTooHigh);
         }
 
         Ok(())
@@ -924,8 +924,8 @@ impl VotingValidator {
         }
 
         // Check if market is already resolved
-        if market.winning_outcome.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+        if market.winning_outcomes.is_some() {
+            return Err(Error::MarketResolved);
         }
 
         Ok(())
@@ -940,8 +940,8 @@ impl VotingValidator {
         }
 
         // Check if market is already resolved
-        if market.winning_outcome.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+        if market.winning_outcomes.is_some() {
+            return Err(Error::MarketResolved);
         }
 
         Ok(())
@@ -961,7 +961,7 @@ impl VotingValidator {
         }
 
         // Check if market is resolved
-        if market.winning_outcome.is_none() {
+        if market.winning_outcomes.is_none() {
             return Err(Error::MarketNotResolved);
         }
 
@@ -1137,8 +1137,8 @@ impl VotingUtils {
         market: &Market,
         user: &Address,
     ) -> Result<i128, Error> {
-        let winning_outcome = market
-            .winning_outcome
+        let winning_outcomes = market
+            .winning_outcomes
             .as_ref()
             .ok_or(Error::MarketNotResolved)?;
 
@@ -1149,21 +1149,30 @@ impl VotingUtils {
 
         let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
 
-        // Only pay if user voted for winning outcome
-        if user_outcome != *winning_outcome {
+        // Only pay if user voted for a winning outcome (handles ties - pool split)
+        if !winning_outcomes.contains(&user_outcome) {
             return Ok(0);
         }
 
-        // Calculate winning statistics
-        let winning_stats = MarketAnalytics::calculate_winning_stats(market, winning_outcome);
+        // Calculate winning statistics for payout calculation
+        // For multi-winner (ties), pool is split proportionally among all winners
+        // Get total stake across all winning outcomes
+        let mut winning_total = 0;
+        for outcome in winning_outcomes.iter() {
+            for (voter, voted_outcome) in market.votes.iter() {
+                if voted_outcome == outcome {
+                    winning_total += market.stakes.get(voter.clone()).unwrap_or(0);
+                }
+            }
+        }
 
-        // Calculate payout
+        // Calculate payout using total across all winning outcomes (handles ties - pool split)
         // Use dynamic platform fee percentage from current configuration
         let cfg = crate::config::ConfigManager::get_config(env)?;
         let payout = MarketUtils::calculate_payout(
             user_stake,
-            winning_stats.winning_total,
-            winning_stats.total_pool,
+            winning_total, // Total stake across all winning outcomes (for tie handling)
+            market.total_staked, // Total pool
             cfg.fees.platform_fee_percentage,
         )?;
 
@@ -1583,10 +1592,13 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Pyth,
+                Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            0,
             crate::types::MarketState::Active,
         );
         market.total_staked = 100_000_000; // 10 XLM
@@ -1610,10 +1622,13 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Pyth,
+                Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            0,
             crate::types::MarketState::Active,
         );
 
@@ -1643,10 +1658,13 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Pyth,
+                Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            0,
             crate::types::MarketState::Active,
         );
 

@@ -188,6 +188,7 @@ impl MarketCreator {
     pub fn create_reflector_market(
         _env: &Env,
         admin: Address,
+        oracle_address: Address,
         question: String,
         outcomes: Vec<String>,
         duration_days: u32,
@@ -197,6 +198,7 @@ impl MarketCreator {
     ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Reflector,
+            oracle_address,
             feed_id: asset_symbol,
             threshold,
             comparison,
@@ -268,6 +270,7 @@ impl MarketCreator {
     pub fn create_pyth_market(
         _env: &Env,
         admin: Address,
+        oracle_address: Address,
         question: String,
         outcomes: Vec<String>,
         duration_days: u32,
@@ -277,6 +280,7 @@ impl MarketCreator {
     ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
             provider: OracleProvider::Pyth,
+            oracle_address,
             feed_id,
             threshold,
             comparison,
@@ -348,6 +352,7 @@ impl MarketCreator {
     pub fn create_reflector_asset_market(
         _env: &Env,
         admin: Address,
+        oracle_address: Address,
         question: String,
         outcomes: Vec<String>,
         duration_days: u32,
@@ -358,6 +363,7 @@ impl MarketCreator {
         Self::create_reflector_market(
             _env,
             admin,
+            oracle_address,
             question,
             outcomes,
             duration_days,
@@ -451,7 +457,7 @@ impl MarketValidator {
 
         // Load dynamic configuration
         let cfg = crate::config::ConfigManager::get_config(_env)
-            .map_err(|_| Error::ConfigurationNotFound)?;
+            .map_err(|_| Error::ConfigNotFound)?;
 
         // Use the new MarketParameterValidator for comprehensive validation
         use crate::validation::MarketParameterValidator;
@@ -549,7 +555,7 @@ impl MarketValidator {
     /// # Errors
     ///
     /// * `Error::MarketClosed` - Market has expired (current time >= end_time)
-    /// * `Error::MarketAlreadyResolved` - Market has already been resolved
+    /// * `Error::MarketResolved` - Market has already been resolved
     ///
     /// # Example
     ///
@@ -576,7 +582,7 @@ impl MarketValidator {
         }
 
         if market.oracle_result.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         Ok(())
@@ -1134,9 +1140,19 @@ impl MarketStateManager {
     ///
     /// # Side Effects
     ///
-    /// * Sets `market.winning_outcome` to the specified outcome
+    /// * Sets `market.winning_outcomes` to the specified outcome(s)
     /// * Transitions market state to `Resolved`
     /// * Emits state change event
+    ///
+    /// # Backward Compatibility
+    ///
+    /// For single winner, pass a vector with one outcome.
+    /// This function replaces the old `set_winning_outcome` for multi-outcome support.
+    pub fn set_winning_outcome(market: &mut Market, outcome: String, market_id: Option<&Symbol>) {
+        // Convert single outcome to vector for backward compatibility
+        let outcomes = vec![market.votes.env(), outcome];
+        Self::set_winning_outcomes(market, outcomes, market_id);
+    }
     ///
     /// # Example
     ///
@@ -1161,14 +1177,23 @@ impl MarketStateManager {
     ///
     /// // Market should now be resolved
     /// assert_eq!(market.state, MarketState::Resolved);
-    /// assert!(market.winning_outcome.is_some());
+    /// assert!(market.winning_outcomes.is_some());
     ///
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-    pub fn set_winning_outcome(market: &mut Market, outcome: String, market_id: Option<&Symbol>) {
+    /// Set winning outcome(s) for a market after resolution.
+    ///
+    /// Supports both single winner and multi-winner (tie) cases.
+    /// For single winner: pass a vector with one outcome.
+    /// For ties: pass a vector with multiple outcomes (pool will be split).
+    pub fn set_winning_outcomes(
+        market: &mut Market,
+        outcomes: Vec<String>,
+        market_id: Option<&Symbol>,
+    ) {
         MarketStateLogic::check_function_access_for_state("resolve", market.state).unwrap();
         let old_state = market.state;
-        market.winning_outcome = Some(outcome);
+        market.winning_outcomes = Some(outcomes);
         // State transition: Ended/Disputed -> Resolved
         if market.state == MarketState::Ended || market.state == MarketState::Disputed {
             MarketStateLogic::validate_state_transition(market.state, MarketState::Resolved)
@@ -1816,7 +1841,7 @@ impl MarketUtils {
     ///     Err(e) => println!("Token client unavailable: {:?}", e),
     /// }
     /// ```
-    pub fn get_token_client(_env: &Env) -> Result<token::Client, Error> {
+    pub fn get_token_client(_env: &Env) -> Result<token::Client<'_>, Error> {
         let token_id: Address = _env
             .storage()
             .persistent()
@@ -1979,6 +2004,108 @@ impl MarketUtils {
             }
         }
     }
+
+    /// Determine winning outcome(s) for a multi-outcome market, handling ties.
+    ///
+    /// This function analyzes vote distribution and stake distribution to determine
+    /// the winning outcome(s). In case of ties (multiple outcomes with same vote count
+    /// or stake), all tied outcomes are returned as winners (pool will be split).
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `market` - The market to analyze
+    /// * `oracle_result` - Oracle-determined outcome (if available)
+    /// * `community_consensus` - Community consensus data
+    /// * `tie_threshold` - Minimum vote/stake difference to break ties (default: 0 = exact tie)
+    ///
+    /// # Returns
+    ///
+    /// Vector of winning outcomes. For single winner: one outcome.
+    /// For ties: multiple outcomes (pool split among all winners).
+    ///
+    /// # Tie Detection Logic
+    ///
+    /// Ties are detected when:
+    /// - Multiple outcomes have the same vote count (vote-based tie)
+    /// - Multiple outcomes have the same total stake (stake-based tie)
+    /// - Oracle and community disagree and both have equal strength
+    ///
+    /// When a tie is detected, all tied outcomes are considered winners and
+    /// the pool is split proportionally among all winners.
+    pub fn determine_winning_outcomes(
+        env: &Env,
+        market: &Market,
+        oracle_result: &String,
+        community_consensus: &CommunityConsensus,
+        tie_threshold: u32,
+    ) -> Vec<String> {
+        // First, get the primary result using existing logic
+        let primary_result = Self::determine_final_result(env, oracle_result, community_consensus);
+
+        // Check for ties by analyzing vote distribution
+        let mut outcome_votes: Map<String, u32> = Map::new(env);
+        let mut outcome_stakes: Map<String, i128> = Map::new(env);
+
+        // Count votes and stakes per outcome
+        for (user, outcome) in market.votes.iter() {
+            let vote_count = outcome_votes.get(outcome.clone()).unwrap_or(0);
+            outcome_votes.set(outcome.clone(), vote_count + 1);
+
+            let stake = market.stakes.get(user.clone()).unwrap_or(0);
+            let current_stake = outcome_stakes.get(outcome.clone()).unwrap_or(0);
+            outcome_stakes.set(outcome.clone(), current_stake + stake);
+        }
+
+        // Find outcomes with maximum votes
+        let mut max_votes = 0;
+        for (_, count) in outcome_votes.iter() {
+            if count > max_votes {
+                max_votes = count;
+            }
+        }
+
+        // Find all outcomes with max_votes (within tie threshold)
+        let mut tied_outcomes = Vec::new(env);
+        for (outcome, count) in outcome_votes.iter() {
+            // Check if this outcome is within tie threshold of max
+            if count >= max_votes.saturating_sub(tie_threshold) {
+                tied_outcomes.push_back(outcome.clone());
+            }
+        }
+
+        // If primary result is in tied outcomes, use tied outcomes
+        // Otherwise, check if we should use stake-based tie detection
+        if tied_outcomes.contains(&primary_result) {
+            // Check for stake-based ties among the vote-tied outcomes
+            let mut max_stake = 0;
+            for outcome in tied_outcomes.iter() {
+                let stake = outcome_stakes.get(outcome.clone()).unwrap_or(0);
+                if stake > max_stake {
+                    max_stake = stake;
+                }
+            }
+
+            // Filter to outcomes with max stake (or within threshold)
+            let mut final_winners = Vec::new(env);
+            for outcome in tied_outcomes.iter() {
+                let stake = outcome_stakes.get(outcome.clone()).unwrap_or(0);
+                if stake >= max_stake.saturating_sub(tie_threshold as i128) {
+                    final_winners.push_back(outcome.clone());
+                }
+            }
+
+            if final_winners.len() > 0 {
+                final_winners
+            } else {
+                // Fallback to primary result if no stake-based winners
+                vec![env, primary_result]
+            }
+        } else {
+            // Primary result is not in tied outcomes, use it as single winner
+            vec![env, primary_result]
+        }
+    }
 }
 
 // ===== MARKET STATISTICS TYPES =====
@@ -2105,7 +2232,7 @@ pub struct WinningStats {
 ///     println!("Stake: {} stroops", user_stats.stake);
 /// }
 ///
-/// if !user_stats.has_claimed && market.winning_outcome.is_some() {
+/// if !user_stats.has_claimed && market.winning_outcomes.is_some() {
 ///     println!("User may be eligible to claim winnings");
 /// }
 /// ```
@@ -2469,8 +2596,9 @@ impl MarketTestHelpers {
         let final_result =
             MarketUtils::determine_final_result(env, &oracle_result, &community_consensus);
 
-        // Set winning outcome
-        MarketStateManager::set_winning_outcome(&mut market, final_result.clone(), None);
+        // Set winning outcome(s) - convert single outcome to vector
+        let winning_outcomes = vec![env, final_result.clone()];
+        MarketStateManager::set_winning_outcomes(&mut market, winning_outcomes, None);
         MarketStateManager::update_market(env, market_id, &market);
 
         Ok(final_result)
@@ -2723,7 +2851,7 @@ impl MarketStateLogic {
                 if market.end_time <= now {
                     return Err(Error::InvalidState);
                 }
-                if market.winning_outcome.is_some() {
+                if market.winning_outcomes.is_some() {
                     return Err(Error::InvalidState);
                 }
             }
@@ -2731,7 +2859,7 @@ impl MarketStateLogic {
                 if market.end_time > now {
                     return Err(Error::InvalidState);
                 }
-                if market.winning_outcome.is_some() {
+                if market.winning_outcomes.is_some() {
                     return Err(Error::InvalidState);
                 }
             }
@@ -2741,7 +2869,7 @@ impl MarketStateLogic {
                 }
             }
             Resolved => {
-                if market.winning_outcome.is_none() {
+                if market.winning_outcomes.is_none() {
                     return Err(Error::InvalidState);
                 }
             }

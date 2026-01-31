@@ -1153,7 +1153,7 @@ impl FeeValidator {
     /// Validate market for fee collection
     pub fn validate_market_for_fee_collection(market: &Market) -> Result<(), Error> {
         // Check if market is resolved
-        if market.winning_outcome.is_none() {
+        if market.winning_outcomes.is_none() {
             return Err(Error::MarketNotResolved);
         }
 
@@ -1270,14 +1270,14 @@ impl FeeUtils {
 
     /// Check if fees can be collected for a market
     pub fn can_collect_fees(market: &Market) -> bool {
-        market.winning_outcome.is_some()
+        market.winning_outcomes.is_some()
             && !market.fee_collected
             && market.total_staked >= FEE_COLLECTION_THRESHOLD
     }
 
     /// Get fee collection eligibility for a market
     pub fn get_fee_eligibility(market: &Market) -> (bool, String) {
-        if market.winning_outcome.is_none() {
+        if market.winning_outcomes.is_none() {
             return (
                 false,
                 String::from_str(&Env::default(), "Market not resolved"),
@@ -1728,7 +1728,9 @@ mod tests {
         assert!(!FeeUtils::can_collect_fees(&market));
 
         // Set winning outcome
-        market.winning_outcome = Some(String::from_str(&env, "yes"));
+        let mut winning_outcomes = Vec::new(&env);
+        winning_outcomes.push_back(String::from_str(&env, "yes"));
+        market.winning_outcomes = Some(winning_outcomes);
 
         // Insufficient stakes
         market.total_staked = FEE_COLLECTION_THRESHOLD - 1;

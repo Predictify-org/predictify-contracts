@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(unused_variables)]
 
 use soroban_sdk::{contracttype, Env, String, Symbol, Vec};
 
@@ -248,7 +249,7 @@ impl VersionMigration {
     }
 
     /// Validate migration configuration
-    pub fn validate(&self, env: &Env) -> Result<(), Error> {
+    pub fn validate(&self, _env: &Env) -> Result<(), Error> {
         // Check if from_version is different from to_version
         if self.from_version.version_number() >= self.to_version.version_number() {
             return Err(Error::InvalidInput);
@@ -470,7 +471,7 @@ pub struct VersionManager;
 
 impl VersionManager {
     /// Initialize version manager
-    pub fn new(env: &Env) -> Self {
+    pub fn new(_env: &Env) -> Self {
         Self
     }
 
@@ -528,7 +529,7 @@ impl VersionManager {
     /// Validate version compatibility
     pub fn validate_version_compatibility(
         &self,
-        env: &Env,
+        _env: &Env,
         old_version: &Version,
         new_version: &Version,
     ) -> Result<bool, Error> {
@@ -621,7 +622,7 @@ impl VersionManager {
     }
 
     /// Execute migration logic
-    fn execute_migration(&self, env: &Env, migration: &VersionMigration) -> Result<(), Error> {
+    fn execute_migration(&self, _env: &Env, _migration: &VersionMigration) -> Result<(), Error> {
         // In a real implementation, this would execute the actual migration
         // For now, just return success
         Ok(())

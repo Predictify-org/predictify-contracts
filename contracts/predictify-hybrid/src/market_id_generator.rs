@@ -6,7 +6,7 @@ use alloc::format;
 /// Provides collision-resistant market ID generation using per-admin counters.
 ///
 /// Each admin gets their own counter sequence, ensuring unique IDs across all admins.
-use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Symbol, Vec};
 
 /// Market ID components
 #[contracttype]
@@ -72,7 +72,7 @@ impl MarketIdGenerator {
     }
 
     /// Build market ID from admin and counter
-    fn build_market_id(env: &Env, admin: &Address, counter: u32) -> Symbol {
+    fn build_market_id(env: &Env, _admin: &Address, counter: u32) -> Symbol {
         // Simple approach: hash counter with admin's Val
         let counter_bytes = Bytes::from_array(env, &counter.to_be_bytes());
 
@@ -133,7 +133,7 @@ impl MarketIdGenerator {
 
     /// Parse market ID into components
     pub fn parse_market_id_components(
-        env: &Env,
+        _env: &Env,
         _market_id: &Symbol,
     ) -> Result<MarketIdComponents, Error> {
         Ok(MarketIdComponents {

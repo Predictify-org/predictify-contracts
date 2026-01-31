@@ -1,0 +1,3140 @@
+   Compiling predictify-hybrid v0.0.0 (/workspaces/predictify-contracts/contracts/predictify-hybrid)
+warning: unused import: `symbol_short`
+  --> contracts/predictify-hybrid/src/bets.rs:22:33
+   |
+22 | use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol};
+   |                                 ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `soroban_sdk::testutils::Address as _`
+    --> contracts/predictify-hybrid/src/config.rs:2786:9
+     |
+2786 |     use soroban_sdk::testutils::Address as _;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `soroban_sdk::testutils::Address`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:698:9
+    |
+698 |     use soroban_sdk::testutils::Address;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `soroban_sdk::testutils::Address`
+    --> contracts/predictify-hybrid/src/errors.rs:1320:9
+     |
+1320 |     use soroban_sdk::testutils::Address;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LedgerInfo` and `Ledger`
+   --> contracts/predictify-hybrid/src/extensions.rs:743:48
+    |
+743 |     use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+    |                                                ^^^^^^  ^^^^^^^^^^
+
+warning: unused import: `BytesN`
+ --> contracts/predictify-hybrid/src/market_id_generator.rs:9:67
+  |
+9 | use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, BytesN, Env, Symbol, Vec};
+  |                                                                   ^^^^^^
+
+warning: unused import: `soroban_sdk::testutils::Address`
+    --> contracts/predictify-hybrid/src/monitoring.rs:1005:9
+     |
+1005 |     use soroban_sdk::testutils::Address;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AuthorizedInvocation`
+   --> contracts/predictify-hybrid/src/rate_limiter.rs:328:35
+    |
+328 |         testutils::{Address as _, AuthorizedInvocation},
+    |                                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `soroban_sdk::testutils::Address as _`
+  --> contracts/predictify-hybrid/src/reentrancy_guard.rs:81:9
+   |
+81 |     use soroban_sdk::testutils::Address as _;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Address`
+  --> contracts/predictify-hybrid/src/reentrancy_guard.rs:82:23
+   |
+82 |     use soroban_sdk::{Address, Env};
+   |                       ^^^^^^^
+
+warning: unused imports: `PredictifyHybridClient` and `test::PredictifyTest`
+    --> contracts/predictify-hybrid/src/resolution.rs:1775:17
+     |
+1775 |     use crate::{test::PredictifyTest, PredictifyHybridClient};
+     |                 ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `LedgerInfo` and `Ledger`
+    --> contracts/predictify-hybrid/src/resolution.rs:1776:48
+     |
+1776 |     use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+     |                                                ^^^^^^  ^^^^^^^^^^
+
+warning: unused import: `soroban_sdk::testutils::Address`
+   --> contracts/predictify-hybrid/src/storage.rs:653:9
+    |
+653 |     use soroban_sdk::testutils::Address;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Bytes`
+ --> contracts/predictify-hybrid/src/upgrade_manager.rs:4:42
+  |
+4 | use soroban_sdk::{contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec};
+  |                                          ^^^^^
+
+warning: unused import: `VersionHistory`
+ --> contracts/predictify-hybrid/src/upgrade_manager.rs:8:34
+  |
+8 | use crate::versioning::{Version, VersionHistory, VersionManager};
+  |                                  ^^^^^^^^^^^^^^
+
+warning: unused import: `soroban_sdk::testutils::Address as _`
+   --> contracts/predictify-hybrid/src/upgrade_manager.rs:751:9
+    |
+751 |     use soroban_sdk::testutils::Address as _;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `IntoVal`
+  --> contracts/predictify-hybrid/src/validation.rs:11:52
+   |
+11 | use soroban_sdk::{contracttype, vec, Address, Env, IntoVal, Map, String, Symbol, Vec};
+   |                                                    ^^^^^^^
+
+warning: unused import: `crate::config`
+ --> contracts/predictify-hybrid/src/validation_tests.rs:4:5
+  |
+4 | use crate::config;
+  |     ^^^^^^^^^^^^^
+
+warning: unused imports: `MarketState` and `Market`
+ --> contracts/predictify-hybrid/src/validation_tests.rs:5:20
+  |
+5 | use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
+  |                    ^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `DisputeValidator`, `MarketValidator`, `OracleValidator`, and `VoteValidator`
+ --> contracts/predictify-hybrid/src/validation_tests.rs:7:5
+  |
+7 |     DisputeValidator, FeeValidator, InputValidator, MarketValidator, OracleValidator,
+  |     ^^^^^^^^^^^^^^^^                                ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+8 |     ValidationDocumentation, ValidationError, ValidationErrorHandler, ValidationResult,
+9 |     ValidationTestingUtils, VoteValidator,
+  |                             ^^^^^^^^^^^^^
+
+warning: unused import: `soroban_sdk::testutils::Address as _`
+    --> contracts/predictify-hybrid/src/voting.rs:1354:9
+     |
+1354 |     use soroban_sdk::testutils::Address as _;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `vec`
+    --> contracts/predictify-hybrid/src/voting.rs:1551:48
+     |
+1551 |     use soroban_sdk::{testutils::Address as _, vec};
+     |                                                ^^^
+
+warning: unused imports: `BetManager` and `BetStorage`
+  --> contracts/predictify-hybrid/src/bet_tests.rs:17:19
+   |
+17 | use crate::bets::{BetManager, BetStorage, BetValidator, MIN_BET_AMOUNT, MAX_BET_AMOUNT};
+   |                   ^^^^^^^^^^  ^^^^^^^^^^
+
+warning: unused import: `BetStats`
+  --> contracts/predictify-hybrid/src/bet_tests.rs:18:25
+   |
+18 | use crate::types::{Bet, BetStats, BetStatus, Market, MarketState, OracleConfig, OracleProvider};
+   |                         ^^^^^^^^
+
+warning: unused import: `Error`
+  --> contracts/predictify-hybrid/src/bet_tests.rs:19:13
+   |
+19 | use crate::{Error, PredictifyHybrid, PredictifyHybridClient};
+   |             ^^^^^
+
+warning: unused imports: `ConfigChanges`, `ConfigManager`, `ConfigUpdateRecord`, `ContractConfig`, and `MarketLimits`
+  --> contracts/predictify-hybrid/src/lib.rs:73:5
+   |
+73 |     ConfigChanges, ConfigManager, ConfigUpdateRecord, ContractConfig, MarketLimits,
+   |     ^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `crate::reentrancy_guard::ReentrancyGuard`
+  --> contracts/predictify-hybrid/src/lib.rs:79:5
+   |
+79 | use crate::reentrancy_guard::ReentrancyGuard;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `FeeAnalytics`, `MarketStatistics`, and `VotingAnalytics`
+  --> contracts/predictify-hybrid/src/test.rs:28:5
+   |
+28 |     MarketStatistics, VotingAnalytics, FeeAnalytics, TimeFrame
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `crate::resolution::ResolutionAnalytics`
+  --> contracts/predictify-hybrid/src/test.rs:30:5
+   |
+30 | use crate::resolution::ResolutionAnalytics;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+    --> contracts/predictify-hybrid/src/oracles.rs:2196:31
+     |
+2196 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+     |                               ^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+    --> contracts/predictify-hybrid/src/oracles.rs:2209:31
+     |
+2209 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+     |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+    --> contracts/predictify-hybrid/src/oracles.rs:2243:31
+     |
+2243 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+     |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+    --> contracts/predictify-hybrid/src/oracles.rs:2281:31
+     |
+2281 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+     |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+    --> contracts/predictify-hybrid/src/oracles.rs:2325:31
+     |
+2325 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+     |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+   --> contracts/predictify-hybrid/src/rate_limiter.rs:353:31
+    |
+353 |         let contract_id = env.register_contract(None, RateLimiterContract);
+    |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+   --> contracts/predictify-hybrid/src/rate_limiter.rs:396:31
+    |
+396 |         let contract_id = env.register_contract(None, RateLimiterContract);
+    |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+   --> contracts/predictify-hybrid/src/rate_limiter.rs:453:31
+    |
+453 |         let contract_id = env.register_contract(None, RateLimiterContract);
+    |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+   --> contracts/predictify-hybrid/src/rate_limiter.rs:481:31
+    |
+481 |         let contract_id = env.register_contract(None, RateLimiterContract);
+    |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+  --> contracts/predictify-hybrid/src/reentrancy_guard.rs:85:24
+   |
+85 |         let addr = env.register_contract(None, PredictifyHybrid);
+   |                        ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+   --> contracts/predictify-hybrid/src/upgrade_manager.rs:809:31
+    |
+809 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+    |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+   --> contracts/predictify-hybrid/src/upgrade_manager.rs:843:31
+    |
+843 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+    |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+   --> contracts/predictify-hybrid/src/versioning.rs:697:31
+    |
+697 |         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+    |                               ^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+  --> contracts/predictify-hybrid/src/upgrade_manager_tests.rs:17:27
+   |
+17 |     let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+   |                           ^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:518:34
+    |
+518 |     fn validate_edge_case_config(env: &Env, config: &EdgeCaseConfig) -> Result<(), Error> {
+    |                                  ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:544:9
+    |
+544 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:545:9
+    |
+545 |         market_id: &Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `extension_seconds`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:546:9
+    |
+546 |         extension_seconds: u64,
+    |         ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_extension_seconds`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:554:33
+    |
+554 |     fn cancel_zero_stake_market(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+    |                                 ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:554:44
+    |
+554 |     fn cancel_zero_stake_market(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+    |                                            ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:561:9
+    |
+561 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:562:9
+    |
+562 |         market_id: &Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `extension_seconds`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:563:9
+    |
+563 |         extension_seconds: u64,
+    |         ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_extension_seconds`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:570:35
+    |
+570 |     fn tie_break_by_earliest_vote(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    |                                   ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:577:33
+    |
+577 |     fn tie_break_by_voter_count(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    |                                 ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:583:39
+    |
+583 |     fn tie_break_by_oracle_preference(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    |                                       ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:589:33
+    |
+589 |     fn tie_break_alphabetically(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    |                                 ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:602:9
+    |
+602 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:624:30
+    |
+624 |     fn validate_partial_data(env: &Env, partial_data: &PartialData) -> Result<(), Error> {
+    |                              ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:638:9
+    |
+638 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:639:9
+    |
+639 |         market_id: &Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `partial_data`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:640:9
+    |
+640 |         partial_data: &PartialData,
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_partial_data`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:648:9
+    |
+648 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:649:9
+    |
+649 |         market_id: &Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `partial_data`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:650:9
+    |
+650 |         partial_data: &PartialData,
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_partial_data`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:659:34
+    |
+659 |     fn test_zero_stake_scenarios(env: &Env) -> Result<(), Error> {
+    |                                  ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:667:36
+    |
+667 |     fn test_tie_breaking_scenarios(env: &Env) -> Result<(), Error> {
+    |                                    ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:674:39
+    |
+674 |     fn test_orphaned_market_scenarios(env: &Env) -> Result<(), Error> {
+    |                                       ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:681:42
+    |
+681 |     fn test_partial_resolution_scenarios(env: &Env) -> Result<(), Error> {
+    |                                          ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/edge_cases.rs:688:37
+    |
+688 |     fn test_configuration_scenarios(env: &Env) -> Result<(), Error> {
+    |                                     ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `i`
+   --> contracts/predictify-hybrid/src/market_analytics.rs:439:14
+    |
+439 |         for (i, market_id) in markets.iter().enumerate() {
+    |              ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: unused variable: `admin`
+  --> contracts/predictify-hybrid/src/market_id_generator.rs:75:35
+   |
+75 |     fn build_market_id(env: &Env, admin: &Address, counter: u32) -> Symbol {
+   |                                   ^^^^^ help: if this is intentional, prefix it with an underscore: `_admin`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:136:9
+    |
+136 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:463:30
+    |
+463 |     fn calculate_total_votes(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                              ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:463:41
+    |
+463 |     fn calculate_total_votes(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                                         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:468:30
+    |
+468 |     fn calculate_total_stake(env: &Env, market_id: &Symbol) -> Result<i128, Error> {
+    |                              ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:468:41
+    |
+468 |     fn calculate_total_stake(env: &Env, market_id: &Symbol) -> Result<i128, Error> {
+    |                                         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:473:38
+    |
+473 |     fn calculate_active_participants(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                                      ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:473:49
+    |
+473 |     fn calculate_active_participants(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                                                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:487:32
+    |
+487 |     fn calculate_dispute_count(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:487:43
+    |
+487 |     fn calculate_dispute_count(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                                           ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:492:40
+    |
+492 |     fn calculate_resolution_confidence(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                                        ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:492:51
+    |
+492 |     fn calculate_resolution_confidence(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    |                                                   ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:497:37
+    |
+497 |     fn get_last_activity(env: &Env, market_id: &Symbol) -> Result<u64, Error> {
+    |                                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:560:34
+    |
+560 |     fn get_average_response_time(env: &Env, oracle: &OracleProvider) -> Result<u64, Error> {
+    |                                  ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `oracle`
+   --> contracts/predictify-hybrid/src/monitoring.rs:560:45
+    |
+560 |     fn get_average_response_time(env: &Env, oracle: &OracleProvider) -> Result<u64, Error> {
+    |                                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:565:31
+    |
+565 |     fn calculate_success_rate(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `oracle`
+   --> contracts/predictify-hybrid/src/monitoring.rs:565:42
+    |
+565 |     fn calculate_success_rate(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                                          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle`
+
+warning: unused variable: `oracle`
+   --> contracts/predictify-hybrid/src/monitoring.rs:570:42
+    |
+570 |     fn get_last_response_time(env: &Env, oracle: &OracleProvider) -> Result<u64, Error> {
+    |                                          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:575:27
+    |
+575 |     fn get_total_requests(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                           ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `oracle`
+   --> contracts/predictify-hybrid/src/monitoring.rs:575:38
+    |
+575 |     fn get_total_requests(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                                      ^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:580:28
+    |
+580 |     fn get_failed_requests(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                            ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `oracle`
+   --> contracts/predictify-hybrid/src/monitoring.rs:580:39
+    |
+580 |     fn get_failed_requests(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                                       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:585:31
+    |
+585 |     fn calculate_availability(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `oracle`
+   --> contracts/predictify-hybrid/src/monitoring.rs:585:42
+    |
+585 |     fn calculate_availability(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    |                                          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:646:39
+    |
+646 |     fn calculate_total_fees_collected(env: &Env, start_time: u64) -> Result<i128, Error> {
+    |                                       ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:646:50
+    |
+646 |     fn calculate_total_fees_collected(env: &Env, start_time: u64) -> Result<i128, Error> {
+    |                                                  ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:651:35
+    |
+651 |     fn count_markets_in_timeframe(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                   ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:651:46
+    |
+651 |     fn count_markets_in_timeframe(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                              ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:656:37
+    |
+656 |     fn count_successful_collections(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                     ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:656:48
+    |
+656 |     fn count_successful_collections(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                                ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:661:33
+    |
+661 |     fn count_failed_collections(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                 ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:661:44
+    |
+661 |     fn count_failed_collections(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                            ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:666:33
+    |
+666 |     fn calculate_revenue_growth(env: &Env, timeframe: &TimeFrame) -> Result<i32, Error> {
+    |                                 ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `timeframe`
+   --> contracts/predictify-hybrid/src/monitoring.rs:666:44
+    |
+666 |     fn calculate_revenue_growth(env: &Env, timeframe: &TimeFrame) -> Result<i32, Error> {
+    |                                            ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_timeframe`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:671:29
+    |
+671 |     fn count_total_disputes(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    |                             ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:671:40
+    |
+671 |     fn count_total_disputes(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    |                                        ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:671:60
+    |
+671 |     fn count_total_disputes(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    |                                                            ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:677:9
+    |
+677 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:678:9
+    |
+678 |         market_id: &Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:679:9
+    |
+679 |         start_time: u64,
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:686:9
+    |
+686 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:687:9
+    |
+687 |         market_id: &Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:688:9
+    |
+688 |         start_time: u64,
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:694:26
+    |
+694 |     fn count_escalations(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    |                          ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:694:37
+    |
+694 |     fn count_escalations(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    |                                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:694:57
+    |
+694 |     fn count_escalations(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    |                                                         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:700:9
+    |
+700 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:701:9
+    |
+701 |         market_id: &Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:702:9
+    |
+702 |         start_time: u64,
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:708:31
+    |
+708 |     fn count_total_operations(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:708:42
+    |
+708 |     fn count_total_operations(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                          ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:713:36
+    |
+713 |     fn count_successful_operations(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                    ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:713:47
+    |
+713 |     fn count_successful_operations(env: &Env, start_time: u64) -> Result<u32, Error> {
+    |                                               ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:718:41
+    |
+718 |     fn calculate_average_execution_time(env: &Env, start_time: u64) -> Result<u64, Error> {
+    |                                         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:718:52
+    |
+718 |     fn calculate_average_execution_time(env: &Env, start_time: u64) -> Result<u64, Error> {
+    |                                                    ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:723:34
+    |
+723 |     fn calculate_total_gas_usage(env: &Env, start_time: u64) -> Result<u64, Error> {
+    |                                  ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `start_time`
+   --> contracts/predictify-hybrid/src/monitoring.rs:723:45
+    |
+723 |     fn calculate_total_gas_usage(env: &Env, start_time: u64) -> Result<u64, Error> {
+    |                                             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:728:29
+    |
+728 |     fn calculate_throughput(env: &Env, timeframe: &TimeFrame) -> Result<u32, Error> {
+    |                             ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `timeframe`
+   --> contracts/predictify-hybrid/src/monitoring.rs:728:40
+    |
+728 |     fn calculate_throughput(env: &Env, timeframe: &TimeFrame) -> Result<u32, Error> {
+    |                                        ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_timeframe`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:903:47
+    |
+903 |     pub fn create_test_fee_collection_metrics(env: &Env) -> FeeCollectionMetrics {
+    |                                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:918:9
+    |
+918 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/monitoring.rs:919:9
+    |
+919 |         market_id: Symbol,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/monitoring.rs:934:44
+    |
+934 |     pub fn create_test_performance_metrics(env: &Env) -> PerformanceMetrics {
+    |                                            ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: variable does not need to be mutable
+    --> contracts/predictify-hybrid/src/oracles.rs:1976:13
+     |
+1976 |         let mut oracle_list: Vec<Address> = env
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/performance_benchmarks.rs:351:9
+    |
+351 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `function`
+   --> contracts/predictify-hybrid/src/performance_benchmarks.rs:368:9
+    |
+368 |         function: &String,
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_function`
+
+warning: unused variable: `operation`
+   --> contracts/predictify-hybrid/src/performance_benchmarks.rs:376:48
+    |
+376 |     fn simulate_storage_operations(_env: &Env, operation: &StorageOperation) -> Result<(), Error> {
+    |                                                ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_operation`
+
+warning: unused variable: `i`
+   --> contracts/predictify-hybrid/src/rate_limiter.rs:358:13
+    |
+358 |         for i in 0..config.voting_limit {
+    |             ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: unused variable: `admin`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:611:9
+    |
+611 |     let admin = Address::from_str(
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_admin`
+
+warning: unused variable: `oracle_config`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:623:9
+    |
+623 |     let oracle_config = OracleConfig {
+    |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle_config`
+
+warning: unused variable: `admin`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:644:9
+    |
+644 |     let admin = Address::from_str(
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_admin`
+
+warning: unused variable: `oracle_config`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:655:9
+    |
+655 |     let oracle_config = OracleConfig {
+    |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_oracle_config`
+
+warning: unused variable: `user`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:676:9
+    |
+676 |     let user = Address::from_str(
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_user`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:680:9
+    |
+680 |     let market_id = Symbol::new(&env, "BTC_MARKET");
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `market`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:683:9
+    |
+683 |     let market = ValidationTestingUtils::create_test_market(&env);
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_market`
+
+warning: unused variable: `user`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:779:9
+    |
+779 |     let user = Address::from_str(
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_user`
+
+warning: unused variable: `market_id`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:783:9
+    |
+783 |     let market_id = Symbol::new(&env, "BTC_MARKET");
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `market`
+   --> contracts/predictify-hybrid/src/validation_tests.rs:785:9
+    |
+785 |     let market = ValidationTestingUtils::create_test_market(&env);
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_market`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/versioning.rs:251:28
+    |
+251 |     pub fn validate(&self, env: &Env) -> Result<(), Error> {
+    |                            ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/versioning.rs:473:16
+    |
+473 |     pub fn new(env: &Env) -> Self {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/versioning.rs:531:9
+    |
+531 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/versioning.rs:624:33
+    |
+624 |     fn execute_migration(&self, env: &Env, migration: &VersionMigration) -> Result<(), Error> {
+    |                                 ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `migration`
+   --> contracts/predictify-hybrid/src/versioning.rs:624:44
+    |
+624 |     fn execute_migration(&self, env: &Env, migration: &VersionMigration) -> Result<(), Error> {
+    |                                            ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_migration`
+
+warning: variable `invalid_config` is assigned to, but never used
+   --> contracts/predictify-hybrid/src/circuit_breaker_tests.rs:399:17
+    |
+399 |             let mut invalid_config = valid_config.clone();
+    |                 ^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_invalid_config` instead
+
+warning: variable `invalid_config2` is assigned to, but never used
+   --> contracts/predictify-hybrid/src/circuit_breaker_tests.rs:403:17
+    |
+403 |             let mut invalid_config2 = valid_config.clone();
+    |                 ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_invalid_config2` instead
+
+warning: variable `invalid_config3` is assigned to, but never used
+   --> contracts/predictify-hybrid/src/circuit_breaker_tests.rs:407:17
+    |
+407 |             let mut invalid_config3 = valid_config.clone();
+    |                 ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_invalid_config3` instead
+
+warning: value assigned to `invalid_config` is never read
+   --> contracts/predictify-hybrid/src/circuit_breaker_tests.rs:400:13
+    |
+400 |             invalid_config.max_error_rate = 101; // > 100
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `invalid_config2` is never read
+   --> contracts/predictify-hybrid/src/circuit_breaker_tests.rs:404:13
+    |
+404 |             invalid_config2.max_latency_ms = 0; // = 0
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `invalid_config3` is never read
+   --> contracts/predictify-hybrid/src/circuit_breaker_tests.rs:408:13
+    |
+408 |             invalid_config3.min_liquidity = -1; // < 0
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `markets`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:113:17
+    |
+113 |             let markets = vec![
+    |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_markets`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:324:13
+    |
+324 |         let env = Env::default();
+    |             ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: variable `invalid_config` is assigned to, but never used
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:337:13
+    |
+337 |         let mut invalid_config = valid_config.clone();
+    |             ^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_invalid_config` instead
+
+warning: variable `invalid_config2` is assigned to, but never used
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:341:13
+    |
+341 |         let mut invalid_config2 = valid_config.clone();
+    |             ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_invalid_config2` instead
+
+warning: variable `invalid_config3` is assigned to, but never used
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:345:13
+    |
+345 |         let mut invalid_config3 = valid_config.clone();
+    |             ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_invalid_config3` instead
+
+warning: variable `invalid_config4` is assigned to, but never used
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:349:13
+    |
+349 |         let mut invalid_config4 = valid_config.clone();
+    |             ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_invalid_config4` instead
+
+warning: value assigned to `invalid_config` is never read
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:338:9
+    |
+338 |         invalid_config.max_batch_size = 0;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `invalid_config2` is never read
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:342:9
+    |
+342 |         invalid_config2.max_operations_per_batch = 0;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `invalid_config3` is never read
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:346:9
+    |
+346 |         invalid_config3.gas_limit_per_batch = 0;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `invalid_config4` is never read
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:350:9
+    |
+350 |         invalid_config4.timeout_per_batch = 0;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `valid_vote`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:361:13
+    |
+361 |         let valid_vote = VoteData {
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_valid_vote`
+
+warning: unused variable: `invalid_vote`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:369:13
+    |
+369 |         let invalid_vote = VoteData {
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_vote`
+
+warning: unused variable: `invalid_vote2`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:377:13
+    |
+377 |         let invalid_vote2 = VoteData {
+    |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_vote2`
+
+warning: unused variable: `valid_claim`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:386:13
+    |
+386 |         let valid_claim = ClaimData {
+    |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_valid_claim`
+
+warning: unused variable: `invalid_claim`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:393:13
+    |
+393 |         let invalid_claim = ClaimData {
+    |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_claim`
+
+warning: unused variable: `valid_market`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:401:13
+    |
+401 |         let valid_market = MarketData {
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_valid_market`
+
+warning: unused variable: `invalid_market`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:418:13
+    |
+418 |         let invalid_market = MarketData {
+    |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_market`
+
+warning: unused variable: `invalid_market2`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:435:13
+    |
+435 |         let invalid_market2 = MarketData {
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_market2`
+
+warning: unused variable: `invalid_market3`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:448:13
+    |
+448 |         let invalid_market3 = MarketData {
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_market3`
+
+warning: unused variable: `valid_feed`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:466:13
+    |
+466 |         let valid_feed = OracleFeed {
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_valid_feed`
+
+warning: unused variable: `invalid_feed`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:475:13
+    |
+475 |         let invalid_feed = OracleFeed {
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_feed`
+
+warning: unused variable: `invalid_feed2`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:484:13
+    |
+484 |         let invalid_feed2 = OracleFeed {
+    |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_invalid_feed2`
+
+warning: unused variable: `test_result`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:502:17
+    |
+502 |             let test_result = BatchResult {
+    |                 ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_test_result`
+
+warning: unused variable: `markets`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:590:17
+    |
+590 |             let markets = vec![&env, BatchTesting::create_test_market_data(&env)];
+    |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_markets`
+
+warning: variable does not need to be mutable
+   --> contracts/predictify-hybrid/src/integration_test.rs:279:9
+    |
+279 |     let mut test_suite = IntegrationTestSuite::setup(2);
+    |         ----^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `context`
+   --> contracts/predictify-hybrid/src/test.rs:617:13
+    |
+617 |         let context = errors::ErrorContext {
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_context`
+
+warning: unused variable: `context`
+   --> contracts/predictify-hybrid/src/test.rs:720:13
+    |
+720 |         let context = errors::ErrorContext {
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_context`
+
+warning: type `TokenTest` is more private than the item `PredictifyTest::token_test`
+  --> contracts/predictify-hybrid/src/test.rs:55:5
+   |
+55 |     pub token_test: TokenTest,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ field `PredictifyTest::token_test` is reachable at visibility `pub(crate)`
+   |
+note: but type `TokenTest` is only usable at visibility `pub(self)`
+  --> contracts/predictify-hybrid/src/test.rs:32:1
+   |
+32 | struct TokenTest {
+   | ^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: associated functions `initialize_with_config` and `validate_initialization_params` are never used
+   --> contracts/predictify-hybrid/src/admin.rs:298:12
+    |
+137 | impl AdminInitializer {
+    | --------------------- associated functions in this implementation
+...
+298 |     pub fn initialize_with_config(
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+385 |     pub fn validate_initialization_params(env: &Env, admin: &Address) -> Result<(), Error> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated functions `require_admin_auth` and `validate_admin_for_action` are never used
+   --> contracts/predictify-hybrid/src/admin.rs:550:12
+    |
+397 | impl AdminAccessControl {
+    | ----------------------- associated functions in this implementation
+...
+550 |     pub fn require_admin_auth(env: &Env, admin: &Address) -> Result<(), Error> {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+644 |     pub fn validate_admin_for_action(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `deactivate_role` is never used
+    --> contracts/predictify-hybrid/src/admin.rs:1177:12
+     |
+ 761 | impl AdminRoleManager {
+     | --------------------- associated function in this implementation
+...
+1177 |     pub fn deactivate_role(
+     |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `get_admin_assignment`, `deactivate_admin`, and `reactivate_admin` are never used
+    --> contracts/predictify-hybrid/src/admin.rs:1442:12
+     |
+1213 | impl AdminManager {
+     | ----------------- associated functions in this implementation
+...
+1442 |     pub fn get_admin_assignment(env: &Env, admin: &Address) -> Option<AdminRoleAssignment> {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+1448 |     pub fn deactivate_admin(
+     |            ^^^^^^^^^^^^^^^^
+...
+1474 |     pub fn reactivate_admin(
+     |            ^^^^^^^^^^^^^^^^
+
+warning: struct `AdminFunctions` is never constructed
+    --> contracts/predictify-hybrid/src/admin.rs:1501:12
+     |
+1501 | pub struct AdminFunctions;
+     |            ^^^^^^^^^^^^^^
+
+warning: associated functions `close_market`, `finalize_market`, `extend_market_duration`, `update_fee_config`, `update_contract_config`, and `reset_config_to_defaults` are never used
+    --> contracts/predictify-hybrid/src/admin.rs:1579:12
+     |
+1503 | impl AdminFunctions {
+     | ------------------- associated functions in this implementation
+...
+1579 |     pub fn close_market(env: &Env, admin: &Address, market_id: &Symbol) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^
+...
+1682 |     pub fn finalize_market(
+     |            ^^^^^^^^^^^^^^^
+...
+1809 |     pub fn extend_market_duration(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+1935 |     pub fn update_fee_config(
+     |            ^^^^^^^^^^^^^^^^^
+...
+2055 |     pub fn update_contract_config(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+2167 |     pub fn reset_config_to_defaults(env: &Env, admin: &Address) -> Result<ContractConfig, Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_action_parameters` is never used
+    --> contracts/predictify-hybrid/src/admin.rs:2467:12
+     |
+2203 | impl AdminValidator {
+     | ------------------- associated function in this implementation
+...
+2467 |     pub fn validate_action_parameters(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `get_admin_actions` and `get_admin_actions_for_admin` are never used
+    --> contracts/predictify-hybrid/src/admin.rs:2765:12
+     |
+2547 | impl AdminActionLogger {
+     | ---------------------- associated functions in this implementation
+...
+2765 |     pub fn get_admin_actions(env: &Env, _limit: u32) -> Result<Vec<AdminAction>, Error> {
+     |            ^^^^^^^^^^^^^^^^^
+...
+2873 |     pub fn get_admin_actions_for_admin(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `is_super_admin`, `get_role_name`, and `get_permission_name` are never used
+    --> contracts/predictify-hybrid/src/admin.rs:2918:12
+     |
+2911 | impl AdminUtils {
+     | --------------- associated functions in this implementation
+...
+2918 |     pub fn is_super_admin(env: &Env, address: &Address) -> bool {
+     |            ^^^^^^^^^^^^^^
+...
+2926 |     pub fn get_role_name(role: &AdminRole) -> String {
+     |            ^^^^^^^^^^^^^
+...
+2939 |     pub fn get_permission_name(permission: &AdminPermission) -> String {
+     |            ^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `get_admin_details` is never used
+    --> contracts/predictify-hybrid/src/admin.rs:3078:12
+     |
+3026 | impl EnhancedAdminAnalytics {
+     | --------------------------- associated function in this implementation
+...
+3078 |     pub fn get_admin_details(env: &Env, admin: &Address) -> Option<AdminRoleAssignment> {
+     |            ^^^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_admin_unified` and `ensure_migration` are never used
+    --> contracts/predictify-hybrid/src/admin.rs:3141:12
+     |
+3100 | impl AdminSystemIntegration {
+     | --------------------------- associated functions in this implementation
+...
+3141 |     pub fn validate_admin_unified(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+3153 |     pub fn ensure_migration(env: &Env) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^
+
+warning: associated function `simulate_admin_action` is never used
+    --> contracts/predictify-hybrid/src/admin.rs:3233:12
+     |
+3194 | impl AdminTesting {
+     | ----------------- associated function in this implementation
+...
+3233 |     pub fn simulate_admin_action(env: &Env, admin: &Address, action: &str) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `update_config`, `batch_create_markets`, `process_single_market_creation`, `validate_market_data`, and `validate_batch_config` are never used
+   --> contracts/predictify-hybrid/src/batch_operations.rs:186:12
+    |
+131 | impl BatchProcessor {
+    | ------------------- associated functions in this implementation
+...
+186 |     pub fn update_config(env: &Env, admin: &Address, config: &BatchConfig) -> Result<(), Error> {
+    |            ^^^^^^^^^^^^^
+...
+353 |     pub fn batch_create_markets(
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+412 |     fn process_single_market_creation(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+694 |     fn validate_market_data(market_data: &MarketData) -> Result<(), Error> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+...
+724 |     fn validate_batch_config(config: &BatchConfig) -> Result<(), Error> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `resolve_market_bets`, `refund_market_bets`, and `calculate_bet_payout` are never used
+   --> contracts/predictify-hybrid/src/bets.rs:297:12
+    |
+122 | impl BetManager {
+    | --------------- associated functions in this implementation
+...
+297 |     pub fn resolve_market_bets(
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+349 |     pub fn refund_market_bets(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+392 |     pub fn calculate_bet_payout(
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `remove_bet` and `get_all_bets_for_market` are never used
+   --> contracts/predictify-hybrid/src/bets.rs:462:12
+    |
+443 | impl BetStorage {
+    | --------------- associated functions in this implementation
+...
+462 |     pub fn remove_bet(env: &Env, market_id: &Symbol, user: &Address) {
+    |            ^^^^^^^^^^
+...
+519 |     pub fn get_all_bets_for_market(env: &Env, market_id: &Symbol) -> soroban_sdk::Vec<Address> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `unlock_funds`, `get_contract_balance`, and `has_sufficient_balance` are never used
+   --> contracts/predictify-hybrid/src/bets.rs:701:12
+    |
+665 | impl BetUtils {
+    | ------------- associated functions in this implementation
+...
+701 |     pub fn unlock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
+    |            ^^^^^^^^^^^^
+...
+716 |     pub fn get_contract_balance(env: &Env) -> Result<i128, Error> {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+732 |     pub fn has_sufficient_balance(env: &Env, user: &Address, amount: i128) -> Result<bool, Error> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `get_market_summary` is never used
+   --> contracts/predictify-hybrid/src/bets.rs:814:12
+    |
+747 | impl BetAnalytics {
+    | ----------------- associated function in this implementation
+...
+814 |     pub fn get_market_summary(env: &Env, market_id: &Symbol) -> BetStats {
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `update_config`, `is_half_open`, and `validate_config` are never used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:165:12
+    |
+102 | impl CircuitBreaker {
+    | ------------------- associated functions in this implementation
+...
+165 |     pub fn update_config(
+    |            ^^^^^^^^^^^^^
+...
+255 |     pub fn is_half_open(env: &Env) -> Result<bool, Error> {
+    |            ^^^^^^^^^^^^
+...
+610 |     fn validate_config(config: &CircuitBreakerConfig) -> Result<(), Error> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: associated functions `simulate_trigger` and `reset` are never used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:817:12
+    |
+776 | impl CircuitBreakerTesting {
+    | -------------------------- associated functions in this implementation
+...
+817 |     pub fn simulate_trigger(env: &Env, condition: &BreakerCondition) -> Result<bool, Error> {
+    |            ^^^^^^^^^^^^^^^^
+...
+822 |     pub fn reset(env: &Env, admin: &Address) -> Result<(), Error> {
+    |            ^^^^^
+
+warning: constant `ADMIN_STORAGE_KEY` is never used
+   --> contracts/predictify-hybrid/src/config.rs:129:11
+    |
+129 | pub const ADMIN_STORAGE_KEY: &str = "Admin";
+    |           ^^^^^^^^^^^^^^^^^
+
+warning: constant `TOKEN_ID_STORAGE_KEY` is never used
+   --> contracts/predictify-hybrid/src/config.rs:132:11
+    |
+132 | pub const TOKEN_ID_STORAGE_KEY: &str = "TokenID";
+    |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `FEE_CONFIG_STORAGE_KEY` is never used
+   --> contracts/predictify-hybrid/src/config.rs:135:11
+    |
+135 | pub const FEE_CONFIG_STORAGE_KEY: &str = "FeeConfig";
+    |           ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `RESOLUTION_ANALYTICS_STORAGE_KEY` is never used
+   --> contracts/predictify-hybrid/src/config.rs:138:11
+    |
+138 | pub const RESOLUTION_ANALYTICS_STORAGE_KEY: &str = "ResolutionAnalytics";
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ORACLE_STATS_STORAGE_KEY` is never used
+   --> contracts/predictify-hybrid/src/config.rs:141:11
+    |
+141 | pub const ORACLE_STATS_STORAGE_KEY: &str = "OracleStats";
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/config.rs:2131:12
+     |
+1080 | impl ConfigManager {
+     | ------------------ associated functions in this implementation
+...
+2131 |     pub fn update_config(env: &Env, config: &ContractConfig) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^
+...
+2204 |     fn push_history(env: &Env, record: &ConfigUpdateRecord) {
+     |        ^^^^^^^^^^^^
+...
+2220 |     pub fn get_current_configuration(env: &Env) -> Result<ContractConfig, Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2225 |     pub fn get_configuration_history(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2237 |     pub fn validate_configuration_changes(env: &Env, changes: &ConfigChanges) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2272 |     pub fn update_fee_percentage(
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+2307 |     pub fn update_dispute_threshold(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2339 |     pub fn update_oracle_timeout(
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+2371 |     pub fn update_market_limits(
+     |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/config.rs:2588:12
+     |
+2581 | impl ConfigUtils {
+     | ---------------- associated functions in this implementation
+...
+2588 |     pub fn is_testnet(config: &ContractConfig) -> bool {
+     |            ^^^^^^^^^^
+...
+2598 |     pub fn get_environment_name(config: &ContractConfig) -> String {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+2610 |     pub fn get_config_summary(config: &ContractConfig) -> String {
+     |            ^^^^^^^^^^^^^^^^^^
+...
+2635 |     pub fn get_voting_config(config: &ContractConfig) -> &VotingConfig {
+     |            ^^^^^^^^^^^^^^^^^
+...
+2640 |     pub fn get_market_config(config: &ContractConfig) -> &MarketConfig {
+     |            ^^^^^^^^^^^^^^^^^
+...
+2645 |     pub fn get_extension_config(config: &ContractConfig) -> &ExtensionConfig {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+2650 |     pub fn get_resolution_config(config: &ContractConfig) -> &ResolutionConfig {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+2655 |     pub fn get_oracle_config(config: &ContractConfig) -> &OracleConfig {
+     |            ^^^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/events.rs:1327:12
+     |
+1218 | impl EventEmitter {
+     | ----------------- associated functions in this implementation
+...
+1327 |     pub fn emit_bet_status_updated(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+1415 |     pub fn emit_dispute_resolved(
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1455 |     pub fn emit_extension_requested(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1476 |     pub fn emit_config_updated(
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+1539 |     pub fn emit_performance_metric(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+1603 |     pub fn emit_config_initialized(env: &Env, admin: &Address, environment: &Environment) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+1646 |     pub fn emit_admin_role_deactivated(env: &Env, admin: &Address, deactivated_by: &Address) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1658 |     pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
+     |            ^^^^^^^^^^^^^^^^^^
+...
+1669 |     pub fn emit_market_finalized(env: &Env, market_id: &Symbol, admin: &Address, outcome: &String) {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1783 |     pub fn emit_storage_migration_event(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1817 |     pub fn emit_oracle_recovery(env: &Env, oracle: &OracleProvider, message: &String) {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+1935 |     pub fn emit_error_event(
+     |            ^^^^^^^^^^^^^^^^
+...
+1969 |     pub fn emit_governance_proposal_created(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1988 |     pub fn emit_governance_vote_cast(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2006 |     pub fn emit_governance_proposal_executed(env: &Env, proposal_id: &Symbol, executor: &Address) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2050 |     pub fn emit_upgrade_proposal_created_event(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EventLogger` is never constructed
+    --> contracts/predictify-hybrid/src/events.rs:2078:12
+     |
+2078 | pub struct EventLogger;
+     |            ^^^^^^^^^^^
+
+warning: associated functions `get_events`, `get_market_events`, `get_recent_events`, `get_error_events`, `get_performance_metrics`, and `clear_old_events` are never used
+    --> contracts/predictify-hybrid/src/events.rs:2082:12
+     |
+2080 | impl EventLogger {
+     | ---------------- associated functions in this implementation
+2081 |     /// Get all events of a specific type
+2082 |     pub fn get_events<T>(env: &Env, event_type: &Symbol) -> Vec<T>
+     |            ^^^^^^^^^^
+...
+2095 |     pub fn get_market_events(env: &Env, market_id: &Symbol) -> Vec<MarketEventSummary> {
+     |            ^^^^^^^^^^^^^^^^^
+...
+2162 |     pub fn get_recent_events(env: &Env, limit: u32) -> Vec<EventSummary> {
+     |            ^^^^^^^^^^^^^^^^^
+...
+2203 |     pub fn get_error_events(env: &Env) -> Vec<ErrorLoggedEvent> {
+     |            ^^^^^^^^^^^^^^^^
+...
+2208 |     pub fn get_performance_metrics(env: &Env) -> Vec<PerformanceMetricEvent> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+2213 |     pub fn clear_old_events(env: &Env, _older_than_timestamp: u64) {
+     |            ^^^^^^^^^^^^^^^^
+
+warning: struct `EventValidator` is never constructed
+    --> contracts/predictify-hybrid/src/events.rs:2243:12
+     |
+2243 | pub struct EventValidator;
+     |            ^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/events.rs:2247:12
+     |
+2245 | impl EventValidator {
+     | ------------------- associated functions in this implementation
+2246 |     /// Validate market created event
+2247 |     pub fn validate_market_created_event(event: &MarketCreatedEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2262 |     pub fn validate_vote_cast_event(event: &VoteCastEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2273 |     pub fn validate_oracle_result_event(_event: &OracleResultEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2280 |     pub fn validate_market_resolved_event(event: &MarketResolvedEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2291 |     pub fn validate_dispute_created_event(event: &DisputeCreatedEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2302 |     pub fn validate_fee_collected_event(event: &FeeCollectedEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2314 |     pub fn validate_extension_requested_event(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2332 |     pub fn validate_error_logged_event(_event: &ErrorLoggedEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2339 |     pub fn validate_performance_metric_event(_event: &PerformanceMetricEvent) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EventHelpers` is never constructed
+    --> contracts/predictify-hybrid/src/events.rs:2349:12
+     |
+2349 | pub struct EventHelpers;
+     |            ^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/events.rs:2353:12
+     |
+2351 | impl EventHelpers {
+     | ----------------- associated functions in this implementation
+2352 |     /// Create event summary from event data
+2353 |     pub fn create_event_summary(env: &Env, event_type: &String, details: &String) -> EventSummary {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+2362 |     pub fn format_timestamp(env: &Env, _timestamp: u64) -> String {
+     |            ^^^^^^^^^^^^^^^^
+...
+2369 |     pub fn get_event_type_from_symbol(env: &Env, _symbol: &Symbol) -> String {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2376 |     pub fn create_event_context(env: &Env, context_parts: &Vec<String>) -> String {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+2391 |     pub fn is_valid_timestamp(timestamp: u64) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^
+...
+2397 |     pub fn get_event_age(current_timestamp: u64, event_timestamp: u64) -> u64 {
+     |            ^^^^^^^^^^^^^
+...
+2406 |     pub fn is_recent_event(
+     |            ^^^^^^^^^^^^^^^
+
+warning: struct `EventTestingUtils` is never constructed
+    --> contracts/predictify-hybrid/src/events.rs:2418:12
+     |
+2418 | pub struct EventTestingUtils;
+     |            ^^^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/events.rs:2422:12
+     |
+2420 | impl EventTestingUtils {
+     | ---------------------- associated functions in this implementation
+2421 |     /// Create test market created event
+2422 |     pub fn create_test_market_created_event(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2442 |     pub fn create_test_vote_cast_event(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2457 |     pub fn create_test_oracle_result_event(env: &Env, market_id: &Symbol) -> OracleResultEvent {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2471 |     pub fn create_test_market_resolved_event(env: &Env, market_id: &Symbol) -> MarketResolvedEvent {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2484 |     pub fn create_test_dispute_created_event(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2499 |     pub fn create_test_fee_collected_event(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2514 |     pub fn create_test_error_logged_event(env: &Env) -> ErrorLoggedEvent {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2526 |     pub fn create_test_performance_metric_event(env: &Env) -> PerformanceMetricEvent {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2537 |     pub fn validate_test_event_structure<T>(_event: &T) -> Result<(), Error>
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2547 |     pub fn simulate_event_emission(env: &Env, _event_type: &String) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_EVENTS_PER_QUERY` is never used
+    --> contracts/predictify-hybrid/src/events.rs:2588:11
+     |
+2588 | pub const MAX_EVENTS_PER_QUERY: u32 = 100;
+     |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `EVENT_RETENTION_DAYS` is never used
+    --> contracts/predictify-hybrid/src/events.rs:2589:11
+     |
+2589 | pub const EVENT_RETENTION_DAYS: u64 = 30 * 24 * 60 * 60; // 30 days
+     |           ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `RECENT_EVENT_THRESHOLD` is never used
+    --> contracts/predictify-hybrid/src/events.rs:2590:11
+     |
+2590 | pub const RECENT_EVENT_THRESHOLD: u64 = 24 * 60 * 60; // 24 hours
+     |           ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EventDocumentation` is never constructed
+    --> contracts/predictify-hybrid/src/events.rs:2595:12
+     |
+2595 | pub struct EventDocumentation;
+     |            ^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `get_overview`, `get_event_type_docs`, and `get_usage_examples` are never used
+    --> contracts/predictify-hybrid/src/events.rs:2599:12
+     |
+2597 | impl EventDocumentation {
+     | ----------------------- associated functions in this implementation
+2598 |     /// Get event system overview
+2599 |     pub fn get_overview(env: &Env) -> String {
+     |            ^^^^^^^^^^^^
+...
+2604 |     pub fn get_event_type_docs(env: &Env) -> Map<String, String> {
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+2656 |     pub fn get_usage_examples(env: &Env) -> Map<String, String> {
+     |            ^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `get_market_extension_history`, `get_extension_stats`, and `can_extend_market` are never used
+   --> contracts/predictify-hybrid/src/extensions.rs:295:12
+    |
+ 96 | impl ExtensionManager {
+    | --------------------- associated functions in this implementation
+...
+295 |     pub fn get_market_extension_history(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+379 |     pub fn get_extension_stats(
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+470 |     pub fn can_extend_market(env: &Env, market_id: Symbol, admin: Address) -> Result<bool, Error> {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated function `get_extension_events` is never used
+   --> contracts/predictify-hybrid/src/extensions.rs:677:12
+    |
+633 | impl ExtensionUtils {
+    | ------------------- associated function in this implementation
+...
+677 |     pub fn get_extension_events(env: &Env) -> Vec<ExtensionEvent> {
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ExtensionTestHelpers` is never constructed
+   --> contracts/predictify-hybrid/src/extensions.rs:705:12
+    |
+705 | pub struct ExtensionTestHelpers;
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `create_test_extension` and `simulate_market_extension` are never used
+   --> contracts/predictify-hybrid/src/extensions.rs:709:12
+    |
+707 | impl ExtensionTestHelpers {
+    | ------------------------- associated functions in this implementation
+708 |     /// Create a test extension
+709 |     pub fn create_test_extension(
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+719 |     pub fn simulate_market_extension(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_FEE_PERCENTAGE` is never used
+  --> contracts/predictify-hybrid/src/fees.rs:38:11
+   |
+38 | pub const MAX_FEE_PERCENTAGE: i128 = 500; // 5.00% in basis points
+   |           ^^^^^^^^^^^^^^^^^^
+
+warning: constant `MIN_FEE_PERCENTAGE` is never used
+  --> contracts/predictify-hybrid/src/fees.rs:41:11
+   |
+41 | pub const MIN_FEE_PERCENTAGE: i128 = 10; // 0.10% in basis points
+   |           ^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTIVITY_LEVEL_LOW` is never used
+  --> contracts/predictify-hybrid/src/fees.rs:44:11
+   |
+44 | pub const ACTIVITY_LEVEL_LOW: u32 = 10; // 10 votes
+   |           ^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTIVITY_LEVEL_MEDIUM` is never used
+  --> contracts/predictify-hybrid/src/fees.rs:45:11
+   |
+45 | pub const ACTIVITY_LEVEL_MEDIUM: u32 = 50; // 50 votes
+   |           ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ACTIVITY_LEVEL_HIGH` is never used
+  --> contracts/predictify-hybrid/src/fees.rs:46:11
+   |
+46 | pub const ACTIVITY_LEVEL_HIGH: u32 = 100; // 100 votes
+   |           ^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `get_fee_analytics`, `update_fee_config`, `get_fee_config`, `validate_market_fees`, `update_fee_structure`, and `get_fee_history` are never used
+   --> contracts/predictify-hybrid/src/fees.rs:775:12
+    |
+716 | impl FeeManager {
+    | --------------- associated functions in this implementation
+...
+775 |     pub fn get_fee_analytics(env: &Env) -> Result<FeeAnalytics, Error> {
+    |            ^^^^^^^^^^^^^^^^^
+...
+780 |     pub fn update_fee_config(
+    |            ^^^^^^^^^^^^^^^^^
+...
+804 |     pub fn get_fee_config(env: &Env) -> Result<FeeConfig, Error> {
+    |            ^^^^^^^^^^^^^^
+...
+809 |     pub fn validate_market_fees(
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+818 |     pub fn update_fee_structure(
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+847 |     pub fn get_fee_history(env: &Env, _market_id: Symbol) -> Result<Vec<FeeHistory>, Error> {
+    |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `calculate_user_payout_after_fees`, `calculate_dynamic_fee`, `calculate_dynamic_fee_by_market_id`, `adjust_fee_by_activity`, `validate_fee_percentage`, and `get_fee_calculation_factors` are never used
+    --> contracts/predictify-hybrid/src/fees.rs:883:12
+     |
+ 866 | impl FeeCalculator {
+     | ------------------ associated functions in this implementation
+...
+ 883 |     pub fn calculate_user_payout_after_fees(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 916 |     pub fn calculate_dynamic_fee(market: &Market) -> Result<i128, Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+ 939 |     pub fn calculate_dynamic_fee_by_market_id(env: &Env, market_id: Symbol) -> Result<i128, Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1001 |     pub fn adjust_fee_by_activity(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+1032 |     pub fn validate_fee_percentage(env: &Env, fee: i128, market_id: Symbol) -> Result<bool, Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+1057 |     pub fn get_fee_calculation_factors(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_fee_config` and `validate_market_fees` are never used
+    --> contracts/predictify-hybrid/src/fees.rs:1196:12
+     |
+1136 | impl FeeValidator {
+     | ----------------- associated functions in this implementation
+...
+1196 |     pub fn validate_fee_config(config: &FeeConfig) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^
+...
+1221 |     pub fn validate_market_fees(market: &Market) -> Result<FeeValidationResult, Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `get_market_fee_stats` and `get_fee_eligibility` are never used
+    --> contracts/predictify-hybrid/src/fees.rs:1267:12
+     |
+1258 | impl FeeUtils {
+     | ------------- associated functions in this implementation
+...
+1267 |     pub fn get_market_fee_stats(market: &Market) -> Result<FeeBreakdown, Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+1279 |     pub fn get_fee_eligibility(market: &Market) -> (bool, String) {
+     |            ^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `record_config_change` and `record_fee_structure_update` are never used
+    --> contracts/predictify-hybrid/src/fees.rs:1366:12
+     |
+1313 | impl FeeTracker {
+     | --------------- associated functions in this implementation
+...
+1366 |     pub fn record_config_change(
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+1397 |     pub fn record_fee_structure_update(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `reset_to_defaults` is never used
+    --> contracts/predictify-hybrid/src/fees.rs:1444:12
+     |
+1418 | impl FeeConfigManager {
+     | --------------------- associated function in this implementation
+...
+1444 |     pub fn reset_to_defaults(env: &Env) -> Result<FeeConfig, Error> {
+     |            ^^^^^^^^^^^^^^^^^
+
+warning: function `create_test_fee_breakdown` is never used
+    --> contracts/predictify-hybrid/src/fees.rs:1545:12
+     |
+1545 |     pub fn create_test_fee_breakdown() -> FeeBreakdown {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_test_fee_tier` is never used
+    --> contracts/predictify-hybrid/src/fees.rs:1590:12
+     |
+1590 |     pub fn create_test_fee_tier(env: &Env) -> FeeTier {
+     |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `create_test_activity_adjustment` is never used
+    --> contracts/predictify-hybrid/src/fees.rs:1600:12
+     |
+1600 |     pub fn create_test_activity_adjustment(env: &Env) -> ActivityAdjustment {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `GovernanceContract` is never constructed
+  --> contracts/predictify-hybrid/src/governance.rs:48:12
+   |
+48 | pub struct GovernanceContract;
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+   --> contracts/predictify-hybrid/src/governance.rs:52:12
+    |
+ 50 | impl GovernanceContract {
+    | ----------------------- associated functions in this implementation
+ 51 |     // Initialize admin, voting period (seconds) and quorum (minimum FOR votes).
+ 52 |     pub fn initialize(env: Env, admin: Address, voting_period_seconds: i64, quorum_votes: u128) {
+    |            ^^^^^^^^^^
+...
+ 77 |     pub fn create_proposal(
+    |            ^^^^^^^^^^^^^^^
+...
+139 |     pub fn vote(
+    |            ^^^^
+...
+199 |     pub fn validate_proposal(
+    |            ^^^^^^^^^^^^^^^^^
+...
+235 |     pub fn execute_proposal(
+    |            ^^^^^^^^^^^^^^^^
+...
+292 |     pub fn list_proposals(env: Env) -> Vec<Symbol> {
+    |            ^^^^^^^^^^^^^^
+...
+300 |     pub fn get_proposal(env: Env, id: Symbol) -> Result<GovernanceProposal, GovernanceError> {
+    |            ^^^^^^^^^^^^
+...
+312 |     pub fn set_voting_period(
+    |            ^^^^^^^^^^^^^^^^^
+...
+328 |     pub fn set_quorum(env: Env, caller: Address, new_quorum: u128) -> Result<(), GovernanceError> {
+    |            ^^^^^^^^^^
+...
+337 |     fn ensure_admin(env: &Env, caller: Address) -> Result<(), GovernanceError> {
+    |        ^^^^^^^^^^^^
+
+warning: associated functions `validate_market_id_format`, `parse_market_id_components`, `is_market_id_valid`, `get_market_id_registry`, and `get_admin_markets` are never used
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:122:12
+    |
+ 36 | impl MarketIdGenerator {
+    | ---------------------- associated functions in this implementation
+...
+122 |     pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+135 |     pub fn parse_market_id_components(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+146 |     pub fn is_market_id_valid(env: &Env, market_id: &Symbol) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+152 |     pub fn get_market_id_registry(env: &Env, start: u32, limit: u32) -> Vec<MarketIdRegistryEntry> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+172 |     pub fn get_admin_markets(env: &Env, admin: &Address) -> Vec<Symbol> {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_recovery_safety` is never used
+   --> contracts/predictify-hybrid/src/recovery.rs:115:12
+    |
+ 97 | impl RecoveryValidator {
+    | ---------------------- associated function in this implementation
+...
+115 |     pub fn validate_recovery_safety(_env: &Env, data: &RecoveryData) -> Result<(), Error> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_external_call_success` and `restore_state_on_failure` are never used
+  --> contracts/predictify-hybrid/src/reentrancy_guard.rs:60:12
+   |
+18 | impl ReentrancyGuard {
+   | -------------------- associated functions in this implementation
+...
+60 |     pub fn validate_external_call_success(_env: &Env, ok: bool) -> Result<(), GuardError> {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+72 |     pub fn restore_state_on_failure<F: FnOnce()>(_env: &Env, restore_fn: F) {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `get_oracle_resolution`, `validate_oracle_resolution`, and `calculate_oracle_confidence` are never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1012:12
+     |
+ 944 | impl OracleResolutionManager {
+     | ---------------------------- associated functions in this implementation
+...
+1012 |     pub fn get_oracle_resolution(
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1023 |     pub fn validate_oracle_resolution(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1046 |     pub fn calculate_oracle_confidence(resolution: &OracleResolution) -> u32 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `finalize_market`, `get_market_resolution`, and `validate_market_resolution` are never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1325:12
+     |
+1233 | impl MarketResolutionManager {
+     | ---------------------------- associated functions in this implementation
+...
+1325 |     pub fn finalize_market(
+     |            ^^^^^^^^^^^^^^^
+...
+1363 |     pub fn get_market_resolution(
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1374 |     pub fn validate_market_resolution(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_oracle_resolution` is never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1405:12
+     |
+1387 | impl OracleResolutionValidator {
+     | ------------------------------ associated function in this implementation
+...
+1405 |     pub fn validate_oracle_resolution(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_admin_permissions`, `validate_outcome`, and `validate_market_resolution` are never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1454:12
+     |
+1431 | impl MarketResolutionValidator {
+     | ------------------------------ associated functions in this implementation
+...
+1454 |     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1470 |     pub fn validate_outcome(
+     |            ^^^^^^^^^^^^^^^^
+...
+1483 |     pub fn validate_market_resolution(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `OracleResolutionAnalytics` is never constructed
+    --> contracts/predictify-hybrid/src/resolution.rs:1510:12
+     |
+1510 | pub struct OracleResolutionAnalytics;
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `calculate_confidence_score` and `get_oracle_stats` are never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1514:12
+     |
+1512 | impl OracleResolutionAnalytics {
+     | ------------------------------ associated functions in this implementation
+1513 |     /// Calculate oracle confidence score
+1514 |     pub fn calculate_confidence_score(resolution: &OracleResolution) -> u32 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1534 |     pub fn get_oracle_stats(_env: &Env) -> Result<OracleStats, Error> {
+     |            ^^^^^^^^^^^^^^^^
+
+warning: associated function `update_resolution_analytics` is never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1583:12
+     |
+1542 | impl MarketResolutionAnalytics {
+     | ------------------------------ associated function in this implementation
+...
+1583 |     pub fn update_resolution_analytics(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `can_resolve_market`, `get_resolution_eligibility`, `calculate_resolution_time`, and `validate_resolution_parameters` are never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1612:12
+     |
+1597 | impl ResolutionUtils {
+     | -------------------- associated functions in this implementation
+...
+1612 |     pub fn can_resolve_market(env: &Env, market: &Market) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^
+...
+1619 |     pub fn get_resolution_eligibility(env: &Env, market: &Market) -> (bool, String) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1636 |     pub fn calculate_resolution_time(env: &Env, market: &Market) -> u64 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1646 |     pub fn validate_resolution_parameters(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `simulate_resolution_process` is never used
+    --> contracts/predictify-hybrid/src/resolution.rs:1717:12
+     |
+1670 | impl ResolutionTesting {
+     | ---------------------- associated function in this implementation
+...
+1717 |     pub fn simulate_resolution_process(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `TimeUtils` is never constructed
+   --> contracts/predictify-hybrid/src/utils.rs:191:12
+    |
+191 | pub struct TimeUtils;
+    |            ^^^^^^^^^
+
+warning: multiple associated functions are never used
+   --> contracts/predictify-hybrid/src/utils.rs:195:12
+    |
+193 | impl TimeUtils {
+    | -------------- associated functions in this implementation
+194 |     /// Convert days to seconds
+195 |     pub fn days_to_seconds(days: u32) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+...
+200 |     pub fn hours_to_seconds(hours: u32) -> u64 {
+    |            ^^^^^^^^^^^^^^^^
+...
+205 |     pub fn minutes_to_seconds(minutes: u32) -> u64 {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+210 |     pub fn time_difference(timestamp1: u64, timestamp2: u64) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+...
+219 |     pub fn is_future_timestamp(current_time: u64, future_time: u64) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+224 |     pub fn is_past_timestamp(current_time: u64, past_time: u64) -> bool {
+    |            ^^^^^^^^^^^^^^^^^
+...
+229 |     pub fn format_duration(env: &Env, seconds: u64) -> String {
+    |            ^^^^^^^^^^^^^^^
+...
+254 |     pub fn time_until_deadline(current_time: u64, deadline: u64) -> u64 {
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+263 |     pub fn is_deadline_passed(current_time: u64, deadline: u64) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+268 |     pub fn validate_duration(days: &u32) -> bool {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `StringUtils` is never constructed
+   --> contracts/predictify-hybrid/src/utils.rs:513:12
+    |
+513 | pub struct StringUtils;
+    |            ^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+   --> contracts/predictify-hybrid/src/utils.rs:517:12
+    |
+515 | impl StringUtils {
+    | ---------------- associated functions in this implementation
+516 |     /// Convert string to uppercase
+517 |     pub fn to_uppercase(s: &String) -> String {
+    |            ^^^^^^^^^^^^
+...
+525 |     pub fn to_lowercase(s: &String) -> String {
+    |            ^^^^^^^^^^^^
+...
+533 |     pub fn trim(s: &String) -> String {
+    |            ^^^^
+...
+541 |     pub fn truncate(s: &String, _max_length: u32) -> String {
+    |            ^^^^^^^^
+...
+549 |     pub fn split(s: &String, _delimiter: &str) -> Vec<String> {
+    |            ^^^^^
+...
+559 |     pub fn join(strings: &Vec<String>, delimiter: &str) -> String {
+    |            ^^^^
+...
+573 |     pub fn contains(_s: &String, _substring: &str) -> bool {
+    |            ^^^^^^^^
+...
+580 |     pub fn starts_with(_s: &String, _prefix: &str) -> bool {
+    |            ^^^^^^^^^^^
+...
+587 |     pub fn ends_with(_s: &String, _suffix: &str) -> bool {
+    |            ^^^^^^^^^
+...
+594 |     pub fn replace(s: &String, _old: &str, _new: &str) -> String {
+    |            ^^^^^^^
+...
+603 |     pub fn validate_string_length(
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+618 |     pub fn sanitize_string(s: &String) -> String {
+    |            ^^^^^^^^^^^^^^^
+...
+626 |     pub fn generate_random_string(env: &Env, _length: u32) -> String {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `NumericUtils` is never constructed
+   --> contracts/predictify-hybrid/src/utils.rs:891:12
+    |
+891 | pub struct NumericUtils;
+    |            ^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+   --> contracts/predictify-hybrid/src/utils.rs:895:12
+    |
+893 | impl NumericUtils {
+    | ----------------- associated functions in this implementation
+894 |     /// Calculate percentage
+895 |     pub fn calculate_percentage(percentage: &i128, value: &i128, denominator: &i128) -> i128 {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+900 |     pub fn round_to_nearest(value: &i128, multiple: &i128) -> i128 {
+    |            ^^^^^^^^^^^^^^^^
+...
+905 |     pub fn clamp(value: &i128, min: &i128, max: &i128) -> i128 {
+    |            ^^^^^
+...
+916 |     pub fn is_within_range(value: &i128, min: &i128, max: &i128) -> bool {
+    |            ^^^^^^^^^^^^^^^
+...
+921 |     pub fn abs_difference(a: &i128, b: &i128) -> i128 {
+    |            ^^^^^^^^^^^^^^
+...
+930 |     pub fn sqrt(value: &i128) -> i128 {
+    |            ^^^^
+...
+944 |     pub fn weighted_average(values: &Vec<i128>, weights: &Vec<i128>) -> i128 {
+    |            ^^^^^^^^^^^^^^^^
+...
+964 |     pub fn simple_interest(principal: &i128, rate: &i128, periods: &i128) -> i128 {
+    |            ^^^^^^^^^^^^^^^
+...
+969 |     pub fn i128_to_string(env: &Env, _value: &i128) -> String {
+    |            ^^^^^^^^^^^^^^
+...
+976 |     pub fn string_to_i128(_s: &String) -> i128 {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `ValidationUtils` is never constructed
+    --> contracts/predictify-hybrid/src/utils.rs:1317:12
+     |
+1317 | pub struct ValidationUtils;
+     |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_positive_number`, `validate_number_range`, `validate_future_timestamp`, `validate_address`, `validate_email`, and `validate_url` are never used
+    --> contracts/predictify-hybrid/src/utils.rs:1321:12
+     |
+1319 | impl ValidationUtils {
+     | -------------------- associated functions in this implementation
+1320 |     /// Validate positive number
+1321 |     pub fn validate_positive_number(value: &i128) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1326 |     pub fn validate_number_range(value: &i128, min: &i128, max: &i128) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1331 |     pub fn validate_future_timestamp(env: &Env, timestamp: &u64) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1337 |     pub fn validate_address(_address: &Address) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^
+...
+1343 |     pub fn validate_email(_email: &String) -> bool {
+     |            ^^^^^^^^^^^^^^
+...
+1350 |     pub fn validate_url(_url: &String) -> bool {
+     |            ^^^^^^^^^^^^
+
+warning: struct `ConversionUtils` is never constructed
+    --> contracts/predictify-hybrid/src/utils.rs:1647:12
+     |
+1647 | pub struct ConversionUtils;
+     |            ^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/utils.rs:1651:12
+     |
+1649 | impl ConversionUtils {
+     | -------------------- associated functions in this implementation
+1650 |     /// Convert address to string
+1651 |     pub fn address_to_string(env: &Env, _address: &Address) -> String {
+     |            ^^^^^^^^^^^^^^^^^
+...
+1658 |     pub fn string_to_address(_env: &Env, s: &String) -> Address {
+     |            ^^^^^^^^^^^^^^^^^
+...
+1663 |     pub fn symbol_to_string(env: &Env, _symbol: &Symbol) -> String {
+     |            ^^^^^^^^^^^^^^^^
+...
+1670 |     pub fn string_to_symbol(env: &Env, _s: &String) -> Symbol {
+     |            ^^^^^^^^^^^^^^^^
+...
+1677 |     pub fn map_to_string(env: &Env, _map: &Map<String, String>) -> String {
+     |            ^^^^^^^^^^^^^
+...
+1684 |     pub fn vec_to_string(env: &Env, _vec: &Vec<String>) -> String {
+     |            ^^^^^^^^^^^^^
+...
+1691 |     pub fn maps_equal(map1: &Map<String, String>, map2: &Map<String, String>) -> bool {
+     |            ^^^^^^^^^^
+...
+1712 |     pub fn map_contains_key(map: &Map<String, String>, key: &String) -> bool {
+     |            ^^^^^^^^^^^^^^^^
+
+warning: struct `CommonUtils` is never constructed
+    --> contracts/predictify-hybrid/src/utils.rs:2049:12
+     |
+2049 | pub struct CommonUtils;
+     |            ^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/utils.rs:2053:12
+     |
+2051 | impl CommonUtils {
+     | ---------------- associated functions in this implementation
+2052 |     /// Generate unique ID
+2053 |     pub fn generate_unique_id(env: &Env, _prefix: &String) -> String {
+     |            ^^^^^^^^^^^^^^^^^^
+...
+2062 |     pub fn addresses_equal(a: &Address, b: &Address) -> bool {
+     |            ^^^^^^^^^^^^^^^
+...
+2067 |     pub fn strings_equal_ignore_case(_a: &String, _b: &String) -> bool {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2074 |     pub fn calculate_weighted_average(values: &Vec<i128>, weights: &Vec<i128>) -> i128 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2079 |     pub fn calculate_simple_interest(principal: &i128, rate: &i128, periods: &i128) -> i128 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2084 |     pub fn format_number_with_commas(env: &Env, _number: &i128) -> String {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2091 |     pub fn random_number_in_range(env: &Env, min: &i128, max: &i128) -> i128 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+    --> contracts/predictify-hybrid/src/utils.rs:2528:12
+     |
+2526 | impl TestingUtils {
+     | ----------------- associated functions in this implementation
+2527 |     /// Create test data
+2528 |     pub fn create_test_data(env: &Env) -> String {
+     |            ^^^^^^^^^^^^^^^^
+...
+2533 |     pub fn validate_test_data_structure<T>(_data: &T) -> Result<(), Error> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2547 |     pub fn generate_test_symbol(env: &Env) -> Symbol {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+2552 |     pub fn generate_test_string(env: &Env) -> String {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+2557 |     pub fn generate_test_number() -> i128 {
+     |            ^^^^^^^^^^^^^^^^^^^^
+...
+2562 |     pub fn create_test_map(env: &Env) -> Map<String, String> {
+     |            ^^^^^^^^^^^^^^^
+...
+2578 |     pub fn create_test_vec(env: &Env) -> Vec<String> {
+     |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_string`, `validate_number_range`, and `validate_future_timestamp` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:1135:12
+     |
+ 996 | impl InputValidator {
+     | ------------------- associated functions in this implementation
+...
+1135 |     pub fn validate_string(
+     |            ^^^^^^^^^^^^^^^
+...
+1159 |     pub fn validate_number_range(
+     |            ^^^^^^^^^^^^^^^^^^^^^
+...
+1185 |     pub fn validate_future_timestamp(env: &Env, timestamp: &u64) -> Result<(), ValidationError> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MarketValidator` is never constructed
+    --> contracts/predictify-hybrid/src/validation.rs:1828:12
+     |
+1828 | pub struct MarketValidator;
+     |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_market_creation`, `validate_outcomes`, `validate_market_for_voting`, `validate_market_for_resolution`, and `validate_market_for_fee_collection` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:1832:12
+     |
+1830 | impl MarketValidator {
+     | -------------------- associated functions in this implementation
+1831 |     /// Validate market creation parameters
+1832 |     pub fn validate_market_creation(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1888 |     pub fn validate_outcomes(env: &Env, outcomes: &Vec<String>) -> Result<(), ValidationError> {
+     |            ^^^^^^^^^^^^^^^^^
+...
+1918 |     pub fn validate_market_for_voting(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1943 |     pub fn validate_market_for_resolution(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1973 |     pub fn validate_market_for_fee_collection(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `OracleValidator` is never constructed
+    --> contracts/predictify-hybrid/src/validation.rs:2005:12
+     |
+2005 | pub struct OracleValidator;
+     |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_oracle_config`, `validate_comparison_operator`, `validate_oracle_provider`, and `validate_oracle_result` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:2009:12
+     |
+2007 | impl OracleValidator {
+     | -------------------- associated functions in this implementation
+2008 |     /// Validate oracle configuration with comprehensive validation
+2009 |     pub fn validate_oracle_config(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+2018 |     pub fn validate_comparison_operator(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2040 |     pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), ValidationError> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2050 |     pub fn validate_oracle_result(
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_fee_config` is never used
+    --> contracts/predictify-hybrid/src/validation.rs:2098:12
+     |
+2074 | impl FeeValidator {
+     | ----------------- associated function in this implementation
+...
+2098 |     pub fn validate_fee_config(
+     |            ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `VoteValidator` is never constructed
+    --> contracts/predictify-hybrid/src/validation.rs:2230:12
+     |
+2230 | pub struct VoteValidator;
+     |            ^^^^^^^^^^^^^
+
+warning: associated functions `validate_vote`, `validate_outcome`, and `validate_stake_amount` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:2234:12
+     |
+2232 | impl VoteValidator {
+     | ------------------ associated functions in this implementation
+2233 |     /// Validate vote parameters with comprehensive validation
+2234 |     pub fn validate_vote(
+     |            ^^^^^^^^^^^^^
+...
+2278 |     pub fn validate_outcome(
+     |            ^^^^^^^^^^^^^^^^
+...
+2295 |     pub fn validate_stake_amount(stake_amount: &i128) -> Result<(), ValidationError> {
+     |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `DisputeValidator` is never constructed
+    --> contracts/predictify-hybrid/src/validation.rs:2394:12
+     |
+2394 | pub struct DisputeValidator;
+     |            ^^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_dispute_creation` and `validate_dispute_stake` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:2398:12
+     |
+2396 | impl DisputeValidator {
+     | --------------------- associated functions in this implementation
+2397 |     /// Validate dispute creation with comprehensive validation
+2398 |     pub fn validate_dispute_creation(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2437 |     pub fn validate_dispute_stake(stake_amount: &i128) -> Result<(), ValidationError> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ConfigValidator` is never constructed
+    --> contracts/predictify-hybrid/src/validation.rs:2507:12
+     |
+2507 | pub struct ConfigValidator;
+     |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_contract_config` and `validate_environment_config` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:2511:12
+     |
+2509 | impl ConfigValidator {
+     | -------------------- associated functions in this implementation
+2510 |     /// Validate contract configuration
+2511 |     pub fn validate_contract_config(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2530 |     pub fn validate_environment_config(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ComprehensiveValidator` is never constructed
+    --> contracts/predictify-hybrid/src/validation.rs:2655:12
+     |
+2655 | pub struct ComprehensiveValidator;
+     |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `validate_complete_market_creation`, `validate_inputs`, and `validate_market_state` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:2659:12
+     |
+2657 | impl ComprehensiveValidator {
+     | --------------------------- associated functions in this implementation
+2658 |     /// Validate complete market creation with all parameters
+2659 |     pub fn validate_complete_market_creation(
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2703 |     pub fn validate_inputs(
+     |            ^^^^^^^^^^^^^^^
+...
+2736 |     pub fn validate_market_state(
+     |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `create_test_validation_result`, `create_test_validation_error`, `validate_test_data_structure`, and `create_test_oracle_config` are never used
+    --> contracts/predictify-hybrid/src/validation.rs:2854:12
+     |
+2852 | impl ValidationTestingUtils {
+     | --------------------------- associated functions in this implementation
+2853 |     /// Create test validation result
+2854 |     pub fn create_test_validation_result(env: &Env) -> ValidationResult {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2862 |     pub fn create_test_validation_error() -> ValidationError {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2867 |     pub fn validate_test_data_structure<T>(_data: &T) -> Result<(), ValidationError> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2898 |     pub fn create_test_oracle_config(env: &Env) -> OracleConfig {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `log_validation_info` is never used
+    --> contracts/predictify-hybrid/src/validation.rs:2990:12
+     |
+2975 | impl ValidationErrorHandler {
+     | --------------------------- associated function in this implementation
+...
+2990 |     pub fn log_validation_info(env: &Env, result: &ValidationResult) {
+     |            ^^^^^^^^^^^^^^^^^^^
+
+warning: field `token_id` is never read
+  --> contracts/predictify-hybrid/src/integration_test.rs:23:9
+   |
+20 | pub struct IntegrationTestSuite {
+   |            -------------------- field in this struct
+...
+23 |     pub token_id: Address,
+   |         ^^^^^^^^
+
+warning: field `admin` is never read
+  --> contracts/predictify-hybrid/src/bet_tests.rs:32:5
+   |
+29 | struct BetTestSetup {
+   |        ------------ field in this struct
+...
+32 |     admin: Address,
+   |     ^^^^^
+
+warning: field `pyth_contract` is never read
+  --> contracts/predictify-hybrid/src/test.rs:59:9
+   |
+52 | pub struct PredictifyTest {
+   |            -------------- field in this struct
+...
+59 |     pub pyth_contract: Address,
+   |         ^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+    --> contracts/predictify-hybrid/src/admin.rs:3386:17
+     |
+3386 |         assert!(action.timestamp >= 0); // In test environment, timestamp can be 0
+     |                 ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_comparisons)]` on by default
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:181:9
+    |
+181 | /         Self::emit_circuit_breaker_event(
+182 | |             env,
+183 | |             BreakerAction::Reset,
+184 | |             BreakerCondition::ManualOverride,
+185 | |             &String::from_str(env, "Configuration updated"),
+186 | |             Some(admin.clone()),
+187 | |         );
+    | |_________^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+    = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+help: use `let _ = ...` to ignore the resulting value
+    |
+181 |         let _ = Self::emit_circuit_breaker_event(
+    |         +++++++
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:231:9
+    |
+231 | /         Self::emit_circuit_breaker_event(
+232 | |             env,
+233 | |             BreakerAction::Pause,
+234 | |             BreakerCondition::ManualOverride,
+235 | |             reason,
+236 | |             Some(admin.clone()),
+237 | |         );
+    | |_________^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+231 |         let _ = Self::emit_circuit_breaker_event(
+    |         +++++++
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:278:17
+    |
+278 | /                 Self::emit_circuit_breaker_event(
+279 | |                     env,
+280 | |                     BreakerAction::Reset,
+281 | |                     BreakerCondition::ManualOverride,
+282 | |                     &String::from_str(env, "Auto-recovery: transitioning to half-open"),
+283 | |                     None,
+284 | |                 );
+    | |_________________^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+278 |                 let _ = Self::emit_circuit_breaker_event(
+    |                 +++++++
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:342:13
+    |
+342 | /             Self::emit_circuit_breaker_event(
+343 | |                 env,
+344 | |                 BreakerAction::Trigger,
+345 | |                 condition.clone(),
+346 | |                 &String::from_str(env, "Automatic circuit breaker triggered"),
+347 | |                 None,
+348 | |             );
+    | |_____________^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+342 |             let _ = Self::emit_circuit_breaker_event(
+    |             +++++++
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:379:9
+    |
+379 | /         Self::emit_circuit_breaker_event(
+380 | |             env,
+381 | |             BreakerAction::Resume,
+382 | |             BreakerCondition::ManualOverride,
+383 | |             &String::from_str(env, "Circuit breaker recovered"),
+384 | |             Some(admin.clone()),
+385 | |         );
+    | |_________^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+379 |         let _ = Self::emit_circuit_breaker_event(
+    |         +++++++
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:408:17
+    |
+408 | /                 Self::emit_circuit_breaker_event(
+409 | |                     env,
+410 | |                     BreakerAction::Resume,
+411 | |                     BreakerCondition::ManualOverride,
+412 | |                     &String::from_str(env, "Auto-recovery: circuit breaker closed"),
+413 | |                     None,
+414 | |                 );
+    | |_________________^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+408 |                 let _ = Self::emit_circuit_breaker_event(
+    |                 +++++++
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/circuit_breaker.rs:437:13
+    |
+437 | /             Self::emit_circuit_breaker_event(
+438 | |                 env,
+439 | |                 BreakerAction::Trigger,
+440 | |                 BreakerCondition::HighErrorRate,
+441 | |                 &String::from_str(env, "Failure in half-open state, reopening circuit breaker"),
+442 | |                 None,
+443 | |             );
+    | |_____________^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+437 |             let _ = Self::emit_circuit_breaker_event(
+    |             +++++++
+
+warning: unused `core::result::Result` that must be used
+   --> contracts/predictify-hybrid/src/edge_cases.rs:160:9
+    |
+160 |         ReentrancyGuard::check_reentrancy_state(env);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+160 |         let _ = ReentrancyGuard::check_reentrancy_state(env);
+    |         +++++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+    --> contracts/predictify-hybrid/src/markets.rs:1792:35
+     |
+1792 |     pub fn get_token_client(_env: &Env) -> Result<token::Client, Error> {
+     |                                   ^^^^            ^^^^^^^^^^^^^ the same lifetime is hidden here
+     |                                   |
+     |                                   the lifetime is elided here
+     |
+     = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+     = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+     |
+1792 |     pub fn get_token_client(_env: &Env) -> Result<token::Client<'_>, Error> {
+     |                                                                ++++
+
+warning: comparison is useless due to type limits
+   --> contracts/predictify-hybrid/src/storage.rs:735:17
+    |
+735 |         assert!(recommendations.len() >= 0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+  --> contracts/predictify-hybrid/src/batch_operations_tests.rs:61:21
+   |
+61 |             assert!(batch_result.execution_time >= 0);
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+  --> contracts/predictify-hybrid/src/batch_operations_tests.rs:87:21
+   |
+87 |             assert!(batch_result.execution_time >= 0);
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:155:21
+    |
+155 |             assert!(batch_result.execution_time >= 0);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:319:17
+    |
+319 |         assert!(batch_result.execution_time >= 0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:619:21
+    |
+619 |             assert!(stats.total_successful_operations >= 0);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:620:21
+    |
+620 |             assert!(stats.total_failed_operations >= 0);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> contracts/predictify-hybrid/src/property_based_tests.rs:59:19
+   |
+59 |     pub fn client(&self) -> PredictifyHybridClient {
+   |                   ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                   |
+   |                   the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+59 |     pub fn client(&self) -> PredictifyHybridClient<'_> {
+   |                                                   ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> contracts/predictify-hybrid/src/bet_tests.rs:118:15
+    |
+118 |     fn client(&self) -> PredictifyHybridClient {
+    |               ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |               |
+    |               the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+118 |     fn client(&self) -> PredictifyHybridClient<'_> {
+    |                                               ++++
+
+warning: comparison is useless due to type limits
+   --> contracts/predictify-hybrid/src/bet_tests.rs:807:13
+    |
+807 |     assert!(bet.timestamp >= 0); // Timestamp can be 0 in test environment
+    |             ^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+    --> contracts/predictify-hybrid/src/test.rs:1026:13
+     |
+1026 |     assert!(result.gas_usage >= 0);
+     |             ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `predictify-hybrid` (lib test) generated 312 warnings (run `cargo fix --lib -p predictify-hybrid --tests` to apply 161 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.87s
+     Running unittests src/lib.rs (target/debug/deps/hello_world-38d51a4524cf5494)
+
+running 1 test
+test test::test ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/predictify_hybrid-a5820df132f3a767)
+
+running 289 tests
+test admin::admin_manager_tests::test_admin_activity_summary ... ok
+test admin::admin_manager_tests::test_can_manage_role ... ok
+test admin::admin_manager_tests::test_check_role_permissions ... ok
+test admin::admin_manager_tests::test_get_admin_roles ... ok
+test admin::admin_manager_tests::test_is_original_admin ... ok
+test admin::admin_manager_tests::test_migration_info ... ok
+test admin::admin_manager_tests::test_permission_hierarchy ... ok
+test admin::admin_manager_tests::test_add_admin_success ... ok
+test admin::admin_manager_tests::test_role_level_hierarchy ... ok
+test admin::admin_manager_tests::test_role_distribution ... ok
+test admin::tests::test_admin_access_control_validate_permission ... ok
+test admin::tests::test_admin_initializer_initialize ... ok
+test admin::tests::test_admin_functions_close_market ... ok
+test admin::tests::test_admin_testing_utilities ... ok
+test admin::tests::test_admin_role_manager_assign_role ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_claim_operations ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_config_validation ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_data_validation ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_error_handling ... ok
+test admin::tests::test_admin_utils_is_admin ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_integration ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_operation_types ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_operation_validation ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_market_creation ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_oracle_calls ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_processor_initialization ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_testing ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_utils ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_vote_operations ... ok
+test bet_tests::test_bet_amount_validation ... ok
+test batch_operations_tests::batch_operations_tests::test_batch_statistics_update ... ok
+test bet_tests::test_bet_equality ... ok
+test bet_tests::test_bet_new_constructor ... ok
+test bet_tests::test_bet_and_vote_coexistence ... ok
+test bet_tests::test_bet_stats_empty_market ... ok
+test bet_tests::test_bet_status_transitions ... ok
+test bet_tests::test_bet_status_active ... ok
+test bet_tests::test_get_bet_nonexistent ... ok
+test bet_tests::test_get_bet ... ok
+test bet_tests::test_get_implied_probability ... ok
+test bet_tests::test_get_market_bet_stats ... ok
+test bet_tests::test_has_user_bet ... ok
+test bet_tests::test_get_payout_multiplier ... ok
+test bet_tests::test_market_validation_for_betting ... ok
+test bet_tests::test_implied_probability_empty_market ... ok
+test bet_tests::test_payout_multiplier_empty_market ... ok
+test bet_tests::test_place_bet_above_maximum - should panic ... ok
+test bet_tests::test_multiple_users_betting ... ok
+test bet_tests::test_place_bet_below_minimum - should panic ... ok
+test bet_tests::test_place_bet_double_betting_prevented - should panic ... ok
+test bet_tests::test_place_bet_invalid_outcome - should panic ... ok
+test bet_tests::test_place_bet_maximum_amount ... ok
+test bet_tests::test_place_bet_nonexistent_market - should panic ... ok
+test bet_tests::test_place_bet_minimum_amount ... ok
+test bet_tests::test_place_bet_on_different_outcome ... ok
+test bet_tests::test_place_bet_on_ended_market - should panic ... ok
+test bet_tests::test_place_bet_requires_authentication - should panic ... ok
+test bets::tests::test_bet_amount_validation ... ok
+test bets::tests::test_bet_status_transitions ... ok
+test bet_tests::test_place_bet_success ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_automatic_trigger ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_circuit_breaker_integration ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_circuit_breaker_initialization ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_circuit_breaker_recovery ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_circuit_breaker_scenarios ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_circuit_breaker_testing ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_circuit_breaker_utils ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_config_validation ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_circuit_breaker_status ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_error_handling ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_emergency_pause ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_event_history ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_record_success_and_failure ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_validate_circuit_breaker_conditions ... ok
+test config::tests::test_config_manager_default_configs ... ok
+test circuit_breaker_tests::circuit_breaker_tests::test_half_open_state ... ok
+test config::tests::test_config_testing ... ok
+test config::tests::test_config_utils ... ok
+test config::tests::test_config_validator ... ok
+test config::tests::test_configuration_constants ... ok
+test config::tests::test_environment_enum ... ok
+test disputes::tests::test_dispute_analytics_stats ... ok
+test disputes::tests::test_dispute_utils_impact_calculation ... ok
+test disputes::tests::test_dispute_validator_market_validation ... ok
+test disputes::tests::test_dispute_validator_stake_validation ... ok
+test disputes::tests::test_testing_utilities ... ok
+test disputes::tests::test_timeout_analytics ... ok
+test disputes::tests::test_timeout_utilities ... ok
+test disputes::tests::test_timeout_validation ... ok
+test edge_cases::tests::test_edge_case_config_validation ... ok
+test edge_cases::tests::test_edge_case_scenario_validation ... ok
+test edge_cases::tests::test_edge_case_statistics ... ok
+test edge_cases::tests::test_tie_breaking_mechanism ... ok
+test errors::tests::test_detailed_error_message ... ok
+test errors::tests::test_error_analytics ... ok
+test errors::tests::test_error_categorization ... ok
+test errors::tests::test_error_context_validation ... ok
+test errors::tests::test_error_recovery_strategy ... ok
+test extensions::tests::test_extension_fee_calculation ... ok
+test extensions::tests::test_extension_stats ... ok
+test extensions::tests::test_extension_validation ... ok
+test fees::tests::test_dynamic_fee_tier_calculation ... ok
+test fees::tests::test_fee_analytics_calculation ... ok
+test fees::tests::test_fee_calculation_factors ... ok
+test fees::tests::test_fee_calculator_platform_fee ... ok
+test config::tests::test_config_storage ... ok
+test fees::tests::test_fee_config_manager ... ok
+test fees::tests::test_fee_utils_can_collect_fees ... ok
+test fees::tests::test_fee_history_creation ... ok
+test fees::tests::test_fee_validator_fee_amount ... ok
+test fees::tests::test_testing_utilities ... ok
+test graceful_degradation::tests::can_check_health ... ok
+test graceful_degradation::tests::can_create_backup ... ok
+test graceful_degradation::tests::partial_data_works ... ok
+test graceful_degradation::tests::strategy_works ... ok
+test fees::tests::test_fee_validator_admin_permissions ... ok
+test integration_test::test_error_scenario_integration - should panic ... ok
+test integration_test::test_complete_market_lifecycle ... ok
+test integration_test::test_multi_user_market_scenarios ... ok
+test markets::tests::test_market_analytics ... ok
+test markets::tests::test_market_utils ... ok
+test markets::tests::test_market_validation ... ok
+test monitoring::tests::test_dispute_resolution_monitoring ... ok
+test monitoring::tests::test_fee_collection_monitoring ... ok
+test monitoring::tests::test_market_health_monitoring ... ok
+test monitoring::tests::test_monitoring_alert_creation ... ok
+test monitoring::tests::test_monitoring_data_validation ... ok
+test monitoring::tests::test_monitoring_testing_utilities ... ok
+test monitoring::tests::test_monitoring_utils ... ok
+test monitoring::tests::test_oracle_health_monitoring ... ok
+test monitoring::tests::test_performance_metrics ... ok
+test oracles::tests::test_oracle_factory ... ok
+test oracles::tests::test_oracle_utils ... ok
+test oracles::tests::test_pyth_oracle_creation ... ok
+test oracles::tests::test_reflector_oracle_creation ... ok
+test oracles::whitelist_tests::test_add_oracle_to_whitelist ... ok
+test oracles::whitelist_tests::test_deactivate_and_reactivate_oracle ... ok
+test oracles::whitelist_tests::test_remove_oracle_from_whitelist ... ok
+test oracles::whitelist_tests::test_unauthorized_access ... ok
+test oracles::whitelist_tests::test_whitelist_initialization ... ok
+test property_based_tests::property_test_runner::run_all_property_tests ... ok
+test integration_test::test_stress_test_multiple_markets ... ok
+test property_based_tests::test_fee_calculation_invariants ... ok
+test property_based_tests::test_fee_calculation_properties ... ok
+test property_based_tests::test_market_creation_invariants ... ok
+test property_based_tests::test_invariant_properties ... ok
+test property_based_tests::test_oracle_configuration_invariants ... ok
+test property_based_tests::test_market_creation_properties ... ok
+test property_based_tests::test_oracle_interaction_properties ... ok
+test property_based_tests::test_state_transition_properties ... ok
+test rate_limiter::tests::test_different_markets ... ok
+test rate_limiter::tests::test_rate_limit_status ... ok
+test rate_limiter::tests::test_rate_limiting_scenarios ... ok
+test rate_limiter::tests::test_update_rate_limits ... ok
+test rate_limiter::tests::test_validate_rate_limit_configuration ... ok
+test recovery_tests::test_recovery_mechanisms ... ok
+test reentrancy_guard::tests::check_reentrancy_state_blocks_when_locked ... ok
+test reentrancy_guard::tests::lock_cycle_sets_and_clears_flag ... ok
+test resolution::tests::test_market_resolution_manager_resolve_market ... ok
+test resolution::tests::test_oracle_resolution_manager_fetch_result ... ok
+test resolution::tests::test_resolution_analytics_determine_method ... ok
+test resolution::tests::test_resolution_method_determination ... ok
+test resolution::tests::test_resolution_testing_utilities ... ok
+test resolution::tests::test_resolution_utils_get_state ... ok
+test storage::tests::test_storage_optimizer_compression ... ok
+test storage::tests::test_storage_usage_monitoring ... ok
+test storage::tests::test_storage_utils ... ok
+test test::test_analytics_empty_fees ... ok
+test test::test_analytics_market_not_found - should panic ... ok
+test test::test_authentication_required - should panic ... ok
+test test::test_comprehensive_market_statistics ... ok
+test test::test_configuration_constants ... ok
+test test::test_create_market_successful ... ok
+test test::test_create_market_with_empty_outcome - should panic ... ok
+test test::test_create_market_with_empty_question - should panic ... ok
+test test::test_create_market_with_non_admin - should panic ... ok
+test test::test_error_recovery_mechanisms ... ok
+test test::test_error_recovery_procedures_documentation ... ok
+test test::test_error_recovery_scenarios ... ok
+test test::test_fee_calculation ... ok
+test test::test_fee_validation ... ok
+test test::test_gas_efficiency_benchmark_function ... ok
+test test::test_initialize_invalid_fee_negative - should panic ... ok
+test test::test_initialize_invalid_fee_too_high - should panic ... ok
+test test::test_initialize_storage_verification ... ok
+test test::test_initialize_valid_fee_bounds ... ok
+test test::test_initialize_with_custom_fee ... ok
+test test::test_initialize_with_default_fee ... ok
+test test::test_market_creation_data ... ok
+test test::test_market_duration_limits ... ok
+test test::test_oracle_configuration ... ok
+test test::test_oracle_provider_types ... ok
+test test::test_outcome_validation ... ok
+test test::test_participation_metrics ... ok
+test test::test_percentage_calculations ... ok
+test test::test_question_length_validation ... ok
+test test::test_reinitialize_prevention - should panic ... ok
+test test::test_resilience_patterns_validation ... ok
+test test::test_successful_vote ... ok
+test test::test_time_calculations ... ok
+test test::test_vote_on_closed_market - should panic ... ok
+test test::test_vote_on_nonexistent_market - should panic ... ok
+test test::test_vote_with_invalid_outcome - should panic ... ok
+test test::test_voting_analytics_tracking ... ok
+test test::test_voting_data_integrity ... ok
+test upgrade_manager::tests::test_compatibility_check ... ok
+test upgrade_manager::tests::test_upgrade_proposal_creation ... ok
+test upgrade_manager::tests::test_upgrade_proposal_validation ... ok
+test upgrade_manager::tests::test_upgrade_statistics ... ok
+test upgrade_manager_tests::test_check_upgrade_available_no_proposals ... ok
+test upgrade_manager_tests::test_check_upgrade_available_with_approved_proposal ... ok
+test upgrade_manager_tests::test_full_upgrade_proposal_lifecycle ... ok
+test upgrade_manager_tests::test_get_contract_version ... ok
+test upgrade_manager_tests::test_get_upgrade_history_empty ... ok
+test upgrade_manager_tests::test_get_upgrade_statistics_initial ... ok
+test upgrade_manager_tests::test_multiple_upgrade_proposals ... ok
+test upgrade_manager_tests::test_upgrade_proposal_approval ... ok
+test upgrade_manager_tests::test_upgrade_proposal_creation ... ok
+test upgrade_manager_tests::test_upgrade_proposal_execution ... ok
+test upgrade_manager_tests::test_upgrade_proposal_rollback_hash ... ok
+test upgrade_manager_tests::test_upgrade_proposal_validation_failure ... ok
+test upgrade_manager_tests::test_upgrade_proposal_validations ... ok
+test upgrade_manager_tests::test_upgrade_safety_incompatible_version ... ok
+test upgrade_manager_tests::test_upgrade_safety_with_validations ... ok
+test upgrade_manager_tests::test_upgrade_safety_without_validations ... ok
+test upgrade_manager_tests::test_validate_breaking_change_upgrade ... ok
+test upgrade_manager_tests::test_validate_compatible_upgrade ... ok
+test upgrade_manager_tests::test_validate_upgrade_with_migration ... ok
+test upgrade_manager_tests::test_validate_upgrade_without_rollback_plan ... ok
+test validation_tests::market_parameter_validator_tests::test_get_parameter_validation_rules ... ok
+test validation_tests::market_parameter_validator_tests::test_market_params_creation ... ok
+test validation_tests::market_parameter_validator_tests::test_validate_comparison_operator ... ok
+test validation_tests::market_parameter_validator_tests::test_validate_duration_limits ... ok
+test validation_tests::market_parameter_validator_tests::test_validate_market_parameters_all_together ... ok
+test validation_tests::market_parameter_validator_tests::test_validate_outcome_count ... ok
+test validation_tests::market_parameter_validator_tests::test_validate_stake_amounts ... ok
+test validation_tests::market_parameter_validator_tests::test_validate_threshold_value ... ok
+test validation_tests::oracle_config_validator_tests::test_get_provider_specific_validation_rules ... ok
+test validation_tests::oracle_config_validator_tests::test_provider_specific_validation ... ok
+test validation_tests::oracle_config_validator_tests::test_validate_comparison_operator ... ok
+test validation_tests::oracle_config_validator_tests::test_validate_feed_id_format ... ok
+test validation_tests::oracle_config_validator_tests::test_validate_oracle_provider ... ok
+test validation_tests::oracle_config_validator_tests::test_validate_threshold_range ... ok
+test validation_tests::test_dispute_validation ... ok
+test validation_tests::test_edge_cases ... ok
+test validation_tests::test_fee_validation ... ok
+test validation_tests::test_multiple_validation_errors ... ok
+test validation_tests::test_validate_address_format ... ok
+test validation_tests::test_validate_address_format_comprehensive ... ok
+test validation_tests::test_validate_all_inputs_comprehensive ... ok
+test validation_tests::test_validate_array_size ... ok
+test validation_tests::test_validate_array_size_comprehensive ... ok
+test validation_tests::test_validate_comprehensive_inputs ... ok
+test validation_tests::test_validate_market_creation ... ok
+test validation_tests::test_validate_market_creation_comprehensive ... ok
+test validation_tests::test_validate_numeric_range ... ok
+test validation_tests::test_validate_numeric_range_comprehensive ... ok
+test validation_tests::test_validate_outcome_format ... ok
+test validation_tests::test_validate_outcome_format_comprehensive ... ok
+test validation_tests::test_validate_question_format ... ok
+test validation_tests::test_validate_question_format_comprehensive ... ok
+test validation_tests::test_validate_string_length ... ok
+test validation_tests::test_validate_string_length_range ... ok
+test validation_tests::test_validate_timestamp_bounds ... ok
+test validation_tests::test_validate_timestamp_bounds_comprehensive ... ok
+test validation_tests::test_validate_vote ... ok
+test validation_tests::test_validation_boundary_conditions ... ok
+test validation_tests::test_validation_documentation ... ok
+test validation_tests::test_validation_error_conversion ... ok
+test validation_tests::test_validation_error_handler ... ok
+test validation_tests::test_validation_error_messages ... ok
+test validation_tests::test_validation_error_propagation ... ok
+test validation_tests::test_validation_performance ... ok
+test validation_tests::test_validation_performance_with_large_inputs ... ok
+test validation_tests::test_validation_result ... ok
+test validation_tests::test_validation_result_accumulation ... ok
+test validation_tests::test_validation_with_malicious_inputs ... ok
+test versioning::tests::test_migration_creation ... ok
+test versioning::tests::test_version_compatibility ... ok
+test versioning::tests::test_version_creation ... ok
+test versioning::tests::test_version_history ... ok
+test versioning::tests::test_version_manager ... ok
+test voting::tests::test_testing_utilities ... ok
+test voting::tests::test_voting_analytics_average_stake ... ok
+test voting::tests::test_voting_utils_fee_calculation ... ok
+test voting::tests::test_voting_utils_stats ... ok
+test voting::tests::test_voting_validator_authentication ... ok
+test voting::tests::test_voting_validator_stake_validation ... ok
+test property_based_tests::test_voting_behavior_properties ... ok
+
+test result: ok. 289 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 135.07s
+

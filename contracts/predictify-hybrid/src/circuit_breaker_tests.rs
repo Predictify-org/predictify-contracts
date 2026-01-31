@@ -1,4 +1,7 @@
 #[cfg(test)]
+#[allow(unused_assignments)]
+#[allow(unused_variables)]
+#[allow(dead_code)]
 mod circuit_breaker_tests {
     use crate::admin::AdminRoleManager;
     use crate::circuit_breaker::*;

@@ -7,78 +7,7 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol
 /// Comprehensive error codes for the Predictify Hybrid prediction market contract.
 ///
 /// This enum defines all possible error conditions that can occur within the Predictify Hybrid
-/// smart contract system. Each error is assigned a unique numeric code for efficient handling
-/// and clear identification. The errors are organized into logical categories for better
-/// understanding and maintenance.
-///
-/// # Error Categories
-///
-/// **User Operation Errors (100-199):**
-/// - Authentication and authorization failures
-/// - Market access and state violations
-/// - User action conflicts and restrictions
-///
-/// **Oracle Errors (200-299):**
-/// - Oracle connectivity and availability issues
-/// - Oracle configuration and validation problems
-///
-/// **Validation Errors (300-399):**
-/// - Input validation failures
-/// - Parameter format and range violations
-/// - Configuration validation errors
-///
-/// **System Errors (400-499):**
-/// - System state and configuration issues
-/// - Dispute and governance related errors
-/// - Fee and extension management errors
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use predictify_hybrid::errors::Error;
-///
-/// // Handle specific error types
-/// fn handle_market_operation_result(result: Result<(), Error>) {
-///     match result {
-///         Ok(()) => println!("Operation successful"),
-///         Err(Error::Unauthorized) => {
-///             println!("Error {}: {}", Error::Unauthorized as u32, Error::Unauthorized.description());
-///         }
-///         Err(Error::MarketNotFound) => {
-///             println!("Market does not exist or has been removed");
-///         }
-///         Err(Error::InsufficientStake) => {
-///             println!("Stake amount is below minimum requirement");
-///         }
-///         Err(e) => {
-///             println!("Operation failed with error {}: {}", e as u32, e.description());
-///         }
-///     }
-/// }
-///
-/// // Get error information
-/// let error = Error::MarketClosed;
-/// println!("Error Code: {}", error.code());           // "MARKET_CLOSED"
-/// println!("Description: {}", error.description());   // "Market is closed"
-/// println!("Numeric Code: {}", error as u32);         // 102
-/// ```
-///
-/// # Error Handling Best Practices
-///
-/// 1. **Specific Handling**: Match specific error types for targeted error handling
-/// 2. **User Feedback**: Use `description()` method for user-friendly error messages
-/// 3. **Logging**: Use `code()` method for structured logging and monitoring
-/// 4. **Recovery**: Implement appropriate recovery strategies for different error types
-/// 5. **Validation**: Prevent errors through proper input validation
-///
-/// # Integration Points
-///
-/// Error enum integrates with:
-/// - **All Contract Functions**: Every public function returns Result<T, Error>
-/// - **Validation System**: Validation functions return specific error types
-/// - **Event System**: Error events are emitted with error codes
-/// - **Client Applications**: Error codes enable proper error handling in dApps
-/// - **Monitoring Systems**: Error codes support operational monitoring and alerting
+/// smart contract system.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -91,7 +20,7 @@ pub enum Error {
     /// Market is closed (has ended)
     MarketClosed = 102,
     /// Market is already resolved
-    MarketAlreadyResolved = 103,
+    MarketResolved = 103,
     /// Market is not resolved yet
     MarketNotResolved = 104,
     /// User has nothing to claim
@@ -108,12 +37,29 @@ pub enum Error {
     AlreadyBet = 110,
     /// Bets have already been placed on this market (cannot update)
     BetsAlreadyPlaced = 111,
+    /// Insufficient balance
+    InsufficientBalance = 112,
+    // FundsLocked removed to save space
 
     // ===== ORACLE ERRORS =====
     /// Oracle is unavailable
     OracleUnavailable = 200,
     /// Invalid oracle configuration
     InvalidOracleConfig = 201,
+    /// Oracle data is stale or timed out
+    OracleStale = 202,
+    /// Oracle consensus not reached (multi-oracle)
+    OracleNoConsensus = 203,
+    /// Oracle result already verified for this market
+    OracleVerified = 204,
+    /// Market not ready for oracle verification
+    MarketNotReady = 205,
+    /// Fallback oracle is unavailable or unhealthy
+    FallbackOracleUnavailable = 202,
+    /// Resolution timeout has been reached
+    ResolutionTimeoutReached = 203,
+    /// Refund process has been initiated
+    RefundStarted = 204,
 
     // ===== VALIDATION ERRORS =====
     /// Invalid question format
@@ -135,63 +81,53 @@ pub enum Error {
     /// Invalid fee configuration
     InvalidFeeConfig = 402,
     /// Configuration not found
-    ConfigurationNotFound = 403,
+    ConfigNotFound = 403,
     /// Already disputed
     AlreadyDisputed = 404,
     /// Dispute voting period expired
-    DisputeVotingPeriodExpired = 405,
+    DisputeVoteExpired = 405,
     /// Dispute voting not allowed
-    DisputeVotingNotAllowed = 406,
+    DisputeVoteDenied = 406,
     /// Already voted in dispute
     DisputeAlreadyVoted = 407,
     /// Dispute resolution conditions not met
-    DisputeResolutionConditionsNotMet = 408,
+    DisputeCondNotMet = 408,
     /// Dispute fee distribution failed
-    DisputeFeeDistributionFailed = 409,
+    DisputeFeeFailed = 409,
     /// Dispute escalation not allowed
-    DisputeEscalationNotAllowed = 410,
+    DisputeNoEscalate = 410,
     /// Threshold below minimum
-    ThresholdBelowMinimum = 411,
+    ThresholdBelowMin = 411,
     /// Threshold exceeds maximum
-    ThresholdExceedsMaximum = 412,
+    ThresholdTooHigh = 412,
     /// Fee already collected
     FeeAlreadyCollected = 413,
-    /// Invalid oracle feed
-    InvalidOracleFeed = 414,
     /// No fees to collect
-    NoFeesToCollect = 415,
+    NoFeesToCollect = 414,
     /// Invalid extension days
-    InvalidExtensionDays = 416,
-    /// Extension days exceeded
-    ExtensionDaysExceeded = 417,
-    /// Market extension not allowed
-    MarketExtensionNotAllowed = 418,
+    InvalidExtensionDays = 415,
+    /// Extension not allowed or exceeded
+    ExtensionDenied = 416,
     /// Extension fee insufficient
-    ExtensionFeeInsufficient = 419,
+    ExtensionFeeLow = 417,
     /// Admin address is not set (initialization missing)
-    AdminNotSet = 420,
+    AdminNotSet = 418,
     /// Dispute timeout not set
-    DisputeTimeoutNotSet = 421,
-    /// Dispute timeout expired
-    DisputeTimeoutExpired = 422,
+    TimeoutNotSet = 419,
     /// Dispute timeout not expired
-    DisputeTimeoutNotExpired = 423,
+    TimeoutNotExpired = 420,
     /// Invalid timeout hours
-    InvalidTimeoutHours = 424,
-    /// Dispute timeout extension not allowed
-    DisputeTimeoutExtensionNotAllowed = 425,
+    InvalidTimeoutHours = 422,
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker not initialized
-    CircuitBreakerNotInitialized = 500,
+    CBNotInitialized = 500,
     /// Circuit breaker is already open (paused)
-    CircuitBreakerAlreadyOpen = 501,
+    CBAlreadyOpen = 501,
     /// Circuit breaker is not open (cannot recover)
-    CircuitBreakerNotOpen = 502,
+    CBNotOpen = 502,
     /// Circuit breaker is open (operations blocked)
-    CircuitBreakerOpen = 503,
-
-    AlreadyInitialized = 504,
+    CBOpen = 503,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -578,7 +514,7 @@ impl ErrorHandler {
 
             // Alternative method errors
             Error::MarketNotFound => RecoveryStrategy::AlternativeMethod,
-            Error::ConfigurationNotFound => RecoveryStrategy::AlternativeMethod,
+            Error::ConfigNotFound => RecoveryStrategy::AlternativeMethod,
 
             // Skip errors
             Error::AlreadyVoted => RecoveryStrategy::Skip,
@@ -588,11 +524,11 @@ impl ErrorHandler {
             // Abort errors
             Error::Unauthorized => RecoveryStrategy::Abort,
             Error::MarketClosed => RecoveryStrategy::Abort,
-            Error::MarketAlreadyResolved => RecoveryStrategy::Abort,
+            Error::MarketResolved => RecoveryStrategy::Abort,
 
             // Manual intervention errors
             Error::AdminNotSet => RecoveryStrategy::ManualIntervention,
-            Error::DisputeFeeDistributionFailed => RecoveryStrategy::ManualIntervention,
+            Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
 
             // No recovery errors
             Error::InvalidState => RecoveryStrategy::NoRecovery,
@@ -879,16 +815,16 @@ impl ErrorHandler {
             Error::OracleUnavailable => 3,
             Error::InvalidInput => 2,
             Error::MarketNotFound => 1,
-            Error::ConfigurationNotFound => 1,
+            Error::ConfigNotFound => 1,
             Error::AlreadyVoted => 0,
             Error::AlreadyBet => 0,
             Error::AlreadyClaimed => 0,
             Error::FeeAlreadyCollected => 0,
             Error::Unauthorized => 0,
             Error::MarketClosed => 0,
-            Error::MarketAlreadyResolved => 0,
+            Error::MarketResolved => 0,
             Error::AdminNotSet => 0,
-            Error::DisputeFeeDistributionFailed => 0,
+            Error::DisputeFeeFailed => 0,
             Error::InvalidState => 0,
             Error::InvalidOracleConfig => 0,
             _ => 1,
@@ -914,16 +850,16 @@ impl ErrorHandler {
             Error::OracleUnavailable => String::from_str(&Env::default(), "retry_with_delay"),
             Error::InvalidInput => String::from_str(&Env::default(), "retry"),
             Error::MarketNotFound => String::from_str(&Env::default(), "alternative_method"),
-            Error::ConfigurationNotFound => String::from_str(&Env::default(), "alternative_method"),
+            Error::ConfigNotFound => String::from_str(&Env::default(), "alternative_method"),
             Error::AlreadyVoted => String::from_str(&Env::default(), "skip"),
             Error::AlreadyBet => String::from_str(&Env::default(), "skip"),
             Error::AlreadyClaimed => String::from_str(&Env::default(), "skip"),
             Error::FeeAlreadyCollected => String::from_str(&Env::default(), "skip"),
             Error::Unauthorized => String::from_str(&Env::default(), "abort"),
             Error::MarketClosed => String::from_str(&Env::default(), "abort"),
-            Error::MarketAlreadyResolved => String::from_str(&Env::default(), "abort"),
+            Error::MarketResolved => String::from_str(&Env::default(), "abort"),
             Error::AdminNotSet => String::from_str(&Env::default(), "manual_intervention"),
-            Error::DisputeFeeDistributionFailed => {
+            Error::DisputeFeeFailed => {
                 String::from_str(&Env::default(), "manual_intervention")
             }
             Error::InvalidState => String::from_str(&Env::default(), "no_recovery"),
@@ -941,7 +877,7 @@ impl ErrorHandler {
                 ErrorCategory::System,
                 RecoveryStrategy::ManualIntervention,
             ),
-            Error::DisputeFeeDistributionFailed => (
+            Error::DisputeFeeFailed => (
                 ErrorSeverity::Critical,
                 ErrorCategory::Financial,
                 RecoveryStrategy::ManualIntervention,
@@ -975,7 +911,7 @@ impl ErrorHandler {
                 ErrorCategory::Market,
                 RecoveryStrategy::Abort,
             ),
-            Error::MarketAlreadyResolved => (
+            Error::MarketResolved => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Market,
                 RecoveryStrategy::Abort,
@@ -1147,7 +1083,7 @@ impl Error {
             Error::Unauthorized => "User is not authorized to perform this action",
             Error::MarketNotFound => "Market not found",
             Error::MarketClosed => "Market is closed",
-            Error::MarketAlreadyResolved => "Market is already resolved",
+            Error::MarketResolved => "Market is already resolved",
             Error::MarketNotResolved => "Market is not resolved yet",
             Error::NothingToClaim => "User has nothing to claim",
             Error::AlreadyClaimed => "User has already claimed",
@@ -1155,7 +1091,10 @@ impl Error {
             Error::InvalidOutcome => "Invalid outcome choice",
             Error::AlreadyVoted => "User has already voted",
             Error::AlreadyBet => "User has already placed a bet on this market",
-            Error::BetsAlreadyPlaced => "Bets have already been placed on this market (cannot update)",
+            Error::BetsAlreadyPlaced => {
+                "Bets have already been placed on this market (cannot update)"
+            }
+            Error::InsufficientBalance => "Insufficient balance for operation",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::InvalidQuestion => "Invalid question format",
@@ -1166,34 +1105,33 @@ impl Error {
             Error::InvalidState => "Invalid state",
             Error::InvalidInput => "Invalid input",
             Error::InvalidFeeConfig => "Invalid fee configuration",
-            Error::ConfigurationNotFound => "Configuration not found",
+            Error::ConfigNotFound => "Configuration not found",
             Error::AlreadyDisputed => "Already disputed",
-            Error::DisputeVotingPeriodExpired => "Dispute voting period expired",
-            Error::DisputeVotingNotAllowed => "Dispute voting not allowed",
+            Error::DisputeVoteExpired => "Dispute voting period expired",
+            Error::DisputeVoteDenied => "Dispute voting not allowed",
             Error::DisputeAlreadyVoted => "Already voted in dispute",
-            Error::DisputeResolutionConditionsNotMet => "Dispute resolution conditions not met",
-            Error::DisputeFeeDistributionFailed => "Dispute fee distribution failed",
-            Error::DisputeEscalationNotAllowed => "Dispute escalation not allowed",
-            Error::ThresholdBelowMinimum => "Threshold below minimum",
-            Error::ThresholdExceedsMaximum => "Threshold exceeds maximum",
+            Error::DisputeCondNotMet => "Dispute resolution conditions not met",
+            Error::DisputeFeeFailed => "Dispute fee distribution failed",
+            Error::DisputeNoEscalate => "Dispute escalation not allowed",
+            Error::ThresholdBelowMin => "Threshold below minimum",
+            Error::ThresholdTooHigh => "Threshold exceeds maximum",
             Error::FeeAlreadyCollected => "Fee already collected",
-            Error::InvalidOracleFeed => "Invalid oracle feed",
             Error::NoFeesToCollect => "No fees to collect",
             Error::InvalidExtensionDays => "Invalid extension days",
-            Error::ExtensionDaysExceeded => "Extension days exceeded",
-            Error::MarketExtensionNotAllowed => "Market extension not allowed",
-            Error::ExtensionFeeInsufficient => "Extension fee insufficient",
+            Error::ExtensionDenied => "Extension not allowed or exceeded",
+            Error::ExtensionFeeLow => "Extension fee insufficient",
             Error::AdminNotSet => "Admin address is not set (initialization missing)",
-            Error::DisputeTimeoutNotSet => "Dispute timeout not set",
-            Error::DisputeTimeoutExpired => "Dispute timeout expired",
-            Error::DisputeTimeoutNotExpired => "Dispute timeout not expired",
+            Error::TimeoutNotSet => "Dispute timeout not set",
+            Error::TimeoutNotExpired => "Dispute timeout not expired",
             Error::InvalidTimeoutHours => "Invalid timeout hours",
-            Error::DisputeTimeoutExtensionNotAllowed => "Dispute timeout extension not allowed",
-            Error::CircuitBreakerNotInitialized => "Circuit breaker not initialized",
-            Error::CircuitBreakerAlreadyOpen => "Circuit breaker is already open (paused)",
-            Error::CircuitBreakerNotOpen => "Circuit breaker is not open (cannot recover)",
-            Error::CircuitBreakerOpen => "Circuit breaker is open (operations blocked)",
-            Error::AlreadyInitialized => "Already Initialized",
+            Error::OracleStale => "Oracle data is stale or timed out",
+            Error::OracleNoConsensus => "Oracle consensus not reached",
+            Error::OracleVerified => "Oracle result already verified",
+            Error::MarketNotReady => "Market not ready for oracle verification",
+            Error::CBNotInitialized => "Circuit breaker not initialized",
+            Error::CBAlreadyOpen => "Circuit breaker is already open (paused)",
+            Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
+            Error::CBOpen => "Circuit breaker is open (operations blocked)",
         }
     }
 
@@ -1265,7 +1203,7 @@ impl Error {
             Error::Unauthorized => "UNAUTHORIZED",
             Error::MarketNotFound => "MARKET_NOT_FOUND",
             Error::MarketClosed => "MARKET_CLOSED",
-            Error::MarketAlreadyResolved => "MARKET_ALREADY_RESOLVED",
+            Error::MarketResolved => "MARKET_ALREADY_RESOLVED",
             Error::MarketNotResolved => "MARKET_NOT_RESOLVED",
             Error::NothingToClaim => "NOTHING_TO_CLAIM",
             Error::AlreadyClaimed => "ALREADY_CLAIMED",
@@ -1274,6 +1212,7 @@ impl Error {
             Error::AlreadyVoted => "ALREADY_VOTED",
             Error::AlreadyBet => "ALREADY_BET",
             Error::BetsAlreadyPlaced => "BETS_ALREADY_PLACED",
+            Error::InsufficientBalance => "INSUFFICIENT_BALANCE",
             Error::OracleUnavailable => "ORACLE_UNAVAILABLE",
             Error::InvalidOracleConfig => "INVALID_ORACLE_CONFIG",
             Error::InvalidQuestion => "INVALID_QUESTION",
@@ -1284,34 +1223,33 @@ impl Error {
             Error::InvalidState => "INVALID_STATE",
             Error::InvalidInput => "INVALID_INPUT",
             Error::InvalidFeeConfig => "INVALID_FEE_CONFIG",
-            Error::ConfigurationNotFound => "CONFIGURATION_NOT_FOUND",
+            Error::ConfigNotFound => "CONFIGURATION_NOT_FOUND",
             Error::AlreadyDisputed => "ALREADY_DISPUTED",
-            Error::DisputeVotingPeriodExpired => "DISPUTE_VOTING_PERIOD_EXPIRED",
-            Error::DisputeVotingNotAllowed => "DISPUTE_VOTING_NOT_ALLOWED",
+            Error::DisputeVoteExpired => "DISPUTE_VOTING_PERIOD_EXPIRED",
+            Error::DisputeVoteDenied => "DISPUTE_VOTING_NOT_ALLOWED",
             Error::DisputeAlreadyVoted => "DISPUTE_ALREADY_VOTED",
-            Error::DisputeResolutionConditionsNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
-            Error::DisputeFeeDistributionFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
-            Error::DisputeEscalationNotAllowed => "DISPUTE_ESCALATION_NOT_ALLOWED",
-            Error::ThresholdBelowMinimum => "THRESHOLD_BELOW_MINIMUM",
-            Error::ThresholdExceedsMaximum => "THRESHOLD_EXCEEDS_MAXIMUM",
+            Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
+            Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
+            Error::DisputeNoEscalate => "DISPUTE_ESCALATION_NOT_ALLOWED",
+            Error::ThresholdBelowMin => "THRESHOLD_BELOW_MINIMUM",
+            Error::ThresholdTooHigh => "THRESHOLD_EXCEEDS_MAXIMUM",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
-            Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
-            Error::ExtensionDaysExceeded => "EXTENSION_DAYS_EXCEEDED",
-            Error::MarketExtensionNotAllowed => "MARKET_EXTENSION_NOT_ALLOWED",
-            Error::ExtensionFeeInsufficient => "EXTENSION_FEE_INSUFFICIENT",
+            Error::ExtensionDenied => "EXTENSION_DENIED",
+            Error::ExtensionFeeLow => "EXTENSION_FEE_INSUFFICIENT",
             Error::AdminNotSet => "ADMIN_NOT_SET",
-            Error::DisputeTimeoutNotSet => "DISPUTE_TIMEOUT_NOT_SET",
-            Error::DisputeTimeoutExpired => "DISPUTE_TIMEOUT_EXPIRED",
-            Error::DisputeTimeoutNotExpired => "DISPUTE_TIMEOUT_NOT_EXPIRED",
+            Error::TimeoutNotSet => "DISPUTE_TIMEOUT_NOT_SET",
+            Error::TimeoutNotExpired => "DISPUTE_TIMEOUT_NOT_EXPIRED",
             Error::InvalidTimeoutHours => "INVALID_TIMEOUT_HOURS",
-            Error::DisputeTimeoutExtensionNotAllowed => "DISPUTE_TIMEOUT_EXTENSION_NOT_ALLOWED",
-            Error::CircuitBreakerNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
-            Error::CircuitBreakerAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
-            Error::CircuitBreakerNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
-            Error::CircuitBreakerOpen => "CIRCUIT_BREAKER_OPEN",
-            Error::AlreadyInitialized => "Already_Initialized",
+            Error::OracleStale => "ORACLE_STALE",
+            Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
+            Error::OracleVerified => "ORACLE_VERIFIED",
+            Error::MarketNotReady => "MARKET_NOT_READY",
+            Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
+            Error::CBAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
+            Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
+            Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
         }
     }
 }

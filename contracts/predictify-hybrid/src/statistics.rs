@@ -58,10 +58,16 @@ impl StatisticsManager {
     /// Record a new market creation
     pub fn record_market_created(env: &Env) {
         let mut stats = Self::get_platform_stats(env);
-        stats.total_events_created = stats.total_events_created.checked_add(1).unwrap_or(stats.total_events_created);
-        stats.active_events_count = stats.active_events_count.checked_add(1).unwrap_or(stats.active_events_count);
+        stats.total_events_created = stats
+            .total_events_created
+            .checked_add(1)
+            .unwrap_or(stats.total_events_created);
+        stats.active_events_count = stats
+            .active_events_count
+            .checked_add(1)
+            .unwrap_or(stats.active_events_count);
         Self::set_platform_stats(env, &stats);
-        
+
         Self::emit_update(env, &stats);
     }
 
@@ -72,7 +78,7 @@ impl StatisticsManager {
             stats.active_events_count -= 1;
         }
         Self::set_platform_stats(env, &stats);
-        
+
         Self::emit_update(env, &stats);
     }
 
@@ -80,16 +86,28 @@ impl StatisticsManager {
     pub fn record_bet_placed(env: &Env, user: &Address, amount: i128) {
         // Update platform stats
         let mut p_stats = Self::get_platform_stats(env);
-        p_stats.total_bets_placed = p_stats.total_bets_placed.checked_add(1).unwrap_or(p_stats.total_bets_placed);
-        p_stats.total_volume = p_stats.total_volume.checked_add(amount).unwrap_or(p_stats.total_volume);
+        p_stats.total_bets_placed = p_stats
+            .total_bets_placed
+            .checked_add(1)
+            .unwrap_or(p_stats.total_bets_placed);
+        p_stats.total_volume = p_stats
+            .total_volume
+            .checked_add(amount)
+            .unwrap_or(p_stats.total_volume);
         Self::set_platform_stats(env, &p_stats);
-        
+
         Self::emit_update(env, &p_stats);
 
         // Update user stats
         let mut u_stats = Self::get_user_stats(env, user);
-        u_stats.total_bets_placed = u_stats.total_bets_placed.checked_add(1).unwrap_or(u_stats.total_bets_placed);
-        u_stats.total_amount_wagered = u_stats.total_amount_wagered.checked_add(amount).unwrap_or(u_stats.total_amount_wagered);
+        u_stats.total_bets_placed = u_stats
+            .total_bets_placed
+            .checked_add(1)
+            .unwrap_or(u_stats.total_bets_placed);
+        u_stats.total_amount_wagered = u_stats
+            .total_amount_wagered
+            .checked_add(amount)
+            .unwrap_or(u_stats.total_amount_wagered);
         u_stats.last_activity_ts = env.ledger().timestamp();
         // Win rate doesn't change on bet placement, only on resolution/claim
         Self::set_user_stats(env, user, &u_stats);
@@ -97,37 +115,47 @@ impl StatisticsManager {
 
     /// Record winnings claimed
     pub fn record_winnings_claimed(env: &Env, user: &Address, amount: i128) {
-        // Note: fees are already deducted from 'amount' usually? 
-        // Or do we track total fees collected separately? 
-        // The implementation plan says "increments fees". 
+        // Note: fees are already deducted from 'amount' usually?
+        // Or do we track total fees collected separately?
+        // The implementation plan says "increments fees".
         // But claim_winnings in lib.rs logic:
         // user_share = user_stake * (1 - fee) * total_pool / winning_total
         // The fee part stays in the contract or is sent to fee collector?
-        // lib.rs seems to deduct fee from user_share. 
+        // lib.rs seems to deduct fee from user_share.
         // So the "fee collected" is the difference.
         // I need to update the hook to pass the fee amount.
-        
+
         // Update user stats
         let mut u_stats = Self::get_user_stats(env, user);
-        u_stats.total_winnings = u_stats.total_winnings.checked_add(amount).unwrap_or(u_stats.total_winnings);
-        u_stats.total_bets_won = u_stats.total_bets_won.checked_add(1).unwrap_or(u_stats.total_bets_won);
+        u_stats.total_winnings = u_stats
+            .total_winnings
+            .checked_add(amount)
+            .unwrap_or(u_stats.total_winnings);
+        u_stats.total_bets_won = u_stats
+            .total_bets_won
+            .checked_add(1)
+            .unwrap_or(u_stats.total_bets_won);
         u_stats.last_activity_ts = env.ledger().timestamp();
-        
+
         // Recalculate win rate
         // Win rate = (bets_won / bets_placed) * 10000
         if u_stats.total_bets_placed > 0 {
-            u_stats.win_rate = ((u_stats.total_bets_won as u128 * 10000) / u_stats.total_bets_placed as u128) as u32;
+            u_stats.win_rate = ((u_stats.total_bets_won as u128 * 10000)
+                / u_stats.total_bets_placed as u128) as u32;
         }
-        
+
         Self::set_user_stats(env, user, &u_stats);
     }
 
     /// Record fees collected
     pub fn record_fees_collected(env: &Env, amount: i128) {
         let mut p_stats = Self::get_platform_stats(env);
-        p_stats.total_fees_collected = p_stats.total_fees_collected.checked_add(amount).unwrap_or(p_stats.total_fees_collected);
+        p_stats.total_fees_collected = p_stats
+            .total_fees_collected
+            .checked_add(amount)
+            .unwrap_or(p_stats.total_fees_collected);
         Self::set_platform_stats(env, &p_stats);
-        
+
         // We might not want to emit full update on every fee collection if it's frequent, but for now consistent behavior is good.
         Self::emit_update(env, &p_stats);
     }

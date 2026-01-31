@@ -19,13 +19,13 @@
 //! - Balance validation before fund transfer
 //! - Market state validation before accepting bets
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
 use crate::reentrancy_guard::ReentrancyGuard;
-use crate::types::{Bet, BetLimits, BetStats, BetStatus, Market, MarketState};
+use crate::types::{Bet, BetLimits, BetStatus, BetStats, Market, MarketState};
 use crate::validation;
 
 // ===== CONSTANTS =====
@@ -98,7 +98,11 @@ pub fn set_global_bet_limits(env: &Env, limits: &BetLimits) -> Result<(), Error>
 }
 
 /// Set per-event bet limits (admin only; validation of bounds done by caller).
-pub fn set_event_bet_limits(env: &Env, market_id: &Symbol, limits: &BetLimits) -> Result<(), Error> {
+pub fn set_event_bet_limits(
+    env: &Env,
+    market_id: &Symbol,
+    limits: &BetLimits,
+) -> Result<(), Error> {
     validate_limits_bounds(limits)?;
     let key = Symbol::new(env, PER_EVENT_BET_LIMITS_KEY);
     let mut per_event: soroban_sdk::Map<Symbol, BetLimits> = env
@@ -208,7 +212,7 @@ impl BetManager {
     ///
     /// - `Error::MarketNotFound` - Market does not exist
     /// - `Error::MarketClosed` - Market has ended or is not active
-    /// - `Error::MarketAlreadyResolved` - Market has already been resolved
+    /// - `Error::MarketResolved` - Market has already been resolved
     /// - `Error::AlreadyBet` - User has already placed a bet on this market
     /// - `Error::InsufficientStake` - Bet amount below minimum
     /// - `Error::InvalidOutcome` - Selected outcome not valid for this market
@@ -349,7 +353,13 @@ impl BetManager {
             BetValidator::validate_market_for_betting(env, &market)?;
 
             // Validate bet parameters
-            BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
+            BetValidator::validate_bet_parameters(
+                env,
+                &market_id,
+                &outcome,
+                &market.outcomes,
+                amount,
+            )?;
 
             // Check if user has already bet on this market
             if Self::has_user_bet(env, &market_id, &user) {
@@ -391,7 +401,8 @@ impl BetManager {
             Self::update_market_bet_stats(env, &market_id, &outcome, amount)?;
 
             // Update market's total staked
-            market.total_staked = market.total_staked
+            market.total_staked = market
+                .total_staked
                 .checked_add(amount)
                 .ok_or(Error::InvalidInput)?;
 
@@ -482,13 +493,14 @@ impl BetManager {
 
     /// Process bet resolution when a market is resolved.
     ///
-    /// This function updates all bets for a market based on the winning outcome.
+    /// This function updates all bets for a market based on the winning outcome(s).
+    /// Supports both single winner and multi-winner (tie) cases.
     ///
     /// # Parameters
     ///
     /// - `env` - The Soroban environment
     /// - `market_id` - Symbol identifying the market
-    /// - `winning_outcome` - The resolved winning outcome
+    /// - `winning_outcomes` - The resolved winning outcome(s) (single or multiple for ties)
     ///
     /// # Returns
     ///
@@ -496,7 +508,7 @@ impl BetManager {
     pub fn resolve_market_bets(
         env: &Env,
         market_id: &Symbol,
-        winning_outcome: &String,
+        winning_outcomes: &Vec<String>,
     ) -> Result<(), Error> {
         // Get all bets for this market from the bet registry
         let bets = BetStorage::get_all_bets_for_market(env, market_id);
@@ -506,8 +518,8 @@ impl BetManager {
         for i in 0..bet_count {
             if let Some(bet_key) = bets.get(i) {
                 if let Some(mut bet) = BetStorage::get_bet(env, market_id, &bet_key) {
-                    // Determine if bet won or lost
-                    if bet.outcome == *winning_outcome {
+                    // Determine if bet won or lost (check if outcome is in winning outcomes)
+                    if winning_outcomes.contains(&bet.outcome) {
                         bet.mark_as_won();
                     } else {
                         bet.mark_as_lost();
@@ -597,17 +609,27 @@ impl BetManager {
         // Get market bet stats
         let stats = BetStorage::get_market_bet_stats(env, market_id);
 
-        // Get total amount bet on the winning outcome
-        let winning_outcome = market.winning_outcome.ok_or(Error::MarketNotResolved)?;
-        let winning_total = stats.outcome_totals.get(winning_outcome).unwrap_or(0);
+        // Get total amount bet on all winning outcomes (handles ties - pool split)
+        let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
+        let mut winning_total = 0;
+        for outcome in winning_outcomes.iter() {
+            winning_total += stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+        }
 
         if winning_total == 0 {
             return Ok(0);
         }
 
-        // Get platform fee percentage from config
-        let cfg = crate::config::ConfigManager::get_config(env)?;
-        let fee_percentage = cfg.fees.platform_fee_percentage;
+        // Get platform fee percentage from config (with fallback to legacy storage)
+        let fee_percentage = crate::config::ConfigManager::get_config(env)
+            .map(|cfg| cfg.fees.platform_fee_percentage)
+            .unwrap_or_else(|_| {
+                // Fallback to legacy storage for backward compatibility
+                env.storage()
+                    .persistent()
+                    .get(&Symbol::new(env, "platform_fee"))
+                    .unwrap_or(200) // Default 2% if not set
+            });
 
         // Calculate payout
         let payout = MarketUtils::calculate_payout(
@@ -777,8 +799,8 @@ impl BetValidator {
         }
 
         // Check if market is not already resolved
-        if market.winning_outcome.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+        if market.winning_outcomes.is_some() {
+            return Err(Error::MarketResolved);
         }
 
         Ok(())
@@ -993,6 +1015,7 @@ impl BetAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::BetStatus;
 
     #[test]
     fn test_bet_amount_validation() {

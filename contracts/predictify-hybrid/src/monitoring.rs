@@ -441,6 +441,10 @@ impl ContractMonitor {
             end_time: env.ledger().timestamp() + 86400,
             oracle_config: OracleConfig {
                 provider: OracleProvider::Reflector,
+                oracle_address: Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 feed_id: String::from_str(env, "sample_feed"),
                 threshold: 100,
                 comparison: String::from_str(env, ">="),
@@ -451,7 +455,7 @@ impl ContractMonitor {
             claimed: Map::new(env),
             total_staked: 0,
             dispute_stakes: Map::new(env),
-            winning_outcome: None,
+            winning_outcomes: None,
             fee_collected: false,
             state: MarketState::Active,
             total_extension_days: 0,
@@ -465,20 +469,22 @@ impl ContractMonitor {
             resolution_dispute_count: 0,
             resolution_source: None,
             dispute_window_hours: 0,
+            category: None,
+            tags: Vec::new(env),
         })
     }
 
-    fn calculate_total_votes(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    fn calculate_total_votes(_env: &Env, _market_id: &Symbol) -> Result<u32, Error> {
         // This would calculate actual vote count
         Ok(0)
     }
 
-    fn calculate_total_stake(env: &Env, market_id: &Symbol) -> Result<i128, Error> {
+    fn calculate_total_stake(_env: &Env, _market_id: &Symbol) -> Result<i128, Error> {
         // This would calculate actual stake amount
         Ok(0)
     }
 
-    fn calculate_active_participants(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    fn calculate_active_participants(_env: &Env, _market_id: &Symbol) -> Result<u32, Error> {
         // This would calculate actual participant count
         Ok(0)
     }
@@ -492,17 +498,17 @@ impl ContractMonitor {
         }
     }
 
-    fn calculate_dispute_count(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    fn calculate_dispute_count(_env: &Env, _market_id: &Symbol) -> Result<u32, Error> {
         // This would calculate actual dispute count
         Ok(0)
     }
 
-    fn calculate_resolution_confidence(env: &Env, market_id: &Symbol) -> Result<u32, Error> {
+    fn calculate_resolution_confidence(_env: &Env, _market_id: &Symbol) -> Result<u32, Error> {
         // This would calculate actual resolution confidence
         Ok(0)
     }
 
-    fn get_last_activity(env: &Env, market_id: &Symbol) -> Result<u64, Error> {
+    fn get_last_activity(env: &Env, _market_id: &Symbol) -> Result<u64, Error> {
         // This would get actual last activity timestamp
         Ok(env.ledger().timestamp())
     }
@@ -565,32 +571,32 @@ impl ContractMonitor {
         }
     }
 
-    fn get_average_response_time(env: &Env, oracle: &OracleProvider) -> Result<u64, Error> {
+    fn get_average_response_time(_env: &Env, _oracle: &OracleProvider) -> Result<u64, Error> {
         // This would get actual response time data
         Ok(1000) // 1 second default
     }
 
-    fn calculate_success_rate(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    fn calculate_success_rate(_env: &Env, _oracle: &OracleProvider) -> Result<u32, Error> {
         // This would calculate actual success rate
         Ok(95) // 95% default
     }
 
-    fn get_last_response_time(env: &Env, oracle: &OracleProvider) -> Result<u64, Error> {
+    fn get_last_response_time(env: &Env, _oracle: &OracleProvider) -> Result<u64, Error> {
         // This would get actual last response time
         Ok(env.ledger().timestamp())
     }
 
-    fn get_total_requests(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    fn get_total_requests(_env: &Env, _oracle: &OracleProvider) -> Result<u32, Error> {
         // This would get actual request count
         Ok(100)
     }
 
-    fn get_failed_requests(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    fn get_failed_requests(_env: &Env, _oracle: &OracleProvider) -> Result<u32, Error> {
         // This would get actual failed request count
         Ok(5)
     }
 
-    fn calculate_availability(env: &Env, oracle: &OracleProvider) -> Result<u32, Error> {
+    fn calculate_availability(_env: &Env, _oracle: &OracleProvider) -> Result<u32, Error> {
         // This would calculate actual availability
         Ok(99) // 99% default
     }
@@ -651,89 +657,89 @@ impl ContractMonitor {
         }
     }
 
-    fn calculate_total_fees_collected(env: &Env, start_time: u64) -> Result<i128, Error> {
+    fn calculate_total_fees_collected(_env: &Env, _start_time: u64) -> Result<i128, Error> {
         // This would calculate actual fees collected
         Ok(10000)
     }
 
-    fn count_markets_in_timeframe(env: &Env, start_time: u64) -> Result<u32, Error> {
+    fn count_markets_in_timeframe(_env: &Env, _start_time: u64) -> Result<u32, Error> {
         // This would count actual markets
         Ok(50)
     }
 
-    fn count_successful_collections(env: &Env, start_time: u64) -> Result<u32, Error> {
+    fn count_successful_collections(_env: &Env, _start_time: u64) -> Result<u32, Error> {
         // This would count actual successful collections
         Ok(45)
     }
 
-    fn count_failed_collections(env: &Env, start_time: u64) -> Result<u32, Error> {
+    fn count_failed_collections(_env: &Env, _start_time: u64) -> Result<u32, Error> {
         // This would count actual failed collections
         Ok(5)
     }
 
-    fn calculate_revenue_growth(env: &Env, timeframe: &TimeFrame) -> Result<i32, Error> {
+    fn calculate_revenue_growth(_env: &Env, _timeframe: &TimeFrame) -> Result<i32, Error> {
         // This would calculate actual revenue growth
         Ok(15) // 15% growth
     }
 
-    fn count_total_disputes(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    fn count_total_disputes(_env: &Env, _market_id: &Symbol, _start_time: u64) -> Result<u32, Error> {
         // This would count actual disputes
         Ok(10)
     }
 
     fn count_resolved_disputes(
-        env: &Env,
-        market_id: &Symbol,
-        start_time: u64,
+        _env: &Env,
+        _market_id: &Symbol,
+        _start_time: u64,
     ) -> Result<u32, Error> {
         // This would count actual resolved disputes
         Ok(8)
     }
 
     fn calculate_average_resolution_time(
-        env: &Env,
-        market_id: &Symbol,
-        start_time: u64,
+        _env: &Env,
+        _market_id: &Symbol,
+        _start_time: u64,
     ) -> Result<u64, Error> {
         // This would calculate actual resolution time
         Ok(86400) // 1 day default
     }
 
-    fn count_escalations(env: &Env, market_id: &Symbol, start_time: u64) -> Result<u32, Error> {
+    fn count_escalations(_env: &Env, _market_id: &Symbol, _start_time: u64) -> Result<u32, Error> {
         // This would count actual escalations
         Ok(2)
     }
 
     fn calculate_community_consensus_rate(
-        env: &Env,
-        market_id: &Symbol,
-        start_time: u64,
+        _env: &Env,
+        _market_id: &Symbol,
+        _start_time: u64,
     ) -> Result<u32, Error> {
         // This would calculate actual consensus rate
         Ok(80) // 80% default
     }
 
-    fn count_total_operations(env: &Env, start_time: u64) -> Result<u32, Error> {
+    fn count_total_operations(_env: &Env, _start_time: u64) -> Result<u32, Error> {
         // This would count actual operations
         Ok(1000)
     }
 
-    fn count_successful_operations(env: &Env, start_time: u64) -> Result<u32, Error> {
+    fn count_successful_operations(_env: &Env, _start_time: u64) -> Result<u32, Error> {
         // This would count actual successful operations
         Ok(950)
     }
 
-    fn calculate_average_execution_time(env: &Env, start_time: u64) -> Result<u64, Error> {
+    fn calculate_average_execution_time(_env: &Env, _start_time: u64) -> Result<u64, Error> {
         // This would calculate actual execution time
         Ok(100) // 100ms default
     }
 
-    fn calculate_total_gas_usage(env: &Env, start_time: u64) -> Result<u64, Error> {
+    fn calculate_total_gas_usage(_env: &Env, _start_time: u64) -> Result<u64, Error> {
         // This would calculate actual gas usage
         Ok(1000000)
     }
 
-    fn calculate_throughput(env: &Env, timeframe: &TimeFrame) -> Result<u32, Error> {
+    fn calculate_throughput(_env: &Env, _timeframe: &TimeFrame) -> Result<u32, Error> {
         // This would calculate actual throughput
         Ok(10) // 10 ops/sec default
     }
@@ -908,7 +914,7 @@ impl MonitoringTestingUtils {
     }
 
     /// Create test fee collection metrics
-    pub fn create_test_fee_collection_metrics(env: &Env) -> FeeCollectionMetrics {
+    pub fn create_test_fee_collection_metrics(_env: &Env) -> FeeCollectionMetrics {
         FeeCollectionMetrics {
             timeframe: TimeFrame::LastDay,
             total_fees_collected: 5000,
@@ -923,8 +929,8 @@ impl MonitoringTestingUtils {
 
     /// Create test dispute resolution metrics
     pub fn create_test_dispute_resolution_metrics(
-        env: &Env,
-        market_id: Symbol,
+        _env: &Env,
+        _market_id: Symbol,
     ) -> DisputeResolutionMetrics {
         DisputeResolutionMetrics {
             timeframe: TimeFrame::LastWeek,
@@ -939,7 +945,7 @@ impl MonitoringTestingUtils {
     }
 
     /// Create test performance metrics
-    pub fn create_test_performance_metrics(env: &Env) -> PerformanceMetrics {
+    pub fn create_test_performance_metrics(_env: &Env) -> PerformanceMetrics {
         PerformanceMetrics {
             timeframe: TimeFrame::LastHour,
             total_operations: 500,

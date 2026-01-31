@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::markets::{MarketStateLogic, MarketStateManager};
-use soroban_sdk::{contracttype, Env, Symbol, Vec};
+use crate::types::{Balance, ReflectorAsset};
+use soroban_sdk::{contracttype, Address, Env, IntoVal, Symbol, Val, Vec};
 
 // ===== STORAGE OPTIMIZATION TYPES =====
 
@@ -438,6 +439,66 @@ impl StorageOptimizer {
     }
 }
 
+// ===== BALANCE STORAGE =====
+
+pub struct BalanceStorage;
+
+impl BalanceStorage {
+    fn get_key(env: &Env, user: &Address, asset: &ReflectorAsset) -> Vec<Val> {
+        let mut key = Vec::new(env);
+        key.push_back(Symbol::new(env, "Balance").into_val(env));
+        key.push_back(user.to_val());
+        key.push_back(asset.into_val(env));
+        key
+    }
+
+    pub fn get_balance(env: &Env, user: &Address, asset: &ReflectorAsset) -> Balance {
+        let key = Self::get_key(env, user, asset);
+        env.storage().persistent().get(&key).unwrap_or(Balance {
+            user: user.clone(),
+            asset: asset.clone(),
+            amount: 0,
+        })
+    }
+
+    pub fn set_balance(env: &Env, balance: &Balance) {
+        let key = Self::get_key(env, &balance.user, &balance.asset);
+        env.storage().persistent().set(&key, balance);
+        // Extend TTL to ensure balance persists
+        env.storage().persistent().extend_ttl(&key, 535680, 535680); // ~30 days
+    }
+
+    pub fn add_balance(
+        env: &Env,
+        user: &Address,
+        asset: &ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        let mut balance = Self::get_balance(env, user, asset);
+        balance.amount = balance
+            .amount
+            .checked_add(amount)
+            .ok_or(Error::InvalidInput)?;
+        Self::set_balance(env, &balance);
+        Ok(balance)
+    }
+
+    pub fn sub_balance(
+        env: &Env,
+        user: &Address,
+        asset: &ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        let mut balance = Self::get_balance(env, user, asset);
+        balance.amount = balance
+            .amount
+            .checked_sub(amount)
+            .ok_or(Error::InsufficientBalance)?;
+        Self::set_balance(env, &balance);
+        Ok(balance)
+    }
+}
+
 // ===== PRIVATE HELPER METHODS =====
 
 impl StorageOptimizer {
@@ -579,6 +640,40 @@ impl StorageOptimizer {
     ) -> Result<(), Error> {
         let key = Symbol::new(env, &format!("compressed_ref_{:?}", market_id));
         env.storage().persistent().set(&key, compressed_id);
+        Ok(())
+    }
+}
+
+// ===== EVENT STORAGE =====
+
+/// Manager for event storage operations
+pub struct EventManager;
+
+impl EventManager {
+    /// Store a new event in persistent storage
+    pub fn store_event(env: &Env, event: &Event) {
+        env.storage().persistent().set(&event.id, event);
+    }
+
+    /// Retrieve an event from persistent storage
+    pub fn get_event(env: &Env, event_id: &Symbol) -> Result<Event, Error> {
+        env.storage()
+            .persistent()
+            .get(event_id)
+            .ok_or(Error::MarketNotFound)
+    }
+
+    /// Check if an event exists
+    pub fn has_event(env: &Env, event_id: &Symbol) -> bool {
+        env.storage().persistent().has(event_id)
+    }
+
+    /// Update an existing event
+    pub fn update_event(env: &Env, event: &Event) -> Result<(), Error> {
+        if !Self::has_event(env, &event.id) {
+            return Err(Error::MarketNotFound);
+        }
+        Self::store_event(env, event);
         Ok(())
     }
 }

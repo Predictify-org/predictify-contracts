@@ -1,4 +1,7 @@
 #[cfg(test)]
+#[allow(unused_assignments)]
+#[allow(unused_variables)]
+#[allow(dead_code)]
 mod batch_operations_tests {
     use crate::admin::AdminRoleManager;
     use crate::batch_operations::*;
@@ -366,7 +369,7 @@ mod batch_operations_tests {
         };
 
         // Invalid vote data - zero stake
-        let invalid_vote = VoteData {
+        let _invalid_vote = VoteData {
             market_id: market_id.clone(),
             voter: <soroban_sdk::Address as Address>::generate(&env),
             outcome: String::from_str(&env, "Yes"),
@@ -374,7 +377,7 @@ mod batch_operations_tests {
         };
 
         // Invalid vote data - empty outcome
-        let invalid_vote2 = VoteData {
+        let _invalid_vote2 = VoteData {
             market_id: market_id.clone(),
             voter: <soroban_sdk::Address as Address>::generate(&env),
             outcome: String::from_str(&env, ""),
@@ -383,14 +386,14 @@ mod batch_operations_tests {
 
         // Test claim data validation
         // Valid claim data
-        let valid_claim = ClaimData {
+        let _valid_claim = ClaimData {
             market_id: market_id.clone(),
             claimant: <soroban_sdk::Address as Address>::generate(&env),
             expected_amount: 2_000_000_000,
         };
 
         // Invalid claim data - zero amount
-        let invalid_claim = ClaimData {
+        let _invalid_claim = ClaimData {
             market_id: market_id.clone(),
             claimant: <soroban_sdk::Address as Address>::generate(&env),
             expected_amount: 0,
@@ -398,7 +401,7 @@ mod batch_operations_tests {
 
         // Test market data validation
         // Valid market data
-        let valid_market = MarketData {
+        let _valid_market = MarketData {
             question: String::from_str(&env, "Test question?"),
             outcomes: vec![
                 &env,
@@ -415,7 +418,7 @@ mod batch_operations_tests {
         };
 
         // Invalid market data - empty question
-        let invalid_market = MarketData {
+        let _invalid_market = MarketData {
             question: String::from_str(&env, ""),
             outcomes: vec![
                 &env,
@@ -432,7 +435,7 @@ mod batch_operations_tests {
         };
 
         // Invalid market data - insufficient outcomes
-        let invalid_market2 = MarketData {
+        let _invalid_market2 = MarketData {
             question: String::from_str(&env, "Test question?"),
             outcomes: vec![&env, String::from_str(&env, "Yes")],
             duration_days: 30,
@@ -445,7 +448,7 @@ mod batch_operations_tests {
         };
 
         // Invalid market data - zero duration
-        let invalid_market3 = MarketData {
+        let _invalid_market3 = MarketData {
             question: String::from_str(&env, "Test question?"),
             outcomes: vec![
                 &env,
@@ -463,7 +466,7 @@ mod batch_operations_tests {
 
         // Test oracle feed data validation
         // Valid oracle feed data
-        let valid_feed = OracleFeed {
+        let _valid_feed = OracleFeed {
             market_id: market_id.clone(),
             feed_id: String::from_str(&env, "BTC/USD"),
             provider: OracleProvider::Reflector,
@@ -472,7 +475,7 @@ mod batch_operations_tests {
         };
 
         // Invalid oracle feed data - empty feed ID
-        let invalid_feed = OracleFeed {
+        let _invalid_feed = OracleFeed {
             market_id: market_id.clone(),
             feed_id: String::from_str(&env, ""),
             provider: OracleProvider::Reflector,
@@ -481,7 +484,7 @@ mod batch_operations_tests {
         };
 
         // Invalid oracle feed data - zero threshold
-        let invalid_feed2 = OracleFeed {
+        let _invalid_feed2 = OracleFeed {
             market_id: market_id.clone(),
             feed_id: String::from_str(&env, "BTC/USD"),
             provider: OracleProvider::Reflector,
@@ -499,7 +502,7 @@ mod batch_operations_tests {
             BatchProcessor::initialize(&env).unwrap();
 
             // Create test batch result
-            let test_result = BatchResult {
+            let _test_result = BatchResult {
                 successful_operations: 8,
                 failed_operations: 2,
                 total_operations: 10,
@@ -587,7 +590,7 @@ mod batch_operations_tests {
 
             let claims = vec![&env, BatchTesting::create_test_claim_data(&env, &market_id)];
 
-            let markets = vec![&env, BatchTesting::create_test_market_data(&env)];
+            let _markets = vec![&env, BatchTesting::create_test_market_data(&env)];
 
             let feeds = vec![
                 &env,

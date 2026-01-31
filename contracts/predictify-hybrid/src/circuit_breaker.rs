@@ -158,7 +158,7 @@ impl CircuitBreaker {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::CONFIG_KEY))
-            .ok_or(Error::CircuitBreakerNotInitialized)
+            .ok_or(Error::CBNotInitialized)
     }
 
     /// Update circuit breaker configuration
@@ -196,7 +196,7 @@ impl CircuitBreaker {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::STATE_KEY))
-            .ok_or(Error::CircuitBreakerNotInitialized)
+            .ok_or(Error::CBNotInitialized)
     }
 
     /// Update circuit breaker state
@@ -219,7 +219,7 @@ impl CircuitBreaker {
 
         // Check if already paused
         if state.state == BreakerState::Open {
-            return Err(Error::CircuitBreakerAlreadyOpen);
+            return Err(Error::CBAlreadyOpen);
         }
 
         // Update state
@@ -365,7 +365,7 @@ impl CircuitBreaker {
 
         // Check if circuit breaker is open
         if state.state != BreakerState::Open && state.state != BreakerState::HalfOpen {
-            return Err(Error::CircuitBreakerNotOpen);
+            return Err(Error::CBNotOpen);
         }
 
         // Reset state
@@ -494,7 +494,7 @@ impl CircuitBreaker {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::EVENTS_KEY))
-            .ok_or(Error::CircuitBreakerNotInitialized)
+            .ok_or(Error::CBNotInitialized)
     }
 
     // ===== STATUS AND MONITORING =====
@@ -715,7 +715,7 @@ impl CircuitBreakerUtils {
     {
         // Check if operation should be allowed
         if !Self::should_allow_operation(env)? {
-            return Err(Error::CircuitBreakerOpen);
+            return Err(Error::CBOpen);
         }
 
         // Execute operation

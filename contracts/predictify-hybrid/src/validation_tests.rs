@@ -1,4 +1,6 @@
 #![cfg(test)]
+#![allow(unused_variables)]
+#![allow(unused_assignments)]
 
 use super::*;
 use crate::config;
@@ -622,6 +624,7 @@ fn test_validate_comprehensive_inputs() {
     let duration_days = 30;
     let oracle_config = OracleConfig {
         provider: OracleProvider::Pyth,
+        oracle_address: Address::generate(&env),
         feed_id: String::from_str(&env, "BTC/USD"),
         threshold: 100000,
         comparison: String::from_str(&env, "gt"),
@@ -654,6 +657,7 @@ fn test_validate_market_creation() {
     let duration_days = 30;
     let oracle_config = OracleConfig {
         provider: OracleProvider::Pyth,
+        oracle_address: Address::generate(&env),
         feed_id: String::from_str(&env, "BTC/USD"),
         threshold: 100000,
         comparison: String::from_str(&env, "gt"),
@@ -1204,8 +1208,9 @@ mod oracle_config_validator_tests {
     //     ).is_err());
 
     //     // Invalid configuration - unsupported provider
-    //     let unsupported_provider_config = OracleConfig::new(
-    //         OracleProvider::BandProtocol,
+    //      let oracle_config = OracleConfig::new(
+    //         OracleProvider::Reflector,
+    //         Address::generate(&env),
     //         String::from_str(&env, "BTC/USD"),
     //         50_000_00,
     //         String::from_str(&env, "gt")
@@ -1385,8 +1390,9 @@ mod oracle_config_validator_tests {
         // Test Reflector-specific validation
         let reflector_config = OracleConfig::new(
             OracleProvider::Reflector,
-            String::from_str(&env, "BTC/USD"),
-            50_000_00,
+            Address::generate(&env),
+            String::from_str(&env, "BTC_USD"),
+            2500000,
             String::from_str(&env, "gt"),
         );
 
@@ -1405,6 +1411,7 @@ mod oracle_config_validator_tests {
         // Test Pyth-specific validation (should fail for provider support but pass format validation)
         let pyth_config = OracleConfig::new(
             OracleProvider::Pyth,
+            Address::generate(&env),
             String::from_str(
                 &env,
                 "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",

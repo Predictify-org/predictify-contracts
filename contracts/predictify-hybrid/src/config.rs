@@ -112,6 +112,10 @@ pub const COMMUNITY_WEIGHT_PERCENTAGE: u32 = 30;
 /// Minimum votes for community consensus
 pub const MIN_VOTES_FOR_CONSENSUS: u32 = 5;
 
+/// Default resolution timeout in seconds (7 days). After market end_time + this period
+/// with no oracle result, anyone may trigger refund on oracle failure.
+pub const DEFAULT_RESOLUTION_TIMEOUT_SECONDS: u64 = 604_800;
+
 // ===== ORACLE CONSTANTS =====
 
 /// Maximum oracle price age (1 hour)
@@ -2026,7 +2030,7 @@ impl ConfigManager {
     ///
     /// # Returns
     ///
-    /// Returns the stored `ContractConfig` on success, or `Error::ConfigurationNotFound`
+    /// Returns the stored `ContractConfig` on success, or `Error::ConfigNotFound`
     /// if no configuration has been stored.
     ///
     /// # Example
@@ -2053,7 +2057,7 @@ impl ConfigManager {
     ///
     /// # Error Handling
     ///
-    /// This function returns `Error::ConfigurationNotFound` when:
+    /// This function returns `Error::ConfigNotFound` when:
     /// - No configuration has been previously stored
     /// - Configuration was stored but corrupted
     /// - Storage key doesn't exist or is inaccessible
@@ -2075,7 +2079,7 @@ impl ConfigManager {
             .get::<Symbol, ContractConfig>(&key)
         {
             Some(config) => Ok(config),
-            None => Err(Error::ConfigurationNotFound),
+            None => Err(Error::ConfigNotFound),
         }
     }
 
@@ -2788,7 +2792,6 @@ impl ConfigTesting {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_config_manager_default_configs() {

@@ -7,7 +7,6 @@ use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::extensions::ExtensionManager;
 use crate::fees::{FeeConfig, FeeManager};
-use crate::format;
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
 use alloc::string::ToString;
@@ -465,12 +464,7 @@ impl AdminAccessControl {
         admin: &Address,
         permission: &AdminPermission,
     ) -> Result<(), Error> {
-        // Check original admin for backward compatibility first
-        if AdminManager::is_original_admin(env, admin) {
-            return Ok(());
-        }
-
-        // Try new multi-admin system if migrated
+        // Try new multi-admin system first if migrated
         if AdminSystemIntegration::is_migrated(env) {
             return AdminManager::validate_admin_permission(env, admin, *permission);
         }
@@ -1258,16 +1252,6 @@ impl AdminManager {
             .persistent()
             .set(&count_key, &(current_count + 1));
 
-        // Maintain a list of admin addresses for iteration
-        let list_key = Symbol::new(env, "AdminList");
-        let mut admin_list: Vec<Address> = env
-            .storage()
-            .persistent()
-            .get(&list_key)
-            .unwrap_or_else(|| Vec::new(env));
-        admin_list.push_back(new_admin.clone());
-        env.storage().persistent().set(&list_key, &admin_list);
-
         // Emit event using existing system
         Self::emit_admin_change_event(env, new_admin, AdminActionType::Added);
 
@@ -1308,18 +1292,6 @@ impl AdminManager {
             env.storage()
                 .persistent()
                 .set(&count_key, &(current_count - 1));
-        }
-
-        // Remove from admin list
-        let list_key = Symbol::new(env, "AdminList");
-        if let Some(admin_list) = env.storage().persistent().get::<_, Vec<Address>>(&list_key) {
-            let mut new_list: Vec<Address> = Vec::new(env);
-            for addr in admin_list.iter() {
-                if &addr != admin_to_remove {
-                    new_list.push_back(addr.clone());
-                }
-            }
-            env.storage().persistent().set(&list_key, &new_list);
         }
 
         Self::emit_admin_change_event(env, admin_to_remove, AdminActionType::Removed);
@@ -1462,14 +1434,14 @@ impl AdminManager {
     // ===== Helper Methods =====
 
     /// Generate a proper admin storage key using the correct environment
-    fn get_admin_key(env: &Env, admin: &Address) -> (Symbol, Address) {
-        // Use a tuple key for per-admin storage
-        // This avoids Symbol character limitations by using Address directly
-        (Symbol::new(env, "MultiAdmin"), admin.clone())
+    fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
+        // Create a unique key based on admin address
+        let key_str = format!("MultiAdmin_{:?}", admin.to_string());
+        Symbol::new(env, &key_str)
     }
 
     /// Check if an address is the original admin from single-admin system
-    fn is_original_admin(env: &Env, admin: &Address) -> bool {
+    pub fn is_original_admin(env: &Env, admin: &Address) -> bool {
         if let Some(original_admin) = Self::get_original_admin(env) {
             return admin == &original_admin;
         }
@@ -1691,7 +1663,7 @@ impl AdminFunctions {
     /// - `Error::Unauthorized` - Admin lacks FinalizeMarket permission
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
     /// - `Error::InvalidOutcome` - Outcome doesn't match market's possible outcomes
-    /// - `Error::MarketAlreadyResolved` - Market has already been finalized
+    /// - `Error::MarketResolved` - Market has already been finalized
     /// - Resolution errors from MarketResolutionManager
     ///
     /// # Example
@@ -2411,7 +2383,7 @@ impl AdminValidator {
         let admin_exists = env.storage().persistent().has(&Symbol::new(env, "Admin"));
 
         if admin_exists {
-            return Err(Error::AlreadyInitialized);
+            return Err(Error::InvalidState);
         }
 
         Ok(())

@@ -102,7 +102,8 @@ impl EventArchive {
         created_at: u64,
     ) -> EventHistoryEntry {
         let archived_at = Self::get_archived_at(env, market_id);
-        let category = market.oracle_config.feed_id.clone();
+        // Use the dedicated category field if set, otherwise fall back to oracle feed_id
+        let category = market.category.clone().unwrap_or_else(|| market.oracle_config.feed_id.clone());
 
         EventHistoryEntry {
             market_id: market_id.clone(),
@@ -111,10 +112,11 @@ impl EventArchive {
             end_time: market.end_time,
             created_at,
             state: market.state,
-            winning_outcome: market.winning_outcome.clone(),
+            winning_outcome: market.get_winning_outcome(), // Get first outcome for backward compatibility
             total_staked: market.total_staked,
             archived_at,
             category,
+            tags: market.tags.clone(),
         }
     }
 
@@ -149,7 +151,11 @@ impl EventArchive {
                 scanned += 1;
                 let created_at = entry.timestamp;
                 if created_at >= from_ts && created_at <= to_ts {
-                    if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&entry.market_id) {
+                    if let Some(market) = env
+                        .storage()
+                        .persistent()
+                        .get::<Symbol, Market>(&entry.market_id)
+                    {
                         result.push_back(Self::market_to_history_entry(
                             env,
                             &entry.market_id,
@@ -181,7 +187,11 @@ impl EventArchive {
         for i in 0..registry_page.len() {
             if let Some(entry) = registry_page.get(i) {
                 scanned += 1;
-                if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&entry.market_id) {
+                if let Some(market) = env
+                    .storage()
+                    .persistent()
+                    .get::<Symbol, Market>(&entry.market_id)
+                {
                     if market.state == status {
                         result.push_back(Self::market_to_history_entry(
                             env,
@@ -197,9 +207,10 @@ impl EventArchive {
         (result, cursor + scanned)
     }
 
-    /// Query events by category (e.g. oracle feed_id) (paginated, bounded).
+    /// Query events by category (paginated, bounded).
     ///
-    /// Returns events whose oracle feed_id matches the given category string.
+    /// Returns events whose category matches the given category string.
+    /// Checks the dedicated category field first, then falls back to oracle feed_id.
     pub fn query_events_by_category(
         env: &Env,
         category: &String,
@@ -215,7 +226,64 @@ impl EventArchive {
             if let Some(entry) = registry_page.get(i) {
                 scanned += 1;
                 if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&entry.market_id) {
-                    if market.oracle_config.feed_id == *category {
+                    // Match against dedicated category field if set, otherwise oracle feed_id
+                    let market_category = market.category.clone().unwrap_or_else(|| market.oracle_config.feed_id.clone());
+                    if market_category == *category {
+                        result.push_back(Self::market_to_history_entry(
+                            env,
+                            &entry.market_id,
+                            &market,
+                            entry.timestamp,
+                        ));
+                    }
+                }
+            }
+        }
+
+        (result, cursor + scanned)
+    }
+
+    /// Query events by tags (paginated, bounded).
+    ///
+    /// Returns events that have ANY of the provided tags (OR logic).
+    /// If no tags are provided, returns an empty result.
+    pub fn query_events_by_tags(
+        env: &Env,
+        tags: &Vec<String>,
+        cursor: u32,
+        limit: u32,
+    ) -> (Vec<EventHistoryEntry>, u32) {
+        let limit = core::cmp::min(limit, MAX_QUERY_LIMIT);
+        let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
+        let mut result = Vec::new(env);
+        let mut scanned = 0u32;
+
+        if tags.is_empty() {
+            return (result, cursor);
+        }
+
+        for i in 0..registry_page.len() {
+            if let Some(entry) = registry_page.get(i) {
+                scanned += 1;
+                if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&entry.market_id) {
+                    // Check if any of the market's tags match any of the query tags
+                    let mut matched = false;
+                    for j in 0..market.tags.len() {
+                        if let Some(market_tag) = market.tags.get(j) {
+                            for k in 0..tags.len() {
+                                if let Some(query_tag) = tags.get(k) {
+                                    if market_tag == query_tag {
+                                        matched = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if matched {
+                                break;
+                            }
+                        }
+                    }
+                    if matched {
                         result.push_back(Self::market_to_history_entry(
                             env,
                             &entry.market_id,

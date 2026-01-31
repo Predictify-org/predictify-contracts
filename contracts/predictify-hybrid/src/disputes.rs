@@ -1758,7 +1758,7 @@ impl DisputeManager {
     ) -> Result<DisputeTimeoutOutcome, Error> {
         // Check if timeout has expired
         if !Self::check_dispute_timeout(env, dispute_id.clone())? {
-            return Err(Error::DisputeTimeoutNotExpired);
+            return Err(Error::TimeoutNotExpired);
         }
 
         // Get timeout configuration
@@ -1871,7 +1871,7 @@ impl DisputeManager {
 
         // Check if timeout can be extended
         if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
-            return Err(Error::DisputeTimeoutExtensionNotAllowed);
+            return Err(Error::TimeoutNotExpired);
         }
 
         // Update timeout
@@ -1911,8 +1911,8 @@ impl DisputeValidator {
         }
 
         // Check if market is already resolved
-        if market.winning_outcome.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+        if market.winning_outcomes.is_some() {
+            return Err(Error::MarketResolved);
         }
 
         // Check if oracle result is available
@@ -1926,8 +1926,8 @@ impl DisputeValidator {
     /// Validate market state for resolution
     pub fn validate_market_for_resolution(_env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market is already resolved
-        if market.winning_outcome.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+        if market.winning_outcomes.is_some() {
+            return Err(Error::MarketResolved);
         }
 
         // Check if there are active disputes
@@ -2004,12 +2004,12 @@ impl DisputeValidator {
         // Check if voting period is active
         let current_time = env.ledger().timestamp();
         if current_time < voting_data.voting_start || current_time > voting_data.voting_end {
-            return Err(Error::DisputeVotingPeriodExpired);
+            return Err(Error::DisputeVoteExpired);
         }
 
         // Check if voting is still active
         if !matches!(voting_data.status, DisputeVotingStatus::Active) {
-            return Err(Error::DisputeVotingNotAllowed);
+            return Err(Error::DisputeVoteDenied);
         }
 
         Ok(())
@@ -2035,7 +2035,7 @@ impl DisputeValidator {
     /// Validate voting is completed
     pub fn validate_voting_completed(voting_data: &DisputeVoting) -> Result<(), Error> {
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeResolutionConditionsNotMet);
+            return Err(Error::DisputeCondNotMet);
         }
 
         Ok(())
@@ -2050,13 +2050,13 @@ impl DisputeValidator {
         let voting_data = DisputeUtils::get_dispute_voting(env, dispute_id)?;
 
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeResolutionConditionsNotMet);
+            return Err(Error::DisputeCondNotMet);
         }
 
         // Check if fees haven't been distributed yet
         let fee_distribution = DisputeUtils::get_dispute_fee_distribution(env, dispute_id)?;
         if fee_distribution.fees_distributed {
-            return Err(Error::DisputeFeeDistributionFailed);
+            return Err(Error::DisputeFeeFailed);
         }
 
         Ok(true)
@@ -2080,13 +2080,13 @@ impl DisputeValidator {
         }
 
         if !has_participated {
-            return Err(Error::DisputeEscalationNotAllowed);
+            return Err(Error::DisputeNoEscalate);
         }
 
         // Check if escalation already exists
         let escalation = DisputeUtils::get_dispute_escalation(env, dispute_id);
         if escalation.is_some() {
-            return Err(Error::DisputeEscalationNotAllowed);
+            return Err(Error::DisputeNoEscalate);
         }
 
         Ok(())
@@ -2127,7 +2127,7 @@ impl DisputeValidator {
         timeout: &DisputeTimeout,
     ) -> Result<(), Error> {
         if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
-            return Err(Error::DisputeTimeoutExtensionNotAllowed);
+            return Err(Error::TimeoutNotExpired);
         }
 
         Ok(())
@@ -2196,8 +2196,10 @@ impl DisputeUtils {
         // Validate the final outcome
         DisputeValidator::validate_resolution_parameters(market, &final_outcome)?;
 
-        // Set the winning outcome
-        market.winning_outcome = Some(final_outcome);
+        // Set the winning outcome(s) - convert single outcome to vector
+        let mut winning_outcomes = Vec::new(market.votes.env());
+        winning_outcomes.push_back(final_outcome);
+        market.winning_outcomes = Some(winning_outcomes);
 
         Ok(())
     }
@@ -2475,7 +2477,7 @@ impl DisputeUtils {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::DisputeTimeoutNotSet)
+            .ok_or(Error::TimeoutNotSet)
     }
 
     /// Check if dispute timeout exists
@@ -2525,7 +2527,7 @@ impl DisputeAnalytics {
         for (_, stake) in market.dispute_stakes.iter() {
             if stake > 0 {
                 unique_disputers += 1;
-                if market.winning_outcome.is_none() {
+                if market.winning_outcomes.is_none() {
                     active_disputes += 1;
                 } else {
                     resolved_disputes += 1;
