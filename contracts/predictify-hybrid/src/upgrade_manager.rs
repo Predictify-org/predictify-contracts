@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
 use alloc::format;
-use soroban_sdk::{contracttype, Address, Bytes, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::events::EventEmitter;
-use crate::versioning::{Version, VersionHistory, VersionManager};
+use crate::versioning::{Version, VersionManager};
 
 /// Comprehensive upgrade management system for Predictify Hybrid contract.
 ///

@@ -91,10 +91,13 @@ impl IntegrationTestSuite {
             &duration_days,
             &OracleConfig {
                 provider: OracleProvider::Reflector,
+                oracle_address: Address::generate(&self.env),
                 feed_id: String::from_str(&self.env, "BTC"),
                 threshold: 2500000,
                 comparison: String::from_str(&self.env, "gt"),
             },
+            &None,
+            &0,
         );
 
         self.market_ids.push_back(market_id.clone());

@@ -34,6 +34,7 @@ mod markets;
 mod monitoring;
 mod oracles;
 mod performance_benchmarks;
+mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
@@ -73,6 +74,7 @@ mod property_based_tests;
 mod upgrade_manager_tests;
 
 #[cfg(test)]
+mod query_tests;
 mod bet_tests;
 
 #[cfg(test)]
@@ -94,16 +96,17 @@ mod event_creation_tests;
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
 pub use errors::Error;
+pub use queries::QueryManager;
 pub use types::*;
 
 use crate::config::{
-    ConfigChanges, ConfigManager, ConfigUpdateRecord, ContractConfig, MarketLimits,
     DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE, MIN_PLATFORM_FEE_PERCENTAGE,
 };
 use crate::events::EventEmitter;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use crate::reentrancy_guard::ReentrancyGuard;
+use crate::resolution::OracleResolution;
 use alloc::format;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
@@ -352,6 +355,8 @@ impl PredictifyHybrid {
         outcomes: Vec<String>,
         duration_days: u32,
         oracle_config: OracleConfig,
+        fallback_oracle_config: Option<OracleConfig>,
+        resolution_timeout: u64,
     ) -> Symbol {
         // Authenticate that the caller is the admin
         admin.require_auth();
@@ -393,6 +398,8 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
+            fallback_oracle_config,
+            resolution_timeout,
             oracle_result: None,
             votes: Map::new(&env),
             total_staked: 0,
@@ -452,6 +459,8 @@ impl PredictifyHybrid {
         outcomes: Vec<String>,
         end_time: u64,
         oracle_config: OracleConfig,
+        fallback_oracle_config: Option<OracleConfig>,
+        resolution_timeout: u64,
     ) -> Symbol {
         // Authenticate that the caller is the admin
         admin.require_auth();
@@ -490,6 +499,8 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
+            fallback_oracle_config,
+            resolution_timeout,
             admin: admin.clone(),
             created_at: env.ledger().timestamp(),
             status: MarketState::Active,
@@ -648,7 +659,7 @@ impl PredictifyHybrid {
     /// This function will panic with specific errors if:
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
     /// - `Error::MarketClosed` - Market betting period has ended or market is not active
-    /// - `Error::MarketAlreadyResolved` - Market has already been resolved
+    /// - `Error::MarketResolved` - Market has already been resolved
     /// - `Error::InvalidOutcome` - Outcome doesn't match any market outcomes
     /// - `Error::AlreadyBet` - User has already placed a bet on this market
     /// - `Error::InsufficientStake` - Bet amount is below minimum (0.1 XLM)
@@ -1215,7 +1226,7 @@ impl PredictifyHybrid {
                 // Retrieve dynamic platform fee percentage from configuration
                 let cfg = match crate::config::ConfigManager::get_config(&env) {
                     Ok(c) => c,
-                    Err(_) => panic_with_error!(env, Error::ConfigurationNotFound),
+                    Err(_) => panic_with_error!(env, Error::ConfigNotFound),
                 };
                 let fee_percent = cfg.fees.platform_fee_percentage;
                 let user_share = (user_stake
@@ -1483,6 +1494,9 @@ impl PredictifyHybrid {
             &MarketState::Resolved,
             &reason,
         );
+
+        // Automatically distribute payouts to winners after resolution
+        let _ = Self::distribute_payouts(env.clone(), market_id);
     }
 
     /// Resolves a market with multiple winning outcomes (for tie cases).
@@ -1650,7 +1664,7 @@ impl PredictifyHybrid {
     ///
     /// This function returns specific errors:
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::MarketAlreadyResolved` - Market already has oracle result set
+    /// - `Error::MarketResolved` - Market already has oracle result set
     /// - `Error::MarketClosed` - Market hasn't reached its end time yet
     /// - Oracle-specific errors from the resolution module
     ///
@@ -1705,7 +1719,7 @@ impl PredictifyHybrid {
 
         // Validate market state
         if market.oracle_result.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if market has ended
@@ -1722,6 +1736,267 @@ impl PredictifyHybrid {
         )?;
 
         Ok(oracle_resolution.oracle_result)
+    pub fn fetch_oracle_result(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
+        resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
+    }
+
+    /// Verifies and fetches event outcome from external oracle sources automatically.
+    ///
+    /// This function implements the complete oracle integration mechanism that:
+    /// - Automatically fetches event outcomes from configured external data sources
+    /// - Validates oracle responses and signatures/authority
+    /// - Supports multiple oracle sources with consensus-based verification
+    /// - Handles oracle failures gracefully with fallback mechanisms
+    /// - Emits result verification events for transparency
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `caller` - The address initiating the verification (must be authenticated)
+    /// * `market_id` - Unique identifier of the market to verify
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<OracleResult, Error>` where:
+    /// - `Ok(OracleResult)` - Complete oracle verification result including:
+    ///   - `outcome`: The determined outcome ("yes"/"no" or custom)
+    ///   - `price`: The fetched price from oracle
+    ///   - `threshold`: The configured threshold for comparison
+    ///   - `confidence_score`: Statistical confidence (0-100)
+    ///   - `is_verified`: Whether the result passed all validations
+    ///   - `sources_count`: Number of oracle sources consulted
+    /// - `Err(Error)` - Specific error if verification fails
+    ///
+    /// # Errors
+    ///
+    /// This function returns specific errors:
+    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
+    /// - `Error::MarketNotReadyForVerification` - Market hasn't ended yet
+    /// - `Error::OracleVerified` - Result already verified for this market
+    /// - `Error::OracleUnavailable` - Oracle service is unavailable
+    /// - `Error::OracleStale` - Oracle data is too old
+    /// - `Error::OracleConsensusNotReached` - Multiple oracles disagree
+    /// - `Error::InvalidOracleConfig` - Oracle not whitelisted/authorized
+    /// - `Error::OracleAllSourcesFailed` - All oracle sources failed
+    /// - `Error::InsufficientOracleSources` - No active oracle sources available
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let caller = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "btc_50k_2024");
+    ///
+    /// // Verify result for an ended market
+    /// match PredictifyHybrid::verify_result(env.clone(), caller, market_id) {
+    ///     Ok(result) => {
+    ///         println!("Outcome: {}", result.outcome);
+    ///         println!("Price: ${}", result.price / 100);
+    ///         println!("Confidence: {}%", result.confidence_score);
+    ///         println!("Sources consulted: {}", result.sources_count);
+    ///         
+    ///         if result.is_verified {
+    ///             println!("Result is verified and authoritative");
+    ///         }
+    ///     },
+    ///     Err(e) => {
+    ///         println!("Verification failed: {:?}", e);
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Oracle Integration
+    ///
+    /// This function integrates with multiple oracle providers:
+    /// - **Reflector**: Primary oracle for Stellar Network (production ready)
+    /// - **Band Protocol**: Decentralized oracle network
+    /// - **Custom Oracles**: Can be added via whitelist system
+    ///
+    /// # Multi-Oracle Consensus
+    ///
+    /// When multiple oracle sources are configured:
+    /// 1. All active sources are queried in parallel
+    /// 2. Responses are validated for freshness and authority
+    /// 3. Consensus is calculated (default: 66% agreement required)
+    /// 4. Confidence score reflects agreement level and price stability
+    ///
+    /// # Security Features
+    ///
+    /// - **Whitelist Validation**: Only whitelisted oracles are queried
+    /// - **Authority Verification**: Oracle responses are validated for authenticity
+    /// - **Staleness Protection**: Data older than 5 minutes is rejected
+    /// - **Price Range Validation**: Ensures prices are within reasonable bounds
+    /// - **Consensus Requirement**: Multiple sources must agree for high-value markets
+    ///
+    /// # Events Emitted
+    ///
+    /// - `OracleVerificationInitiated`: When verification begins
+    /// - `OracleResultVerified`: When verification succeeds
+    /// - `OracleVerificationFailed`: When verification fails
+    /// - `OracleConsensusReached`: When multiple sources agree
+    ///
+    /// # Market State Requirements
+    ///
+    /// - Market must exist in storage
+    /// - Market end time must have passed
+    /// - Result must not already be verified
+    /// - At least one active oracle source must be available
+    pub fn verify_result(
+        env: Env,
+        caller: Address,
+        market_id: Symbol,
+    ) -> Result<OracleResult, Error> {
+        // Authenticate the caller
+        caller.require_auth();
+
+        // Use the OracleIntegrationManager to perform verification
+        oracles::OracleIntegrationManager::verify_result(&env, &market_id, &caller)
+    }
+
+    /// Verifies oracle result with retry logic for resilience.
+    ///
+    /// This function is similar to `verify_result` but includes automatic
+    /// retry logic to handle transient oracle failures. Useful in production
+    /// environments where network issues may cause temporary unavailability.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `caller` - The address initiating the verification
+    /// * `market_id` - Unique identifier of the market to verify
+    /// * `max_retries` - Maximum number of retry attempts (capped at 3)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<OracleResult, Error>` - Same as `verify_result`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let caller = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "btc_50k_2024");
+    ///
+    /// // Verify with up to 3 retries
+    /// let result = PredictifyHybrid::verify_result_with_retry(
+    ///     env.clone(),
+    ///     caller,
+    ///     market_id,
+    ///     3
+    /// );
+    /// ```
+    pub fn verify_result_with_retry(
+        env: Env,
+        caller: Address,
+        market_id: Symbol,
+        max_retries: u32,
+    ) -> Result<OracleResult, Error> {
+        caller.require_auth();
+        oracles::OracleIntegrationManager::verify_result_with_retry(
+            &env,
+            &market_id,
+            &caller,
+            max_retries,
+        )
+    }
+
+    /// Retrieves a previously verified oracle result for a market.
+    ///
+    /// This function returns the stored oracle verification result for a market
+    /// that has already been verified. Useful for checking verification status
+    /// and retrieving historical verification data.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market
+    ///
+    /// # Returns
+    ///
+    /// Returns `Option<OracleResult>`:
+    /// - `Some(OracleResult)` - The stored verification result
+    /// - `None` - Market has not been verified yet
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "btc_50k_2024");
+    ///
+    /// match PredictifyHybrid::get_verified_result(env.clone(), market_id) {
+    ///     Some(result) => {
+    ///         println!("Market verified with outcome: {}", result.outcome);
+    ///     },
+    ///     None => {
+    ///         println!("Market not yet verified");
+    ///     }
+    /// }
+    /// ```
+    pub fn get_verified_result(env: Env, market_id: Symbol) -> Option<OracleResult> {
+        oracles::OracleIntegrationManager::get_oracle_result(&env, &market_id)
+    }
+
+    /// Checks if a market's result has been verified via oracle.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `market_id` - Unique identifier of the market
+    ///
+    /// # Returns
+    ///
+    /// Returns `bool` - `true` if verified, `false` otherwise
+    pub fn is_result_verified(env: Env, market_id: Symbol) -> bool {
+        oracles::OracleIntegrationManager::is_result_verified(&env, &market_id)
+    }
+
+    /// Admin override for oracle result verification.
+    ///
+    /// Allows an authorized admin to manually set the verification result
+    /// when automatic verification fails or produces incorrect results.
+    /// This is a privileged operation requiring admin authorization.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `admin` - Admin address (must be authorized)
+    /// * `market_id` - Market to override
+    /// * `outcome` - The outcome to set ("yes"/"no" or custom)
+    /// * `reason` - Reason for the manual override
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>`:
+    /// - `Ok(())` - Override successful
+    /// - `Err(Error::Unauthorized)` - Caller is not admin
+    ///
+    /// # Security
+    ///
+    /// This function should be used sparingly and only when:
+    /// - Automatic oracle verification has failed repeatedly
+    /// - Oracle data is known to be incorrect
+    /// - Emergency situations requiring immediate resolution
+    pub fn admin_override_verification(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        outcome: String,
+        reason: String,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        oracles::OracleIntegrationManager::admin_override_result(
+            &env,
+            &admin,
+            &market_id,
+            &outcome,
+            &reason,
+        )
     }
 
     /// Resolves a market automatically using oracle data and community consensus.
@@ -1746,7 +2021,7 @@ impl PredictifyHybrid {
     /// This function returns specific errors:
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
     /// - `Error::MarketNotEnded` - Market hasn't reached its end time
-    /// - `Error::MarketAlreadyResolved` - Market is already resolved
+    /// - `Error::MarketResolved` - Market is already resolved
     /// - `Error::InsufficientData` - Not enough data for resolution
     /// - Resolution-specific errors from the resolution module
     ///
@@ -2075,7 +2350,7 @@ impl PredictifyHybrid {
     /// This function will panic with specific errors if:
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
     /// - `Error::MarketNotResolved` - Market hasn't been resolved yet
-    /// - `Error::MarketAlreadyResolved` - Payouts have already been distributed
+    /// - `Error::MarketResolved` - Payouts have already been distributed
     ///
     /// # Example
     ///
@@ -2137,7 +2412,7 @@ impl PredictifyHybrid {
 
         // Since place_bet now updates market.votes and market.stakes,
         // we can use the vote-based payout system for both bets and votes
-        let mut total_distributed = 0;
+        let _total_distributed = 0;
 
         // Check if payouts have already been distributed
         let mut has_unclaimed_winners = false;
@@ -2592,7 +2867,7 @@ impl PredictifyHybrid {
     /// This function returns specific errors:
     /// - `Error::Unauthorized` - Caller is not the contract admin
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::MarketAlreadyResolved` - Cannot extend a resolved market
+    /// - `Error::MarketResolved` - Cannot extend a resolved market
     /// - `Error::InvalidDuration` - Extension would exceed maximum allowed limit
     ///
     /// # Example
@@ -2661,7 +2936,7 @@ impl PredictifyHybrid {
             || market.state == MarketState::Closed
             || market.state == MarketState::Cancelled
         {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Validate extension limit
@@ -2736,7 +3011,7 @@ impl PredictifyHybrid {
     /// This function returns specific errors:
     /// - `Error::Unauthorized` - Caller is not the contract admin
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::MarketAlreadyResolved` - Cannot update a resolved market
+    /// - `Error::MarketResolved` - Cannot update a resolved market
     /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
     /// - `Error::InvalidQuestion` - New description is empty or invalid
     ///
@@ -2806,7 +3081,7 @@ impl PredictifyHybrid {
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if any bets have been placed
@@ -2866,7 +3141,7 @@ impl PredictifyHybrid {
     /// This function returns specific errors:
     /// - `Error::Unauthorized` - Caller is not the contract admin
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::MarketAlreadyResolved` - Cannot update a resolved market
+    /// - `Error::MarketResolved` - Cannot update a resolved market
     /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
     /// - `Error::InvalidOutcomes` - New outcomes list is invalid (< 2 outcomes or empty strings)
     ///
@@ -2950,7 +3225,7 @@ impl PredictifyHybrid {
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if any bets have been placed
@@ -3009,7 +3284,7 @@ impl PredictifyHybrid {
     /// This function returns specific errors:
     /// - `Error::Unauthorized` - Caller is not the contract admin
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::MarketAlreadyResolved` - Cannot update a resolved market
+    /// - `Error::MarketResolved` - Cannot update a resolved market
     /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
     ///
     /// # Example
@@ -3060,7 +3335,7 @@ impl PredictifyHybrid {
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if any bets have been placed
@@ -3113,7 +3388,7 @@ impl PredictifyHybrid {
     /// This function returns specific errors:
     /// - `Error::Unauthorized` - Caller is not the contract admin
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::MarketAlreadyResolved` - Cannot update a resolved market
+    /// - `Error::MarketResolved` - Cannot update a resolved market
     /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
     /// - `Error::InvalidInput` - One or more tags are empty strings
     ///
@@ -3179,7 +3454,7 @@ impl PredictifyHybrid {
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if any bets have been placed
@@ -3255,7 +3530,7 @@ impl PredictifyHybrid {
     /// This function will panic with specific errors if:
     /// - `Error::Unauthorized` - Caller is not the contract admin
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::MarketAlreadyResolved` - Market has already been resolved
+    /// - `Error::MarketResolved` - Market has already been resolved
     /// - `Error::InvalidState` - Market is in an invalid state for cancellation
     ///
     /// # Example
@@ -3324,7 +3599,7 @@ impl PredictifyHybrid {
 
         // Validate cancellation conditions
         if market.state == MarketState::Resolved {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         if market.state == MarketState::Cancelled {
@@ -3396,10 +3671,10 @@ impl PredictifyHybrid {
             return Ok(0);
         }
         if market.winning_outcomes.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
         if market.oracle_result.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
         let current_time = env.ledger().timestamp();
         if current_time < market.end_time {

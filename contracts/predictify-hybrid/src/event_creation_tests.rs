@@ -52,6 +52,7 @@ fn test_create_event_success() {
     let end_time = setup.env.ledger().timestamp() + 3600; // 1 hour from now
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
+        oracle_address: Address::generate(&setup.env),
         feed_id: String::from_str(&setup.env, "BTC/USD"),
         threshold: 50000,
         comparison: String::from_str(&setup.env, "gt"),
@@ -63,6 +64,8 @@ fn test_create_event_success() {
         &outcomes,
         &end_time,
         &oracle_config,
+        &None,
+        &0,
     );
 
     // Verify event details using the new get_event method
@@ -86,6 +89,7 @@ fn test_create_market_success() {
     let duration_days = 30;
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
+        oracle_address: Address::generate(&setup.env),
         feed_id: String::from_str(&setup.env, "BTC/USD"),
         threshold: 50000,
         comparison: String::from_str(&setup.env, "gt"),
@@ -97,6 +101,8 @@ fn test_create_market_success() {
         &outcomes,
         &duration_days,
         &oracle_config,
+        &None,
+        &0,
     );
 
     assert!(client.get_market(&market_id).is_some());
@@ -118,6 +124,7 @@ fn test_create_event_unauthorized() {
     let end_time = setup.env.ledger().timestamp() + 3600;
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
+        oracle_address: Address::generate(&setup.env),
         feed_id: String::from_str(&setup.env, "BTC/USD"),
         threshold: 50000,
         comparison: String::from_str(&setup.env, "gt"),
@@ -129,6 +136,8 @@ fn test_create_event_unauthorized() {
         &outcomes,
         &end_time,
         &oracle_config,
+        &None,
+        &0,
     );
 }
 
@@ -147,6 +156,7 @@ fn test_create_event_invalid_end_time() {
     let end_time = setup.env.ledger().timestamp() - 3600; // Past time
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
+        oracle_address: Address::generate(&setup.env),
         feed_id: String::from_str(&setup.env, "BTC/USD"),
         threshold: 50000,
         comparison: String::from_str(&setup.env, "gt"),
@@ -158,6 +168,8 @@ fn test_create_event_invalid_end_time() {
         &outcomes,
         &end_time,
         &oracle_config,
+        &None,
+        &0,
     );
 }
 
@@ -172,6 +184,7 @@ fn test_create_event_empty_outcomes() {
     let end_time = setup.env.ledger().timestamp() - 3600; // Past time
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
+        oracle_address: Address::generate(&setup.env),
         feed_id: String::from_str(&setup.env, "BTC/USD"),
         threshold: 50000,
         comparison: String::from_str(&setup.env, "gt"),
@@ -183,5 +196,7 @@ fn test_create_event_empty_outcomes() {
         &outcomes,
         &end_time,
         &oracle_config,
+        &None,
+        &0,
     );
 }

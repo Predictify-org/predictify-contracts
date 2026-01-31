@@ -396,7 +396,7 @@ impl EdgeCaseHandler {
                 if config.max_single_user_percentage < 0
                     || config.max_single_user_percentage > 10000
                 {
-                    return Err(Error::ThresholdExceedsMaximum);
+                    return Err(Error::ThresholdTooHigh);
                 }
             }
             EdgeCaseScenario::LowParticipation => {
@@ -515,9 +515,9 @@ impl EdgeCaseHandler {
     }
 
     /// Validate edge case configuration.
-    fn validate_edge_case_config(env: &Env, config: &EdgeCaseConfig) -> Result<(), Error> {
+    fn validate_edge_case_config(_env: &Env, config: &EdgeCaseConfig) -> Result<(), Error> {
         if config.min_total_stake < 0 {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
 
         if config.min_participation_rate < 0 || config.min_participation_rate > 10000 {
@@ -533,7 +533,7 @@ impl EdgeCaseHandler {
         }
 
         if config.max_single_user_percentage < 0 || config.max_single_user_percentage > 10000 {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::ThresholdTooHigh);
         }
 
         Ok(())
@@ -541,9 +541,9 @@ impl EdgeCaseHandler {
 
     /// Extend market for increased participation.
     fn extend_for_participation(
-        env: &Env,
-        market_id: &Symbol,
-        extension_seconds: u64,
+        _env: &Env,
+        _market_id: &Symbol,
+        _extension_seconds: u64,
     ) -> Result<(), Error> {
         // Implementation would extend market duration
         // This is a placeholder that would integrate with the extension system
@@ -551,42 +551,42 @@ impl EdgeCaseHandler {
     }
 
     /// Cancel market with zero stakes.
-    fn cancel_zero_stake_market(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+    fn cancel_zero_stake_market(_env: &Env, _market_id: &Symbol) -> Result<(), Error> {
         // Implementation would cancel market and handle refunds
         Ok(())
     }
 
     /// Emergency extension for stake collection.
     fn emergency_extension_for_stakes(
-        env: &Env,
-        market_id: &Symbol,
-        extension_seconds: u64,
+        _env: &Env,
+        _market_id: &Symbol,
+        _extension_seconds: u64,
     ) -> Result<(), Error> {
         // Implementation would trigger emergency extension
         Ok(())
     }
 
     /// Tie-breaking by earliest vote timestamp.
-    fn tie_break_by_earliest_vote(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    fn tie_break_by_earliest_vote(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
         // Implementation would check vote timestamps
         // For now, return first outcome as placeholder
         Ok(outcomes.get(0).unwrap())
     }
 
     /// Tie-breaking by voter count.
-    fn tie_break_by_voter_count(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    fn tie_break_by_voter_count(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
         // Implementation would count unique voters per outcome
         Ok(outcomes.get(0).unwrap())
     }
 
     /// Tie-breaking by oracle preference.
-    fn tie_break_by_oracle_preference(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    fn tie_break_by_oracle_preference(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
         // Implementation would check oracle result
         Ok(outcomes.get(0).unwrap())
     }
 
     /// Alphabetical tie-breaking (deterministic).
-    fn tie_break_alphabetically(env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
+    fn tie_break_alphabetically(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
         // Implementation would sort alphabetically
         Ok(outcomes.get(0).unwrap())
     }
@@ -599,7 +599,7 @@ impl EdgeCaseHandler {
 
     /// Check if a market is orphaned.
     fn is_market_orphaned(
-        env: &Env,
+        _env: &Env,
         market: &Market,
         current_time: u64,
         config: &EdgeCaseConfig,
@@ -621,7 +621,7 @@ impl EdgeCaseHandler {
     }
 
     /// Validate partial resolution data.
-    fn validate_partial_data(env: &Env, partial_data: &PartialData) -> Result<(), Error> {
+    fn validate_partial_data(_env: &Env, partial_data: &PartialData) -> Result<(), Error> {
         if partial_data.resolution_confidence < 0 || partial_data.resolution_confidence > 10000 {
             return Err(Error::InvalidThreshold);
         }
@@ -635,9 +635,9 @@ impl EdgeCaseHandler {
 
     /// Resolve market with partial data.
     fn resolve_with_partial_data(
-        env: &Env,
-        market_id: &Symbol,
-        partial_data: &PartialData,
+        _env: &Env,
+        _market_id: &Symbol,
+        _partial_data: &PartialData,
     ) -> Result<(), Error> {
         // Implementation would resolve market based on partial data
         Ok(())
@@ -645,9 +645,9 @@ impl EdgeCaseHandler {
 
     /// Attempt alternative resolution strategies.
     fn attempt_alternative_resolution(
-        env: &Env,
-        market_id: &Symbol,
-        partial_data: &PartialData,
+        _env: &Env,
+        _market_id: &Symbol,
+        _partial_data: &PartialData,
     ) -> Result<(), Error> {
         // Implementation would try alternative resolution methods
         Ok(())
@@ -656,7 +656,7 @@ impl EdgeCaseHandler {
     // ===== TEST HELPER METHODS =====
 
     /// Test zero stake scenarios.
-    fn test_zero_stake_scenarios(env: &Env) -> Result<(), Error> {
+    fn test_zero_stake_scenarios(_env: &Env) -> Result<(), Error> {
         // Test early stage zero stakes
         // Test mature market zero stakes
         // Test near-expiry zero stakes
@@ -664,28 +664,28 @@ impl EdgeCaseHandler {
     }
 
     /// Test tie-breaking scenarios.
-    fn test_tie_breaking_scenarios(env: &Env) -> Result<(), Error> {
+    fn test_tie_breaking_scenarios(_env: &Env) -> Result<(), Error> {
         // Test different tie-breaking methods
         // Test edge cases in tie-breaking
         Ok(())
     }
 
     /// Test orphaned market scenarios.
-    fn test_orphaned_market_scenarios(env: &Env) -> Result<(), Error> {
+    fn test_orphaned_market_scenarios(_env: &Env) -> Result<(), Error> {
         // Test orphan detection
         // Test recovery strategies
         Ok(())
     }
 
     /// Test partial resolution scenarios.
-    fn test_partial_resolution_scenarios(env: &Env) -> Result<(), Error> {
+    fn test_partial_resolution_scenarios(_env: &Env) -> Result<(), Error> {
         // Test partial data handling
         // Test confidence thresholds
         Ok(())
     }
 
     /// Test configuration scenarios.
-    fn test_configuration_scenarios(env: &Env) -> Result<(), Error> {
+    fn test_configuration_scenarios(_env: &Env) -> Result<(), Error> {
         // Test config validation
         // Test edge cases in configuration
         Ok(())
@@ -722,7 +722,7 @@ mod tests {
     #[test]
     fn test_tie_breaking_mechanism() {
         let env = Env::default();
-        let outcomes = vec![
+        let outcomes = soroban_sdk::vec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),

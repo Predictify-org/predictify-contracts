@@ -1,7 +1,7 @@
 
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
-use crate::PredictifyHybridClient;
-use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol, vec, Vec};
+use crate::{PredictifyHybrid, PredictifyHybridClient};
+use soroban_sdk::{testutils::{Address as _, Ledger}, token::{StellarAssetClient, Client as TokenClient}, Address, Env, String, Symbol, vec, Vec};
 use alloc::format;
 
 /// Setup function for tests
@@ -195,4 +195,117 @@ fn test_security_update_tags_unauthorized() {
     
     // Try to update tags as non-admin
     client.update_event_tags(&user, &market_id, &vec![&env, String::from_str(&env, "Hack")]);
+}
+
+// ===== INTEGRATION TEST: ENSURE CATEGORY/TAGS DO NOT AFFECT RESOLUTION/PAYOUTS =====
+
+struct TokenTestSetup {
+    env: Env,
+    contract_id: Address,
+    admin: Address,
+    user1: Address,
+    user2: Address,
+    token_id: Address,
+    market_id: Symbol,
+}
+
+impl TokenTestSetup {
+    fn new() -> Self {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let contract_id = env.register(PredictifyHybrid, ());
+
+        // Setup Token
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_id = token_contract.address();
+
+        // Store TokenID in contract
+        env.as_contract(&contract_id, || {
+             env.storage().persistent().set(&Symbol::new(&env, "TokenID"), &token_id);
+        });
+
+        // Initialize the contract
+        let client = PredictifyHybridClient::new(&env, &contract_id);
+        client.initialize(&admin, &Some(2));
+
+        // Create users and fund them
+        let user1 = Address::generate(&env);
+        let user2 = Address::generate(&env);
+        let stellar_client = StellarAssetClient::new(&env, &token_id);
+        stellar_client.mint(&user1, &1_000_000_000); // 1_000 XLM
+        stellar_client.mint(&user2, &1_000_000_000);
+
+        // Approve contract to spend tokens on behalf of users
+        let token_client = TokenClient::new(&env, &token_id);
+        token_client.approve(&user1, &contract_id, &i128::MAX, &1000000);
+        token_client.approve(&user2, &contract_id, &i128::MAX, &1000000);
+        token_client.approve(&admin, &contract_id, &i128::MAX, &1000000);
+
+        // Create a market
+        let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
+        let market_id = client.create_market(
+            &admin,
+            &String::from_str(&env, "Will category/tags affect payouts?"),
+            &outcomes,
+            &30,
+            &OracleConfig {
+                provider: OracleProvider::Reflector,
+                feed_id: String::from_str(&env, "BTC/USD"),
+                threshold: 100,
+                comparison: String::from_str(&env, "gte"),
+            },
+        );
+
+        Self { env, contract_id, admin, user1, user2, token_id, market_id }
+    }
+
+    fn client(&self) -> PredictifyHybridClient<'_> {
+        PredictifyHybridClient::new(&self.env, &self.contract_id)
+    }
+}
+
+#[test]
+fn test_category_tags_do_not_affect_resolution_and_payouts() {
+    let setup = TokenTestSetup::new();
+    let client = setup.client();
+
+    // Update category and tags before bets are placed (allowed)
+    client.update_event_category(&setup.admin, &setup.market_id, &Some(String::from_str(&setup.env, "Finance")));
+    client.update_event_tags(&setup.admin, &setup.market_id, &vec![&setup.env, String::from_str(&setup.env, "crypto")] );
+
+    // Place bets: user1 -> yes (10), user2 -> no (20)
+    client.place_bet(&setup.user1, &setup.market_id, &String::from_str(&setup.env, "yes"), &10_0000000);
+    client.place_bet(&setup.user2, &setup.market_id, &String::from_str(&setup.env, "no"), &20_0000000);
+
+    // Payout multiplier for "yes" should be (30/10)*100 = 300 and unchanged by category/tags
+    let yes_mul_before = client.get_payout_multiplier(&setup.market_id, &String::from_str(&setup.env, "yes"));
+    assert_eq!(yes_mul_before, 300);
+
+    // Advance time and resolve market to "yes"
+    setup.env.ledger().with_mut(|li| { li.timestamp = li.timestamp + (31 * 24 * 60 * 60); });
+    let _ = client.try_resolve_market_manual(&setup.admin, &setup.market_id, &String::from_str(&setup.env, "yes"));
+
+    // Ensure market resolved
+    let market = client.get_market(&setup.market_id).unwrap();
+    assert_eq!(market.state, MarketState::Resolved);
+
+    // Final multiplier should remain the same
+    let yes_mul_final = client.get_payout_multiplier(&setup.market_id, &String::from_str(&setup.env, "yes"));
+    assert_eq!(yes_mul_final, 300);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")]
+fn test_update_category_after_bets_forbidden() {
+    let setup = TokenTestSetup::new();
+    let client = setup.client();
+
+    // Place a bet first
+    client.place_bet(&setup.user1, &setup.market_id, &String::from_str(&setup.env, "yes"), &10_0000000);
+
+    // Attempt to update category after bets have been placed -> should panic with #111
+    client.update_event_category(&setup.admin, &setup.market_id, &Some(String::from_str(&setup.env, "Blocked")));
 }

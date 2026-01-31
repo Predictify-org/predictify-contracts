@@ -25,7 +25,7 @@ use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
 use crate::reentrancy_guard::ReentrancyGuard;
-use crate::types::{Bet, BetLimits, BetStats, BetStatus, Market, MarketState};
+use crate::types::{Bet, BetLimits, BetStatus, BetStats, Market, MarketState};
 use crate::validation;
 
 // ===== CONSTANTS =====
@@ -212,7 +212,7 @@ impl BetManager {
     ///
     /// - `Error::MarketNotFound` - Market does not exist
     /// - `Error::MarketClosed` - Market has ended or is not active
-    /// - `Error::MarketAlreadyResolved` - Market has already been resolved
+    /// - `Error::MarketResolved` - Market has already been resolved
     /// - `Error::AlreadyBet` - User has already placed a bet on this market
     /// - `Error::InsufficientStake` - Bet amount below minimum
     /// - `Error::InvalidOutcome` - Selected outcome not valid for this market
@@ -800,7 +800,7 @@ impl BetValidator {
 
         // Check if market is not already resolved
         if market.winning_outcomes.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         Ok(())
@@ -1015,6 +1015,7 @@ impl BetAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::BetStatus;
 
     #[test]
     fn test_bet_amount_validation() {
