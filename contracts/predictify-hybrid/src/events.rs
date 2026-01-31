@@ -645,6 +645,106 @@ pub struct DisputeResolvedEvent {
     pub timestamp: u64,
 }
 
+// ===== RESOLUTION DELAY / DISPUTE WINDOW EVENTS =====
+
+/// Event emitted when a market resolution is proposed and the dispute window opens.
+///
+/// This event signals the start of the dispute window period. During this time,
+/// community members can file disputes if they believe the proposed outcome is incorrect.
+/// Payouts are blocked until the window closes and the resolution is finalized.
+///
+/// # Event Data
+///
+/// - `market_id`: The market being resolved
+/// - `proposed_outcome`: The outcome proposed by oracle/admin
+/// - `resolution_source`: How the resolution was determined (Oracle, Community, Admin, Hybrid)
+/// - `window_end_time`: When the dispute window will close
+/// - `dispute_window_hours`: Duration of the window in hours
+/// - `timestamp`: When the resolution was proposed
+///
+/// # Usage
+///
+/// Subscribe to this event to:
+/// - Notify users that a market resolution is pending
+/// - Display countdown to dispute window close
+/// - Enable dispute filing UI
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolutionProposedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Proposed resolution outcome
+    pub proposed_outcome: String,
+    /// Source of resolution (Oracle, Community, Admin, Hybrid)
+    pub resolution_source: String,
+    /// When the dispute window will close
+    pub window_end_time: u64,
+    /// Duration of the dispute window in hours
+    pub dispute_window_hours: u32,
+    /// Proposal timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when a dispute window closes.
+///
+/// This event signals the end of the dispute filing period. After this point,
+/// no new disputes can be filed for this resolution attempt. If there are no
+/// unresolved disputes, the resolution can be finalized.
+///
+/// # Event Data
+///
+/// - `market_id`: The market whose window closed
+/// - `disputes_filed`: Number of disputes filed during the window
+/// - `has_unresolved_disputes`: Whether any disputes are still unresolved
+/// - `timestamp`: When the window closed
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeWindowClosedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Number of disputes filed during the window
+    pub disputes_filed: u32,
+    /// Whether there are unresolved disputes blocking finalization
+    pub has_unresolved_disputes: bool,
+    /// Window close timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when a market resolution is finalized after the dispute window.
+///
+/// This event signals that the resolution is now permanent and payouts are enabled.
+/// Once finalized, the winning outcome cannot be changed (except through admin override
+/// in extreme circumstances).
+///
+/// # Event Data
+///
+/// - `market_id`: The market that was finalized
+/// - `final_outcome`: The confirmed winning outcome
+/// - `was_disputed`: Whether any disputes were filed during the window
+/// - `disputes_resolved`: Number of disputes that were resolved
+/// - `timestamp`: When finalization occurred
+///
+/// # Post-Finalization
+///
+/// After this event:
+/// - Users can call `claim_winnings` to collect payouts
+/// - No new disputes can be filed
+/// - Market state transitions to final resolved state
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolutionFinalizedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Final confirmed outcome
+    pub final_outcome: String,
+    /// Whether any disputes were filed
+    pub was_disputed: bool,
+    /// Number of disputes that were resolved
+    pub disputes_resolved: u32,
+    /// Finalization timestamp
+    pub timestamp: u64,
+}
+
 /// Fee collected event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1567,6 +1667,99 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("dispt_res"), &event);
+    }
+
+    // ===== RESOLUTION DELAY / DISPUTE WINDOW EVENT EMITTERS =====
+
+    /// Emit resolution proposed event when resolution is proposed and dispute window opens.
+    ///
+    /// This function emits an event signaling the start of the dispute window period.
+    /// During this time, community members can file disputes before the resolution
+    /// is finalized and payouts are enabled.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `proposed_outcome` - The outcome being proposed
+    /// - `resolution_source` - Source of resolution (Oracle, Community, Admin, Hybrid)
+    /// - `window_end_time` - When the dispute window will close
+    /// - `dispute_window_hours` - Duration of the window in hours
+    pub fn emit_resolution_proposed(
+        env: &Env,
+        market_id: &Symbol,
+        proposed_outcome: &String,
+        resolution_source: &String,
+        window_end_time: u64,
+        dispute_window_hours: u32,
+    ) {
+        let event = ResolutionProposedEvent {
+            market_id: market_id.clone(),
+            proposed_outcome: proposed_outcome.clone(),
+            resolution_source: resolution_source.clone(),
+            window_end_time,
+            dispute_window_hours,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("res_prop"), &event);
+    }
+
+    /// Emit dispute window closed event when the window period ends.
+    ///
+    /// This function emits an event signaling the end of the dispute filing period.
+    /// After this point, no new disputes can be filed.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `disputes_filed` - Number of disputes filed during the window
+    /// - `has_unresolved_disputes` - Whether any disputes are still unresolved
+    pub fn emit_dispute_window_closed(
+        env: &Env,
+        market_id: &Symbol,
+        disputes_filed: u32,
+        has_unresolved_disputes: bool,
+    ) {
+        let event = DisputeWindowClosedEvent {
+            market_id: market_id.clone(),
+            disputes_filed,
+            has_unresolved_disputes,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("win_close"), &event);
+    }
+
+    /// Emit resolution finalized event when resolution becomes permanent.
+    ///
+    /// This function emits an event signaling that the resolution is now final
+    /// and payouts are enabled. Users can now claim their winnings.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `market_id` - Market identifier
+    /// - `final_outcome` - The confirmed winning outcome
+    /// - `was_disputed` - Whether any disputes were filed during the window
+    /// - `disputes_resolved` - Number of disputes that were resolved
+    pub fn emit_resolution_finalized(
+        env: &Env,
+        market_id: &Symbol,
+        final_outcome: &String,
+        was_disputed: bool,
+        disputes_resolved: u32,
+    ) {
+        let event = ResolutionFinalizedEvent {
+            market_id: market_id.clone(),
+            final_outcome: final_outcome.clone(),
+            was_disputed,
+            disputes_resolved,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("res_final"), &event);
     }
 
     /// Emit fee collected event

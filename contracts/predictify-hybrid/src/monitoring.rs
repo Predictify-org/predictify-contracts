@@ -457,6 +457,14 @@ impl ContractMonitor {
             total_extension_days: 0,
             max_extension_days: 7,
             extension_history: Vec::new(env),
+            // Resolution delay fields
+            resolution_proposed_outcome: None,
+            resolution_proposed_at: 0,
+            resolution_window_end_time: 0,
+            resolution_is_finalized: false,
+            resolution_dispute_count: 0,
+            resolution_source: None,
+            dispute_window_hours: 0,
         })
     }
 
