@@ -980,7 +980,7 @@ impl OracleResolutionManager {
                 &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
             );
 
-            return Err(Error::ResolutionTimeoutReached);
+            return Err(Error::ResTimeout);
         }
 
         // Validate market for oracle resolution
@@ -1006,7 +1006,7 @@ impl OracleResolutionManager {
                             used_config = fallback_config.clone();
                             res
                         }
-                        Err(_) => return Err(Error::FallbackOracleUnavailable),
+                        Err(_) => return Err(Error::FallbackUnavail),
                     }
                 } else {
                     return Err(Error::OracleUnavailable);

@@ -594,6 +594,11 @@ impl PredictifyHybrid {
     pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
         user.require_auth();
 
+        // Check user restrictions (whitelist/blacklist)
+        if let Err(e) = admin::UserRestrictionManager::check_restrictions(&env, &user, &market_id) {
+            panic_with_error!(env, e);
+        }
+
         let mut market: Market = env
             .storage()
             .persistent()
@@ -1732,11 +1737,12 @@ impl PredictifyHybrid {
         let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
             &env,
             &market_id,
-            &oracle_contract,
         )?;
 
         Ok(oracle_resolution.oracle_result)
-    pub fn fetch_oracle_result(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
+    }
+
+    pub fn fetch_oracle_result_basic(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
         resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
     }
 
@@ -1775,7 +1781,7 @@ impl PredictifyHybrid {
     /// - `Error::OracleVerified` - Result already verified for this market
     /// - `Error::OracleUnavailable` - Oracle service is unavailable
     /// - `Error::OracleStale` - Oracle data is too old
-    /// - `Error::OracleConsensusNotReached` - Multiple oracles disagree
+    /// - `Error::ResTimeout` - Multiple oracles disagree
     /// - `Error::InvalidOracleConfig` - Oracle not whitelisted/authorized
     /// - `Error::OracleAllSourcesFailed` - All oracle sources failed
     /// - `Error::InsufficientOracleSources` - No active oracle sources available
@@ -4232,6 +4238,75 @@ impl PredictifyHybrid {
     /// Check role permissions against a specific permission
     pub fn check_role_permissions(env: Env, role: AdminRole, permission: AdminPermission) -> bool {
         AdminManager::check_role_permissions(&env, role, permission)
+    }
+
+    // ===== USER RESTRICTION MANAGEMENT =====
+
+    /// Set global blacklist status for a user (SuperAdmin/ManageRestrictions only)
+    pub fn set_global_blacklist(
+        env: Env,
+        admin: Address,
+        user: Address,
+        status: bool,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        AdminManager::validate_admin_permission(&env, &admin, AdminPermission::ManageRestrictions)?;
+        admin::UserRestrictionManager::set_global_blacklist(&env, user, status);
+        Ok(())
+    }
+
+    /// Set event-specific blacklist status for a user (SuperAdmin/ManageRestrictions only)
+    pub fn set_event_blacklist(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        user: Address,
+        status: bool,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        AdminManager::validate_admin_permission(&env, &admin, AdminPermission::ManageRestrictions)?;
+        admin::UserRestrictionManager::set_event_blacklist(&env, market_id, user, status);
+        Ok(())
+    }
+
+    /// Set global whitelist status for a user (SuperAdmin/ManageRestrictions only)
+    pub fn set_global_whitelist(
+        env: Env,
+        admin: Address,
+        user: Address,
+        status: bool,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        AdminManager::validate_admin_permission(&env, &admin, AdminPermission::ManageRestrictions)?;
+        admin::UserRestrictionManager::set_global_whitelist(&env, user, status);
+        Ok(())
+    }
+
+    /// Set event-specific whitelist status for a user (SuperAdmin/ManageRestrictions only)
+    pub fn set_event_whitelist(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        user: Address,
+        status: bool,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        AdminManager::validate_admin_permission(&env, &admin, AdminPermission::ManageRestrictions)?;
+        admin::UserRestrictionManager::set_event_whitelist(&env, market_id, user, status);
+        Ok(())
+    }
+
+    /// Enable or disable whitelist enforcement for a specific event (SuperAdmin/ManageRestrictions only)
+    pub fn set_whitelist_enabled(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        enabled: bool,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        AdminManager::validate_admin_permission(&env, &admin, AdminPermission::ManageRestrictions)?;
+        admin::UserRestrictionManager::set_whitelist_enabled(&env, market_id, enabled);
+        Ok(())
     }
 
     // ===== CONTRACT UPGRADE METHODS =====

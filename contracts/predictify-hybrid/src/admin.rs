@@ -67,6 +67,8 @@ pub enum AdminPermission {
     ViewAnalytics,
     /// Emergency actions
     EmergencyActions,
+    /// Manage user whitelists and blacklists
+    ManageRestrictions,
 }
 
 /// Admin action record
@@ -747,6 +749,7 @@ impl AdminAccessControl {
             "manage_disputes" => Ok(AdminPermission::ManageDisputes),
             "view_analytics" => Ok(AdminPermission::ViewAnalytics),
             "emergency_actions" => Ok(AdminPermission::EmergencyActions),
+            "manage_restrictions" => Ok(AdminPermission::ManageRestrictions),
             _ => Err(Error::InvalidInput),
         }
     }
@@ -3012,6 +3015,9 @@ impl AdminUtils {
             AdminPermission::EmergencyActions => {
                 String::from_str(&soroban_sdk::Env::default(), "EmergencyActions")
             }
+            AdminPermission::ManageRestrictions => {
+                String::from_str(&soroban_sdk::Env::default(), "ManageRestrictions")
+            }
         }
     }
 }
@@ -3305,6 +3311,99 @@ impl Default for AdminAnalytics {
 // ===== MODULE TESTS =====
 
 #[cfg(test)]
+// ===== USER RESTRICTION MANAGEMENT =====
+
+#[derive(Clone)]
+#[contracttype]
+pub enum UserRestrictionKey {
+    GlobalBlacklist(Address),
+    EventBlacklist(Symbol, Address),
+    GlobalWhitelist(Address),
+    EventWhitelist(Symbol, Address),
+    WhitelistEnabled(Symbol),
+}
+
+pub struct UserRestrictionManager;
+
+impl UserRestrictionManager {
+    pub fn set_global_blacklist(env: &Env, user: Address, status: bool) {
+        env.storage()
+            .persistent()
+            .set(&UserRestrictionKey::GlobalBlacklist(user), &status);
+    }
+
+    pub fn set_event_blacklist(env: &Env, market_id: Symbol, user: Address, status: bool) {
+        env.storage()
+            .persistent()
+            .set(&UserRestrictionKey::EventBlacklist(market_id, user), &status);
+    }
+
+    pub fn set_global_whitelist(env: &Env, user: Address, status: bool) {
+        env.storage()
+            .persistent()
+            .set(&UserRestrictionKey::GlobalWhitelist(user), &status);
+    }
+
+    pub fn set_event_whitelist(env: &Env, market_id: Symbol, user: Address, status: bool) {
+        env.storage()
+            .persistent()
+            .set(&UserRestrictionKey::EventWhitelist(market_id, user), &status);
+    }
+
+    pub fn set_whitelist_enabled(env: &Env, market_id: Symbol, enabled: bool) {
+        env.storage()
+            .persistent()
+            .set(&UserRestrictionKey::WhitelistEnabled(market_id), &enabled);
+    }
+
+    pub fn check_restrictions(env: &Env, user: &Address, market_id: &Symbol) -> Result<(), Error> {
+        // 1. Check Global Blacklist
+        if env
+            .storage()
+            .persistent()
+            .get::<_, bool>(&UserRestrictionKey::GlobalBlacklist(user.clone()))
+            .unwrap_or(false)
+        {
+            return Err(Error::Blacklist);
+        }
+
+        // 2. Check Event Blacklist
+        if env
+            .storage()
+            .persistent()
+            .get::<_, bool>(&UserRestrictionKey::EventBlacklist(market_id.clone(), user.clone()))
+            .unwrap_or(false)
+        {
+            return Err(Error::Blacklist);
+        }
+
+        // 3. Check Whitelist (if enabled for this event)
+        let whitelist_enabled = env
+            .storage()
+            .persistent()
+            .get::<_, bool>(&UserRestrictionKey::WhitelistEnabled(market_id.clone()))
+            .unwrap_or(false);
+        if whitelist_enabled {
+            let is_global_whitelisted = env
+                .storage()
+                .persistent()
+                .get::<_, bool>(&UserRestrictionKey::GlobalWhitelist(user.clone()))
+                .unwrap_or(false);
+            let is_event_whitelisted = env
+                .storage()
+                .persistent()
+                .get::<_, bool>(&UserRestrictionKey::EventWhitelist(market_id.clone(), user.clone()))
+                .unwrap_or(false);
+
+            if !is_global_whitelisted && !is_event_whitelisted {
+                return Err(Error::NoWhitelist);
+            }
+        }
+
+        Ok(())
+    }
+}
+
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;

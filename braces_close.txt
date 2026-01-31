@@ -1,0 +1,509 @@
+54:}
+97:use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
+104:};
+106:use crate::graceful_degradation::{OracleBackup, OracleHealth};
+113:};
+147:    /// # use soroban_sdk::{Env, Address};
+186:        }
+192:        }
+204:    }
+220:    }
+236:    }
+246:    }
+287:    /// # use soroban_sdk::{Env, Address, String, Vec};
+288:    /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleType};
+302:    /// };
+317:    /// # use soroban_sdk::{Env, Address, String, Vec};
+318:    /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleProvider};
+371:            });
+375:        }
+380:        }
+384:        }
+417:        };
+429:    }
+475:            });
+479:        }
+490:        }
+507:        };
+526:    }
+540:    }
+567:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+600:        }
+608:            });
+613:        }
+619:        }
+624:        }
+628:            Ok(_) => {}
+630:        }
+641:    }
+676:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+757:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+781:        }
+788:            }
+790:        }
+791:    }
+826:    /// # use soroban_sdk::{Env, Address, String, Symbol, Vec};
+854:        }
+858:        }
+859:    }
+880:    /// # use soroban_sdk::{Env, Address, Symbol};
+889:    ///         println!("Bet amount: {}", bet.amount);
+890:    ///         println!("Selected outcome: {:?}", bet.outcome);
+891:    ///         println!("Status: {:?}", bet.status);
+892:    ///     },
+895:    ///     }
+896:    /// }
+900:    }
+920:    /// # use soroban_sdk::{Env, Address, Symbol};
+928:    /// } else {
+930:    /// }
+934:    }
+953:    /// # use soroban_sdk::{Env, Symbol};
+959:    /// println!("Total bets: {}", stats.total_bets);
+960:    /// println!("Total locked: {} stroops", stats.total_amount_locked);
+961:    /// println!("Unique bettors: {}", stats.unique_bettors);
+965:    }
+993:    /// # use soroban_sdk::{Env, Address, Symbol};
+1000:    ///     Ok(payout) => println!("User will receive {} stroops", payout),
+1001:    ///     Err(e) => println!("Calculation failed: {:?}", e),
+1002:    /// }
+1047:    /// # use soroban_sdk::{Env, Address, Symbol};
+1055:    ///     Ok(payout) => println!("Payout: {}", payout),
+1056:    ///     Err(e) => println!("Error: {:?}", e),
+1057:    /// }
+1061:    }
+1081:    /// # use soroban_sdk::{Env, Symbol, String};
+1091:    /// println!("Implied probability for 'Yes': {}%", prob);
+1095:    }
+1115:    /// # use soroban_sdk::{Env, Symbol, String};
+1126:    /// println!("Payout multiplier for 'Yes': {:.2}x", actual_multiplier);
+1130:    }
+1155:    /// # use soroban_sdk::{Env, Address, Symbol};
+1191:        }
+1199:            });
+1204:        }
+1210:        };
+1227:                }
+1228:            }
+1235:                };
+1293:                    Ok(_) => {}
+1295:                }
+1298:            }
+1299:        }
+1304:    }
+1330:    /// # use soroban_sdk::{Env, Symbol};
+1341:    ///     },
+1344:    ///     }
+1345:    /// }
+1361:    }
+1388:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+1436:            });
+1440:        }
+1448:            });
+1453:        }
+1459:        }
+1505:    }
+1532:    /// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+1574:            });
+1578:        }
+1583:        }
+1591:            });
+1596:        }
+1603:            }
+1604:        }
+1648:    }
+1679:    /// # use soroban_sdk::{Env, Address, Symbol};
+1692:    ///         println!("Oracle result: {}", result);
+1693:    ///     },
+1696:    ///         println!("Failed to fetch oracle result: {:?}", e);
+1697:    ///     }
+1698:    /// }
+1728:        }
+1734:        }
+1744:    }
+1748:    }
+1793:    /// # use soroban_sdk::{Env, Address, Symbol};
+1802:    ///         println!("Outcome: {}", result.outcome);
+1803:    ///         println!("Price: ${}", result.price / 100);
+1804:    ///         println!("Confidence: {}%", result.confidence_score);
+1805:    ///         println!("Sources consulted: {}", result.sources_count);
+1809:    ///         }
+1810:    ///     },
+1812:    ///         println!("Verification failed: {:?}", e);
+1813:    ///     }
+1814:    /// }
+1863:    }
+1885:    /// # use soroban_sdk::{Env, Address, Symbol};
+1912:    }
+1934:    /// # use soroban_sdk::{Env, Symbol};
+1941:    ///         println!("Market verified with outcome: {}", result.outcome);
+1942:    ///     },
+1945:    ///     }
+1946:    /// }
+1950:    }
+1964:    }
+2007:    }
+2038:    /// # use soroban_sdk::{Env, Symbol};
+2047:    ///     },
+2050:    ///         println!("Resolution failed: {:?}", e);
+2051:    ///     }
+2052:    /// }
+2085:    }
+2132:    ///         println!("Resolved markets: {}", total_resolved);
+2133:    ///         println!("Oracle accuracy: {}%", oracle_accuracy);
+2134:    ///     },
+2136:    ///         println!("Analytics unavailable: {:?}", e);
+2137:    ///     }
+2138:    /// }
+2165:    }
+2200:    /// # use soroban_sdk::{Env, Symbol};
+2212:    ///         println!("Participants: {}", total_participants);
+2213:    ///         println!("Total stake: {}", total_stake);
+2214:    ///         println!("Leading outcome: {:?}", leading_outcome);
+2215:    ///     },
+2217:    ///         println!("Analytics unavailable: {:?}", e);
+2218:    ///     }
+2219:    /// }
+2264:    }
+2276:    }
+2292:    }
+2309:            });
+2313:        }
+2316:    }
+2329:            });
+2333:        }
+2336:    }
+2365:    /// # use soroban_sdk::{Env, Symbol};
+2371:    ///     Ok(total) => println!("Distributed {} stroops to winners", total),
+2372:    ///     Err(e) => println!("Distribution failed: {:?}", e),
+2373:    /// }
+2395:        }
+2402:            });
+2408:        };
+2433:                }
+2434:            }
+2435:        }
+2446:                    }
+2447:                }
+2448:            }
+2449:        }
+2453:        }
+2463:            }
+2464:        }
+2471:            }
+2476:                }
+2477:            }
+2478:        }
+2482:        }
+2496:                }
+2529:                        }
+2530:                    }
+2531:                }
+2532:            }
+2533:        }
+2545:                    }
+2567:                                Ok(_) => {}
+2569:                            }
+2571:                        }
+2572:                    }
+2573:                } else {
+2578:                    }
+2579:                }
+2580:            }
+2581:        }
+2587:    }
+2596:    }
+2610:    }
+2622:    }
+2632:    }
+2660:    /// # use soroban_sdk::{Env, Address};
+2668:    ///     Err(e) => println!("Fee update failed: {:?}", e),
+2669:    /// }
+2685:        }
+2690:        }
+2695:        }
+2702:    }
+2721:        }
+2722:        let limits = BetLimits { min_bet, max_bet };
+2727:    }
+2746:        }
+2747:        let limits = BetLimits { min_bet, max_bet };
+2751:    }
+2756:    }
+2785:    /// # use soroban_sdk::{Env, Address};
+2792:    ///     Ok(amount) => println!("Withdrew {} stroops", amount),
+2793:    ///     Err(e) => println!("Withdrawal failed: {:?}", e),
+2794:    /// }
+2800:        }
+2809:            });
+2813:        }
+2821:        }
+2826:        } else {
+2828:        };
+2849:    }
+2883:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+2898:    ///     Err(e) => println!("Extension failed: {:?}", e),
+2899:    /// }
+2932:        }
+2947:        }
+2953:        }
+2994:    }
+3028:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+3042:    ///     Err(e) => println!("Update failed: {:?}", e),
+3043:    /// }
+3075:        }
+3080:        }
+3092:        }
+3098:        }
+3103:        }
+3124:    }
+3158:    /// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
+3178:    ///     Err(e) => println!("Update failed: {:?}", e),
+3179:    /// }
+3212:        }
+3217:        }
+3223:            }
+3224:        }
+3236:        }
+3242:        }
+3247:        }
+3268:    }
+3300:    /// # use soroban_sdk::{Env, Address, Symbol, String};
+3314:    ///     Err(e) => println!("Update failed: {:?}", e),
+3315:    /// }
+3334:        }
+3346:        }
+3352:        }
+3357:        }
+3372:    }
+3405:    /// # use soroban_sdk::{Env, Address, Symbol, String, vec};
+3426:    ///     Err(e) => println!("Update failed: {:?}", e),
+3427:    /// }
+3446:        }
+3452:            }
+3453:        }
+3465:        }
+3471:        }
+3476:        }
+3491:    }
+3514:    }
+3546:    /// # use soroban_sdk::{Env, Address, String, Symbol};
+3558:    ///     Ok(total) => println!("Refunded {} stroops", total),
+3559:    ///     Err(e) => println!("Cancellation failed: {:?}", e),
+3560:    /// }
+3592:            });
+3596:        }
+3605:            });
+3610:        }
+3615:        }
+3620:        }
+3632:        }
+3635:        }
+3656:    }
+3679:        }
+3682:        }
+3685:        }
+3689:        }
+3698:        }
+3706:        }
+3709:        }
+3725:    }
+3745:            });
+3749:        }
+3758:    }
+3770:        };
+3773:    }
+3778:    }
+3787:    }
+3792:    }
+3797:    }
+3802:    }
+3810:    }
+3815:    }
+3820:    }
+3827:        };
+3830:    }
+3837:        };
+3840:    }
+3847:        };
+3850:    }
+3861:    }
+3869:    }
+3874:    }
+3879:    }
+3887:    }
+3892:    }
+3899:    }
+3907:    }
+3912:    }
+3921:    }
+3929:    }
+3934:    }
+3939:    }
+3947:        }
+3951:        }
+3952:    }
+3964:        }
+3968:        }
+3969:    }
+3977:        }
+3978:    }
+3984:    }
+3991:    }
+4004:    }
+4017:    }
+4022:    }
+4027:    }
+4032:    }
+4040:    }
+4050:    }
+4058:    }
+4066:    }
+4074:    }
+4082:    }
+4090:    }
+4098:    }
+4121:        }
+4134:                    } else {
+4136:                    }
+4137:                } else if comparison == &String::from_str(&env, "lt") {
+4140:                    } else {
+4142:                    }
+4143:                } else {
+4146:                    } else {
+4148:                    }
+4149:                };
+4152:            }
+4158:            }
+4159:        }
+4160:    }
+4172:        }
+4173:    }
+4186:    }
+4196:    }
+4207:    }
+4216:    }
+4221:    }
+4226:    }
+4232:    }
+4237:    }
+4242:    }
+4257:    }
+4271:    }
+4284:    }
+4298:    }
+4311:    }
+4342:    /// # use soroban_sdk::{Env, Address, BytesN};
+4359:    }
+4383:    }
+4395:    }
+4406:    }
+4417:    }
+4428:    }
+4448:    }
+4467:    }
+4496:    /// # use soroban_sdk::{Env, Symbol};
+4503:    ///         println!("Total participants: {}", stats.total_participants);
+4504:    ///         println!("Total stake: {}", stats.total_stake);
+4505:    ///         println!("Consensus strength: {}%", stats.consensus_strength);
+4506:    ///     },
+4507:    ///     Err(e) => println!("Analytics unavailable: {:?}", e),
+4508:    /// }
+4515:    }
+4537:    /// # use soroban_sdk::{Env, Symbol};
+4544:    ///         println!("Total votes: {}", analytics.total_votes);
+4545:    ///         println!("Unique voters: {}", analytics.unique_voters);
+4546:    ///     },
+4547:    ///     Err(e) => println!("Voting analytics unavailable: {:?}", e),
+4548:    /// }
+4555:    }
+4578:    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+4583:    ///         println!("Oracle accuracy: {}%", stats.accuracy_rate);
+4584:    ///         println!("Uptime: {}%", stats.uptime_percentage);
+4585:    ///         println!("Reliability score: {}", stats.reliability_score);
+4586:    ///     },
+4587:    ///     Err(e) => println!("Oracle stats unavailable: {:?}", e),
+4588:    /// }
+4595:    }
+4618:    /// # use predictify_hybrid::{PredictifyHybrid, TimeFrame};
+4623:    ///         println!("Total fees collected: {}", analytics.total_fees_collected);
+4624:    ///         println!("Collection rate: {}%", analytics.fee_collection_rate);
+4625:    ///     },
+4626:    ///     Err(e) => println!("Fee analytics unavailable: {:?}", e),
+4627:    /// }
+4634:    }
+4656:    /// # use soroban_sdk::{Env, Symbol};
+4663:    ///         println!("Total disputes: {}", analytics.total_disputes);
+4664:    ///         println!("Success rate: {}%", analytics.dispute_success_rate);
+4665:    ///     },
+4666:    ///     Err(e) => println!("Dispute analytics unavailable: {:?}", e),
+4667:    /// }
+4674:    }
+4696:    /// # use soroban_sdk::{Env, Symbol};
+4703:    ///         println!("Total participants: {}", metrics.total_participants);
+4704:    ///         println!("Engagement score: {}", metrics.engagement_score);
+4705:    ///         println!("Retention rate: {}%", metrics.retention_rate);
+4706:    ///     },
+4707:    ///     Err(e) => println!("Participation metrics unavailable: {:?}", e),
+4708:    /// }
+4715:    }
+4737:    /// # use soroban_sdk::{Env, Symbol, vec};
+4748:    ///         println!("Total markets: {}", comparison.total_markets);
+4749:    ///         println!("Average participation: {}", comparison.average_participation);
+4750:    ///         println!("Success rate: {}%", comparison.success_rate);
+4751:    ///     },
+4752:    ///     Err(e) => println!("Comparison analytics unavailable: {:?}", e),
+4753:    /// }
+4760:    }
+4785:    /// # use soroban_sdk::{Env, String, vec};
+4796:    ///         println!("Gas usage: {}", result.gas_usage);
+4797:    ///         println!("Execution time: {}", result.execution_time);
+4798:    ///         println!("Performance score: {}", result.performance_score);
+4799:    ///     },
+4800:    ///     Err(e) => println!("Benchmark failed: {:?}", e),
+4801:    /// }
+4811:    }
+4834:    /// # use predictify_hybrid::{PredictifyHybrid, StorageOperation};
+4842:    /// # };
+4846:    ///         println!("Storage usage: {}", result.storage_usage);
+4847:    ///         println!("Gas usage: {}", result.gas_usage);
+4848:    ///     },
+4849:    ///     Err(e) => println!("Storage benchmark failed: {:?}", e),
+4850:    /// }
+4859:    }
+4882:    /// # use predictify_hybrid::{PredictifyHybrid, OracleProvider};
+4890:    ///         println!("Oracle response time: {}", result.execution_time);
+4891:    ///         println!("Oracle gas usage: {}", result.gas_usage);
+4892:    ///     },
+4893:    ///     Err(e) => println!("Oracle benchmark failed: {:?}", e),
+4894:    /// }
+4903:    }
+4925:    /// # use soroban_sdk::{Env, vec};
+4926:    /// # use predictify_hybrid::{PredictifyHybrid, BatchOperation};
+4935:    /// #     }
+4940:    ///         println!("Batch execution time: {}", result.execution_time);
+4941:    ///         println!("Batch gas usage: {}", result.gas_usage);
+4942:    ///     },
+4943:    ///     Err(e) => println!("Batch benchmark failed: {:?}", e),
+4944:    /// }
+4953:    }
+4983:    ///         println!("Total gas usage: {}", result.gas_usage);
+4984:    ///         println!("Total execution time: {}", result.execution_time);
+4985:    ///     },
+4986:    ///     Err(e) => println!("Scalability benchmark failed: {:?}", e),
+4987:    /// }
+4999:    }
+5022:    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceBenchmarkSuite};
+5029:    ///         println!("Overall score: {}", report.performance_metrics.overall_performance_score);
+5030:    ///         println!("Recommendations: {}", report.recommendations.len());
+5031:    ///     },
+5032:    ///     Err(e) => println!("Report generation failed: {:?}", e),
+5033:    /// }
+5043:    }
+5068:    /// # use predictify_hybrid::{PredictifyHybrid, PerformanceMetrics, PerformanceThresholds};
+5076:    ///     Err(e) => println!("Validation failed: {:?}", e),
+5077:    /// }
+5087:    }
+5091:    }
+5096:    }
+5097:}
