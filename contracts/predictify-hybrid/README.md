@@ -555,6 +555,133 @@ soroban contract invoke --id <contract_id> -- set_token_contract --token_contrac
 - **Reentrancy Protection**: Soroban's built-in protection
 - **Stake Tracking**: Proper tracking of user stakes and claims
 - **Oracle Validation**: Real contract calls with error handling
+- **Resolution Delay**: Mandatory dispute window before payouts
+
+## Resolution Delay and Dispute Window
+
+The contract implements a mandatory dispute window between market resolution and payout distribution. This allows community members to challenge resolution outcomes before payouts become final.
+
+### Key Features
+
+- **Configurable Window Duration**: Admin can set global (1-168 hours) or per-market dispute windows
+- **Proposal-Based Resolution**: Resolution is proposed, not immediately finalized
+- **Dispute Integration**: Disputes can only be filed during the open window
+- **Finalization Gate**: Payouts blocked until window closes and disputes resolved
+
+### Resolution Flow
+
+```
+Market Ends → Resolution Proposed → Dispute Window Open → Window Closes → Finalized → Payouts
+                                          ↓
+                                   Disputes Filed → Disputes Resolved ↗
+```
+
+### API Functions
+
+```rust
+/// Set global dispute window (admin only)
+/// @param hours: Window duration in hours (1-168)
+/// @param market_id: None for global, Some(id) for per-market
+set_dispute_window_duration(env, admin, hours, market_id: Option<Symbol>)
+
+/// Propose resolution after market ends (opens dispute window)
+/// @returns The proposed outcome
+propose_market_resolution(env, admin, market_id) -> String
+
+/// Finalize resolution after window closes
+/// @returns The final winning outcome
+finalize_market_resolution(env, market_id) -> String
+
+/// Get dispute window status
+/// @returns (is_open, remaining_seconds, dispute_count)
+get_dispute_window_status(env, market_id) -> (bool, u64, u32)
+
+/// File a dispute during the window
+/// @param stake: Amount to stake on dispute
+/// @param reason: Reason for dispute
+dispute_during_window(env, user, market_id, stake, reason)
+
+/// Emergency admin force finalize (bypasses window)
+force_finalize_resolution(env, admin, market_id, outcome)
+```
+
+### Usage Example
+
+```javascript
+// 1. Set global dispute window to 48 hours
+await predictifyClient.set_dispute_window_duration(adminAddress, 48, null);
+
+// 2. After market ends, propose resolution
+const proposedOutcome = await predictifyClient.propose_market_resolution(
+  adminAddress,
+  marketId
+);
+console.log("Proposed outcome:", proposedOutcome);
+
+// 3. Check window status
+const [isOpen, remaining, disputes] = await predictifyClient.get_dispute_window_status(marketId);
+if (isOpen) {
+  console.log(`Window open for ${remaining / 3600} more hours`);
+  console.log(`${disputes} disputes filed so far`);
+}
+
+// 4. Users can file disputes during window
+await predictifyClient.dispute_during_window(
+  userAddress,
+  marketId,
+  10_000_000, // 1 XLM stake
+  "Oracle data appears incorrect"
+);
+
+// 5. After window closes (and disputes resolved), finalize
+const finalOutcome = await predictifyClient.finalize_market_resolution(marketId);
+console.log("Final outcome:", finalOutcome);
+
+// 6. Now users can claim winnings
+await predictifyClient.claim_winnings(userAddress, marketId);
+```
+
+### Error Handling
+
+```rust
+DisputeWindowNotOpen = 426,      // Cannot dispute outside window
+DisputeWindowStillOpen = 427,    // Cannot finalize while window open
+ResolutionNotProposed = 428,     // Resolution must be proposed first
+ResolutionAlreadyFinalized = 429, // Cannot modify finalized resolution
+ResolutionNotFinalized = 430,    // Cannot claim before finalization
+UnresolvedDisputes = 431,        // Cannot finalize with active disputes
+```
+
+### Events Emitted
+
+```rust
+/// When resolution is proposed
+ResolutionProposedEvent {
+    market_id: Symbol,
+    proposed_outcome: String,
+    resolution_source: String,
+    window_end_time: u64,
+    dispute_window_hours: u32,
+    timestamp: u64,
+}
+
+/// When dispute window closes
+DisputeWindowClosedEvent {
+    market_id: Symbol,
+    disputes_filed: u32,
+    has_unresolved_disputes: bool,
+    timestamp: u64,
+}
+
+/// When resolution is finalized
+ResolutionFinalizedEvent {
+    market_id: Symbol,
+    final_outcome: String,
+    was_disputed: bool,
+    disputes_resolved: u32,
+    timestamp: u64,
+}
+```
 
 ## Performance Considerations
 
