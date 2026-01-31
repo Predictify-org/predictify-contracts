@@ -843,10 +843,10 @@ pub struct ResolutionConfig {
 /// # Example
 ///
 /// ```rust
-/// # use predictify_hybrid::config::OracleConfig;
+/// # use predictify_hybrid::config::OracleSettings;
 ///
 /// // Create production oracle configuration
-/// let oracle_config = OracleConfig {
+/// let oracle_config = OracleSettings {
 ///     max_price_age: 3600,      // 1 hour maximum data age
 ///     retry_attempts: 3,        // Try up to 3 times
 ///     timeout_seconds: 30,      // 30 second timeout per attempt
@@ -863,7 +863,7 @@ pub struct ResolutionConfig {
 /// ```
 #[derive(Clone, Debug)]
 #[contracttype]
-pub struct OracleConfig {
+pub struct OracleSettings {
     /// Maximum age of oracle data before it's considered stale (in seconds).
     ///
     /// Ensures oracle data is sufficiently recent for accurate market
@@ -1023,7 +1023,7 @@ pub struct ContractConfig {
     ///
     /// Controls how the contract interacts with external
     /// oracle services for market resolution data.
-    pub oracle: OracleConfig,
+    pub oracle: OracleSettings,
 }
 
 // ===== CONFIGURATION MANAGER =====
@@ -1896,8 +1896,8 @@ impl ConfigManager {
     /// - System reliability (adequate retries)
     /// - Resource usage (bounded timeouts)
     /// - Data quality (freshness requirements)
-    pub fn get_default_oracle_config() -> OracleConfig {
-        OracleConfig {
+    pub fn get_default_oracle_config() -> OracleSettings {
+        OracleSettings {
             max_price_age: MAX_ORACLE_PRICE_AGE,
             retry_attempts: ORACLE_RETRY_ATTEMPTS,
             timeout_seconds: ORACLE_TIMEOUT_SECONDS,
@@ -1956,8 +1956,8 @@ impl ConfigManager {
     /// - Network congestion and latency issues
     /// - Oracle provider diversity and failover
     /// - Regulatory compliance and audit requirements
-    pub fn get_mainnet_oracle_config() -> OracleConfig {
-        OracleConfig {
+    pub fn get_mainnet_oracle_config() -> OracleSettings {
+        OracleSettings {
             max_price_age: 1800, // 30 minutes for mainnet
             retry_attempts: 5,   // More retries for mainnet
             timeout_seconds: 60, // Longer timeout for mainnet
@@ -2661,7 +2661,7 @@ impl ConfigUtils {
     }
 
     /// Get oracle configuration
-    pub fn get_oracle_config(config: &ContractConfig) -> &OracleConfig {
+    pub fn get_oracle_config(config: &ContractConfig) -> &OracleSettings {
         &config.oracle
     }
 }

@@ -791,8 +791,8 @@ pub struct EventHistoryEntry {
     pub created_at: u64,
     /// Current market state (Active, Resolved, Cancelled, etc.)
     pub state: MarketState,
-    /// Winning outcome if resolved
-    pub winning_outcome: Option<String>,
+    /// Winning outcome(s) if resolved
+    pub winning_outcomes: Option<Vec<String>>,
     /// Total amount staked (public aggregate)
     pub total_staked: i128,
     /// When archived (if any); None if not archived
