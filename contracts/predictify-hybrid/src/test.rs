@@ -4392,7 +4392,7 @@ fn test_query_result_correctness_resolved_market() {
     assert!(entry.is_some());
     let e = entry.unwrap();
     assert_eq!(e.state, MarketState::Resolved);
-    assert_eq!(e.winning_outcome, Some(String::from_str(&test.env, "yes")));
+    assert_eq!(e.winning_outcomes, Some(soroban_sdk::vec![&test.env, String::from_str(&test.env, "yes")]));
     assert_eq!(e.total_staked, stake);
     assert_eq!(
         e.question,

@@ -115,7 +115,7 @@ impl EventArchive {
             end_time: market.end_time,
             created_at,
             state: market.state,
-            winning_outcome: market.get_winning_outcome(), // Get first outcome for backward compatibility
+            winning_outcomes: market.winning_outcomes.clone(),
             total_staked: market.total_staked,
             archived_at,
             category,
