@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use soroban_sdk::{vec, String};
+
 //! Oracle Fallback and Resolution Timeout Tests
 
 // ===== BASIC ORACLE TESTS =====
