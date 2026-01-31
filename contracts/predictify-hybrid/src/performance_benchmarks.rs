@@ -348,7 +348,7 @@ impl PerformanceBenchmarkManager {
 
     /// Validate performance against thresholds
     pub fn validate_performance_thresholds(
-        env: &Env,
+        _env: &Env,
         metrics: PerformanceMetrics,
         thresholds: PerformanceThresholds,
     ) -> Result<bool, Error> {
@@ -365,7 +365,7 @@ impl PerformanceBenchmarkManager {
     /// Simulate function execution for benchmarking
     fn simulate_function_execution(
         _env: &Env,
-        function: &String,
+        _function: &String,
         _inputs: &Vec<String>,
     ) -> Result<(), Error> {
         // Simple function simulation - always succeed
@@ -373,7 +373,7 @@ impl PerformanceBenchmarkManager {
     }
 
     /// Simulate storage operations for benchmarking
-    fn simulate_storage_operations(_env: &Env, operation: &StorageOperation) -> Result<(), Error> {
+    fn simulate_storage_operations(_env: &Env, _operation: &StorageOperation) -> Result<(), Error> {
         // Simulate storage operations based on type
         // Simple operation simulation - always succeed
         Ok(())

@@ -412,7 +412,7 @@ impl VotingManager {
         // Calculate adjusted threshold and enforce dynamic bounds
         let mut adjusted_threshold = base + factors.total_adjustment;
         if adjusted_threshold < cfg.voting.min_dispute_stake {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
         if adjusted_threshold > cfg.voting.max_dispute_threshold {
             adjusted_threshold = cfg.voting.max_dispute_threshold;
@@ -652,11 +652,11 @@ impl ThresholdUtils {
 
         // Ensure within limits
         if adjusted < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
 
         if adjusted > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::ThresholdTooHigh);
         }
 
         Ok(adjusted)
@@ -742,11 +742,11 @@ impl ThresholdUtils {
     /// Validate dispute threshold
     pub fn validate_dispute_threshold(threshold: i128, _market_id: &Symbol) -> Result<bool, Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::ThresholdTooHigh);
         }
 
         Ok(true)
@@ -808,11 +808,11 @@ impl ThresholdValidator {
     /// Validate threshold limits
     pub fn validate_threshold_limits(threshold: i128) -> Result<(), Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMinimum);
+            return Err(Error::ThresholdBelowMin);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdExceedsMaximum);
+            return Err(Error::ThresholdTooHigh);
         }
 
         Ok(())
@@ -925,7 +925,7 @@ impl VotingValidator {
 
         // Check if market is already resolved
         if market.winning_outcomes.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         Ok(())
@@ -941,7 +941,7 @@ impl VotingValidator {
 
         // Check if market is already resolved
         if market.winning_outcomes.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         Ok(())

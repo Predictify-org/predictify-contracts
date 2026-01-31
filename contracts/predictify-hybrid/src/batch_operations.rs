@@ -179,7 +179,7 @@ impl BatchProcessor {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::BATCH_CONFIG_KEY))
-            .ok_or(Error::ConfigurationNotFound)
+            .ok_or(Error::ConfigNotFound)
     }
 
     /// Update batch processor configuration
@@ -489,7 +489,7 @@ impl BatchProcessor {
         let market = crate::markets::MarketStateManager::get_market(env, &feed_data.market_id)?;
 
         if market.is_resolved() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // TODO: Fix oracle call - OracleManager doesn't exist
@@ -627,7 +627,7 @@ impl BatchProcessor {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::BATCH_STATS_KEY))
-            .ok_or(Error::ConfigurationNotFound)
+            .ok_or(Error::ConfigNotFound)
     }
 
     /// Update batch statistics
@@ -710,7 +710,7 @@ impl BatchProcessor {
     /// Validate oracle feed data
     fn validate_oracle_feed_data(feed_data: &OracleFeed) -> Result<(), Error> {
         if feed_data.feed_id.is_empty() {
-            return Err(Error::InvalidOracleFeed);
+            return Err(Error::InvalidOracleConfig);
         }
 
         if feed_data.threshold <= 0 {

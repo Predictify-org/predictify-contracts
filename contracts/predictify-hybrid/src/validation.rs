@@ -8,7 +8,7 @@ use crate::{
     types::{BetLimits, Market, OracleConfig, OracleProvider},
 };
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
-use soroban_sdk::{contracttype, vec, Address, Env, IntoVal, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
 
@@ -2081,10 +2081,23 @@ impl MarketValidator {
 
 // ===== ORACLE VALIDATION =====
 
-/// Oracle validation utilities
+/// Oracle validation utilities for comprehensive oracle response validation.
+///
+/// This module provides validation functions for oracle configurations, responses,
+/// signatures, and result verification. It ensures oracle data integrity and
+/// security for the prediction market resolution process.
 pub struct OracleValidator;
 
 impl OracleValidator {
+    /// Maximum allowed data age in seconds (5 minutes)
+    const MAX_DATA_AGE_SECONDS: u64 = 300;
+    /// Minimum acceptable price (0.0001 cents)
+    const MIN_VALID_PRICE: i128 = 1;
+    /// Maximum acceptable price ($1 trillion)
+    const MAX_VALID_PRICE: i128 = 100_000_000_000_000;
+    /// Minimum confidence score required
+    const MIN_CONFIDENCE_SCORE: u32 = 50;
+
     /// Validate oracle configuration with comprehensive validation
     pub fn validate_oracle_config(
         env: &Env,
@@ -2139,6 +2152,168 @@ impl OracleValidator {
 
         // Check if oracle result matches one of the market outcomes
         if !market_outcomes.contains(oracle_result) {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        Ok(())
+    }
+
+    /// Validate oracle response for automatic result verification.
+    ///
+    /// Performs comprehensive validation of an oracle response including:
+    /// - Price range validation
+    /// - Data freshness (staleness check)
+    /// - Confidence score threshold
+    /// - Verification status
+    ///
+    /// # Arguments
+    /// * `oracle_result` - The oracle result to validate
+    /// * `current_time` - Current timestamp for staleness check
+    ///
+    /// # Returns
+    /// `Ok(())` if validation passes, `Err(ValidationError)` otherwise
+    pub fn validate_oracle_response(
+        oracle_result: &crate::types::OracleResult,
+        current_time: u64,
+    ) -> Result<(), ValidationError> {
+        // Validate price is within acceptable range
+        if !Self::is_valid_price(oracle_result.price) {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        // Validate data freshness
+        if !Self::is_data_fresh(oracle_result.timestamp, current_time) {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        // Validate confidence score
+        if oracle_result.confidence_score < Self::MIN_CONFIDENCE_SCORE {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        // Validate the result is marked as verified
+        if !oracle_result.is_verified {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        Ok(())
+    }
+
+    /// Validate oracle price is within acceptable range.
+    ///
+    /// # Arguments
+    /// * `price` - Price value to validate
+    ///
+    /// # Returns
+    /// `true` if price is valid, `false` otherwise
+    pub fn is_valid_price(price: i128) -> bool {
+        price >= Self::MIN_VALID_PRICE && price <= Self::MAX_VALID_PRICE
+    }
+
+    /// Check if oracle data is fresh (not stale).
+    ///
+    /// # Arguments
+    /// * `data_timestamp` - Timestamp of the oracle data
+    /// * `current_time` - Current timestamp
+    ///
+    /// # Returns
+    /// `true` if data is fresh, `false` if stale
+    pub fn is_data_fresh(data_timestamp: u64, current_time: u64) -> bool {
+        current_time.saturating_sub(data_timestamp) <= Self::MAX_DATA_AGE_SECONDS
+    }
+
+    /// Validate oracle signature/authority.
+    ///
+    /// Verifies that the oracle response comes from an authorized source.
+    /// This is a placeholder that would integrate with actual signature
+    /// verification in a production environment.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `oracle_address` - Address of the oracle contract
+    /// * `signature` - Optional signature data
+    ///
+    /// # Returns
+    /// `Ok(())` if authority is valid, `Err(ValidationError)` otherwise
+    pub fn validate_oracle_authority(
+        env: &Env,
+        oracle_address: &Address,
+        _signature: Option<&String>,
+    ) -> Result<(), ValidationError> {
+        // Check if oracle is whitelisted
+        match crate::oracles::OracleWhitelist::validate_oracle_contract(env, oracle_address) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(ValidationError::InvalidOracle),
+            Err(_) => Err(ValidationError::InvalidOracle),
+        }
+    }
+
+    /// Validate oracle consensus result.
+    ///
+    /// Validates that a multi-oracle result has sufficient consensus.
+    ///
+    /// # Arguments
+    /// * `multi_result` - Multi-oracle aggregated result
+    /// * `required_threshold` - Required consensus percentage (e.g., 66 for 2/3)
+    ///
+    /// # Returns
+    /// `Ok(())` if consensus is sufficient, `Err(ValidationError)` otherwise
+    pub fn validate_oracle_consensus(
+        multi_result: &crate::types::MultiOracleResult,
+        required_threshold: u32,
+    ) -> Result<(), ValidationError> {
+        if !multi_result.consensus_reached {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        if multi_result.agreement_percentage < required_threshold {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        Ok(())
+    }
+
+    /// Comprehensive validation for oracle-based market resolution.
+    ///
+    /// Performs all necessary validations before using oracle data
+    /// for market resolution.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `oracle_result` - The oracle result to validate
+    /// * `market` - The market being resolved
+    ///
+    /// # Returns
+    /// `Ok(())` if all validations pass, `Err(ValidationError)` otherwise
+    pub fn validate_for_resolution(
+        env: &Env,
+        oracle_result: &crate::types::OracleResult,
+        market: &crate::types::Market,
+    ) -> Result<(), ValidationError> {
+        let current_time = env.ledger().timestamp();
+
+        // Validate oracle response
+        Self::validate_oracle_response(oracle_result, current_time)?;
+
+        // Validate the outcome is valid for the market
+        let yes_outcome = String::from_str(env, "yes");
+        let no_outcome = String::from_str(env, "no");
+
+        // For standard yes/no markets, check if outcome is valid
+        if oracle_result.outcome != yes_outcome && oracle_result.outcome != no_outcome {
+            // Check if it matches a custom outcome
+            if !market.outcomes.contains(&oracle_result.outcome) {
+                return Err(ValidationError::InvalidOracle);
+            }
+        }
+
+        // Validate the feed_id matches market config
+        if oracle_result.feed_id != market.oracle_config.feed_id {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        // Validate the threshold matches
+        if oracle_result.threshold != market.oracle_config.threshold {
             return Err(ValidationError::InvalidOracle);
         }
 

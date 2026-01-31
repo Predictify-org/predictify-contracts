@@ -166,7 +166,7 @@ fn test_extend_deadline_resolved_market() {
         &String::from_str(&setup.env, "Extension after resolution"),
     );
 
-    assert_eq!(result, Err(Ok(Error::MarketAlreadyResolved)));
+    assert_eq!(result, Err(Ok(Error::MarketResolved)));
 }
 
 #[test]
@@ -559,5 +559,5 @@ fn test_update_event_outcomes_resolved_market() {
 
     let result = client.try_update_event_outcomes(&setup.admin, &market_id, &new_outcomes);
 
-    assert_eq!(result, Err(Ok(Error::MarketAlreadyResolved)));
+    assert_eq!(result, Err(Ok(Error::MarketResolved)));
 }

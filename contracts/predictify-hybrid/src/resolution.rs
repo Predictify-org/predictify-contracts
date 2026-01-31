@@ -1456,7 +1456,7 @@ impl OracleResolutionValidator {
     pub fn validate_market_for_oracle_resolution(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if the market has already been resolved
         if market.oracle_result.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if the market ended (we can only fetch oracle result after market ends)
@@ -1500,7 +1500,7 @@ impl MarketResolutionValidator {
     pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market is already resolved
         if market.winning_outcomes.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if oracle result is available
@@ -1722,7 +1722,7 @@ impl ResolutionUtils {
 
         // Validate market is not already resolved
         if market.winning_outcomes.is_some() {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         Ok(())

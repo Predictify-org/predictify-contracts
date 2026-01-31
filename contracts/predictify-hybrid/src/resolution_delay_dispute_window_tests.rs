@@ -256,7 +256,9 @@ fn test_dispute_creation_during_window() {
         let (market_id, mut market) = setup.create_test_market(end_time);
 
         market.state = MarketState::Ended;
-        market.winning_outcomes = Some(vec![&setup.env, String::from_str(&setup.env, "yes")]);
+        let mut outcomes = soroban_sdk::Vec::new(&setup.env);
+        outcomes.push_back(String::from_str(&setup.env, "yes"));
+        market.winning_outcomes = Some(outcomes);
         setup.env.storage().persistent().set(&market_id, &market);
 
         // Advance past end time but within dispute window
@@ -611,7 +613,9 @@ fn test_resolution_allowed_after_end_time() {
 
         // Resolution should be allowed
         market.state = MarketState::Ended;
-        market.winning_outcomes = Some(vec![&setup.env, String::from_str(&setup.env, "yes")]);
+        let mut outcomes = soroban_sdk::Vec::new(&setup.env);
+        outcomes.push_back(String::from_str(&setup.env, "yes"));
+        market.winning_outcomes = Some(outcomes);
         market.state = MarketState::Resolved;
 
         assert_eq!(market.state, MarketState::Resolved);
@@ -642,7 +646,9 @@ fn test_full_lifecycle_with_dispute_window() {
 
         // 3. Market ends
         market.state = MarketState::Ended;
-        market.winning_outcomes = Some(vec![&setup.env, String::from_str(&setup.env, "yes")]);
+        let mut outcomes = soroban_sdk::Vec::new(&setup.env);
+        outcomes.push_back(String::from_str(&setup.env, "yes"));
+        market.winning_outcomes = Some(outcomes);
         setup.env.storage().persistent().set(&market_id, &market);
 
         // 4. File dispute (before resolving, while in Ended state)

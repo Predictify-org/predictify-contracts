@@ -1,8 +1,10 @@
 #![cfg(test)]
 
-use soroban_sdk::{vec, String};
+extern crate alloc;
+use alloc::string::String;
+use alloc::vec;
 
-//! Oracle Fallback and Resolution Timeout Tests
+// Oracle Fallback and Resolution Timeout Tests
 
 // ===== BASIC ORACLE TESTS =====
 
