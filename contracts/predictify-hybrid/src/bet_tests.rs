@@ -108,10 +108,13 @@ impl BetTestSetup {
             &30,
             &OracleConfig {
                 provider: OracleProvider::Reflector,
+                oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 feed_id: String::from_str(env, "BTC/USD"),
                 threshold: 100_000_00000000, // $100,000
                 comparison: String::from_str(env, "gte"),
             },
+            &None,
+            &0u64,
         )
     }
 
@@ -402,6 +405,72 @@ fn test_place_bet_below_minimum_rejects_with_error() {
 }
 
 #[test]
+fn test_market_validation_for_betting() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+
+    // Create an active market
+    let active_market = Market {
+        admin: admin.clone(),
+        question: String::from_str(&env, "Test question?"),
+        outcomes: vec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        end_time: env.ledger().timestamp() + 86400, // 1 day in future
+        oracle_config: OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            feed_id: String::from_str(&env, "BTC/USD"),
+            threshold: 50000,
+            comparison: String::from_str(&env, "gte"),
+        },
+        fallback_oracle_config: Vec::new(&env),
+        resolution_timeout: 0,
+        oracle_result: None,
+        votes: Map::new(&env),
+        total_staked: 0,
+        dispute_stakes: Map::new(&env),
+        stakes: Map::new(&env),
+        claimed: Map::new(&env),
+        winning_outcomes: None,
+        fee_collected: false,
+        state: MarketState::Active,
+        total_extension_days: 0,
+        max_extension_days: 30,
+        extension_history: Vec::new(&env),
+        // Resolution delay fields
+        resolution_proposed_outcome: None,
+        resolution_proposed_at: 0,
+        resolution_window_end_time: 0,
+        resolution_is_finalized: false,
+        resolution_dispute_count: 0,
+        resolution_source: None,
+        dispute_window_hours: 0,
+        category: None,
+        tags: Vec::new(&env),
+    };
+
+    // Active market should be valid
+    assert!(BetValidator::validate_market_for_betting(&env, &active_market).is_ok());
+
+    // Ended market should fail
+    let mut ended_market = active_market.clone();
+    ended_market.state = MarketState::Ended;
+    assert!(BetValidator::validate_market_for_betting(&env, &ended_market).is_err());
+
+    // Resolved market should fail
+    let mut resolved_market = active_market.clone();
+    resolved_market.winning_outcomes = Some(vec![&env, String::from_str(&env, "yes")]);
+    assert!(BetValidator::validate_market_for_betting(&env, &resolved_market).is_err());
+
+    // Closed market should fail
+    let mut closed_market = active_market.clone();
+    closed_market.state = MarketState::Closed;
+    assert!(BetValidator::validate_market_for_betting(&env, &closed_market).is_err());
+}
+
 fn test_place_bet_above_maximum_rejects_with_error() {
     // Verify error code for above maximum
     assert_eq!(Error::InvalidInput as i128, 401);

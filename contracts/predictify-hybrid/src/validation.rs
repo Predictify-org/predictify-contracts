@@ -2949,6 +2949,8 @@ impl ComprehensiveValidator {
             outcomes,
             duration_days,
             oracle_config,
+            &None,
+            &0u64,
         );
         if !market_result.is_valid {
             result.add_error();
@@ -3155,11 +3157,16 @@ impl ValidationTestingUtils {
             env.ledger().timestamp() + 86400,
             OracleConfig {
                 provider: OracleProvider::Pyth,
-                oracle_address: Address::generate(env),
+                oracle_address: Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 feed_id: String::from_str(env, "BTC/USD"),
                 threshold: 2500000,
                 comparison: String::from_str(env, "gt"),
             },
+            None,
+            0u64,
             crate::types::MarketState::Active,
         )
     }
@@ -3168,7 +3175,10 @@ impl ValidationTestingUtils {
     pub fn create_test_oracle_config(env: &Env) -> OracleConfig {
         OracleConfig {
             provider: OracleProvider::Pyth,
-            oracle_address: Address::generate(env),
+            oracle_address: Address::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ),
             feed_id: String::from_str(env, "BTC/USD"),
             threshold: 2500000,
             comparison: String::from_str(env, "gt"),

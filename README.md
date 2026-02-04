@@ -413,9 +413,64 @@ cargo test test_name
   - `oracles.rs`: Oracle integration (Pyth, Reflector)
   - `voting.rs`: Community voting system
   - `disputes.rs`: Dispute resolution mechanism
+  - `resolution_delay.rs`: **Resolution delay and dispute window system**
   - `governance.rs`: Governance and admin functions
   - `types.rs`: Core data structures
   - `errors.rs`: Error definitions
+
+### Resolution Delay and Dispute Window
+
+The platform implements a mandatory dispute window between market resolution and payout distribution. This allows community members to challenge resolution outcomes before payouts become final.
+
+**Key Features:**
+
+- **Configurable Window Duration**: Admin can set global (1-168 hours) or per-market dispute windows
+- **Proposal-Based Resolution**: Resolution is proposed, not immediately finalized
+- **Dispute Integration**: Disputes can only be filed during the open window
+- **Finalization Gate**: Payouts blocked until window closes and disputes resolved
+
+**Resolution Flow:**
+
+```
+Market Ends → Resolution Proposed → Dispute Window Open → Window Closes → Finalized → Payouts
+                                          ↓
+                                   Disputes Filed → Disputes Resolved ↗
+```
+
+**API Functions:**
+
+```rust
+// Set global dispute window (admin)
+set_dispute_window_duration(env, admin, hours, None);
+
+// Set per-market dispute window (admin)
+set_dispute_window_duration(env, admin, hours, Some(market_id));
+
+// Propose resolution (opens dispute window)
+propose_market_resolution(env, admin, market_id) -> String;
+
+// Finalize after window closes
+finalize_market_resolution(env, market_id) -> String;
+
+// Query dispute window status
+get_dispute_window_status(env, market_id) -> (is_open, remaining_seconds, dispute_count);
+
+// File dispute during window
+dispute_during_window(env, user, market_id, stake, reason);
+
+// Emergency admin override
+force_finalize_resolution(env, admin, market_id, outcome);
+```
+
+**Claim Winnings Protection:**
+
+The `claim_winnings` function now requires resolution to be finalized before allowing payouts:
+
+```rust
+// This will fail if resolution is not finalized
+claim_winnings(env, user, market_id);
+// Error::ResolutionNotFinalized if dispute window still open
+```
 
 ### Adding New Features
 

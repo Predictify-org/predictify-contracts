@@ -701,6 +701,118 @@ impl OracleConfig {
 /// - **Resolved**: Outcome determined, payouts available
 /// - **Closed**: All operations complete
 /// - **Cancelled**: Market cancelled, stakes refunded
+
+// ===== RESOLUTION DELAY AND DISPUTE WINDOW TYPES =====
+// (These are defined before Market since Market references ResolutionWindow)
+
+/// Resolution delay configuration for dispute windows.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolutionDelayConfig {
+    /// Duration of the dispute window in hours (default: 24-72)
+    pub dispute_window_hours: u32,
+    /// Minimum stake required to file a dispute (in stroops)
+    pub min_dispute_stake: i128,
+    /// Whether to automatically finalize when window closes with no disputes
+    pub auto_finalize_enabled: bool,
+}
+
+impl ResolutionDelayConfig {
+    /// Create a new resolution delay configuration with defaults
+    pub fn default_config() -> Self {
+        Self {
+            dispute_window_hours: 48,
+            min_dispute_stake: 10_000_000,
+            auto_finalize_enabled: true,
+        }
+    }
+
+    /// Validate the configuration
+    pub fn validate(&self) -> Result<(), crate::Error> {
+        if self.dispute_window_hours == 0 || self.dispute_window_hours > 168 {
+            return Err(crate::Error::InvalidTimeoutHours);
+        }
+        if self.min_dispute_stake < 0 {
+            return Err(crate::Error::InvalidInput);
+        }
+        Ok(())
+    }
+}
+
+/// Resolution window state tracking for a market.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolutionWindow {
+    /// The proposed resolution outcome
+    pub proposed_outcome: String,
+    /// Timestamp when resolution was proposed (window opened)
+    pub proposed_at: u64,
+    /// Timestamp when the dispute window closes
+    pub window_end_time: u64,
+    /// Whether the resolution has been finalized (payouts enabled)
+    pub is_finalized: bool,
+    /// Number of disputes filed during this window
+    pub dispute_count: u32,
+    /// Source of the resolution (Oracle, Community, Admin, Hybrid)
+    pub resolution_source: String,
+}
+
+impl ResolutionWindow {
+    /// Create a new resolution window
+    pub fn new(
+        env: &Env,
+        proposed_outcome: String,
+        window_hours: u32,
+        resolution_source: String,
+    ) -> Self {
+        let current_time = env.ledger().timestamp();
+        let window_seconds = (window_hours as u64) * 60 * 60;
+        
+        Self {
+            proposed_outcome,
+            proposed_at: current_time,
+            window_end_time: current_time + window_seconds,
+            is_finalized: false,
+            dispute_count: 0,
+            resolution_source,
+        }
+    }
+
+    /// Check if the dispute window is currently open
+    pub fn is_window_open(&self, current_time: u64) -> bool {
+        !self.is_finalized && current_time < self.window_end_time
+    }
+
+    /// Check if the window has closed (but not necessarily finalized)
+    pub fn is_window_closed(&self, current_time: u64) -> bool {
+        current_time >= self.window_end_time
+    }
+
+    /// Get remaining time in the window (0 if closed)
+    pub fn get_remaining_time(&self, current_time: u64) -> u64 {
+        if current_time >= self.window_end_time {
+            0
+        } else {
+            self.window_end_time - current_time
+        }
+    }
+
+    /// Check if resolution can be finalized
+    pub fn can_finalize(&self, current_time: u64, has_unresolved_disputes: bool) -> bool {
+        self.is_window_closed(current_time) && !self.is_finalized && !has_unresolved_disputes
+    }
+
+    /// Increment dispute count
+    pub fn record_dispute(&mut self) {
+        self.dispute_count += 1;
+    }
+
+    /// Finalize the resolution
+    pub fn finalize(&mut self) {
+        self.is_finalized = true;
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Market {
@@ -714,8 +826,8 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
-    /// Fallback oracle configuration
-    pub fallback_oracle_config: Option<OracleConfig>,
+    /// Fallback oracle configuration (empty vec = none, one element = some)
+    pub fallback_oracle_config: Vec<OracleConfig>,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Oracle result (set after market ends)
@@ -747,6 +859,22 @@ pub struct Market {
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
 
+    // ===== RESOLUTION DELAY FIELDS =====
+    
+    /// Proposed resolution outcome (empty if not proposed)
+    pub resolution_proposed_outcome: Option<String>,
+    /// When resolution was proposed (0 if not proposed)
+    pub resolution_proposed_at: u64,
+    /// When the dispute window closes (0 if not proposed)
+    pub resolution_window_end_time: u64,
+    /// Whether the resolution is finalized
+    pub resolution_is_finalized: bool,
+    /// Number of disputes filed during the window
+    pub resolution_dispute_count: u32,
+    /// Resolution source (Oracle, Community, Admin, etc.)
+    pub resolution_source: Option<String>,
+    /// Per-market dispute window duration override (0 = use global config)
+    pub dispute_window_hours: u32,
     /// Optional category for the event (e.g., "sports", "crypto", "politics")
     /// Used for filtering and display in client applications
     pub category: Option<String>,
@@ -852,13 +980,14 @@ impl Market {
         resolution_timeout: u64,
         state: MarketState,
     ) -> Self {
+        let fallback_vec = Self::option_oracle_config_to_vec(env, &fallback_oracle_config);
         Self {
             admin,
             question,
             outcomes,
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            fallback_oracle_config: fallback_vec,
             resolution_timeout,
             oracle_result: None,
             votes: Map::new(env),
@@ -874,8 +1003,37 @@ impl Market {
             max_extension_days: 30, // Default maximum extension days
             extension_history: Vec::new(env),
 
+            // Resolution delay fields
+            resolution_proposed_outcome: None,
+            resolution_proposed_at: 0,
+            resolution_window_end_time: 0,
+            resolution_is_finalized: false,
+            resolution_dispute_count: 0,
+            resolution_source: None,
+            dispute_window_hours: 0, // 0 means use global config
             category: None,
             tags: Vec::new(env),
+        }
+    }
+
+    /// Convert Option<OracleConfig> to Vec for storage (avoids contracttype Option issue in test builds).
+    pub fn option_oracle_config_to_vec(env: &Env, o: &Option<OracleConfig>) -> Vec<OracleConfig> {
+        match o {
+            None => Vec::new(env),
+            Some(c) => {
+                let mut v = Vec::new(env);
+                v.push_back(c.clone());
+                v
+            }
+        }
+    }
+
+    /// Fallback oracle config as Option (empty vec = None).
+    pub fn get_fallback_oracle_config(&self) -> Option<OracleConfig> {
+        if self.fallback_oracle_config.len() == 0 {
+            None
+        } else {
+            Some(self.fallback_oracle_config.get(0).unwrap().clone())
         }
     }
 
@@ -911,6 +1069,34 @@ impl Market {
             .as_ref()
             .map(|outcomes| outcomes.contains(outcome))
             .unwrap_or(false)
+    }
+
+    /// Check if the resolution is finalized (payouts can proceed)
+    pub fn is_resolution_finalized(&self) -> bool {
+        self.resolution_is_finalized
+    }
+
+    /// Check if the dispute window is currently open
+    pub fn is_dispute_window_open(&self, current_time: u64) -> bool {
+        // Window is open if proposed, not finalized, and before end time
+        self.resolution_proposed_at > 0 
+            && !self.resolution_is_finalized 
+            && current_time < self.resolution_window_end_time
+    }
+
+    /// Get the resolution window end time (0 if no window)
+    pub fn get_dispute_window_end_time(&self) -> u64 {
+        self.resolution_window_end_time
+    }
+
+    /// Get the proposed outcome (if any)
+    pub fn get_proposed_outcome(&self) -> Option<String> {
+        self.resolution_proposed_outcome.clone()
+    }
+
+    /// Check if resolution has been proposed
+    pub fn is_resolution_proposed(&self) -> bool {
+        self.resolution_proposed_at > 0
     }
 
     /// Get total dispute stakes for the market
@@ -3082,8 +3268,8 @@ pub struct Event {
     pub end_time: u64,
     /// Oracle configuration for result verification (primary)
     pub oracle_config: OracleConfig,
-    /// Fallback oracle configuration
-    pub fallback_oracle_config: Option<OracleConfig>,
+    /// Fallback oracle configuration (empty vec = none, one element = some)
+    pub fallback_oracle_config: Vec<OracleConfig>,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Administrative address that created/manages the event

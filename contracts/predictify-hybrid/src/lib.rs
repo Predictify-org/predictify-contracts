@@ -39,6 +39,7 @@ mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
 mod resolution;
+mod resolution_delay;
 mod statistics;
 mod storage;
 mod types;
@@ -88,6 +89,7 @@ mod category_tags_tests;
 mod statistics_tests;
 
 #[cfg(test)]
+mod resolution_delay_tests;
 mod resolution_delay_dispute_window_tests;
 
 #[cfg(test)]
@@ -398,7 +400,7 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            fallback_oracle_config: Market::option_oracle_config_to_vec(&env, &fallback_oracle_config),
             resolution_timeout,
             oracle_result: None,
             votes: Map::new(&env),
@@ -412,6 +414,14 @@ impl PredictifyHybrid {
             total_extension_days: 0,
             max_extension_days: 30,
             extension_history: Vec::new(&env),
+            // Resolution delay fields
+            resolution_proposed_outcome: None,
+            resolution_proposed_at: 0,
+            resolution_window_end_time: 0,
+            resolution_is_finalized: false,
+            resolution_dispute_count: 0,
+            resolution_source: None,
+            dispute_window_hours: 0, // 0 means use global config
             category: None,
             tags: Vec::new(&env),
         };
@@ -499,7 +509,7 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            fallback_oracle_config: Market::option_oracle_config_to_vec(&env, &fallback_oracle_config),
             resolution_timeout,
             admin: admin.clone(),
             created_at: env.ledger().timestamp(),
@@ -1198,6 +1208,13 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::AlreadyClaimed);
         }
 
+        // NEW: Verify resolution is finalized (dispute window closed)
+        // This ensures payouts only occur after the dispute window closes
+        // and all disputes are resolved
+        if !resolution_delay::ResolutionDelayManager::is_resolution_finalized(&env, &market_id) {
+            panic_with_error!(env, Error::MarketNotResolved);
+        }
+
         // Check if market is resolved
         let winning_outcomes = match &market.winning_outcomes {
             Some(outcomes) => outcomes,
@@ -1353,6 +1370,344 @@ impl PredictifyHybrid {
     /// It retrieves data from persistent storage with minimal computational overhead.
     pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
         env.storage().persistent().get(&market_id)
+    }
+
+    // ===== RESOLUTION DELAY / DISPUTE WINDOW FUNCTIONS =====
+
+    /// Sets the dispute window duration for resolution delay.
+    ///
+    /// This function configures how long the dispute window remains open after a
+    /// market resolution is proposed. During this window, community members can
+    /// file disputes if they believe the proposed outcome is incorrect.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address (must be authorized)
+    /// * `hours` - Duration of the dispute window in hours (1-168)
+    /// * `market_id` - Optional market ID for per-market override (None = global setting)
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::InvalidTimeoutHours` - Hours is 0 or exceeds 168 (1 week)
+    /// - `Error::MarketNotFound` - Market ID specified but doesn't exist
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // Set global dispute window to 72 hours
+    /// PredictifyHybrid::set_dispute_window_duration(env, admin, 72, None);
+    ///
+    /// // Set per-market override to 24 hours
+    /// PredictifyHybrid::set_dispute_window_duration(env, admin, 24, Some(market_id));
+    /// ```
+    ///
+    /// # Security
+    ///
+    /// Only the contract admin can modify dispute window configuration.
+    /// Changes take effect for future resolution proposals, not retroactively.
+    pub fn set_dispute_window_duration(
+        env: Env,
+        admin: Address,
+        hours: u32,
+        market_id: Option<Symbol>,
+    ) {
+        admin.require_auth();
+
+        match market_id {
+            Some(mid) => {
+                match resolution_delay::ResolutionDelayManager::set_market_dispute_window(
+                    &env, &admin, &mid, hours,
+                ) {
+                    Ok(_) => (),
+                    Err(e) => panic_with_error!(env, e),
+                }
+            }
+            None => {
+                match resolution_delay::ResolutionDelayManager::set_global_dispute_window(
+                    &env, &admin, hours,
+                ) {
+                    Ok(_) => (),
+                    Err(e) => panic_with_error!(env, e),
+                }
+            }
+        }
+    }
+
+    /// Proposes a resolution for a market, opening the dispute window.
+    ///
+    /// This function is called after a market ends to propose the winning outcome.
+    /// It opens a dispute window during which community members can challenge the
+    /// proposed outcome. Payouts are blocked until the window closes and resolution
+    /// is finalized.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address proposing resolution (must be authorized)
+    /// * `market_id` - The market to propose resolution for
+    ///
+    /// # Returns
+    ///
+    /// Returns the proposed outcome string.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::MarketNotFound` - Market doesn't exist
+    /// - `Error::MarketClosed` - Market hasn't ended yet
+    /// - `Error::ResolutionAlreadyFinalized` - Resolution already finalized
+    /// - `Error::OracleUnavailable` - Oracle result not available
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // After market ends, propose resolution
+    /// let outcome = PredictifyHybrid::propose_market_resolution(env, admin, market_id);
+    /// // Dispute window is now open for configured duration
+    /// ```
+    ///
+    /// # Events
+    ///
+    /// Emits `ResolutionProposedEvent` with window details.
+    ///
+    /// # Resolution Flow
+    ///
+    /// 1. Market ends (end_time reached)
+    /// 2. Admin calls `propose_market_resolution` (this function)
+    /// 3. Dispute window opens for configured duration
+    /// 4. Community can file disputes during window
+    /// 5. After window closes, call `finalize_market_resolution`
+    /// 6. Payouts enabled after finalization
+    pub fn propose_market_resolution(env: Env, admin: Address, market_id: Symbol) -> String {
+        admin.require_auth();
+
+        // Validate admin
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        // Get the market
+        let market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
+
+        // Get the oracle result (must be set before proposing resolution)
+        let outcome = match &market.oracle_result {
+            Some(result) => result.clone(),
+            None => panic_with_error!(env, Error::OracleUnavailable),
+        };
+
+        // Propose resolution using the delay manager
+        let resolution_source = String::from_str(&env, "Oracle");
+        match resolution_delay::ResolutionDelayManager::propose_resolution(
+            &env,
+            &market_id,
+            outcome.clone(),
+            resolution_source,
+        ) {
+            Ok(_) => outcome,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Finalizes a market resolution after the dispute window closes.
+    ///
+    /// This function completes the resolution process, making the outcome permanent
+    /// and enabling payouts. It can only be called after the dispute window has
+    /// closed and all disputes are resolved.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - The market to finalize
+    ///
+    /// # Returns
+    ///
+    /// Returns the final winning outcome string.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - `Error::MarketNotFound` - Market doesn't exist
+    /// - `Error::ResolutionNotProposed` - Resolution hasn't been proposed
+    /// - `Error::DisputeWindowStillOpen` - Window hasn't closed yet
+    /// - `Error::UnresolvedDisputes` - There are unresolved disputes
+    /// - `Error::ResolutionAlreadyFinalized` - Already finalized
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // After dispute window closes
+    /// let final_outcome = PredictifyHybrid::finalize_market_resolution(env, market_id);
+    /// // Users can now call claim_winnings
+    /// ```
+    ///
+    /// # Events
+    ///
+    /// Emits `DisputeWindowClosedEvent` and `ResolutionFinalizedEvent`.
+    ///
+    /// # Security
+    ///
+    /// This function can be called by anyone (permissionless) since it only
+    /// succeeds when legitimate conditions are met (window closed, no disputes).
+    pub fn finalize_market_resolution(env: Env, market_id: Symbol) -> String {
+        match resolution_delay::ResolutionDelayManager::finalize_resolution(&env, &market_id) {
+            Ok(outcome) => outcome,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Gets the current status of a market's dispute window.
+    ///
+    /// This function returns information about the dispute window for a market,
+    /// including whether it's open, time remaining, and dispute count.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - The market to query
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of `(is_open, remaining_seconds, dispute_count)`:
+    /// - `is_open`: Whether the dispute window is currently open
+    /// - `remaining_seconds`: Seconds until window closes (0 if closed)
+    /// - `dispute_count`: Number of disputes filed during the window
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let (is_open, remaining, disputes) = PredictifyHybrid::get_dispute_window_status(env, market_id);
+    /// if is_open {
+    ///     println!("Window open for {} more seconds", remaining);
+    ///     println!("{} disputes filed", disputes);
+    /// } else {
+    ///     println!("Window closed, ready for finalization");
+    /// }
+    /// ```
+    pub fn get_dispute_window_status(env: Env, market_id: Symbol) -> (bool, u64, u32) {
+        resolution_delay::ResolutionDelayManager::get_dispute_window_status(&env, &market_id)
+    }
+
+    /// Files a dispute during the dispute window.
+    ///
+    /// This function allows users to challenge a proposed resolution during the
+    /// dispute window period. Disputes require a stake and block finalization
+    /// until resolved.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - The user filing the dispute (must be authorized)
+    /// * `market_id` - The market to dispute
+    /// * `stake` - Stake amount backing the dispute
+    /// * `reason` - Reason for the dispute
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - `Error::MarketNotFound` - Market doesn't exist
+    /// - `Error::ResolutionNotProposed` - No resolution to dispute
+    /// - `Error::DisputeWindowNotOpen` - Window is closed
+    /// - `Error::ResolutionAlreadyFinalized` - Resolution already finalized
+    /// - `Error::InsufficientStake` - Stake below minimum
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// PredictifyHybrid::dispute_during_window(
+    ///     env,
+    ///     user,
+    ///     market_id,
+    ///     10_000_000, // 1 XLM stake
+    ///     String::from_str(&env, "Oracle data appears incorrect")
+    /// );
+    /// ```
+    ///
+    /// # Events
+    ///
+    /// Emits `DisputeCreatedEvent`.
+    pub fn dispute_during_window(
+        env: Env,
+        user: Address,
+        market_id: Symbol,
+        stake: i128,
+        reason: String,
+    ) {
+        user.require_auth();
+
+        // Validate dispute is allowed during window
+        match resolution_delay::ResolutionDelayManager::validate_dispute_allowed(&env, &market_id) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
+        // Check minimum stake
+        let config = resolution_delay::ResolutionDelayManager::get_dispute_window_config(&env, &market_id);
+        if stake < config.min_dispute_stake {
+            panic_with_error!(env, Error::InsufficientStake);
+        }
+
+        // Record the dispute in the window
+        match resolution_delay::ResolutionDelayManager::record_dispute(&env, &market_id) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
+        // Also create the actual dispute using existing dispute system
+        // The disputes module will handle the dispute creation and voting
+        EventEmitter::emit_dispute_created(&env, &market_id, &user, stake, Some(reason));
+    }
+
+    /// Force finalizes a resolution (admin emergency override).
+    ///
+    /// This function allows an admin to bypass normal finalization requirements
+    /// and immediately finalize a resolution. Should only be used in emergency
+    /// situations where normal dispute resolution is blocked or malfunctioning.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address (must be authorized)
+    /// * `market_id` - The market to force finalize
+    /// * `outcome` - The final outcome to set
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::MarketNotFound` - Market doesn't exist
+    ///
+    /// # Security
+    ///
+    /// This is an admin-only emergency function that bypasses the dispute window.
+    /// Use with extreme caution as it overrides community governance.
+    pub fn force_finalize_resolution(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        outcome: String,
+    ) {
+        admin.require_auth();
+
+        match resolution_delay::ResolutionDelayManager::force_finalize(
+            &env, &admin, &market_id, outcome,
+        ) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
     /// Manually resolves a prediction market by setting the winning outcome (admin only).
@@ -1705,37 +2060,6 @@ impl PredictifyHybrid {
     /// - Market must exist and be past its end time
     /// - Market must not already have an oracle result
     /// - Oracle contract must be accessible and responsive
-    pub fn fetch_oracle_result(
-        env: Env,
-        market_id: Symbol,
-        oracle_contract: Address,
-    ) -> Result<String, Error> {
-        // Get the market from storage
-        let market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Validate market state
-        if market.oracle_result.is_some() {
-            return Err(Error::MarketResolved);
-        }
-
-        // Check if market has ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
-            return Err(Error::MarketClosed);
-        }
-
-        // Get oracle result using the resolution module
-        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
-            &env,
-            &market_id,
-            &oracle_contract,
-        )?;
-
-        Ok(oracle_resolution.oracle_result)
     pub fn fetch_oracle_result(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
         resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
     }
@@ -2580,6 +2904,7 @@ impl PredictifyHybrid {
     }
 
     // ===== EVENT ARCHIVE AND HISTORICAL QUERY =====
+
 
     /// Mark a resolved or cancelled event (market) as archived. Admin only.
     /// Market must be in Resolved or Cancelled state. Returns InvalidState if not

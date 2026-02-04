@@ -55,11 +55,11 @@ pub enum Error {
     /// Market not ready for oracle verification
     MarketNotReady = 205,
     /// Fallback oracle is unavailable or unhealthy
-    FallbackOracleUnavailable = 202,
+    FallbackUnavailable = 206,
     /// Resolution timeout has been reached
-    ResolutionTimeoutReached = 203,
+    ResTimeoutReached = 207,
     /// Refund process has been initiated
-    RefundStarted = 204,
+    RefundStarted = 208,
 
     // ===== VALIDATION ERRORS =====
     /// Invalid question format
@@ -120,14 +120,8 @@ pub enum Error {
     InvalidTimeoutHours = 422,
 
     // ===== CIRCUIT BREAKER ERRORS =====
-    /// Circuit breaker not initialized
-    CBNotInitialized = 500,
-    /// Circuit breaker is already open (paused)
-    CBAlreadyOpen = 501,
-    /// Circuit breaker is not open (cannot recover)
-    CBNotOpen = 502,
-    /// Circuit breaker is open (operations blocked)
-    CBOpen = 503,
+    /// Circuit breaker state error (not initialized, open, or invalid state)
+    CBState = 500,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1128,10 +1122,10 @@ impl Error {
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
             Error::MarketNotReady => "Market not ready for oracle verification",
-            Error::CBNotInitialized => "Circuit breaker not initialized",
-            Error::CBAlreadyOpen => "Circuit breaker is already open (paused)",
-            Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
-            Error::CBOpen => "Circuit breaker is open (operations blocked)",
+            Error::FallbackUnavailable => "Fallback oracle unavailable or unhealthy",
+            Error::ResTimeoutReached => "Resolution timeout has been reached",
+            Error::RefundStarted => "Refund process has been initiated",
+            Error::CBState => "Circuit breaker state error",
         }
     }
 
@@ -1246,10 +1240,10 @@ impl Error {
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
             Error::MarketNotReady => "MARKET_NOT_READY",
-            Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
-            Error::CBAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
-            Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
-            Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
+            Error::FallbackUnavailable => "FALLBACK_UNAVAILABLE",
+            Error::ResTimeoutReached => "RES_TIMEOUT_REACHED",
+            Error::RefundStarted => "REFUND_STARTED",
+            Error::CBState => "CB_STATE",
         }
     }
 }

@@ -91,6 +91,8 @@ impl QueryManager {
         // Get oracle provider name
         let oracle_provider = market.oracle_config.provider.name();
 
+        let winning_outcome = market.get_winning_outcome();
+
         let response = EventDetailsQuery {
             market_id,
             question: market.question,
@@ -101,7 +103,7 @@ impl QueryManager {
             oracle_provider: String::from_str(env, oracle_provider),
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
-            winning_outcome: market.winning_outcome.clone(),
+            winning_outcome,
             oracle_result: market.oracle_result.clone(),
             participant_count,
             vote_count,
@@ -217,11 +219,7 @@ impl QueryManager {
         let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
 
         // Determine if user is winning
-        let is_winning = market
-            .winning_outcome
-            .as_ref()
-            .map(|wo| wo == &outcome)
-            .unwrap_or(false);
+        let is_winning = market.is_winning_outcome(&outcome);
 
         // Calculate potential payout
         let potential_payout = if is_winning && !has_claimed {
@@ -455,14 +453,14 @@ impl QueryManager {
     /// - User's stake proportion
     /// - Total winning stakes
     /// - Platform fee deduction
-    fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    pub(crate) fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
         if user_stake <= 0 {
             return Ok(0);
         }
 
         // Get total winning stakes
-        if let Some(winning_outcome) = &market.winning_outcome {
-            let winning_total = Self::calculate_outcome_pool(env, market, winning_outcome)?;
+        if let Some(winning_outcome) = market.get_winning_outcome() {
+            let winning_total = Self::calculate_outcome_pool(env, market, &winning_outcome)?;
 
             if winning_total <= 0 {
                 return Ok(0);
@@ -484,7 +482,7 @@ impl QueryManager {
     /// Calculate total stake for a specific outcome.
     ///
     /// Sums all user stakes that voted for the given outcome.
-    fn calculate_outcome_pool(
+    pub(crate) fn calculate_outcome_pool(
         env: &Env,
         market: &Market,
         outcome: &String,
@@ -507,7 +505,7 @@ impl QueryManager {
     ///
     /// Uses stake distribution to infer market's probability estimates
     /// for "yes" and "no" outcomes. Returns percentages (0-100).
-    fn calculate_implied_probabilities(
+    pub(crate) fn calculate_implied_probabilities(
         env: &Env,
         market: &Market,
     ) -> Result<(u32, u32), Error> {
@@ -539,6 +537,7 @@ impl QueryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::Env;
 
     #[test]
@@ -562,10 +561,13 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
+                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            0u64,
             MarketState::Active,
         );
 
@@ -590,10 +592,13 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
+                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            0u64,
             MarketState::Active,
         );
 
@@ -625,10 +630,13 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
+                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            0u64,
             MarketState::Active,
         );
 

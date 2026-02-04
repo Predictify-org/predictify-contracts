@@ -1,4 +1,5 @@
 extern crate alloc;
+use alloc::format;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 // use alloc::string::ToString; // Unused import
 

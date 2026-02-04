@@ -48,11 +48,15 @@ impl TestSetup {
         
         let oracle_config = OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(
+                &self.env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ),
             String::from_str(&self.env, "BTC/USD"),
             50_000_00,
             String::from_str(&self.env, "gt"),
         );
-        
+
         let market = Market::new(
             &self.env,
             self.admin.clone(),
@@ -60,6 +64,8 @@ impl TestSetup {
             outcomes,
             end_time,
             oracle_config,
+            None,
+            0u64,
             MarketState::Active,
         );
         

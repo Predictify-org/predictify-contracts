@@ -506,6 +506,8 @@ proptest! {
             &outcomes,
             &30,
             &oracle_config,
+            &None,
+            &0u64,
         );
 
         // Store admin address to avoid borrowing issues

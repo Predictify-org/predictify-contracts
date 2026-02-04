@@ -980,7 +980,7 @@ impl OracleResolutionManager {
                 &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
             );
 
-            return Err(Error::ResolutionTimeoutReached);
+            return Err(Error::ResTimeoutReached);
         }
 
         // Validate market for oracle resolution
@@ -994,7 +994,7 @@ impl OracleResolutionManager {
             Ok(res) => res,
             Err(_) => {
                 // 3. Try fallback oracle if primary fails
-                if let Some(ref fallback_config) = market.fallback_oracle_config {
+                if let Some(ref fallback_config) = market.get_fallback_oracle_config() {
                     match Self::try_fetch_from_config(env, fallback_config) {
                         Ok(res) => {
                             crate::events::EventEmitter::emit_fallback_used(
@@ -1006,7 +1006,7 @@ impl OracleResolutionManager {
                             used_config = fallback_config.clone();
                             res
                         }
-                        Err(_) => return Err(Error::FallbackOracleUnavailable),
+                        Err(_) => return Err(Error::FallbackUnavailable),
                     }
                 } else {
                     return Err(Error::OracleUnavailable);
@@ -1331,16 +1331,32 @@ impl MarketResolutionManager {
         let resolution = MarketResolution {
             market_id: market_id.clone(),
             final_outcome: final_result.clone(),
-            oracle_result,
+            oracle_result: oracle_result.clone(),
             community_consensus,
             resolution_timestamp: env.ledger().timestamp(),
             resolution_method,
             confidence_score,
         };
 
-        // Capture old state for event
-        let old_state = market.state.clone();
+        // Determine resolution source string for dispute window
+        let resolution_source = match resolution_method {
+            ResolutionMethod::OracleOnly => "Oracle",
+            ResolutionMethod::CommunityOnly => "Community",
+            ResolutionMethod::Hybrid => "Hybrid",
+            ResolutionMethod::AdminOverride => "Admin",
+            ResolutionMethod::DisputeResolution => "DisputeResolution",
+        };
+        let resolution_source_str = soroban_sdk::String::from_str(env, resolution_source);
 
+        // INTEGRATION: Use dispute window system instead of immediate resolution
+        // Propose the resolution to open the dispute window
+        // The winning outcome will be set when finalize_resolution is called
+        crate::resolution_delay::ResolutionDelayManager::propose_resolution(
+            env,
+            market_id,
+            final_result.clone(),
+            resolution_source_str,
+        )?;
         // Set winning outcome(s) - supports both single winner and ties
         MarketStateManager::set_winning_outcomes(
             &mut market,
@@ -1349,7 +1365,7 @@ impl MarketResolutionManager {
         );
         MarketStateManager::update_market(env, market_id, &market);
 
-        // Emit market resolved event
+        // Emit market resolution proposed event (the detailed event is emitted by propose_resolution)
         let oracle_result_str = market
             .oracle_result
             .clone()
@@ -1364,6 +1380,9 @@ impl MarketResolutionManager {
         };
         let resolution_method_str = soroban_sdk::String::from_str(env, method_str);
 
+        // Note: The final "Resolved" state will be set when finalize_market_resolution is called
+        // after the dispute window closes. For now, the market stays in its current state
+        // but has a pending resolution proposal.
         crate::events::EventEmitter::emit_market_resolved(
             env,
             market_id,
@@ -1372,15 +1391,6 @@ impl MarketResolutionManager {
             &community_consensus_str,
             &resolution_method_str,
             confidence_score as i128,
-        );
-
-        // Emit state change event
-        crate::events::EventEmitter::emit_state_change_event(
-            env,
-            market_id,
-            &old_state,
-            &crate::types::MarketState::Resolved,
-            &soroban_sdk::String::from_str(env, "Automated resolution completed"),
         );
 
         Ok(resolution)
@@ -1886,6 +1896,8 @@ mod tests {
                 threshold: 2500000,
                 comparison: String::from_str(&env, "gt"),
             },
+            None,
+            0u64,
             MarketState::Active,
         );
 

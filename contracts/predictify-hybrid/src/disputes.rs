@@ -814,6 +814,16 @@ impl DisputeManager {
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         DisputeValidator::validate_market_for_dispute(env, &market)?;
 
+        // INTEGRATION: Validate dispute window is open (if resolution was proposed)
+        // This ensures disputes are only allowed during the dispute window period
+        // after a resolution has been proposed but before it's finalized.
+        // If no resolution window exists, fall back to existing dispute validation.
+        if market.is_resolution_proposed() {
+            crate::resolution_delay::ResolutionDelayManager::validate_dispute_allowed(
+                env, &market_id
+            )?;
+        }
+
         // Validate dispute parameters
         DisputeValidator::validate_dispute_parameters(env, &user, &market, stake)?;
 
@@ -845,6 +855,13 @@ impl DisputeManager {
 
         // Update market in storage
         MarketStateManager::update_market(env, &market_id, &market);
+
+        // INTEGRATION: Record dispute in the resolution window
+        // This tracks dispute count and prevents finalization until disputes are resolved
+        if crate::resolution_delay::ResolutionDelayManager::is_dispute_window_open(env, &market_id) {
+            // Note: record_dispute already increments the dispute count
+            let _ = crate::resolution_delay::ResolutionDelayManager::record_dispute(env, &market_id);
+        }
 
         // Emit dispute created event
         crate::events::EventEmitter::emit_dispute_created(
@@ -2816,10 +2833,13 @@ mod tests {
             end_time,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),
             ),
+            None,
+            0u64,
             crate::types::MarketState::Active,
         )
     }
