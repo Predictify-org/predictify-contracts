@@ -55,6 +55,7 @@ fn create_ended_market(env: &Env, market_id: &Symbol, admin: &Address) -> Market
 
     let oracle_config = OracleConfig {
         provider: crate::types::OracleProvider::Pyth,
+        oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
         feed_id: String::from_str(env, "TEST/USD"),
         threshold: 100,
         comparison: String::from_str(env, "gt"),
@@ -71,6 +72,8 @@ fn create_ended_market(env: &Env, market_id: &Symbol, admin: &Address) -> Market
         outcomes,
         end_time,
         oracle_config,
+        None,
+        0u64,
         MarketState::Ended,
     );
 
@@ -306,6 +309,7 @@ mod resolution_workflow_tests {
 
         let oracle_config = OracleConfig {
             provider: crate::types::OracleProvider::Pyth,
+            oracle_address: Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             feed_id: String::from_str(&env, "TEST/USD"),
             threshold: 100,
             comparison: String::from_str(&env, "gt"),
@@ -321,6 +325,8 @@ mod resolution_workflow_tests {
             outcomes,
             end_time,
             oracle_config,
+            None,
+            0u64,
             MarketState::Active,
         );
 
@@ -425,7 +431,7 @@ mod dispute_during_window_tests {
 
         // Dispute should not be allowed
         let result = ResolutionDelayManager::validate_dispute_allowed(&env, &market_id);
-        assert_eq!(result, Err(Error::DisputeVotingNotAllowed));
+        assert_eq!(result, Err(Error::DisputeVoteDenied));
     }
 
     #[test]
@@ -479,7 +485,7 @@ mod dispute_during_window_tests {
 
         // Recording should fail
         let result = ResolutionDelayManager::record_dispute(&env, &market_id);
-        assert_eq!(result, Err(Error::DisputeVotingNotAllowed));
+        assert_eq!(result, Err(Error::DisputeVoteDenied));
     }
 }
 
@@ -532,7 +538,7 @@ mod finalization_tests {
 
         // Finalize should fail
         let result = ResolutionDelayManager::finalize_resolution(&env, &market_id);
-        assert_eq!(result, Err(Error::DisputeTimeoutNotExpired));
+        assert_eq!(result, Err(Error::TimeoutNotExpired));
     }
 
     #[test]
@@ -570,7 +576,7 @@ mod finalization_tests {
 
         // Second finalize should fail
         let result = ResolutionDelayManager::finalize_resolution(&env, &market_id);
-        assert_eq!(result, Err(Error::MarketAlreadyResolved));
+        assert_eq!(result, Err(Error::MarketResolved));
     }
 
     #[test]
@@ -840,7 +846,7 @@ mod edge_case_tests {
 
         // Dispute should not be allowed after finalization
         let result = ResolutionDelayManager::validate_dispute_allowed(&env, &market_id);
-        assert_eq!(result, Err(Error::MarketAlreadyResolved));
+        assert_eq!(result, Err(Error::MarketResolved));
     }
 
     #[test]
@@ -933,7 +939,7 @@ mod integration_tests {
         // 5. Cannot finalize during window
         assert_eq!(
             ResolutionDelayManager::finalize_resolution(&env, &market_id),
-            Err(Error::DisputeTimeoutNotExpired)
+            Err(Error::TimeoutNotExpired)
         );
 
         // 6. Wait for window to close
@@ -953,7 +959,7 @@ mod integration_tests {
 
         // 10. Verify market state updated
         let market: Market = env.storage().persistent().get(&market_id).unwrap();
-        assert_eq!(market.winning_outcome, Some(outcome));
+        assert_eq!(market.get_winning_outcome(), Some(outcome));
         assert_eq!(market.state, MarketState::Resolved);
     }
 

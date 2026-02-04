@@ -2833,10 +2833,13 @@ mod tests {
             end_time,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),
             ),
+            None,
+            0u64,
             crate::types::MarketState::Active,
         )
     }

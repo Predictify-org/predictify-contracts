@@ -33,17 +33,20 @@ fn create_test_market(
     
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
+        oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
         feed_id: String::from_str(env, "BTC/USD"),
         threshold: 100,
         comparison: String::from_str(env, "gte"),
     };
-    
+
     client.create_market(
         admin,
         &question,
         &outcomes,
         &30, // 30 days
-        &oracle_config
+        &oracle_config,
+        &None,
+        &0u64,
     )
 }
 
@@ -253,10 +256,13 @@ impl TokenTestSetup {
             &30,
             &OracleConfig {
                 provider: OracleProvider::Reflector,
+                oracle_address: Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 100,
                 comparison: String::from_str(&env, "gte"),
             },
+            &None,
+            &0u64,
         );
 
         Self { env, contract_id, admin, user1, user2, token_id, market_id }

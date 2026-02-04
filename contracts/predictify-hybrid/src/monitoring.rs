@@ -449,6 +449,8 @@ impl ContractMonitor {
                 threshold: 100,
                 comparison: String::from_str(env, ">="),
             },
+            fallback_oracle_config: Vec::new(env),
+            resolution_timeout: 0,
             oracle_result: None,
             votes: Map::new(env),
             stakes: Map::new(env),

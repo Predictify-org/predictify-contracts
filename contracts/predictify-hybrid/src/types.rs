@@ -826,8 +826,8 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
-    /// Fallback oracle configuration
-    pub fallback_oracle_config: Option<OracleConfig>,
+    /// Fallback oracle configuration (empty vec = none, one element = some)
+    pub fallback_oracle_config: Vec<OracleConfig>,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Oracle result (set after market ends)
@@ -980,13 +980,14 @@ impl Market {
         resolution_timeout: u64,
         state: MarketState,
     ) -> Self {
+        let fallback_vec = Self::option_oracle_config_to_vec(env, &fallback_oracle_config);
         Self {
             admin,
             question,
             outcomes,
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            fallback_oracle_config: fallback_vec,
             resolution_timeout,
             oracle_result: None,
             votes: Map::new(env),
@@ -1012,6 +1013,27 @@ impl Market {
             dispute_window_hours: 0, // 0 means use global config
             category: None,
             tags: Vec::new(env),
+        }
+    }
+
+    /// Convert Option<OracleConfig> to Vec for storage (avoids contracttype Option issue in test builds).
+    pub fn option_oracle_config_to_vec(env: &Env, o: &Option<OracleConfig>) -> Vec<OracleConfig> {
+        match o {
+            None => Vec::new(env),
+            Some(c) => {
+                let mut v = Vec::new(env);
+                v.push_back(c.clone());
+                v
+            }
+        }
+    }
+
+    /// Fallback oracle config as Option (empty vec = None).
+    pub fn get_fallback_oracle_config(&self) -> Option<OracleConfig> {
+        if self.fallback_oracle_config.len() == 0 {
+            None
+        } else {
+            Some(self.fallback_oracle_config.get(0).unwrap().clone())
         }
     }
 
@@ -3246,8 +3268,8 @@ pub struct Event {
     pub end_time: u64,
     /// Oracle configuration for result verification (primary)
     pub oracle_config: OracleConfig,
-    /// Fallback oracle configuration
-    pub fallback_oracle_config: Option<OracleConfig>,
+    /// Fallback oracle configuration (empty vec = none, one element = some)
+    pub fallback_oracle_config: Vec<OracleConfig>,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Administrative address that created/manages the event

@@ -37,7 +37,7 @@
 
 #![allow(dead_code)]
 
-use soroban_sdk::{Address, Env, String, Symbol};
+use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::events::EventEmitter;
@@ -225,7 +225,7 @@ impl ResolutionDelayManager {
     ///
     /// - `Error::MarketNotFound`: Market doesn't exist
     /// - `Error::MarketClosed`: Market hasn't ended yet (still active)
-    /// - `Error::MarketAlreadyResolved`: Resolution already finalized
+    /// - `Error::MarketResolved`: Resolution already finalized
     ///
     /// # Events
     ///
@@ -246,7 +246,7 @@ impl ResolutionDelayManager {
 
         // Check if already finalized
         if market.resolution_is_finalized {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Get dispute window duration for this market
@@ -368,9 +368,9 @@ impl ResolutionDelayManager {
     ///
     /// - `Error::MarketNotFound`: Market doesn't exist
     /// - `Error::MarketNotResolved`: No resolution has been proposed
-    /// - `Error::DisputeTimeoutNotExpired`: Window hasn't closed yet
-    /// - `Error::DisputeResolutionConditionsNotMet`: There are unresolved disputes
-    /// - `Error::MarketAlreadyResolved`: Already finalized
+    /// - `Error::TimeoutNotExpired`: Window hasn't closed yet
+    /// - `Error::DisputeCondNotMet`: There are unresolved disputes
+    /// - `Error::MarketResolved`: Already finalized
     ///
     /// # Events
     ///
@@ -386,18 +386,18 @@ impl ResolutionDelayManager {
 
         // Check if already finalized
         if market.resolution_is_finalized {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if window has closed
         if market.is_dispute_window_open(current_time) {
-            return Err(Error::DisputeTimeoutNotExpired);
+            return Err(Error::TimeoutNotExpired);
         }
 
         // Check for unresolved disputes
         let has_unresolved = Self::has_unresolved_disputes(env, market_id);
         if has_unresolved {
-            return Err(Error::DisputeResolutionConditionsNotMet);
+            return Err(Error::DisputeCondNotMet);
         }
 
         // Get resolution data
@@ -418,7 +418,7 @@ impl ResolutionDelayManager {
         market.resolution_is_finalized = true;
 
         // Set the winning outcome
-        market.winning_outcome = Some(proposed_outcome.clone());
+        market.winning_outcomes = Some(vec![env, proposed_outcome.clone()]);
         market.state = MarketState::Resolved;
 
         // Update market
@@ -504,14 +504,14 @@ impl ResolutionDelayManager {
     /// # Errors
     ///
     /// - `Error::MarketNotFound`: Market doesn't exist
-    /// - `Error::DisputeVotingNotAllowed`: Window is not open for disputes
+    /// - `Error::DisputeVoteDenied`: Window is not open for disputes
     pub fn record_dispute(env: &Env, market_id: &Symbol) -> Result<(), Error> {
         let mut market = MarketStateManager::get_market(env, market_id)?;
         let current_time = env.ledger().timestamp();
 
         // Check if window is open
         if !market.is_dispute_window_open(current_time) {
-            return Err(Error::DisputeVotingNotAllowed);
+            return Err(Error::DisputeVoteDenied);
         }
 
         // Increment dispute count
@@ -566,8 +566,8 @@ impl ResolutionDelayManager {
     /// # Errors
     ///
     /// - `Error::MarketNotResolved`: No resolution proposed
-    /// - `Error::DisputeVotingNotAllowed`: Window is closed
-    /// - `Error::MarketAlreadyResolved`: Resolution already finalized
+    /// - `Error::DisputeVoteDenied`: Window is closed
+    /// - `Error::MarketResolved`: Resolution already finalized
     pub fn validate_dispute_allowed(env: &Env, market_id: &Symbol) -> Result<(), Error> {
         let market = MarketStateManager::get_market(env, market_id)?;
         let current_time = env.ledger().timestamp();
@@ -579,12 +579,12 @@ impl ResolutionDelayManager {
 
         // Check if already finalized
         if market.resolution_is_finalized {
-            return Err(Error::MarketAlreadyResolved);
+            return Err(Error::MarketResolved);
         }
 
         // Check if window is open
         if !market.is_dispute_window_open(current_time) {
-            return Err(Error::DisputeVotingNotAllowed);
+            return Err(Error::DisputeVoteDenied);
         }
 
         Ok(())
@@ -633,7 +633,7 @@ impl ResolutionDelayManager {
         market.resolution_is_finalized = true;
 
         // Set winning outcome
-        market.winning_outcome = Some(outcome.clone());
+        market.winning_outcomes = Some(vec![env, outcome.clone()]);
         market.state = MarketState::Resolved;
 
         MarketStateManager::update_market(env, market_id, &market);

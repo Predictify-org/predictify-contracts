@@ -400,7 +400,7 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            fallback_oracle_config: Market::option_oracle_config_to_vec(&env, &fallback_oracle_config),
             resolution_timeout,
             oracle_result: None,
             votes: Map::new(&env),
@@ -509,7 +509,7 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            fallback_oracle_config: Market::option_oracle_config_to_vec(&env, &fallback_oracle_config),
             resolution_timeout,
             admin: admin.clone(),
             created_at: env.ledger().timestamp(),
@@ -2060,37 +2060,6 @@ impl PredictifyHybrid {
     /// - Market must exist and be past its end time
     /// - Market must not already have an oracle result
     /// - Oracle contract must be accessible and responsive
-    pub fn fetch_oracle_result(
-        env: Env,
-        market_id: Symbol,
-        oracle_contract: Address,
-    ) -> Result<String, Error> {
-        // Get the market from storage
-        let market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Validate market state
-        if market.oracle_result.is_some() {
-            return Err(Error::MarketResolved);
-        }
-
-        // Check if market has ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
-            return Err(Error::MarketClosed);
-        }
-
-        // Get oracle result using the resolution module
-        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
-            &env,
-            &market_id,
-            &oracle_contract,
-        )?;
-
-        Ok(oracle_resolution.oracle_result)
     pub fn fetch_oracle_result(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
         resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
     }
@@ -2935,6 +2904,7 @@ impl PredictifyHybrid {
     }
 
     // ===== EVENT ARCHIVE AND HISTORICAL QUERY =====
+
 
     /// Mark a resolved or cancelled event (market) as archived. Admin only.
     /// Market must be in Resolved or Cancelled state. Returns InvalidState if not
