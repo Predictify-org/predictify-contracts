@@ -55,11 +55,11 @@ pub enum Error {
     /// Market not ready for oracle verification
     MarketNotReady = 205,
     /// Fallback oracle is unavailable or unhealthy
-    FallbackOracleUnavailable = 202,
+    FallbackOracleUnavailable = 206,
     /// Resolution timeout has been reached
-    ResolutionTimeoutReached = 203,
+    ResolutionTimeoutReached = 207,
     /// Refund process has been initiated
-    RefundStarted = 204,
+    RefundStarted = 208,
 
     // ===== VALIDATION ERRORS =====
     /// Invalid question format

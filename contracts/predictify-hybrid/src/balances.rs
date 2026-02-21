@@ -7,6 +7,7 @@ use crate::storage::BalanceStorage;
 use crate::types::{Balance, ReflectorAsset};
 use crate::validation::InputValidator;
 use soroban_sdk::{Address, Env, String};
+use crate::circuit_breaker::CircuitBreaker;
 
 /// Manages user balances for deposits and withdrawals.
 ///
@@ -86,6 +87,11 @@ impl BalanceManager {
         amount: i128,
     ) -> Result<Balance, Error> {
         user.require_auth();
+
+        // Prevent withdrawals when circuit breaker disallows them
+        if !CircuitBreaker::are_withdrawals_allowed(env)? {
+            return Err(Error::CBOpen);
+        }
 
         // Validate amount
         InputValidator::validate_balance_amount(&amount).map_err(|_| Error::InvalidInput)?;

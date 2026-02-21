@@ -2238,3 +2238,4 @@ fn test_claim_by_loser() {
             .unwrap()
     });
 
+}
