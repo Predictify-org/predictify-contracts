@@ -10,6 +10,7 @@ use crate::fees::{FeeConfig, FeeManager};
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
 use alloc::string::ToString;
+use alloc::format;
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -21,7 +22,121 @@ use alloc::string::ToString;
 /// - Admin helper utilities and testing functions
 /// - Admin event emission and monitoring
 
-// ===== ADMIN TYPES =====
+// ===== ADMIN TYPES & MULTISIG =====
+
+/// Multisig threshold for admin actions
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct MultisigConfig {
+    pub threshold: u32, // M-of-N
+    pub total_admins: u32,
+}
+
+/// Pending multisig approvals for a sensitive action
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct PendingApproval {
+    pub action: String, // e.g. "pause", "upgrade", "withdraw_fees"
+    pub params: Map<String, String>,
+    pub approvers: Vec<Address>,
+    pub created_at: u64,
+}
+// ===== MULTISIG EVENTS =====
+pub struct MultisigEventEmitter;
+
+impl MultisigEventEmitter {
+    pub fn emit_threshold_changed(env: &Env, new_threshold: u32) {
+        EventEmitter::emit_admin_action_logged(env, &Address::from_contract_id(&env.current_contract_address()), "ThresholdChanged", &true);
+    }
+    pub fn emit_approval(env: &Env, action: &str, admin: &Address) {
+        EventEmitter::emit_admin_action_logged(env, admin, &format!("Approved:{}", action), &true);
+    }
+    pub fn emit_action_executed(env: &Env, action: &str) {
+        EventEmitter::emit_admin_action_logged(env, &Address::from_contract_id(&env.current_contract_address()), &format!("Executed:{}", action), &true);
+    }
+}
+// ===== MULTISIG STORAGE KEYS =====
+const MULTISIG_CONFIG_KEY: &str = "MultisigConfig";
+const PENDING_APPROVALS_KEY: &str = "PendingApprovals";
+// ===== MULTISIG LOGIC =====
+pub struct MultisigManager;
+
+impl MultisigManager {
+    /// Set the multisig threshold (M-of-N). Only callable by SuperAdmin.
+    pub fn set_threshold(env: &Env, admin: &Address, threshold: u32) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        let total_admins = EnhancedAdminAnalytics::count_total_admins(env);
+        if threshold == 0 || threshold > total_admins {
+            return Err(Error::InvalidInput);
+        }
+        let config = MultisigConfig { threshold, total_admins };
+        env.storage().persistent().set(&Symbol::new(env, MULTISIG_CONFIG_KEY), &config);
+        MultisigEventEmitter::emit_threshold_changed(env, threshold);
+        Ok(())
+    }
+
+    /// Get the current multisig config
+    pub fn get_config(env: &Env) -> MultisigConfig {
+        env.storage().persistent().get(&Symbol::new(env, MULTISIG_CONFIG_KEY)).unwrap_or(MultisigConfig { threshold: 1, total_admins: EnhancedAdminAnalytics::count_total_admins(env) })
+    }
+
+    /// Approve a sensitive action (pause, upgrade, withdraw, etc.)
+    pub fn approve_action(env: &Env, admin: &Address, action: &str, params: Map<String, String>) -> Result<bool, Error> {
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        let mut approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
+        let mut found = false;
+        let mut executed = false;
+        let now = env.ledger().timestamp();
+        for approval in approvals.iter_mut() {
+            if approval.action == action && approval.params == params {
+                if !approval.approvers.contains(admin) {
+                    approval.approvers.push_back(admin.clone());
+                    MultisigEventEmitter::emit_approval(env, action, admin);
+                }
+                found = true;
+                let config = Self::get_config(env);
+                if approval.approvers.len() as u32 >= config.threshold {
+                    // Threshold met: execute action (caller must handle actual execution)
+                    MultisigEventEmitter::emit_action_executed(env, action);
+                    executed = true;
+                }
+                break;
+            }
+        }
+        if !found {
+            let mut approvers = Vec::new(env);
+            approvers.push_back(admin.clone());
+            approvals.push_back(PendingApproval {
+                action: String::from_str(env, action),
+                params: params.clone(),
+                approvers,
+                created_at: now,
+            });
+            MultisigEventEmitter::emit_approval(env, action, admin);
+        }
+        env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &approvals);
+        Ok(executed)
+    }
+
+    /// Clear approvals for an action after execution
+    pub fn clear_approvals(env: &Env, action: &str, params: Map<String, String>) {
+        let mut approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
+        approvals.retain(|a| !(a.action == action && a.params == params));
+        env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &approvals);
+    }
+
+    /// Check if threshold is met for an action
+    pub fn is_threshold_met(env: &Env, action: &str, params: Map<String, String>) -> bool {
+        let approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
+        for approval in approvals.iter() {
+            if approval.action == action && approval.params == params {
+                let config = Self::get_config(env);
+                return approval.approvers.len() as u32 >= config.threshold;
+            }
+        }
+        false
+    }
+}
 
 /// Admin role enumeration
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -165,7 +280,7 @@ impl AdminInitializer {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::AdminInitializer;
     /// # let env = Env::default();
-    /// # let admin_address = Address::generate(&env);
+    /// # let admin_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// match AdminInitializer::initialize(&env, &admin_address) {
     ///     Ok(()) => {
@@ -255,7 +370,7 @@ impl AdminInitializer {
     /// # use predictify_hybrid::admin::AdminInitializer;
     /// # use predictify_hybrid::config::Environment;
     /// # let env = Env::default();
-    /// # let admin_address = Address::generate(&env);
+    /// # let admin_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Initialize for mainnet deployment
     /// match AdminInitializer::initialize_with_config(
@@ -346,7 +461,7 @@ impl AdminInitializer {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::AdminInitializer;
     /// # let env = Env::default();
-    /// # let proposed_admin = Address::generate(&env);
+    /// # let proposed_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Validate before initialization
     /// match AdminInitializer::validate_initialization_params(&env, &proposed_admin) {
@@ -425,7 +540,7 @@ impl AdminAccessControl {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::{AdminAccessControl, AdminPermission};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Check if admin can create markets
     /// match AdminAccessControl::validate_permission(
@@ -510,7 +625,7 @@ impl AdminAccessControl {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::AdminAccessControl;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Authenticate admin before sensitive operation
     /// match AdminAccessControl::require_admin_auth(&env, &admin) {
@@ -595,7 +710,7 @@ impl AdminAccessControl {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::AdminAccessControl;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Validate admin for market creation
     /// match AdminAccessControl::validate_admin_for_action(
@@ -790,8 +905,8 @@ impl AdminRoleManager {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::{AdminRoleManager, AdminRole};
     /// # let env = Env::default();
-    /// # let super_admin = Address::generate(&env);
-    /// # let new_admin = Address::generate(&env);
+    /// # let super_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    /// # let new_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Assign MarketAdmin role to a new admin
     /// match AdminRoleManager::assign_role(
@@ -909,7 +1024,7 @@ impl AdminRoleManager {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::{AdminRoleManager, AdminRole};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Get admin role for permission checking
     /// match AdminRoleManager::get_admin_role(&env, &admin) {
@@ -1571,7 +1686,7 @@ impl AdminFunctions {
     /// # use soroban_sdk::{Env, Address, Symbol};
     /// # use predictify_hybrid::admin::AdminFunctions;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "problematic_market");
     ///
     /// // Close a problematic market
@@ -1672,7 +1787,7 @@ impl AdminFunctions {
     /// # use soroban_sdk::{Env, Address, Symbol, String};
     /// # use predictify_hybrid::admin::AdminFunctions;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "disputed_market");
     /// # let outcome = String::from_str(&env, "Yes");
     ///
@@ -1787,7 +1902,7 @@ impl AdminFunctions {
     /// # use soroban_sdk::{Env, Address, Symbol, String};
     /// # use predictify_hybrid::admin::AdminFunctions;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "active_market");
     /// # let reason = String::from_str(&env, "Low participation, extending for more votes");
     ///
@@ -1920,7 +2035,7 @@ impl AdminFunctions {
     /// # use predictify_hybrid::admin::AdminFunctions;
     /// # use predictify_hybrid::fees::FeeConfig;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let new_config = FeeConfig {
     /// #     platform_fee_percentage: 250, // 2.5%
     /// #     creation_fee: 1000000,        // 1 XLM
@@ -2029,7 +2144,7 @@ impl AdminFunctions {
     /// # use predictify_hybrid::admin::AdminFunctions;
     /// # use predictify_hybrid::config::{ContractConfig, Environment};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let new_config = ContractConfig {
     /// #     environment: Environment::Mainnet,
     /// #     max_market_duration_days: 365,
@@ -2138,7 +2253,7 @@ impl AdminFunctions {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::AdminFunctions;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Reset configuration to defaults after problematic changes
     /// match AdminFunctions::reset_config_to_defaults(&env, &admin) {
@@ -2272,7 +2387,7 @@ impl AdminValidator {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::AdminValidator;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Validate admin address before operations
     /// match AdminValidator::validate_admin_address(&env, &admin) {
@@ -2365,7 +2480,7 @@ impl AdminValidator {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::{AdminValidator, AdminInitializer};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Safe initialization pattern
     /// AdminValidator::validate_contract_not_initialized(&env)?;
@@ -2485,7 +2600,7 @@ impl AdminValidator {
     /// # use soroban_sdk::{Env, Address, Map};
     /// # use predictify_hybrid::admin::{AdminValidator, AdminActionLogger};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let action = "close_market";
     /// # let params = Map::new(&env);
     ///
@@ -2611,7 +2726,7 @@ impl AdminActionLogger {
     /// # use soroban_sdk::{Env, Address, Map, String};
     /// # use predictify_hybrid::admin::AdminActionLogger;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let mut params = Map::new(&env);
     /// # params.set(
     /// #     String::from_str(&env, "market_id"),
@@ -2836,7 +2951,7 @@ impl AdminActionLogger {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::admin::AdminActionLogger;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Get actions performed by a specific admin
     /// match AdminActionLogger::get_admin_actions_for_admin(&env, &admin, 25) {
@@ -3313,7 +3428,7 @@ mod tests {
     fn test_admin_initializer_initialize() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         // Test initialization
         env.as_contract(&contract_id, || {
@@ -3333,7 +3448,7 @@ mod tests {
     fn test_admin_access_control_validate_permission() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             // Initialize admin
@@ -3353,8 +3468,8 @@ mod tests {
     fn test_admin_role_manager_assign_role() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        let new_admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let new_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             // Initialize admin
@@ -3379,7 +3494,7 @@ mod tests {
     fn test_admin_functions_close_market() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
         let _market_id = Symbol::new(&env, "test_market");
 
         env.as_contract(&contract_id, || {
@@ -3400,8 +3515,8 @@ mod tests {
     fn test_admin_utils_is_admin() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        let non_admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let non_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             // Initialize admin
@@ -3416,7 +3531,7 @@ mod tests {
     #[test]
     fn test_admin_testing_utilities() {
         let env = Env::default();
-        let admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         let action = AdminTesting::create_test_admin_action(&env, &admin);
         // Check the action structure manually first
@@ -3446,8 +3561,8 @@ mod admin_manager_tests {
     fn test_add_admin_success() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let super_admin = Address::generate(&env);
-        let new_admin = Address::generate(&env);
+        let super_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let new_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             // Initialize with super admin
@@ -3528,7 +3643,7 @@ mod admin_manager_tests {
     fn test_get_admin_roles() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let super_admin = Address::generate(&env);
+        let super_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             AdminInitializer::initialize(&env, &super_admin).unwrap();
@@ -3548,8 +3663,8 @@ mod admin_manager_tests {
     fn test_is_original_admin() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let super_admin = Address::generate(&env);
-        let other_admin = Address::generate(&env);
+        let super_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let other_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             AdminInitializer::initialize(&env, &super_admin).unwrap();
@@ -3647,7 +3762,7 @@ mod admin_manager_tests {
     fn test_role_distribution() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let super_admin = Address::generate(&env);
+        let super_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             AdminInitializer::initialize(&env, &super_admin).unwrap();
@@ -3667,7 +3782,7 @@ mod admin_manager_tests {
     fn test_migration_info() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let super_admin = Address::generate(&env);
+        let super_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             AdminInitializer::initialize(&env, &super_admin).unwrap();
@@ -3694,7 +3809,7 @@ mod admin_manager_tests {
     fn test_admin_activity_summary() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let super_admin = Address::generate(&env);
+        let super_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         env.as_contract(&contract_id, || {
             AdminInitializer::initialize(&env, &super_admin).unwrap();

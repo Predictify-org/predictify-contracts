@@ -6,6 +6,7 @@
 #![allow(unused_mut)]
 #![allow(deprecated)]
 
+#[macro_use]
 extern crate alloc;
 extern crate wee_alloc;
 
@@ -21,7 +22,7 @@ mod circuit_breaker;
 mod config;
 mod disputes;
 mod edge_cases;
-mod errors;
+pub mod errors;
 mod event_archive;
 mod events;
 mod extensions;
@@ -41,6 +42,7 @@ mod reentrancy_guard;
 mod resolution;
 mod statistics;
 mod storage;
+mod reporting;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -91,11 +93,15 @@ mod statistics_tests;
 mod resolution_delay_dispute_window_tests;
 
 #[cfg(test)]
+mod reporting_tests;
+
+#[cfg(test)]
 mod event_creation_tests;
 
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
-pub use errors::Error;
+pub use crate::errors::Error as Error;
+pub use reporting::ReportingManager;
 pub use queries::QueryManager;
 pub use types::*;
 
@@ -147,7 +153,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin_address = Address::generate(&env);
+    /// # let admin_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Initialize with default 2% platform fee
     /// PredictifyHybrid::initialize(env.clone(), admin_address.clone(), None);
@@ -235,6 +241,38 @@ impl PredictifyHybrid {
         balances::BalanceManager::withdraw(&env, user, asset, amount)
     }
 
+    // ===== REPORTING & ANALYTICS APIs =====
+
+    /// Retrieve a list of active events with basic stats.
+    ///
+    /// Supports pagination to ensure bounded result size and gas efficiency.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `offset` - Number of active events to skip.
+    /// * `limit` - Maximum number of active events to return.
+    pub fn get_active_events(env: Env, offset: u32, limit: u32) -> Result<Vec<ActiveEvent>, Error> {
+        ReportingManager::get_active_events(&env, offset, limit)
+    }
+
+    /// Retrieve global platform statistics and metrics.
+    ///
+    /// Returns aggregate value locked, total events, and fees collected.
+    pub fn get_platform_stats(env: Env) -> Result<PlatformStats, Error> {
+        ReportingManager::get_platform_stats(&env)
+    }
+
+    /// Retrieve a detailed snapshot of a specific event.
+    ///
+    /// Returns full event state, outcome pools, and participation metrics.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `id` - Unique identifier of the event to snapshot.
+    pub fn get_event_snapshot(env: Env, id: Symbol) -> Result<EventSnapshot, Error> {
+        ReportingManager::get_event_snapshot(&env, id)
+    }
+
     /// Gets the current balance of a user for a specific asset.
     ///
     /// # Parameters
@@ -287,7 +325,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, String, Vec};
     /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleType};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by 2024?");
     /// let outcomes = vec![
@@ -296,7 +334,7 @@ impl PredictifyHybrid {
     /// ];
     /// let oracle_config = OracleConfig {
     ///     oracle_type: OracleType::Reflector,
-    ///     oracle_contract: Address::generate(&env),
+    ///     oracle_contract: Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
     ///     asset_code: Some(String::from_str(&env, "BTC")),
     ///     threshold_value: Some(100000),
     /// };
@@ -317,7 +355,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, String, Vec};
     /// # use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleProvider};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Create a 3-outcome market (e.g., match result)
     /// let question = String::from_str(&env, "Match result?");
@@ -567,7 +605,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, String, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Vote "Yes" with 1000 token units stake
@@ -671,7 +709,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, String, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "btc_50k");
     ///
     /// // Place a bet of 1 XLM on "Yes" outcome
@@ -752,7 +790,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol, String};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Place bet on "Team A" outcome
@@ -821,7 +859,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, String, Symbol, Vec};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// let bets = vec![
     ///     &env,
@@ -875,7 +913,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "btc_50k");
     ///
     /// match PredictifyHybrid::get_bet(env.clone(), market_id, user) {
@@ -915,7 +953,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "btc_50k");
     ///
     /// if PredictifyHybrid::has_user_bet(env.clone(), market_id.clone(), user.clone()) {
@@ -989,7 +1027,7 @@ impl PredictifyHybrid {
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "resolved_market");
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// match PredictifyHybrid::calculate_bet_payout(env.clone(), market_id, user) {
     ///     Ok(payout) => println!("User will receive {} stroops", payout),
@@ -1042,7 +1080,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Calculate payout for user's winning bet
@@ -1150,7 +1188,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let user = Address::generate(&env);
+    /// # let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "resolved_market");
     ///
     /// // Claim winnings from a resolved market
@@ -1383,7 +1421,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, String, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Manually resolve market with "Yes" as winning outcome
@@ -1527,7 +1565,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "sports_match");
     ///
     /// // Resolve with tie (Team A and Team B both win)
@@ -1675,7 +1713,7 @@ impl PredictifyHybrid {
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "btc_market");
-    /// # let oracle_address = Address::generate(&env);
+    /// # let oracle_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// match PredictifyHybrid::fetch_oracle_result(
     ///     env.clone(),
@@ -1732,11 +1770,12 @@ impl PredictifyHybrid {
         let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
             &env,
             &market_id,
-            &oracle_contract,
         )?;
 
         Ok(oracle_resolution.oracle_result)
-    pub fn fetch_oracle_result(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
+    }
+
+    pub fn fetch_oracle_resolution(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
         resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
     }
 
@@ -1786,7 +1825,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let caller = Address::generate(&env);
+    /// # let caller = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "btc_50k_2024");
     ///
     /// // Verify result for an ended market
@@ -1878,7 +1917,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let caller = Address::generate(&env);
+    /// # let caller = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "btc_50k_2024");
     ///
     /// // Verify with up to 3 retries
@@ -1989,14 +2028,34 @@ impl PredictifyHybrid {
         outcome: String,
         reason: String,
     ) -> Result<(), Error> {
+        use crate::admin::MultisigManager;
         admin.require_auth();
-        oracles::OracleIntegrationManager::admin_override_result(
+
+        // Prepare multisig params
+        let mut params = Map::new(&env);
+        params.set(String::from_str(&env, "market_id"), market_id.to_string(&env));
+        params.set(String::from_str(&env, "outcome"), outcome.clone());
+        params.set(String::from_str(&env, "reason"), reason.clone());
+
+        // Collect approval
+        let approved = MultisigManager::approve_action(&env, &admin, "admin_override_verification", params.clone())?;
+        if !approved {
+            // Not enough approvals yet
+            return Err(Error::ApprovalPending);
+        }
+
+        let result = oracles::OracleIntegrationManager::admin_override_result(
             &env,
             &admin,
             &market_id,
             &outcome,
             &reason,
-        )
+        );
+
+        // Clear approvals after execution
+        MultisigManager::clear_approvals(&env, "admin_override_verification", params);
+
+        result
     }
 
     /// Resolves a market automatically using oracle data and community consensus.
@@ -2653,7 +2712,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Set platform fee to 2.5% (250 basis points)
     /// match PredictifyHybrid::set_platform_fee(env.clone(), admin, 250) {
@@ -2778,7 +2837,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Withdraw all available fees
     /// match PredictifyHybrid::withdraw_collected_fees(env.clone(), admin, 0) {
@@ -2787,22 +2846,21 @@ impl PredictifyHybrid {
     /// }
     /// ```
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
+        use crate::admin::MultisigManager;
         admin.require_auth();
         if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
             return Err(Error::InvalidState);
         }
 
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
+        // Prepare multisig params
+        let mut params = Map::new(&env);
+        params.set(String::from_str(&env, "amount"), amount.to_string(&env));
 
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
+        // Collect approval
+        let approved = MultisigManager::approve_action(&env, &admin, "withdraw_collected_fees", params.clone())?;
+        if !approved {
+            // Not enough approvals yet
+            return Err(Error::ApprovalPending);
         }
 
         // Get collected fees from storage (using the same key as FeeTracker)
@@ -2810,6 +2868,7 @@ impl PredictifyHybrid {
         let collected_fees: i128 = env.storage().persistent().get(&fees_key).unwrap_or(0);
 
         if collected_fees == 0 {
+            MultisigManager::clear_approvals(&env, "withdraw_collected_fees", params);
             return Err(Error::NoFeesToCollect);
         }
 
@@ -2835,8 +2894,8 @@ impl PredictifyHybrid {
             &String::from_str(&env, "fee_withdrawal"),
         );
 
-        // In a real implementation, transfer tokens to admin here
-        // For now, we'll just track the withdrawal
+        // Clear approvals after execution
+        MultisigManager::clear_approvals(&env, "withdraw_collected_fees", params);
 
         Ok(withdrawal_amount)
     }
@@ -2876,7 +2935,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol, String};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Extend market by 7 days
@@ -3021,7 +3080,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol, String};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Update market description
@@ -3151,7 +3210,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol, String, Vec};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Update market outcomes
@@ -3293,7 +3352,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol, String};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Set market category
@@ -3398,7 +3457,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, Symbol, String, vec};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// // Set market tags
@@ -3539,7 +3598,7 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, String, Symbol};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
     /// match PredictifyHybrid::cancel_event(
@@ -4265,7 +4324,7 @@ impl PredictifyHybrid {
     /// ```rust
     /// # use soroban_sdk::{Env, Address, BytesN};
     /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
+    /// # let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
     ///
     /// // Perform upgrade with admin authorization
@@ -4278,8 +4337,26 @@ impl PredictifyHybrid {
         admin: Address,
         new_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
+        use crate::admin::MultisigManager;
         admin.require_auth();
-        upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash)
+
+        // Prepare multisig params
+        let mut params = Map::new(&env);
+        params.set(String::from_str(&env, "new_wasm_hash"), new_wasm_hash.to_string(&env));
+
+        // Collect approval
+        let approved = MultisigManager::approve_action(&env, &admin, "upgrade_contract", params.clone())?;
+        if !approved {
+            // Not enough approvals yet
+            return Err(Error::ApprovalPending);
+        }
+
+        let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
+
+        // Clear approvals after execution
+        MultisigManager::clear_approvals(&env, "upgrade_contract", params);
+
+        result
     }
 
     /// Rollback contract to previous version
@@ -4302,8 +4379,26 @@ impl PredictifyHybrid {
         admin: Address,
         rollback_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
+        use crate::admin::MultisigManager;
         admin.require_auth();
-        upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash)
+
+        // Prepare multisig params
+        let mut params = Map::new(&env);
+        params.set(String::from_str(&env, "rollback_wasm_hash"), rollback_wasm_hash.to_string(&env));
+
+        // Collect approval
+        let approved = MultisigManager::approve_action(&env, &admin, "rollback_upgrade", params.clone())?;
+        if !approved {
+            // Not enough approvals yet
+            return Err(Error::ApprovalPending);
+        }
+
+        let result = upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash);
+
+        // Clear approvals after execution
+        MultisigManager::clear_approvals(&env, "rollback_upgrade", params);
+
+        result
     }
 
     /// Get current contract version
