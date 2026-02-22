@@ -200,6 +200,135 @@ fn test_create_market_successful() {
             .unwrap()
     });
 
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // 3. Resolve market to winning outcome
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+
+    // 4. Loser claims (should not mark as claimed)
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+
+    let updated_market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    assert!(!updated_market
+        .claimed
+        .get(test.user.clone())
+        .unwrap_or(false));
+
+
+// ===== VERSION & CAPABILITY DISCOVERY TESTS =====
+
+#[test]
+fn test_version_discovery_format_and_no_state_change() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let version_key = Symbol::new(&test.env, "VERSION_HISTORY");
+    let had_version_history = test.env.storage().persistent().has(&version_key);
+    let events_before = test.env.events().all().len();
+
+    let version = client.get_contract_version().unwrap();
+
+    assert!(version.description.len() > 0);
+
+    let version_text = format!("{}.{}.{}", version.major, version.minor, version.patch);
+    let parts: Vec<&str> = version_text.split('.').collect();
+    assert_eq!(parts.len(), 3);
+    assert!(parts.iter().all(|part| !part.is_empty()));
+    assert!(parts
+        .iter()
+        .all(|part| part.chars().all(|c| c.is_ascii_digit())));
+
+    let has_version_history = test.env.storage().persistent().has(&version_key);
+    assert_eq!(had_version_history, has_version_history);
+    assert_eq!(events_before, test.env.events().all().len());
+}
+
+#[test]
+fn test_capabilities_list_and_no_state_change() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let version_key = Symbol::new(&test.env, "VERSION_HISTORY");
+    let had_version_history = test.env.storage().persistent().has(&version_key);
+    let events_before = test.env.events().all().len();
+
+    let capabilities = client.capabilities();
+
+    let expected = vec![
+        &test.env,
+        String::from_str(&test.env, "versioning"),
+        String::from_str(&test.env, "upgrade-management"),
+        String::from_str(&test.env, "query-functions"),
+        String::from_str(&test.env, "market-management"),
+        String::from_str(&test.env, "betting"),
+        String::from_str(&test.env, "disputes"),
+        String::from_str(&test.env, "oracle-integration"),
+        String::from_str(&test.env, "governance"),
+        String::from_str(&test.env, "analytics"),
+        String::from_str(&test.env, "monitoring"),
+    ];
+
+    assert!(!capabilities.is_empty());
+    assert_eq!(capabilities, expected);
+
+    let has_version_history = test.env.storage().persistent().has(&version_key);
+    assert_eq!(had_version_history, has_version_history);
+    assert_eq!(events_before, test.env.events().all().len());
+}
+
+#[test]
+fn test_version_and_capabilities_after_upgrade() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let initial_version = crate::versioning::Version::new(
+        &test.env,
+        1,
+        0,
+        0,
+        String::from_str(&test.env, "Initial version"),
+        false,
+    );
+    client.track_contract_version(&initial_version).unwrap();
+
+    let upgraded_version = crate::versioning::Version::new(
+        &test.env,
+        1,
+        1,
+        0,
+        String::from_str(&test.env, "Upgrade"),
+        false,
+    );
+    client.upgrade_to_version(&upgraded_version).unwrap();
+
+    let current_version = client.get_contract_version().unwrap();
+    assert_eq!(current_version.major, 1);
+    assert_eq!(current_version.minor, 1);
+    assert_eq!(current_version.patch, 0);
+
+    let capabilities = client.capabilities();
+    assert!(!capabilities.is_empty());
+    assert!(capabilities.contains(String::from_str(&test.env, "versioning")));
+    assert!(capabilities.contains(String::from_str(&test.env, "upgrade-management")));
+}
     assert_eq!(
         market.question,
         String::from_str(&test.env, "Will BTC go above $25,000 by December 31?")

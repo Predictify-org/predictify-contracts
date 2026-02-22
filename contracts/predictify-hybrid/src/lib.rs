@@ -4228,6 +4228,24 @@ impl PredictifyHybrid {
         versioning::VersionManager::new(&env).test_version_migration(&env, migration)
     }
 
+    /// Get contract capability list for client discovery.
+    ///
+    /// Returns a stable list of supported feature groups for compatibility checks.
+    pub fn capabilities(env: Env) -> Vec<String> {
+        let mut capabilities = Vec::new(&env);
+        capabilities.push_back(String::from_str(&env, "versioning"));
+        capabilities.push_back(String::from_str(&env, "upgrade-management"));
+        capabilities.push_back(String::from_str(&env, "query-functions"));
+        capabilities.push_back(String::from_str(&env, "market-management"));
+        capabilities.push_back(String::from_str(&env, "betting"));
+        capabilities.push_back(String::from_str(&env, "disputes"));
+        capabilities.push_back(String::from_str(&env, "oracle-integration"));
+        capabilities.push_back(String::from_str(&env, "governance"));
+        capabilities.push_back(String::from_str(&env, "analytics"));
+        capabilities.push_back(String::from_str(&env, "monitoring"));
+        capabilities
+    }
+
     // ===== MONITORING FUNCTIONS =====
 
     /// Monitor market health for a specific market
