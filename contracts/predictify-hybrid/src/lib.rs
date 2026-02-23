@@ -2755,6 +2755,75 @@ impl PredictifyHybrid {
         crate::bets::get_effective_bet_limits(&env, &market_id)
     }
 
+    /// Set global oracle validation config (admin only).
+    ///
+    /// - `max_staleness_secs`: maximum allowed age in seconds.
+    /// - `max_confidence_bps`: maximum confidence interval in basis points.
+    /// Per-event overrides, if set, take precedence over this global config.
+    pub fn set_oracle_validation_config_global(
+        env: Env,
+        admin: Address,
+        max_staleness_secs: u64,
+        max_confidence_bps: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        let config = GlobalOracleValidationConfig {
+            max_staleness_secs,
+            max_confidence_bps,
+        };
+        crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
+        Ok(())
+    }
+
+    /// Set per-event oracle validation config (admin only).
+    ///
+    /// Overrides global validation settings for the given market.
+    pub fn set_oracle_validation_config_for_event(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        max_staleness_secs: u64,
+        max_confidence_bps: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        let config = EventOracleValidationConfig {
+            max_staleness_secs,
+            max_confidence_bps,
+        };
+        crate::oracles::OracleValidationConfigManager::set_event_config(
+            &env,
+            &market_id,
+            &config,
+        )?;
+        Ok(())
+    }
+
+    /// Get effective oracle validation config for a market.
+    pub fn get_effective_oracle_validation_config(
+        env: Env,
+        market_id: Symbol,
+    ) -> GlobalOracleValidationConfig {
+        crate::oracles::OracleValidationConfigManager::get_effective_config(&env, &market_id)
+    }
+
     /// Withdraw collected platform fees (admin only).
     ///
     /// This function allows the admin to withdraw fees that have been collected

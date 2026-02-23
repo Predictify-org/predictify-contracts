@@ -1244,6 +1244,42 @@ impl OracleResult {
     }
 }
 
+/// Lightweight oracle price payload with validation metadata.
+///
+/// This structure captures the minimum data needed for staleness and
+/// confidence interval validation without provider-specific dependencies.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OraclePriceData {
+    /// Price value in oracle base units
+    pub price: i128,
+    /// Publish time of the oracle data (unix timestamp seconds)
+    pub publish_time: u64,
+    /// Confidence interval (absolute) in the same base units as `price`
+    pub confidence: Option<i128>,
+    /// Exponent/decimals scale used by the oracle (e.g., Pyth exponent)
+    pub exponent: i32,
+}
+
+/// Global oracle validation configuration applied when no per-event override exists.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalOracleValidationConfig {
+    /// Maximum age of oracle data in seconds before it is rejected
+    pub max_staleness_secs: u64,
+    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
+    pub max_confidence_bps: u32,
+}
+
+/// Per-event oracle validation configuration override.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventOracleValidationConfig {
+    /// Maximum age of oracle data in seconds before it is rejected
+    pub max_staleness_secs: u64,
+    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
+    pub max_confidence_bps: u32,
+}
+
 /// Multi-oracle aggregated result for consensus-based verification.
 ///
 /// This structure aggregates results from multiple oracle sources to provide

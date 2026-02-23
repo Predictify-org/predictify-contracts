@@ -58,6 +58,8 @@ pub enum Error {
     FallbackOracleUnavailable = 206,
     /// Resolution timeout has been reached
     ResolutionTimeoutReached = 207,
+    /// Oracle confidence interval exceeds configured threshold
+    OracleConfidenceTooWide = 208,
 
     // ===== VALIDATION ERRORS =====
     /// Invalid question format
@@ -505,6 +507,7 @@ impl ErrorHandler {
             // Retryable errors
             Error::OracleUnavailable => RecoveryStrategy::RetryWithDelay,
             Error::InvalidInput => RecoveryStrategy::Retry,
+            Error::OracleConfidenceTooWide => RecoveryStrategy::NoRecovery,
 
             // Alternative method errors
             Error::MarketNotFound => RecoveryStrategy::AlternativeMethod,
@@ -843,6 +846,7 @@ impl ErrorHandler {
         match error {
             Error::OracleUnavailable => String::from_str(&Env::default(), "retry_with_delay"),
             Error::InvalidInput => String::from_str(&Env::default(), "retry"),
+            Error::OracleConfidenceTooWide => String::from_str(&Env::default(), "no_recovery"),
             Error::MarketNotFound => String::from_str(&Env::default(), "alternative_method"),
             Error::ConfigNotFound => String::from_str(&Env::default(), "alternative_method"),
             Error::AlreadyVoted => String::from_str(&Env::default(), "skip"),
@@ -921,6 +925,11 @@ impl ErrorHandler {
                 RecoveryStrategy::Retry,
             ),
             Error::InvalidOracleConfig => (
+                ErrorSeverity::Medium,
+                ErrorCategory::Oracle,
+                RecoveryStrategy::NoRecovery,
+            ),
+            Error::OracleConfidenceTooWide => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Oracle,
                 RecoveryStrategy::NoRecovery,
@@ -1122,6 +1131,7 @@ impl Error {
             Error::MarketNotReady => "Market not ready for oracle verification",
             Error::FallbackOracleUnavailable => "Fallback oracle is unavailable or unhealthy",
             Error::ResolutionTimeoutReached => "Resolution timeout has been reached",
+            Error::OracleConfidenceTooWide => "Oracle confidence interval exceeds threshold",
             Error::CBNotInitialized => "Circuit breaker not initialized",
             Error::CBAlreadyOpen => "Circuit breaker is already open (paused)",
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
@@ -1240,6 +1250,7 @@ impl Error {
             Error::MarketNotReady => "MARKET_NOT_READY",
             Error::FallbackOracleUnavailable => "FALLBACK_ORACLE_UNAVAILABLE",
             Error::ResolutionTimeoutReached => "RESOLUTION_TIMEOUT_REACHED",
+            Error::OracleConfidenceTooWide => "ORACLE_CONFIDENCE_TOO_WIDE",
             Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
             Error::CBAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",

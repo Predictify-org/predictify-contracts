@@ -832,6 +832,31 @@ pub struct OracleVerificationFailedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when oracle data fails staleness or confidence validation.
+///
+/// Captures validation parameters for auditing and monitoring.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleValidationFailedEvent {
+    /// Market ID associated with the validation attempt
+    pub market_id: Symbol,
+    /// Oracle provider name
+    pub provider: String,
+    /// Feed ID used
+    pub feed_id: String,
+    /// Reason for validation failure ("stale_data" or "confidence_too_wide")
+    pub reason: String,
+    /// Observed data age in seconds
+    pub observed_age_secs: u64,
+    /// Maximum allowed data age in seconds
+    pub max_age_secs: u64,
+    /// Observed confidence interval in basis points (if applicable)
+    pub observed_confidence_bps: Option<u32>,
+    /// Maximum allowed confidence interval in basis points
+    pub max_confidence_bps: u32,
+    /// Validation failure timestamp
+    pub timestamp: u64,
+}
 /// Event emitted when multi-oracle consensus is reached.
 ///
 /// This event is emitted when multiple oracle sources agree on an outcome,
@@ -1974,6 +1999,33 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("orc_fail"), &event);
+    }
+
+    /// Emit oracle validation failed event.
+    pub fn emit_oracle_validation_failed(
+        env: &Env,
+        market_id: &Symbol,
+        provider: &String,
+        feed_id: &String,
+        reason: &String,
+        observed_age_secs: u64,
+        max_age_secs: u64,
+        observed_confidence_bps: Option<u32>,
+        max_confidence_bps: u32,
+    ) {
+        let event = OracleValidationFailedEvent {
+            market_id: market_id.clone(),
+            provider: provider.clone(),
+            feed_id: feed_id.clone(),
+            reason: reason.clone(),
+            observed_age_secs,
+            max_age_secs,
+            observed_confidence_bps,
+            max_confidence_bps,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("orc_val"), &event);
     }
 
     /// Emit oracle consensus reached event
