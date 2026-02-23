@@ -90,6 +90,7 @@ impl QueryManager {
 
         // Get oracle provider name
         let oracle_provider = market.oracle_config.provider.name();
+        let winning_outcome = market.get_winning_outcome();
 
         // Compute winning_outcome before moving fields
         let winning_outcome = market.get_winning_outcome();
@@ -219,7 +220,7 @@ impl QueryManager {
 
         let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
 
-        // Determine if user is winning
+        // Determine if user is winning (supports single or multiple winning outcomes / ties)
         let is_winning = market
             .winning_outcomes
             .as_ref()
@@ -458,7 +459,7 @@ impl QueryManager {
     /// - User's stake proportion
     /// - Total winning stakes
     /// - Platform fee deduction
-    pub fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    pub(crate) fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
         if user_stake <= 0 {
             return Ok(0);
         }

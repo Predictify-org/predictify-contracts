@@ -391,6 +391,10 @@ impl PredictifyHybrid {
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
         let end_time: u64 = env.ledger().timestamp() + duration_seconds;
 
+        let (has_fallback, fallback_cfg) = match &fallback_oracle_config {
+            Some(c) => (true, c.clone()),
+            None => (false, OracleConfig::none_sentinel(&env)),
+        };
         // Create a new market
         let market = Market {
             admin: admin.clone(),
@@ -398,7 +402,8 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            has_fallback,
+            fallback_oracle_config: fallback_cfg,
             resolution_timeout,
             oracle_result: None,
             votes: Map::new(&env),
@@ -492,6 +497,10 @@ impl PredictifyHybrid {
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
+        let (has_fallback, fallback_cfg) = match &fallback_oracle_config {
+            Some(c) => (true, c.clone()),
+            None => (false, OracleConfig::none_sentinel(&env)),
+        };
         // Create a new event
         let event = Event {
             id: event_id.clone(),
@@ -499,7 +508,8 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            has_fallback,
+            fallback_oracle_config: fallback_cfg,
             resolution_timeout,
             admin: admin.clone(),
             created_at: env.ledger().timestamp(),
@@ -1642,8 +1652,99 @@ impl PredictifyHybrid {
         // Winners must explicitly call claim_winnings to receive their payouts
     }
 
-    pub fn fetch_oracle_result(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
-        resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
+    /// Fetches oracle result for a market from external oracle contracts.
+    ///
+    /// This function retrieves prediction results from configured oracle sources
+    /// such as Reflector or Pyth networks. It's used to obtain objective data
+    /// for market resolution when manual resolution is not appropriate.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to fetch oracle data for
+    /// * `oracle_contract` - Address of the oracle contract to query
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<String, Error>` where:
+    /// - `Ok(String)` - The oracle result as a string representation
+    /// - `Err(Error)` - Specific error if operation fails
+    ///
+    /// # Errors
+    ///
+    /// This function returns specific errors:
+    /// - `Error::MarketNotFound` - Market with given ID doesn't exist
+    /// - `Error::MarketResolved` - Market already has oracle result set
+    /// - `Error::MarketClosed` - Market hasn't reached its end time yet
+    /// - Oracle-specific errors from the resolution module
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "btc_market");
+    /// # let oracle_address = Address::generate(&env);
+    ///
+    /// match PredictifyHybrid::fetch_oracle_result(
+    ///     env.clone(),
+    ///     market_id,
+    ///     oracle_address
+    /// ) {
+    ///     Ok(result) => {
+    ///         // Oracle result retrieved successfully
+    ///         println!("Oracle result: {}", result);
+    ///     },
+    ///     Err(e) => {
+    ///         // Handle error
+    ///         println!("Failed to fetch oracle result: {:?}", e);
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Oracle Integration
+    ///
+    /// This function integrates with various oracle types:
+    /// - **Reflector**: For asset price data and market conditions
+    /// - **Pyth**: For high-frequency financial data feeds
+    /// - **Custom Oracles**: For specialized data sources
+    ///
+    /// # Market State Requirements
+    ///
+    /// - Market must exist and be past its end time
+    /// - Market must not already have an oracle result
+    /// - Oracle contract must be accessible and responsive
+    pub fn fetch_oracle_result(
+        env: Env,
+        market_id: Symbol,
+        oracle_contract: Address,
+    ) -> Result<String, Error> {
+        // Get the market from storage
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        // Validate market state
+        if market.oracle_result.is_some() {
+            return Err(Error::MarketResolved);
+        }
+
+        // Check if market has ended
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
+            return Err(Error::MarketClosed);
+        }
+
+        // Get oracle result using the resolution module (oracle_contract from market config is used internally)
+        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
+            &env,
+            &market_id,
+        )?;
+
+        Ok(oracle_resolution.oracle_result)
     }
 
     /// Verifies and fetches event outcome from external oracle sources automatically.

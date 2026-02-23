@@ -843,10 +843,10 @@ pub struct ResolutionConfig {
 /// # Example
 ///
 /// ```rust
-/// # use predictify_hybrid::config::OracleConfig;
+/// # use predictify_hybrid::config::OracleRuntimeConfig;
 ///
 /// // Create production oracle configuration
-/// let oracle_config = OracleConfig {
+/// let oracle_config = OracleRuntimeConfig {
 ///     max_price_age: 3600,      // 1 hour maximum data age
 ///     retry_attempts: 3,        // Try up to 3 times
 ///     timeout_seconds: 30,      // 30 second timeout per attempt
@@ -861,9 +861,11 @@ pub struct ResolutionConfig {
 /// let is_fresh = data_age <= oracle_config.max_price_age;
 /// println!("Data is fresh: {}", is_fresh); // true
 /// ```
+/// Runtime/config settings for oracle requests (age, retries, timeout).
+/// Named to avoid conflict with types::OracleConfig (market oracle config).
 #[derive(Clone, Debug)]
 #[contracttype]
-pub struct OracleConfig {
+pub struct OracleRuntimeConfig {
     /// Maximum age of oracle data before it's considered stale (in seconds).
     ///
     /// Ensures oracle data is sufficiently recent for accurate market
@@ -1023,7 +1025,7 @@ pub struct ContractConfig {
     ///
     /// Controls how the contract interacts with external
     /// oracle services for market resolution data.
-    pub oracle: OracleConfig,
+    pub oracle: OracleRuntimeConfig,
 }
 
 // ===== CONFIGURATION MANAGER =====
@@ -1842,7 +1844,7 @@ impl ConfigManager {
     ///
     /// # Returns
     ///
-    /// Returns an `OracleConfig` with balanced default values suitable for
+    /// Returns an `OracleRuntimeConfig` with balanced default values suitable for
     /// reliable oracle integration with reasonable performance characteristics.
     ///
     /// # Example
@@ -1896,8 +1898,8 @@ impl ConfigManager {
     /// - System reliability (adequate retries)
     /// - Resource usage (bounded timeouts)
     /// - Data quality (freshness requirements)
-    pub fn get_default_oracle_config() -> OracleConfig {
-        OracleConfig {
+    pub fn get_default_oracle_config() -> OracleRuntimeConfig {
+        OracleRuntimeConfig {
             max_price_age: MAX_ORACLE_PRICE_AGE,
             retry_attempts: ORACLE_RETRY_ATTEMPTS,
             timeout_seconds: ORACLE_TIMEOUT_SECONDS,
@@ -1919,7 +1921,7 @@ impl ConfigManager {
     ///
     /// # Returns
     ///
-    /// Returns an `OracleConfig` with mainnet-optimized values designed for
+    /// Returns an `OracleRuntimeConfig` with mainnet-optimized values designed for
     /// production deployment with enhanced data quality and reliability.
     ///
     /// # Example
@@ -1956,8 +1958,8 @@ impl ConfigManager {
     /// - Network congestion and latency issues
     /// - Oracle provider diversity and failover
     /// - Regulatory compliance and audit requirements
-    pub fn get_mainnet_oracle_config() -> OracleConfig {
-        OracleConfig {
+    pub fn get_mainnet_oracle_config() -> OracleRuntimeConfig {
+        OracleRuntimeConfig {
             max_price_age: 1800, // 30 minutes for mainnet
             retry_attempts: 5,   // More retries for mainnet
             timeout_seconds: 60, // Longer timeout for mainnet
@@ -2565,7 +2567,7 @@ impl ConfigValidator {
     }
 
     /// Validate oracle configuration
-    pub fn validate_oracle_config(config: &OracleConfig) -> Result<(), Error> {
+    pub fn validate_oracle_config(config: &OracleRuntimeConfig) -> Result<(), Error> {
         if config.max_price_age == 0 {
             return Err(Error::InvalidInput);
         }
@@ -2661,7 +2663,7 @@ impl ConfigUtils {
     }
 
     /// Get oracle configuration
-    pub fn get_oracle_config(config: &ContractConfig) -> &OracleConfig {
+    pub fn get_oracle_config(config: &ContractConfig) -> &OracleRuntimeConfig {
         &config.oracle
     }
 }
@@ -2778,7 +2780,7 @@ impl ConfigTesting {
                 community_weight_percentage: 40,
                 min_votes_for_consensus: 3,
             },
-            oracle: OracleConfig {
+            oracle: OracleRuntimeConfig {
                 max_price_age: 1800,
                 retry_attempts: 2,
                 timeout_seconds: 15,

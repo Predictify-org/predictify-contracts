@@ -531,6 +531,17 @@ impl OracleConfig {
             comparison,
         }
     }
+
+    /// Sentinel value for "no fallback" (used when has_fallback is false). Do not use for resolution.
+    pub fn none_sentinel(env: &Env) -> Self {
+        Self {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            feed_id: String::from_str(env, ""),
+            threshold: 0,
+            comparison: String::from_str(env, ""),
+        }
+    }
 }
 
 impl OracleConfig {
@@ -757,8 +768,10 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
-    /// Fallback oracle configuration
-    pub fallback_oracle_config: FallbackOracleConfig,
+    /// Whether a fallback oracle is configured (avoids Option in contract type for SDK compatibility)
+    pub has_fallback: bool,
+    /// Fallback oracle configuration (only valid when has_fallback is true)
+    pub fallback_oracle_config: OracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Oracle result (set after market ends)
@@ -895,13 +908,18 @@ impl Market {
         resolution_timeout: u64,
         state: MarketState,
     ) -> Self {
+        let (has_fallback, fallback_cfg) = match &fallback_oracle_config {
+            Some(c) => (true, c.clone()),
+            None => (false, OracleConfig::none_sentinel(env)),
+        };
         Self {
             admin,
             question,
             outcomes,
             end_time,
             oracle_config,
-            fallback_oracle_config,
+            has_fallback,
+            fallback_oracle_config: fallback_cfg,
             resolution_timeout,
             oracle_result: None,
             votes: Map::new(env),
@@ -3125,8 +3143,10 @@ pub struct Event {
     pub end_time: u64,
     /// Oracle configuration for result verification (primary)
     pub oracle_config: OracleConfig,
-    /// Fallback oracle configuration
-    pub fallback_oracle_config: FallbackOracleConfig,
+    /// Whether a fallback oracle is configured
+    pub has_fallback: bool,
+    /// Fallback oracle configuration (only valid when has_fallback is true)
+    pub fallback_oracle_config: OracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Administrative address that created/manages the event

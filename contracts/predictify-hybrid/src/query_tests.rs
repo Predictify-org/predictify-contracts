@@ -41,7 +41,7 @@ fn test_payout_calculation_zero_stake() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -73,7 +73,7 @@ fn test_payout_calculation_unresolved_market() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -113,7 +113,7 @@ fn test_implied_probabilities_zero_pool() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -148,7 +148,7 @@ fn test_implied_probabilities_sum_to_100() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -185,7 +185,7 @@ fn test_outcome_pool_empty_market() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -219,7 +219,7 @@ fn test_outcome_pool_with_single_vote() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -260,7 +260,7 @@ fn test_outcome_pool_with_multiple_votes() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -313,7 +313,7 @@ fn test_market_status_all_states() {
         MarketState::Cancelled,
     ];
 
-    for state in states {
+    for state in states.iter().copied() {
         let status = MarketStatus::from_market_state(state);
         // Should not panic and should return valid status
         match status {
@@ -337,7 +337,7 @@ fn test_probabilities_are_percentages() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -373,7 +373,7 @@ fn test_payout_never_exceeds_total_pool() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -416,7 +416,7 @@ fn test_pool_calculation_commutative() {
         &env,
         admin.clone(),
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -449,7 +449,7 @@ fn test_pool_calculation_commutative() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -492,7 +492,7 @@ fn test_status_conversion_roundtrip() {
         MarketState::Cancelled,
     ];
 
-    for state in all_states {
+    for state in all_states.iter().copied() {
         let status = MarketStatus::from_market_state(state);
         // Verify status is valid
         match status {
@@ -518,7 +518,7 @@ fn test_outcome_pool_consistency() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -562,12 +562,14 @@ fn test_payout_with_high_fees() {
     // Edge case: Verify fee deduction is applied
     let env = Env::default();
     let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let yes = String::from_str(&env, "yes");
 
     let mut market = Market::new(
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -586,6 +588,8 @@ fn test_payout_with_high_fees() {
     );
 
     let stake = 100_000_000i128; // 10 XLM
+    market.votes.set(user.clone(), yes.clone());
+    market.stakes.set(user.clone(), stake);
     market.total_staked = stake;
     market.winning_outcomes = Some(soroban_sdk::vec![&env, String::from_str(&env, "yes")]);
     
@@ -613,7 +617,7 @@ fn test_negative_values_handled() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -647,7 +651,7 @@ fn test_large_number_handling() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),

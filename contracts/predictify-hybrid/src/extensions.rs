@@ -647,7 +647,7 @@ impl ExtensionUtils {
         // For now, we'll just validate the fee amount
 
         if fee_amount <= 0 {
-            return Err(Error::ExtensionFeeLow);
+            return Err(Error::InsufficientStake);
         }
 
         Ok(fee_amount)

@@ -38,7 +38,7 @@ fn create_test_market(
         threshold: 100,
         comparison: String::from_str(env, "gte"),
     };
-    
+
     client.create_market(
         admin,
         &question,
