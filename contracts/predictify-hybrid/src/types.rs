@@ -471,6 +471,49 @@ pub struct OracleConfig {
     pub comparison: String,
 }
 
+/// Soroban-compatible nullable wrapper for OracleConfig.
+/// Used instead of Option<OracleConfig> because Soroban's contracttype macro
+/// requires a dedicated enum to support nullable nested contracttype structs.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FallbackOracleConfig {
+    /// No fallback oracle configured
+    None,
+    /// A fallback oracle configuration
+    Some(OracleConfig),
+}
+
+impl FallbackOracleConfig {
+    /// Returns true if there is no fallback oracle
+    pub fn is_none(&self) -> bool {
+        matches!(self, FallbackOracleConfig::None)
+    }
+
+    /// Returns the inner OracleConfig if present
+    pub fn as_ref(&self) -> Option<&OracleConfig> {
+        match self {
+            FallbackOracleConfig::Some(c) => Some(c),
+            FallbackOracleConfig::None => None,
+        }
+    }
+
+    /// Convert from Option<OracleConfig>
+    pub fn from_option(opt: Option<OracleConfig>) -> Self {
+        match opt {
+            Some(c) => FallbackOracleConfig::Some(c),
+            None => FallbackOracleConfig::None,
+        }
+    }
+
+    /// Convert to Option<OracleConfig>
+    pub fn to_option(self) -> Option<OracleConfig> {
+        match self {
+            FallbackOracleConfig::Some(c) => Some(c),
+            FallbackOracleConfig::None => None,
+        }
+    }
+}
+
 impl OracleConfig {
     /// Create a new oracle configuration
     pub fn new(
@@ -715,7 +758,7 @@ pub struct Market {
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
     /// Fallback oracle configuration
-    pub fallback_oracle_config: Option<OracleConfig>,
+    pub fallback_oracle_config: FallbackOracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Oracle result (set after market ends)
@@ -848,7 +891,7 @@ impl Market {
         outcomes: Vec<String>,
         end_time: u64,
         oracle_config: OracleConfig,
-        fallback_oracle_config: Option<OracleConfig>,
+        fallback_oracle_config: FallbackOracleConfig,
         resolution_timeout: u64,
         state: MarketState,
     ) -> Self {
@@ -3083,7 +3126,7 @@ pub struct Event {
     /// Oracle configuration for result verification (primary)
     pub oracle_config: OracleConfig,
     /// Fallback oracle configuration
-    pub fallback_oracle_config: Option<OracleConfig>,
+    pub fallback_oracle_config: FallbackOracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
     /// Administrative address that created/manages the event

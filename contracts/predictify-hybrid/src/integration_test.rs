@@ -96,7 +96,7 @@ impl IntegrationTestSuite {
                 threshold: 2500000,
                 comparison: String::from_str(&self.env, "gt"),
             },
-            &None,
+            &FallbackOracleConfig::None,
             &0,
         );
 

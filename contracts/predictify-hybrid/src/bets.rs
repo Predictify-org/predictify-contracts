@@ -480,7 +480,7 @@ impl BetManager {
         stats.unique_bettors += 1;
 
         // Update outcome totals
-        let current_outcome_total = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+        let current_outcome_total = stats.outcome_totals.get(outcome.clone()).unwrap_or(0i128);
         stats
             .outcome_totals
             .set(outcome.clone(), current_outcome_total + amount);
@@ -611,9 +611,10 @@ impl BetManager {
 
         // Get total amount bet on all winning outcomes (handles ties - pool split)
         let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
-        let mut winning_total = 0;
+        let mut winning_total = 0i128;
         for outcome in winning_outcomes.iter() {
-            winning_total += stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+            let outcome: String = outcome;
+            winning_total += stats.outcome_totals.get(outcome.clone()).unwrap_or(0i128);
         }
 
         if winning_total == 0 {
@@ -963,7 +964,7 @@ impl BetAnalytics {
             return 0;
         }
 
-        let outcome_amount = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+        let outcome_amount = stats.outcome_totals.get(outcome.clone()).unwrap_or(0i128);
 
         // Return as percentage (0-100)
         (outcome_amount * 100) / stats.total_amount_locked
@@ -985,7 +986,7 @@ impl BetAnalytics {
     pub fn calculate_payout_multiplier(env: &Env, market_id: &Symbol, outcome: &String) -> i128 {
         let stats = BetStorage::get_market_bet_stats(env, market_id);
 
-        let outcome_amount = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+        let outcome_amount = stats.outcome_totals.get(outcome.clone()).unwrap_or(0i128);
 
         if outcome_amount == 0 {
             return 0;

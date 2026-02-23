@@ -1,5 +1,5 @@
 
-use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
+use crate::types::{FallbackOracleConfig, Market, MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{testutils::{Address as _, Ledger}, token::{StellarAssetClient, Client as TokenClient}, Address, Env, String, Symbol, vec, Vec};
 use alloc::format;
@@ -33,6 +33,7 @@ fn create_test_market(
     
     let oracle_config = OracleConfig {
         provider: OracleProvider::Reflector,
+        oracle_address: Address::generate(env),
         feed_id: String::from_str(env, "BTC/USD"),
         threshold: 100,
         comparison: String::from_str(env, "gte"),
@@ -43,7 +44,9 @@ fn create_test_market(
         &question,
         &outcomes,
         &30, // 30 days
-        &oracle_config
+        &oracle_config,
+        &FallbackOracleConfig::None,
+        &0,
     )
 }
 
@@ -253,10 +256,13 @@ impl TokenTestSetup {
             &30,
             &OracleConfig {
                 provider: OracleProvider::Reflector,
+                oracle_address: Address::generate(&env),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 100,
                 comparison: String::from_str(&env, "gte"),
             },
+            &FallbackOracleConfig::None,
+            &0,
         );
 
         Self { env, contract_id, admin, user1, user2, token_id, market_id }

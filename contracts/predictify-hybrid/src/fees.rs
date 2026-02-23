@@ -2,7 +2,7 @@ use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Sy
 
 use crate::errors::Error;
 use crate::markets::{MarketStateManager, MarketUtils};
-use crate::types::Market;
+use crate::types::{FallbackOracleConfig, Market};
 
 /// Fee management system for Predictify Hybrid contract
 ///
@@ -1654,10 +1654,13 @@ mod tests {
             env.ledger().timestamp() + 86400,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
+                Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
+            FallbackOracleConfig::None,
+            0,
             crate::types::MarketState::Active,
         );
 
@@ -1717,10 +1720,13 @@ mod tests {
             env.ledger().timestamp() + 86400,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
+                Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
+            FallbackOracleConfig::None,
+            0,
             crate::types::MarketState::Active,
         );
 

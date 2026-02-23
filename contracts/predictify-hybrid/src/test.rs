@@ -35,9 +35,9 @@ use crate::market_analytics::{
 use crate::resolution::ResolutionAnalytics;
 
 // Test setup structures 
-struct TokenTest {
-    token_id: Address,
-    env: Env,
+pub struct TokenTest {
+    pub token_id: Address,
+    pub env: Env,
 }
 
 impl TokenTest {
@@ -151,7 +151,7 @@ impl PredictifyTest {
                 threshold: 2500000,
                 comparison: String::from_str(&self.env, "gt"),
             },
-            &None,
+            &FallbackOracleConfig::None,
             &0,
         )
     }
@@ -182,7 +182,7 @@ fn test_create_market_successful() {
             threshold: 2500000,
             comparison: String::from_str(&test.env, "gt"),
         },
-        &None,
+        &FallbackOracleConfig::None,
         &0,
     );
 
@@ -2238,3 +2238,22 @@ fn test_claim_by_loser() {
             .unwrap()
     });
 
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // 3. Resolve market with winning outcome "yes" (user voted "no", so they lost)
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+
+    // 4. Try to claim winnings as loser (should panic with NoWinnings)
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+}

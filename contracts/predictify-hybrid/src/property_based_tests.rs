@@ -178,7 +178,7 @@ proptest! {
             &outcomes,
             &duration_days,
             &oracle_config,
-            &None,
+            &FallbackOracleConfig::None,
             &0,
         );
 
@@ -228,7 +228,7 @@ proptest! {
             &outcomes,
             &duration_days,
             &oracle_config,
-            &None,
+            &FallbackOracleConfig::None,
             &0,
         );
 
@@ -281,7 +281,7 @@ proptest! {
             &outcomes,
             &30,
             &oracle_config,
-            &None,
+            &FallbackOracleConfig::None,
             &0,
         );
 
@@ -450,7 +450,7 @@ proptest! {
             &outcomes,
             &duration_days,
             &oracle_config,
-            &None,
+            &FallbackOracleConfig::None,
             &0,
         );
 
@@ -506,6 +506,8 @@ proptest! {
             &outcomes,
             &30,
             &oracle_config,
+        &FallbackOracleConfig::None,
+        &0,
         );
 
         // Store admin address to avoid borrowing issues

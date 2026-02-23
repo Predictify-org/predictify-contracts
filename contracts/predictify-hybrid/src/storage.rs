@@ -762,10 +762,13 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Reflector,
+                <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env),
                 String::from_str(&env, "BTC"),
                 2500000,
                 String::from_str(&env, "gt"),
             ),
+            FallbackOracleConfig::None,
+            0,
             MarketState::Active,
         );
 
@@ -814,10 +817,13 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Reflector,
+                <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env),
                 String::from_str(&env, "BTC"),
                 2500000,
                 String::from_str(&env, "gt"),
             ),
+            FallbackOracleConfig::None,
+            0,
             MarketState::Active,
         );
 
@@ -827,6 +833,6 @@ mod tests {
 
         let recommendations = StorageUtils::get_storage_recommendations(&market);
         // Recommendations may be empty for small markets, so we just check it doesn't panic
-        assert!(recommendations.len() >= 0);
+        assert!(recommendations.len() < 100);
     }
 }

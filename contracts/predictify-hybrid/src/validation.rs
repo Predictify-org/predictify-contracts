@@ -5,7 +5,7 @@ extern crate alloc;
 use crate::{
     config,
     errors::Error,
-    types::{BetLimits, Market, OracleConfig, OracleProvider},
+    types::{BetLimits, FallbackOracleConfig, Market, OracleConfig, OracleProvider},
 };
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
@@ -1902,7 +1902,7 @@ impl MarketValidator {
         outcomes: &Vec<String>,
         duration_days: &u32,
         oracle_config: &OracleConfig,
-        fallback_oracle_config: &Option<OracleConfig>,
+        fallback_oracle_config: &FallbackOracleConfig,
         resolution_timeout: &u64,
     ) -> ValidationResult {
         let mut result = ValidationResult::valid();
@@ -1940,7 +1940,7 @@ impl MarketValidator {
         }
 
         // Validate fallback oracle config if provided
-        if let Some(ref fallback) = fallback_oracle_config {
+        if let FallbackOracleConfig::Some(ref fallback) = fallback_oracle_config {
             if let Err(_) = OracleValidator::validate_oracle_config(env, fallback) {
                 result.add_error();
             }
@@ -2949,6 +2949,8 @@ impl ComprehensiveValidator {
             outcomes,
             duration_days,
             oracle_config,
+            &FallbackOracleConfig::None, // fallback_oracle_config
+            &0,    // resolution_timeout
         );
         if !market_result.is_valid {
             result.add_error();
@@ -3155,11 +3157,16 @@ impl ValidationTestingUtils {
             env.ledger().timestamp() + 86400,
             OracleConfig {
                 provider: OracleProvider::Pyth,
-                oracle_address: Address::generate(env),
+                oracle_address: Address::from_string(&String::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                )),
                 feed_id: String::from_str(env, "BTC/USD"),
                 threshold: 2500000,
                 comparison: String::from_str(env, "gt"),
             },
+            FallbackOracleConfig::None, // fallback_oracle_config
+            0,    // resolution_timeout
             crate::types::MarketState::Active,
         )
     }
@@ -3168,7 +3175,10 @@ impl ValidationTestingUtils {
     pub fn create_test_oracle_config(env: &Env) -> OracleConfig {
         OracleConfig {
             provider: OracleProvider::Pyth,
-            oracle_address: Address::generate(env),
+            oracle_address: Address::from_string(&String::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            )),
             feed_id: String::from_str(env, "BTC/USD"),
             threshold: 2500000,
             comparison: String::from_str(env, "gt"),

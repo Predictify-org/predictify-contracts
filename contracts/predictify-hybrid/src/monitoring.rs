@@ -4,7 +4,7 @@ use alloc::format;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
+use crate::types::{FallbackOracleConfig, Market, MarketState, OracleConfig, OracleProvider};
 
 /// Comprehensive monitoring system for Predictify contract health and performance.
 ///
@@ -449,6 +449,8 @@ impl ContractMonitor {
                 threshold: 100,
                 comparison: String::from_str(env, ">="),
             },
+            fallback_oracle_config: FallbackOracleConfig::None,
+            resolution_timeout: 0,
             oracle_result: None,
             votes: Map::new(env),
             stakes: Map::new(env),

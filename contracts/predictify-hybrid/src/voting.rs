@@ -4,7 +4,7 @@
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
-    types::Market,
+    types::{FallbackOracleConfig, Market},
 };
 
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
@@ -1597,7 +1597,7 @@ mod tests {
                 2500000,
                 String::from_str(&env, "gt"),
             ),
-            None,
+            FallbackOracleConfig::None,
             0,
             crate::types::MarketState::Active,
         );
@@ -1627,7 +1627,7 @@ mod tests {
                 2500000,
                 String::from_str(&env, "gt"),
             ),
-            None,
+            FallbackOracleConfig::None,
             0,
             crate::types::MarketState::Active,
         );
@@ -1663,7 +1663,7 @@ mod tests {
                 2500000,
                 String::from_str(&env, "gt"),
             ),
-            None,
+            FallbackOracleConfig::None,
             0,
             crate::types::MarketState::Active,
         );

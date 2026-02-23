@@ -10,6 +10,7 @@ use crate::fees::{FeeConfig, FeeManager};
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
 use alloc::string::ToString;
+use alloc::format;
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -1434,10 +1435,9 @@ impl AdminManager {
     // ===== Helper Methods =====
 
     /// Generate a proper admin storage key using the correct environment
-    fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
-        // Create a unique key based on admin address
-        let key_str = format!("MultiAdmin_{:?}", admin.to_string());
-        Symbol::new(env, &key_str)
+    fn get_admin_key(_env: &Env, admin: &Address) -> Address {
+        // Use the admin address directly as key for unique identification
+        admin.clone()
     }
 
     /// Check if an address is the original admin from single-admin system
@@ -3421,7 +3421,6 @@ mod tests {
         let action = AdminTesting::create_test_admin_action(&env, &admin);
         // Check the action structure manually first
         assert!(action.action.len() > 0);
-        assert!(action.timestamp >= 0); // In test environment, timestamp can be 0
         assert!(AdminTesting::validate_admin_action_structure(&action).is_ok());
 
         let role_assignment = AdminTesting::create_test_role_assignment(&env, &admin);

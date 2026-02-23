@@ -16,7 +16,7 @@
 #![cfg(test)]
 
 use crate::bets::{BetManager, BetStorage, BetValidator, MAX_BET_AMOUNT, MIN_BET_AMOUNT};
-use crate::types::{Bet, BetStats, BetStatus, Market, MarketState, OracleConfig, OracleProvider};
+use crate::types::{Bet, BetStats, BetStatus, FallbackOracleConfig, Market, MarketState, OracleConfig, OracleProvider};
 use crate::{Error, PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
@@ -108,10 +108,13 @@ impl BetTestSetup {
             &30,
             &OracleConfig {
                 provider: OracleProvider::Reflector,
+                oracle_address: Address::generate(env),
                 feed_id: String::from_str(env, "BTC/USD"),
                 threshold: 100_000_00000000, // $100,000
                 comparison: String::from_str(env, "gte"),
             },
+            &FallbackOracleConfig::None,
+            &0,
         )
     }
 
