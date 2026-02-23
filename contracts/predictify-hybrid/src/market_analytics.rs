@@ -163,14 +163,16 @@ impl MarketAnalyticsManager {
         let mut total_stake_by_outcome = Map::new(env);
 
         for (user, outcome) in market.votes.iter() {
-            let stake = market.stakes.get(user.clone()).unwrap_or(0);
+            let user: soroban_sdk::Address = user;
+            let outcome: String = outcome;
+            let stake = market.stakes.get(user.clone()).unwrap_or(0i128);
 
             // Count votes per outcome
-            let vote_count = outcome_distribution.get(outcome.clone()).unwrap_or(0);
+            let vote_count = outcome_distribution.get(outcome.clone()).unwrap_or(0u32);
             outcome_distribution.set(outcome.clone(), vote_count + 1);
 
             // Sum stakes per outcome
-            let outcome_stake = total_stake_by_outcome.get(outcome.clone()).unwrap_or(0);
+            let outcome_stake = total_stake_by_outcome.get(outcome.clone()).unwrap_or(0i128);
             total_stake_by_outcome.set(outcome.clone(), outcome_stake + stake);
         }
 
@@ -230,7 +232,8 @@ impl MarketAnalyticsManager {
         // Calculate outcome preferences
         let mut outcome_preferences = Map::new(env);
         for (_, outcome) in market.votes.iter() {
-            let count = outcome_preferences.get(outcome.clone()).unwrap_or(0);
+            let outcome: String = outcome;
+            let count = outcome_preferences.get(outcome.clone()).unwrap_or(0u32);
             outcome_preferences.set(outcome.clone(), count + 1);
         }
 
@@ -538,7 +541,7 @@ impl MarketAnalyticsManager {
 
         let mut outcome_counts = Map::new(&market.votes.env());
         for (_, outcome) in market.votes.iter() {
-            let count = outcome_counts.get(outcome.clone()).unwrap_or(0);
+            let count = outcome_counts.get(outcome.clone()).unwrap_or(0u32);
             outcome_counts.set(outcome.clone(), count + 1);
         }
 

@@ -4,7 +4,7 @@ use crate::config::{ConfigManager, DISPUTE_EXTENSION_HOURS};
 use crate::disputes::DisputeManager;
 use crate::errors::Error;
 use crate::markets::MarketStateManager;
-use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
+use crate::types::{FallbackOracleConfig, Market, MarketState, OracleConfig, OracleProvider};
 use crate::voting::VotingManager;
 use crate::PredictifyHybrid;
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
@@ -48,7 +48,7 @@ impl TestSetup {
         
         let oracle_config = OracleConfig::new(
             OracleProvider::Reflector,
-            soroban_sdk::Address::from_str(&self.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            Address::generate(&self.env),
             String::from_str(&self.env, "BTC/USD"),
             50_000_00,
             String::from_str(&self.env, "gt"),
@@ -61,8 +61,8 @@ impl TestSetup {
             outcomes,
             end_time,
             oracle_config,
-            None,
-            86400,
+            FallbackOracleConfig::None,
+            0,
             MarketState::Active,
         );
         

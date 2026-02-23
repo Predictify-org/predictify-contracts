@@ -35,9 +35,9 @@ use crate::market_analytics::{
 use crate::resolution::ResolutionAnalytics;
 
 // Test setup structures 
-pub(crate) struct TokenTest {
-    pub(crate) token_id: Address,
-    env: Env,
+pub struct TokenTest {
+    pub token_id: Address,
+    pub env: Env,
 }
 
 impl TokenTest {
@@ -151,7 +151,7 @@ impl PredictifyTest {
                 threshold: 2500000,
                 comparison: String::from_str(&self.env, "gt"),
             },
-            &None,
+            &FallbackOracleConfig::None,
             &0,
         )
     }
@@ -182,7 +182,7 @@ fn test_create_market_successful() {
             threshold: 2500000,
             comparison: String::from_str(&test.env, "gt"),
         },
-        &None,
+        &FallbackOracleConfig::None,
         &0,
     );
 

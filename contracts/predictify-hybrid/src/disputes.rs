@@ -1696,7 +1696,7 @@ impl DisputeManager {
         // Validate timeout hours
         if timeout_hours == 0 || timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvTimeoutHrs);
         }
 
         // Create timeout configuration
@@ -1741,7 +1741,7 @@ impl DisputeManager {
     ) -> Result<DisputeTimeoutOutcome, Error> {
         // Check if timeout has expired
         if !Self::check_dispute_timeout(env, dispute_id.clone())? {
-            return Err(Error::InvalidState);
+            return Err(Error::TimeoutNotExp);
         }
 
         // Get timeout configuration
@@ -1846,7 +1846,7 @@ impl DisputeManager {
         // Validate additional hours
         if additional_hours == 0 || additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvTimeoutHrs);
         }
 
         // Get current timeout
@@ -1854,7 +1854,7 @@ impl DisputeManager {
 
         // Check if timeout can be extended
         if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
-            return Err(Error::InvalidState);
+            return Err(Error::TimeoutNotExp);
         }
 
         // Update timeout
@@ -2078,12 +2078,12 @@ impl DisputeValidator {
     /// Validate dispute timeout parameters
     pub fn validate_dispute_timeout_parameters(timeout_hours: u32) -> Result<(), Error> {
         if timeout_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvTimeoutHrs);
         }
 
         if timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvTimeoutHrs);
         }
 
         Ok(())
@@ -2094,12 +2094,12 @@ impl DisputeValidator {
         additional_hours: u32,
     ) -> Result<(), Error> {
         if additional_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvTimeoutHrs);
         }
 
         if additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvTimeoutHrs);
         }
 
         Ok(())
@@ -2110,7 +2110,7 @@ impl DisputeValidator {
         timeout: &DisputeTimeout,
     ) -> Result<(), Error> {
         if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
-            return Err(Error::InvalidState);
+            return Err(Error::TimeoutNotExp);
         }
 
         Ok(())
@@ -2765,7 +2765,7 @@ pub mod testing {
     /// Validate timeout structure
     pub fn validate_timeout_structure(timeout: &DisputeTimeout) -> Result<(), Error> {
         if timeout.timeout_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvTimeoutHrs);
         }
 
         if timeout.expires_at <= timeout.created_at {
@@ -2816,13 +2816,13 @@ mod tests {
             end_time,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
-                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::generate(env),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),
             ),
-            None,
-            86400,
+            crate::types::FallbackOracleConfig::None,
+            0,
             crate::types::MarketState::Active,
         )
     }

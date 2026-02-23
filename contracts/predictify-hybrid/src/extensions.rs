@@ -567,7 +567,7 @@ impl ExtensionValidator {
     ) -> Result<(), Error> {
         // Validate additional days
         if additional_days < MIN_EXTENSION_DAYS {
-            return Err(Error::InvalidExtensionDays);
+            return Err(Error::InvExtDays);
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
@@ -761,7 +761,7 @@ mod tests {
             assert_eq!(
                 ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
                     .unwrap_err(),
-                Error::InvalidExtensionDays
+                Error::InvExtDays
             );
         });
 

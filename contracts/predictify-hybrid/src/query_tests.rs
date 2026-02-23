@@ -7,16 +7,13 @@
 
 use crate::queries::*;
 use crate::types::*;
-use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{vec as svec, Address, Env, String, Symbol};
-
-const TEST_ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+use soroban_sdk::{testutils::Address as _, vec, Address, Env, String, Symbol};
 
 // ===== UNIT TESTS =====
 
 #[test]
 fn test_market_status_conversion() {
-    let test_cases: [(MarketState, MarketStatus); 6] = [
+    let test_cases = [
         (MarketState::Active, MarketStatus::Active),
         (MarketState::Ended, MarketStatus::Ended),
         (MarketState::Disputed, MarketStatus::Disputed),
@@ -52,13 +49,13 @@ fn test_payout_calculation_zero_stake() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -84,13 +81,13 @@ fn test_payout_calculation_unresolved_market() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -124,13 +121,13 @@ fn test_implied_probabilities_zero_pool() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -159,13 +156,13 @@ fn test_implied_probabilities_sum_to_100() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -196,13 +193,13 @@ fn test_outcome_pool_empty_market() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -230,13 +227,13 @@ fn test_outcome_pool_with_single_vote() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -271,13 +268,13 @@ fn test_outcome_pool_with_multiple_votes() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -307,7 +304,7 @@ fn test_outcome_pool_with_multiple_votes() {
 #[test]
 fn test_market_status_all_states() {
     // Test all market states convert properly
-    let states: [MarketState; 6] = [
+    let states = [
         MarketState::Active,
         MarketState::Ended,
         MarketState::Disputed,
@@ -348,13 +345,13 @@ fn test_probabilities_are_percentages() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -384,13 +381,13 @@ fn test_payout_never_exceeds_total_pool() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -427,13 +424,13 @@ fn test_pool_calculation_commutative() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -460,21 +457,21 @@ fn test_pool_calculation_commutative() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
     // Add votes in reverse order 2, 1
     market2.votes.set(user2.clone(), outcome.clone());
-    market2.stakes.set(user2.clone(), 2_000_000i128);
+    market2.stakes.set(user2, 2_000_000i128);
     market2.votes.set(user1.clone(), outcome.clone());
-    market2.stakes.set(user1.clone(), 3_000_000i128);
+    market2.stakes.set(user1, 3_000_000i128);
 
     let pool2 = QueryManager::calculate_outcome_pool(&env, &market2, &outcome).unwrap();
 
@@ -486,7 +483,7 @@ fn test_pool_calculation_commutative() {
 #[test]
 fn test_status_conversion_roundtrip() {
     // Test that we can convert states and back
-    let all_states: [MarketState; 6] = [
+    let all_states = [
         MarketState::Active,
         MarketState::Ended,
         MarketState::Disputed,
@@ -529,13 +526,13 @@ fn test_outcome_pool_consistency() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -580,13 +577,13 @@ fn test_payout_with_high_fees() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -594,17 +591,20 @@ fn test_payout_with_high_fees() {
     market.votes.set(user.clone(), yes.clone());
     market.stakes.set(user.clone(), stake);
     market.total_staked = stake;
-    market.winning_outcomes = Some(soroban_sdk::vec![&env, yes]);
+    market.winning_outcomes = Some(soroban_sdk::vec![&env, String::from_str(&env, "yes")]);
+    
+    // Add a user vote to create a winning pool
+    let user = Address::generate(&env);
+    market.votes.set(user.clone(), String::from_str(&env, "yes"));
+    market.stakes.set(user, stake);
 
     let payout = QueryManager::calculate_payout(&env, &market, stake).unwrap();
 
     // Should be less than stake due to fee (2%)
     assert!(payout < stake, "Payout should be less than stake due to fees");
-    assert!(
-        payout >= stake * 98 / 100,
-        "Payout should be approximately 98% of stake, got {}",
-        payout
-    );
+    // Payout should be exactly 98% of stake (stake * 98 / 100)
+    let expected_payout = stake * 98 / 100;
+    assert_eq!(payout, expected_payout, "Payout should be exactly 98% of stake");
 }
 
 #[test]
@@ -625,13 +625,13 @@ fn test_negative_values_handled() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 
@@ -659,13 +659,13 @@ fn test_large_number_handling() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            Address::generate(&env),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
-        None,
-        86400,
+        FallbackOracleConfig::None,
+        0,
         MarketState::Active,
     );
 

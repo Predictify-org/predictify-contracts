@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::errors::Error;
-use crate::types::{OracleConfig, OracleProvider};
+use crate::types::{FallbackOracleConfig, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
@@ -58,7 +58,7 @@ impl TestSetup {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         let oracle_config = OracleConfig::new(
             OracleProvider::Reflector,
-            Address::from_str(&self.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            Address::generate(&self.env),
             String::from_str(&self.env, "BTC/USD"),
             5000000,
             String::from_str(&self.env, "gt"),
@@ -70,8 +70,8 @@ impl TestSetup {
             &outcomes,
             &duration_days,
             &oracle_config,
-            &None,
-            &86400u64,
+            &FallbackOracleConfig::None,
+            &0,
         )
     }
 }

@@ -355,7 +355,7 @@ impl PredictifyHybrid {
         outcomes: Vec<String>,
         duration_days: u32,
         oracle_config: OracleConfig,
-        fallback_oracle_config: Option<OracleConfig>,
+        fallback_oracle_config: FallbackOracleConfig,
         resolution_timeout: u64,
     ) -> Symbol {
         // Authenticate that the caller is the admin
@@ -464,7 +464,7 @@ impl PredictifyHybrid {
         outcomes: Vec<String>,
         end_time: u64,
         oracle_config: OracleConfig,
-        fallback_oracle_config: Option<OracleConfig>,
+        fallback_oracle_config: FallbackOracleConfig,
         resolution_timeout: u64,
     ) -> Symbol {
         // Authenticate that the caller is the admin
@@ -1505,8 +1505,8 @@ impl PredictifyHybrid {
             &reason,
         );
 
-        // Automatically distribute payouts to winners after resolution
-        let _ = Self::distribute_payouts(env.clone(), market_id);
+        // Note: Payouts are NOT automatically distributed
+        // Winners must explicitly call claim_winnings to receive their payouts
     }
 
     /// Resolves a market with multiple winning outcomes (for tie cases).
@@ -1648,8 +1648,8 @@ impl PredictifyHybrid {
             &reason,
         );
 
-        // Automatically distribute payouts (handles split pool for ties)
-        let _ = Self::distribute_payouts(env.clone(), market_id);
+        // Note: Payouts are NOT automatically distributed
+        // Winners must explicitly call claim_winnings to receive their payouts
     }
 
     /// Fetches oracle result for a market from external oracle contracts.

@@ -5,7 +5,7 @@ extern crate alloc;
 use crate::{
     config,
     errors::Error,
-    types::{BetLimits, Market, OracleConfig, OracleProvider},
+    types::{BetLimits, FallbackOracleConfig, Market, OracleConfig, OracleProvider},
 };
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};

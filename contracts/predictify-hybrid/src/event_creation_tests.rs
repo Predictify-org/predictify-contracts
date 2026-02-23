@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::errors::Error;
-use crate::types::{MarketState, OracleConfig, OracleProvider};
+use crate::types::{FallbackOracleConfig, MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
@@ -64,7 +64,7 @@ fn test_create_event_success() {
         &outcomes,
         &end_time,
         &oracle_config,
-        &None,
+        &FallbackOracleConfig::None,
         &0,
     );
 
@@ -101,7 +101,7 @@ fn test_create_market_success() {
         &outcomes,
         &duration_days,
         &oracle_config,
-        &None,
+        &FallbackOracleConfig::None,
         &0,
     );
 
@@ -136,7 +136,7 @@ fn test_create_event_unauthorized() {
         &outcomes,
         &end_time,
         &oracle_config,
-        &None,
+        &FallbackOracleConfig::None,
         &0,
     );
 }
@@ -168,7 +168,7 @@ fn test_create_event_invalid_end_time() {
         &outcomes,
         &end_time,
         &oracle_config,
-        &None,
+        &FallbackOracleConfig::None,
         &0,
     );
 }
@@ -196,7 +196,7 @@ fn test_create_event_empty_outcomes() {
         &outcomes,
         &end_time,
         &oracle_config,
-        &None,
+        &FallbackOracleConfig::None,
         &0,
     );
 }

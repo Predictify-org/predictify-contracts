@@ -411,7 +411,7 @@ mod batch_operations_tests {
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
                 provider: crate::types::OracleProvider::Reflector,
-                oracle_address: soroban_sdk::Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                oracle_address: <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env),
                 feed_id: String::from_str(&env, "BTC"),
                 threshold: 100_000_00,
                 comparison: String::from_str(&env, "gt"),
@@ -429,7 +429,7 @@ mod batch_operations_tests {
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
                 provider: crate::types::OracleProvider::Reflector,
-                oracle_address: soroban_sdk::Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                oracle_address: <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env),
                 feed_id: String::from_str(&env, "BTC"),
                 threshold: 100_000_00,
                 comparison: String::from_str(&env, "gt"),
@@ -443,7 +443,7 @@ mod batch_operations_tests {
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
                 provider: crate::types::OracleProvider::Reflector,
-                oracle_address: soroban_sdk::Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                oracle_address: <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env),
                 feed_id: String::from_str(&env, "BTC"),
                 threshold: 100_000_00,
                 comparison: String::from_str(&env, "gt"),
@@ -461,7 +461,7 @@ mod batch_operations_tests {
             duration_days: 0,
             oracle_config: crate::types::OracleConfig {
                 provider: crate::types::OracleProvider::Reflector,
-                oracle_address: soroban_sdk::Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                oracle_address: <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env),
                 feed_id: String::from_str(&env, "BTC"),
                 threshold: 100_000_00,
                 comparison: String::from_str(&env, "gt"),

@@ -54,6 +54,8 @@ pub enum Error {
     OracleVerified = 204,
     /// Market not ready for oracle verification
     MarketNotReady = 205,
+    // FbOracleUnavail, ResTimeout, RefundStarted removed to stay within
+    // Soroban's 50-variant limit for contracterror enums.
     /// Fallback oracle is unavailable or unhealthy
     FallbackOracleUnavailable = 206,
     /// Resolution timeout has been reached
@@ -103,15 +105,17 @@ pub enum Error {
     /// No fees to collect
     NoFeesToCollect = 414,
     /// Invalid extension days
-    InvalidExtensionDays = 415,
+    InvExtDays = 415,
     /// Extension not allowed or exceeded
     ExtensionDenied = 416,
     /// Admin address is not set (initialization missing)
     AdminNotSet = 418,
     /// Dispute timeout not set
     TimeoutNotSet = 419,
+    /// Dispute timeout not expired
+    TimeoutNotExp = 420,
     /// Invalid timeout hours
-    InvalidTimeoutHours = 422,
+    InvTimeoutHrs = 422,
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker not initialized
@@ -1111,11 +1115,13 @@ impl Error {
             Error::ThresholdTooHigh => "Threshold exceeds maximum",
             Error::FeeAlreadyCollected => "Fee already collected",
             Error::NoFeesToCollect => "No fees to collect",
-            Error::InvalidExtensionDays => "Invalid extension days",
+            Error::InvExtDays => "Invalid extension days",
             Error::ExtensionDenied => "Extension not allowed or exceeded",
-            Error::AdminNotSet => "Admin address is not set (initialization missing)",
+            Error::ExtensionFeeLow => "Extension fee insufficient",
+            Error::AdminNotSet => "Admin not set",
             Error::TimeoutNotSet => "Dispute timeout not set",
-            Error::InvalidTimeoutHours => "Invalid timeout hours",
+            Error::TimeoutNotExp => "Dispute timeout not expired",
+            Error::InvTimeoutHrs => "Invalid timeout hours",
             Error::OracleStale => "Oracle data is stale or timed out",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1229,11 +1235,12 @@ impl Error {
             Error::ThresholdTooHigh => "THRESHOLD_EXCEEDS_MAXIMUM",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
-            Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
+            Error::InvExtDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
             Error::TimeoutNotSet => "DISPUTE_TIMEOUT_NOT_SET",
-            Error::InvalidTimeoutHours => "INVALID_TIMEOUT_HOURS",
+            Error::TimeoutNotExp => "DISPUTE_TIMEOUT_NOT_EXPIRED",
+            Error::InvTimeoutHrs => "INVALID_TIMEOUT_HOURS",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",

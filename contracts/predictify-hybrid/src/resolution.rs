@@ -980,7 +980,7 @@ impl OracleResolutionManager {
                 &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
             );
 
-            return Err(Error::ResolutionTimeoutReached);
+            return Err(Error::InvalidState);
         }
 
         // Validate market for oracle resolution
@@ -994,8 +994,7 @@ impl OracleResolutionManager {
             Ok(res) => res,
             Err(_) => {
                 // 3. Try fallback oracle if primary fails
-                if market.has_fallback {
-                    let fallback_config = &market.fallback_oracle_config;
+                if let FallbackOracleConfig::Some(ref fallback_config) = market.fallback_oracle_config {
                     match Self::try_fetch_from_config(env, fallback_config) {
                         Ok(res) => {
                             crate::events::EventEmitter::emit_fallback_used(
@@ -1007,7 +1006,7 @@ impl OracleResolutionManager {
                             used_config = fallback_config.clone();
                             res
                         }
-                        Err(_) => return Err(Error::FallbackOracleUnavailable),
+                        Err(_) => return Err(Error::OracleUnavailable),
                     }
                 } else {
                     return Err(Error::OracleUnavailable);
@@ -1887,8 +1886,8 @@ mod tests {
                 threshold: 2500000,
                 comparison: String::from_str(&env, "gt"),
             },
-            None,
-            86400,
+            FallbackOracleConfig::None,
+            0,
             MarketState::Active,
         );
 

@@ -19,7 +19,7 @@
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
-    types::{Market, MarketState},
+    types::{FallbackOracleConfig, Market, MarketState},
     voting::VotingStats,
 };
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
@@ -90,6 +90,9 @@ impl QueryManager {
 
         // Get oracle provider name
         let oracle_provider = market.oracle_config.provider.name();
+        let winning_outcome = market.get_winning_outcome();
+
+        // Compute winning_outcome before moving fields
         let winning_outcome = market.get_winning_outcome();
 
         let response = EventDetailsQuery {
@@ -221,7 +224,7 @@ impl QueryManager {
         let is_winning = market
             .winning_outcomes
             .as_ref()
-            .map(|wos| wos.contains(&outcome))
+            .map(|wo| wo.contains(&outcome))
             .unwrap_or(false);
 
         // Calculate potential payout
@@ -461,12 +464,10 @@ impl QueryManager {
             return Ok(0);
         }
 
-        // Get total winning stakes (sum across all winning outcomes for proportional tie payout)
+        // Get total winning stakes
         if let Some(winning_outcomes) = &market.winning_outcomes {
-            let mut winning_total = 0i128;
-            for outcome in winning_outcomes.iter() {
-                winning_total += Self::calculate_outcome_pool(env, market, &outcome)?;
-            }
+            let winning_outcome = winning_outcomes.get(0).unwrap_or_else(|| panic!("No winning outcome"));
+            let winning_total = Self::calculate_outcome_pool(env, market, &winning_outcome)?;
 
             if winning_total <= 0 {
                 return Ok(0);
@@ -488,7 +489,7 @@ impl QueryManager {
     /// Calculate total stake for a specific outcome.
     ///
     /// Sums all user stakes that voted for the given outcome.
-    pub(crate) fn calculate_outcome_pool(
+    pub fn calculate_outcome_pool(
         env: &Env,
         market: &Market,
         outcome: &String,
@@ -511,7 +512,7 @@ impl QueryManager {
     ///
     /// Uses stake distribution to infer market's probability estimates
     /// for "yes" and "no" outcomes. Returns percentages (0-100).
-    pub(crate) fn calculate_implied_probabilities(
+    pub fn calculate_implied_probabilities(
         env: &Env,
         market: &Market,
     ) -> Result<(u32, u32), Error> {
@@ -567,13 +568,13 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
-                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::generate(&env),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
-            None,
-            86400,
+            FallbackOracleConfig::None,
+            0,
             MarketState::Active,
         );
 
@@ -598,13 +599,13 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
-                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::generate(&env),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
-            None,
-            86400,
+            FallbackOracleConfig::None,
+            0,
             MarketState::Active,
         );
 
@@ -636,13 +637,13 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
-                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::generate(&env),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
-            None,
-            86400,
+            FallbackOracleConfig::None,
+            0,
             MarketState::Active,
         );
 
