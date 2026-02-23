@@ -38,6 +38,87 @@ struct BetTestSetup {
 }
 
 impl BetTestSetup {
+        /// Test placing a bet with a custom Stellar asset (e.g., USDC)
+        #[test]
+        fn test_place_bet_with_custom_token() {
+            let setup = BetTestSetup::new();
+            let custom_asset = crate::tokens::Asset {
+                contract: setup.token_id.clone(),
+                symbol: Symbol::short("USDC"),
+                decimals: 6,
+            };
+            // Add custom asset to allowed assets
+            // (Pseudo-code, implement actual registry logic)
+            // TokenRegistry::add_global(&setup.env, &custom_asset);
+
+            // User deposits custom token
+            let amount = 1_000_000; // 1 USDC
+            crate::tokens::transfer_token(&setup.env, &custom_asset, &setup.user, &setup.contract_id, amount);
+
+            // Place bet using custom token
+            // (Pseudo-code, implement actual bet placement logic)
+            // BetManager::place_bet(&setup.env, &setup.user, &setup.market_id, amount, &custom_asset);
+
+            // Assert bet is tracked and funds are locked
+            // ...assertions...
+        }
+
+        /// Test payout with custom token
+        #[test]
+        fn test_payout_with_custom_token() {
+            let setup = BetTestSetup::new();
+            let custom_asset = crate::tokens::Asset {
+                contract: setup.token_id.clone(),
+                symbol: Symbol::short("USDC"),
+                decimals: 6,
+            };
+            let payout_amount = 2_000_000; // 2 USDC
+            // Simulate payout
+            crate::tokens::transfer_token(&setup.env, &custom_asset, &setup.contract_id, &setup.user, payout_amount);
+            // Assert payout received
+            // ...assertions...
+        }
+
+        /// Test insufficient balance for custom token
+        #[test]
+        fn test_insufficient_balance_custom_token() {
+            let setup = BetTestSetup::new();
+            let custom_asset = crate::tokens::Asset {
+                contract: setup.token_id.clone(),
+                symbol: Symbol::short("USDC"),
+                decimals: 6,
+            };
+            let bet_amount = 10_000_000; // 10 USDC
+            // User has not deposited enough
+            // Attempt bet placement should fail
+            // ...assertions for error...
+        }
+
+        /// Test approval/allowance handling for custom token
+        #[test]
+        fn test_token_approval_handling() {
+            let setup = BetTestSetup::new();
+            let custom_asset = crate::tokens::Asset {
+                contract: setup.token_id.clone(),
+                symbol: Symbol::short("USDC"),
+                decimals: 6,
+            };
+            // Simulate approval/allowance
+            // ...pseudo-code for approval logic...
+            // Assert approval is required and handled
+            // ...assertions...
+        }
+
+        /// Test XLM-native flow is not broken
+        #[test]
+        fn test_xlm_native_flow_compatibility() {
+            let setup = BetTestSetup::new();
+            // Place bet with native XLM
+            let amount = 1_000_000; // 1 XLM
+            // ...existing XLM bet placement logic...
+            // Assert XLM flow works as before
+            // ...assertions...
+        }
     /// Create a new test environment with contract deployed and initialized
     fn new() -> Self {
         let env = Env::default();

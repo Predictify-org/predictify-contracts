@@ -763,11 +763,13 @@ pub struct Market {
     /// Optional category for the event (e.g., "sports", "crypto", "politics")
     /// Used for filtering and display in client applications
     pub category: Option<String>,
-    /// List of searchable tags for filtering events
-    /// Tags can be used to categorize events by multiple dimensions
+    /// List of searchable tags for filtering events by multiple dimensions
     pub tags: Vec<String>,
-}
 
+    /// Asset used for bets and payouts (Stellar token/asset)
+    pub asset: Option<crate::tokens::Asset>,
+}
+        /// Validate market parameters
 // ===== BET LIMITS =====
 
 /// Configurable minimum and maximum bet amount for an event or globally.
@@ -965,6 +967,13 @@ impl Market {
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
             return Err(crate::Error::InvalidDuration);
+        }
+
+        // Validate asset if present
+        if let Some(asset) = &self.asset {
+            if !asset.validate(env) {
+                return Err(crate::Error::InvalidInput);
+            }
         }
 
         Ok(())
