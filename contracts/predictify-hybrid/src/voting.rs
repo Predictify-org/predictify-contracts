@@ -412,7 +412,7 @@ impl VotingManager {
         // Calculate adjusted threshold and enforce dynamic bounds
         let mut adjusted_threshold = base + factors.total_adjustment;
         if adjusted_threshold < cfg.voting.min_dispute_stake {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
         if adjusted_threshold > cfg.voting.max_dispute_threshold {
             adjusted_threshold = cfg.voting.max_dispute_threshold;
@@ -652,11 +652,11 @@ impl ThresholdUtils {
 
         // Ensure within limits
         if adjusted < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if adjusted > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(adjusted)
@@ -742,11 +742,11 @@ impl ThresholdUtils {
     /// Validate dispute threshold
     pub fn validate_dispute_threshold(threshold: i128, _market_id: &Symbol) -> Result<bool, Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(true)
@@ -808,11 +808,11 @@ impl ThresholdValidator {
     /// Validate threshold limits
     pub fn validate_threshold_limits(threshold: i128) -> Result<(), Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(())

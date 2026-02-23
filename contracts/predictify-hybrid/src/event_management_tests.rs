@@ -56,26 +56,46 @@ impl TestSetup {
 
     fn create_market(&self, question: &str, outcomes: Vec<String>, duration_days: u32) -> Symbol {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
+        let oracle_address = Address::from_str(&self.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
         let oracle_config = OracleConfig::new(
             OracleProvider::Reflector,
+            oracle_address.clone(),
             String::from_str(&self.env, "BTC/USD"),
-            5000000,
-            String::from_str(&self.env, "gt"),
+            100_000_00000000, // $100,000
+            String::from_str(&self.env, "gte"),
         );
+        let market_id = Symbol::new(&self.env, "test_market_id");
+        
+        // Mock market object since it's not provided in scope
+        use crate::types::{Market, MarketState};
+        let market = Market {
+            id: market_id.clone(),
+            admin: self.admin.clone(),
+            question: String::from_str(&self.env, question),
+            outcomes: outcomes.clone(),
+            end_time: self.env.ledger().timestamp() + (duration_days as u64 * 86400),
+            state: MarketState::Active,
+            oracle_config,
+            fallback_oracle_config: None,
+            winning_outcomes: None,
+            total_votes: 0,
+            total_stake: 0,
+            outcome_votes: Map::new(&self.env),
+            outcome_stake: Map::new(&self.env),
+            voters: Vec::new(&self.env),
+            claimed: Map::new(&self.env),
+            resolution_timeout: 3600,
+            total_extension_days: 0,
+            extension_history: Vec::new(&self.env),
+        };
 
-        client.create_market(
-            &self.admin,
-            &String::from_str(&self.env, question),
-            &outcomes,
-            &duration_days,
-            &oracle_config,
-        )
+        // Store market in contract storage
+        self.env.as_contract(&self.contract_id, || {
+            self.env.storage().persistent().set(&market_id, &market);
+        });
+        market_id
     }
-}
-
-// ===== EXTEND DEADLINE TESTS =====
-
-#[test]
+    }
 fn test_extend_deadline_success() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);

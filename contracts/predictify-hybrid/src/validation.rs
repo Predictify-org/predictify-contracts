@@ -50,7 +50,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 /// # let env = Env::default();
 ///
 /// // Handle address validation error
-/// let user_address = Address::generate(&env);
+/// let user_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// match InputValidator::validate_address(&env, &user_address) {
 ///     Ok(()) => println!("Address is valid"),
 ///     Err(ValidationError::InvalidAddress) => {
@@ -331,7 +331,7 @@ impl ValidationError {
 /// let mut validation_result = ValidationResult::valid();
 ///
 /// // Validate multiple parameters
-/// let admin = Address::generate(&env);
+/// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// let question = String::from_str(&env, "Will BTC reach $100k?");
 /// let duration = 30u32;
 ///
@@ -425,8 +425,8 @@ impl ValidationError {
 ///
 /// // Use batch validation
 /// let admins = vec![
-///     Address::generate(&env),
-///     Address::generate(&env),
+///     Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+///     Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 /// ];
 /// let questions = vec![
 ///     String::from_str(&env, "Will BTC reach $100k?"),
@@ -609,7 +609,7 @@ impl ValidationResult {
 /// # let env = Env::default();
 ///
 /// // Validate address
-/// let user_address = Address::generate(&env);
+/// let user_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// match InputValidator::validate_address(&env, &user_address) {
 ///     Ok(()) => println!("Address is valid"),
 ///     Err(ValidationError::InvalidAddress) => {
@@ -680,7 +680,7 @@ impl ValidationResult {
 /// # let env = Env::default();
 ///
 /// // Validate market admin address
-/// let admin_address = Address::generate(&env);
+/// let admin_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// match InputValidator::validate_address(&env, &admin_address) {
 ///     Ok(()) => {
 ///         println!("Admin address is valid: {}", admin_address);
@@ -697,9 +697,9 @@ impl ValidationResult {
 ///
 /// // Validate multiple participant addresses
 /// let participants = vec![
-///     Address::generate(&env),
-///     Address::generate(&env),
-///     Address::generate(&env),
+///     Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+///     Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+///     Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 /// ];
 ///
 /// let mut valid_participants = Vec::new();
@@ -722,7 +722,7 @@ impl ValidationResult {
 /// println!("Invalid participants: {}", invalid_count);
 ///
 /// // Validate oracle provider address
-/// let oracle_address = Address::generate(&env);
+/// let oracle_address = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// if InputValidator::validate_address(&env, &oracle_address).is_ok() {
 ///     println!("Oracle address is valid for price feeds");
 /// } else {
@@ -1359,7 +1359,7 @@ impl InputValidator {
 /// # let env = Env::default();
 ///
 /// // Validate market creation
-/// let admin = Address::generate(&env);
+/// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by year end?");
 /// let outcomes = vec![
 ///     &env,
@@ -1393,7 +1393,7 @@ impl InputValidator {
 /// }
 ///
 /// // Validate voting parameters
-/// let voter = Address::generate(&env);
+/// let voter = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// let market_id = Symbol::new(&env, "BTC_100K");
 /// let outcome = String::from_str(&env, "yes");
 /// let stake = 5000000i128; // 5 XLM
@@ -1426,7 +1426,7 @@ impl InputValidator {
 /// let test_scenarios = vec![
 ///     // Scenario 1: Valid market
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "Will Bitcoin reach $100,000 by December 31, 2024?"),
 ///         vec![
 ///             &env,
@@ -1444,7 +1444,7 @@ impl InputValidator {
 ///     ),
 ///     // Scenario 2: Question too short
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "BTC?"), // Too short
 ///         vec![
 ///             &env,
@@ -1462,7 +1462,7 @@ impl InputValidator {
 ///     ),
 ///     // Scenario 3: Duration too short
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "Will Ethereum reach $5,000 this quarter?"),
 ///         vec![
 ///             &env,
@@ -1525,28 +1525,28 @@ impl InputValidator {
 /// let voting_scenarios = vec![
 ///     // Scenario 1: Valid vote
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "yes"),
 ///         5000000i128, // 5 XLM stake
 ///         "Valid vote with proper stake"
 ///     ),
 ///     // Scenario 2: Invalid outcome
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "maybe"), // Invalid outcome
 ///         1000000i128,
 ///         "Vote with invalid outcome"
 ///     ),
 ///     // Scenario 3: Zero stake
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "no"),
 ///         0i128, // Zero stake
 ///         "Vote with zero stake"
 ///     ),
 ///     // Scenario 4: Negative stake
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "yes"),
 ///         -1000000i128, // Negative stake
 ///         "Vote with negative stake"
@@ -1664,7 +1664,7 @@ impl InputValidator {
 ///     // Market 1: Active market (should not collect fees yet)
 ///     (
 ///         Market {
-///             admin: Address::generate(&env),
+///             admin: Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///             question: String::from_str(&env, "Will BTC reach $100k?"),
 ///             outcomes: vec![
 ///                 &env,
@@ -1686,7 +1686,7 @@ impl InputValidator {
 ///     // Market 2: Resolved market (should allow fee collection)
 ///     (
 ///         Market {
-///             admin: Address::generate(&env),
+///             admin: Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///             question: String::from_str(&env, "Will ETH reach $5k?"),
 ///             outcomes: vec![
 ///                 &env,
@@ -1768,7 +1768,7 @@ impl InputValidator {
 /// // Create batch of market requests
 /// let market_requests = vec![
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "Will Bitcoin reach $100,000?"),
 ///         vec![
 ///             String::from_str(&env, "yes"),
@@ -1783,7 +1783,7 @@ impl InputValidator {
 ///         },
 ///     ),
 ///     (
-///         Address::generate(&env),
+///         Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///         String::from_str(&env, "Will Ethereum reach $5,000?"),
 ///         vec![
 ///             String::from_str(&env, "yes"),
@@ -2433,7 +2433,7 @@ impl FeeValidator {
 /// # let env = Env::default();
 ///
 /// // Validate user voting eligibility
-/// let voter = Address::generate(&env);
+/// let voter = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// let market_id = Symbol::new(&env, "BTC_100K");
 ///
 /// match VoteValidator::validate_user(&env, &voter, &market_id) {
@@ -2610,11 +2610,11 @@ pub fn validate_bet_amount_against_limits(amount: i128, limits: &BetLimits) -> R
 /// # let env = Env::default();
 ///
 /// // Validate dispute creation
-/// let user = Address::generate(&env);
+/// let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// let market_id = Symbol::new(&env, "BTC_100K");
 /// let dispute_stake = 10000000i128; // 10 XLM
 /// let market = Market {
-///     admin: Address::generate(&env),
+///     admin: Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 ///     question: String::from_str(&env, "Will BTC reach $100k?"),
 ///     outcomes: vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
 ///     deadline: env.ledger().timestamp() - 3600, // Past deadline
@@ -2740,8 +2740,8 @@ impl DisputeValidator {
 /// # let env = Env::default();
 ///
 /// // Validate contract configuration
-/// let admin = Address::generate(&env);
-/// let token_id = Address::generate(&env);
+/// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+/// let token_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 ///
 /// match ConfigValidator::validate_contract_config(&env, &admin, &token_id) {
 ///     Ok(()) => println!("Contract configuration is valid"),
@@ -2847,7 +2847,7 @@ impl ConfigValidator {
 /// # let env = Env::default();
 ///
 /// // Comprehensive market creation validation
-/// let admin = Address::generate(&env);
+/// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by year end?");
 /// let outcomes = vec![
 ///     String::from_str(&env, "yes"),
@@ -2949,6 +2949,8 @@ impl ComprehensiveValidator {
             outcomes,
             duration_days,
             oracle_config,
+            &None,
+            &86400,
         );
         if !market_result.is_valid {
             result.add_error();
@@ -3155,11 +3157,13 @@ impl ValidationTestingUtils {
             env.ledger().timestamp() + 86400,
             OracleConfig {
                 provider: OracleProvider::Pyth,
-                oracle_address: Address::generate(env),
+                oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
                 feed_id: String::from_str(env, "BTC/USD"),
                 threshold: 2500000,
                 comparison: String::from_str(env, "gt"),
             },
+            None,
+            86400,
             crate::types::MarketState::Active,
         )
     }
@@ -3168,7 +3172,7 @@ impl ValidationTestingUtils {
     pub fn create_test_oracle_config(env: &Env) -> OracleConfig {
         OracleConfig {
             provider: OracleProvider::Pyth,
-            oracle_address: Address::generate(env),
+            oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             feed_id: String::from_str(env, "BTC/USD"),
             threshold: 2500000,
             comparison: String::from_str(env, "gt"),

@@ -920,6 +920,7 @@ dependencies = [
 name = "predictify-hybrid"
 version = "0.0.0"
 dependencies = [
+ "hex",
  "proptest",
  "soroban-sdk",
  "wee_alloc",

@@ -1,0 +1,3076 @@
+error: custom attribute panicked
+ --> contracts/predictify-hybrid/src/errors.rs:3:1
+  |
+3 | #[contracterror]
+  | ^^^^^^^^^^^^^^^^
+  |
+  = help: message: called `Result::unwrap()` on an `Err` value: LengthExceedsMax
+
+error[E0432]: unresolved import `crate::errors::Error`
+  --> contracts/predictify-hybrid/src/admin.rs:37:5
+   |
+37 | use crate::errors::Error;
+   |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+   |
+help: consider importing one of these items instead
+   |
+37 - use crate::errors::Error;
+37 + use core::error::Error;
+   |
+37 - use crate::errors::Error;
+37 + use core::fmt::Error;
+   |
+37 - use crate::errors::Error;
+37 + use alloc::fmt::Error;
+   |
+37 - use crate::errors::Error;
+37 + use proptest::string::Error;
+   |
+   = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/balances.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::admin::admin_manager_tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/batch_operations.rs:5:5
+  |
+5 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::admin::admin_manager_tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+5 - use crate::errors::Error;
+5 + use core::error::Error;
+  |
+5 - use crate::errors::Error;
+5 + use core::fmt::Error;
+  |
+5 - use crate::errors::Error;
+5 + use alloc::fmt::Error;
+  |
+5 - use crate::errors::Error;
+5 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+  --> contracts/predictify-hybrid/src/bets.rs:24:5
+   |
+24 | use crate::errors::Error;
+   |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+   |
+   = note: unresolved item `crate::admin::admin_manager_tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+   |
+24 - use crate::errors::Error;
+24 + use core::error::Error;
+   |
+24 - use crate::errors::Error;
+24 + use core::fmt::Error;
+   |
+24 - use crate::errors::Error;
+24 + use alloc::fmt::Error;
+   |
+24 - use crate::errors::Error;
+24 + use proptest::string::Error;
+   |
+   = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/circuit_breaker.rs:4:5
+  |
+4 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::bets::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+4 - use crate::errors::Error;
+4 + use core::error::Error;
+  |
+4 - use crate::errors::Error;
+4 + use core::fmt::Error;
+  |
+4 - use crate::errors::Error;
+4 + use alloc::fmt::Error;
+  |
+4 - use crate::errors::Error;
+4 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/config.rs:4:5
+  |
+4 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::bets::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+4 - use crate::errors::Error;
+4 + use core::error::Error;
+  |
+4 - use crate::errors::Error;
+4 + use core::fmt::Error;
+  |
+4 - use crate::errors::Error;
+4 + use alloc::fmt::Error;
+  |
+4 - use crate::errors::Error;
+4 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/disputes.rs:4:5
+  |
+4 |     errors::Error,
+  |     ^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = help: consider importing one of these items instead:
+          core::error::Error
+          core::fmt::Error
+          alloc::fmt::Error
+          proptest::string::Error
+          soroban_sdk::Error
+          soroban_sdk::testutils::ed25519::Error
+          soroban_sdk::xdr::Error
+          soroban_sdk::xdr::ScSpecType::Error
+          soroban_sdk::xdr::ScSpecTypeDef::Error
+          soroban_sdk::xdr::ScVal::Error
+          soroban_sdk::xdr::ScValType::Error
+  = note: unresolved item `crate::config::tests::Error` exists but is inaccessible
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/edge_cases.rs:5:5
+  |
+5 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::disputes::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+5 - use crate::errors::Error;
+5 + use core::error::Error;
+  |
+5 - use crate::errors::Error;
+5 + use core::fmt::Error;
+  |
+5 - use crate::errors::Error;
+5 + use alloc::fmt::Error;
+  |
+5 - use crate::errors::Error;
+5 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/event_archive.rs:7:5
+  |
+7 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::edge_cases::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+7 - use crate::errors::Error;
+7 + use core::error::Error;
+  |
+7 - use crate::errors::Error;
+7 + use core::fmt::Error;
+  |
+7 - use crate::errors::Error;
+7 + use alloc::fmt::Error;
+  |
+7 - use crate::errors::Error;
+7 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/events.rs:7:5
+  |
+7 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::edge_cases::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+7 - use crate::errors::Error;
+7 + use core::error::Error;
+  |
+7 - use crate::errors::Error;
+7 + use core::fmt::Error;
+  |
+7 - use crate::errors::Error;
+7 + use alloc::fmt::Error;
+  |
+7 - use crate::errors::Error;
+7 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/extensions.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::edge_cases::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/fees.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::extensions::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/graceful_degradation.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::fees::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/market_analytics.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::graceful_degradation::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/market_id_generator.rs:1:5
+  |
+1 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::graceful_degradation::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+1 - use crate::errors::Error;
+1 + use core::error::Error;
+  |
+1 - use crate::errors::Error;
+1 + use core::fmt::Error;
+  |
+1 - use crate::errors::Error;
+1 + use alloc::fmt::Error;
+  |
+1 - use crate::errors::Error;
+1 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/markets.rs:6:5
+  |
+6 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::graceful_degradation::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+6 - use crate::errors::Error;
+6 + use core::error::Error;
+  |
+6 - use crate::errors::Error;
+6 + use core::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use alloc::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/monitoring.rs:6:5
+  |
+6 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::markets::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+6 - use crate::errors::Error;
+6 + use core::error::Error;
+  |
+6 - use crate::errors::Error;
+6 + use core::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use alloc::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/oracles.rs:4:5
+  |
+4 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::monitoring::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+4 - use crate::errors::Error;
+4 + use core::error::Error;
+  |
+4 - use crate::errors::Error;
+4 + use core::fmt::Error;
+  |
+4 - use crate::errors::Error;
+4 + use alloc::fmt::Error;
+  |
+4 - use crate::errors::Error;
+4 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/performance_benchmarks.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::oracles::whitelist_tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+  --> contracts/predictify-hybrid/src/queries.rs:20:5
+   |
+20 |     errors::Error,
+   |     ^^^^^^^^^^^^^ no `Error` in `errors`
+   |
+   = help: consider importing one of these items instead:
+           core::error::Error
+           core::fmt::Error
+           alloc::fmt::Error
+           proptest::string::Error
+           soroban_sdk::Error
+           soroban_sdk::testutils::ed25519::Error
+           soroban_sdk::xdr::Error
+           soroban_sdk::xdr::ScSpecType::Error
+           soroban_sdk::xdr::ScSpecTypeDef::Error
+           soroban_sdk::xdr::ScVal::Error
+           soroban_sdk::xdr::ScValType::Error
+   = note: unresolved item `crate::oracles::whitelist_tests::Error` exists but is inaccessible
+
+error[E0432]: unresolved import `crate::Error`
+ --> contracts/predictify-hybrid/src/recovery.rs:7:5
+  |
+7 | use crate::Error;
+  |     ^^^^^^^^^^^^ no `Error` in the root
+  |
+  = note: unresolved item `crate::queries::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+7 - use crate::Error;
+7 + use core::error::Error;
+  |
+7 - use crate::Error;
+7 + use core::fmt::Error;
+  |
+7 - use crate::Error;
+7 + use alloc::fmt::Error;
+  |
+7 - use crate::Error;
+7 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/resolution.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::queries::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/reporting.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::resolution::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/upgrade_manager.rs:6:5
+  |
+6 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::resolution::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+6 - use crate::errors::Error;
+6 + use core::error::Error;
+  |
+6 - use crate::errors::Error;
+6 + use core::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use alloc::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/utils.rs:7:5
+  |
+7 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::upgrade_manager::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+7 - use crate::errors::Error;
+7 + use core::error::Error;
+  |
+7 - use crate::errors::Error;
+7 + use core::fmt::Error;
+  |
+7 - use crate::errors::Error;
+7 + use alloc::fmt::Error;
+  |
+7 - use crate::errors::Error;
+7 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/validation.rs:7:5
+  |
+7 |     errors::Error,
+  |     ^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = help: consider importing one of these items instead:
+          core::error::Error
+          core::fmt::Error
+          alloc::fmt::Error
+          proptest::string::Error
+          soroban_sdk::Error
+          soroban_sdk::testutils::ed25519::Error
+          soroban_sdk::xdr::Error
+          soroban_sdk::xdr::ScSpecType::Error
+          soroban_sdk::xdr::ScSpecTypeDef::Error
+          soroban_sdk::xdr::ScVal::Error
+          soroban_sdk::xdr::ScValType::Error
+  = note: unresolved item `crate::upgrade_manager::tests::Error` exists but is inaccessible
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/versioning.rs:6:5
+  |
+6 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::upgrade_manager::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+6 - use crate::errors::Error;
+6 + use core::error::Error;
+  |
+6 - use crate::errors::Error;
+6 + use core::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use alloc::fmt::Error;
+  |
+6 - use crate::errors::Error;
+6 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/voting.rs:5:5
+  |
+5 |     errors::Error,
+  |     ^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = help: consider importing one of these items instead:
+          core::error::Error
+          core::fmt::Error
+          alloc::fmt::Error
+          proptest::string::Error
+          soroban_sdk::Error
+          soroban_sdk::testutils::ed25519::Error
+          soroban_sdk::xdr::Error
+          soroban_sdk::xdr::ScSpecType::Error
+          soroban_sdk::xdr::ScSpecTypeDef::Error
+          soroban_sdk::xdr::ScVal::Error
+          soroban_sdk::xdr::ScValType::Error
+  = note: unresolved item `crate::versioning::tests::Error` exists but is inaccessible
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/circuit_breaker_tests.rs:8:9
+  |
+8 |     use crate::errors::Error;
+  |         ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::voting::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+8 -     use crate::errors::Error;
+8 +     use core::error::Error;
+  |
+8 -     use crate::errors::Error;
+8 +     use core::fmt::Error;
+  |
+8 -     use crate::errors::Error;
+8 +     use alloc::fmt::Error;
+  |
+8 -     use crate::errors::Error;
+8 +     use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::Error`
+  --> contracts/predictify-hybrid/src/bet_tests.rs:20:13
+   |
+20 | use crate::{Error, PredictifyHybrid, PredictifyHybridClient};
+   |             ^^^^^ no `Error` in the root
+   |
+   = help: consider importing one of these items instead:
+           core::error::Error
+           core::fmt::Error
+           alloc::fmt::Error
+           proptest::string::Error
+           soroban_sdk::Error
+           soroban_sdk::testutils::ed25519::Error
+           soroban_sdk::xdr::Error
+           soroban_sdk::xdr::ScSpecType::Error
+           soroban_sdk::xdr::ScSpecTypeDef::Error
+           soroban_sdk::xdr::ScVal::Error
+           soroban_sdk::xdr::ScValType::Error
+   = note: unresolved item `crate::voting::tests::Error` exists but is inaccessible
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/balance_tests.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::voting::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/event_management_tests.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::voting::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/resolution_delay_dispute_window_tests.rs:5:5
+  |
+5 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::voting::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+5 - use crate::errors::Error;
+5 + use core::error::Error;
+  |
+5 - use crate::errors::Error;
+5 + use core::fmt::Error;
+  |
+5 - use crate::errors::Error;
+5 + use alloc::fmt::Error;
+  |
+5 - use crate::errors::Error;
+5 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+ --> contracts/predictify-hybrid/src/event_creation_tests.rs:3:5
+  |
+3 | use crate::errors::Error;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+  |
+  = note: unresolved item `crate::voting::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+  |
+3 - use crate::errors::Error;
+3 + use core::error::Error;
+  |
+3 - use crate::errors::Error;
+3 + use core::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use alloc::fmt::Error;
+  |
+3 - use crate::errors::Error;
+3 + use proptest::string::Error;
+  |
+  = and 7 other candidates
+
+error[E0432]: unresolved import `crate::errors::Error`
+   --> contracts/predictify-hybrid/src/lib.rs:130:9
+    |
+130 | pub use crate::errors::Error as Error;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `Error` in `errors`
+    |
+    = note: unresolved item `crate::voting::tests::Error` exists but is inaccessible
+help: consider importing one of these items instead
+    |
+130 - pub use crate::errors::Error as Error;
+130 + pub use core::error::Error;
+    |
+130 - pub use crate::errors::Error as Error;
+130 + pub use core::fmt::Error;
+    |
+130 - pub use crate::errors::Error as Error;
+130 + pub use alloc::fmt::Error;
+    |
+130 - pub use crate::errors::Error as Error;
+130 + pub use proptest::string::Error;
+    |
+    = and 7 other candidates
+
+error[E0425]: cannot find type `Error` in this scope
+   --> contracts/predictify-hybrid/src/errors.rs:121:51
+    |
+121 | ...&Env, _error: Error, _context: ErrorContext) -> Result<Er...
+    |                  ^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0425]: cannot find type `Error` in this scope
+   --> contracts/predictify-hybrid/src/errors.rs:121:107
+    |
+121 | ...rrorRecovery, Error> {
+    |                  ^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0433]: failed to resolve: use of undeclared type `Error`
+   --> contracts/predictify-hybrid/src/errors.rs:122:13
+    |
+122 |         Err(Error::InvalidState)
+    |             ^^^^^ use of undeclared type `Error`
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0425]: cannot find type `Error` in this scope
+   --> contracts/predictify-hybrid/src/errors.rs:124:91
+    |
+124 | ... Result<bool, Error> {
+    |                  ^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0425]: cannot find type `Error` in this scope
+   --> contracts/predictify-hybrid/src/errors.rs:127:81
+    |
+127 | ...coveryStatus, Error> {
+    |                  ^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0433]: failed to resolve: use of undeclared type `Error`
+   --> contracts/predictify-hybrid/src/errors.rs:128:13
+    |
+128 |         Err(Error::InvalidState)
+    |             ^^^^^ use of undeclared type `Error`
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0425]: cannot find type `Error` in this scope
+   --> contracts/predictify-hybrid/src/errors.rs:131:105
+    |
+131 | ... Result<bool, Error> {
+    |                  ^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0425]: cannot find type `Error` in this scope
+   --> contracts/predictify-hybrid/src/errors.rs:134:90
+    |
+134 | ...ing, String>, Error> {
+    |                  ^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0433]: failed to resolve: use of undeclared type `Error`
+   --> contracts/predictify-hybrid/src/errors.rs:135:13
+    |
+135 |         Err(Error::InvalidState)
+    |             ^^^^^ use of undeclared type `Error`
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0425]: cannot find type `Error` in this scope
+   --> contracts/predictify-hybrid/src/errors.rs:139:6
+    |
+139 | impl Error {
+    |      ^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use core::error::Error;
+    |
+  1 + use core::fmt::Error;
+    |
+  1 + use alloc::fmt::Error;
+    |
+  1 + use proptest::string::Error;
+    |
+    = and 3 other candidates
+
+error[E0433]: failed to resolve: use of undeclared type `Map`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:83:28
+   |
+83 |             outcome_votes: Map::new(&self.env),
+   |                            ^^^ use of undeclared type `Map`
+   |
+help: consider importing one of these structs
+   |
+ 3 + use crate::Map;
+   |
+ 3 + use core::iter::Map;
+   |
+ 3 + use proptest::strategy::Map;
+   |
+ 3 + use proptest::strategy::statics::Map;
+   |
+   = and 1 other candidate
+
+error[E0433]: failed to resolve: use of undeclared type `Map`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:84:28
+   |
+84 |             outcome_stake: Map::new(&self.env),
+   |                            ^^^ use of undeclared type `Map`
+   |
+help: consider importing one of these structs
+   |
+ 3 + use crate::Map;
+   |
+ 3 + use core::iter::Map;
+   |
+ 3 + use proptest::strategy::Map;
+   |
+ 3 + use proptest::strategy::statics::Map;
+   |
+   = and 1 other candidate
+
+error[E0433]: failed to resolve: use of undeclared type `Map`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:86:22
+   |
+86 |             claimed: Map::new(&self.env),
+   |                      ^^^ use of undeclared type `Map`
+   |
+help: consider importing one of these structs
+   |
+ 3 + use crate::Map;
+   |
+ 3 + use core::iter::Map;
+   |
+ 3 + use proptest::strategy::Map;
+   |
+ 3 + use proptest::strategy::statics::Map;
+   |
+   = and 1 other candidate
+
+error[E0433]: failed to resolve: could not find `Error` in `errors`
+   --> contracts/predictify-hybrid/src/test.rs:331:31
+    |
+331 | ...errors::Error::Unauthorized as i128, 100);
+    |            ^^^^^ could not find `Error` in `errors`
+    |
+help: consider importing one of these items
+    |
+ 20 + use crate::test::alloc::fmt::Error;
+    |
+ 20 + use core::error::Error;
+    |
+ 20 + use core::fmt::Error;
+    |
+ 20 + use alloc::fmt::Error;
+    |
+    = and 4 other candidates
+help: if you import `Error`, refer to it directly
+    |
+331 -     assert_eq!(crate::errors::Error::Unauthorized as i128, 100);
+331 +     assert_eq!(Error::Unauthorized as i128, 100);
+    |
+
+error[E0433]: failed to resolve: could not find `Error` in `errors`
+   --> contracts/predictify-hybrid/src/test.rs:338:31
+    |
+338 | ...errors::Error::InvalidOutcomes as i128, 301);
+    |            ^^^^^ could not find `Error` in `errors`
+    |
+help: consider importing one of these items
+    |
+ 20 + use crate::test::alloc::fmt::Error;
+    |
+ 20 + use core::error::Error;
+    |
+ 20 + use core::fmt::Error;
+    |
+ 20 + use alloc::fmt::Error;
+    |
+    = and 4 other candidates
+help: if you import `Error`, refer to it directly
+    |
+338 -     assert_eq!(crate::errors::Error::InvalidOutcomes as i128, 301);
+338 +     assert_eq!(Error::InvalidOutcomes as i128, 301);
+    |
+
+error[E0433]: failed to resolve: could not find `Error` in `errors`
+   --> contracts/predictify-hybrid/src/test.rs:345:31
+    |
+345 | ...errors::Error::InvalidQuestion as i128, 300);
+    |            ^^^^^ could not find `Error` in `errors`
+    |
+help: consider importing one of these items
+    |
+ 20 + use crate::test::alloc::fmt::Error;
+    |
+ 20 + use core::error::Error;
+    |
+ 20 + use core::fmt::Error;
+    |
+ 20 + use alloc::fmt::Error;
+    |
+    = and 4 other candidates
+help: if you import `Error`, refer to it directly
+    |
+345 -     assert_eq!(crate::errors::Error::InvalidQuestion as i128, 300);
+345 +     assert_eq!(Error::InvalidQuestion as i128, 300);
+    |
+
+error[E0433]: failed to resolve: could not find `Error` in `errors`
+   --> contracts/predictify-hybrid/src/test.rs:423:31
+    |
+423 | ...errors::Error::InvalidOutcome as i128, 108);
+    |            ^^^^^ could not find `Error` in `errors`
+    |
+help: consider importing one of these items
+    |
+ 20 + use crate::test::alloc::fmt::Error;
+    |
+ 20 + use core::error::Error;
+    |
+ 20 + use core::fmt::Error;
+    |
+ 20 + use alloc::fmt::Error;
+    |
+    = and 4 other candidates
+help: if you import `Error`, refer to it directly
+    |
+423 -     assert_eq!(crate::errors::Error::InvalidOutcome as i128, 108);
+423 +     assert_eq!(Error::InvalidOutcome as i128, 108);
+    |
+
+error[E0433]: failed to resolve: could not find `Error` in `errors`
+   --> contracts/predictify-hybrid/src/test.rs:430:31
+    |
+430 | ...errors::Error::MarketNotFound as i128, 101);
+    |            ^^^^^ could not find `Error` in `errors`
+    |
+help: consider importing one of these items
+    |
+ 20 + use crate::test::alloc::fmt::Error;
+    |
+ 20 + use core::error::Error;
+    |
+ 20 + use core::fmt::Error;
+    |
+ 20 + use alloc::fmt::Error;
+    |
+    = and 4 other candidates
+help: if you import `Error`, refer to it directly
+    |
+430 -     assert_eq!(crate::errors::Error::MarketNotFound as i128, 101);
+430 +     assert_eq!(Error::MarketNotFound as i128, 101);
+    |
+
+error[E0433]: failed to resolve: could not find `Error` in `errors`
+    --> contracts/predictify-hybrid/src/test.rs:1221:31
+     |
+1221 | ...errors::Error::InvalidFeeConfig as i128, 402);
+     |            ^^^^^ could not find `Error` in `errors`
+     |
+help: consider importing one of these items
+     |
+  20 + use crate::test::alloc::fmt::Error;
+     |
+  20 + use core::error::Error;
+     |
+  20 + use core::fmt::Error;
+     |
+  20 + use alloc::fmt::Error;
+     |
+     = and 4 other candidates
+help: if you import `Error`, refer to it directly
+     |
+1221 -     assert_eq!(crate::errors::Error::InvalidFeeConfig as i128, 402);
+1221 +     assert_eq!(Error::InvalidFeeConfig as i128, 402);
+     |
+
+error[E0433]: failed to resolve: could not find `Error` in `errors`
+    --> contracts/predictify-hybrid/src/test.rs:1228:31
+     |
+1228 | ...errors::Error::InvalidFeeConfig as i128, 402);
+     |            ^^^^^ could not find `Error` in `errors`
+     |
+help: consider importing one of these items
+     |
+  20 + use crate::test::alloc::fmt::Error;
+     |
+  20 + use core::error::Error;
+     |
+  20 + use core::fmt::Error;
+     |
+  20 + use alloc::fmt::Error;
+     |
+     = and 4 other candidates
+help: if you import `Error`, refer to it directly
+     |
+1228 -     assert_eq!(crate::errors::Error::InvalidFeeConfig as i128, 402);
+1228 +     assert_eq!(Error::InvalidFeeConfig as i128, 402);
+     |
+
+error[E0659]: `vec` is ambiguous
+    --> contracts/predictify-hybrid/src/markets.rs:3006:34
+     |
+3006 |             let valid_outcomes = vec![
+     |                                  ^^^ ambiguous name
+     |
+     = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+    --> contracts/predictify-hybrid/src/markets.rs:2991:9
+     |
+2991 |     use super::*;
+     |         ^^^^^^^^
+     = help: consider adding an explicit import of `vec` to disambiguate
+     = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+    --> contracts/predictify-hybrid/src/lib.rs:33:1
+     |
+  33 | #[macro_use]
+     | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+    --> contracts/predictify-hybrid/src/markets.rs:3031:36
+     |
+3031 | ...   let invalid_outcomes = vec![&env, String::from_str(&e...
+     |                              ^^^ ambiguous name
+     |
+     = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+    --> contracts/predictify-hybrid/src/markets.rs:2991:9
+     |
+2991 |     use super::*;
+     |         ^^^^^^^^
+     = help: consider adding an explicit import of `vec` to disambiguate
+     = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+    --> contracts/predictify-hybrid/src/lib.rs:33:1
+     |
+  33 | #[macro_use]
+     | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+    --> contracts/predictify-hybrid/src/markets.rs:3084:13
+     |
+3084 |             vec![
+     |             ^^^ ambiguous name
+     |
+     = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+    --> contracts/predictify-hybrid/src/markets.rs:2991:9
+     |
+2991 |     use super::*;
+     |         ^^^^^^^^
+     = help: consider adding an explicit import of `vec` to disambiguate
+     = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+    --> contracts/predictify-hybrid/src/lib.rs:33:1
+     |
+  33 | #[macro_use]
+     | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/queries.rs:568:13
+    |
+568 |             vec![&env, String::from_str(&env, "yes")],
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/queries.rs:548:9
+    |
+548 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/queries.rs:592:13
+    |
+592 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/queries.rs:548:9
+    |
+548 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/queries.rs:627:13
+    |
+627 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/queries.rs:548:9
+    |
+548 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:108:30
+    |
+108 |         let valid_outcomes = vec![
+    |                              ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:120:32
+    |
+120 |         let valid_outcomes_3 = vec![
+    |                                ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:134:32
+    |
+134 | ...   let too_few_outcomes = vec![&env, String::from_str(&en...
+    |                              ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:143:33
+    |
+143 |         let too_many_outcomes = vec![
+    |                                 ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:165:29
+    |
+165 |         let empty_outcome = vec![
+    |                             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:178:34
+    |
+178 |         let duplicate_outcomes = vec![
+    |                                  ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:315:13
+    |
+315 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:331:13
+    |
+331 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:349:13
+    |
+349 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:367:13
+    |
+367 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:385:13
+    |
+385 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:432:13
+    |
+432 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+   --> contracts/predictify-hybrid/src/validation_tests.rs:450:13
+    |
+450 |             vec![
+    |             ^^^ ambiguous name
+    |
+    = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+   --> contracts/predictify-hybrid/src/validation_tests.rs:18:9
+    |
+ 18 |     use super::*;
+    |         ^^^^^^^^
+    = help: consider adding an explicit import of `vec` to disambiguate
+    = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+   --> contracts/predictify-hybrid/src/lib.rs:33:1
+    |
+ 33 | #[macro_use]
+    | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+    --> contracts/predictify-hybrid/src/validation_tests.rs:1086:35
+     |
+1086 |         let reflector_operators = vec![
+     |                                   ^^^ ambiguous name
+     |
+     = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+    --> contracts/predictify-hybrid/src/validation_tests.rs:920:9
+     |
+ 920 |     use super::*;
+     |         ^^^^^^^^
+     = help: consider adding an explicit import of `vec` to disambiguate
+     = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+    --> contracts/predictify-hybrid/src/lib.rs:33:1
+     |
+  33 | #[macro_use]
+     | ^^^^^^^^^^^^
+
+error[E0659]: `vec` is ambiguous
+    --> contracts/predictify-hybrid/src/validation_tests.rs:1131:30
+     |
+1131 |         let pyth_operators = vec![
+     |                              ^^^ ambiguous name
+     |
+     = note: ambiguous because of a conflict between a name from a glob import and an outer scope during import or macro resolution
+note: `vec` could refer to the macro imported here
+    --> contracts/predictify-hybrid/src/validation_tests.rs:920:9
+     |
+ 920 |     use super::*;
+     |         ^^^^^^^^
+     = help: consider adding an explicit import of `vec` to disambiguate
+     = help: or use `self::vec` to refer to this macro unambiguously
+note: `vec` could also refer to the macro imported here
+    --> contracts/predictify-hybrid/src/lib.rs:33:1
+     |
+  33 | #[macro_use]
+     | ^^^^^^^^^^^^
+
+error[E0599]: no method named `iter_mut` found for struct `soroban_sdk::Vec<T>` in the current scope
+   --> contracts/predictify-hybrid/src/admin.rs:121:35
+    |
+121 |         for approval in approvals.iter_mut() {
+    |                                   ^^^^^^^^
+    |
+help: there is a method `iter` with a similar name
+    |
+121 -         for approval in approvals.iter_mut() {
+121 +         for approval in approvals.iter() {
+    |
+
+error[E0599]: no method named `retain` found for struct `soroban_sdk::Vec<T>` in the current scope
+   --> contracts/predictify-hybrid/src/admin.rs:155:19
+    |
+155 |         approvals.retain(|a| !(a.action == action && a.param...
+    |                   ^^^^^^ method not found in `soroban_sdk::Vec<PendingApproval>`
+
+error[E0308]: mismatched types
+   --> contracts/predictify-hybrid/src/admin.rs:163:35
+    |
+163 |             if approval.action == action && approval.params ...
+    |                ---------------    ^^^^^^ expected `String`, found `&str`
+    |                |
+    |                expected because this is `soroban_sdk::String`
+
+error[E0282]: type annotations needed
+   --> contracts/predictify-hybrid/src/bets.rs:616:55
+    |
+616 | ...come_totals.get(outcome.clone()).unwrap_or(0);
+    |                    ^^^^^^^ cannot infer type
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> contracts/predictify-hybrid/src/disputes.rs:2817:13
+     |
+2817 |             crate::types::OracleConfig::new(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2818 |                 crate::types::OracleProvider::Pyth,
+2819 |                 String::from_str(env, "BTC/USD"),
+     |                 -------------------------------- argument #2 of type `soroban_sdk::Address` is missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:476:12
+     |
+ 476 |     pub fn new(
+     |            ^^^
+ 477 |         provider: OracleProvider,
+ 478 |         oracle_address: Address,
+     |         -----------------------
+help: provide the argument
+     |
+2817 |             crate::types::OracleConfig::new(
+2818 |                 crate::types::OracleProvider::Pyth,
+2819 ~                 /* soroban_sdk::Address */,
+2820 ~                 String::from_str(env, "BTC/USD"),
+     |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+    --> contracts/predictify-hybrid/src/disputes.rs:2811:9
+     |
+2811 |           Market::new(
+     |  _________^^^^^^^^^^^-
+2812 | |             env,
+2813 | |             Address::generate(env),
+2814 | |             String::from_str(env, "Test Market"),
+...    |
+2823 | |             crate::types::MarketState::Active,
+2824 | |         )
+     | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:844:12
+     |
+ 844 |     pub fn new(
+     |            ^^^
+...
+ 851 |         fallback_oracle_config: Option<OracleConfig>,
+     |         --------------------------------------------
+ 852 |         resolution_timeout: u64,
+     |         -----------------------
+help: provide the arguments
+     |
+2811 |         Market::new(
+ ...
+2822 |             ),
+2823 ~             /* core::option::Option<types::OracleConfig> */,
+2824 +             /* u64 */,
+2825 ~             crate::types::MarketState::Active,
+     |
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> contracts/predictify-hybrid/src/fees.rs:1655:13
+     |
+1655 |             crate::types::OracleConfig::new(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1656 |                 crate::types::OracleProvider::Pyth,
+1657 |                 String::from_str(&env, "BTC/USD"),
+     |                 --------------------------------- argument #2 of type `soroban_sdk::Address` is missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:476:12
+     |
+ 476 |     pub fn new(
+     |            ^^^
+ 477 |         provider: OracleProvider,
+ 478 |         oracle_address: Address,
+     |         -----------------------
+help: provide the argument
+     |
+1655 |             crate::types::OracleConfig::new(
+1656 |                 crate::types::OracleProvider::Pyth,
+1657 ~                 /* soroban_sdk::Address */,
+1658 ~                 String::from_str(&env, "BTC/USD"),
+     |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+    --> contracts/predictify-hybrid/src/fees.rs:1645:26
+     |
+1645 |           let mut market = Market::new(
+     |  __________________________^^^^^^^^^^^-
+1646 | |             &env,
+1647 | |             Address::generate(&env),
+1648 | |             String::from_str(&env, "Test Market"),
+...    |
+1661 | |             crate::types::MarketState::Active,
+1662 | |         );
+     | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:844:12
+     |
+ 844 |     pub fn new(
+     |            ^^^
+...
+ 851 |         fallback_oracle_config: Option<OracleConfig>,
+     |         --------------------------------------------
+ 852 |         resolution_timeout: u64,
+     |         -----------------------
+help: provide the arguments
+     |
+1645 |         let mut market = Market::new(
+ ...
+1660 |             ),
+1661 ~             /* core::option::Option<types::OracleConfig> */,
+1662 +             /* u64 */,
+1663 ~             crate::types::MarketState::Active,
+     |
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> contracts/predictify-hybrid/src/fees.rs:1718:13
+     |
+1718 |             crate::types::OracleConfig::new(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1719 |                 crate::types::OracleProvider::Pyth,
+1720 |                 String::from_str(&env, "BTC/USD"),
+     |                 --------------------------------- argument #2 of type `soroban_sdk::Address` is missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:476:12
+     |
+ 476 |     pub fn new(
+     |            ^^^
+ 477 |         provider: OracleProvider,
+ 478 |         oracle_address: Address,
+     |         -----------------------
+help: provide the argument
+     |
+1718 |             crate::types::OracleConfig::new(
+1719 |                 crate::types::OracleProvider::Pyth,
+1720 ~                 /* soroban_sdk::Address */,
+1721 ~                 String::from_str(&env, "BTC/USD"),
+     |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+    --> contracts/predictify-hybrid/src/fees.rs:1708:26
+     |
+1708 |           let mut market = Market::new(
+     |  __________________________^^^^^^^^^^^-
+1709 | |             &env,
+1710 | |             Address::generate(&env),
+1711 | |             String::from_str(&env, "Test Market"),
+...    |
+1724 | |             crate::types::MarketState::Active,
+1725 | |         );
+     | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:844:12
+     |
+ 844 |     pub fn new(
+     |            ^^^
+...
+ 851 |         fallback_oracle_config: Option<OracleConfig>,
+     |         --------------------------------------------
+ 852 |         resolution_timeout: u64,
+     |         -----------------------
+help: provide the arguments
+     |
+1708 |         let mut market = Market::new(
+ ...
+1723 |             ),
+1724 ~             /* core::option::Option<types::OracleConfig> */,
+1725 +             /* u64 */,
+1726 ~             crate::types::MarketState::Active,
+     |
+
+error[E0282]: type annotations needed
+   --> contracts/predictify-hybrid/src/market_analytics.rs:166:43
+    |
+166 | ...arket.stakes.get(user.clone()).unwrap_or(0);
+    |                     ^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> contracts/predictify-hybrid/src/market_analytics.rs:169:60
+    |
+169 | ...istribution.get(outcome.clone()).unwrap_or(0);
+    |                    ^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> contracts/predictify-hybrid/src/market_analytics.rs:233:54
+    |
+233 | ...preferences.get(outcome.clone()).unwrap_or(0);
+    |                    ^^^^^^^ cannot infer type
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+    --> contracts/predictify-hybrid/src/markets.rs:3080:22
+     |
+3080 |           let market = Market::new(
+     |  ______________________^^^^^^^^^^^-
+3081 | |             &env,
+3082 | |             Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAA...
+3083 | |             String::from_str(&env, "Test?"),
+...    |
+3094 | |             MarketState::Active,
+3095 | |         );
+     | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:844:12
+     |
+ 844 |     pub fn new(
+     |            ^^^
+...
+ 851 |         fallback_oracle_config: Option<OracleConfig>,
+     |         --------------------------------------------
+ 852 |         resolution_timeout: u64,
+     |         -----------------------
+help: provide the arguments
+     |
+3080 |         let market = Market::new(
+ ...
+3093 |             ),
+3094 ~             /* core::option::Option<types::OracleConfig> */,
+3095 +             /* u64 */,
+3096 ~             MarketState::Active,
+     |
+
+error[E0282]: type annotations needed
+   --> contracts/predictify-hybrid/src/queries.rs:104:73
+    |
+104 | ...and_then(|v| v.get(0)),
+    |              ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+104 |             winning_outcome: market.winning_outcomes.as_ref().and_then(|v: /* Type */| v.get(0)),
+    |                                                                          ++++++++++++
+
+error[E0282]: type annotations needed
+   --> contracts/predictify-hybrid/src/queries.rs:223:19
+    |
+223 |             .map(|wos| {
+    |                   ^^^
+224 |                 for wo in wos.iter() {
+    |                           --- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+223 |             .map(|wos: /* Type */| {
+    |                      ++++++++++++
+
+error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope
+   --> contracts/predictify-hybrid/src/queries.rs:563:30
+    |
+563 |         let admin = Address::generate(&env);
+    |                              ^^^^^^^^ function or associated item not found in `soroban_sdk::Address`
+    |
+note: if you're trying to build a new `soroban_sdk::Address` consider using one of the following associated functions:
+      soroban_sdk::Address::from_str
+      soroban_sdk::Address::from_string
+      soroban_sdk::Address::from_string_bytes
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/address.rs:238:5
+    |
+238 |     pub fn from_str(env: &Env, strkey: &str) -> Address {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+250 |     pub fn from_string(strkey: &String) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+272 |     pub fn from_string_bytes(strkey: &Bytes) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Address` which provides `generate` is implemented but not in scope; perhaps you want to import it
+    |
+548 +     use soroban_sdk::testutils::Address;
+    |
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> contracts/predictify-hybrid/src/queries.rs:570:13
+    |
+570 |             crate::types::OracleConfig::new(
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+571 |                 crate::types::OracleProvider::Reflector,
+572 |                 String::from_str(&env, "TEST"),
+    |                 ------------------------------ argument #2 of type `soroban_sdk::Address` is missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:476:12
+    |
+476 |     pub fn new(
+    |            ^^^
+477 |         provider: OracleProvider,
+478 |         oracle_address: Address,
+    |         -----------------------
+help: provide the argument
+    |
+570 |             crate::types::OracleConfig::new(
+571 |                 crate::types::OracleProvider::Reflector,
+572 ~                 /* soroban_sdk::Address */,
+573 ~                 String::from_str(&env, "TEST"),
+    |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/queries.rs:564:22
+    |
+564 |           let market = Market::new(
+    |  ______________________^^^^^^^^^^^-
+565 | |             &env,
+566 | |             admin,
+567 | |             String::from_str(&env, "Test"),
+...   |
+576 | |             MarketState::Active,
+577 | |         );
+    | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+564 |         let market = Market::new(
+...
+575 |             ),
+576 ~             /* core::option::Option<types::OracleConfig> */,
+577 +             /* u64 */,
+578 ~             MarketState::Active,
+    |
+
+error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope
+   --> contracts/predictify-hybrid/src/queries.rs:587:30
+    |
+587 |         let admin = Address::generate(&env);
+    |                              ^^^^^^^^ function or associated item not found in `soroban_sdk::Address`
+    |
+note: if you're trying to build a new `soroban_sdk::Address` consider using one of the following associated functions:
+      soroban_sdk::Address::from_str
+      soroban_sdk::Address::from_string
+      soroban_sdk::Address::from_string_bytes
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/address.rs:238:5
+    |
+238 |     pub fn from_str(env: &Env, strkey: &str) -> Address {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+250 |     pub fn from_string(strkey: &String) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+272 |     pub fn from_string_bytes(strkey: &Bytes) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Address` which provides `generate` is implemented but not in scope; perhaps you want to import it
+    |
+548 +     use soroban_sdk::testutils::Address;
+    |
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> contracts/predictify-hybrid/src/queries.rs:598:13
+    |
+598 |             crate::types::OracleConfig::new(
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+599 |                 crate::types::OracleProvider::Reflector,
+600 |                 String::from_str(&env, "TEST"),
+    |                 ------------------------------ argument #2 of type `soroban_sdk::Address` is missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:476:12
+    |
+476 |     pub fn new(
+    |            ^^^
+477 |         provider: OracleProvider,
+478 |         oracle_address: Address,
+    |         -----------------------
+help: provide the argument
+    |
+598 |             crate::types::OracleConfig::new(
+599 |                 crate::types::OracleProvider::Reflector,
+600 ~                 /* soroban_sdk::Address */,
+601 ~                 String::from_str(&env, "TEST"),
+    |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/queries.rs:588:26
+    |
+588 |           let mut market = Market::new(
+    |  __________________________^^^^^^^^^^^-
+589 | |             &env,
+590 | |             admin,
+591 | |             String::from_str(&env, "Test"),
+...   |
+604 | |             MarketState::Active,
+605 | |         );
+    | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+588 |         let mut market = Market::new(
+...
+603 |             ),
+604 ~             /* core::option::Option<types::OracleConfig> */,
+605 +             /* u64 */,
+606 ~             MarketState::Active,
+    |
+
+error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope
+   --> contracts/predictify-hybrid/src/queries.rs:619:30
+    |
+619 |         let admin = Address::generate(&env);
+    |                              ^^^^^^^^ function or associated item not found in `soroban_sdk::Address`
+    |
+note: if you're trying to build a new `soroban_sdk::Address` consider using one of the following associated functions:
+      soroban_sdk::Address::from_str
+      soroban_sdk::Address::from_string
+      soroban_sdk::Address::from_string_bytes
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/address.rs:238:5
+    |
+238 |     pub fn from_str(env: &Env, strkey: &str) -> Address {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+250 |     pub fn from_string(strkey: &String) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+272 |     pub fn from_string_bytes(strkey: &Bytes) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Address` which provides `generate` is implemented but not in scope; perhaps you want to import it
+    |
+548 +     use soroban_sdk::testutils::Address;
+    |
+
+error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope
+   --> contracts/predictify-hybrid/src/queries.rs:620:30
+    |
+620 |         let user1 = Address::generate(&env);
+    |                              ^^^^^^^^ function or associated item not found in `soroban_sdk::Address`
+    |
+note: if you're trying to build a new `soroban_sdk::Address` consider using one of the following associated functions:
+      soroban_sdk::Address::from_str
+      soroban_sdk::Address::from_string
+      soroban_sdk::Address::from_string_bytes
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/address.rs:238:5
+    |
+238 |     pub fn from_str(env: &Env, strkey: &str) -> Address {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+250 |     pub fn from_string(strkey: &String) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+272 |     pub fn from_string_bytes(strkey: &Bytes) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Address` which provides `generate` is implemented but not in scope; perhaps you want to import it
+    |
+548 +     use soroban_sdk::testutils::Address;
+    |
+
+error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope
+   --> contracts/predictify-hybrid/src/queries.rs:621:30
+    |
+621 |         let user2 = Address::generate(&env);
+    |                              ^^^^^^^^ function or associated item not found in `soroban_sdk::Address`
+    |
+note: if you're trying to build a new `soroban_sdk::Address` consider using one of the following associated functions:
+      soroban_sdk::Address::from_str
+      soroban_sdk::Address::from_string
+      soroban_sdk::Address::from_string_bytes
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/address.rs:238:5
+    |
+238 |     pub fn from_str(env: &Env, strkey: &str) -> Address {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+250 |     pub fn from_string(strkey: &String) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+272 |     pub fn from_string_bytes(strkey: &Bytes) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Address` which provides `generate` is implemented but not in scope; perhaps you want to import it
+    |
+548 +     use soroban_sdk::testutils::Address;
+    |
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> contracts/predictify-hybrid/src/queries.rs:633:13
+    |
+633 |             crate::types::OracleConfig::new(
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+634 |                 crate::types::OracleProvider::Reflector,
+635 |                 String::from_str(&env, "TEST"),
+    |                 ------------------------------ argument #2 of type `soroban_sdk::Address` is missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:476:12
+    |
+476 |     pub fn new(
+    |            ^^^
+477 |         provider: OracleProvider,
+478 |         oracle_address: Address,
+    |         -----------------------
+help: provide the argument
+    |
+633 |             crate::types::OracleConfig::new(
+634 |                 crate::types::OracleProvider::Reflector,
+635 ~                 /* soroban_sdk::Address */,
+636 ~                 String::from_str(&env, "TEST"),
+    |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/queries.rs:623:26
+    |
+623 |           let mut market = Market::new(
+    |  __________________________^^^^^^^^^^^-
+624 | |             &env,
+625 | |             admin,
+626 | |             String::from_str(&env, "Test"),
+...   |
+639 | |             MarketState::Active,
+640 | |         );
+    | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+623 |         let mut market = Market::new(
+...
+638 |             ),
+639 ~             /* core::option::Option<types::OracleConfig> */,
+640 +             /* u64 */,
+641 ~             MarketState::Active,
+    |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+    --> contracts/predictify-hybrid/src/resolution.rs:1872:22
+     |
+1872 |           let market = Market::new(
+     |  ______________________^^^^^^^^^^^-
+1873 | |             &env,
+1874 | |             admin,
+1875 | |             String::from_str(&env, "Test Market"),
+...    |
+1889 | |             MarketState::Active,
+1890 | |         );
+     | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:844:12
+     |
+ 844 |     pub fn new(
+     |            ^^^
+...
+ 851 |         fallback_oracle_config: Option<OracleConfig>,
+     |         --------------------------------------------
+ 852 |         resolution_timeout: u64,
+     |         -----------------------
+help: provide the arguments
+     |
+1872 |         let market = Market::new(
+ ...
+1888 |             },
+1889 ~             /* core::option::Option<types::OracleConfig> */,
+1890 +             /* u64 */,
+1891 ~             MarketState::Active,
+     |
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> contracts/predictify-hybrid/src/storage.rs:763:13
+    |
+763 |             OracleConfig::new(
+    |             ^^^^^^^^^^^^^^^^^
+764 |                 OracleProvider::Reflector,
+765 |                 String::from_str(&env, "BTC"),
+    |                 ----------------------------- argument #2 of type `soroban_sdk::Address` is missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:476:12
+    |
+476 |     pub fn new(
+    |            ^^^
+477 |         provider: OracleProvider,
+478 |         oracle_address: Address,
+    |         -----------------------
+help: provide the argument
+    |
+763 |             OracleConfig::new(
+764 |                 OracleProvider::Reflector,
+765 ~                 /* soroban_sdk::Address */,
+766 ~                 String::from_str(&env, "BTC"),
+    |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/storage.rs:754:22
+    |
+754 |           let market = Market::new(
+    |  ______________________^^^^^^^^^^^-
+755 | |             &env,
+756 | |             admin,
+757 | |             String::from_str(&env, "Test market question"),
+...   |
+769 | |             MarketState::Active,
+770 | |         );
+    | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+754 |         let market = Market::new(
+...
+768 |             ),
+769 ~             /* core::option::Option<types::OracleConfig> */,
+770 +             /* u64 */,
+771 ~             MarketState::Active,
+    |
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> contracts/predictify-hybrid/src/storage.rs:815:13
+    |
+815 |             OracleConfig::new(
+    |             ^^^^^^^^^^^^^^^^^
+816 |                 OracleProvider::Reflector,
+817 |                 String::from_str(&env, "BTC"),
+    |                 ----------------------------- argument #2 of type `soroban_sdk::Address` is missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:476:12
+    |
+476 |     pub fn new(
+    |            ^^^
+477 |         provider: OracleProvider,
+478 |         oracle_address: Address,
+    |         -----------------------
+help: provide the argument
+    |
+815 |             OracleConfig::new(
+816 |                 OracleProvider::Reflector,
+817 ~                 /* soroban_sdk::Address */,
+818 ~                 String::from_str(&env, "BTC"),
+    |
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/storage.rs:806:22
+    |
+806 |           let market = Market::new(
+    |  ______________________^^^^^^^^^^^-
+807 | |             &env,
+808 | |             admin,
+809 | |             String::from_str(&env, "Test market"),
+...   |
+821 | |             MarketState::Active,
+822 | |         );
+    | |_________- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+806 |         let market = Market::new(
+...
+820 |             ),
+821 ~             /* core::option::Option<types::OracleConfig> */,
+822 +             /* u64 */,
+823 ~             MarketState::Active,
+    |
+
+error[E0282]: type annotations needed
+  --> contracts/predictify-hybrid/src/reporting.rs:28:61
+   |
+28 | ...ket: Market = env.storage().persistent().get(&id).ok_or(Er...
+   |                                             ^^^ cannot infer type of the type parameter `K` declared on the method `get`
+...
+32 | ...     id: id.clone(),
+   |             -- type must be known at this point
+   |
+help: consider specifying the generic arguments
+   |
+28 |             let market: Market = env.storage().persistent().get::<K, V>(&id).ok_or(Error::MarketNotFound)?;
+   |                                                                ++++++++
+
+error[E0277]: the trait bound `ScVal: TryFrom<&Option<...>>` is not satisfied
+   --> contracts/predictify-hybrid/src/types.rs:704:1
+    |
+704 | #[contracttype]
+    | ^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+    = help: the trait `From<types::OracleConfig>` is not implemented for `soroban_sdk::xdr::ScVal`
+    = help: the following other types implement trait `From<T>`:
+              `&soroban_sdk::xdr::ScVal` implements `From<ScValObjRef<'_>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&()>`
+              `soroban_sdk::xdr::ScVal` implements `From<&bool>`
+              `soroban_sdk::xdr::ScVal` implements `From<&core::option::Option<T>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i128>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i32>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i64>`
+              `soroban_sdk::xdr::ScVal` implements `From<&soroban_sdk::Address>`
+            and 36 others
+    = note: required for `types::OracleConfig` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `From<&Option<OracleConfig>>`
+    = note: 1 redundant requirement hidden
+    = note: required for `&core::option::Option<types::OracleConfig>` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `TryFrom<&Option<OracleConfig>>`
+    = note: required for `&core::option::Option<types::OracleConfig>` to implement `TryInto<soroban_sdk::xdr::ScVal>`
+    = note: the full name for the type has been written to '/home/knights/Documents/Project/Drips/predictify-contracts/target/debug/deps/predictify_hybrid-5b780f59d3b390e4.long-type-9809320024992930326.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the attribute macro `contracttype` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ScVal: TryFrom<&Option<...>>` is not satisfied
+    --> contracts/predictify-hybrid/src/types.rs:3072:1
+     |
+3072 | #[contracttype]
+     | ^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+     = help: the trait `From<types::OracleConfig>` is not implemented for `soroban_sdk::xdr::ScVal`
+     = help: the following other types implement trait `From<T>`:
+               `&soroban_sdk::xdr::ScVal` implements `From<ScValObjRef<'_>>`
+               `soroban_sdk::xdr::ScVal` implements `From<&()>`
+               `soroban_sdk::xdr::ScVal` implements `From<&bool>`
+               `soroban_sdk::xdr::ScVal` implements `From<&core::option::Option<T>>`
+               `soroban_sdk::xdr::ScVal` implements `From<&i128>`
+               `soroban_sdk::xdr::ScVal` implements `From<&i32>`
+               `soroban_sdk::xdr::ScVal` implements `From<&i64>`
+               `soroban_sdk::xdr::ScVal` implements `From<&soroban_sdk::Address>`
+             and 36 others
+     = note: required for `types::OracleConfig` to implement `Into<soroban_sdk::xdr::ScVal>`
+     = note: required for `soroban_sdk::xdr::ScVal` to implement `From<&Option<OracleConfig>>`
+     = note: 1 redundant requirement hidden
+     = note: required for `&core::option::Option<types::OracleConfig>` to implement `Into<soroban_sdk::xdr::ScVal>`
+     = note: required for `soroban_sdk::xdr::ScVal` to implement `TryFrom<&Option<OracleConfig>>`
+     = note: required for `&core::option::Option<types::OracleConfig>` to implement `TryInto<soroban_sdk::xdr::ScVal>`
+     = note: the full name for the type has been written to '/home/knights/Documents/Project/Drips/predictify-contracts/target/debug/deps/predictify_hybrid-5b780f59d3b390e4.long-type-8313363214669508211.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+     = note: this error originates in the attribute macro `contracttype` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0063]: missing field `oracle_address` in initializer of `types::OracleConfig`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:412:28
+    |
+412 |             oracle_config: crate::types::OracleConfig {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `oracle_address`
+
+error[E0063]: missing field `oracle_address` in initializer of `types::OracleConfig`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:429:28
+    |
+429 |             oracle_config: crate::types::OracleConfig {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `oracle_address`
+
+error[E0063]: missing field `oracle_address` in initializer of `types::OracleConfig`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:442:28
+    |
+442 |             oracle_config: crate::types::OracleConfig {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `oracle_address`
+
+error[E0063]: missing field `oracle_address` in initializer of `types::OracleConfig`
+   --> contracts/predictify-hybrid/src/batch_operations_tests.rs:459:28
+    |
+459 |             oracle_config: crate::types::OracleConfig {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `oracle_address`
+
+error[E0061]: this method takes 7 arguments but 5 arguments were supplied
+   --> contracts/predictify-hybrid/src/property_based_tests.rs:503:32
+    |
+503 |           let market_id = client.create_market(
+    |  ________________________________^^^^^^^^^^^^^-
+504 | |             &suite.admin,
+505 | |             &question_str,
+506 | |             &outcomes,
+507 | |             &30,
+508 | |             &oracle_config,
+509 | |         );
+    | |_________- two arguments of type `&core::option::Option<types::OracleConfig>` and `&u64` are missing
+    |
+note: method defined here
+   --> contracts/predictify-hybrid/src/lib.rs:417:12
+    |
+417 |     pub fn create_market(
+    |            ^^^^^^^^^^^^^
+...
+424 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+425 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+503 |         let market_id = client.create_market(
+...
+508 |             &oracle_config,
+509 ~             /* &core::option::Option<types::OracleConfig> */,
+510 +             /* &u64 */,
+511 ~         );
+    |
+
+error[E0308]: mismatched types
+   --> contracts/predictify-hybrid/src/query_tests.rs:17:9
+    |
+ 16 |       let test_cases = vec![
+    |  ______________________-
+ 17 | |         (MarketState::Active, MarketStatus::Active),
+    | |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&Env`, found `(MarketState, MarketStatus)`
+ 18 | |         (MarketState::Ended, MarketStatus::Ended),
+ 19 | |         (MarketState::Disputed, MarketStatus::Disputed),
+...   |
+ 22 | |         (MarketState::Cancelled, MarketStatus::Cancelled),
+ 23 | |     ];
+    | |_____- arguments to this function are incorrect
+    |
+    = note: expected reference `&soroban_sdk::Env`
+                   found tuple `(types::MarketState, types::MarketStatus)`
+note: associated function defined here
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/vec.rs:362:12
+    |
+362 |     pub fn from_array<const N: usize>(env: &Env, items: [T; ...
+    |            ^^^^^^^^^^
+
+error[E0624]: associated function `calculate_implied_probabilities` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:162:31
+    |
+162 |   ...Manager::calculate_implied_probabilities(&env, &market);
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:517:5
+    |
+517 | /     fn calculate_implied_probabilities(
+518 | |         env: &Env,
+519 | |         market: &Market,
+520 | |     ) -> Result<(u32, u32), Error> {
+    | |__________________________________- private associated function defined here
+
+error[E0624]: associated function `calculate_implied_probabilities` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:205:31
+    |
+205 |   ...Manager::calculate_implied_probabilities(&env, &market);
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:517:5
+    |
+517 | /     fn calculate_implied_probabilities(
+518 | |         env: &Env,
+519 | |         market: &Market,
+520 | |     ) -> Result<(u32, u32), Error> {
+    | |__________________________________- private associated function defined here
+
+error[E0308]: mismatched types
+   --> contracts/predictify-hybrid/src/query_tests.rs:361:9
+    |
+360 |       let states = vec![
+    |  __________________-
+361 | |         MarketState::Active,
+    | |         ^^^^^^^^^^^^^^^^^^^ expected `&Env`, found `MarketState`
+362 | |         MarketState::Ended,
+363 | |         MarketState::Disputed,
+...   |
+366 | |         MarketState::Cancelled,
+367 | |     ];
+    | |_____- arguments to this function are incorrect
+    |
+note: associated function defined here
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/vec.rs:362:12
+    |
+362 |     pub fn from_array<const N: usize>(env: &Env, items: [T; ...
+    |            ^^^^^^^^^^
+
+error[E0624]: associated function `calculate_implied_probabilities` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:417:31
+    |
+417 |   ...Manager::calculate_implied_probabilities(&env, &market);
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:517:5
+    |
+517 | /     fn calculate_implied_probabilities(
+518 | |         env: &Env,
+519 | |         market: &Market,
+520 | |     ) -> Result<(u32, u32), Error> {
+    | |__________________________________- private associated function defined here
+
+error[E0308]: mismatched types
+   --> contracts/predictify-hybrid/src/query_tests.rs:461:36
+    |
+461 | ...tcomes = Some(String::from_str(&env, "yes"));
+    |             ---- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Vec<String>`, found `String`
+    |             |
+    |             arguments to this enum variant are incorrect
+    |
+    = note: expected struct `soroban_sdk::Vec<soroban_sdk::String>`
+               found struct `soroban_sdk::String`
+help: the type constructed contains `soroban_sdk::String` due to the type of the argument passed
+   --> contracts/predictify-hybrid/src/query_tests.rs:461:31
+    |
+461 | ...tcomes = Some(String::from_str(&env, "yes"));
+    |             ^^^^^-----------------------------^
+    |                  |
+    |                  this argument influences the type of `Some`
+note: tuple variant defined here
+   --> /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/option.rs:608:5
+
+error[E0624]: associated function `calculate_payout` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:463:32
+    |
+463 | ...ager::calculate_payout(&env, &market, stake);
+    |          ^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:465:5
+    |
+465 |     fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    |     ---------------------------------------------------------------------------------------- private associated function defined here
+
+error[E0624]: associated function `calculate_outcome_pool` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:516:31
+    |
+516 |   ...ueryManager::calculate_outcome_pool(&env, &market1, &ou...
+    |                   ^^^^^^^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:494:5
+    |
+494 | /     fn calculate_outcome_pool(
+495 | |         env: &Env,
+496 | |         market: &Market,
+497 | |         outcome: &String,
+498 | |     ) -> Result<i128, Error> {
+    | |____________________________- private associated function defined here
+
+error[E0624]: associated function `calculate_outcome_pool` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:553:31
+    |
+553 |   ...ueryManager::calculate_outcome_pool(&env, &market2, &ou...
+    |                   ^^^^^^^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:494:5
+    |
+494 | /     fn calculate_outcome_pool(
+495 | |         env: &Env,
+496 | |         market: &Market,
+497 | |         outcome: &String,
+498 | |     ) -> Result<i128, Error> {
+    | |____________________________- private associated function defined here
+
+error[E0308]: mismatched types
+   --> contracts/predictify-hybrid/src/query_tests.rs:564:9
+    |
+563 |       let all_states = vec![
+    |  ______________________-
+564 | |         MarketState::Active,
+    | |         ^^^^^^^^^^^^^^^^^^^ expected `&Env`, found `MarketState`
+565 | |         MarketState::Ended,
+566 | |         MarketState::Disputed,
+...   |
+569 | |         MarketState::Cancelled,
+570 | |     ];
+    | |_____- arguments to this function are incorrect
+    |
+note: associated function defined here
+   --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/vec.rs:362:12
+    |
+362 |     pub fn from_array<const N: usize>(env: &Env, items: [T; ...
+    |            ^^^^^^^^^^
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/query_tests.rs:594:22
+    |
+594 |       let mut market = Market::new(
+    |  ______________________^^^^^^^^^^^-
+595 | |         &env,
+596 | |         admin,
+597 | |         String::from_str(&env, "Test"),
+...   |
+608 | |         MarketState::Active,
+609 | |     );
+    | |_____- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+594 |     let mut market = Market::new(
+...
+607 |         ),
+608 ~         /* core::option::Option<types::OracleConfig> */,
+609 +         /* u64 */,
+610 ~         MarketState::Active,
+    |
+
+error[E0624]: associated function `calculate_outcome_pool` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:620:34
+    |
+620 |   ...ueryManager::calculate_outcome_pool(&env, &market, &yes...
+    |                   ^^^^^^^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:494:5
+    |
+494 | /     fn calculate_outcome_pool(
+495 | |         env: &Env,
+496 | |         market: &Market,
+497 | |         outcome: &String,
+498 | |     ) -> Result<i128, Error> {
+    | |____________________________- private associated function defined here
+
+error[E0624]: associated function `calculate_outcome_pool` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:621:33
+    |
+621 |   ...ueryManager::calculate_outcome_pool(&env, &market, &no_...
+    |                   ^^^^^^^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:494:5
+    |
+494 | /     fn calculate_outcome_pool(
+495 | |         env: &Env,
+496 | |         market: &Market,
+497 | |         outcome: &String,
+498 | |     ) -> Result<i128, Error> {
+    | |____________________________- private associated function defined here
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/query_tests.rs:638:22
+    |
+638 |       let mut market = Market::new(
+    |  ______________________^^^^^^^^^^^-
+639 | |         &env,
+640 | |         admin,
+641 | |         String::from_str(&env, "Test"),
+...   |
+652 | |         MarketState::Active,
+653 | |     );
+    | |_____- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+638 |     let mut market = Market::new(
+...
+651 |         ),
+652 ~         /* core::option::Option<types::OracleConfig> */,
+653 +         /* u64 */,
+654 ~         MarketState::Active,
+    |
+
+error[E0308]: mismatched types
+   --> contracts/predictify-hybrid/src/query_tests.rs:657:36
+    |
+657 | ...tcomes = Some(String::from_str(&env, "yes"));
+    |             ---- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Vec<String>`, found `String`
+    |             |
+    |             arguments to this enum variant are incorrect
+    |
+    = note: expected struct `soroban_sdk::Vec<soroban_sdk::String>`
+               found struct `soroban_sdk::String`
+help: the type constructed contains `soroban_sdk::String` due to the type of the argument passed
+   --> contracts/predictify-hybrid/src/query_tests.rs:657:31
+    |
+657 | ...tcomes = Some(String::from_str(&env, "yes"));
+    |             ^^^^^-----------------------------^
+    |                  |
+    |                  this argument influences the type of `Some`
+note: tuple variant defined here
+   --> /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/option.rs:608:5
+
+error[E0624]: associated function `calculate_payout` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:659:32
+    |
+659 | ...ager::calculate_payout(&env, &market, stake).unwrap();
+    |          ^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:465:5
+    |
+465 |     fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    |     ---------------------------------------------------------------------------------------- private associated function defined here
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/query_tests.rs:675:18
+    |
+675 |       let market = Market::new(
+    |  __________________^^^^^^^^^^^-
+676 | |         &env,
+677 | |         admin,
+678 | |         String::from_str(&env, "Test"),
+...   |
+689 | |         MarketState::Active,
+690 | |     );
+    | |_____- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+675 |     let market = Market::new(
+...
+688 |         ),
+689 ~         /* core::option::Option<types::OracleConfig> */,
+690 +         /* u64 */,
+691 ~         MarketState::Active,
+    |
+
+error[E0624]: associated function `calculate_payout` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:693:32
+    |
+693 | ...ager::calculate_payout(&env, &market, -1_000_000);
+    |          ^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:465:5
+    |
+465 |     fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    |     ---------------------------------------------------------------------------------------- private associated function defined here
+
+error[E0061]: this function takes 9 arguments but 7 arguments were supplied
+   --> contracts/predictify-hybrid/src/query_tests.rs:704:18
+    |
+704 |       let market = Market::new(
+    |  __________________^^^^^^^^^^^-
+705 | |         &env,
+706 | |         admin,
+707 | |         String::from_str(&env, "Test"),
+...   |
+718 | |         MarketState::Active,
+719 | |     );
+    | |_____- two arguments of type `core::option::Option<types::OracleConfig>` and `u64` are missing
+    |
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/types.rs:844:12
+    |
+844 |     pub fn new(
+    |            ^^^
+...
+851 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+852 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+704 |     let market = Market::new(
+...
+717 |         ),
+718 ~         /* core::option::Option<types::OracleConfig> */,
+719 +         /* u64 */,
+720 ~         MarketState::Active,
+    |
+
+error[E0624]: associated function `calculate_payout` is private
+   --> contracts/predictify-hybrid/src/query_tests.rs:722:32
+    |
+722 | ...ager::calculate_payout(&env, &market, i128::MAX / 2);
+    |          ^^^^^^^^^^^^^^^^ private associated function
+    |
+   ::: contracts/predictify-hybrid/src/queries.rs:465:5
+    |
+465 |     fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    |     ---------------------------------------------------------------------------------------- private associated function defined here
+
+error[E0616]: field `token_id` of struct `TokenTest` is private
+  --> contracts/predictify-hybrid/src/balance_tests.rs:16:78
+   |
+16 | ... &test.token_test.token_id);
+   |                      ^^^^^^^^ private field
+
+error[E0560]: struct `types::Market` has no field named `id`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:72:13
+   |
+72 |             id: market_id.clone(),
+   |             ^^ `types::Market` does not have this field
+   |
+   = note: available fields are: `oracle_result`, `votes`, `stakes`, `total_staked`, `dispute_stakes` ... and 4 others
+
+error[E0560]: struct `types::Market` has no field named `total_votes`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:81:13
+   |
+81 |             total_votes: 0,
+   |             ^^^^^^^^^^^ `types::Market` does not have this field
+   |
+   = note: available fields are: `oracle_result`, `votes`, `stakes`, `total_staked`, `dispute_stakes` ... and 4 others
+
+error[E0560]: struct `types::Market` has no field named `total_stake`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:82:13
+   |
+82 |             total_stake: 0,
+   |             ^^^^^^^^^^^ unknown field
+   |
+help: a field with a similar name exists
+   |
+82 |             total_staked: 0,
+   |                        +
+
+error[E0560]: struct `types::Market` has no field named `outcome_votes`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:83:13
+   |
+83 |             outcome_votes: Map::new(&self.env),
+   |             ^^^^^^^^^^^^^ `types::Market` does not have this field
+   |
+   = note: available fields are: `oracle_result`, `votes`, `stakes`, `total_staked`, `dispute_stakes` ... and 4 others
+
+error[E0560]: struct `types::Market` has no field named `outcome_stake`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:84:13
+   |
+84 |             outcome_stake: Map::new(&self.env),
+   |             ^^^^^^^^^^^^^ `types::Market` does not have this field
+   |
+   = note: available fields are: `oracle_result`, `votes`, `stakes`, `total_staked`, `dispute_stakes` ... and 4 others
+
+error[E0560]: struct `types::Market` has no field named `voters`
+  --> contracts/predictify-hybrid/src/event_management_tests.rs:85:13
+   |
+85 |             voters: Vec::new(&self.env),
+   |             ^^^^^^ unknown field
+   |
+help: a field with a similar name exists
+   |
+85 -             voters: Vec::new(&self.env),
+85 +             votes: Vec::new(&self.env),
+   |
+
+error[E0063]: missing field `oracle_address` in initializer of `types::OracleConfig`
+   --> contracts/predictify-hybrid/src/category_tags_tests.rs:264:14
+    |
+264 |             &OracleConfig {
+    |              ^^^^^^^^^^^^ missing `oracle_address`
+
+error[E0061]: this method takes 7 arguments but 5 arguments were supplied
+   --> contracts/predictify-hybrid/src/category_tags_tests.rs:259:32
+    |
+259 |           let market_id = client.create_market(
+    |  ________________________________^^^^^^^^^^^^^-
+260 | |             &admin,
+261 | |             &String::from_str(&env, "Will category/tags af...
+262 | |             &outcomes,
+...   |
+269 | |             },
+270 | |         );
+    | |_________- two arguments of type `&core::option::Option<types::OracleConfig>` and `&u64` are missing
+    |
+note: method defined here
+   --> contracts/predictify-hybrid/src/lib.rs:417:12
+    |
+417 |     pub fn create_market(
+    |            ^^^^^^^^^^^^^
+...
+424 |         fallback_oracle_config: Option<OracleConfig>,
+    |         --------------------------------------------
+425 |         resolution_timeout: u64,
+    |         -----------------------
+help: provide the arguments
+    |
+259 |         let market_id = client.create_market(
+...
+269 |             },
+270 ~             /* &core::option::Option<types::OracleConfig> */,
+271 +             /* &u64 */,
+272 ~         );
+    |
+
+error[E0599]: no method named `to_string` found for struct `soroban_sdk::Symbol` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2064:39
+     |
+2064 |         let market_id_str = market_id.to_string();
+     |                                       ^^^^^^^^^ method not found in `soroban_sdk::Symbol`
+     |
+    --> /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/alloc/src/string.rs:2853:8
+     |
+     = note: the method is available for `soroban_sdk::Symbol` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `ToString` which provides `to_string` is implemented but not in scope; perhaps you want to import it
+     |
+   9 + use crate::alloc::string::ToString;
+     |
+
+error[E0599]: no method named `to_string` found for type `i128` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2885:33
+     |
+2885 |         let amount_str = amount.to_string();
+     |                                 ^^^^^^^^^
+     |
+    --> /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/alloc/src/string.rs:2853:8
+     |
+     = note: the method is available for `i128` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `ToString` which provides `to_string` is implemented but not in scope; perhaps you want to import it
+     |
+   9 + use crate::alloc::string::ToString;
+     |
+help: there is a method `to_i8` with a similar name
+     |
+2885 -         let amount_str = amount.to_string();
+2885 +         let amount_str = amount.to_i8();
+     |
+
+error[E0308]: mismatched types
+    --> contracts/predictify-hybrid/src/lib.rs:4269:80
+     |
+4269 | ...n"), String::from_str(&env, &new_admin.to_string()));
+     |         ----------------       ^^^^^^^^^^^^^^^^^^^^^^ expected `&str`, found `&String`
+     |         |
+     |         arguments to this function are incorrect
+     |
+     = note: expected reference `&str`
+                found reference `&soroban_sdk::String`
+note: associated function defined here
+    --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/string.rs:236:12
+     |
+ 236 |     pub fn from_str(env: &Env, s: &str) -> String {
+     |            ^^^^^^^^
+
+error[E0308]: mismatched types
+    --> contracts/predictify-hybrid/src/lib.rs:4296:86
+     |
+4296 | ...), String::from_str(&env, &admin_to_remove.to_string()));
+     |       ----------------       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&str`, found `&String`
+     |       |
+     |       arguments to this function are incorrect
+     |
+     = note: expected reference `&str`
+                found reference `&soroban_sdk::String`
+note: associated function defined here
+    --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/string.rs:236:12
+     |
+ 236 |     pub fn from_str(env: &Env, s: &str) -> String {
+     |            ^^^^^^^^
+
+error[E0308]: mismatched types
+    --> contracts/predictify-hybrid/src/lib.rs:4323:83
+     |
+4323 | ...), String::from_str(&env, &target_admin.to_string()));
+     |       ----------------       ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&str`, found `&String`
+     |       |
+     |       arguments to this function are incorrect
+     |
+     = note: expected reference `&str`
+                found reference `&soroban_sdk::String`
+note: associated function defined here
+    --> /home/knights/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.7/src/string.rs:236:12
+     |
+ 236 |     pub fn from_str(env: &Env, s: &str) -> String {
+     |            ^^^^^^^^
+
+error[E0599]: no method named `to_string` found for type `u32` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:4346:91
+     |
+4346 | ...m_str(&env, &threshold.to_string()));
+     |                           ^^^^^^^^^
+     |
+    --> /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/alloc/src/string.rs:2853:8
+     |
+     = note: the method is available for `u32` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `ToString` which provides `to_string` is implemented but not in scope; perhaps you want to import it
+     |
+   9 + use crate::alloc::string::ToString;
+     |
+help: there is a method `to_i8` with a similar name
+     |
+4346 -         params.set(String::from_str(&env, "threshold"), String::from_str(&env, &threshold.to_string()));
+4346 +         params.set(String::from_str(&env, "threshold"), String::from_str(&env, &threshold.to_i8()));
+     |
+
+error[E0308]: mismatched types
+   --> contracts/predictify-hybrid/src/test.rs:99:75
+    |
+ 99 | ...   PredictifyHybrid::initialize(self.env.clone(), admin.clone(), multisig_threshold.clone())
+    |       ----------------------------                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<i128>`, found `Option<u32>`
+    |       |
+    |       arguments to this function are incorrect
+    |
+    = note: expected enum `core::option::Option<i128>`
+               found enum `core::option::Option<u32>`
+note: associated function defined here
+   --> contracts/predictify-hybrid/src/lib.rs:211:12
+    |
+211 | ...fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>) {
+    |       ^^^^^^^^^^                           -------------------------------------
+
+Some errors have detailed explanations: E0061, E0063, E0277, E0282, E0308, E0425, E0432, E0433, E0560...
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `predictify-hybrid` (lib test) due to 153 previous errors

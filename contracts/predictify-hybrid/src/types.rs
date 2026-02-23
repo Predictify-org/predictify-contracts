@@ -3107,3 +3107,57 @@ pub struct Balance {
     pub asset: ReflectorAsset,
     pub amount: i128,
 }
+
+// ===== REPORTING TYPES =====
+
+/// Summary of an active event for reporting and analytics.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActiveEvent {
+    /// Unique identifier for the event
+    pub id: Symbol,
+    /// Event description or question
+    pub question: String,
+    /// When the event ends (Unix timestamp)
+    pub end_time: u64,
+    /// Total amount currently staked in the event pool
+    pub total_pool: i128,
+}
+
+/// Global platform-level statistics and metrics.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformStats {
+    /// Current number of active prediction events
+    pub total_active_events: u32,
+    /// Total number of resolved prediction events
+    pub total_resolved_events: u32,
+    /// Aggregate value locked across all active and resolved events
+    pub total_pool_all_events: i128,
+    /// Cumulative platform fees collected since inception
+    pub total_fees_collected: i128,
+    /// Current contract version
+    pub version: String,
+}
+
+/// Detailed snapshot of an event's current state and participation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventSnapshot {
+    /// Unique identifier for the event
+    pub id: Symbol,
+    /// Event description or question
+    pub question: String,
+    /// Available outcomes for the event
+    pub outcomes: Vec<String>,
+    /// Current lifecycle state of the event
+    pub state: MarketState,
+    /// Total amount currently staked in the event pool
+    pub total_pool: i128,
+    /// Distribution of stakes across different outcomes
+    pub outcome_pools: Map<String, i128>,
+    /// Number of unique participants who have voted/bet
+    pub participant_count: u32,
+    /// When the event ends (Unix timestamp)
+    pub end_time: u64,
+}

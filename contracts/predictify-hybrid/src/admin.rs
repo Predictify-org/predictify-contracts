@@ -1,3 +1,34 @@
+/// # Multisig Admin Flow (NatSpec)
+///
+/// ## Overview
+/// This module manages multi-admin and multisig governance for Predictify Hybrid contracts.
+/// - Admins are stored as a set of authorized addresses.
+/// - Sensitive actions (pause, upgrade, fee withdrawal, etc.) require M-of-N multisig approval.
+/// - Threshold can be set by an authorized admin.
+/// - All admin actions emit events for transparency.
+///
+/// ## Storage
+/// - Admin set: persistent set of admin addresses
+/// - Threshold: required number of approvals for sensitive actions
+/// - Pending approvals: tracked per action and parameters
+///
+/// ## Soroban Auth Patterns
+/// - All admin actions require `require_auth()` on the caller.
+/// - MultisigManager enforces threshold and tracks approvals.
+/// - Only admins can add/remove admins or set threshold.
+///
+/// ## Events
+/// - AdminAdded, AdminRemoved, ThresholdChanged, ActionApproved, ActionExecuted
+///
+/// ## Example Usage
+/// ```rust
+/// // Add a new admin
+/// PredictifyHybrid::add_admin(env, admin, new_admin, role);
+/// // Set multisig threshold
+/// PredictifyHybrid::set_multisig_threshold(env, admin, 2);
+/// // Approve a sensitive action
+/// PredictifyHybrid::withdraw_collected_fees(env, admin, amount);
+/// ```
 extern crate alloc;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 // use alloc::string::ToString; // Unused import
@@ -46,13 +77,13 @@ pub struct MultisigEventEmitter;
 
 impl MultisigEventEmitter {
     pub fn emit_threshold_changed(env: &Env, new_threshold: u32) {
-        EventEmitter::emit_admin_action_logged(env, &Address::from_contract_id(&env.current_contract_address()), "ThresholdChanged", &true);
+        EventEmitter::emit_admin_action_logged(env, &env.current_contract_address(), "ThresholdChanged", &true);
     }
     pub fn emit_approval(env: &Env, action: &str, admin: &Address) {
         EventEmitter::emit_admin_action_logged(env, admin, &format!("Approved:{}", action), &true);
     }
     pub fn emit_action_executed(env: &Env, action: &str) {
-        EventEmitter::emit_admin_action_logged(env, &Address::from_contract_id(&env.current_contract_address()), &format!("Executed:{}", action), &true);
+        EventEmitter::emit_admin_action_logged(env, &env.current_contract_address(), &format!("Executed:{}", action), &true);
     }
 }
 // ===== MULTISIG STORAGE KEYS =====
@@ -78,6 +109,31 @@ impl MultisigManager {
     /// Get the current multisig config
     pub fn get_config(env: &Env) -> MultisigConfig {
         env.storage().persistent().get(&Symbol::new(env, MULTISIG_CONFIG_KEY)).unwrap_or(MultisigConfig { threshold: 1, total_admins: EnhancedAdminAnalytics::count_total_admins(env) })
+    }
+
+    /// Propose a sensitive action (pause, upgrade, withdraw, etc.)
+    pub fn propose_admin_action(env: &Env, admin: &Address, action: &str, params: Map<String, String>) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        let mut approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
+        let now = env.ledger().timestamp();
+        for approval in approvals.iter_mut() {
+            if approval.action == action && approval.params == params {
+                return Err(Error::AlreadyExists);
+            }
+        }
+
+        let mut approvers = Vec::new(env);
+        approvers.push_back(admin.clone());
+        approvals.push_back(PendingApproval {
+            action: String::from_str(env, action),
+            params: params.clone(),
+            approvers,
+            created_at: now,
+        });
+        MultisigEventEmitter::emit_approval(env, action, admin);
+
+        env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &approvals);
+        Ok(())
     }
 
     /// Approve a sensitive action (pause, upgrade, withdraw, etc.)
@@ -116,6 +172,23 @@ impl MultisigManager {
         }
         env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &approvals);
         Ok(executed)
+    }
+
+    /// Execute a sensitive action (pause, upgrade, withdraw, etc.)
+    pub fn execute_admin_action(env: &Env, admin: &Address, action: &str, params: Map<String, String>) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        
+        if !Self::is_threshold_met(env, action, params.clone()) {
+            return Err(Error::ThresholdNotMet);
+        }
+
+        // NOTE: The actual execution of the action is handled by the calling contract.
+        // This function's responsibility is to verify that the threshold has been met.
+
+        Self::clear_approvals(env, action, params.clone());
+        MultisigEventEmitter::emit_action_executed(env, action);
+
+        Ok(())
     }
 
     /// Clear approvals for an action after execution

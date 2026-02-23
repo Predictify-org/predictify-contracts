@@ -571,7 +571,7 @@ impl ExtensionValidator {
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
-            return Err(Error::ExtensionDenied);
+            return Err(Error::ExtensionError);
         }
 
         // Get market and validate state
@@ -601,12 +601,12 @@ impl ExtensionValidator {
 
         // Check total extension days limit
         if market.total_extension_days + additional_days > market.max_extension_days {
-            return Err(Error::ExtensionDenied);
+            return Err(Error::ExtensionError);
         }
 
         // Check number of extensions limit
         if (market.extension_history.len() as usize) >= (MAX_TOTAL_EXTENSIONS as usize) {
-            return Err(Error::ExtensionDenied);
+            return Err(Error::ExtensionError);
         }
 
         Ok(())
@@ -647,7 +647,7 @@ impl ExtensionUtils {
         // For now, we'll just validate the fee amount
 
         if fee_amount <= 0 {
-            return Err(Error::ExtensionFeeLow);
+            return Err(Error::ExtensionError);
         }
 
         Ok(fee_amount)
@@ -768,7 +768,7 @@ mod tests {
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
                 .unwrap_err(),
-            Error::ExtensionDenied
+            Error::ExtensionError
         );
     }
 

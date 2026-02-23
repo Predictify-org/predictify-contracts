@@ -48,11 +48,18 @@ impl TestSetup {
         
         let oracle_config = OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&self.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             String::from_str(&self.env, "BTC/USD"),
             50_000_00,
             String::from_str(&self.env, "gt"),
         );
-        
+        let fallback_oracle_config = Some(OracleConfig::new(
+            OracleProvider::Reflector,
+            Address::from_str(&self.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+            String::from_str(&self.env, "BTC/USD"),
+            50_000_00,
+            String::from_str(&self.env, "gt"),
+        ));
         let market = Market::new(
             &self.env,
             self.admin.clone(),
@@ -60,6 +67,8 @@ impl TestSetup {
             outcomes,
             end_time,
             oracle_config,
+            fallback_oracle_config,
+            3600u64,
             MarketState::Active,
         );
         

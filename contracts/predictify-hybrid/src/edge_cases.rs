@@ -396,7 +396,7 @@ impl EdgeCaseHandler {
                 if config.max_single_user_percentage < 0
                     || config.max_single_user_percentage > 10000
                 {
-                    return Err(Error::ThresholdTooHigh);
+                    return Err(Error::InvalidThreshold);
                 }
             }
             EdgeCaseScenario::LowParticipation => {
@@ -517,7 +517,7 @@ impl EdgeCaseHandler {
     /// Validate edge case configuration.
     fn validate_edge_case_config(_env: &Env, config: &EdgeCaseConfig) -> Result<(), Error> {
         if config.min_total_stake < 0 {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if config.min_participation_rate < 0 || config.min_participation_rate > 10000 {
@@ -533,7 +533,7 @@ impl EdgeCaseHandler {
         }
 
         if config.max_single_user_percentage < 0 || config.max_single_user_percentage > 10000 {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(())

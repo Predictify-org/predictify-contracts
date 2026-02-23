@@ -106,12 +106,21 @@ impl BetTestSetup {
             &String::from_str(env, "Will BTC reach $100,000 by end of 2024?"),
             &outcomes,
             &30,
-            &OracleConfig {
-                provider: OracleProvider::Reflector,
-                feed_id: String::from_str(env, "BTC/USD"),
-                threshold: 100_000_00000000, // $100,000
-                comparison: String::from_str(env, "gte"),
-            },
+            &OracleConfig::new(
+                OracleProvider::Reflector,
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+                String::from_str(env, "BTC/USD"),
+                100_000_00000000, // $100,000
+                String::from_str(env, "gte"),
+            ),
+            &Some(OracleConfig::new(
+                OracleProvider::Reflector,
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+                String::from_str(env, "BTC/USD"),
+                100_000_00000000, // $100,000
+                String::from_str(env, "gte"),
+            )),
+            &3600u64 // resolution_timeout
         )
     }
 

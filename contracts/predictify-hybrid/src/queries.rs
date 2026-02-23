@@ -101,7 +101,7 @@ impl QueryManager {
             oracle_provider: String::from_str(env, oracle_provider),
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
-            winning_outcome: market.winning_outcome.clone(),
+            winning_outcome: market.winning_outcomes.as_ref().and_then(|v| v.get(0)),
             oracle_result: market.oracle_result.clone(),
             participant_count,
             vote_count,
@@ -218,9 +218,16 @@ impl QueryManager {
 
         // Determine if user is winning
         let is_winning = market
-            .winning_outcome
+            .winning_outcomes
             .as_ref()
-            .map(|wo| wo == &outcome)
+            .map(|wos| {
+                for wo in wos.iter() {
+                    if wo == outcome {
+                        return true;
+                    }
+                }
+                false
+            })
             .unwrap_or(false);
 
         // Calculate potential payout
@@ -461,8 +468,8 @@ impl QueryManager {
         }
 
         // Get total winning stakes
-        if let Some(winning_outcome) = &market.winning_outcome {
-            let winning_total = Self::calculate_outcome_pool(env, market, winning_outcome)?;
+        if let Some(winning_outcome) = market.winning_outcomes.as_ref().and_then(|v| v.get(0)) {
+            let winning_total = Self::calculate_outcome_pool(env, market, &winning_outcome)?;
 
             if winning_total <= 0 {
                 return Ok(0);

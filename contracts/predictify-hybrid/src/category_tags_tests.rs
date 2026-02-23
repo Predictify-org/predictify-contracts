@@ -31,19 +31,29 @@ fn create_test_market(
     outcomes.push_back(String::from_str(env, "yes"));
     outcomes.push_back(String::from_str(env, "no"));
     
-    let oracle_config = OracleConfig {
-        provider: OracleProvider::Reflector,
-        feed_id: String::from_str(env, "BTC/USD"),
-        threshold: 100,
-        comparison: String::from_str(env, "gte"),
-    };
-    
+    let oracle_address = Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    let oracle_config = OracleConfig::new(
+        OracleProvider::Reflector,
+        oracle_address.clone(),
+        String::from_str(env, "BTC/USD"),
+        100,
+        String::from_str(env, "gte"),
+    );
+    let fallback_oracle_config = Some(OracleConfig::new(
+        OracleProvider::Reflector,
+        oracle_address.clone(),
+        String::from_str(env, "BTC/USD"),
+        100,
+        String::from_str(env, "gte"),
+    ));
     client.create_market(
         admin,
         &question,
         &outcomes,
         &30, // 30 days
-        &oracle_config
+        &oracle_config,
+        &fallback_oracle_config,
+        &3600u64 // resolution_timeout
     )
 }
 

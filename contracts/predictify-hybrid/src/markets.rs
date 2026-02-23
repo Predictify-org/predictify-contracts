@@ -65,7 +65,7 @@ impl MarketCreator {
     /// use crate::types::{OracleConfig, OracleProvider};
     ///
     /// let env = Env::default();
-    /// let admin = Address::generate(&env);
+    /// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?");
     /// let outcomes = vec![
     ///     &env,
@@ -117,6 +117,8 @@ impl MarketCreator {
             outcomes,
             end_time,
             oracle_config,
+            None,
+            86400, // Default 24h resolution timeout
             MarketState::Active,
         );
 
@@ -139,7 +141,7 @@ impl MarketCreator {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - Address of the market administrator
     /// * `question` - The prediction question (1-500 characters)
     /// * `outcomes` - Vector of possible outcomes (minimum 2, maximum 10)
@@ -165,7 +167,7 @@ impl MarketCreator {
     /// use crate::markets::MarketCreator;
     ///
     /// let env = Env::default();
-    /// let admin = Address::generate(&env);
+    /// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let question = String::from_str(&env, "Will XLM price exceed $1.00 this month?");
     /// let outcomes = vec![
     ///     &env,
@@ -186,7 +188,7 @@ impl MarketCreator {
     /// ```
 
     pub fn create_reflector_market(
-        _env: &Env,
+        env: &Env,
         admin: Address,
         oracle_address: Address,
         question: String,
@@ -205,7 +207,7 @@ impl MarketCreator {
         };
 
         Self::create_market(
-            _env,
+            env,
             admin,
             question,
             outcomes,
@@ -222,7 +224,7 @@ impl MarketCreator {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - Address of the market administrator
     /// * `question` - The prediction question (1-500 characters)
     /// * `outcomes` - Vector of possible outcomes (minimum 2, maximum 10)
@@ -248,7 +250,7 @@ impl MarketCreator {
     /// use crate::markets::MarketCreator;
     ///
     /// let env = Env::default();
-    /// let admin = Address::generate(&env);
+    /// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let question = String::from_str(&env, "Will ETH break $5,000 before year end?");
     /// let outcomes = vec![
     ///     &env,
@@ -268,7 +270,7 @@ impl MarketCreator {
     /// ).expect("Pyth market creation should succeed");
     /// ```
     pub fn create_pyth_market(
-        _env: &Env,
+        env: &Env,
         admin: Address,
         oracle_address: Address,
         question: String,
@@ -287,7 +289,7 @@ impl MarketCreator {
         };
 
         Self::create_market(
-            _env,
+            env,
             admin,
             question,
             outcomes,
@@ -305,7 +307,7 @@ impl MarketCreator {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - Address of the market administrator
     /// * `question` - The prediction question (1-500 characters)
     /// * `outcomes` - Vector of possible outcomes (minimum 2, maximum 10)
@@ -330,7 +332,7 @@ impl MarketCreator {
     /// use crate::markets::MarketCreator;
     ///
     /// let env = Env::default();
-    /// let admin = Address::generate(&env);
+    /// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let question = String::from_str(&env, "Will Bitcoin dominance exceed 50% this quarter?");
     /// let outcomes = vec![
     ///     &env,
@@ -350,7 +352,7 @@ impl MarketCreator {
     /// ).expect("Asset market creation should succeed");
     /// ```
     pub fn create_reflector_asset_market(
-        _env: &Env,
+        env: &Env,
         admin: Address,
         oracle_address: Address,
         question: String,
@@ -361,7 +363,7 @@ impl MarketCreator {
         comparison: String,
     ) -> Result<Symbol, Error> {
         Self::create_reflector_market(
-            _env,
+            env,
             admin,
             oracle_address,
             question,
@@ -392,7 +394,7 @@ impl MarketValidator {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `question` - The prediction question to validate
     /// * `outcomes` - Vector of possible outcomes to validate
     /// * `duration_days` - Market duration in days to validate
@@ -445,7 +447,7 @@ impl MarketValidator {
     /// ).is_err());
     /// ```
     pub fn validate_market_params(
-        _env: &Env,
+        env: &Env,
         question: &String,
         outcomes: &Vec<String>,
         duration_days: u32,
@@ -456,7 +458,7 @@ impl MarketValidator {
         }
 
         // Load dynamic configuration
-        let cfg = crate::config::ConfigManager::get_config(_env)
+        let cfg = crate::config::ConfigManager::get_config(env)
             .map_err(|_| Error::ConfigNotFound)?;
 
         // Use the new MarketParameterValidator for comprehensive validation
@@ -503,7 +505,7 @@ impl MarketValidator {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `oracle_config` - Oracle configuration to validate
     ///
     /// # Returns
@@ -533,8 +535,8 @@ impl MarketValidator {
     ///
     /// assert!(MarketValidator::validate_oracle_config(&env, &oracle_config).is_ok());
     /// ```
-    pub fn validate_oracle_config(_env: &Env, oracle_config: &OracleConfig) -> Result<(), Error> {
-        oracle_config.validate(_env)
+    pub fn validate_oracle_config(env: &Env, oracle_config: &OracleConfig) -> Result<(), Error> {
+        oracle_config.validate(env)
     }
 
     /// Validates that a market is in the correct state to accept votes.
@@ -544,7 +546,7 @@ impl MarketValidator {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `market` - Market to validate for voting eligibility
     ///
     /// # Returns
@@ -574,8 +576,8 @@ impl MarketValidator {
     ///     Err(e) => println!("Cannot vote: {:?}", e),
     /// }
     /// ```
-    pub fn validate_market_for_voting(_env: &Env, market: &Market) -> Result<(), Error> {
-        let current_time = _env.ledger().timestamp();
+    pub fn validate_market_for_voting(env: &Env, market: &Market) -> Result<(), Error> {
+        let current_time = env.ledger().timestamp();
 
         if current_time >= market.end_time {
             return Err(Error::MarketClosed);
@@ -596,7 +598,7 @@ impl MarketValidator {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `market` - Market to validate for resolution eligibility
     ///
     /// # Returns
@@ -626,8 +628,8 @@ impl MarketValidator {
     ///     Err(e) => println!("Cannot resolve yet: {:?}", e),
     /// }
     /// ```
-    pub fn validate_market_for_resolution(_env: &Env, market: &Market) -> Result<(), Error> {
-        let current_time = _env.ledger().timestamp();
+    pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
+        let current_time = env.ledger().timestamp();
 
         if current_time < market.end_time {
             return Err(Error::MarketClosed);
@@ -642,7 +644,7 @@ impl MarketValidator {
 
     /// Validate outcome for a market
     pub fn validate_outcome(
-        _env: &Env,
+        env: &Env,
         outcome: &String,
         market_outcomes: &Vec<String>,
     ) -> Result<(), Error> {
@@ -727,7 +729,7 @@ impl MarketStateManager {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `market_id` - Unique symbol identifier for the market
     ///
     /// # Returns
@@ -756,8 +758,8 @@ impl MarketStateManager {
     ///     Err(e) => println!("Market not found: {:?}", e),
     /// }
     /// ```
-    pub fn get_market(_env: &Env, market_id: &Symbol) -> Result<Market, Error> {
-        _env.storage()
+    pub fn get_market(env: &Env, market_id: &Symbol) -> Result<Market, Error> {
+        env.storage()
             .persistent()
             .get(market_id)
             .ok_or(Error::MarketNotFound)
@@ -771,7 +773,7 @@ impl MarketStateManager {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `market_id` - Unique symbol identifier for the market
     /// * `market` - Updated market data to store
     ///
@@ -791,8 +793,8 @@ impl MarketStateManager {
     /// // Save changes
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-    pub fn update_market(_env: &Env, market_id: &Symbol, market: &Market) {
-        _env.storage().persistent().set(market_id, market);
+    pub fn update_market(env: &Env, market_id: &Symbol, market: &Market) {
+        env.storage().persistent().set(market_id, market);
     }
 
     /// Updates the market question/description.
@@ -802,15 +804,15 @@ impl MarketStateManager {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment
+    /// * `env` - The Soroban environment
     /// * `market_id` - The market identifier
     /// * `new_description` - The new question/description
     pub fn update_description(
-        _env: &Env,
+        env: &Env,
         market_id: &Symbol,
         new_description: String,
     ) -> Result<(), Error> {
-        let mut market = Self::get_market(_env, market_id)?;
+        let mut market = Self::get_market(env, market_id)?;
 
         // Ensure no votes have been placed
         if !market.votes.is_empty() {
@@ -818,7 +820,7 @@ impl MarketStateManager {
         }
 
         market.question = new_description;
-        Self::update_market(_env, market_id, &market);
+        Self::update_market(env, market_id, &market);
         Ok(())
     }
 
@@ -902,7 +904,7 @@ impl MarketStateManager {
     /// use crate::markets::MarketStateManager;
     ///
     /// let env = Env::default();
-    /// let user = Address::generate(&env);
+    /// let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let market_id = Symbol::new(&env, "active_market");
     /// let mut market = MarketStateManager::get_market(&env, &market_id)?;
     ///
@@ -973,7 +975,7 @@ impl MarketStateManager {
     /// use crate::types::MarketState;
     ///
     /// let env = Env::default();
-    /// let disputer = Address::generate(&env);
+    /// let disputer = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let market_id = Symbol::new(&env, "ended_market");
     /// let mut market = MarketStateManager::get_market(&env, &market_id)?;
     ///
@@ -1053,7 +1055,7 @@ impl MarketStateManager {
     /// use crate::types::MarketState;
     ///
     /// let env = Env::default();
-    /// let winner = Address::generate(&env);
+    /// let winner = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let market_id = Symbol::new(&env, "resolved_market");
     /// let mut market = MarketStateManager::get_market(&env, &market_id)?;
     ///
@@ -1293,7 +1295,7 @@ impl MarketStateManager {
     /// # Parameters
     ///
     /// * `market` - Mutable reference to the market
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `extension_hours` - Number of hours to extend the market (minimum extension)
     ///
     /// # Logic
@@ -1333,8 +1335,8 @@ impl MarketStateManager {
     ///
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-    pub fn extend_for_dispute(market: &mut Market, _env: &Env, extension_hours: u64) {
-        let current_time = _env.ledger().timestamp();
+    pub fn extend_for_dispute(market: &mut Market, env: &Env, extension_hours: u64) {
+        let current_time = env.ledger().timestamp();
         let extension_seconds = extension_hours * 60 * 60;
 
         if market.end_time < current_time + extension_seconds {
@@ -1493,7 +1495,7 @@ impl MarketAnalytics {
     /// use crate::markets::{MarketAnalytics, MarketStateManager};
     ///
     /// let env = Env::default();
-    /// let user = Address::generate(&env);
+    /// let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let market_id = Symbol::new(&env, "active_market");
     /// let market = MarketStateManager::get_market(&env, &market_id)?;
     ///
@@ -1675,7 +1677,7 @@ impl MarketUtils {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     ///
     /// # Returns
     ///
@@ -1702,13 +1704,13 @@ impl MarketUtils {
     ///
     /// println!("Created market: {}", market_id_1);
     /// ```
-    pub fn generate_market_id(_env: &Env) -> Symbol {
-        let counter_key = Symbol::new(_env, "MarketCounter");
-        let counter: u32 = _env.storage().persistent().get(&counter_key).unwrap_or(0);
+    pub fn generate_market_id(env: &Env) -> Symbol {
+        let counter_key = Symbol::new(env, "MarketCounter");
+        let counter: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
         let new_counter = counter + 1;
-        _env.storage().persistent().set(&counter_key, &new_counter);
+        env.storage().persistent().set(&counter_key, &new_counter);
 
-        Symbol::new(_env, "market")
+        Symbol::new(env, "market")
     }
 
     /// Calculates the end timestamp for a market based on duration in days.
@@ -1719,7 +1721,7 @@ impl MarketUtils {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `duration_days` - Market duration in days (1-365)
     ///
     /// # Returns
@@ -1748,10 +1750,10 @@ impl MarketUtils {
     ///
     /// println!("Market ends at timestamp: {}", end_time);
     /// ```
-    pub fn calculate_end_time(_env: &Env, duration_days: u32) -> u64 {
+    pub fn calculate_end_time(env: &Env, duration_days: u32) -> u64 {
         let seconds_per_day: u64 = 24 * 60 * 60;
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
-        _env.ledger().timestamp() + duration_seconds
+        env.ledger().timestamp() + duration_seconds
     }
 
     /// Processes the market creation fee by delegating to the fees module.
@@ -1762,7 +1764,7 @@ impl MarketUtils {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - Address of the market administrator who pays the fee
     ///
     /// # Returns
@@ -1787,7 +1789,7 @@ impl MarketUtils {
     /// use crate::markets::MarketUtils;
     ///
     /// let env = Env::default();
-    /// let admin = Address::generate(&env);
+    /// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     ///
     /// // Process creation fee
     /// match MarketUtils::process_creation_fee(&env, &admin) {
@@ -1795,9 +1797,9 @@ impl MarketUtils {
     ///     Err(e) => println!("Fee processing failed: {:?}", e),
     /// }
     /// ```
-    pub fn process_creation_fee(_env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn process_creation_fee(env: &Env, admin: &Address) -> Result<(), Error> {
         // Delegate to the fees module
-        crate::fees::FeeManager::process_creation_fee(_env, admin)
+        crate::fees::FeeManager::process_creation_fee(env, admin)
     }
 
     /// Retrieves the token client for market-related token operations.
@@ -1808,7 +1810,7 @@ impl MarketUtils {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     ///
     /// # Returns
     ///
@@ -1841,14 +1843,14 @@ impl MarketUtils {
     ///     Err(e) => println!("Token client unavailable: {:?}", e),
     /// }
     /// ```
-    pub fn get_token_client(_env: &Env) -> Result<token::Client<'_>, Error> {
-        let token_id: Address = _env
+    pub fn get_token_client(env: &Env) -> Result<token::Client<'_>, Error> {
+        let token_id: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(_env, "TokenID"))
+            .get(&Symbol::new(env, "TokenID"))
             .ok_or(Error::InvalidState)?;
 
-        Ok(token::Client::new(_env, &token_id))
+        Ok(token::Client::new(env, &token_id))
     }
 
     /// Calculates the payout amount for a winning user based on their stake and pool distribution.
@@ -1927,7 +1929,7 @@ impl MarketUtils {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     /// * `oracle_result` - The outcome determined by the oracle
     /// * `community_consensus` - Community voting consensus data
     ///
@@ -1975,7 +1977,7 @@ impl MarketUtils {
     /// println!("Final market result: {}", final_result);
     /// ```
     pub fn determine_final_result(
-        _env: &Env,
+        env: &Env,
         oracle_result: &String,
         community_consensus: &CommunityConsensus,
     ) -> String {
@@ -1986,8 +1988,8 @@ impl MarketUtils {
             // If they disagree, check if community consensus is strong
             if community_consensus.percentage > 50 && community_consensus.total_votes >= 5 {
                 // Apply 70-30 weighting using pseudo-random selection
-                let timestamp = _env.ledger().timestamp();
-                let sequence = _env.ledger().sequence();
+                let timestamp = env.ledger().timestamp();
+                let sequence = env.ledger().sequence();
                 let combined = timestamp as u128 + sequence as u128;
                 let random_value = (combined % 100) as u32;
 
@@ -2221,7 +2223,7 @@ pub struct WinningStats {
 /// use soroban_sdk::{Env, Address, Symbol};
 ///
 /// let env = Env::default();
-/// let user = Address::generate(&env);
+/// let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 /// let market_id = Symbol::new(&env, "market_123");
 /// let market = MarketStateManager::get_market(&env, &market_id)?;
 ///
@@ -2321,7 +2323,7 @@ impl MarketTestHelpers {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     ///
     /// # Returns
     ///
@@ -2357,24 +2359,22 @@ impl MarketTestHelpers {
     /// // Use config for testing market creation
     /// // let market_id = MarketCreator::create_market(...);
     /// ```
-    pub fn create_test_market_config(_env: &Env) -> MarketCreationParams {
+    pub fn create_test_market_config(env: &Env) -> MarketCreationParams {
         MarketCreationParams::new(
             Address::from_str(
-                _env,
+                env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             ),
-            String::from_str(_env, "Will BTC go above $25,000 by December 31?"),
+            String::from_str(env, "Will BTC go above $25,000 by December 31?"),
             vec![
-                _env,
-                String::from_str(_env, "yes"),
-                String::from_str(_env, "no"),
+                env,
+                String::from_str(env, "yes"),
+                String::from_str(env, "no"),
             ],
             30,
-            OracleConfig::new(
-                OracleProvider::Pyth,
-                String::from_str(_env, "BTC/USD"),
+            OracleConfig::new(OracleProvider::Pyth, Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), String::from_str(env, "BTC/USD"),
                 25_000_00,
-                String::from_str(_env, "gt"),
+                String::from_str(env, "gt"),
             ),
             1_000_000, // Creation fee: 1 XLM
         )
@@ -2388,7 +2388,7 @@ impl MarketTestHelpers {
     ///
     /// # Parameters
     ///
-    /// * `_env` - The Soroban environment for blockchain operations
+    /// * `env` - The Soroban environment for blockchain operations
     ///
     /// # Returns
     ///
@@ -2426,11 +2426,11 @@ impl MarketTestHelpers {
     /// println!("Created test market: {}", market_id);
     /// println!("Market question: {}", market.question);
     /// ```
-    pub fn create_test_market(_env: &Env) -> Result<Symbol, Error> {
-        let config = Self::create_test_market_config(_env);
+    pub fn create_test_market(env: &Env) -> Result<Symbol, Error> {
+        let config = Self::create_test_market_config(env);
 
         MarketCreator::create_market(
-            _env,
+            env,
             config.admin,
             config.question,
             config.outcomes,
@@ -2483,7 +2483,7 @@ impl MarketTestHelpers {
     ///
     /// let env = Env::default();
     /// let market_id = Symbol::new(&env, "test_market");
-    /// let user = Address::generate(&env);
+    /// let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let outcome = String::from_str(&env, "yes");
     /// let stake = 5_000_000; // 0.5 XLM
     ///
@@ -3079,7 +3079,7 @@ mod tests {
         // Create a test market
         let market = Market::new(
             &env,
-            Address::generate(&env),
+            Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             String::from_str(&env, "Test?"),
             vec![
                 &env,
@@ -3087,9 +3087,7 @@ mod tests {
                 String::from_str(&env, "no"),
             ],
             env.ledger().timestamp() + 86400,
-            OracleConfig::new(
-                OracleProvider::Pyth,
-                String::from_str(&env, "BTC/USD"),
+            OracleConfig::new(OracleProvider::Pyth, Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), String::from_str(&env, "BTC/USD"),
                 25_000_00,
                 String::from_str(&env, "gt"),
             ),
@@ -3165,7 +3163,7 @@ impl MarketPauseManager {
     /// use crate::pause::MarketPauseManager;
     ///
     /// let env = Env::default();
-    /// let admin = Address::generate(&env);
+    /// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let market_id = Symbol::new(&env, "market_123");
     ///
     /// // Pause market for 24 hours
@@ -3236,7 +3234,7 @@ impl MarketPauseManager {
     /// use crate::pause::MarketPauseManager;
     ///
     /// let env = Env::default();
-    /// let admin = Address::generate(&env);
+    /// let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     /// let market_id = Symbol::new(&env, "market_123");
     ///
     /// // Resume paused market

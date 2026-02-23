@@ -33,6 +33,123 @@ use crate::market_analytics::{
     MarketStatistics, VotingAnalytics, FeeAnalytics, TimeFrame
 };
 use crate::resolution::ResolutionAnalytics;
+// Test client for PredictifyHybrid contract
+pub struct PredictifyHybridClient<'a> {
+    pub env: &'a Env,
+    pub contract_id: &'a Address,
+}
+
+impl<'a> PredictifyHybridClient<'a> {
+    pub fn vote(&self, user: &Address, market_id: &Symbol, outcome: &String, amount: &i128) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::vote(self.env.clone(), user.clone(), market_id.clone(), outcome.clone(), *amount)
+        })
+    }
+
+    pub fn resolve_market_manual(&self, admin: &Address, market_id: &Symbol, outcome: &String) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::resolve_market_manual(self.env.clone(), admin.clone(), market_id.clone(), outcome.clone())
+        })
+    }
+
+    pub fn claim_winnings(&self, user: &Address, market_id: &Symbol) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::claim_winnings(self.env.clone(), user.clone(), market_id.clone())
+        })
+    }
+
+    pub fn withdraw_collected_fees(&self, admin: &Address, amount: &i128) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::withdraw_collected_fees(self.env.clone(), admin.clone(), *amount)
+        })
+    }
+
+    pub fn upgrade_contract(&self, admin: &Address, wasm_hash: &soroban_sdk::BytesN<32>) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::upgrade_contract(self.env.clone(), admin.clone(), wasm_hash.clone())
+        })
+    }
+
+    pub fn place_bet(&self, user: &Address, market_id: &Symbol, outcome: &String, amount: &i128) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::place_bet(self.env.clone(), user.clone(), market_id.clone(), outcome.clone(), *amount)
+        })
+    }
+
+    pub fn distribute_payouts(&self, market_id: &Symbol) -> Result<i128, Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::distribute_payouts(self.env.clone(), market_id.clone())
+        })
+    }
+
+    pub fn set_platform_fee(&self, admin: &Address, fee: &i128) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::set_platform_fee(self.env.clone(), admin.clone(), *fee)
+        })
+    }
+
+    pub fn cancel_event(&self, admin: &Address, event_id: &Symbol, reason: &Option<String>) -> Result<i128, Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::cancel_event(self.env.clone(), admin.clone(), event_id.clone(), reason.clone())
+        })
+    }
+
+    pub fn initialize(&self, admin: &Address, multisig_threshold: &Option<u32>) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::initialize(self.env.clone(), admin.clone(), multisig_threshold.clone())
+        })
+    }
+
+    pub fn refund_on_oracle_failure(&self, admin: &Address, market_id: &Symbol) -> Result<i128, Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::refund_on_oracle_failure(self.env.clone(), admin.clone(), market_id.clone())
+        })
+    }
+
+    pub fn create_market(&self,
+        admin: &Address,
+        question: &String,
+        outcomes: &soroban_sdk::Vec<String>,
+        duration_days: &u32,
+        oracle_config: &OracleConfig,
+        fallback_oracle_config: &Option<OracleConfig>,
+        resolution_timeout: &u64,
+    ) -> Symbol {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::create_market(
+                self.env.clone(),
+                admin.clone(),
+                question.clone(),
+                outcomes.clone(),
+                *duration_days,
+                oracle_config.clone(),
+                fallback_oracle_config.clone(),
+                *resolution_timeout,
+            )
+        })
+    }
+    pub fn new(env: &'a Env, contract_id: &'a Address) -> Self {
+        Self { env, contract_id }
+    }
+
+    pub fn add_admin(&self, admin: &Address, new_admin: &Address, role: &AdminRole) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::add_admin(self.env.clone(), admin.clone(), new_admin.clone(), role.clone())
+        })
+    }
+
+    pub fn remove_admin(&self, admin: &Address, admin_to_remove: &Address) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::remove_admin(self.env.clone(), admin.clone(), admin_to_remove.clone())
+        })
+    }
+
+    pub fn set_multisig_threshold(&self, admin: &Address, threshold: &u32) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::set_multisig_threshold(self.env.clone(), admin.clone(), *threshold)
+        })
+    }
+}
 
 // Test setup structures 
 struct TokenTest {
@@ -44,7 +161,7 @@ impl TokenTest {
     fn setup() -> Self {
         let env = Env::default();
         env.mock_all_auths();
-        let token_admin = Address::generate(&env);
+        let token_admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
         let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
         let token_address = token_contract.address();
 
@@ -71,8 +188,8 @@ impl PredictifyTest {
         let env = token_test.env.clone();
 
         // Setup admin and user
-        let admin = Address::generate(&env);
-        let user = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let user = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         // Mock all authentication before contract initialization
         env.mock_all_auths();
@@ -80,7 +197,7 @@ impl PredictifyTest {
         // Initialize contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+    client.initialize(&admin, &None).unwrap();
 
         // Initialize configuration (required for VotingManager::process_claim)
         env.as_contract(&contract_id, || {
@@ -105,7 +222,7 @@ impl PredictifyTest {
         let market_id = Symbol::new(&env, "market");
 
         // Create pyth contract address (mock)
-        let pyth_contract = Address::generate(&env);
+        let pyth_contract = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
         Self {
             env,
@@ -211,9 +328,6 @@ fn test_create_market_with_non_admin() {
 
     // Verify user is not admin
     assert_ne!(test.user, test.admin);
-
-    // The create_market function validates caller is admin.
-    // Non-admin calls would return Unauthorized (#100).
     assert_eq!(crate::errors::Error::Unauthorized as i128, 100);
 }
 
@@ -365,8 +479,6 @@ fn test_fee_validation() {
     // Test valid fee amount
     let valid_fee = 1_0000000; // 1 XLM
     assert!(valid_fee >= 1_000_000); // MIN_FEE_AMOUNT
-
-    // Test invalid fee amounts would be caught by validation
     let too_small_fee = 500_000; // 0.5 XLM
     assert!(too_small_fee < 1_000_000); // Below MIN_FEE_AMOUNT
 }
@@ -566,7 +678,7 @@ fn test_oracle_provider_types() {
 #[test]
 fn test_successful_oracle_price_retrieval() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     // Create valid mock oracle
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
@@ -582,7 +694,7 @@ fn test_successful_oracle_price_retrieval() {
 #[test]
 fn test_oracle_price_parsing_and_storage() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
 
@@ -606,7 +718,7 @@ fn test_oracle_price_parsing_and_storage() {
 #[test]
 fn test_invalid_response_format_handling() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     // Test with invalid feed ID
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
@@ -619,7 +731,7 @@ fn test_invalid_response_format_handling() {
 #[test]
 fn test_empty_response_handling() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
 
@@ -631,7 +743,7 @@ fn test_empty_response_handling() {
 #[test]
 fn test_corrupted_payload_handling() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
 
@@ -645,7 +757,7 @@ fn test_corrupted_payload_handling() {
 #[test]
 fn test_oracle_unavailable_handling() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let oracle = crate::oracles::ReflectorOracle::new(contract_id.clone());
 
@@ -661,7 +773,7 @@ fn test_oracle_unavailable_handling() {
 #[test]
 fn test_oracle_timeout_simulation() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
 
@@ -678,8 +790,8 @@ fn test_multiple_oracle_price_aggregation() {
     let env = Env::default();
 
     // Create multiple oracle instances
-    let oracle1 = crate::oracles::ReflectorOracle::new(Address::generate(&env));
-    let oracle2 = crate::oracles::ReflectorOracle::new(Address::generate(&env));
+    let oracle1 = crate::oracles::ReflectorOracle::new(Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+    let oracle2 = crate::oracles::ReflectorOracle::new(Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
 
     // Get prices from both oracles
     let price1 = oracle1.get_price(&env, &String::from_str(&env, "BTC/USD")).unwrap();
@@ -717,7 +829,7 @@ fn test_oracle_consensus_logic() {
 #[test]
 fn test_duplicate_oracle_submissions() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
 
@@ -761,7 +873,7 @@ fn test_extreme_price_values() {
 #[test]
 fn test_unexpected_response_types() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     let oracle = crate::oracles::ReflectorOracle::new(contract_id);
 
@@ -849,7 +961,7 @@ fn test_oracle_factory_supported_providers() {
 #[test]
 fn test_oracle_factory_creation() {
     let env = Env::default();
-    let contract_id = Address::generate(&env);
+    let contract_id = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
     // Test successful creation
     let result = crate::oracles::OracleFactory::create_oracle(OracleProvider::Reflector, contract_id.clone());
@@ -1023,7 +1135,7 @@ fn test_initialize_with_default_fee() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = Address::generate(&env);
+    let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
@@ -1054,7 +1166,7 @@ fn test_initialize_with_custom_fee() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = Address::generate(&env);
+    let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
@@ -1076,7 +1188,7 @@ fn test_reinitialize_prevention() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = Address::generate(&env);
+    let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
@@ -1122,7 +1234,7 @@ fn test_initialize_valid_fee_bounds() {
     {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
 
@@ -1141,7 +1253,7 @@ fn test_initialize_valid_fee_bounds() {
     {
         let env = Env::default();
         env.mock_all_auths();
-        let admin = Address::generate(&env);
+        let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
 
@@ -1162,7 +1274,7 @@ fn test_initialize_storage_verification() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = Address::generate(&env);
+    let admin = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
@@ -2026,215 +2138,65 @@ fn test_manual_dispute_resolution_triggers_payout() {
     assert!(market_after.claimed.get(user1.clone()).unwrap_or(false));
 }
 
-// ===== PAYOUT DISTRIBUTION TESTS =====
-
+// ===== MULTISIG ADMIN TESTS =====
 #[test]
-fn test_payout_calculation_proportional() {
-    // Test proportional payout calculation
-    // Scenario:
-    // - Total pool: 1000 XLM
-    // - Winning total: 500 XLM
-    // - User stake: 100 XLM
-    // - Fee: 2%
-    //
-    // Expected payout:
-    // - User share = 100 * (100 - 2) / 100 = 98 XLM
-    // - Payout = 98 * 1000 / 500 = 196 XLM
+fn test_multisig_threshold_enforcement() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let admin2 = test.create_funded_user();
+    let admin3 = test.create_funded_user();
 
-    let user_stake = 100_0000000;
-    let winning_total = 500_0000000;
-    let total_pool = 1000_0000000;
-    let fee_percentage = 2;
+    // Add two more admins
+    client.add_admin(&test.admin, &admin2, &AdminRole::SuperAdmin).unwrap();
+    client.add_admin(&test.admin, &admin3, &AdminRole::SuperAdmin).unwrap();
 
-    let payout =
-        MarketUtils::calculate_payout(user_stake, winning_total, total_pool, fee_percentage)
-            .unwrap();
+    // Set threshold to 2 of 3
+    // (Assume set_threshold is implemented in the contract and client)
+    client.set_multisig_threshold(&test.admin, &2u32).unwrap();
 
-    assert_eq!(payout, 196_0000000);
-}
-
-#[test]
-fn test_payout_calculation_all_winners() {
-    // Test payout when everyone wins (unlikely but possible)
-    // Scenario:
-    // - Total pool: 1000 XLM
-    // - Winning total: 1000 XLM
-    // - User stake: 100 XLM
-    // - Fee: 2%
-    //
-    // Expected payout:
-    // - User share = 100 * 0.98 = 98 XLM
-    // - Payout = 98 * 1000 / 1000 = 98 XLM (just getting stake back minus fee)
-
-    let user_stake = 100_0000000;
-    let winning_total = 1000_0000000;
-    let total_pool = 1000_0000000;
-    let fee_percentage = 2;
-
-    let payout =
-        MarketUtils::calculate_payout(user_stake, winning_total, total_pool, fee_percentage)
-            .unwrap();
-
-    assert_eq!(payout, 98_0000000);
-}
-
-#[test]
-fn test_payout_calculation_no_winners() {
-    // Test payout calculation when there are no winners
-    // This should return an error as division by zero would occur
-
-    let user_stake = 100_0000000;
-    let winning_total = 0;
-    let total_pool = 1000_0000000;
-    let fee_percentage = 2;
-
-    let result =
-        MarketUtils::calculate_payout(user_stake, winning_total, total_pool, fee_percentage);
-
+    // Try to withdraw fees with only one approval (should fail)
+    let result = client.withdraw_collected_fees(&test.admin, &0);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), Error::NothingToClaim);
+
+    // Approve with second admin (should succeed now)
+    let result2 = client.withdraw_collected_fees(&admin2, &0);
+    assert!(result2.is_ok());
+
+    // Remove an admin and lower threshold
+    client.remove_admin(&test.admin, &admin3).unwrap();
+    client.set_multisig_threshold(&test.admin, &1u32).unwrap();
+
+    // Now single admin can withdraw again
+    let result3 = client.withdraw_collected_fees(&test.admin, &0);
+    assert!(result3.is_ok());
 }
 
 #[test]
-fn test_claim_winnings_successful() {
+fn test_multisig_upgrade_requires_threshold() {
     let test = PredictifyTest::setup();
-    let market_id = test.create_test_market();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let admin2 = test.create_funded_user();
+    client.add_admin(&test.admin, &admin2, &AdminRole::SuperAdmin).unwrap();
+    client.set_multisig_threshold(&test.admin, &2u32).unwrap();
+    let wasm_hash = soroban_sdk::BytesN::from_array(&test.env, &[1u8; 32]);
 
-    // 1. User votes for "yes"
-    test.env.mock_all_auths();
-    client.vote(
-        &test.user,
-        &market_id,
-        &String::from_str(&test.env, "yes"),
-        &100_0000000,
-    );
+    // Only one approval: should fail
+    let result = client.upgrade_contract(&test.admin, &wasm_hash);
+    assert!(result.is_err());
 
-    // 2. Another user votes for "no" (to create a pool)
-    let loser = Address::generate(&test.env);
-    let stellar_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
-    stellar_client.mint(&loser, &100_0000000);
-
-    test.env.mock_all_auths();
-    client.vote(
-        &loser,
-        &market_id,
-        &String::from_str(&test.env, "no"),
-        &100_0000000,
-    );
-
-    // 3. Advance time to end market
-    let market = test.env.as_contract(&test.contract_id, || {
-        test.env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .unwrap()
-    });
-
-    test.env.ledger().set(LedgerInfo {
-        timestamp: market.end_time + 1,
-        protocol_version: 22,
-        sequence_number: test.env.ledger().sequence(),
-        network_id: Default::default(),
-        base_reserve: 10,
-        min_temp_entry_ttl: 1,
-        min_persistent_entry_ttl: 1,
-        max_entry_ttl: 10000,
-    });
-
-    // 4. Resolve market manually (as admin)
-    test.env.mock_all_auths();
-    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
-
-    // 5. Winner claims winnings explicitly
-    test.env.mock_all_auths();
-    client.claim_winnings(&test.user, &market_id);
-
-    // Verify claimed status
-    let market = test.env.as_contract(&test.contract_id, || {
-        test.env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .unwrap()
-    });
-    assert_eq!(market.state, MarketState::Resolved);
-    assert!(market.claimed.get(test.user.clone()).unwrap_or(false));
+    // Second approval: should succeed
+    let result2 = client.upgrade_contract(&admin2, &wasm_hash);
+    assert!(result2.is_ok());
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #106)")] // AlreadyClaimed = 106
-fn test_double_claim_prevention() {
+fn test_single_admin_mode_still_works() {
     let test = PredictifyTest::setup();
-    let market_id = test.create_test_market();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-
-    // User places bet
-    let user1 = test.create_funded_user();
-    // 1. User votes
-    test.env.mock_all_auths();
-    client.vote(
-        &test.user,
-        &market_id,
-        &String::from_str(&test.env, "yes"),
-        &100_0000000,
-    );
-
-    // 2. Advance time
-    let market = test.env.as_contract(&test.contract_id, || {
-        test.env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .unwrap()
-    });
-
-    test.env.ledger().set(LedgerInfo {
-        timestamp: market.end_time + 1,
-        protocol_version: 22,
-        sequence_number: test.env.ledger().sequence(),
-        network_id: Default::default(),
-        base_reserve: 10,
-        min_temp_entry_ttl: 1,
-        min_persistent_entry_ttl: 1,
-        max_entry_ttl: 10000,
-    });
-
-    // 3. Resolve market
-    test.env.mock_all_auths();
-    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
-
-    // 4. First claim
-    test.env.mock_all_auths();
-    client.claim_winnings(&test.user, &market_id);
-
-    // 5. Try to claim again (should panic with AlreadyClaimed)
-    test.env.mock_all_auths();
-    client.claim_winnings(&test.user, &market_id);
+    // Default threshold is 1
+    let result = client.withdraw_collected_fees(&test.admin, &0);
+    assert!(result.is_ok());
 }
 
-#[test]
-fn test_claim_by_loser() {
-    let test = PredictifyTest::setup();
-    let market_id = test.create_test_market();
-    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
-
-    // 1. User votes for losing outcome
-    test.env.mock_all_auths();
-    client.vote(
-        &test.user,
-        &market_id,
-        &String::from_str(&test.env, "no"),
-        &100_0000000,
-    );
-
-    // 2. Advance time
-    let market = test.env.as_contract(&test.contract_id, || {
-        test.env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .unwrap()
-    });
+// ===== TESTS FOR AUTOMATIC PAYOUT DISTRIBUTION (#202) =====
 

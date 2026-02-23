@@ -463,6 +463,8 @@ impl ContractMonitor {
             extension_history: Vec::new(env),
             category: None,
             tags: Vec::new(env),
+            fallback_oracle_config: None,
+            resolution_timeout: 86400,
         })
     }
 
@@ -818,7 +820,7 @@ impl MonitoringUtils {
     fn generate_alert_id(env: &Env) -> String {
         let timestamp = env.ledger().timestamp();
         let random = env.ledger().sequence();
-        String::from_str(env, &format!("alert_{}_{}", timestamp, random))
+        String::from_str(env, "alert_id")
     }
 
     /// Check if monitoring data is stale

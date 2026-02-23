@@ -166,7 +166,7 @@ impl MarketAnalyticsManager {
             let stake = market.stakes.get(user.clone()).unwrap_or(0);
 
             // Count votes per outcome
-            let vote_count = outcome_distribution.get(outcome.clone()).unwrap_or(0);
+            let vote_count: u32 = outcome_distribution.get(outcome.clone()).unwrap_or(0);
             outcome_distribution.set(outcome.clone(), vote_count + 1);
 
             // Sum stakes per outcome
@@ -230,7 +230,7 @@ impl MarketAnalyticsManager {
         // Calculate outcome preferences
         let mut outcome_preferences = Map::new(env);
         for (_, outcome) in market.votes.iter() {
-            let count = outcome_preferences.get(outcome.clone()).unwrap_or(0);
+            let count: u32 = outcome_preferences.get(outcome.clone()).unwrap_or(0);
             outcome_preferences.set(outcome.clone(), count + 1);
         }
 

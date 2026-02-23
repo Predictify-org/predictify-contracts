@@ -862,6 +862,7 @@ impl BatchTesting {
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
                 provider: crate::types::OracleProvider::Reflector,
+                oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
                 feed_id: String::from_str(env, "BTC"),
                 threshold: 100_000_00, // $100,000
                 comparison: String::from_str(env, "gt"),
