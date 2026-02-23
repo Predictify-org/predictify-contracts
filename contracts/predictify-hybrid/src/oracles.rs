@@ -3264,7 +3264,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
-            let unauthorized = crate::PredictifyHybrid::set_oracle_validation_config_global(
+            let unauthorized = crate::PredictifyHybrid::set_oracle_val_cfg_global(
                 env.clone(),
                 non_admin.clone(),
                 60,
@@ -3272,7 +3272,7 @@ mod oracle_integration_tests {
             );
             assert_eq!(unauthorized.unwrap_err(), Error::Unauthorized);
 
-            let ok = crate::PredictifyHybrid::set_oracle_validation_config_for_event(
+            let ok = crate::PredictifyHybrid::set_oracle_val_cfg_event(
                 env.clone(),
                 admin.clone(),
                 Symbol::new(&env, "admin_evt"),

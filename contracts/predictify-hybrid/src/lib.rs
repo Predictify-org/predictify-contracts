@@ -21,7 +21,7 @@ mod circuit_breaker;
 mod config;
 mod disputes;
 mod edge_cases;
-mod errors;
+mod err;
 mod event_archive;
 mod events;
 mod extensions;
@@ -95,7 +95,11 @@ mod event_creation_tests;
 
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
-pub use errors::Error;
+pub use err::Error;
+// Backwards-compatible re-export for existing module paths.
+pub mod errors {
+    pub use crate::err::*;
+}
 pub use queries::QueryManager;
 pub use types::*;
 
@@ -2760,7 +2764,7 @@ impl PredictifyHybrid {
     /// - `max_staleness_secs`: maximum allowed age in seconds.
     /// - `max_confidence_bps`: maximum confidence interval in basis points.
     /// Per-event overrides, if set, take precedence over this global config.
-    pub fn set_oracle_validation_config_global(
+    pub fn set_oracle_val_cfg_global(
         env: Env,
         admin: Address,
         max_staleness_secs: u64,
@@ -2787,7 +2791,7 @@ impl PredictifyHybrid {
     /// Set per-event oracle validation config (admin only).
     ///
     /// Overrides global validation settings for the given market.
-    pub fn set_oracle_validation_config_for_event(
+    pub fn set_oracle_val_cfg_event(
         env: Env,
         admin: Address,
         market_id: Symbol,
@@ -2817,7 +2821,7 @@ impl PredictifyHybrid {
     }
 
     /// Get effective oracle validation config for a market.
-    pub fn get_effective_oracle_validation_config(
+    pub fn get_oracle_val_cfg_effective(
         env: Env,
         market_id: Symbol,
     ) -> GlobalOracleValidationConfig {
