@@ -1834,6 +1834,10 @@ impl PredictifyHybrid {
         Ok(oracle_resolution.oracle_result)
     }
 
+    pub fn fetch_oracle_result(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
+        resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
+    }
+
     /// Verifies and fetches event outcome from external oracle sources automatically.
     ///
     /// This function implements the complete oracle integration mechanism that:
