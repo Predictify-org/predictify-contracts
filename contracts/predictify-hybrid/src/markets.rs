@@ -123,7 +123,9 @@ impl MarketCreator {
         );
 
         // Process market creation fee
-        MarketUtils::process_creation_fee(env, &admin)?;
+        // Market creator flow does not have the generated market id yet in this helper path.
+        // Use the generated id after creation in higher-level flows when event metadata is required.
+        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
@@ -1797,7 +1799,7 @@ impl MarketUtils {
     ///     Err(e) => println!("Fee processing failed: {:?}", e),
     /// }
     /// ```
-    pub fn process_creation_fee(_env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn process_creation_fee(_env: &Env, admin: &Address) -> Result<i128, Error> {
         // Delegate to the fees module
         crate::fees::FeeManager::process_creation_fee(_env, admin)
     }

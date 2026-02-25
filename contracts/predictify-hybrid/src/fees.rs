@@ -755,21 +755,34 @@ impl FeeManager {
         Ok(fee_amount)
     }
 
-    /// Process market creation fee
-    pub fn process_creation_fee(env: &Env, admin: &Address) -> Result<(), Error> {
+    /// Process market/event creation fee and return the charged amount.
+    pub fn process_creation_fee(env: &Env, admin: &Address) -> Result<i128, Error> {
+        // Read configured fee (fallback to default constant if config is missing)
+        let fee_config = match crate::config::ConfigManager::get_config(env) {
+            Ok(cfg) => cfg.fees,
+            Err(_) => crate::config::ConfigManager::get_default_fee_config(),
+        };
+
+        // If fees are disabled, skip charging.
+        if !fee_config.fees_enabled {
+            return Ok(0);
+        }
+
+        let creation_fee = fee_config.creation_fee;
+
         // Validate creation fee
-        FeeValidator::validate_creation_fee(MARKET_CREATION_FEE)?;
+        FeeValidator::validate_creation_fee(creation_fee)?;
 
         // Get token client
         let token_client = MarketUtils::get_token_client(env)?;
 
         // Transfer creation fee from admin to contract
-        token_client.transfer(admin, &env.current_contract_address(), &MARKET_CREATION_FEE);
+        token_client.transfer(admin, &env.current_contract_address(), &creation_fee);
 
         // Record creation fee
-        FeeTracker::record_creation_fee(env, admin, MARKET_CREATION_FEE)?;
+        FeeTracker::record_creation_fee(env, admin, creation_fee)?;
 
-        Ok(())
+        Ok(creation_fee)
     }
 
     /// Get fee analytics for all markets
@@ -1186,7 +1199,7 @@ impl FeeValidator {
 
     /// Validate creation fee
     pub fn validate_creation_fee(fee_amount: i128) -> Result<(), Error> {
-        if fee_amount != MARKET_CREATION_FEE {
+        if fee_amount < MIN_FEE_AMOUNT || fee_amount > MAX_FEE_AMOUNT {
             return Err(Error::InvalidInput);
         }
 

@@ -4,8 +4,7 @@ use crate::errors::Error;
 use crate::types::{EventVisibility, MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{symbol_short, vec, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{symbol_short, token::StellarAssetClient, vec, Address, Env, String, Symbol, Vec};
 
 // Test helper structure
 struct TestSetup {
@@ -25,27 +24,24 @@ impl TestSetup {
         });
 
         let admin = Address::generate(&env);
-        let token_admin = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_id = token_contract.address();
-
         let contract_id = env.register(PredictifyHybrid, ());
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+        let token_address = token_contract.address();
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
         client.initialize(&admin, &None);
 
-        // Configure token used for fees and staking
+        // Configure token used for creation fee collection and fund admin balance.
         env.as_contract(&contract_id, || {
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "TokenID"), &token_id);
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
         });
-
-        // Fund admin with tokens so creation fees can be paid
-        let stellar_client = StellarAssetClient::new(&env, &token_id);
+        let token_client = StellarAssetClient::new(&env, &token_address);
         env.mock_all_auths();
-        stellar_client.mint(&admin, &1_000_000_0000000); // 1,000 XLM
+        token_client.mint(&admin, &1_000_0000000);
 
         Self {
             env,
