@@ -147,7 +147,7 @@ impl GasTestContext {
         self.env.mock_all_auths();
         client.create_market(
             &self.admin,
-            &String::from_str(&self.env, "Test?"),
+            &String::from_str(&self.env, "Test Market Question?"),
             &outcomes,
             &7,
             &OracleConfig {
@@ -205,7 +205,7 @@ fn test_gas_create_market_minimal() {
     ctx.env.mock_all_auths();
     let market_id = client.create_market(
         &ctx.admin,
-        &String::from_str(&ctx.env, "Test?"),
+        &String::from_str(&ctx.env, "Test Market Question?"),
         &outcomes,
         &7,
         &OracleConfig {
@@ -403,7 +403,7 @@ fn test_gas_operations_within_expected_ranges() {
     ctx.env.mock_all_auths();
     let market_id = client.create_market(
         &ctx.admin,
-        &String::from_str(&ctx.env, "Test?"),
+        &String::from_str(&ctx.env, "Test Market Question?"),
         &outcomes,
         &30,
         &OracleConfig {

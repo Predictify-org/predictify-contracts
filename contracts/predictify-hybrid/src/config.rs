@@ -32,8 +32,35 @@ pub const MIN_MARKET_OUTCOMES: u32 = 2;
 /// Maximum question length in characters
 pub const MAX_QUESTION_LENGTH: u32 = 500;
 
+/// Minimum question length in characters
+pub const MIN_QUESTION_LENGTH: u32 = 10;
+
 /// Maximum outcome length in characters
 pub const MAX_OUTCOME_LENGTH: u32 = 100;
+
+/// Minimum outcome length in characters
+pub const MIN_OUTCOME_LENGTH: u32 = 2;
+
+/// Maximum description length in characters
+pub const MAX_DESCRIPTION_LENGTH: u32 = 1000;
+
+/// Minimum description length in characters (optional field, can be 0)
+pub const MIN_DESCRIPTION_LENGTH: u32 = 0;
+
+/// Maximum tag length in characters
+pub const MAX_TAG_LENGTH: u32 = 50;
+
+/// Minimum tag length in characters
+pub const MIN_TAG_LENGTH: u32 = 2;
+
+/// Maximum number of tags per market
+pub const MAX_TAGS_PER_MARKET: u32 = 10;
+
+/// Maximum category name length in characters
+pub const MAX_CATEGORY_LENGTH: u32 = 100;
+
+/// Minimum category name length in characters
+pub const MIN_CATEGORY_LENGTH: u32 = 2;
 
 // ===== FEE CONSTANTS =====
 

@@ -104,6 +104,9 @@ mod event_creation_tests;
 #[cfg(test)]
 mod unclaimed_winnings_timeout_tests;
 
+#[cfg(test)]
+mod metadata_validation_tests;
+
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
 pub use errors::Error;
@@ -543,6 +546,15 @@ impl PredictifyHybrid {
             crate::storage::CreatorLimitsManager::get_active_events(&env, &admin);
         if current_active_events >= market_config.max_active_events_per_creator {
             panic_with_error!(env, Error::InvalidInput);
+        }
+
+        // Validate metadata using InputValidator
+        if let Err(_) = crate::validation::InputValidator::validate_question_length(&question) {
+            panic_with_error!(env, Error::InvalidQuestion);
+        }
+
+        if let Err(_) = crate::validation::InputValidator::validate_outcomes(&outcomes) {
+            panic_with_error!(env, Error::InvalidOutcomes);
         }
 
         // Validate inputs

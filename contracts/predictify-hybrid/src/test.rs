@@ -3448,15 +3448,15 @@ fn test_no_dust_left_after_tie_payout() {
     
     let outcomes = vec![
         &test.env,
-        String::from_str(&test.env, "a"),
-        String::from_str(&test.env, "b"),
-        String::from_str(&test.env, "c"),
+        String::from_str(&test.env, "aa"),
+        String::from_str(&test.env, "bb"),
+        String::from_str(&test.env, "cc"),
     ];
 
     test.env.mock_all_auths();
     let market_id = client.create_market(
         &test.admin,
-        &String::from_str(&test.env, "Dust Test"),
+        &String::from_str(&test.env, "Dust Test Market"),
         &outcomes,
         &30,
         &OracleConfig {
@@ -3480,9 +3480,9 @@ fn test_no_dust_left_after_tie_payout() {
 
     // Intentionally use amounts that don't divide evenly
     test.env.mock_all_auths();
-    client.vote(&user1, &market_id, &String::from_str(&test.env, "a"), &333_3333333); // 333.3333333 XLM
-    client.vote(&user2, &market_id, &String::from_str(&test.env, "b"), &333_3333333);
-    client.vote(&user3, &market_id, &String::from_str(&test.env, "c"), &333_3333334); // Slightly different
+    client.vote(&user1, &market_id, &String::from_str(&test.env, "aa"), &333_3333333); // 333.3333333 XLM
+    client.vote(&user2, &market_id, &String::from_str(&test.env, "bb"), &333_3333333);
+    client.vote(&user3, &market_id, &String::from_str(&test.env, "cc"), &333_3333334); // Slightly different
 
     let market_before = test.env.as_contract(&test.contract_id, || {
         test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
@@ -3507,9 +3507,9 @@ fn test_no_dust_left_after_tie_payout() {
         market.state = MarketState::Resolved;
         market.winning_outcomes = Some(vec![
             &test.env,
-            String::from_str(&test.env, "a"),
-            String::from_str(&test.env, "b"),
-            String::from_str(&test.env, "c"),
+            String::from_str(&test.env, "aa"),
+            String::from_str(&test.env, "bb"),
+            String::from_str(&test.env, "cc"),
         ]);
         test.env.storage().persistent().set(&market_id, &market);
     });
@@ -3561,8 +3561,8 @@ fn test_claim_flow_for_tie_winners() {
     
     let outcomes = vec![
         &test.env,
-        String::from_str(&test.env, "x"),
-        String::from_str(&test.env, "y"),
+        String::from_str(&test.env, "xx"),
+        String::from_str(&test.env, "yy"),
     ];
 
     test.env.mock_all_auths();
@@ -3589,8 +3589,8 @@ fn test_claim_flow_for_tie_winners() {
     let user2 = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.vote(&user1, &market_id, &String::from_str(&test.env, "x"), &150_0000000);
-    client.vote(&user2, &market_id, &String::from_str(&test.env, "y"), &150_0000000);
+    client.vote(&user1, &market_id, &String::from_str(&test.env, "xx"), &150_0000000);
+    client.vote(&user2, &market_id, &String::from_str(&test.env, "yy"), &150_0000000);
 
     // Advance time past end_time AND dispute window
     let market = test.env.as_contract(&test.contract_id, || {
@@ -3621,8 +3621,8 @@ fn test_claim_flow_for_tie_winners() {
         market.state = MarketState::Resolved;
         market.winning_outcomes = Some(vec![
             &test.env,
-            String::from_str(&test.env, "x"),
-            String::from_str(&test.env, "y"),
+            String::from_str(&test.env, "xx"),
+            String::from_str(&test.env, "yy"),
         ]);
         test.env.storage().persistent().set(&market_id, &market);
     });
@@ -4301,9 +4301,9 @@ fn test_tie_with_zero_stakers_on_losing_outcome() {
     
     let outcomes = vec![
         &test.env,
-        String::from_str(&test.env, "a"),
-        String::from_str(&test.env, "b"),
-        String::from_str(&test.env, "c"),
+        String::from_str(&test.env, "aa"),
+        String::from_str(&test.env, "bb"),
+        String::from_str(&test.env, "cc"),
     ];
 
     test.env.mock_all_auths();
@@ -4331,8 +4331,8 @@ fn test_tie_with_zero_stakers_on_losing_outcome() {
 
     // Only outcomes a and b have stakes (c has zero)
     test.env.mock_all_auths();
-    client.vote(&user1, &market_id, &String::from_str(&test.env, "a"), &100_0000000);
-    client.vote(&user2, &market_id, &String::from_str(&test.env, "b"), &100_0000000);
+    client.vote(&user1, &market_id, &String::from_str(&test.env, "aa"), &100_0000000);
+    client.vote(&user2, &market_id, &String::from_str(&test.env, "bb"), &100_0000000);
 
     // Advance time past end_time AND dispute window
     let market = test.env.as_contract(&test.contract_id, || {
@@ -4356,8 +4356,8 @@ fn test_tie_with_zero_stakers_on_losing_outcome() {
         market.state = MarketState::Resolved;
         market.winning_outcomes = Some(vec![
             &test.env,
-            String::from_str(&test.env, "a"),
-            String::from_str(&test.env, "b"),
+            String::from_str(&test.env, "aa"),
+            String::from_str(&test.env, "bb"),
         ]);
         test.env.storage().persistent().set(&market_id, &market);
     });

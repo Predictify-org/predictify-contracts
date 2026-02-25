@@ -1308,6 +1308,307 @@ impl InputValidator {
         }
         Ok(())
     }
+
+    // ===== METADATA LENGTH VALIDATION METHODS =====
+
+    /// Validate market question with length limits
+    ///
+    /// Validates that a market question meets the required length constraints.
+    /// Questions must be between MIN_QUESTION_LENGTH and MAX_QUESTION_LENGTH characters.
+    ///
+    /// # Parameters
+    /// * `question` - The market question string to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if the question length is valid
+    /// * `Err(ValidationError::StringTooShort)` if below minimum length
+    /// * `Err(ValidationError::StringTooLong)` if above maximum length
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let question = String::from_str(&env, "Will Bitcoin reach $100,000 by end of 2024?");
+    /// assert!(InputValidator::validate_question_length(&question).is_ok());
+    /// ```
+    pub fn validate_question_length(question: &String) -> Result<(), ValidationError> {
+        Self::validate_string_length_range(
+            question,
+            config::MIN_QUESTION_LENGTH,
+            config::MAX_QUESTION_LENGTH,
+        )
+    }
+
+    /// Validate market outcome with length limits
+    ///
+    /// Validates that a market outcome meets the required length constraints.
+    /// Outcomes must be between MIN_OUTCOME_LENGTH and MAX_OUTCOME_LENGTH characters.
+    ///
+    /// # Parameters
+    /// * `outcome` - The outcome string to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if the outcome length is valid
+    /// * `Err(ValidationError::StringTooShort)` if below minimum length
+    /// * `Err(ValidationError::StringTooLong)` if above maximum length
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let outcome = String::from_str(&env, "Yes");
+    /// assert!(InputValidator::validate_outcome_length(&outcome).is_ok());
+    /// ```
+    pub fn validate_outcome_length(outcome: &String) -> Result<(), ValidationError> {
+        Self::validate_string_length_range(
+            outcome,
+            config::MIN_OUTCOME_LENGTH,
+            config::MAX_OUTCOME_LENGTH,
+        )
+    }
+
+    /// Validate market description with length limits
+    ///
+    /// Validates that a market description meets the required length constraints.
+    /// Descriptions can be empty (optional) or between MIN_DESCRIPTION_LENGTH and MAX_DESCRIPTION_LENGTH.
+    ///
+    /// # Parameters
+    /// * `description` - The description string to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if the description length is valid
+    /// * `Err(ValidationError::StringTooLong)` if above maximum length
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let description = String::from_str(&env, "Detailed market description...");
+    /// assert!(InputValidator::validate_description_length(&description).is_ok());
+    /// ```
+    pub fn validate_description_length(description: &String) -> Result<(), ValidationError> {
+        let length = description.len() as u32;
+        
+        // Description is optional, so empty is allowed
+        if length == 0 {
+            return Ok(());
+        }
+        
+        if length > config::MAX_DESCRIPTION_LENGTH {
+            return Err(ValidationError::StringTooLong);
+        }
+        
+        Ok(())
+    }
+
+    /// Validate market tag with length limits
+    ///
+    /// Validates that a market tag meets the required length constraints.
+    /// Tags must be between MIN_TAG_LENGTH and MAX_TAG_LENGTH characters.
+    ///
+    /// # Parameters
+    /// * `tag` - The tag string to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if the tag length is valid
+    /// * `Err(ValidationError::StringTooShort)` if below minimum length
+    /// * `Err(ValidationError::StringTooLong)` if above maximum length
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let tag = String::from_str(&env, "crypto");
+    /// assert!(InputValidator::validate_tag_length(&tag).is_ok());
+    /// ```
+    pub fn validate_tag_length(tag: &String) -> Result<(), ValidationError> {
+        Self::validate_string_length_range(
+            tag,
+            config::MIN_TAG_LENGTH,
+            config::MAX_TAG_LENGTH,
+        )
+    }
+
+    /// Validate market category with length limits
+    ///
+    /// Validates that a market category meets the required length constraints.
+    /// Categories must be between MIN_CATEGORY_LENGTH and MAX_CATEGORY_LENGTH characters.
+    ///
+    /// # Parameters
+    /// * `category` - The category string to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if the category length is valid
+    /// * `Err(ValidationError::StringTooShort)` if below minimum length
+    /// * `Err(ValidationError::StringTooLong)` if above maximum length
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let category = String::from_str(&env, "Cryptocurrency");
+    /// assert!(InputValidator::validate_category_length(&category).is_ok());
+    /// ```
+    pub fn validate_category_length(category: &String) -> Result<(), ValidationError> {
+        Self::validate_string_length_range(
+            category,
+            config::MIN_CATEGORY_LENGTH,
+            config::MAX_CATEGORY_LENGTH,
+        )
+    }
+
+    /// Validate all outcomes in a vector
+    ///
+    /// Validates that all outcomes in a vector meet length requirements and
+    /// that the number of outcomes is within acceptable limits.
+    ///
+    /// # Parameters
+    /// * `outcomes` - Vector of outcome strings to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if all outcomes are valid
+    /// * `Err(ValidationError)` if any validation fails
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let outcomes = vec![
+    ///     &env,
+    ///     String::from_str(&env, "Yes"),
+    ///     String::from_str(&env, "No"),
+    /// ];
+    /// assert!(InputValidator::validate_outcomes(&outcomes).is_ok());
+    /// ```
+    pub fn validate_outcomes(outcomes: &Vec<String>) -> Result<(), ValidationError> {
+        // Validate array size
+        Self::validate_array_size(outcomes, config::MAX_MARKET_OUTCOMES)?;
+        
+        // Validate minimum number of outcomes
+        if (outcomes.len() as u32) < config::MIN_MARKET_OUTCOMES {
+            return Err(ValidationError::ArrayTooSmall);
+        }
+        
+        // Validate each outcome length
+        for outcome in outcomes.iter() {
+            Self::validate_outcome_length(&outcome)?;
+        }
+        
+        Ok(())
+    }
+
+    /// Validate all tags in a vector
+    ///
+    /// Validates that all tags in a vector meet length requirements and
+    /// that the number of tags is within acceptable limits.
+    ///
+    /// # Parameters
+    /// * `tags` - Vector of tag strings to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if all tags are valid
+    /// * `Err(ValidationError)` if any validation fails
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let tags = vec![
+    ///     &env,
+    ///     String::from_str(&env, "crypto"),
+    ///     String::from_str(&env, "bitcoin"),
+    /// ];
+    /// assert!(InputValidator::validate_tags(&tags).is_ok());
+    /// ```
+    pub fn validate_tags(tags: &Vec<String>) -> Result<(), ValidationError> {
+        // Tags are optional, so empty vector is allowed
+        if tags.is_empty() {
+            return Ok(());
+        }
+        
+        // Validate maximum number of tags
+        if (tags.len() as u32) > config::MAX_TAGS_PER_MARKET {
+            return Err(ValidationError::ArrayTooLarge);
+        }
+        
+        // Validate each tag length
+        for tag in tags.iter() {
+            Self::validate_tag_length(&tag)?;
+        }
+        
+        Ok(())
+    }
+
+    /// Comprehensive validation for market metadata
+    ///
+    /// Validates all metadata fields for market creation including question,
+    /// outcomes, description, category, and tags.
+    ///
+    /// # Parameters
+    /// * `question` - The market question
+    /// * `outcomes` - Vector of possible outcomes
+    /// * `description` - Optional market description
+    /// * `category` - Optional market category
+    /// * `tags` - Optional vector of tags
+    ///
+    /// # Returns
+    /// * `Ok(())` if all metadata is valid
+    /// * `Err(ValidationError)` if any validation fails
+    ///
+    /// # Example
+    /// ```rust
+    /// # use soroban_sdk::{Env, String, vec};
+    /// # use predictify_hybrid::validation::InputValidator;
+    /// # let env = Env::default();
+    /// let question = String::from_str(&env, "Will Bitcoin reach $100,000?");
+    /// let outcomes = vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")];
+    /// let description = String::from_str(&env, "Market about Bitcoin price prediction");
+    /// let category = String::from_str(&env, "Cryptocurrency");
+    /// let tags = vec![&env, String::from_str(&env, "crypto"), String::from_str(&env, "bitcoin")];
+    /// 
+    /// assert!(InputValidator::validate_market_metadata(
+    ///     &question,
+    ///     &outcomes,
+    ///     &Some(description),
+    ///     &Some(category),
+    ///     &tags
+    /// ).is_ok());
+    /// ```
+    pub fn validate_market_metadata(
+        question: &String,
+        outcomes: &Vec<String>,
+        description: &Option<String>,
+        category: &Option<String>,
+        tags: &Vec<String>,
+    ) -> Result<(), ValidationError> {
+        // Validate question
+        Self::validate_question_length(question)?;
+        
+        // Validate outcomes
+        Self::validate_outcomes(outcomes)?;
+        
+        // Validate description if provided
+        if let Some(desc) = description {
+            Self::validate_description_length(desc)?;
+        }
+        
+        // Validate category if provided
+        if let Some(cat) = category {
+            Self::validate_category_length(cat)?;
+        }
+        
+        // Validate tags
+        Self::validate_tags(tags)?;
+        
+        Ok(())
+    }
 }
 
 // ===== MARKET VALIDATION =====
