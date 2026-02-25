@@ -3061,6 +3061,9 @@ fn resolve_market_without_distribution(
         market.winning_outcomes = Some(winners);
         market.state = MarketState::Resolved;
         test.env.storage().persistent().set(market_id, &market);
+    });
+}
+
 // ===== BATCH CLAIM WINNINGS TESTS =====
 
 #[test]
