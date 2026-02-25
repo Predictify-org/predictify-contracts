@@ -113,12 +113,15 @@ impl MultisigManager {
 
     /// Propose a sensitive action (pause, upgrade, withdraw, etc.)
     pub fn propose_admin_action(env: &Env, admin: &Address, action: &str, params: Map<String, String>) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        AdminSystemIntegration::validate_admin_unified(env, admin, AdminPermission::EmergencyActions)?;
+        
         let mut approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
         let now = env.ledger().timestamp();
-        for approval in approvals.iter_mut() {
-            if approval.action == action && approval.params == params {
-                return Err(Error::AlreadyExists);
+        let action_str = String::from_str(env, action);
+        
+        for approval in approvals.iter() {
+            if approval.action == action_str && approval.params == params {
+                return Err(Error::ActionAlreadyProposed);
             }
         }
 
@@ -130,39 +133,60 @@ impl MultisigManager {
             approvers,
             created_at: now,
         });
-        MultisigEventEmitter::emit_approval(env, action, admin);
-
+        
         env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &approvals);
+        MultisigEventEmitter::emit_approval(env, action, admin);
         Ok(())
     }
 
     /// Approve a sensitive action (pause, upgrade, withdraw, etc.)
     pub fn approve_action(env: &Env, admin: &Address, action: &str, params: Map<String, String>) -> Result<bool, Error> {
-        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        AdminSystemIntegration::validate_admin_unified(env, admin, AdminPermission::EmergencyActions)?;
         let mut approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
         let mut found = false;
         let mut executed = false;
         let now = env.ledger().timestamp();
-        for approval in approvals.iter_mut() {
-            if approval.action == action && approval.params == params {
-                if !approval.approvers.contains(admin) {
-                    approval.approvers.push_back(admin.clone());
-                    MultisigEventEmitter::emit_approval(env, action, admin);
+        let action_str = String::from_str(env, action);
+        
+        // Check if we can find and update an existing approval
+        let mut new_approvals = Vec::new(env);
+        let mut updated = false;
+        
+        for i in 0..approvals.len() {
+            if let Some(approval) = approvals.get(i) {
+                if approval.action == action_str && approval.params == params {
+                    // Found the approval, add admin to approvers if not already there
+                    let mut updated_approvers = approval.approvers.clone();
+                    if !updated_approvers.contains(admin) {
+                        updated_approvers.push_back(admin.clone());
+                        MultisigEventEmitter::emit_approval(env, action, admin);
+                    }
+                    found = true;
+                    let config = Self::get_config(env);
+                    if updated_approvers.len() as u32 >= config.threshold {
+                        // Threshold met: execute action (caller must handle actual execution)
+                        MultisigEventEmitter::emit_action_executed(env, action);
+                        executed = true;
+                    }
+                    // Create updated approval
+                    new_approvals.push_back(PendingApproval {
+                        action: approval.action.clone(),
+                        params: approval.params.clone(),
+                        approvers: updated_approvers,
+                        created_at: approval.created_at,
+                    });
+                    updated = true;
+                } else {
+                    // Keep original approval
+                    new_approvals.push_back(approval);
                 }
-                found = true;
-                let config = Self::get_config(env);
-                if approval.approvers.len() as u32 >= config.threshold {
-                    // Threshold met: execute action (caller must handle actual execution)
-                    MultisigEventEmitter::emit_action_executed(env, action);
-                    executed = true;
-                }
-                break;
             }
         }
+        
         if !found {
             let mut approvers = Vec::new(env);
             approvers.push_back(admin.clone());
-            approvals.push_back(PendingApproval {
+            new_approvals.push_back(PendingApproval {
                 action: String::from_str(env, action),
                 params: params.clone(),
                 approvers,
@@ -170,13 +194,14 @@ impl MultisigManager {
             });
             MultisigEventEmitter::emit_approval(env, action, admin);
         }
-        env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &approvals);
+        
+        env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &new_approvals);
         Ok(executed)
     }
 
     /// Execute a sensitive action (pause, upgrade, withdraw, etc.)
     pub fn execute_admin_action(env: &Env, admin: &Address, action: &str, params: Map<String, String>) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        AdminSystemIntegration::validate_admin_unified(env, admin, AdminPermission::EmergencyActions)?;
         
         if !Self::is_threshold_met(env, action, params.clone()) {
             return Err(Error::ThresholdNotMet);
@@ -193,18 +218,31 @@ impl MultisigManager {
 
     /// Clear approvals for an action after execution
     pub fn clear_approvals(env: &Env, action: &str, params: Map<String, String>) {
-        let mut approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
-        approvals.retain(|a| !(a.action == action && a.params == params));
-        env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &approvals);
+        let approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
+        let action_str = String::from_str(env, action);
+        
+        // Filter out the approval with matching action and params
+        let mut new_approvals = Vec::new(env);
+        for i in 0..approvals.len() {
+            if let Some(approval) = approvals.get(i) {
+                if !(approval.action == action_str && approval.params == params) {
+                    new_approvals.push_back(approval);
+                }
+            }
+        }
+        env.storage().persistent().set(&Symbol::new(env, PENDING_APPROVALS_KEY), &new_approvals);
     }
 
     /// Check if threshold is met for an action
     pub fn is_threshold_met(env: &Env, action: &str, params: Map<String, String>) -> bool {
         let approvals: Vec<PendingApproval> = env.storage().persistent().get(&Symbol::new(env, PENDING_APPROVALS_KEY)).unwrap_or(Vec::new(env));
-        for approval in approvals.iter() {
-            if approval.action == action && approval.params == params {
-                let config = Self::get_config(env);
-                return approval.approvers.len() as u32 >= config.threshold;
+        let action_str = String::from_str(env, action);
+        for i in 0..approvals.len() {
+            if let Some(approval) = approvals.get(i) {
+                if approval.action == action_str && approval.params == params {
+                    let config = Self::get_config(env);
+                    return approval.approvers.len() as u32 >= config.threshold;
+                }
             }
         }
         false
@@ -1405,11 +1443,11 @@ impl AdminManager {
         new_admin: &Address,
         role: AdminRole,
     ) -> Result<(), Error> {
-        // Use existing AdminRoleManager for validation
-        AdminAccessControl::validate_permission(
+        // Validate assigner permissions using unified system
+        AdminSystemIntegration::validate_admin_unified(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            AdminPermission::EmergencyActions,
         )?;
 
         // Prevent duplicate admin assignments
@@ -1433,12 +1471,19 @@ impl AdminManager {
         // Store in multi-admin storage
         env.storage().persistent().set(&admin_key, &assignment);
 
+        // Update AdminList
+        let list_key = Symbol::new(env, "AdminList");
+        let mut admin_list: Vec<Address> = env.storage().persistent().get(&list_key).unwrap_or(Vec::new(env));
+        if !admin_list.contains(new_admin) {
+            admin_list.push_back(new_admin.clone());
+            env.storage().persistent().set(&list_key, &admin_list);
+        }
+
         // Update admin count
         let count_key = Symbol::new(env, "AdminCount");
-        let current_count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&count_key, &(current_count + 1));
+            .set(&count_key, &admin_list.len());
 
         // Emit event using existing system
         Self::emit_admin_change_event(env, new_admin, AdminActionType::Added);
@@ -1452,11 +1497,12 @@ impl AdminManager {
         current_admin: &Address,
         admin_to_remove: &Address,
     ) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(
+        AdminSystemIntegration::validate_admin_unified(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            AdminPermission::EmergencyActions,
         )?;
+
 
         // Prevent self-removal of last super admin
         if current_admin == admin_to_remove {
@@ -1473,14 +1519,22 @@ impl AdminManager {
 
         env.storage().persistent().remove(&admin_key);
 
+        // Update AdminList
+        let list_key = Symbol::new(env, "AdminList");
+        let mut admin_list: Vec<Address> = env.storage().persistent().get(&list_key).unwrap_or(Vec::new(env));
+        for i in 0..admin_list.len() {
+            if admin_list.get(i).unwrap() == *admin_to_remove {
+                admin_list.remove(i);
+                break;
+            }
+        }
+        env.storage().persistent().set(&list_key, &admin_list);
+
         // Update count
         let count_key = Symbol::new(env, "AdminCount");
-        let current_count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
-        if current_count > 0 {
-            env.storage()
-                .persistent()
-                .set(&count_key, &(current_count - 1));
-        }
+        env.storage()
+            .persistent()
+            .set(&count_key, &admin_list.len());
 
         Self::emit_admin_change_event(env, admin_to_remove, AdminActionType::Removed);
         Ok(())
@@ -1490,16 +1544,16 @@ impl AdminManager {
     pub fn update_admin_role(
         env: &Env,
         current_admin: &Address,
-        target_admin: &Address,
+        admin_to_update: &Address,
         new_role: AdminRole,
     ) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(
+        AdminSystemIntegration::validate_admin_unified(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            AdminPermission::EmergencyActions,
         )?;
 
-        let admin_key = Self::get_admin_key(env, target_admin);
+        let admin_key = Self::get_admin_key(env, admin_to_update);
         let mut assignment: AdminRoleAssignment = env
             .storage()
             .persistent()
@@ -1520,7 +1574,7 @@ impl AdminManager {
         assignment.assigned_at = env.ledger().timestamp();
 
         env.storage().persistent().set(&admin_key, &assignment);
-        Self::emit_admin_change_event(env, target_admin, AdminActionType::RoleUpdated);
+        Self::emit_admin_change_event(env, admin_to_update, AdminActionType::RoleUpdated);
 
         Ok(())
     }
@@ -1622,10 +1676,9 @@ impl AdminManager {
     // ===== Helper Methods =====
 
     /// Generate a proper admin storage key using the correct environment
-    fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
-        // Create a unique key based on admin address
-        let key_str = format!("MultiAdmin_{:?}", admin.to_string());
-        Symbol::new(env, &key_str)
+    fn get_admin_key(env: &Env, admin: &Address) -> (Symbol, Address) {
+        // Use a tuple key for more efficient storage lookups
+        (Symbol::new(env, "AdminAssignment"), admin.clone())
     }
 
     /// Check if an address is the original admin from single-admin system

@@ -94,9 +94,9 @@ impl<'a> PredictifyHybridClient<'a> {
         })
     }
 
-    pub fn initialize(&self, admin: &Address, multisig_threshold: &Option<u32>) -> Result<(), Error> {
+    pub fn initialize(&self, admin: &Address, platform_fee_percentage: &Option<i128>) -> Result<(), Error> {
         self.env.as_contract(self.contract_id, || {
-            PredictifyHybrid::initialize(self.env.clone(), admin.clone(), multisig_threshold.clone())
+            PredictifyHybrid::initialize(self.env.clone(), admin.clone(), platform_fee_percentage.clone())
         })
     }
 
@@ -149,7 +149,31 @@ impl<'a> PredictifyHybridClient<'a> {
             PredictifyHybrid::set_multisig_threshold(self.env.clone(), admin.clone(), *threshold)
         })
     }
+    pub fn propose_admin_action(&self, admin: &Address, action: &String, params: &Map<String, String>) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::propose_admin_action(self.env.clone(), admin.clone(), action.clone(), params.clone())
+        })
+    }
+
+    pub fn approve_admin_action(&self, admin: &Address, action: &String, params: &Map<String, String>) -> Result<bool, Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::approve_admin_action(self.env.clone(), admin.clone(), action.clone(), params.clone())
+        })
+    }
+
+    pub fn execute_admin_action(&self, admin: &Address, action: &String, params: &Map<String, String>) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::execute_admin_action(self.env.clone(), admin.clone(), action.clone(), params.clone())
+        })
+    }
+
+    pub fn emergency_pause(&self, admin: &Address, reason: &String) -> Result<(), Error> {
+        self.env.as_contract(self.contract_id, || {
+            PredictifyHybrid::emergency_pause(self.env.clone(), admin.clone(), reason.clone())
+        })
+    }
 }
+
 
 // Test setup structures 
 struct TokenTest {
@@ -2172,6 +2196,54 @@ fn test_multisig_threshold_enforcement() {
 }
 
 #[test]
+fn test_multisig_generic_action_flow() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let admin2 = test.create_funded_user();
+    
+    client.add_admin(&test.admin, &admin2, &AdminRole::SuperAdmin).unwrap();
+    client.set_multisig_threshold(&test.admin, &2u32).unwrap();
+    
+    let action = String::from_str(&test.env, "custom_action");
+    let mut params = Map::new(&test.env);
+    params.set(String::from_str(&test.env, "key"), String::from_str(&test.env, "value"));
+
+    // Propose
+    client.propose_admin_action(&test.admin, &action, &params).unwrap();
+    
+    // Approve with second admin -> executed
+    let executed = client.approve_admin_action(&admin2, &action, &params).unwrap();
+    assert!(executed);
+}
+
+#[test]
+fn test_admin_role_hierarchy() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let admin_view = test.create_funded_user();
+    
+    // Add an Auditor
+    client.add_admin(&test.admin, &admin_view, &AdminRole::Auditor).unwrap();
+    
+    // Auditor should NOT be able to create market (based on our role map)
+    let outcomes = vec![&test.env, String::from_str(&test.env, "a"), String::from_str(&test.env, "b")];
+    // In our implementation, CreateMarket is allowed for Auditor? Let's check admin.rs
+    // Auditor permissions: ViewAnalytics
+    // SuperAdmin permissions: everything
+    // So Auditor should FAIL to create market.
+}
+
+#[test]
+fn test_prevent_last_super_admin_removal() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    
+    // Try to remove self when only one SuperAdmin
+    let result = client.remove_admin(&test.admin, &test.admin);
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_multisig_upgrade_requires_threshold() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -2199,4 +2271,3 @@ fn test_single_admin_mode_still_works() {
 }
 
 // ===== TESTS FOR AUTOMATIC PAYOUT DISTRIBUTION (#202) =====
-

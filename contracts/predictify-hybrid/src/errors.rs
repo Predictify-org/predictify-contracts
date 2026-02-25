@@ -4,8 +4,6 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    /// Not enough multisig approvals yet
-    ApprovalPending = 100,
     Unauthorized = 1,
     MarketNotFound = 2,
     MarketClosed = 3,
@@ -36,29 +34,24 @@ pub enum Error {
     DisputeVoteExpired = 28,
     DisputeCondNotMet = 29,
     NotAuthorized = 30,
-    /*
-    AdminNotSet = 30,
-    CBOpen = 31,
-    ResolutionTimeoutReached = 32,
-    CBAlreadyOpen = 33,
-    CBNotOpen = 34,
-    CBNotInitialized = 35,
-    DisputeVoteDenied = 36,
-    DisputeAlreadyVoted = 37,
-    DisputeFeeFailed = 38,
-    DisputeNoEscalate = 39,
-    FeeAlreadyCollected = 40,
-    NoFeesToCollect = 41,
-    InvalidExtensionDays = 42,
-    InvalidFeeConfig = 43,
-    TimeoutNotSet = 44,
-    TimeoutNotExpired = 45,
-    InvalidTimeoutHours = 46,
-    InvalidComparison = 47,
-    ExtensionError = 48,
-    InvalidResolutionWindow = 49,
-    FallbackOracleUnavailable = 50,
-    */
+    ThresholdNotMet = 31,
+    ActionAlreadyProposed = 32,
+    ActionNotFound = 33,
+    NoApprovalsFound = 34,
+    AdminNotSet = 35,
+    CBNotInitialized = 36,
+    CBAlreadyOpen = 37,
+    AlreadyInitialized = 38,
+    InvalidFeeConfig = 39,
+    ApprovalPending = 40,
+    CBNotOpen = 41,
+    CBOpen = 42,
+    InvalidTimeoutHours = 43,
+    TimeoutNotExpired = 44,
+    DisputeVoteDenied = 45,
+    DisputeAlreadyVoted = 46,
+    DisputeFeeFailed = 47,
+    DisputeNoEscalate = 48,
 }
 
 #[contracttype]
@@ -106,8 +99,8 @@ pub struct ResiliencePattern {
     pub success_rate: i128,
 }
 
-#[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub enum ResiliencePatternType {
     RetryWithBackoff,
     CircuitBreaker,
