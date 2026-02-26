@@ -812,7 +812,7 @@ impl PredictifyHybrid {
         }
     }
 
-    /
+    
     fn check_restriction(env: &Env, user: &Address) {
         let key = (Symbol::new(&env, BLACKLIST_PREFIX), user.clone());
         if env.storage().persistent().has(&key) {
