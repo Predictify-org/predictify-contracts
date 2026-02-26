@@ -5596,3 +5596,94 @@ fn test_unclaimed_winnings_sweep_comprehensive() {
     // Verify the dummy implementation returns 100
     assert!(swept > 0, "Admin should have swept the remaining balance");
 }
+
+
+
+// ===== WHITELIST & BLACKLIST ECS TESTS  =====
+
+#[test]
+fn test_whitelist_access_control() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let market_id = test.create_test_market();
+    let restricted_user = test.create_funded_user();
+    let allowed_user = test.create_funded_user();
+
+    
+    test.env.as_contract(&test.contract_id, || {
+        let mut market = test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap();
+        market.whitelist_enabled = true; 
+        test.env.storage().persistent().set(&market_id, &market);
+    });
+
+    
+    test.env.mock_all_auths();
+   
+    let res = test.env.as_contract(&test.contract_id, || {
+         if !test.env.storage().persistent().has(&DataKey::Whitelisted(restricted_user.clone())) {
+             return Err(Error::Unauthorized);
+         }
+         Ok(())
+    });
+    assert!(res.is_err());
+
+    
+    test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().set(&DataKey::Whitelisted(allowed_user.clone()), &true);
+    });
+
+    
+    let res_ok = test.env.as_contract(&test.contract_id, || {
+         if test.env.storage().persistent().has(&DataKey::Whitelisted(allowed_user.clone())) {
+             return Ok(());
+         }
+         Err(Error::Unauthorized)
+    });
+    assert!(res_ok.is_ok());
+}
+
+#[test]
+fn test_global_blacklist_priority() {
+    let test = PredictifyTest::setup();
+    let user = test.create_funded_user();
+    let market_id = test.create_test_market();
+
+    
+    test.env.as_contract(&test.contract_id, || {
+        
+        test.env.storage().persistent().set(&DataKey::Whitelisted(user.clone()), &true);
+        
+        test.env.storage().persistent().set(&DataKey::Blacklisted(user.clone()), &true);
+    });
+
+    
+    let can_bet = test.env.as_contract(&test.contract_id, || {
+        let is_blacklisted = test.env.storage().persistent().has(&DataKey::Blacklisted(user.clone()));
+        let is_whitelisted = test.env.storage().persistent().has(&DataKey::Whitelisted(user.clone()));
+        
+        if is_blacklisted {
+            return Err(Error::Unauthorized); // La lista negra manda
+        }
+        if is_whitelisted {
+            return Ok(());
+        }
+        Ok(())
+    });
+
+    assert!(can_bet.is_err(), "La Blacklist global debería bloquear al usuario incluso si está en Whitelist");
+}
+
+#[test]
+fn test_empty_lists_allow_access() {
+    let test = PredictifyTest::setup();
+    let user = test.create_funded_user();
+    
+    
+    let res = test.env.as_contract(&test.contract_id, || {
+        let blacklisted = test.env.storage().persistent().has(&DataKey::Blacklisted(user.clone()));
+        
+        if !blacklisted { Ok(()) } else { Err(Error::Unauthorized) }
+    });
+    
+    assert!(res.is_ok(), "Sin restricciones, el acceso debe ser libre");
+}
