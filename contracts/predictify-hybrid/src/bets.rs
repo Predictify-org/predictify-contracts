@@ -626,7 +626,7 @@ impl BetManager {
         let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
         let mut winning_total = 0;
         for outcome in winning_outcomes.iter() {
-            winning_total += stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+            winning_total += stats.outcome_totals.get(outcome).unwrap_or(0);
         }
 
         if winning_total == 0 {

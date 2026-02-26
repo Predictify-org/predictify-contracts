@@ -63,29 +63,29 @@ fn test_error_numeric_codes_additional_range() {
     assert_eq!(Error::InvalidFeeConfig as u32, 402);
     assert_eq!(Error::ConfigNotFound as u32, 403);
     assert_eq!(Error::AlreadyDisputed as u32, 404);
-    assert_eq!(Error::DisputeVoteExpired as u32, 405);
-    assert_eq!(Error::DisputeVoteDenied as u32, 406);
-    assert_eq!(Error::DisputeAlreadyVoted as u32, 407);
-    assert_eq!(Error::DisputeCondNotMet as u32, 408);
-    assert_eq!(Error::DisputeFeeFailed as u32, 409);
-    assert_eq!(Error::DisputeNoEscalate as u32, 410);
-    assert_eq!(Error::ThresholdBelowMin as u32, 411);
-    assert_eq!(Error::ThresholdTooHigh as u32, 412);
-    assert_eq!(Error::FeeAlreadyCollected as u32, 413);
-    assert_eq!(Error::NoFeesToCollect as u32, 414);
-    assert_eq!(Error::InvalidExtensionDays as u32, 415);
-    assert_eq!(Error::ExtensionDenied as u32, 416);
+    assert_eq!(Error::DisputeError as u32, 405);
+    assert_eq!(Error::DisputeError as u32, 406);
+    assert_eq!(Error::DisputeError as u32, 407);
+    assert_eq!(Error::DisputeError as u32, 408);
+    assert_eq!(Error::DisputeError as u32, 409);
+    assert_eq!(Error::DisputeError as u32, 410);
+    assert_eq!(Error::InvalidThreshold as u32, 411);
+    assert_eq!(Error::InvalidThreshold as u32, 412);
+    assert_eq!(Error::InvalidFeeConfig as u32, 413);
+    assert_eq!(Error::InvalidFeeConfig as u32, 414);
+    assert_eq!(Error::InvalidInput as u32, 415);
+    assert_eq!(Error::InvalidInput as u32, 416);
     assert_eq!(Error::AdminNotSet as u32, 418);
-    assert_eq!(Error::TimeoutNotSet as u32, 419);
-    assert_eq!(Error::InvalidTimeoutHours as u32, 422);
+    assert_eq!(Error::TimeoutError as u32, 419);
+    assert_eq!(Error::TimeoutError as u32, 422);
 }
 
 #[test]
 fn test_error_numeric_codes_circuit_breaker_range() {
-    assert_eq!(Error::CBNotInitialized as u32, 500);
-    assert_eq!(Error::CBAlreadyOpen as u32, 501);
-    assert_eq!(Error::CBNotOpen as u32, 502);
-    assert_eq!(Error::CBOpen as u32, 503);
+    assert_eq!(Error::CBError as u32, 500);
+    assert_eq!(Error::CBError as u32, 501);
+    assert_eq!(Error::CBError as u32, 502);
+    assert_eq!(Error::CBError as u32, 503);
 }
 
 // ===== ERROR CODE STRING TESTS =====
@@ -142,49 +142,49 @@ fn test_error_code_strings_additional() {
     assert_eq!(Error::ConfigNotFound.code(), "CONFIGURATION_NOT_FOUND");
     assert_eq!(Error::AlreadyDisputed.code(), "ALREADY_DISPUTED");
     assert_eq!(
-        Error::DisputeVoteExpired.code(),
+        Error::DisputeError.code(),
         "DISPUTE_VOTING_PERIOD_EXPIRED"
     );
     assert_eq!(
-        Error::DisputeVoteDenied.code(),
+        Error::DisputeError.code(),
         "DISPUTE_VOTING_NOT_ALLOWED"
     );
-    assert_eq!(Error::DisputeAlreadyVoted.code(), "DISPUTE_ALREADY_VOTED");
+    assert_eq!(Error::DisputeError.code(), "DISPUTE_ALREADY_VOTED");
     assert_eq!(
-        Error::DisputeCondNotMet.code(),
+        Error::DisputeError.code(),
         "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET"
     );
     assert_eq!(
-        Error::DisputeFeeFailed.code(),
+        Error::DisputeError.code(),
         "DISPUTE_FEE_DISTRIBUTION_FAILED"
     );
     assert_eq!(
-        Error::DisputeNoEscalate.code(),
+        Error::DisputeError.code(),
         "DISPUTE_ESCALATION_NOT_ALLOWED"
     );
-    assert_eq!(Error::ThresholdBelowMin.code(), "THRESHOLD_BELOW_MINIMUM");
-    assert_eq!(Error::ThresholdTooHigh.code(), "THRESHOLD_EXCEEDS_MAXIMUM");
-    assert_eq!(Error::FeeAlreadyCollected.code(), "FEE_ALREADY_COLLECTED");
-    assert_eq!(Error::NoFeesToCollect.code(), "NO_FEES_TO_COLLECT");
+    assert_eq!(Error::InvalidThreshold.code(), "THRESHOLD_BELOW_MINIMUM");
+    assert_eq!(Error::InvalidThreshold.code(), "THRESHOLD_EXCEEDS_MAXIMUM");
+    assert_eq!(Error::InvalidFeeConfig.code(), "FEE_ALREADY_COLLECTED");
+    assert_eq!(Error::InvalidFeeConfig.code(), "NO_FEES_TO_COLLECT");
     assert_eq!(
-        Error::InvalidExtensionDays.code(),
+        Error::InvalidInput.code(),
         "INVALID_EXTENSION_DAYS"
     );
-    assert_eq!(Error::ExtensionDenied.code(), "EXTENSION_DENIED");
+    assert_eq!(Error::InvalidInput.code(), "EXTENSION_DENIED");
     assert_eq!(Error::AdminNotSet.code(), "ADMIN_NOT_SET");
-    assert_eq!(Error::TimeoutNotSet.code(), "DISPUTE_TIMEOUT_NOT_SET");
-    assert_eq!(Error::InvalidTimeoutHours.code(), "INVALID_TIMEOUT_HOURS");
+    assert_eq!(Error::TimeoutError.code(), "DISPUTE_TIMEOUT_NOT_SET");
+    assert_eq!(Error::TimeoutError.code(), "INVALID_TIMEOUT_HOURS");
 }
 
 #[test]
 fn test_error_code_strings_circuit_breaker() {
     assert_eq!(
-        Error::CBNotInitialized.code(),
+        Error::CBError.code(),
         "CIRCUIT_BREAKER_NOT_INITIALIZED"
     );
-    assert_eq!(Error::CBAlreadyOpen.code(), "CIRCUIT_BREAKER_ALREADY_OPEN");
-    assert_eq!(Error::CBNotOpen.code(), "CIRCUIT_BREAKER_NOT_OPEN");
-    assert_eq!(Error::CBOpen.code(), "CIRCUIT_BREAKER_OPEN");
+    assert_eq!(Error::CBError.code(), "CIRCUIT_BREAKER_ALREADY_OPEN");
+    assert_eq!(Error::CBError.code(), "CIRCUIT_BREAKER_NOT_OPEN");
+    assert_eq!(Error::CBError.code(), "CIRCUIT_BREAKER_OPEN");
 }
 
 // ===== ERROR DESCRIPTION TESTS =====
@@ -313,48 +313,48 @@ fn test_error_descriptions_additional() {
     );
     assert_eq!(Error::AlreadyDisputed.description(), "Already disputed");
     assert_eq!(
-        Error::DisputeVoteExpired.description(),
+        Error::DisputeError.description(),
         "Dispute voting period expired"
     );
     assert_eq!(
-        Error::DisputeVoteDenied.description(),
+        Error::DisputeError.description(),
         "Dispute voting not allowed"
     );
     assert_eq!(
-        Error::DisputeAlreadyVoted.description(),
+        Error::DisputeError.description(),
         "Already voted in dispute"
     );
     assert_eq!(
-        Error::DisputeCondNotMet.description(),
+        Error::DisputeError.description(),
         "Dispute resolution conditions not met"
     );
     assert_eq!(
-        Error::DisputeFeeFailed.description(),
+        Error::DisputeError.description(),
         "Dispute fee distribution failed"
     );
     assert_eq!(
-        Error::DisputeNoEscalate.description(),
+        Error::DisputeError.description(),
         "Dispute escalation not allowed"
     );
     assert_eq!(
-        Error::ThresholdBelowMin.description(),
+        Error::InvalidThreshold.description(),
         "Threshold below minimum"
     );
     assert_eq!(
-        Error::ThresholdTooHigh.description(),
+        Error::InvalidThreshold.description(),
         "Threshold exceeds maximum"
     );
     assert_eq!(
-        Error::FeeAlreadyCollected.description(),
+        Error::InvalidFeeConfig.description(),
         "Fee already collected"
     );
-    assert_eq!(Error::NoFeesToCollect.description(), "No fees to collect");
+    assert_eq!(Error::InvalidFeeConfig.description(), "No fees to collect");
     assert_eq!(
-        Error::InvalidExtensionDays.description(),
+        Error::InvalidInput.description(),
         "Invalid extension days"
     );
     assert_eq!(
-        Error::ExtensionDenied.description(),
+        Error::InvalidInput.description(),
         "Extension not allowed or exceeded"
     );
     assert_eq!(
@@ -362,11 +362,11 @@ fn test_error_descriptions_additional() {
         "Admin address is not set (initialization missing)"
     );
     assert_eq!(
-        Error::TimeoutNotSet.description(),
+        Error::TimeoutError.description(),
         "Dispute timeout not set"
     );
     assert_eq!(
-        Error::InvalidTimeoutHours.description(),
+        Error::TimeoutError.description(),
         "Invalid timeout hours"
     );
 }
@@ -374,19 +374,19 @@ fn test_error_descriptions_additional() {
 #[test]
 fn test_error_descriptions_circuit_breaker() {
     assert_eq!(
-        Error::CBNotInitialized.description(),
+        Error::CBError.description(),
         "Circuit breaker not initialized"
     );
     assert_eq!(
-        Error::CBAlreadyOpen.description(),
+        Error::CBError.description(),
         "Circuit breaker is already open (paused)"
     );
     assert_eq!(
-        Error::CBNotOpen.description(),
+        Error::CBError.description(),
         "Circuit breaker is not open (cannot recover)"
     );
     assert_eq!(
-        Error::CBOpen.description(),
+        Error::CBError.description(),
         "Circuit breaker is open (operations blocked)"
     );
 }
@@ -427,25 +427,25 @@ fn test_all_error_descriptions_are_non_empty() {
     assert!(!Error::InvalidFeeConfig.description().is_empty());
     assert!(!Error::ConfigNotFound.description().is_empty());
     assert!(!Error::AlreadyDisputed.description().is_empty());
-    assert!(!Error::DisputeVoteExpired.description().is_empty());
-    assert!(!Error::DisputeVoteDenied.description().is_empty());
-    assert!(!Error::DisputeAlreadyVoted.description().is_empty());
-    assert!(!Error::DisputeCondNotMet.description().is_empty());
-    assert!(!Error::DisputeFeeFailed.description().is_empty());
-    assert!(!Error::DisputeNoEscalate.description().is_empty());
-    assert!(!Error::ThresholdBelowMin.description().is_empty());
-    assert!(!Error::ThresholdTooHigh.description().is_empty());
-    assert!(!Error::FeeAlreadyCollected.description().is_empty());
-    assert!(!Error::NoFeesToCollect.description().is_empty());
-    assert!(!Error::InvalidExtensionDays.description().is_empty());
-    assert!(!Error::ExtensionDenied.description().is_empty());
+    assert!(!Error::DisputeError.description().is_empty());
+    assert!(!Error::DisputeError.description().is_empty());
+    assert!(!Error::DisputeError.description().is_empty());
+    assert!(!Error::DisputeError.description().is_empty());
+    assert!(!Error::DisputeError.description().is_empty());
+    assert!(!Error::DisputeError.description().is_empty());
+    assert!(!Error::InvalidThreshold.description().is_empty());
+    assert!(!Error::InvalidThreshold.description().is_empty());
+    assert!(!Error::InvalidFeeConfig.description().is_empty());
+    assert!(!Error::InvalidFeeConfig.description().is_empty());
+    assert!(!Error::InvalidInput.description().is_empty());
+    assert!(!Error::InvalidInput.description().is_empty());
     assert!(!Error::AdminNotSet.description().is_empty());
-    assert!(!Error::TimeoutNotSet.description().is_empty());
-    assert!(!Error::InvalidTimeoutHours.description().is_empty());
-    assert!(!Error::CBNotInitialized.description().is_empty());
-    assert!(!Error::CBAlreadyOpen.description().is_empty());
-    assert!(!Error::CBNotOpen.description().is_empty());
-    assert!(!Error::CBOpen.description().is_empty());
+    assert!(!Error::TimeoutError.description().is_empty());
+    assert!(!Error::TimeoutError.description().is_empty());
+    assert!(!Error::CBError.description().is_empty());
+    assert!(!Error::CBError.description().is_empty());
+    assert!(!Error::CBError.description().is_empty());
+    assert!(!Error::CBError.description().is_empty());
 }
 
 #[test]
@@ -482,25 +482,25 @@ fn test_all_error_codes_are_non_empty() {
     assert!(!Error::InvalidFeeConfig.code().is_empty());
     assert!(!Error::ConfigNotFound.code().is_empty());
     assert!(!Error::AlreadyDisputed.code().is_empty());
-    assert!(!Error::DisputeVoteExpired.code().is_empty());
-    assert!(!Error::DisputeVoteDenied.code().is_empty());
-    assert!(!Error::DisputeAlreadyVoted.code().is_empty());
-    assert!(!Error::DisputeCondNotMet.code().is_empty());
-    assert!(!Error::DisputeFeeFailed.code().is_empty());
-    assert!(!Error::DisputeNoEscalate.code().is_empty());
-    assert!(!Error::ThresholdBelowMin.code().is_empty());
-    assert!(!Error::ThresholdTooHigh.code().is_empty());
-    assert!(!Error::FeeAlreadyCollected.code().is_empty());
-    assert!(!Error::NoFeesToCollect.code().is_empty());
-    assert!(!Error::InvalidExtensionDays.code().is_empty());
-    assert!(!Error::ExtensionDenied.code().is_empty());
+    assert!(!Error::DisputeError.code().is_empty());
+    assert!(!Error::DisputeError.code().is_empty());
+    assert!(!Error::DisputeError.code().is_empty());
+    assert!(!Error::DisputeError.code().is_empty());
+    assert!(!Error::DisputeError.code().is_empty());
+    assert!(!Error::DisputeError.code().is_empty());
+    assert!(!Error::InvalidThreshold.code().is_empty());
+    assert!(!Error::InvalidThreshold.code().is_empty());
+    assert!(!Error::InvalidFeeConfig.code().is_empty());
+    assert!(!Error::InvalidFeeConfig.code().is_empty());
+    assert!(!Error::InvalidInput.code().is_empty());
+    assert!(!Error::InvalidInput.code().is_empty());
     assert!(!Error::AdminNotSet.code().is_empty());
-    assert!(!Error::TimeoutNotSet.code().is_empty());
-    assert!(!Error::InvalidTimeoutHours.code().is_empty());
-    assert!(!Error::CBNotInitialized.code().is_empty());
-    assert!(!Error::CBAlreadyOpen.code().is_empty());
-    assert!(!Error::CBNotOpen.code().is_empty());
-    assert!(!Error::CBOpen.code().is_empty());
+    assert!(!Error::TimeoutError.code().is_empty());
+    assert!(!Error::TimeoutError.code().is_empty());
+    assert!(!Error::CBError.code().is_empty());
+    assert!(!Error::CBError.code().is_empty());
+    assert!(!Error::CBError.code().is_empty());
+    assert!(!Error::CBError.code().is_empty());
 }
 
 // ===== CODE UNIQUENESS TESTS =====
@@ -540,25 +540,25 @@ fn test_error_numeric_codes_are_unique() {
         Error::InvalidFeeConfig as u32,
         Error::ConfigNotFound as u32,
         Error::AlreadyDisputed as u32,
-        Error::DisputeVoteExpired as u32,
-        Error::DisputeVoteDenied as u32,
-        Error::DisputeAlreadyVoted as u32,
-        Error::DisputeCondNotMet as u32,
-        Error::DisputeFeeFailed as u32,
-        Error::DisputeNoEscalate as u32,
-        Error::ThresholdBelowMin as u32,
-        Error::ThresholdTooHigh as u32,
-        Error::FeeAlreadyCollected as u32,
-        Error::NoFeesToCollect as u32,
-        Error::InvalidExtensionDays as u32,
-        Error::ExtensionDenied as u32,
+        Error::DisputeError as u32,
+        Error::DisputeError as u32,
+        Error::DisputeError as u32,
+        Error::DisputeError as u32,
+        Error::DisputeError as u32,
+        Error::DisputeError as u32,
+        Error::InvalidThreshold as u32,
+        Error::InvalidThreshold as u32,
+        Error::InvalidFeeConfig as u32,
+        Error::InvalidFeeConfig as u32,
+        Error::InvalidInput as u32,
+        Error::InvalidInput as u32,
         Error::AdminNotSet as u32,
-        Error::TimeoutNotSet as u32,
-        Error::InvalidTimeoutHours as u32,
-        Error::CBNotInitialized as u32,
-        Error::CBAlreadyOpen as u32,
-        Error::CBNotOpen as u32,
-        Error::CBOpen as u32,
+        Error::TimeoutError as u32,
+        Error::TimeoutError as u32,
+        Error::CBError as u32,
+        Error::CBError as u32,
+        Error::CBError as u32,
+        Error::CBError as u32,
     ];
 
     // Verify all codes are unique using a simple O(n^2) uniqueness check
@@ -607,25 +607,25 @@ fn test_error_string_codes_are_unique() {
         Error::InvalidFeeConfig.code(),
         Error::ConfigNotFound.code(),
         Error::AlreadyDisputed.code(),
-        Error::DisputeVoteExpired.code(),
-        Error::DisputeVoteDenied.code(),
-        Error::DisputeAlreadyVoted.code(),
-        Error::DisputeCondNotMet.code(),
-        Error::DisputeFeeFailed.code(),
-        Error::DisputeNoEscalate.code(),
-        Error::ThresholdBelowMin.code(),
-        Error::ThresholdTooHigh.code(),
-        Error::FeeAlreadyCollected.code(),
-        Error::NoFeesToCollect.code(),
-        Error::InvalidExtensionDays.code(),
-        Error::ExtensionDenied.code(),
+        Error::DisputeError.code(),
+        Error::DisputeError.code(),
+        Error::DisputeError.code(),
+        Error::DisputeError.code(),
+        Error::DisputeError.code(),
+        Error::DisputeError.code(),
+        Error::InvalidThreshold.code(),
+        Error::InvalidThreshold.code(),
+        Error::InvalidFeeConfig.code(),
+        Error::InvalidFeeConfig.code(),
+        Error::InvalidInput.code(),
+        Error::InvalidInput.code(),
         Error::AdminNotSet.code(),
-        Error::TimeoutNotSet.code(),
-        Error::InvalidTimeoutHours.code(),
-        Error::CBNotInitialized.code(),
-        Error::CBAlreadyOpen.code(),
-        Error::CBNotOpen.code(),
-        Error::CBOpen.code(),
+        Error::TimeoutError.code(),
+        Error::TimeoutError.code(),
+        Error::CBError.code(),
+        Error::CBError.code(),
+        Error::CBError.code(),
+        Error::CBError.code(),
     ];
 
     for i in 0..codes.len() {
@@ -709,10 +709,10 @@ fn test_validation_errors_in_range_300_to_304() {
 #[test]
 fn test_circuit_breaker_errors_in_range_500_to_503() {
     let cb_errs = &[
-        Error::CBNotInitialized as u32,
-        Error::CBAlreadyOpen as u32,
-        Error::CBNotOpen as u32,
-        Error::CBOpen as u32,
+        Error::CBError as u32,
+        Error::CBError as u32,
+        Error::CBError as u32,
+        Error::CBError as u32,
     ];
     for &code in cb_errs {
         assert!(
@@ -766,7 +766,7 @@ fn test_recovery_strategy_skip() {
         RecoveryStrategy::Skip
     );
     assert_eq!(
-        ErrorHandler::get_error_recovery_strategy(&Error::FeeAlreadyCollected),
+        ErrorHandler::get_error_recovery_strategy(&Error::InvalidFeeConfig),
         RecoveryStrategy::Skip
     );
 }
@@ -794,7 +794,7 @@ fn test_recovery_strategy_manual_intervention() {
         RecoveryStrategy::ManualIntervention
     );
     assert_eq!(
-        ErrorHandler::get_error_recovery_strategy(&Error::DisputeFeeFailed),
+        ErrorHandler::get_error_recovery_strategy(&Error::DisputeError),
         RecoveryStrategy::ManualIntervention
     );
 }
@@ -827,7 +827,7 @@ fn test_classification_critical_admin_not_set() {
 fn test_classification_critical_dispute_fee_failed() {
     let env = Env::default();
     let context = make_test_context(&env);
-    let detailed = ErrorHandler::categorize_error(&env, Error::DisputeFeeFailed, context);
+    let detailed = ErrorHandler::categorize_error(&env, Error::DisputeError, context);
     assert_eq!(detailed.severity, ErrorSeverity::Critical);
     assert_eq!(detailed.category, ErrorCategory::Financial);
     assert_eq!(detailed.recovery_strategy, RecoveryStrategy::ManualIntervention);
@@ -957,7 +957,7 @@ fn test_classification_low_already_claimed() {
 fn test_classification_low_fee_already_collected() {
     let env = Env::default();
     let context = make_test_context(&env);
-    let detailed = ErrorHandler::categorize_error(&env, Error::FeeAlreadyCollected, context);
+    let detailed = ErrorHandler::categorize_error(&env, Error::InvalidFeeConfig, context);
     assert_eq!(detailed.severity, ErrorSeverity::Low);
     assert_eq!(detailed.category, ErrorCategory::Financial);
     assert_eq!(detailed.recovery_strategy, RecoveryStrategy::Skip);
@@ -1005,7 +1005,7 @@ fn test_client_can_branch_on_string_code() {
 #[test]
 fn test_client_can_branch_abort_vs_skip() {
     let abort_errors = &[Error::Unauthorized, Error::MarketClosed, Error::MarketResolved];
-    let skip_errors = &[Error::AlreadyVoted, Error::AlreadyClaimed, Error::FeeAlreadyCollected];
+    let skip_errors = &[Error::AlreadyVoted, Error::AlreadyClaimed, Error::InvalidFeeConfig];
 
     for err in abort_errors {
         assert_eq!(
@@ -1269,7 +1269,7 @@ fn test_error_codes_are_upper_snake_case() {
         Error::MarketNotFound.code(),
         Error::OracleUnavailable.code(),
         Error::InvalidFeeConfig.code(),
-        Error::CBOpen.code(),
+        Error::CBError.code(),
     ];
     for &code in codes {
         // All chars must be uppercase ASCII letters, digits, or underscores

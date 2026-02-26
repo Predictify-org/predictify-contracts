@@ -131,7 +131,7 @@ use crate::reentrancy_guard::ReentrancyGuard;
 use crate::resolution::OracleResolution;
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, token, Address, Env, Map, String, Symbol, Vec,
 };
 
 #[contract]
@@ -1004,7 +1004,7 @@ impl PredictifyHybrid {
     }
 
     /// Removes users from the global betting whitelist (admin only).
-    pub fn remove_users_from_global_whitelist(
+    pub fn remove_from_global_whitelist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -1048,7 +1048,7 @@ impl PredictifyHybrid {
     }
 
     /// Removes users from the global betting blacklist (admin only).
-    pub fn remove_users_from_global_blacklist(
+    pub fn remove_from_global_blacklist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -1092,7 +1092,7 @@ impl PredictifyHybrid {
     }
 
     /// Removes event creators from the global creator blacklist (admin only).
-    pub fn remove_creators_from_global_blacklist(
+    pub fn remove_creators_from_blacklist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -3580,7 +3580,7 @@ impl PredictifyHybrid {
                                 .ok_or(Error::InvalidInput)?;
 
                             // Handle payout distribution: custom token transfer or internal balance credit
-                            let token_client = MarketUtils::get_token_client(&env);
+                            let token_client: Result<token::Client, Error> = MarketUtils::get_token_client(&env);
                             match token_client {
                                 Ok(client) => {
                                     // Direct token transfer for custom tokens
@@ -3634,7 +3634,7 @@ impl PredictifyHybrid {
                             let _ = bets::BetStorage::store_bet(&env, &bet);
 
                             // Handle payout distribution: custom token transfer or internal balance credit
-                            let token_client = MarketUtils::get_token_client(&env);
+                            let token_client: Result<token::Client, Error> = MarketUtils::get_token_client(&env);
                             match token_client {
                                 Ok(client) => {
                                     // Direct token transfer for custom tokens

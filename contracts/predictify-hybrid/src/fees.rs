@@ -886,7 +886,7 @@ impl FeeCalculator {
     /// Calculate platform fee for a market
     pub fn calculate_platform_fee(market: &Market) -> Result<i128, Error> {
         if market.total_staked == 0 {
-            return Err(Error::NoFeesToCollect);
+            return Err(Error::InvalidFeeConfig);
         }
 
         let fee_amount = (market.total_staked * PLATFORM_FEE_PERCENTAGE) / 100;
@@ -1178,7 +1178,7 @@ impl FeeValidator {
 
         // Check if fees already collected
         if market.fee_collected {
-            return Err(Error::FeeAlreadyCollected);
+            return Err(Error::InvalidFeeConfig);
         }
 
         // Check if there are sufficient stakes
