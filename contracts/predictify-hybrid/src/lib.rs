@@ -143,6 +143,7 @@ const GLOBAL_CLAIM_PERIOD_KEY: &str = "claim_timeout";
 const MARKET_CLAIM_PERIODS_KEY: &str = "claim_overrides";
 const TREASURY_STORAGE_KEY: &str = "Treasury";
 const GLOBAL_MIN_POOL_SIZE_KEY: &str = "global_min_pool";
+const BLACKLIST_PREFIX: &str = "restricted_user";
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -384,6 +385,7 @@ impl PredictifyHybrid {
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
+        Self::check_restriction(&env, &user);
         balances::BalanceManager::deposit(&env, user, asset, amount)
     }
 
@@ -826,6 +828,34 @@ impl PredictifyHybrid {
         event_id
     }
 
+
+    
+    pub fn set_user_restriction(env: Env, admin: Address, user: Address, is_restricted: bool) {
+        admin.require_auth();
+        
+        let stored_admin: Address = env.storage().persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        let key = (Symbol::new(&env, BLACKLIST_PREFIX), user.clone());
+        if is_restricted {
+            env.storage().persistent().set(&key, &true);
+        } else {
+            env.storage().persistent().remove(&key);
+        }
+    }
+
+    
+    fn check_restriction(env: &Env, user: &Address) {
+        let key = (Symbol::new(&env, BLACKLIST_PREFIX), user.clone());
+        if env.storage().persistent().has(&key) {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+    }
     /// Retrieves an event by its unique identifier.
     ///
     /// # Parameters
