@@ -1544,6 +1544,102 @@ fn test_set_platform_fee_invalid_range() {
 }
 
 #[test]
+fn test_fee_withdrawal_schedule_defaults() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let schedule = client.get_fee_withdrawal_schedule();
+    assert_eq!(
+        schedule.timelock_seconds,
+        crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS
+    );
+    assert_eq!(
+        schedule.max_withdrawal_bps,
+        crate::fees::DEFAULT_FEE_WITHDRAWAL_MAX_BPS
+    );
+}
+
+#[test]
+fn test_fee_withdrawal_schedule_admin_only() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.mock_all_auths();
+    let result = client.try_set_fee_withdrawal_schedule(
+        &test.user,
+        &(crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS + 1),
+        &9000u32,
+    );
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_fee_withdrawal_schedule_invalid_bounds() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.mock_all_auths();
+    let too_short = client.try_set_fee_withdrawal_schedule(
+        &test.admin,
+        &(crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS - 1),
+        &10_000u32,
+    );
+    assert_eq!(too_short, Err(Ok(Error::InvalidInput)));
+
+    let zero_cap = client.try_set_fee_withdrawal_schedule(
+        &test.admin,
+        &crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS,
+        &0u32,
+    );
+    assert_eq!(zero_cap, Err(Ok(Error::InvalidInput)));
+
+    let too_high_cap = client.try_set_fee_withdrawal_schedule(
+        &test.admin,
+        &crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS,
+        &10_001u32,
+    );
+    assert_eq!(too_high_cap, Err(Ok(Error::InvalidInput)));
+}
+
+#[test]
+fn test_fee_withdrawal_schedule_tightening_rules() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // Tighten schedule (valid)
+    test.env.mock_all_auths();
+    assert!(client
+        .try_set_fee_withdrawal_schedule(
+            &test.admin,
+            &(crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS + 60),
+            &9000u32,
+        )
+        .is_ok());
+
+    let schedule = client.get_fee_withdrawal_schedule();
+    assert_eq!(
+        schedule.timelock_seconds,
+        crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS + 60
+    );
+    assert_eq!(schedule.max_withdrawal_bps, 9000);
+
+    // Loosening timelock or increasing cap should be rejected
+    let loosen_time = client.try_set_fee_withdrawal_schedule(
+        &test.admin,
+        &crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS,
+        &9000u32,
+    );
+    assert_eq!(loosen_time, Err(Ok(Error::InvalidInput)));
+
+    let loosen_cap = client.try_set_fee_withdrawal_schedule(
+        &test.admin,
+        &(crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS + 60),
+        &9500u32,
+    );
+    assert_eq!(loosen_cap, Err(Ok(Error::InvalidInput)));
+}
+
+#[test]
 fn test_withdraw_collected_fees() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -1649,6 +1745,27 @@ fn test_withdraw_collected_fees_no_fees() {
 }
 
 #[test]
+fn test_withdraw_fees_admin_only() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: 1_700_000_000,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    test.env.mock_all_auths();
+    let result = client.try_withdraw_fees(&test.user, &0);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
 fn test_fee_withdrawal_timelock_enforced_and_then_allows_withdrawal() {
     let test = PredictifyTest::setup();
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
@@ -1730,6 +1847,107 @@ fn test_fee_withdrawal_timelock_enforced_and_then_allows_withdrawal() {
     });
     test.env.mock_all_auths();
     assert_eq!(client.withdraw_fees(&test.admin, &0), 50);
+}
+
+#[test]
+fn test_fee_withdrawal_event_fields_and_exact_timelock_boundary() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let start_ts: u64 = 1_700_000_000;
+    let timelock = crate::fees::DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS;
+
+    // Seed fee vault and fund contract
+    test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .set(&Symbol::new(&test.env, "tot_fees"), &25i128);
+    });
+    let stellar_client = StellarAssetClient::new(&test.env, &test.token_test.token_id);
+    test.env.mock_all_auths();
+    stellar_client.mint(&test.contract_id, &25i128);
+
+    // First withdrawal (establishes last withdrawal timestamp)
+    test.env.ledger().set(LedgerInfo {
+        timestamp: start_ts,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    assert_eq!(client.withdraw_fees(&test.admin, &0), 25);
+
+    // Add more fees for the next attempt
+    test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .set(&Symbol::new(&test.env, "tot_fees"), &10i128);
+    });
+    test.env.mock_all_auths();
+    stellar_client.mint(&test.contract_id, &10i128);
+
+    // Attempt just before timelock expires
+    test.env.ledger().set(LedgerInfo {
+        timestamp: start_ts + timelock - 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    assert_eq!(client.withdraw_fees(&test.admin, &0), 0);
+
+    let attempt_event = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, FeeWithdrawalAttemptEvent>(&Symbol::new(&test.env, "fwd_att"))
+            .unwrap()
+    });
+    assert_eq!(
+        attempt_event.status,
+        crate::fees::FeeWithdrawalStatus::Timelocked
+    );
+    assert_eq!(attempt_event.last_withdrawal_ts, start_ts);
+    assert_eq!(attempt_event.next_allowed_ts, start_ts + timelock);
+    assert_eq!(attempt_event.timelock_seconds, timelock);
+    assert_eq!(
+        attempt_event.max_withdrawal_bps,
+        crate::fees::DEFAULT_FEE_WITHDRAWAL_MAX_BPS
+    );
+
+    // Attempt at exact timelock boundary should succeed
+    test.env.ledger().set(LedgerInfo {
+        timestamp: start_ts + timelock,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    assert_eq!(client.withdraw_fees(&test.admin, &0), 10);
+
+    let success_event = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, FeeWithdrawnEvent>(&Symbol::new(&test.env, "fwd_ok"))
+            .unwrap()
+    });
+    assert_eq!(success_event.amount, 10);
+    assert_eq!(success_event.remaining_fees, 0);
+    assert_eq!(success_event.timestamp, start_ts + timelock);
 }
 
 #[test]
@@ -2843,6 +3061,9 @@ fn resolve_market_without_distribution(
         market.winning_outcomes = Some(winners);
         market.state = MarketState::Resolved;
         test.env.storage().persistent().set(market_id, &market);
+    });
+}
+
 // ===== BATCH CLAIM WINNINGS TESTS =====
 
 #[test]
