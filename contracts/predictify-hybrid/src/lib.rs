@@ -1,3 +1,22 @@
+    /**
+     * @notice Places a bet on a prediction market event using a custom Stellar token/asset.
+     * @dev Supports Soroban token interface for secure fund locking and payout.
+     * @param env Soroban environment
+     * @param user Address of the user placing the bet
+     * @param market_id Unique identifier of the market
+     * @param outcome Outcome to bet on
+     * @param amount Amount to bet (base token units)
+     * @param asset Optional asset info (Stellar token/asset)
+     * @return Bet struct containing bet details
+     */
+    /**
+     * @notice Places multiple bets atomically using custom Stellar token/asset.
+     * @dev Supports Soroban token interface for secure batch fund locking and payout.
+     * @param env Soroban environment
+     * @param user Address of the user placing the bets
+     * @param bets Vector of (market_id, outcome, amount, asset)
+     * @return Vector of Bet structs
+     */
 #![no_std]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
@@ -143,6 +162,7 @@ const GLOBAL_CLAIM_PERIOD_KEY: &str = "claim_timeout";
 const MARKET_CLAIM_PERIODS_KEY: &str = "claim_overrides";
 const TREASURY_STORAGE_KEY: &str = "Treasury";
 const GLOBAL_MIN_POOL_SIZE_KEY: &str = "global_min_pool";
+const BLACKLIST_PREFIX: &str = "restricted_user";
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -201,9 +221,34 @@ impl PredictifyHybrid {
     ///
     /// This function can only be called once. Any subsequent calls will panic with
     /// `Error::AlreadyInitialized` to prevent admin takeover attacks.
-    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>) {
-        // Determine platform fee (default 2% if not specified)
+    /// Initializes the Predictify Hybrid contract with admin, platform fee, and allowed tokens.
+    ///
+    /// Allows admin to configure allowed Stellar assets (e.g., USDC, custom token) for bets/payouts.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin address
+    /// * `platform_fee_percentage` - Optional platform fee
+    /// * `allowed_assets` - Optional list of allowed assets (Address, Symbol, decimals)
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        platform_fee_percentage: Option<i128>,
+        allowed_assets: Option<Vec<crate::tokens::Asset>>,
+    ) {
         let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
+        // Store allowed assets globally
+        if let Some(assets) = allowed_assets {
+            for asset in assets.iter() {
+                if !asset.validate(&env) {
+                    panic_with_error!(env, Error::InvalidInput);
+                }
+                crate::tokens::TokenRegistry::add_global(&env, asset);
+            }
+            env.storage().persistent().set(&Symbol::new(&env, "allowed_assets_global"), &assets);
+        }
+        // ...existing code...
+    }
 
         // Validate fee percentage bounds (0-10%)
         if fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
@@ -384,6 +429,7 @@ impl PredictifyHybrid {
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
+        Self::check_restriction(&env, &user);
         balances::BalanceManager::deposit(&env, user, asset, amount)
     }
 
@@ -413,29 +459,18 @@ impl PredictifyHybrid {
         storage::BalanceStorage::get_balance(&env, &user, &asset)
     }
 
-    /// Creates a new prediction market with specified parameters and oracle configuration.
+    /// Creates a new prediction market with specified parameters, oracle configuration, and allowed asset.
     ///
-    /// This function allows authorized administrators to create prediction markets
-    /// with custom questions, possible outcomes, duration, and oracle integration.
-    /// Each market gets a unique identifier and is stored in persistent contract storage.
-    ///
-    /// # Multi-Outcome Support
-    ///
-    /// Markets support 2 to N outcomes, enabling both binary (yes/no) and multi-outcome
-    /// markets (e.g., Team A / Team B / Draw). The contract handles:
-    /// - Single winner resolution (one outcome wins)
-    /// - Tie/multi-winner resolution (multiple outcomes win, pool split proportionally)
-    /// - Outcome validation during bet placement
-    /// - Proportional payout distribution for ties
+    /// Allows admin to set allowed token(s) per event or globally.
     ///
     /// # Parameters
-    ///
     /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - The administrator address creating the market (must be authorized)
     /// * `question` - The prediction question (must be non-empty)
     /// * `outcomes` - Vector of possible outcomes (minimum 2 required, all non-empty, no duplicates)
     /// * `duration_days` - Market duration in days (must be between 1-365 days)
     /// * `oracle_config` - Configuration for oracle integration (Reflector, Pyth, etc.)
+    /// * `asset` - Optional asset for bets/payouts (Stellar token)
     ///
     /// # Returns
     ///
@@ -826,6 +861,34 @@ impl PredictifyHybrid {
         event_id
     }
 
+
+    
+    pub fn set_user_restriction(env: Env, admin: Address, user: Address, is_restricted: bool) {
+        admin.require_auth();
+        
+        let stored_admin: Address = env.storage().persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        let key = (Symbol::new(&env, BLACKLIST_PREFIX), user.clone());
+        if is_restricted {
+            env.storage().persistent().set(&key, &true);
+        } else {
+            env.storage().persistent().remove(&key);
+        }
+    }
+
+    
+    fn check_restriction(env: &Env, user: &Address) {
+        let key = (Symbol::new(&env, BLACKLIST_PREFIX), user.clone());
+        if env.storage().persistent().has(&key) {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+    }
     /// Retrieves an event by its unique identifier.
     ///
     /// # Parameters
@@ -1005,6 +1068,7 @@ impl PredictifyHybrid {
 
     /// Removes users from the global betting whitelist (admin only).
     pub fn remove_from_global_whitelist(
+    pub fn rm_users_global_whitelist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -1049,6 +1113,7 @@ impl PredictifyHybrid {
 
     /// Removes users from the global betting blacklist (admin only).
     pub fn remove_from_global_blacklist(
+    pub fn rm_users_global_blacklist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -1093,6 +1158,7 @@ impl PredictifyHybrid {
 
     /// Removes event creators from the global creator blacklist (admin only).
     pub fn remove_creators_from_blacklist(
+    pub fn rm_creators_global_blacklist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -1344,12 +1410,23 @@ impl PredictifyHybrid {
     ///     10_0000000, // 10 XLM
     /// );
     /// ```
+    /// Places a bet on a prediction market event by locking user funds.
+    /// Supports custom Stellar token/asset via Soroban token interface.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - The address of the user placing the bet (must be authenticated)
+    /// * `market_id` - Unique identifier of the market to bet on
+    /// * `outcome` - The outcome the user predicts will occur
+    /// * `amount` - Amount of tokens to lock for this bet (in base token units)
+    /// * `asset` - Optional asset info (Stellar token/asset)
     pub fn place_bet(
         env: Env,
         user: Address,
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        asset: Option<crate::tokens::Asset>,
     ) -> crate::types::Bet {
         if let Err(e) = admin::ContractPauseManager::require_not_paused(&env) {
             panic_with_error!(env, e);
@@ -1372,7 +1449,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         // Use the BetManager to handle the bet placement
-        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
+        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount, asset) {
             Ok(bet) => {
                 // Record statistics
                 statistics::StatisticsManager::record_bet_placed(&env, &user, amount);
@@ -1441,10 +1518,17 @@ impl PredictifyHybrid {
     ///
     /// let placed_bets = PredictifyHybrid::place_bets(env.clone(), user, bets);
     /// ```
+    /// Places multiple bets in a single atomic transaction.
+    /// Supports custom Stellar token/asset via Soroban token interface.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - The address of the user placing the bets (must be authenticated)
+    /// * `bets` - Vector of tuples containing (market_id, outcome, amount, asset) for each bet
     pub fn place_bets(
         env: Env,
         user: Address,
-        bets: Vec<(Symbol, String, i128)>,
+        bets: Vec<(Symbol, String, i128, Option<crate::tokens::Asset>)>,
     ) -> Vec<crate::types::Bet> {
         if let Err(e) = admin::ContractPauseManager::require_not_paused(&env) {
             panic_with_error!(env, e);
@@ -2798,6 +2882,10 @@ impl PredictifyHybrid {
             resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)?;
 
         Ok(oracle_resolution.oracle_result)
+    }
+
+    fn fetch_oracle_resolution(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
+        resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
     }
 
     /// Verifies and fetches event outcome from external oracle sources automatically.
@@ -5292,6 +5380,24 @@ impl PredictifyHybrid {
         migration: versioning::VersionMigration,
     ) -> Result<bool, Error> {
         versioning::VersionManager::new(&env).test_version_migration(&env, migration)
+    }
+
+    /// Get contract capability list for client discovery.
+    ///
+    /// Returns a stable list of supported feature groups for compatibility checks.
+    pub fn capabilities(env: Env) -> Vec<String> {
+        let mut capabilities = Vec::new(&env);
+        capabilities.push_back(String::from_str(&env, "versioning"));
+        capabilities.push_back(String::from_str(&env, "upgrade-management"));
+        capabilities.push_back(String::from_str(&env, "query-functions"));
+        capabilities.push_back(String::from_str(&env, "market-management"));
+        capabilities.push_back(String::from_str(&env, "betting"));
+        capabilities.push_back(String::from_str(&env, "disputes"));
+        capabilities.push_back(String::from_str(&env, "oracle-integration"));
+        capabilities.push_back(String::from_str(&env, "governance"));
+        capabilities.push_back(String::from_str(&env, "analytics"));
+        capabilities.push_back(String::from_str(&env, "monitoring"));
+        capabilities
     }
 
     // ===== MONITORING FUNCTIONS =====

@@ -1,3 +1,22 @@
+    /**
+     * @notice Place a bet on a market outcome with custom Stellar token/asset support.
+     * @dev Uses Soroban token interface for secure fund locking and payout.
+     * @param env Soroban environment
+     * @param user Address of the user placing the bet
+     * @param market_id Unique identifier of the market
+     * @param outcome Outcome to bet on
+     * @param amount Amount to bet (base token units)
+     * @param asset Optional asset info (Stellar token/asset)
+     * @return Bet struct
+     */
+    /**
+     * @notice Place multiple bets atomically with custom Stellar token/asset support.
+     * @dev Uses Soroban token interface for secure batch fund locking and payout.
+     * @param env Soroban environment
+     * @param user Address of the user placing the bets
+     * @param bets Vector of (market_id, outcome, amount, asset)
+     * @return Vector of Bet structs
+     */
 //! # Bet Placement Module
 //!
 //! This module implements the bet placement mechanism for prediction markets,
@@ -245,8 +264,8 @@ impl BetManager {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        asset: Option<crate::tokens::Asset>,
     ) -> Result<Bet, Error> {
-        // Require authentication from the user
         user.require_auth();
 
         if crate::storage::EventManager::has_event(env, &market_id) {
@@ -259,46 +278,25 @@ impl BetManager {
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         BetValidator::validate_market_for_betting(env, &market)?;
-
-        // Validate bet parameters (uses configurable min/max limits per event or global)
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
-
-        // Check if user has already bet on this market
         if Self::has_user_bet(env, &market_id, &user) {
             return Err(Error::AlreadyBet);
         }
-
-        // Lock funds (transfer from user to contract)
-        BetUtils::lock_funds(env, &user, amount)?;
-
-        // Create bet
-        let bet = Bet::new(
-            env,
-            user.clone(),
-            market_id.clone(),
-            outcome.clone(),
-            amount,
-        );
-
-        // Store bet
+        // Lock funds using token transfer if asset is set, else XLM-native
+        if let Some(asset_info) = asset.or_else(|| market.asset.clone()) {
+            crate::tokens::transfer_token(env, &asset_info, &user, &env.current_contract_address(), amount);
+            crate::tokens::emit_asset_event(env, &asset_info, "bet_locked");
+        } else {
+            BetUtils::lock_funds(env, &user, amount)?;
+        }
+        let bet = Bet::new(env, user.clone(), market_id.clone(), outcome.clone(), amount);
         BetStorage::store_bet(env, &bet)?;
-
-        // Update market betting stats
         Self::update_market_bet_stats(env, &market_id, &outcome, amount)?;
-
-        // Update market's total staked (for payout pool calculation)
         market.total_staked += amount;
-
-        // Also update votes and stakes for backward compatibility with payout distribution
-        // This allows distribute_payouts to work with both bets and votes
         market.votes.set(user.clone(), outcome.clone());
         market.stakes.set(user.clone(), amount);
-
         MarketStateManager::update_market(env, &market_id, &market);
-
-        // Emit bet placed event
         EventEmitter::emit_bet_placed(env, &market_id, &user, &outcome, amount);
-
         Ok(bet)
     }
 
@@ -335,7 +333,7 @@ impl BetManager {
     pub fn place_bets(
         env: &Env,
         user: Address,
-        bets: soroban_sdk::Vec<(Symbol, String, i128)>,
+        bets: soroban_sdk::Vec<(Symbol, String, i128, Option<crate::tokens::Asset>)>,
     ) -> Result<soroban_sdk::Vec<Bet>, Error> {
         // Require authentication from the user
         user.require_auth();
@@ -355,7 +353,7 @@ impl BetManager {
         let mut total_amount: i128 = 0;
 
         for bet_data in bets.iter() {
-            let (market_id, outcome, amount) = bet_data;
+            let (market_id, outcome, amount, asset) = bet_data;
 
             // Get and validate market
             let market = MarketStateManager::get_market(env, &market_id)?;
@@ -385,13 +383,22 @@ impl BetManager {
         }
 
         // Phase 2: Lock total funds once (more efficient than per-bet transfers)
-        BetUtils::lock_funds(env, &user, total_amount)?;
+        // If all bets use same asset, use token transfer; else fallback to XLM-native
+        let all_assets = bets.iter().map(|(_, _, _, asset)| asset.clone()).collect::<soroban_sdk::Vec<Option<crate::tokens::Asset>>>();
+        let unique_assets = all_assets.iter().filter_map(|a| a.clone()).collect::<soroban_sdk::Vec<crate::tokens::Asset>>();
+        if unique_assets.len() == 1 {
+            let asset_info = unique_assets.get(0).unwrap();
+            crate::tokens::transfer_token(env, &asset_info, &user, &env.current_contract_address(), total_amount);
+            crate::tokens::emit_asset_event(env, &asset_info, "bet_locked_batch");
+        } else {
+            BetUtils::lock_funds(env, &user, total_amount)?;
+        }
 
         // Phase 3: Create and store all bets
         let mut placed_bets = soroban_sdk::Vec::new(env);
 
         for (i, bet_data) in bets.iter().enumerate() {
-            let (market_id, outcome, amount) = bet_data;
+            let (market_id, outcome, amount, asset) = bet_data;
             let mut market = markets.get(i as u32).unwrap();
 
             // Create bet
@@ -608,50 +615,39 @@ impl BetManager {
         market_id: &Symbol,
         user: &Address,
     ) -> Result<i128, Error> {
-        // Get user's bet
         let bet = BetStorage::get_bet(env, market_id, user).ok_or(Error::NothingToClaim)?;
-
-        // Ensure bet is a winner
         if !bet.is_winner() {
             return Ok(0);
         }
-
-        // Get market
         let market = MarketStateManager::get_market(env, market_id)?;
-
-        // Get market bet stats
         let stats = BetStorage::get_market_bet_stats(env, market_id);
-
-        // Get total amount bet on all winning outcomes (handles ties - pool split)
         let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
         let mut winning_total = 0;
         for outcome in winning_outcomes.iter() {
             winning_total += stats.outcome_totals.get(outcome).unwrap_or(0);
         }
-
         if winning_total == 0 {
             return Ok(0);
         }
-
-        // Get platform fee percentage from config (with fallback to legacy storage)
         let fee_percentage = crate::config::ConfigManager::get_config(env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
-                // Fallback to legacy storage for backward compatibility
                 env.storage()
                     .persistent()
                     .get(&Symbol::new(env, "platform_fee"))
-                    .unwrap_or(200) // Default 2% if not set
+                    .unwrap_or(200)
             });
-
-        // Calculate payout
         let payout = MarketUtils::calculate_payout(
             bet.amount,
             winning_total,
             stats.total_amount_locked,
             fee_percentage,
         )?;
-
+        // Payout via token transfer if asset is set
+        if let Some(asset_info) = market.asset.clone() {
+            crate::tokens::transfer_token(env, &asset_info, &env.current_contract_address(), user, payout);
+            crate::tokens::emit_asset_event(env, &asset_info, "bet_payout");
+        }
         Ok(payout)
     }
 

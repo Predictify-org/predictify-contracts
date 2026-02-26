@@ -58,9 +58,9 @@ pub enum Error {
     /// Market not ready for oracle verification
     MarketNotReady = 205,
     /// Fallback oracle is unavailable or unhealthy
-    FallbackOracleUnavailable = 206,
+    FallbackOracleUnavail = 206,
     /// Resolution timeout has been reached
-    ResolutionTimeoutReached = 207,
+    ResTimeoutReached = 207,
 
     // ===== VALIDATION ERRORS =====
     /// Invalid question format
@@ -143,15 +143,15 @@ pub enum RecoveryStrategy {
     /// Retry the operation
     Retry,
     /// Wait and retry later
-    RetryWithDelay,
+    RetryDelay,
     /// Use alternative method
-    AlternativeMethod,
+    Alternative,
     /// Skip operation and continue
     Skip,
     /// Abort operation
     Abort,
     /// Manual intervention required
-    ManualIntervention,
+    Manual,
     /// No recovery possible
     NoRecovery,
 }
@@ -279,7 +279,7 @@ pub struct ResiliencePattern {
     /// Pattern name/identifier
     pub pattern_name: String,
     /// Pattern type
-    pub pattern_type: ResiliencePatternType,
+    pub pattern_type: ResilienceType,
     /// Pattern configuration
     pub pattern_config: Map<String, String>,
     /// Pattern enabled status
@@ -295,11 +295,11 @@ pub struct ResiliencePattern {
 /// Resilience pattern types
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ResiliencePatternType {
+pub enum ResilienceType {
     /// Retry with exponential backoff
-    RetryWithBackoff,
+    RetryBackoff,
     /// Circuit breaker pattern
-    CircuitBreaker,
+    CB,
     /// Bulkhead isolation
     Bulkhead,
     /// Timeout pattern
@@ -307,7 +307,7 @@ pub enum ResiliencePatternType {
     /// Fallback pattern
     Fallback,
     /// Health check pattern
-    HealthCheck,
+    Health,
     /// Rate limiting pattern
     RateLimit,
 }
@@ -404,7 +404,7 @@ impl ErrorHandler {
                 // For retryable errors, return success to allow retry
                 Ok(true)
             }
-            RecoveryStrategy::RetryWithDelay => {
+            RecoveryStrategy::RetryDelay => {
                 // For errors that need delay, check if enough time has passed
                 let last_attempt = context.timestamp;
                 let current_time = env.ledger().timestamp();
@@ -416,7 +416,7 @@ impl ErrorHandler {
                     Err(Error::InvalidState)
                 }
             }
-            RecoveryStrategy::AlternativeMethod => {
+            RecoveryStrategy::Alternative => {
                 // Try alternative approach based on error type
                 match error {
                     Error::OracleUnavailable => {
@@ -438,7 +438,7 @@ impl ErrorHandler {
                 // Abort the operation
                 Ok(false)
             }
-            RecoveryStrategy::ManualIntervention => {
+            RecoveryStrategy::Manual => {
                 // Require manual intervention
                 Err(Error::InvalidState)
             }
@@ -475,12 +475,12 @@ impl ErrorHandler {
     pub fn get_error_recovery_strategy(error: &Error) -> RecoveryStrategy {
         match error {
             // Retryable errors
-            Error::OracleUnavailable => RecoveryStrategy::RetryWithDelay,
+            Error::OracleUnavailable => RecoveryStrategy::RetryDelay,
             Error::InvalidInput => RecoveryStrategy::Retry,
 
             // Alternative method errors
-            Error::MarketNotFound => RecoveryStrategy::AlternativeMethod,
-            Error::ConfigNotFound => RecoveryStrategy::AlternativeMethod,
+            Error::MarketNotFound => RecoveryStrategy::Alternative,
+            Error::ConfigNotFound => RecoveryStrategy::Alternative,
 
             // Skip errors
             Error::AlreadyVoted => RecoveryStrategy::Skip,
@@ -495,6 +495,8 @@ impl ErrorHandler {
             // Manual intervention errors
             Error::AdminNotSet => RecoveryStrategy::ManualIntervention,
             Error::DisputeError => RecoveryStrategy::ManualIntervention,
+            Error::AdminNotSet => RecoveryStrategy::Manual,
+            Error::DisputeFeeFailed => RecoveryStrategy::Manual,
 
             // No recovery errors
             Error::InvalidState => RecoveryStrategy::NoRecovery,
@@ -683,7 +685,7 @@ impl ErrorHandler {
     }
 
     /// Document error recovery procedures and best practices
-    pub fn document_error_recovery_procedures(env: &Env) -> Result<Map<String, String>, Error> {
+    pub fn document_error_recovery(env: &Env) -> Result<Map<String, String>, Error> {
         let mut procedures = Map::new(env);
 
         procedures.set(
@@ -839,12 +841,12 @@ impl ErrorHandler {
             Error::AdminNotSet => (
                 ErrorSeverity::Critical,
                 ErrorCategory::System,
-                RecoveryStrategy::ManualIntervention,
+                RecoveryStrategy::Manual,
             ),
             Error::DisputeError => (
                 ErrorSeverity::Critical,
                 ErrorCategory::Financial,
-                RecoveryStrategy::ManualIntervention,
+                RecoveryStrategy::Manual,
             ),
 
             // High severity errors
@@ -856,7 +858,7 @@ impl ErrorHandler {
             Error::OracleUnavailable => (
                 ErrorSeverity::High,
                 ErrorCategory::Oracle,
-                RecoveryStrategy::RetryWithDelay,
+                RecoveryStrategy::RetryDelay,
             ),
             Error::InvalidState => (
                 ErrorSeverity::High,
@@ -868,7 +870,7 @@ impl ErrorHandler {
             Error::MarketNotFound => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Market,
-                RecoveryStrategy::AlternativeMethod,
+                RecoveryStrategy::Alternative,
             ),
             Error::MarketClosed => (
                 ErrorSeverity::Medium,
@@ -1255,7 +1257,7 @@ mod tests {
     #[test]
     fn test_error_recovery_strategy() {
         let retry_strategy = ErrorHandler::get_error_recovery_strategy(&Error::OracleUnavailable);
-        assert_eq!(retry_strategy, RecoveryStrategy::RetryWithDelay);
+        assert_eq!(retry_strategy, RecoveryStrategy::RetryDelay);
 
         let abort_strategy = ErrorHandler::get_error_recovery_strategy(&Error::Unauthorized);
         assert_eq!(abort_strategy, RecoveryStrategy::Abort);

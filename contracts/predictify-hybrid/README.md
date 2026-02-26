@@ -1,3 +1,50 @@
+# Custom Stellar Token/Asset Support
+
+## Multi-Asset Markets
+
+Markets can now accept and pay out in any Stellar asset (e.g., USDC, custom token, XLM) using the Soroban token interface.
+
+### Admin Controls
+- Admin can set allowed tokens globally or per event
+- Allowed assets are validated and stored in contract registry
+- Use `initialize` to set global allowed assets
+- Use market creation functions to specify per-event asset
+
+### Secure Token Handling
+- Bets and payouts use Soroban token transfer interface
+- Contract validates token contract and decimals
+- Handles approval/allowance if required by token
+- Emits events with asset info for transparency
+- Does not break XLM-native flow if still supported
+
+### Example Usage
+```rust
+// Initialize contract with allowed assets
+PredictifyHybrid::initialize(env, admin, Some(2), Some(vec![Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }]));
+
+// Create market with custom asset
+PredictifyHybrid::create_market(env, admin, question, outcomes, duration_days, oracle_config, Some(Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }));
+
+// Place bet with custom asset
+BetManager::place_bet(env, user, market_id, outcome, amount, Some(Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }));
+```
+
+### Security Notes
+- All token transfers are validated
+- Only allowed assets can be used for bets/payouts
+- Minimum 95% test coverage required
+- Comprehensive input validation and event emission
+
+### Events
+- Asset info is included in bet and payout events
+- Admin can query allowed assets per event or globally
+
+### Testing
+- Tests cover XLM and custom token flows
+- Insufficient balance and invalid asset scenarios are handled
+
+### Commit Message Example
+`feat: implement custom Stellar token/asset support for bets and payouts`
 # Predictify Hybrid Contract with Real Oracle Integration
 
 ## Overview
