@@ -4,8 +4,6 @@ use soroban_sdk::{contracttype, vec, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::markets::MarketStateManager;
-// ReentrancyGuard module not required here; removed stale import.
-use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::*;
 
 /// Edge case management system for Predictify Hybrid contract
@@ -156,8 +154,6 @@ impl EdgeCaseHandler {
     ///     .expect("Zero stake handling should succeed");
     /// ```
     pub fn handle_zero_stake_scenario(env: &Env, market_id: Symbol) -> Result<(), Error> {
-        // Check reentrancy protection
-        ReentrancyGuard::check_reentrancy_state(env).map_err(|_| Error::InvalidState)?;
         // Get market data
         let market = MarketStateManager::get_market(env, &market_id)?;
 
