@@ -42,6 +42,7 @@ mod reentrancy_guard;
 mod resolution;
 mod statistics;
 mod storage;
+mod lists;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -715,6 +716,11 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
+        // Enforce global creator blacklist (if configured)
+        if let Err(e) = crate::lists::AccessLists::require_creator_can_create(&env, &admin) {
+            panic_with_error!(env, e);
+        }
+
         // Get market configuration for limits
         let market_config = crate::config::ConfigManager::get_default_market_config();
 
@@ -975,6 +981,138 @@ impl PredictifyHybrid {
         Ok(())
     }
 
+    /// Adds users to the global betting whitelist (admin only).
+    pub fn add_users_to_global_whitelist(
+        env: Env,
+        admin: Address,
+        addresses: Vec<Address>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::Unauthorized)?;
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        crate::lists::AccessLists::add_to_user_whitelist(&env, &addresses);
+        Ok(())
+    }
+
+    /// Removes users from the global betting whitelist (admin only).
+    pub fn remove_users_from_global_whitelist(
+        env: Env,
+        admin: Address,
+        addresses: Vec<Address>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::Unauthorized)?;
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        crate::lists::AccessLists::remove_from_user_whitelist(&env, &addresses);
+        Ok(())
+    }
+
+    /// Adds users to the global betting blacklist (admin only).
+    pub fn add_users_to_global_blacklist(
+        env: Env,
+        admin: Address,
+        addresses: Vec<Address>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::Unauthorized)?;
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        crate::lists::AccessLists::add_to_user_blacklist(&env, &addresses);
+        Ok(())
+    }
+
+    /// Removes users from the global betting blacklist (admin only).
+    pub fn remove_users_from_global_blacklist(
+        env: Env,
+        admin: Address,
+        addresses: Vec<Address>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::Unauthorized)?;
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        crate::lists::AccessLists::remove_from_user_blacklist(&env, &addresses);
+        Ok(())
+    }
+
+    /// Adds event creators to the global creator blacklist (admin only).
+    pub fn add_creators_to_global_blacklist(
+        env: Env,
+        admin: Address,
+        addresses: Vec<Address>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::Unauthorized)?;
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        crate::lists::AccessLists::add_to_creator_blacklist(&env, &addresses);
+        Ok(())
+    }
+
+    /// Removes event creators from the global creator blacklist (admin only).
+    pub fn remove_creators_from_global_blacklist(
+        env: Env,
+        admin: Address,
+        addresses: Vec<Address>,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::Unauthorized)?;
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        crate::lists::AccessLists::remove_from_creator_blacklist(&env, &addresses);
+        Ok(())
+    }
+
     /// Allows users to vote on a market outcome by staking tokens.
     ///
     /// This function enables users to participate in prediction markets by voting
@@ -1229,6 +1367,10 @@ impl PredictifyHybrid {
             }
             Err(_) => panic_with_error!(env, Error::InvalidInput),
         }
+        // Enforce global user whitelist/blacklist for betting
+        if let Err(e) = crate::lists::AccessLists::require_user_can_bet(&env, &user) {
+            panic_with_error!(env, e);
+        }
         // Use the BetManager to handle the bet placement
         match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
             Ok(bet) => {
@@ -1310,6 +1452,10 @@ impl PredictifyHybrid {
         let gas_marker = crate::gas::GasTracker::start_tracking(&env);
         if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
             panic_with_error!(env, Error::InvalidState);
+        }
+        // Enforce global user whitelist/blacklist for betting
+        if let Err(e) = crate::lists::AccessLists::require_user_can_bet(&env, &user) {
+            panic_with_error!(env, e);
         }
         match bets::BetManager::place_bets(&env, user, bets) {
             Ok(placed_bets) => {

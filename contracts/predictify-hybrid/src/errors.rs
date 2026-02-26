@@ -36,6 +36,12 @@ pub enum Error {
     BetsAlreadyPlaced = 111,
     /// Insufficient balance
     InsufficientBalance = 112,
+    /// User is blocked by global blacklist
+    UserBlacklisted = 113,
+    /// User is not in the required global whitelist
+    UserNotWhitelisted = 114,
+    /// Event creator is blocked by global blacklist
+    CreatorBlacklisted = 115,
     // FundsLocked removed to save space
 
     // ===== ORACLE ERRORS =====
