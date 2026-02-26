@@ -83,6 +83,9 @@ mod bet_cancellation_tests;
 mod query_tests;
 
 #[cfg(test)]
+#[cfg(test)]
+mod custom_token_tests;
+#[cfg(test)]
 mod state_snapshot_reporting_tests;
 
 #[cfg(test)]
@@ -122,6 +125,7 @@ use crate::config::{
 use crate::events::EventEmitter;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
+use crate::markets::MarketUtils;
 use crate::reentrancy_guard::ReentrancyGuard;
 use crate::resolution::OracleResolution;
 use alloc::format;
@@ -1827,17 +1831,29 @@ impl PredictifyHybrid {
                 // Emit winnings claimed event
                 EventEmitter::emit_winnings_claimed(env, market_id, user, payout);
 
-                // Credit tokens to user balance
-                match storage::BalanceStorage::add_balance(
-                    env,
-                    user,
-                    &types::ReflectorAsset::Stellar,
-                    payout,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => panic_with_error!(env, e),
+                // Handle payout distribution: custom token transfer or internal balance credit
+                match MarketUtils::get_token_client(env) {
+                    Ok(client) => {
+                        // Direct token transfer for custom tokens
+                        if let Err(_) = ReentrancyGuard::before_external_call(env) {
+                            panic_with_error!(env, Error::InvalidState);
+                        }
+                        client.transfer(&env.current_contract_address(), user, &payout);
+                        ReentrancyGuard::after_external_call(env);
+                    }
+                    Err(_) => {
+                        // Fallback to internal balance management
+                        match storage::BalanceStorage::add_balance(
+                            env,
+                            user,
+                            &types::ReflectorAsset::Stellar,
+                            payout,
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => panic_with_error!(env, e),
+                        }
+                    }
                 }
-
                 return;
             }
         }
@@ -3297,7 +3313,7 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "platform_fee"))
-            .unwrap_or(200); // Default 2% if not set
+            .unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE); // Default 2% if not set
 
         // Since place_bet now updates market.votes and market.stakes,
         // we can use the vote-based payout system for both bets and votes
@@ -3364,7 +3380,7 @@ impl PredictifyHybrid {
         }
 
         let total_pool = market.total_staked;
-        let fee_denominator = 10000i128; // Fee is in basis points
+        let fee_denominator = PERCENTAGE_DENOMINATOR;
 
         let mut total_distributed: i128 = 0;
 
@@ -3379,7 +3395,6 @@ impl PredictifyHybrid {
 
                 let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
                 if user_stake > 0 {
-                    let fee_denominator = 10000i128;
                     let user_share = (user_stake
                         .checked_mul(fee_denominator - fee_percent)
                         .ok_or(Error::InvalidInput)?)
@@ -3399,13 +3414,27 @@ impl PredictifyHybrid {
                                 .checked_add(payout)
                                 .ok_or(Error::InvalidInput)?;
 
-                            // Credit winnings to user balance
-                            storage::BalanceStorage::add_balance(
-                                &env,
-                                &user,
-                                &types::ReflectorAsset::Stellar,
-                                payout,
-                            )?;
+                            // Handle payout distribution: custom token transfer or internal balance credit
+                            let token_client = MarketUtils::get_token_client(&env);
+                            match token_client {
+                                Ok(client) => {
+                                    // Direct token transfer for custom tokens
+                                    if let Err(_) = ReentrancyGuard::before_external_call(&env) {
+                                        panic_with_error!(env, Error::InvalidState);
+                                    }
+                                    client.transfer(&env.current_contract_address(), &user, &payout);
+                                    ReentrancyGuard::after_external_call(&env);
+                                }
+                                Err(_) => {
+                                    // Fallback to internal balance management (e.g. for native-fee markets)
+                                    storage::BalanceStorage::add_balance(
+                                        &env,
+                                        &user,
+                                        &types::ReflectorAsset::Stellar,
+                                        payout,
+                                    )?;
+                                }
+                            }
 
                             EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                         }
@@ -3439,16 +3468,31 @@ impl PredictifyHybrid {
                             bet.status = BetStatus::Won;
                             let _ = bets::BetStorage::store_bet(&env, &bet);
 
-                            // Credit winnings to user balance instead of direct transfer
-                            match storage::BalanceStorage::add_balance(
-                                &env,
-                                &user,
-                                &types::ReflectorAsset::Stellar,
-                                payout,
-                            ) {
-                                Ok(_) => {}
-                                Err(e) => panic_with_error!(env, e),
+                            // Handle payout distribution: custom token transfer or internal balance credit
+                            let token_client = MarketUtils::get_token_client(&env);
+                            match token_client {
+                                Ok(client) => {
+                                    // Direct token transfer for custom tokens
+                                    if let Err(_) = ReentrancyGuard::before_external_call(&env) {
+                                        panic_with_error!(env, Error::InvalidState);
+                                    }
+                                    client.transfer(&env.current_contract_address(), &user, &payout);
+                                    ReentrancyGuard::after_external_call(&env);
+                                }
+                                Err(_) => {
+                                    // Fallback to internal balance management
+                                    match storage::BalanceStorage::add_balance(
+                                        &env,
+                                        &user,
+                                        &types::ReflectorAsset::Stellar,
+                                        payout,
+                                    ) {
+                                        Ok(_) => {}
+                                        Err(e) => panic_with_error!(env, e),
+                                    }
+                                }
                             }
+
                             EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                         }
                     }
