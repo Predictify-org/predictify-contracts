@@ -2800,6 +2800,10 @@ impl PredictifyHybrid {
         Ok(oracle_resolution.oracle_result)
     }
 
+    fn fetch_oracle_resolution(env: Env, market_id: Symbol) -> Result<OracleResolution, Error> {
+        resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)
+    }
+
     /// Verifies and fetches event outcome from external oracle sources automatically.
     ///
     /// This function implements the complete oracle integration mechanism that:
@@ -5292,6 +5296,24 @@ impl PredictifyHybrid {
         migration: versioning::VersionMigration,
     ) -> Result<bool, Error> {
         versioning::VersionManager::new(&env).test_version_migration(&env, migration)
+    }
+
+    /// Get contract capability list for client discovery.
+    ///
+    /// Returns a stable list of supported feature groups for compatibility checks.
+    pub fn capabilities(env: Env) -> Vec<String> {
+        let mut capabilities = Vec::new(&env);
+        capabilities.push_back(String::from_str(&env, "versioning"));
+        capabilities.push_back(String::from_str(&env, "upgrade-management"));
+        capabilities.push_back(String::from_str(&env, "query-functions"));
+        capabilities.push_back(String::from_str(&env, "market-management"));
+        capabilities.push_back(String::from_str(&env, "betting"));
+        capabilities.push_back(String::from_str(&env, "disputes"));
+        capabilities.push_back(String::from_str(&env, "oracle-integration"));
+        capabilities.push_back(String::from_str(&env, "governance"));
+        capabilities.push_back(String::from_str(&env, "analytics"));
+        capabilities.push_back(String::from_str(&env, "monitoring"));
+        capabilities
     }
 
     // ===== MONITORING FUNCTIONS =====
