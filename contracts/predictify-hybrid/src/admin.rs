@@ -63,11 +63,11 @@ pub enum AdminPermission {
     /// Collect fees
     CollectFees,
     /// Manage disputes
-    ManageDisputes,
+    ManageDispute,
     /// View analytics
-    ViewAnalytics,
+    ViewAnalytic,
     /// Emergency actions
-    EmergencyActions,
+    Emergency,
 }
 
 /// Admin action record
@@ -827,9 +827,9 @@ impl AdminAccessControl {
     /// | `"update_config"` | `AdminPermission::UpdateConfig` |
     /// | `"reset_config"` | `AdminPermission::ResetConfig` |
     /// | `"collect_fees"` | `AdminPermission::CollectFees` |
-    /// | `"manage_disputes"` | `AdminPermission::ManageDisputes` |
-    /// | `"view_analytics"` | `AdminPermission::ViewAnalytics` |
-    /// | `"emergency_actions"` | `AdminPermission::EmergencyActions` |
+    /// | `"manage_disputes"` | `AdminPermission::ManageDispute` |
+    /// | `"view_analytics"` | `AdminPermission::ViewAnalytic` |
+    /// | `"emergency_actions"` | `AdminPermission::Emergency` |
     ///
     /// # Use Cases
     ///
@@ -855,9 +855,9 @@ impl AdminAccessControl {
             "update_config" => Ok(AdminPermission::UpdateConfig),
             "reset_config" => Ok(AdminPermission::ResetConfig),
             "collect_fees" => Ok(AdminPermission::CollectFees),
-            "manage_disputes" => Ok(AdminPermission::ManageDisputes),
-            "view_analytics" => Ok(AdminPermission::ViewAnalytics),
-            "emergency_actions" => Ok(AdminPermission::EmergencyActions),
+            "manage_disputes" => Ok(AdminPermission::ManageDispute),
+            "view_analytics" => Ok(AdminPermission::ViewAnalytic),
+            "emergency_actions" => Ok(AdminPermission::Emergency),
             _ => Err(Error::InvalidInput),
         }
     }
@@ -891,7 +891,7 @@ impl AdminRoleManager {
     /// # Errors
     ///
     /// This function returns specific errors:
-    /// - `Error::Unauthorized` - Assigner lacks EmergencyActions permission
+    /// - `Error::Unauthorized` - Assigner lacks Emergency permission
     /// - Permission validation errors from AdminAccessControl
     /// - Storage operation errors
     ///
@@ -933,14 +933,14 @@ impl AdminRoleManager {
     ///
     /// The assignment process:
     /// 1. **Bootstrap Check**: First assignment bypasses permission validation
-    /// 2. **Permission Validation**: Subsequent assignments require EmergencyActions permission
+    /// 2. **Permission Validation**: Subsequent assignments require Emergency permission
     /// 3. **Role Creation**: Creates AdminRoleAssignment with timestamp and permissions
     /// 4. **Storage Update**: Stores assignment in persistent storage
     /// 5. **Event Emission**: Emits role assignment event for monitoring
     ///
     /// # Security
     ///
-    /// Only admins with EmergencyActions permission can assign roles to others.
+    /// Only admins with Emergency permission can assign roles to others.
     /// The first admin assignment (bootstrapping) bypasses this check to enable
     /// initial contract setup.
     pub fn assign_role(
@@ -960,7 +960,7 @@ impl AdminRoleManager {
             AdminAccessControl::validate_permission(
                 env,
                 assigned_by,
-                &AdminPermission::EmergencyActions,
+                &AdminPermission::Emergency,
             )?;
         }
 
@@ -1179,7 +1179,7 @@ impl AdminRoleManager {
     /// # Returns
     ///
     /// Returns `Vec<AdminPermission>` containing all permissions for the role.
-    /// The vector is never empty - even ReadOnlyAdmin has ViewAnalytics permission.
+    /// The vector is never empty - even ReadOnlyAdmin has ViewAnalytic permission.
     ///
     /// # Example
     ///
@@ -1196,7 +1196,7 @@ impl AdminRoleManager {
     ///
     /// println!("SuperAdmin has {} permissions", super_permissions.len());
     /// assert!(super_permissions.contains(&AdminPermission::Initialize));
-    /// assert!(super_permissions.contains(&AdminPermission::EmergencyActions));
+    /// assert!(super_permissions.contains(&AdminPermission::Emergency));
     ///
     /// // Get permissions for MarketAdmin
     /// let market_permissions = AdminRoleManager::get_permissions_for_role(
@@ -1213,19 +1213,19 @@ impl AdminRoleManager {
     /// **SuperAdmin** (12 permissions):
     /// - Initialize, CreateMarket, CloseMarket, FinalizeMarket
     /// - ExtendMarket, UpdateFees, UpdateConfig, ResetConfig
-    /// - CollectFees, ManageDisputes, ViewAnalytics, EmergencyActions
+    /// - CollectFees, ManageDispute, ViewAnalytic, Emergency
     ///
     /// **MarketAdmin** (5 permissions):
-    /// - CreateMarket, CloseMarket, FinalizeMarket, ExtendMarket, ViewAnalytics
+    /// - CreateMarket, CloseMarket, FinalizeMarket, ExtendMarket, ViewAnalytic
     ///
     /// **ConfigAdmin** (3 permissions):
-    /// - UpdateConfig, ResetConfig, ViewAnalytics
+    /// - UpdateConfig, ResetConfig, ViewAnalytic
     ///
     /// **FeeAdmin** (3 permissions):
-    /// - UpdateFees, CollectFees, ViewAnalytics
+    /// - UpdateFees, CollectFees, ViewAnalytic
     ///
     /// **ReadOnlyAdmin** (1 permission):
-    /// - ViewAnalytics
+    /// - ViewAnalytic
     ///
     /// # Use Cases
     ///
@@ -1255,9 +1255,9 @@ impl AdminRoleManager {
                 AdminPermission::UpdateConfig,
                 AdminPermission::ResetConfig,
                 AdminPermission::CollectFees,
-                AdminPermission::ManageDisputes,
-                AdminPermission::ViewAnalytics,
-                AdminPermission::EmergencyActions,
+                AdminPermission::ManageDispute,
+                AdminPermission::ViewAnalytic,
+                AdminPermission::Emergency,
             ],
             AdminRole::MarketAdmin => soroban_sdk::vec![
                 env,
@@ -1265,21 +1265,21 @@ impl AdminRoleManager {
                 AdminPermission::CloseMarket,
                 AdminPermission::FinalizeMarket,
                 AdminPermission::ExtendMarket,
-                AdminPermission::ViewAnalytics,
+                AdminPermission::ViewAnalytic,
             ],
             AdminRole::ConfigAdmin => soroban_sdk::vec![
                 env,
                 AdminPermission::UpdateConfig,
                 AdminPermission::ResetConfig,
-                AdminPermission::ViewAnalytics,
+                AdminPermission::ViewAnalytic,
             ],
             AdminRole::FeeAdmin => soroban_sdk::vec![
                 env,
                 AdminPermission::UpdateFees,
                 AdminPermission::CollectFees,
-                AdminPermission::ViewAnalytics,
+                AdminPermission::ViewAnalytic,
             ],
-            AdminRole::ReadOnlyAdmin => soroban_sdk::vec![env, AdminPermission::ViewAnalytics,],
+            AdminRole::ReadOnlyAdmin => soroban_sdk::vec![env, AdminPermission::ViewAnalytic,],
         }
     }
 
@@ -1293,7 +1293,7 @@ impl AdminRoleManager {
         AdminAccessControl::validate_permission(
             env,
             deactivated_by,
-            &AdminPermission::EmergencyActions,
+            &AdminPermission::Emergency,
         )?;
 
         // Use a simple fixed key for admin role storage
@@ -1332,7 +1332,7 @@ impl AdminManager {
         AdminAccessControl::validate_permission(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            &AdminPermission::Emergency,
         )?;
 
         // Prevent duplicate admin assignments
@@ -1378,7 +1378,7 @@ impl AdminManager {
         AdminAccessControl::validate_permission(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            &AdminPermission::Emergency,
         )?;
 
         // Prevent self-removal of last super admin
@@ -1419,7 +1419,7 @@ impl AdminManager {
         AdminAccessControl::validate_permission(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            &AdminPermission::Emergency,
         )?;
 
         let admin_key = Self::get_admin_key(env, target_admin);
@@ -1602,7 +1602,7 @@ impl AdminManager {
         AdminAccessControl::validate_permission(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            &AdminPermission::Emergency,
         )?;
 
         let admin_key = Self::get_admin_key(env, target_admin);
@@ -1628,7 +1628,7 @@ impl AdminManager {
         AdminAccessControl::validate_permission(
             env,
             current_admin,
-            &AdminPermission::EmergencyActions,
+            &AdminPermission::Emergency,
         )?;
 
         let admin_key = Self::get_admin_key(env, target_admin);
@@ -1654,7 +1654,7 @@ pub struct MultisigManager;
 impl MultisigManager {
     /// Set the multisig threshold (M-of-N)
     pub fn set_threshold(env: &Env, admin: &Address, threshold: u32) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
         
         let total_admins = Self::count_active_admins(env);
         if threshold == 0 || threshold > total_admins {
@@ -1691,7 +1691,7 @@ impl MultisigManager {
         target: Address,
         data: Map<String, String>,
     ) -> Result<u64, Error> {
-        AdminAccessControl::validate_permission(env, initiator, &AdminPermission::EmergencyActions)?;
+        AdminAccessControl::validate_permission(env, initiator, &AdminPermission::Emergency)?;
         
         let action_id = Self::get_next_action_id(env);
         let mut approvals = Vec::new(env);
@@ -1717,7 +1717,7 @@ impl MultisigManager {
     
     /// Approve a pending action
     pub fn approve_action(env: &Env, admin: &Address, action_id: u64) -> Result<bool, Error> {
-        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
         
         let key = Self::get_action_key(env, action_id);
         let mut action: PendingAdminAction = env.storage().persistent().get(&key).ok_or(Error::ConfigNotFound)?;
@@ -3260,14 +3260,14 @@ impl AdminUtils {
             AdminPermission::CollectFees => {
                 String::from_str(&soroban_sdk::Env::default(), "CollectFees")
             }
-            AdminPermission::ManageDisputes => {
-                String::from_str(&soroban_sdk::Env::default(), "ManageDisputes")
+            AdminPermission::ManageDispute => {
+                String::from_str(&soroban_sdk::Env::default(), "ManageDispute")
             }
-            AdminPermission::ViewAnalytics => {
-                String::from_str(&soroban_sdk::Env::default(), "ViewAnalytics")
+            AdminPermission::ViewAnalytic => {
+                String::from_str(&soroban_sdk::Env::default(), "ViewAnalytic")
             }
-            AdminPermission::EmergencyActions => {
-                String::from_str(&soroban_sdk::Env::default(), "EmergencyActions")
+            AdminPermission::Emergency => {
+                String::from_str(&soroban_sdk::Env::default(), "Emergency")
             }
         }
     }
@@ -3768,11 +3768,11 @@ mod admin_manager_tests {
             AdminPermission::UpdateFees
         ));
 
-        // ReadOnlyAdmin should only have ViewAnalytics
+        // ReadOnlyAdmin should only have ViewAnalytic
         assert!(AdminManager::check_role_permissions(
             &env,
             AdminRole::ReadOnlyAdmin,
-            AdminPermission::ViewAnalytics
+            AdminPermission::ViewAnalytic
         ));
         assert!(!AdminManager::check_role_permissions(
             &env,

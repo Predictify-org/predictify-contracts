@@ -1004,7 +1004,7 @@ impl PredictifyHybrid {
     }
 
     /// Removes users from the global betting whitelist (admin only).
-    pub fn remove_users_from_global_whitelist(
+    pub fn rm_users_global_whitelist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -1048,7 +1048,7 @@ impl PredictifyHybrid {
     }
 
     /// Removes users from the global betting blacklist (admin only).
-    pub fn remove_users_from_global_blacklist(
+    pub fn rm_users_global_blacklist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,
@@ -1092,7 +1092,7 @@ impl PredictifyHybrid {
     }
 
     /// Removes event creators from the global creator blacklist (admin only).
-    pub fn remove_creators_from_global_blacklist(
+    pub fn rm_creators_global_blacklist(
         env: Env,
         admin: Address,
         addresses: Vec<Address>,

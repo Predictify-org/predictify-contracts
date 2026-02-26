@@ -736,10 +736,10 @@ pub struct FeeWithdrawnEvent {
 ///
 /// ```rust
 /// # use soroban_sdk::{Env, Symbol, String, Address};
-/// # use predictify_hybrid::events::OracleVerificationInitiatedEvent;
+/// # use predictify_hybrid::events::OracleVerifInitiatedEvent;
 /// # let env = Env::default();
 ///
-/// let event = OracleVerificationInitiatedEvent {
+/// let event = OracleVerifInitiatedEvent {
 ///     market_id: Symbol::new(&env, \"btc_50k\"),
 ///     initiator: Address::generate(&env),
 ///     feed_id: String::from_str(&env, \"BTC/USD\"),
@@ -749,7 +749,7 @@ pub struct FeeWithdrawnEvent {
 /// ```
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OracleVerificationInitiatedEvent {
+pub struct OracleVerifInitiatedEvent {
     /// Market ID being verified
     pub market_id: Symbol,
     /// Address that initiated verification
@@ -2042,7 +2042,7 @@ impl EventEmitter {
         feed_id: &String,
         oracle_count: u32,
     ) {
-        let event = OracleVerificationInitiatedEvent {
+        let event = OracleVerifInitiatedEvent {
             market_id: market_id.clone(),
             initiator: initiator.clone(),
             feed_id: feed_id.clone(),
