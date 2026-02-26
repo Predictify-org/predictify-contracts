@@ -215,6 +215,45 @@ fn test_create_event_unauthorized() {
 }
 
 #[test]
+#[should_panic(expected = "HostError: Error(Contract, #115)")] // Error::CreatorBlacklisted = 115
+fn test_create_event_creator_blacklisted_globally() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    // Blacklist the admin as a creator globally
+    let addrs = vec![&setup.env, setup.admin.clone()];
+    setup.env.mock_all_auths();
+    client.add_creators_to_global_blacklist(&setup.admin, &addrs);
+
+    let description = String::from_str(&setup.env, "Blacklisted creator event?");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::Reflector,
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    // Now event creation by this admin should fail due to creator blacklist
+    client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+        &EventVisibility::Public,
+    );
+}
+
+#[test]
 #[should_panic(expected = "HostError: Error(Contract, #302)")] // Error::InvalidDuration = 302
 fn test_create_event_invalid_end_time() {
     let setup = TestSetup::new();

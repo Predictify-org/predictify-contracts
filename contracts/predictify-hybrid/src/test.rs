@@ -227,6 +227,30 @@ fn test_public_event_allows_any_address_to_bet() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #113)")] // Error::UserBlacklisted = 113
+fn test_global_blacklist_blocks_bettor() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Public);
+    let blocked_user = test.create_funded_user();
+
+    // Add user to global betting blacklist
+    let addrs = vec![&test.env, blocked_user.clone()];
+    test.env.mock_all_auths();
+    client.add_users_to_global_blacklist(&test.admin, &addrs);
+
+    // Betting from this user should now fail due to global blacklist
+    test.env.mock_all_auths();
+    client.place_bet(
+        &blocked_user,
+        &event_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000i128,
+    );
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #100)")]
 fn test_private_event_blocks_non_allowlisted_address_from_betting() {
     let test = PredictifyTest::setup();
