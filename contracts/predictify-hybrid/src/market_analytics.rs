@@ -158,12 +158,12 @@ impl MarketAnalyticsManager {
         let total_votes = market.votes.len() as u32;
 
         // Calculate outcome distribution
-        let mut outcome_distribution = Map::new(env);
-        let mut stake_distribution = Map::new(env);
-        let mut total_stake_by_outcome = Map::new(env);
+        let mut outcome_distribution: Map<String, u32> = Map::new(env);
+        let mut stake_distribution: Map<String, i128> = Map::new(env);
+        let mut total_stake_by_outcome: Map<String, i128> = Map::new(env);
 
         for (user, outcome) in market.votes.iter() {
-            let stake = market.stakes.get(user.clone()).unwrap_or(0);
+            let stake = market.stakes.get(user).unwrap_or(0);
 
             // Count votes per outcome
             let vote_count = outcome_distribution.get(outcome.clone()).unwrap_or(0);
@@ -224,18 +224,18 @@ impl MarketAnalyticsManager {
         let unique_voters = market.votes.len() as u32;
 
         // Create voting timeline (simplified - in real implementation would track timestamps)
-        let mut voting_timeline = Map::new(env);
+        let mut voting_timeline: Map<u64, u32> = Map::new(env);
         voting_timeline.set(0, total_votes); // Placeholder
 
         // Calculate outcome preferences
-        let mut outcome_preferences = Map::new(env);
+        let mut outcome_preferences: Map<String, u32> = Map::new(env);
         for (_, outcome) in market.votes.iter() {
             let count = outcome_preferences.get(outcome.clone()).unwrap_or(0);
             outcome_preferences.set(outcome.clone(), count + 1);
         }
 
         // Calculate stake concentration
-        let mut stake_concentration = Map::new(env);
+        let mut stake_concentration: Map<Address, i128> = Map::new(env);
         for (user, stake) in market.stakes.iter() {
             stake_concentration.set(user, stake);
         }

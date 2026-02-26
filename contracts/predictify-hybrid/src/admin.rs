@@ -1727,7 +1727,7 @@ impl MultisigManager {
         }
         
         if env.ledger().timestamp() > action.expires_at {
-            return Err(Error::DisputeVoteExpired);
+            return Err(Error::DisputeError);
         }
         
         if action.approvals.contains(admin) {

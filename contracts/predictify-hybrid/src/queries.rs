@@ -215,7 +215,7 @@ impl QueryManager {
         let is_winning = market
             .winning_outcomes
             .as_ref()
-            .map(|wos| wos.contains(&outcome))
+            .map(|wos: &Vec<String>| wos.contains(&outcome))
             .unwrap_or(false);
 
         // Calculate potential payout
