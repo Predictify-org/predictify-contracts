@@ -25,7 +25,7 @@ use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
 use crate::reentrancy_guard::ReentrancyGuard;
-use crate::types::{Bet, BetLimits, BetStats, BetStatus, Market, MarketState};
+use crate::types::{Bet, BetLimits, BetStats, BetStatus, EventVisibility, Market, MarketState};
 use crate::validation;
 
 // ===== CONSTANTS =====
@@ -249,9 +249,12 @@ impl BetManager {
         // Require authentication from the user
         user.require_auth();
 
-        // Note: Event visibility checking is disabled to avoid deserialization issues
-        // when markets and events share the same ID space. Events should use a different
-        // ID prefix (e.g., "evt_") to enable visibility checks.
+        if crate::storage::EventManager::has_event(env, &market_id) {
+            let event = crate::storage::EventManager::get_event(env, &market_id)?;
+            if event.visibility == EventVisibility::Private && !event.allowlist.contains(&user) {
+                return Err(Error::Unauthorized);
+            }
+        }
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;

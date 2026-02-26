@@ -167,6 +167,226 @@ impl PredictifyTest {
             &None,
         )
     }
+
+    pub fn create_test_event(&self, visibility: EventVisibility) -> Symbol {
+        let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
+
+        let outcomes = vec![
+            &self.env,
+            String::from_str(&self.env, "yes"),
+            String::from_str(&self.env, "no"),
+        ];
+
+        self.env.mock_all_auths();
+        client.create_event(
+            &self.admin,
+            &String::from_str(&self.env, "Will BTC reach $50k?"),
+            &outcomes,
+            &(self.env.ledger().timestamp() + 86400),
+            &OracleConfig {
+                provider: OracleProvider::Reflector,
+                oracle_address: Address::generate(&self.env),
+                feed_id: String::from_str(&self.env, "BTC"),
+                threshold: 50_000_00,
+                comparison: String::from_str(&self.env, "gt"),
+            },
+            &None,
+            &3600,
+            &visibility,
+        )
+    }
+}
+
+#[test]
+fn test_public_event_allows_any_address_to_bet() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Public);
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.place_bet(
+        &user1,
+        &event_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000i128,
+    );
+
+    test.env.mock_all_auths();
+    client.place_bet(
+        &user2,
+        &event_id,
+        &String::from_str(&test.env, "no"),
+        &10_000_000i128,
+    );
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.visibility, EventVisibility::Public);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #100)")]
+fn test_private_event_blocks_non_allowlisted_address_from_betting() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Private);
+    let allowlisted = test.create_funded_user();
+    let non_allowlisted = test.create_funded_user();
+
+    let addresses = vec![&test.env, allowlisted.clone()];
+    test.env.mock_all_auths();
+    client.add_to_allowlist(&test.admin, &event_id, &addresses);
+
+    test.env.mock_all_auths();
+    client.place_bet(
+        &non_allowlisted,
+        &event_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000i128,
+    );
+}
+
+#[test]
+fn test_private_event_allows_allowlisted_address_to_bet() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Private);
+    let allowlisted = test.create_funded_user();
+
+    let addresses = vec![&test.env, allowlisted.clone()];
+    test.env.mock_all_auths();
+    client.add_to_allowlist(&test.admin, &event_id, &addresses);
+
+    test.env.mock_all_auths();
+    client.place_bet(
+        &allowlisted,
+        &event_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000i128,
+    );
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.visibility, EventVisibility::Private);
+    assert!(event.allowlist.contains(&allowlisted));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #100)")]
+fn test_private_event_empty_allowlist_blocks_all_bettors() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Private);
+    let user = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.place_bet(
+        &user,
+        &event_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000i128,
+    );
+}
+
+#[test]
+fn test_allowlist_add_remove_and_query_exposure() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Private);
+    let user1 = test.create_funded_user();
+    let user2 = test.create_funded_user();
+
+    let addrs = vec![&test.env, user1.clone(), user2.clone()];
+    test.env.mock_all_auths();
+    client.add_to_allowlist(&test.admin, &event_id, &addrs);
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.visibility, EventVisibility::Private);
+    assert!(event.allowlist.contains(&user1));
+    assert!(event.allowlist.contains(&user2));
+
+    let remove_addrs = vec![&test.env, user1.clone()];
+    test.env.mock_all_auths();
+    client.remove_from_allowlist(&test.admin, &event_id, &remove_addrs);
+
+    let event = client.get_event(&event_id).unwrap();
+    assert!(!event.allowlist.contains(&user1));
+    assert!(event.allowlist.contains(&user2));
+}
+
+#[test]
+fn test_switch_visibility_before_first_bet_enforced() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Public);
+
+    test.env.mock_all_auths();
+    client.set_event_visibility(&test.admin, &event_id, &EventVisibility::Private);
+
+    let allowlisted = test.create_funded_user();
+    let non_allowlisted = test.create_funded_user();
+
+    let addrs = vec![&test.env, allowlisted.clone()];
+    test.env.mock_all_auths();
+    client.add_to_allowlist(&test.admin, &event_id, &addrs);
+
+    test.env.mock_all_auths();
+    client.place_bet(
+        &allowlisted,
+        &event_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000i128,
+    );
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.visibility, EventVisibility::Private);
+    assert!(event.allowlist.contains(&allowlisted));
+
+    let unauthorized_err = test.env.as_contract(&test.contract_id, || {
+        crate::bets::BetManager::place_bet(
+            &test.env,
+            non_allowlisted.clone(),
+            event_id.clone(),
+            String::from_str(&test.env, "no"),
+            10_000_000i128,
+        )
+    });
+    assert!(unauthorized_err.is_err());
+    assert_eq!(unauthorized_err.unwrap_err(), Error::Unauthorized);
+}
+
+#[test]
+fn test_cannot_switch_visibility_after_first_bet() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let event_id = test.create_test_event(EventVisibility::Public);
+    let bettor = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.place_bet(
+        &bettor,
+        &event_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000i128,
+    );
+
+    let result = test.env.as_contract(&test.contract_id, || {
+        PredictifyHybrid::set_event_visibility(
+            test.env.clone(),
+            test.admin.clone(),
+            event_id.clone(),
+            EventVisibility::Private,
+        )
+    });
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), Error::BetsAlreadyPlaced);
 }
 
 // Core functionality tests
