@@ -37,7 +37,6 @@ mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
 mod recovery;
-mod reentrancy_guard;
 mod resolution;
 mod statistics;
 mod storage;
@@ -109,7 +108,6 @@ use crate::config::{
 use crate::events::EventEmitter;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
-use crate::reentrancy_guard::ReentrancyGuard;
 use crate::resolution::OracleResolution;
 use alloc::format;
 use soroban_sdk::{
@@ -785,9 +783,6 @@ impl PredictifyHybrid {
         outcome: String,
         amount: i128,
     ) -> crate::types::Bet {
-        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
-            panic_with_error!(env, Error::InvalidState);
-        }
         // Use the BetManager to handle the bet placement
         match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
             Ok(bet) => {
@@ -858,9 +853,6 @@ impl PredictifyHybrid {
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
     ) -> Vec<crate::types::Bet> {
-        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
-            panic_with_error!(env, Error::InvalidState);
-        }
         match bets::BetManager::place_bets(&env, user, bets) {
             Ok(placed_bets) => placed_bets,
             Err(e) => panic_with_error!(env, e),
@@ -1195,9 +1187,6 @@ impl PredictifyHybrid {
     /// - User must not have previously claimed winnings
     pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
         user.require_auth();
-        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
-            panic_with_error!(env, Error::InvalidState);
-        }
 
         let mut market: Market = env
             .storage()
@@ -2394,9 +2383,6 @@ impl PredictifyHybrid {
     ///
     /// This function emits `WinningsClaimedEvent` for each user who receives a payout.
     pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
-        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
-            return Err(Error::InvalidState);
-        }
         let mut market: Market = env
             .storage()
             .persistent()
@@ -2868,9 +2854,6 @@ impl PredictifyHybrid {
     /// ```
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
         admin.require_auth();
-        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
-            return Err(Error::InvalidState);
-        }
 
         // Verify admin
         let stored_admin: Address = env
@@ -3699,15 +3682,8 @@ impl PredictifyHybrid {
         market.state = MarketState::Cancelled;
         env.storage().persistent().set(&market_id, &market);
 
-        // Refund all bets under reentrancy lock (batch of token transfers)
-        if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
-            return Err(Error::InvalidState);
-        }
-        if ReentrancyGuard::before_external_call(&env).is_err() {
-            return Err(Error::InvalidState);
-        }
+        // Refund all bets (batch of token transfers)
         let refund_result = bets::BetManager::refund_market_bets(&env, &market_id);
-        ReentrancyGuard::after_external_call(&env);
         refund_result?;
 
         // Calculate total refunded (sum of all bets)
@@ -3774,14 +3750,7 @@ impl PredictifyHybrid {
         market.state = MarketState::Cancelled;
         env.storage().persistent().set(&market_id, &market);
 
-        if reentrancy_guard::ReentrancyGuard::check_reentrancy_state(&env).is_err() {
-            return Err(Error::InvalidState);
-        }
-        if reentrancy_guard::ReentrancyGuard::before_external_call(&env).is_err() {
-            return Err(Error::InvalidState);
-        }
         let refund_result = bets::BetManager::refund_market_bets(&env, &market_id);
-        reentrancy_guard::ReentrancyGuard::after_external_call(&env);
         refund_result?;
 
         let total_refunded = market.total_staked;
