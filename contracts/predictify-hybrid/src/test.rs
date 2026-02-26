@@ -6540,3 +6540,465 @@ fn test_unclaimed_winnings_sweep_comprehensive() {
     // Verify the dummy implementation returns 100
     assert!(swept > 0, "Admin should have swept the remaining balance");
 }
+
+// ===== COMPREHENSIVE CLAIM WINNINGS TESTS =====
+
+#[test]
+fn test_claim_winnings_correct_proportional_amount() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let winner1 = test.create_funded_user();
+    let winner2 = test.create_funded_user();
+    let loser = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(&winner1, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(&winner2, &market_id, &String::from_str(&test.env, "yes"), &200_0000000);
+    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &300_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    let winner1_balance_before = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner1)
+    });
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&winner1, &market_id);
+
+    let winner1_balance_after = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner1)
+    });
+
+    let payout = winner1_balance_after - winner1_balance_before;
+    assert!(payout > 100_0000000, "Winner should receive more than their stake");
+    assert!(payout < 600_0000000, "Winner should not receive entire pool");
+}
+
+#[test]
+fn test_claim_winnings_with_platform_fee_deduction() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let winner = test.create_funded_user();
+    let loser = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(&winner, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &100_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    let balance_before = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner)
+    });
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&winner, &market_id);
+
+    let balance_after = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner)
+    });
+
+    let payout = balance_after - balance_before;
+    let expected_gross = 200_0000000;
+    let expected_fee = expected_gross * 200 / 10000;
+    let expected_net = expected_gross - expected_fee;
+
+    assert_eq!(payout, expected_net, "Payout should equal gross minus 2% platform fee");
+}
+
+#[test]
+fn test_claim_winnings_multiple_winners_proportional_split() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let winner1 = test.create_funded_user();
+    let winner2 = test.create_funded_user();
+    let winner3 = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(&winner1, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(&winner2, &market_id, &String::from_str(&test.env, "yes"), &200_0000000);
+    client.vote(&winner3, &market_id, &String::from_str(&test.env, "yes"), &300_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    let balance1_before = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner1)
+    });
+
+    let balance2_before = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner2)
+    });
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&winner1, &market_id);
+    client.claim_winnings(&winner2, &market_id);
+
+    let balance1_after = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner1)
+    });
+
+    let balance2_after = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&winner2)
+    });
+
+    let payout1 = balance1_after - balance1_before;
+    let payout2 = balance2_after - balance2_before;
+
+    assert!(payout2 > payout1, "Winner with 2x stake should receive more");
+    assert!(payout2 / payout1 >= 1 && payout2 / payout1 <= 3, "Payout ratio should be proportional");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #104)")]
+fn test_claim_winnings_unresolved_market_rejected() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.mock_all_auths();
+    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #105)")]
+fn test_claim_winnings_non_voter_rejected() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let voter = test.create_funded_user();
+    let non_voter = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(&voter, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&non_voter, &market_id);
+}
+
+#[test]
+fn test_claim_winnings_event_emission() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.mock_all_auths();
+    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+
+    let events = test.env.events().all();
+    let has_claim_event = events.iter().any(|e| {
+        let (_, topics, _) = e;
+        topics.iter().any(|t| {
+            if let Ok(sym) = Symbol::try_from_val(&test.env, t) {
+                sym == Symbol::new(&test.env, "winnings_claimed")
+            } else {
+                false
+            }
+        })
+    });
+
+    assert!(has_claim_event, "WinningsClaimed event should be emitted");
+}
+
+#[test]
+fn test_claim_winnings_zero_payout_for_loser_marked_claimed() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let winner = test.create_funded_user();
+    let loser = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(&winner, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &100_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    let balance_before = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&loser)
+    });
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&loser, &market_id);
+
+    let balance_after = test.env.as_contract(&test.contract_id, || {
+        let token_client = crate::markets::MarketUtils::get_token_client(&test.env).unwrap();
+        token_client.balance(&loser)
+    });
+
+    assert_eq!(balance_after, balance_before, "Loser should receive no payout");
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    assert!(market_after.claimed.get(loser.clone()).unwrap_or(false), "Loser should be marked as claimed");
+}
+
+#[test]
+fn test_claim_winnings_statistics_updated() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.mock_all_auths();
+    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+
+    let stats = test.env.as_contract(&test.contract_id, || {
+        crate::statistics::StatisticsManager::get_user_stats(&test.env, &test.user)
+    });
+
+    assert!(stats.total_winnings_claimed > 0, "User statistics should reflect claimed winnings");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #101)")]
+fn test_claim_winnings_nonexistent_market() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let fake_market = Symbol::new(&test.env, "fake_market");
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &fake_market);
+}
+
+#[test]
+fn test_claim_winnings_all_winners_can_claim() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    let winner1 = test.create_funded_user();
+    let winner2 = test.create_funded_user();
+    let winner3 = test.create_funded_user();
+    let loser = test.create_funded_user();
+
+    test.env.mock_all_auths();
+    client.vote(&winner1, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(&winner2, &market_id, &String::from_str(&test.env, "yes"), &150_0000000);
+    client.vote(&winner3, &market_id, &String::from_str(&test.env, "yes"), &250_0000000);
+    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &500_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&winner1, &market_id);
+    client.claim_winnings(&winner2, &market_id);
+    client.claim_winnings(&winner3, &market_id);
+
+    let market_after = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    assert!(market_after.claimed.get(winner1.clone()).unwrap_or(false));
+    assert!(market_after.claimed.get(winner2.clone()).unwrap_or(false));
+    assert!(market_after.claimed.get(winner3.clone()).unwrap_or(false));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #207)")]
+fn test_claim_winnings_after_claim_period_expired() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    test.env.mock_all_auths();
+    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    resolve_market_without_distribution(&test, &market_id, "yes");
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 8000000,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    test.env.mock_all_auths();
+    client.claim_winnings(&test.user, &market_id);
+}
