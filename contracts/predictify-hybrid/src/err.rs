@@ -90,16 +90,10 @@ pub enum Error {
     DisputeVoteDenied = 406,
     /// Already voted in dispute
     DisputeAlreadyVoted = 407,
-    /// Dispute resolution conditions not met
+    /// Dispute resolution conditions not met (includes escalation not allowed)
     DisputeCondNotMet = 408,
     /// Dispute fee distribution failed
     DisputeFeeFailed = 409,
-    /// Dispute escalation not allowed
-    DisputeNoEscalate = 410,
-    /// Threshold below minimum
-    ThresholdBelowMin = 411,
-    /// Threshold exceeds maximum
-    ThresholdTooHigh = 412,
     /// Fee already collected
     FeeAlreadyCollected = 413,
     /// No fees to collect
@@ -110,10 +104,6 @@ pub enum Error {
     ExtensionDenied = 416,
     /// Admin address is not set (initialization missing)
     AdminNotSet = 418,
-    /// Dispute timeout not set
-    TimeoutNotSet = 419,
-    /// Invalid timeout hours
-    InvalidTimeoutHours = 422,
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker not initialized
@@ -1115,16 +1105,11 @@ impl Error {
             Error::DisputeAlreadyVoted => "Already voted in dispute",
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
-            Error::DisputeNoEscalate => "Dispute escalation not allowed",
-            Error::ThresholdBelowMin => "Threshold below minimum",
-            Error::ThresholdTooHigh => "Threshold exceeds maximum",
             Error::FeeAlreadyCollected => "Fee already collected",
             Error::NoFeesToCollect => "No fees to collect",
             Error::InvalidExtensionDays => "Invalid extension days",
             Error::ExtensionDenied => "Extension not allowed or exceeded",
             Error::AdminNotSet => "Admin address is not set (initialization missing)",
-            Error::TimeoutNotSet => "Dispute timeout not set",
-            Error::InvalidTimeoutHours => "Invalid timeout hours",
             Error::OracleStale => "Oracle data is stale or timed out",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1234,16 +1219,11 @@ impl Error {
             Error::DisputeAlreadyVoted => "DISPUTE_ALREADY_VOTED",
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
-            Error::DisputeNoEscalate => "DISPUTE_ESCALATION_NOT_ALLOWED",
-            Error::ThresholdBelowMin => "THRESHOLD_BELOW_MINIMUM",
-            Error::ThresholdTooHigh => "THRESHOLD_EXCEEDS_MAXIMUM",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
-            Error::TimeoutNotSet => "DISPUTE_TIMEOUT_NOT_SET",
-            Error::InvalidTimeoutHours => "INVALID_TIMEOUT_HOURS",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
