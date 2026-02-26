@@ -1888,8 +1888,7 @@ impl DisputeValidator {
     /// Validate market state for dispute
     pub fn validate_market_for_dispute(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market has ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
+        if market.is_active(env) {
             return Err(Error::MarketClosed);
         }
 
@@ -2816,7 +2815,10 @@ mod tests {
             end_time,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
-                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),

@@ -32,8 +32,35 @@ pub const MIN_MARKET_OUTCOMES: u32 = 2;
 /// Maximum question length in characters
 pub const MAX_QUESTION_LENGTH: u32 = 500;
 
+/// Minimum question length in characters
+pub const MIN_QUESTION_LENGTH: u32 = 10;
+
 /// Maximum outcome length in characters
 pub const MAX_OUTCOME_LENGTH: u32 = 100;
+
+/// Minimum outcome length in characters
+pub const MIN_OUTCOME_LENGTH: u32 = 2;
+
+/// Maximum description length in characters
+pub const MAX_DESCRIPTION_LENGTH: u32 = 1000;
+
+/// Minimum description length in characters (optional field, can be 0)
+pub const MIN_DESCRIPTION_LENGTH: u32 = 0;
+
+/// Maximum tag length in characters
+pub const MAX_TAG_LENGTH: u32 = 50;
+
+/// Minimum tag length in characters
+pub const MIN_TAG_LENGTH: u32 = 2;
+
+/// Maximum number of tags per market
+pub const MAX_TAGS_PER_MARKET: u32 = 10;
+
+/// Maximum category name length in characters
+pub const MAX_CATEGORY_LENGTH: u32 = 100;
+
+/// Minimum category name length in characters
+pub const MIN_CATEGORY_LENGTH: u32 = 2;
 
 // ===== FEE CONSTANTS =====
 
@@ -94,6 +121,11 @@ pub const EXTENSION_FEE_PER_DAY: i128 = 100_000_000;
 
 /// Maximum total extensions per market
 pub const MAX_TOTAL_EXTENSIONS: u32 = 3;
+
+// ===== POOL SIZE CONSTANTS =====
+
+/// Default minimum pool size (0 = no minimum)
+pub const DEFAULT_MIN_POOL_SIZE: i128 = 0;
 
 // ===== RESOLUTION CONSTANTS =====
 
@@ -638,6 +670,14 @@ pub struct MarketConfig {
     ///
     /// Typical range: 50-200 characters
     pub max_outcome_length: u32,
+
+    /// Maximum number of active events a single creator (admin) can have.
+    ///
+    /// Limits how many unresolved/uncancelled events a single address can create
+    /// to prevent spam and manage platform capacity.
+    ///
+    /// Typical range: 5-50 events
+    pub max_active_events_per_creator: u32,
 }
 
 /// Market duration extension configuration and fee structure.
@@ -1688,6 +1728,7 @@ impl ConfigManager {
             min_outcomes: MIN_MARKET_OUTCOMES,
             max_question_length: MAX_QUESTION_LENGTH,
             max_outcome_length: MAX_OUTCOME_LENGTH,
+            max_active_events_per_creator: 20,
         }
     }
 
@@ -2766,6 +2807,7 @@ impl ConfigTesting {
                 min_outcomes: 2,
                 max_question_length: 200,
                 max_outcome_length: 50,
+                max_active_events_per_creator: 20,
             },
             extension: ExtensionConfig {
                 max_extension_days: 7,

@@ -73,10 +73,10 @@ use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 /// // Check market state and determine available operations
 /// match market.state {
 ///     MarketState::Active => {
-///         if market.is_active(current_time) {
+///         if market.is_active(&env) {
 ///             println!("Market is active - users can vote");
 ///             // Allow voting operations
-///         } else {
+///         } else if market.has_ended(&env) {
 ///             println!("Market should transition to Ended state");
 ///         }
 ///     },
@@ -435,6 +435,7 @@ impl OracleProvider {
 /// // "Will BTC reach $100k by year end?"
 /// let btc_100k = OracleConfig::new(
 ///     OracleProvider::Reflector,
+///     Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
 ///     String::from_str(&env, "BTC/USD"),
 ///     100_000_00,
 ///     String::from_str(&env, "gt")
@@ -443,6 +444,7 @@ impl OracleProvider {
 /// // "Will ETH stay above $1,500?"
 /// let eth_support = OracleConfig::new(
 ///     OracleProvider::Reflector,
+///     Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
 ///     String::from_str(&env, "ETH/USD"),
 ///     1_500_00,
 ///     String::from_str(&env, "gt")
@@ -493,7 +495,10 @@ impl OracleConfig {
     pub fn none_sentinel(env: &Env) -> Self {
         Self {
             provider: OracleProvider::Reflector,
-            oracle_address: Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+            oracle_address: Address::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ),
             feed_id: String::from_str(env, ""),
             threshold: 0,
             comparison: String::from_str(env, ""),
@@ -594,10 +599,10 @@ impl OracleConfig {
 /// market.validate(&env)?;
 ///
 /// // Check market status
-/// let current_time = env.ledger().timestamp();
-/// if market.is_active(current_time) {
+/// let env = Env::default();
+/// if market.is_active(&env) {
 ///     println!("Market is active and accepting votes");
-/// } else if market.has_ended(current_time) {
+/// } else if market.has_ended(&env) {
 ///     println!("Market has ended, ready for resolution");
 /// }
 ///
@@ -765,6 +770,13 @@ pub struct Market {
     pub category: Option<String>,
     /// List of searchable tags for filtering events by multiple dimensions
     pub tags: Vec<String>,
+    /// Minimum total pool size required for resolution (None = no minimum)
+    pub min_pool_size: Option<i128>,
+    /// Bet deadline (Unix timestamp). No bets accepted after this time. 0 = use end_time (no early cutoff).
+    pub bet_deadline: u64,
+    /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
+    pub dispute_window_seconds: u64,
+}
 
     /// Asset used for bets and payouts (Stellar token/asset)
     pub asset: Option<crate::tokens::Asset>,
@@ -896,17 +908,20 @@ impl Market {
 
             category: None,
             tags: Vec::new(env),
+            min_pool_size: None,
+            bet_deadline: 0,
+            dispute_window_seconds: 86400, // 24h default
         }
     }
 
-    /// Check if the market is active (not ended)
-    pub fn is_active(&self, current_time: u64) -> bool {
-        current_time < self.end_time
+    /// Check if the market is active (not ended) using the current ledger timestamp
+    pub fn is_active(&self, env: &Env) -> bool {
+        env.ledger().timestamp() < self.end_time
     }
 
-    /// Check if the market has ended
-    pub fn has_ended(&self, current_time: u64) -> bool {
-        current_time >= self.end_time
+    /// Check if the market has ended using the current ledger timestamp
+    pub fn has_ended(&self, env: &Env) -> bool {
+        env.ledger().timestamp() >= self.end_time
     }
 
     /// Check if the market is resolved
@@ -1247,9 +1262,9 @@ impl OracleResult {
         self.is_verified && self.confidence_score >= 50 && self.price > 0
     }
 
-    /// Check if the oracle data is fresh (within max_age_seconds)
-    pub fn is_fresh(&self, current_time: u64, max_age_seconds: u64) -> bool {
-        current_time.saturating_sub(self.timestamp) <= max_age_seconds
+    /// Check if the oracle data is fresh (within max_age_seconds) using current ledger timestamp
+    pub fn is_fresh(&self, env: &Env, max_age_seconds: u64) -> bool {
+        env.ledger().timestamp().saturating_sub(self.timestamp) <= max_age_seconds
     }
 }
 
@@ -1451,8 +1466,8 @@ pub enum OracleVerificationStatus {
 /// }
 ///
 /// // Check data freshness
-/// let current_time = env.ledger().timestamp();
-/// if btc_price.is_fresh(current_time, 300) { // 5 minutes
+/// let env = Env::default();
+/// if btc_price.is_fresh(&env, 300) { // 5 minutes
 ///     println!("Price data is fresh (within 5 minutes)");
 /// } else {
 ///     println!("Price data is stale - consider refreshing");
@@ -1557,13 +1572,13 @@ pub enum OracleVerificationStatus {
 /// # let env = Env::default();
 /// # let price_data = ReflectorPriceData::default(); // Placeholder
 ///
-/// let current_time = env.ledger().timestamp();
+/// let env = Env::default();
 /// let max_age = 600; // 10 minutes
 ///
-/// if price_data.is_fresh(current_time, max_age) {
+/// if price_data.is_fresh(&env, max_age) {
 ///     println!("Price data is current");
 /// } else {
-///     let age = current_time - price_data.timestamp;
+///     let age = env.ledger().timestamp() - price_data.timestamp;
 ///     println!("Price data is {} seconds old", age);
 ///     
 ///     if age > 3600 { // 1 hour
@@ -3048,6 +3063,11 @@ impl Bet {
     pub fn mark_as_refunded(&mut self) {
         self.status = BetStatus::Refunded;
     }
+
+    /// Mark the bet as cancelled
+    pub fn mark_as_cancelled(&mut self) {
+        self.status = BetStatus::Cancelled;
+    }
 }
 
 /// Statistics for bets placed on a specific market.
@@ -3092,6 +3112,16 @@ pub struct BetStats {
 
 // ===== EVENT TYPES =====
 
+/// Visibility setting for events (public vs private)
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EventVisibility {
+    /// Public event - anyone can bet
+    Public,
+    /// Private event - only allowlisted addresses can bet
+    Private,
+}
+
 /// Represents a prediction market event with specified parameters.
 ///
 /// This structure stores all metadata and configuration for a prediction event,
@@ -3121,6 +3151,10 @@ pub struct Event {
     pub created_at: u64,
     /// Current status of the event
     pub status: MarketState,
+    /// Visibility setting (public or private)
+    pub visibility: EventVisibility,
+    /// Allowlist of addresses permitted to bet (only enforced for private events)
+    pub allowlist: Vec<Address>,
 }
 
 impl ReflectorAsset {

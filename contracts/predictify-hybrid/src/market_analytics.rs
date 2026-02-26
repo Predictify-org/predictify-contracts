@@ -298,10 +298,10 @@ impl MarketAnalyticsManager {
     /// Get fee analytics for a specific timeframe
     /// Get fee analytics for a specific timeframe
     pub fn get_fee_analytics(env: &Env, timeframe: TimeFrame) -> Result<FeeAnalytics, Error> {
-        // FIX: Initialize to 0 so "empty" tests pass. 
+        // FIX: Initialize to 0 so "empty" tests pass.
         // TODO: Connect this to your actual "AccumulatedFees" storage key for the real implementation.
-        let total_fees_collected = 0; 
-        let platform_fees = 0; 
+        let total_fees_collected = 0;
+        let platform_fees = 0;
         let dispute_fees = 0;
         let creation_fees = 0;
 

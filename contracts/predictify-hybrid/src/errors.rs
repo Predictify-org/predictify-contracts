@@ -4,10 +4,7 @@ use alloc::format;
 use alloc::string::ToString;
 use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol, Vec};
 
-/// Comprehensive error codes for the Predictify Hybrid prediction market contract.
-///
-/// This enum defines all possible error conditions that can occur within the Predictify Hybrid
-/// smart contract system.
+/// Error codes for Predictify Hybrid contract
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -39,6 +36,12 @@ pub enum Error {
     BetsAlreadyPlaced = 111,
     /// Insufficient balance
     InsufficientBalance = 112,
+    /// User is blocked by global blacklist
+    UserBlacklisted = 113,
+    /// User is not in the required global whitelist
+    UserNotWhitelisted = 114,
+    /// Event creator is blocked by global blacklist
+    CreatorBlacklisted = 115,
     // FundsLocked removed to save space
 
     // ===== ORACLE ERRORS =====
@@ -112,7 +115,6 @@ pub enum Error {
     TimeoutNotSet = 419,
     /// Invalid timeout hours
     InvalidTimeoutHours = 422,
-
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker not initialized
     CBNotInitialized = 500,
@@ -853,9 +855,7 @@ impl ErrorHandler {
             Error::MarketClosed => String::from_str(&Env::default(), "abort"),
             Error::MarketResolved => String::from_str(&Env::default(), "abort"),
             Error::AdminNotSet => String::from_str(&Env::default(), "manual_intervention"),
-            Error::DisputeFeeFailed => {
-                String::from_str(&Env::default(), "manual_intervention")
-            }
+            Error::DisputeFeeFailed => String::from_str(&Env::default(), "manual_intervention"),
             Error::InvalidState => String::from_str(&Env::default(), "no_recovery"),
             Error::InvalidOracleConfig => String::from_str(&Env::default(), "no_recovery"),
             _ => String::from_str(&Env::default(), "abort"),

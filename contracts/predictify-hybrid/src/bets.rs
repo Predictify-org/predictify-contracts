@@ -44,7 +44,7 @@ use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
 use crate::reentrancy_guard::ReentrancyGuard;
-use crate::types::{Bet, BetLimits, BetStatus, BetStats, Market, MarketState};
+use crate::types::{Bet, BetLimits, BetStats, BetStatus, EventVisibility, Market, MarketState};
 use crate::validation;
 
 // ===== CONSTANTS =====
@@ -236,6 +236,7 @@ impl BetManager {
     /// - `Error::InsufficientStake` - Bet amount below minimum
     /// - `Error::InvalidOutcome` - Selected outcome not valid for this market
     /// - `Error::InsufficientBalance` - User doesn't have enough funds
+    /// - `Error::Unauthorized` - User not on allowlist for private event
     ///
     /// # Security
     ///
@@ -244,6 +245,7 @@ impl BetManager {
     /// - Validates user has not already bet on this market
     /// - Validates user has sufficient balance
     /// - Locks funds atomically with bet creation
+    /// - Enforces allowlist for private events
     ///
     /// # Example
     ///
@@ -265,6 +267,15 @@ impl BetManager {
         asset: Option<crate::tokens::Asset>,
     ) -> Result<Bet, Error> {
         user.require_auth();
+
+        if crate::storage::EventManager::has_event(env, &market_id) {
+            let event = crate::storage::EventManager::get_event(env, &market_id)?;
+            if event.visibility == EventVisibility::Private && !event.allowlist.contains(&user) {
+                return Err(Error::Unauthorized);
+            }
+        }
+
+        // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         BetValidator::validate_market_for_betting(env, &market)?;
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
@@ -438,7 +449,11 @@ impl BetManager {
     ///
     /// Returns `true` if the user has already placed a bet, `false` otherwise.
     pub fn has_user_bet(env: &Env, market_id: &Symbol, user: &Address) -> bool {
-        BetStorage::get_bet(env, market_id, user).is_some()
+        if let Some(bet) = BetStorage::get_bet(env, market_id, user) {
+            bet.is_active()
+        } else {
+            false
+        }
     }
 
     /// Get a user's bet on a specific market.
@@ -635,6 +650,122 @@ impl BetManager {
         }
         Ok(payout)
     }
+
+    /// Cancel a bet before the market deadline and refund the user.
+    ///
+    /// This function allows users to cancel their active bets before the market
+    /// deadline, receiving a full refund of their locked funds.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `user` - Address of the user cancelling the bet
+    /// - `market_id` - Symbol identifying the market
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful cancellation and refund,
+    /// or `Err(Error)` if cancellation fails.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::NothingToClaim` - User has no bet on this market
+    /// - `Error::MarketNotFound` - Market does not exist
+    /// - `Error::MarketClosed` - Market deadline has passed
+    /// - `Error::InvalidState` - Bet is not in Active status
+    ///
+    /// # Security
+    ///
+    /// - Requires user authentication via `require_auth()`
+    /// - Only the bettor can cancel their own bet
+    /// - Can only cancel before market deadline
+    /// - Funds are refunded atomically with status update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// BetManager::cancel_bet(
+    ///     &env,
+    ///     user.clone(),
+    ///     Symbol::new(&env, "BTC_100K"),
+    /// )?;
+    /// ```
+    pub fn cancel_bet(
+        env: &Env,
+        user: Address,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        // Require authentication from the user
+        user.require_auth();
+
+        // Get user's bet
+        let mut bet = BetStorage::get_bet(env, &market_id, &user)
+            .ok_or(Error::NothingToClaim)?;
+
+        // Ensure bet is active
+        if !bet.is_active() {
+            return Err(Error::InvalidState);
+        }
+
+        // Get market and validate it hasn't ended
+        let market = MarketStateManager::get_market(env, &market_id)?;
+        let current_time = env.ledger().timestamp();
+        
+        if current_time >= market.end_time {
+            return Err(Error::MarketClosed);
+        }
+
+        // Refund the locked funds
+        BetUtils::unlock_funds(env, &user, bet.amount)?;
+
+        // Mark bet as cancelled
+        bet.status = BetStatus::Cancelled;
+        BetStorage::store_bet(env, &bet)?;
+
+        // Update market betting stats
+        Self::update_market_bet_stats_on_cancel(env, &market_id, &bet.outcome, bet.amount)?;
+
+        // Emit bet cancelled event
+        EventEmitter::emit_bet_status_updated(
+            env,
+            &market_id,
+            &user,
+            &String::from_str(env, "Active"),
+            &String::from_str(env, "Cancelled"),
+            Some(bet.amount),
+        );
+
+        Ok(())
+    }
+
+    /// Update market betting statistics after a bet cancellation.
+    fn update_market_bet_stats_on_cancel(
+        env: &Env,
+        market_id: &Symbol,
+        outcome: &String,
+        amount: i128,
+    ) -> Result<(), Error> {
+        let mut stats = BetStorage::get_market_bet_stats(env, market_id);
+
+        // Update totals
+        stats.total_bets = stats.total_bets.saturating_sub(1);
+        stats.total_amount_locked = stats.total_amount_locked.saturating_sub(amount);
+        stats.unique_bettors = stats.unique_bettors.saturating_sub(1);
+
+        // Update outcome totals
+        let current_outcome_total = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+        let new_total = current_outcome_total.saturating_sub(amount);
+        if new_total > 0 {
+            stats.outcome_totals.set(outcome.clone(), new_total);
+        } else {
+            stats.outcome_totals.remove(outcome.clone());
+        }
+
+        // Store updated stats
+        BetStorage::store_market_bet_stats(env, market_id, &stats)?;
+
+        Ok(())
+    }
 }
 
 // ===== BET STORAGE =====
@@ -789,6 +920,16 @@ impl BetValidator {
         // Check if market has not ended
         let current_time = env.ledger().timestamp();
         if current_time >= market.end_time {
+            return Err(Error::MarketClosed);
+        }
+
+        // Bet deadline: no bets after deadline (0 = use end_time)
+        let deadline = if market.bet_deadline > 0 {
+            market.bet_deadline
+        } else {
+            market.end_time
+        };
+        if current_time >= deadline {
             return Err(Error::MarketClosed);
         }
 

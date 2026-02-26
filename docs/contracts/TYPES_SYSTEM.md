@@ -115,7 +115,7 @@ market.validate(&env)?;
 ```rust
 use types::MarketState;
 
-let state = MarketState::from_market(&market, current_time);
+let state = MarketState::from_market(&market, &env);
 
 if state.is_active() {
     // Market is accepting votes
@@ -201,12 +201,12 @@ conversion::validate_comparison(&comparison, &env)?;
 
 ```rust
 // Check if market is active
-if market.is_active(current_time) {
+if market.is_active(&env) {
     // Accept votes
 }
 
 // Check if market has ended
-if market.has_ended(current_time) {
+if market.has_ended(&env) {
     // Resolve market
 }
 
@@ -304,8 +304,8 @@ let pyth_price = PythPrice::new(2500000, 1000, -2, timestamp);
 // Get price in cents
 let price_cents = pyth_price.price_in_cents();
 
-// Check if price is stale
-if pyth_price.is_stale(current_time, max_age) {
+// Check if price is stale (manual check)
+if env.ledger().timestamp() > pyth_price.publish_time + max_age {
     // Handle stale price
 }
 
@@ -321,8 +321,8 @@ let reflector_price = ReflectorPriceData::new(2500000, timestamp);
 // Get price in cents
 let price_cents = reflector_price.price_in_cents();
 
-// Check if price is stale
-if reflector_price.is_stale(current_time, max_age) {
+// Check if price is stale (manual check)
+if env.ledger().timestamp() > reflector_price.timestamp + max_age {
     // Handle stale price
 }
 
@@ -442,7 +442,7 @@ fn test_oracle_provider() {
 #[test]
 fn test_market_creation() {
     let market = Market::new(&env, admin, question, outcomes, end_time, oracle_config);
-    assert!(market.is_active(current_time));
+    assert!(market.is_active(&env));
     assert!(!market.is_resolved());
 }
 
@@ -481,7 +481,7 @@ fn test_validation_helpers() {
    if current_time < market.end_time { /* active */ }
    
    // New
-   if market.is_active(current_time) { /* active */ }
+   if market.is_active(&env) { /* active */ }
    ```
 
 ## Type Reference

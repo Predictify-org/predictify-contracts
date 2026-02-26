@@ -64,7 +64,11 @@ fn test_payout_calculation_zero_stake() {
 
     let payout = QueryManager::calculate_payout(&env, &market, 0);
     assert!(payout.is_ok(), "Payout calculation failed for zero stake");
-    assert_eq!(payout.unwrap(), 0, "Zero stake should result in zero payout");
+    assert_eq!(
+        payout.unwrap(),
+        0,
+        "Zero stake should result in zero payout"
+    );
 }
 
 #[test]
@@ -173,9 +177,11 @@ fn test_implied_probabilities_sum_to_100() {
     assert!(probs.is_ok());
     let (p1, p2) = probs.unwrap();
     assert_eq!(
-        p1 + p2, 100,
+        p1 + p2,
+        100,
         "Probabilities should sum to 100% (got {} + {})",
-        p1, p2
+        p1,
+        p2
     );
 }
 
@@ -209,7 +215,11 @@ fn test_outcome_pool_empty_market() {
     let outcome = String::from_str(&env, "yes");
     let pool = QueryManager::calculate_outcome_pool(&env, &market, &outcome);
     assert!(pool.is_ok(), "Outcome pool calculation failed");
-    assert_eq!(pool.unwrap(), 0, "Empty market should have zero pool for outcome");
+    assert_eq!(
+        pool.unwrap(),
+        0,
+        "Empty market should have zero pool for outcome"
+    );
 }
 
 #[test]
@@ -320,8 +330,12 @@ fn test_market_status_all_states() {
         let status = MarketStatus::from_market_state(state);
         // Should not panic and should return valid status
         match status {
-            MarketStatus::Active | MarketStatus::Ended | MarketStatus::Disputed
-            | MarketStatus::Resolved | MarketStatus::Closed | MarketStatus::Cancelled => {
+            MarketStatus::Active
+            | MarketStatus::Ended
+            | MarketStatus::Disputed
+            | MarketStatus::Resolved
+            | MarketStatus::Closed
+            | MarketStatus::Cancelled => {
                 // Valid status
             }
         }
@@ -599,7 +613,10 @@ fn test_payout_with_high_fees() {
     let payout = QueryManager::calculate_payout(&env, &market, stake).unwrap();
 
     // Should be less than stake due to fee (2%)
-    assert!(payout < stake, "Payout should be less than stake due to fees");
+    assert!(
+        payout < stake,
+        "Payout should be less than stake due to fees"
+    );
     assert!(
         payout >= stake * 98 / 100,
         "Payout should be approximately 98% of stake, got {}",

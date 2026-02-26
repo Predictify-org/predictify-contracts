@@ -650,22 +650,29 @@ impl StorageOptimizer {
 pub struct EventManager;
 
 impl EventManager {
+    fn event_storage_key(env: &Env, event_id: &Symbol) -> (Symbol, Symbol) {
+        (Symbol::new(env, "Event"), event_id.clone())
+    }
+
     /// Store a new event in persistent storage
     pub fn store_event(env: &Env, event: &Event) {
-        env.storage().persistent().set(&event.id, event);
+        let key = Self::event_storage_key(env, &event.id);
+        env.storage().persistent().set(&key, event);
     }
 
     /// Retrieve an event from persistent storage
     pub fn get_event(env: &Env, event_id: &Symbol) -> Result<Event, Error> {
+        let key = Self::event_storage_key(env, event_id);
         env.storage()
             .persistent()
-            .get(event_id)
+            .get(&key)
             .ok_or(Error::MarketNotFound)
     }
 
     /// Check if an event exists
     pub fn has_event(env: &Env, event_id: &Symbol) -> bool {
-        env.storage().persistent().has(event_id)
+        let key = Self::event_storage_key(env, event_id);
+        env.storage().persistent().has(&key)
     }
 
     /// Update an existing event
@@ -675,6 +682,46 @@ impl EventManager {
         }
         Self::store_event(env, event);
         Ok(())
+    }
+}
+
+// ===== CREATOR LIMITS STORAGE =====
+
+/// Manager for creator-related limit and tracking operations
+pub struct CreatorLimitsManager;
+
+impl CreatorLimitsManager {
+    /// Get the storage key for a specific creator's active events count
+    fn get_active_events_key(env: &Env, creator: &Address) -> Symbol {
+        let mut key_bytes = soroban_sdk::Bytes::new(env);
+        key_bytes.append(&soroban_sdk::Bytes::from_slice(env, b"ActiveEvents_"));
+        // Simply use a composite struct to represent the key to avoid complex byte manipulation.
+        // A common pattern in Soroban is a tuple `(Symbol, Address)`.
+        Symbol::new(env, "ActiveEvt") // we will construct a tuple key instead in the actual methods
+    }
+
+    /// Retrieve the number of active events for a given creator
+    pub fn get_active_events(env: &Env, creator: &Address) -> u32 {
+        let key = (Symbol::new(env, "ActiveEvents"), creator.clone());
+        env.storage().persistent().get(&key).unwrap_or(0)
+    }
+
+    /// Increment a creator's active events count by 1
+    pub fn increment_active_events(env: &Env, creator: &Address) {
+        let key = (Symbol::new(env, "ActiveEvents"), creator.clone());
+        let current_count: u32 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(current_count + 1));
+    }
+
+    /// Decrement a creator's active events count by 1
+    pub fn decrement_active_events(env: &Env, creator: &Address) {
+        let key = (Symbol::new(env, "ActiveEvents"), creator.clone());
+        let current_count: u32 = env.storage().persistent().get(&key).unwrap_or(0);
+
+        // Prevent underflow if count is already 0
+        if current_count > 0 {
+            env.storage().persistent().set(&key, &(current_count - 1));
+        }
     }
 }
 
@@ -762,7 +809,10 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Reflector,
-                soroban_sdk::Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                soroban_sdk::Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "BTC"),
                 2500000,
                 String::from_str(&env, "gt"),
@@ -817,7 +867,10 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Reflector,
-                soroban_sdk::Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                soroban_sdk::Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "BTC"),
                 2500000,
                 String::from_str(&env, "gt"),

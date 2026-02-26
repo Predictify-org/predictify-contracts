@@ -103,7 +103,10 @@ impl EventArchive {
     ) -> EventHistoryEntry {
         let archived_at = Self::get_archived_at(env, market_id);
         // Use the dedicated category field if set, otherwise fall back to oracle feed_id
-        let category = market.category.clone().unwrap_or_else(|| market.oracle_config.feed_id.clone());
+        let category = market
+            .category
+            .clone()
+            .unwrap_or_else(|| market.oracle_config.feed_id.clone());
 
         EventHistoryEntry {
             market_id: market_id.clone(),
@@ -225,9 +228,16 @@ impl EventArchive {
         for i in 0..registry_page.len() {
             if let Some(entry) = registry_page.get(i) {
                 scanned += 1;
-                if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&entry.market_id) {
+                if let Some(market) = env
+                    .storage()
+                    .persistent()
+                    .get::<Symbol, Market>(&entry.market_id)
+                {
                     // Match against dedicated category field if set, otherwise oracle feed_id
-                    let market_category = market.category.clone().unwrap_or_else(|| market.oracle_config.feed_id.clone());
+                    let market_category = market
+                        .category
+                        .clone()
+                        .unwrap_or_else(|| market.oracle_config.feed_id.clone());
                     if market_category == *category {
                         result.push_back(Self::market_to_history_entry(
                             env,
@@ -265,7 +275,11 @@ impl EventArchive {
         for i in 0..registry_page.len() {
             if let Some(entry) = registry_page.get(i) {
                 scanned += 1;
-                if let Some(market) = env.storage().persistent().get::<Symbol, Market>(&entry.market_id) {
+                if let Some(market) = env
+                    .storage()
+                    .persistent()
+                    .get::<Symbol, Market>(&entry.market_id)
+                {
                     // Check if any of the market's tags match any of the query tags
                     let mut matched = false;
                     for j in 0..market.tags.len() {

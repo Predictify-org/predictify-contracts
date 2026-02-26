@@ -129,6 +129,30 @@ pub struct AdminAnalyticsResult {
     pub last_updated: u64,
 }
 
+/// Multisig configuration for admin operations
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct MultisigConfig {
+    pub threshold: u32,
+    pub total_admins: u32,
+    pub enabled: bool,
+}
+
+/// Pending admin action requiring multisig approval
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct PendingAdminAction {
+    pub action_id: u64,
+    pub action_type: String,
+    pub target: Address,
+    pub initiator: Address,
+    pub approvals: Vec<Address>,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub executed: bool,
+    pub data: Map<String, String>,
+}
+
 // ===== ADMIN INITIALIZATION =====
 
 /// Admin initialization management
@@ -564,7 +588,93 @@ impl AdminAccessControl {
 
         Ok(())
     }
+}
 
+// ===== CONTRACT PAUSE AND ADMIN TRANSFER =====
+
+const CONTRACT_PAUSED_KEY: &str = "ContractPaused";
+
+/// Contract-level pause and primary admin transfer.
+pub struct ContractPauseManager;
+
+impl ContractPauseManager {
+    /// Returns true if the contract is currently paused.
+    pub fn is_contract_paused(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, CONTRACT_PAUSED_KEY))
+            .unwrap_or(false)
+    }
+
+    /// Pause contract operations. Caller must be the current primary admin.
+    pub fn pause(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+        let stored: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)?;
+        if admin != &stored {
+            return Err(Error::Unauthorized);
+        }
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &true);
+        EventEmitter::emit_contract_paused(env, admin);
+        Ok(())
+    }
+
+    /// Unpause contract operations. Caller must be the current primary admin.
+    pub fn unpause(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+        let stored: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)?;
+        if admin != &stored {
+            return Err(Error::Unauthorized);
+        }
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &false);
+        EventEmitter::emit_contract_unpaused(env, admin);
+        Ok(())
+    }
+
+    /// Require that the contract is not paused; return Error::InvalidState otherwise.
+    pub fn require_not_paused(env: &Env) -> Result<(), Error> {
+        if Self::is_contract_paused(env) {
+            return Err(Error::InvalidState);
+        }
+        Ok(())
+    }
+
+    /// Transfer the primary admin role to a new address. Caller must be the current primary admin.
+    /// New admin must not be the zero/invalid address.
+    pub fn transfer_admin(env: &Env, current_admin: &Address, new_admin: &Address) -> Result<(), Error> {
+        current_admin.require_auth();
+        let stored: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)?;
+        if current_admin != &stored {
+            return Err(Error::Unauthorized);
+        }
+        if new_admin == current_admin {
+            return Err(Error::InvalidInput);
+        }
+        AdminValidator::validate_admin_address(env, new_admin)?;
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, "Admin"), new_admin);
+        EventEmitter::emit_admin_transferred(env, current_admin, new_admin);
+        Ok(())
+    }
+}
+
+impl AdminAccessControl {
     /// Validates admin authentication and permissions for a specific action.
     ///
     /// This comprehensive validation function combines authentication and
@@ -1437,7 +1547,7 @@ impl AdminManager {
     /// Generate a proper admin storage key using the correct environment
     fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
         // Create a unique key based on admin address
-        let key_str = format!("MultiAdmin_{:?}", admin.to_string());
+        let key_str = alloc::format!("MultiAdmin_{:?}", admin.to_string());
         Symbol::new(env, &key_str)
     }
 
@@ -1533,6 +1643,152 @@ impl AdminManager {
 
         Self::emit_admin_change_event(env, target_admin, AdminActionType::Activated);
         Ok(())
+    }
+}
+
+// ===== MULTISIG MANAGER =====
+
+/// Manages multisig/threshold approval for sensitive admin operations
+pub struct MultisigManager;
+
+impl MultisigManager {
+    /// Set the multisig threshold (M-of-N)
+    pub fn set_threshold(env: &Env, admin: &Address, threshold: u32) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        
+        let total_admins = Self::count_active_admins(env);
+        if threshold == 0 || threshold > total_admins {
+            return Err(Error::InvalidInput);
+        }
+        
+        let config = MultisigConfig {
+            threshold,
+            total_admins,
+            enabled: threshold > 1,
+        };
+        
+        env.storage().persistent().set(&Symbol::new(env, "MultisigConfig"), &config);
+        Ok(())
+    }
+    
+    /// Get current multisig configuration
+    pub fn get_config(env: &Env) -> MultisigConfig {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, "MultisigConfig"))
+            .unwrap_or(MultisigConfig {
+                threshold: 1,
+                total_admins: 1,
+                enabled: false,
+            })
+    }
+    
+    /// Create a pending action requiring approval
+    pub fn create_pending_action(
+        env: &Env,
+        initiator: &Address,
+        action_type: String,
+        target: Address,
+        data: Map<String, String>,
+    ) -> Result<u64, Error> {
+        AdminAccessControl::validate_permission(env, initiator, &AdminPermission::EmergencyActions)?;
+        
+        let action_id = Self::get_next_action_id(env);
+        let mut approvals = Vec::new(env);
+        approvals.push_back(initiator.clone());
+        
+        let action = PendingAdminAction {
+            action_id,
+            action_type,
+            target,
+            initiator: initiator.clone(),
+            approvals,
+            created_at: env.ledger().timestamp(),
+            expires_at: env.ledger().timestamp() + 86400, // 24 hours
+            executed: false,
+            data,
+        };
+        
+        let key = Self::get_action_key(env, action_id);
+        env.storage().persistent().set(&key, &action);
+        
+        Ok(action_id)
+    }
+    
+    /// Approve a pending action
+    pub fn approve_action(env: &Env, admin: &Address, action_id: u64) -> Result<bool, Error> {
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::EmergencyActions)?;
+        
+        let key = Self::get_action_key(env, action_id);
+        let mut action: PendingAdminAction = env.storage().persistent().get(&key).ok_or(Error::ConfigNotFound)?;
+        
+        if action.executed {
+            return Err(Error::InvalidState);
+        }
+        
+        if env.ledger().timestamp() > action.expires_at {
+            return Err(Error::DisputeVoteExpired);
+        }
+        
+        if action.approvals.contains(admin) {
+            return Err(Error::InvalidState);
+        }
+        
+        action.approvals.push_back(admin.clone());
+        env.storage().persistent().set(&key, &action);
+        
+        let config = Self::get_config(env);
+        Ok(action.approvals.len() >= config.threshold)
+    }
+    
+    /// Execute a pending action if threshold is met
+    pub fn execute_action(env: &Env, action_id: u64) -> Result<(), Error> {
+        let key = Self::get_action_key(env, action_id);
+        let mut action: PendingAdminAction = env.storage().persistent().get(&key).ok_or(Error::ConfigNotFound)?;
+        
+        if action.executed {
+            return Err(Error::InvalidState);
+        }
+        
+        let config = Self::get_config(env);
+        if action.approvals.len() < config.threshold {
+            return Err(Error::Unauthorized);
+        }
+        
+        action.executed = true;
+        env.storage().persistent().set(&key, &action);
+        
+        Ok(())
+    }
+    
+    /// Get pending action details
+    pub fn get_pending_action(env: &Env, action_id: u64) -> Option<PendingAdminAction> {
+        let key = Self::get_action_key(env, action_id);
+        env.storage().persistent().get(&key)
+    }
+    
+    /// Check if action requires multisig approval
+    pub fn requires_multisig(env: &Env) -> bool {
+        let config = Self::get_config(env);
+        config.enabled && config.threshold > 1
+    }
+    
+    // Helper methods
+    fn get_action_key(env: &Env, action_id: u64) -> Symbol {
+        let key_str = alloc::format!("PendingAction_{}", action_id);
+        Symbol::new(env, &key_str)
+    }
+    
+    fn get_next_action_id(env: &Env) -> u64 {
+        let key = Symbol::new(env, "NextActionId");
+        let current: u64 = env.storage().persistent().get(&key).unwrap_or(1);
+        env.storage().persistent().set(&key, &(current + 1));
+        current
+    }
+    
+    fn count_active_admins(env: &Env) -> u32 {
+        let count_key = Symbol::new(env, "AdminCount");
+        env.storage().persistent().get(&count_key).unwrap_or(1)
     }
 }
 
