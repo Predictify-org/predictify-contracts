@@ -2801,6 +2801,485 @@ fn test_refund_on_oracle_failure_after_timeout_any_caller() {
     assert_eq!(total_refunded, 10_000_000);
 }
 
+/// #251: Refund uses per-market resolution_timeout when set (not default).
+#[test]
+fn test_refund_on_oracle_failure_uses_market_resolution_timeout() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+    let resolution_timeout: u64 = 3600; // 1 hour
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Will BTC hit $50k?"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "BTC"),
+            threshold: 50_000_00,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &resolution_timeout,
+        &None,
+        &None,
+        &None,
+    );
+    let user1 = test.create_funded_user();
+    test.env.mock_all_auths();
+    client.place_bet(
+        &user1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_000_000,
+    );
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    let any_caller = test.create_funded_user();
+    // After market resolution_timeout: any caller can refund (per-market timeout)
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + resolution_timeout + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    let total_refunded = client.refund_on_oracle_failure(&any_caller, &market_id);
+    assert_eq!(total_refunded, 10_000_000);
+}
+
+// ===== TESTS FOR RATE LIMITING (#259) =====
+
+#[test]
+fn test_bet_rate_limit_enforced_when_config_set() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let market1 = test.create_test_market();
+    let market2 = test.create_test_market();
+    let market3 = test.create_test_market();
+    let user = test.create_funded_user();
+    let config = crate::rate_limiter::RateLimitConfig {
+        voting_limit: 10,
+        dispute_limit: 5,
+        oracle_call_limit: 20,
+        bet_limit: 2,
+        events_per_admin_limit: 10,
+        time_window_seconds: 3600,
+    };
+    test.env.mock_all_auths();
+    client.set_rate_limits(&test.admin, &config);
+    test.env.mock_all_auths();
+    client.place_bet(&user, &market1, &String::from_str(&test.env, "yes"), &1_000_000);
+    test.env.mock_all_auths();
+    client.place_bet(&user, &market2, &String::from_str(&test.env, "yes"), &1_000_000);
+    test.env.mock_all_auths();
+    let res = client.try_place_bet(&user, &market3, &String::from_str(&test.env, "yes"), &1_000_000);
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_bet_rate_limit_at_limit_ok() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let market1 = test.create_test_market();
+    let market2 = test.create_test_market();
+    let user = test.create_funded_user();
+    let config = crate::rate_limiter::RateLimitConfig {
+        voting_limit: 10,
+        dispute_limit: 5,
+        oracle_call_limit: 20,
+        bet_limit: 2,
+        events_per_admin_limit: 10,
+        time_window_seconds: 3600,
+    };
+    test.env.mock_all_auths();
+    client.set_rate_limits(&test.admin, &config);
+    test.env.mock_all_auths();
+    client.place_bet(&user, &market1, &String::from_str(&test.env, "yes"), &1_000_000);
+    test.env.mock_all_auths();
+    client.place_bet(&user, &market2, &String::from_str(&test.env, "yes"), &1_000_000);
+    // Exactly at limit: both bets succeeded (different markets)
+}
+
+#[test]
+fn test_bet_rate_limit_without_config_ok() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let market_id = test.create_test_market();
+    let user = test.create_funded_user();
+    // No set_rate_limits called - place_bet should succeed
+    test.env.mock_all_auths();
+    client.place_bet(&user, &market_id, &String::from_str(&test.env, "yes"), &1_000_000);
+    // No limit enforced when config not set
+}
+
+// ===== TESTS FOR MULTI-OUTCOME MARKETS (#248) =====
+
+#[test]
+fn test_multi_outcome_creation_binary() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Binary outcome question?"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "BTC"),
+            threshold: 100,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &0,
+        &None,
+        &None,
+        &None,
+    );
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert_eq!(market.outcomes.len(), 2);
+}
+
+#[test]
+fn test_multi_outcome_creation_three_outcomes() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "A1"),
+        String::from_str(&test.env, "B2"),
+        String::from_str(&test.env, "C3"),
+    ];
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Which outcome will win?"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "X"),
+            threshold: 100,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &0,
+        &None,
+        &None,
+        &None,
+    );
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert_eq!(market.outcomes.len(), 3);
+}
+
+#[test]
+fn test_multi_outcome_invalid_outcome_rejected() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "A1"),
+        String::from_str(&test.env, "B2"),
+        String::from_str(&test.env, "C3"),
+    ];
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Which outcome will win?"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "X"),
+            threshold: 100,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &0,
+        &None,
+        &None,
+        &None,
+    );
+    let user = test.create_funded_user();
+    test.env.mock_all_auths();
+    let res = client.try_place_bet(
+        &user,
+        &market_id,
+        &String::from_str(&test.env, "D4"),
+        &10_000_000,
+    );
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_multi_outcome_single_winner_payout() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "win"),
+        String::from_str(&test.env, "lose"),
+    ];
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Single winner test market"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "X"),
+            threshold: 100,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &0,
+        &None,
+        &None,
+        &None,
+    );
+    let winner = test.create_funded_user();
+    let loser = test.create_funded_user();
+    test.env.mock_all_auths();
+    client.place_bet(&winner, &market_id, &String::from_str(&test.env, "win"), &100_0000000);
+    client.place_bet(&loser, &market_id, &String::from_str(&test.env, "lose"), &200_0000000);
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "win"));
+    test.env.mock_all_auths();
+    client.claim_winnings(&winner, &market_id);
+    test.env.mock_all_auths();
+    client.claim_winnings(&loser, &market_id);
+}
+
+#[test]
+fn test_multi_outcome_tie_split_payout() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "A1"),
+        String::from_str(&test.env, "B2"),
+        String::from_str(&test.env, "C3"),
+    ];
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "Tie split test"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "X"),
+            threshold: 100,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &0,
+        &None,
+        &None,
+        &None,
+    );
+    let u1 = test.create_funded_user();
+    let u2 = test.create_funded_user();
+    test.env.mock_all_auths();
+    client.place_bet(&u1, &market_id, &String::from_str(&test.env, "A1"), &100_0000000);
+    client.place_bet(&u2, &market_id, &String::from_str(&test.env, "B2"), &100_0000000);
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    let winning = vec![
+        &test.env,
+        String::from_str(&test.env, "A1"),
+        String::from_str(&test.env, "B2"),
+    ];
+    test.env.mock_all_auths();
+    client.resolve_market_with_ties(&test.admin, &market_id, &winning);
+    test.env.mock_all_auths();
+    client.claim_winnings(&u1, &market_id);
+    client.claim_winnings(&u2, &market_id);
+}
+
+#[test]
+fn test_multi_outcome_one_outcome_no_bets() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "A1"),
+        String::from_str(&test.env, "B2"),
+        String::from_str(&test.env, "C3"),
+    ];
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "One outcome no bets"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "X"),
+            threshold: 100,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &0,
+        &None,
+        &None,
+        &None,
+    );
+    let user = test.create_funded_user();
+    test.env.mock_all_auths();
+    client.place_bet(&user, &market_id, &String::from_str(&test.env, "A1"), &50_0000000);
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "A1"));
+    test.env.mock_all_auths();
+    client.claim_winnings(&user, &market_id);
+}
+
+#[test]
+fn test_multi_outcome_all_same_outcome() {
+    let test = PredictifyTest::setup();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+    let outcomes = vec![
+        &test.env,
+        String::from_str(&test.env, "yes"),
+        String::from_str(&test.env, "no"),
+    ];
+    test.env.mock_all_auths();
+    let market_id = client.create_market(
+        &test.admin,
+        &String::from_str(&test.env, "All same outcome"),
+        &outcomes,
+        &30,
+        &OracleConfig {
+            provider: OracleProvider::Reflector,
+            oracle_address: Address::generate(&test.env),
+            feed_id: String::from_str(&test.env, "X"),
+            threshold: 100,
+            comparison: String::from_str(&test.env, "gt"),
+        },
+        &None,
+        &0,
+        &None,
+        &None,
+        &None,
+    );
+    let u1 = test.create_funded_user();
+    let u2 = test.create_funded_user();
+    test.env.mock_all_auths();
+    client.place_bet(&u1, &market_id, &String::from_str(&test.env, "yes"), &10_0000000);
+    client.place_bet(&u2, &market_id, &String::from_str(&test.env, "yes"), &20_0000000);
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+    test.env.mock_all_auths();
+    client.claim_winnings(&u1, &market_id);
+    client.claim_winnings(&u2, &market_id);
+}
+
 // ===== TESTS FOR MANUAL DISPUTE RESOLUTION (#218, #219) =====
 
 #[test]

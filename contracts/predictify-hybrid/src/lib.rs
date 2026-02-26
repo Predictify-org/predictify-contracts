@@ -556,6 +556,16 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidInput);
         }
 
+        // Rate limit: max events per admin per time window (when config set)
+        match rate_limiter::RateLimiter::new(env.clone()).rate_limit_admin_events(admin.clone()) {
+            Ok(()) => {}
+            Err(rate_limiter::RateLimiterError::ConfigNotFound) => {}
+            Err(rate_limiter::RateLimiterError::RateLimitExceeded) => {
+                panic_with_error!(env, Error::InvalidInput);
+            }
+            Err(_) => panic_with_error!(env, Error::InvalidInput),
+        }
+
         // Validate metadata using InputValidator
         if let Err(_) = crate::validation::InputValidator::validate_question_length(&question) {
             panic_with_error!(env, Error::InvalidQuestion);
@@ -1209,6 +1219,15 @@ impl PredictifyHybrid {
         let gas_marker = crate::gas::GasTracker::start_tracking(&env);
         if ReentrancyGuard::check_reentrancy_state(&env).is_err() {
             panic_with_error!(env, Error::InvalidState);
+        }
+        // Rate limit: max bets per user per time window (when config set)
+        match rate_limiter::RateLimiter::new(env.clone()).rate_limit_bets(user.clone()) {
+            Ok(()) => {}
+            Err(rate_limiter::RateLimiterError::ConfigNotFound) => {}
+            Err(rate_limiter::RateLimiterError::RateLimitExceeded) => {
+                panic_with_error!(env, Error::InvalidInput);
+            }
+            Err(_) => panic_with_error!(env, Error::InvalidInput),
         }
         // Use the BetManager to handle the bet placement
         match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
@@ -4774,8 +4793,12 @@ impl PredictifyHybrid {
         let stored_admin: Option<Address> =
             env.storage().persistent().get(&Symbol::new(&env, "Admin"));
         let is_admin = stored_admin.as_ref().map_or(false, |a| a == &caller);
-        let timeout_passed = current_time.saturating_sub(market.end_time)
-            >= config::DEFAULT_RESOLUTION_TIMEOUT_SECONDS;
+        let effective_timeout = if market.resolution_timeout == 0 {
+            config::DEFAULT_RESOLUTION_TIMEOUT_SECONDS
+        } else {
+            market.resolution_timeout
+        };
+        let timeout_passed = current_time.saturating_sub(market.end_time) >= effective_timeout;
         if !is_admin && !timeout_passed {
             return Err(Error::Unauthorized);
         }
@@ -5323,6 +5346,28 @@ impl PredictifyHybrid {
     /// Unpause contract operations (admin only).
     pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
         admin::ContractPauseManager::unpause(&env, &admin)
+    }
+
+    /// Set or update rate limits (admin only). Configures max bets per user per time window,
+    /// max events per admin per time window, and existing voting/dispute/oracle limits.
+    /// When config is set, place_bet and create_market enforce these limits.
+    pub fn set_rate_limits(
+        env: Env,
+        admin: Address,
+        config: rate_limiter::RateLimitConfig,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::AdminNotSet)?;
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+        rate_limiter::RateLimiter::new(env)
+            .update_rate_limits(admin, config)
+            .map_err(|_| Error::InvalidInput)
     }
 
     /// Returns true if the contract is currently paused.
