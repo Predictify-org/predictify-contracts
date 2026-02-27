@@ -776,12 +776,10 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
-}
-
     /// Asset used for bets and payouts (Stellar token/asset)
     pub asset: Option<crate::tokens::Asset>,
 }
-        /// Validate market parameters
+
 // ===== BET LIMITS =====
 
 /// Configurable minimum and maximum bet amount for an event or globally.
