@@ -2313,12 +2313,8 @@ impl OracleIntegrationManager {
         );
 
         // Attempt to fetch and verify oracle result
-        let oracle_result = Self::fetch_and_verify_oracle_result(
-            env,
-            market_id,
-            &market,
-            &oracle_sources,
-        )?;
+        let oracle_result =
+            Self::fetch_and_verify_oracle_result(env, market_id, &market, &oracle_sources)?;
 
         // Store the verified result
         Self::store_oracle_result(env, market_id, &oracle_result)?;
@@ -2489,8 +2485,9 @@ impl OracleIntegrationManager {
         }
 
         // Create oracle instance and fetch price
-        let oracle_instance = OracleFactory::create_oracle(provider.clone(), oracle_address.clone())?;
-        
+        let oracle_instance =
+            OracleFactory::create_oracle(provider.clone(), oracle_address.clone())?;
+
         // Check oracle health
         if !oracle_instance.is_healthy(env).unwrap_or(false) {
             return Err(Error::OracleUnavailable);
@@ -2632,10 +2629,7 @@ impl OracleIntegrationManager {
     }
 
     /// Get stored oracle result for a market.
-    pub fn get_oracle_result(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> Option<crate::types::OracleResult> {
+    pub fn get_oracle_result(env: &Env, market_id: &Symbol) -> Option<crate::types::OracleResult> {
         env.storage()
             .persistent()
             .get(&OracleIntegrationKey::OracleResult(market_id.clone()))
@@ -2685,20 +2679,17 @@ impl OracleIntegrationManager {
     /// Verify oracle authority/signature.
     ///
     /// Validates that an oracle response comes from a trusted source.
-    pub fn verify_oracle_authority(
-        env: &Env,
-        oracle_address: &Address,
-    ) -> Result<bool, Error> {
+    pub fn verify_oracle_authority(env: &Env, oracle_address: &Address) -> Result<bool, Error> {
         // Check if oracle is whitelisted
         let is_whitelisted = OracleWhitelist::validate_oracle_contract(env, oracle_address)?;
-        
+
         if !is_whitelisted {
             return Err(Error::InvalidOracleConfig);
         }
 
         // Get oracle metadata to verify it's active
         let metadata = OracleWhitelist::get_oracle_metadata(env, oracle_address)?;
-        
+
         if !metadata.is_active {
             return Err(Error::InvalidOracleConfig);
         }
@@ -2738,8 +2729,8 @@ impl OracleIntegrationManager {
             timestamp: env.ledger().timestamp(),
             block_number: env.ledger().sequence(),
             is_verified: true,
-            confidence_score: 100, // Admin override is authoritative
-            sources_count: 0, // Manual
+            confidence_score: 100,           // Admin override is authoritative
+            sources_count: 0,                // Manual
             signature: Some(reason.clone()), // Store reason in signature field
             error_message: None,
         };
@@ -2784,7 +2775,9 @@ mod oracle_integration_tests {
         // Invalid prices
         assert!(!OracleIntegrationManager::validate_price_range(0));
         assert!(!OracleIntegrationManager::validate_price_range(-100));
-        assert!(!OracleIntegrationManager::validate_price_range(100_000_000_000_001));
+        assert!(!OracleIntegrationManager::validate_price_range(
+            100_000_000_000_001
+        ));
     }
 
     #[test]
@@ -2806,14 +2799,14 @@ mod oracle_integration_tests {
     #[test]
     fn test_determine_consensus_outcome() {
         let env = Env::default();
-        
+
         // All agree on "yes"
         let mut results: Vec<(i128, String)> = Vec::new(&env);
         results.push_back((50_000_00, String::from_str(&env, "yes")));
         results.push_back((50_100_00, String::from_str(&env, "yes")));
         results.push_back((49_900_00, String::from_str(&env, "yes")));
-        
-        let (outcome, consensus, count) = 
+
+        let (outcome, consensus, count) =
             OracleIntegrationManager::determine_consensus_outcome(&env, &results).unwrap();
         assert_eq!(outcome, String::from_str(&env, "yes"));
         assert!(consensus);
@@ -2824,8 +2817,8 @@ mod oracle_integration_tests {
         mixed_results.push_back((50_000_00, String::from_str(&env, "yes")));
         mixed_results.push_back((50_100_00, String::from_str(&env, "yes")));
         mixed_results.push_back((49_000_00, String::from_str(&env, "no")));
-        
-        let (outcome, consensus, count) = 
+
+        let (outcome, consensus, count) =
             OracleIntegrationManager::determine_consensus_outcome(&env, &mixed_results).unwrap();
         assert_eq!(outcome, String::from_str(&env, "yes"));
         assert!(consensus); // 67% meets 66% threshold
@@ -2840,7 +2833,9 @@ mod oracle_integration_tests {
 
         env.as_contract(&contract_id, || {
             // Initially not verified
-            assert!(!OracleIntegrationManager::is_result_verified(&env, &market_id));
+            assert!(!OracleIntegrationManager::is_result_verified(
+                &env, &market_id
+            ));
 
             // Create and store result
             let result = crate::types::OracleResult {
@@ -2864,7 +2859,9 @@ mod oracle_integration_tests {
             OracleIntegrationManager::mark_as_verified(&env, &market_id);
 
             // Now verified
-            assert!(OracleIntegrationManager::is_result_verified(&env, &market_id));
+            assert!(OracleIntegrationManager::is_result_verified(
+                &env, &market_id
+            ));
 
             // Can retrieve result
             let retrieved = OracleIntegrationManager::get_oracle_result(&env, &market_id).unwrap();

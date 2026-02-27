@@ -1,5 +1,5 @@
 use crate::events::EventEmitter;
-use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, String, Symbol, Vec};
 
 /// ---------- CONTRACT TYPES ----------
 #[contracttype]
@@ -56,7 +56,7 @@ impl GovernanceContract {
             return;
         }
         if voting_period_seconds == 0 || quorum_votes == 0 {
-            panic!("invalid params");
+            panic_with_error!(env, crate::errors::Error::InvalidInput);
         }
         env.storage().persistent().set(&StorageKey::Admin, &admin);
         env.storage()

@@ -7,13 +7,16 @@
 
 use crate::queries::*;
 use crate::types::*;
-use soroban_sdk::{vec, Address, Env, String, Symbol};
+use soroban_sdk::testutils::Address as _;
+use soroban_sdk::{vec as svec, Address, Env, String, Symbol};
+
+const TEST_ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 // ===== UNIT TESTS =====
 
 #[test]
 fn test_market_status_conversion() {
-    let test_cases = vec![
+    let test_cases: [(MarketState, MarketStatus); 6] = [
         (MarketState::Active, MarketStatus::Active),
         (MarketState::Ended, MarketStatus::Ended),
         (MarketState::Disputed, MarketStatus::Disputed),
@@ -41,7 +44,7 @@ fn test_payout_calculation_zero_stake() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -49,16 +52,23 @@ fn test_payout_calculation_zero_stake() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
     let payout = QueryManager::calculate_payout(&env, &market, 0);
     assert!(payout.is_ok(), "Payout calculation failed for zero stake");
-    assert_eq!(payout.unwrap(), 0, "Zero stake should result in zero payout");
+    assert_eq!(
+        payout.unwrap(),
+        0,
+        "Zero stake should result in zero payout"
+    );
 }
 
 #[test]
@@ -70,7 +80,7 @@ fn test_payout_calculation_unresolved_market() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -78,10 +88,13 @@ fn test_payout_calculation_unresolved_market() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -107,7 +120,7 @@ fn test_implied_probabilities_zero_pool() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -115,10 +128,13 @@ fn test_implied_probabilities_zero_pool() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -139,7 +155,7 @@ fn test_implied_probabilities_sum_to_100() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -147,10 +163,13 @@ fn test_implied_probabilities_sum_to_100() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -158,9 +177,11 @@ fn test_implied_probabilities_sum_to_100() {
     assert!(probs.is_ok());
     let (p1, p2) = probs.unwrap();
     assert_eq!(
-        p1 + p2, 100,
+        p1 + p2,
+        100,
         "Probabilities should sum to 100% (got {} + {})",
-        p1, p2
+        p1,
+        p2
     );
 }
 
@@ -173,7 +194,7 @@ fn test_outcome_pool_empty_market() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -181,17 +202,24 @@ fn test_outcome_pool_empty_market() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
     let outcome = String::from_str(&env, "yes");
     let pool = QueryManager::calculate_outcome_pool(&env, &market, &outcome);
     assert!(pool.is_ok(), "Outcome pool calculation failed");
-    assert_eq!(pool.unwrap(), 0, "Empty market should have zero pool for outcome");
+    assert_eq!(
+        pool.unwrap(),
+        0,
+        "Empty market should have zero pool for outcome"
+    );
 }
 
 #[test]
@@ -204,7 +232,7 @@ fn test_outcome_pool_with_single_vote() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -212,10 +240,13 @@ fn test_outcome_pool_with_single_vote() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -242,7 +273,7 @@ fn test_outcome_pool_with_multiple_votes() {
         &env,
         admin,
         String::from_str(&env, "Test Market"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -250,10 +281,13 @@ fn test_outcome_pool_with_multiple_votes() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -283,7 +317,7 @@ fn test_outcome_pool_with_multiple_votes() {
 #[test]
 fn test_market_status_all_states() {
     // Test all market states convert properly
-    let states = vec![
+    let states: [MarketState; 6] = [
         MarketState::Active,
         MarketState::Ended,
         MarketState::Disputed,
@@ -292,12 +326,16 @@ fn test_market_status_all_states() {
         MarketState::Cancelled,
     ];
 
-    for state in states {
+    for state in states.iter().copied() {
         let status = MarketStatus::from_market_state(state);
         // Should not panic and should return valid status
         match status {
-            MarketStatus::Active | MarketStatus::Ended | MarketStatus::Disputed
-            | MarketStatus::Resolved | MarketStatus::Closed | MarketStatus::Cancelled => {
+            MarketStatus::Active
+            | MarketStatus::Ended
+            | MarketStatus::Disputed
+            | MarketStatus::Resolved
+            | MarketStatus::Closed
+            | MarketStatus::Cancelled => {
                 // Valid status
             }
         }
@@ -316,7 +354,7 @@ fn test_probabilities_are_percentages() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -324,10 +362,13 @@ fn test_probabilities_are_percentages() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -349,7 +390,7 @@ fn test_payout_never_exceeds_total_pool() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -357,16 +398,19 @@ fn test_payout_never_exceeds_total_pool() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
     let stake = 10_000_000i128;
     market.total_staked = stake;
-    market.winning_outcome = Some(String::from_str(&env, "yes"));
+    market.winning_outcomes = Some(soroban_sdk::vec![&env, String::from_str(&env, "yes")]);
 
     let payout = QueryManager::calculate_payout(&env, &market, stake);
     assert!(payout.is_ok());
@@ -389,7 +433,7 @@ fn test_pool_calculation_commutative() {
         &env,
         admin.clone(),
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -397,10 +441,13 @@ fn test_pool_calculation_commutative() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -419,7 +466,7 @@ fn test_pool_calculation_commutative() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -427,18 +474,21 @@ fn test_pool_calculation_commutative() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
     // Add votes in reverse order 2, 1
-    market2.votes.set(user2, outcome.clone());
-    market2.stakes.set(user2, 2_000_000i128);
-    market2.votes.set(user1, outcome.clone());
-    market2.stakes.set(user1, 3_000_000i128);
+    market2.votes.set(user2.clone(), outcome.clone());
+    market2.stakes.set(user2.clone(), 2_000_000i128);
+    market2.votes.set(user1.clone(), outcome.clone());
+    market2.stakes.set(user1.clone(), 3_000_000i128);
 
     let pool2 = QueryManager::calculate_outcome_pool(&env, &market2, &outcome).unwrap();
 
@@ -450,7 +500,7 @@ fn test_pool_calculation_commutative() {
 #[test]
 fn test_status_conversion_roundtrip() {
     // Test that we can convert states and back
-    let all_states = vec![
+    let all_states: [MarketState; 6] = [
         MarketState::Active,
         MarketState::Ended,
         MarketState::Disputed,
@@ -459,7 +509,7 @@ fn test_status_conversion_roundtrip() {
         MarketState::Cancelled,
     ];
 
-    for state in all_states {
+    for state in all_states.iter().copied() {
         let status = MarketStatus::from_market_state(state);
         // Verify status is valid
         match status {
@@ -485,7 +535,7 @@ fn test_outcome_pool_consistency() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -493,10 +543,13 @@ fn test_outcome_pool_consistency() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -526,12 +579,14 @@ fn test_payout_with_high_fees() {
     // Edge case: Verify fee deduction is applied
     let env = Env::default();
     let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let yes = String::from_str(&env, "yes");
 
     let mut market = Market::new(
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -539,24 +594,33 @@ fn test_payout_with_high_fees() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
     let stake = 100_000_000i128; // 10 XLM
+    market.votes.set(user.clone(), yes.clone());
+    market.stakes.set(user.clone(), stake);
     market.total_staked = stake;
-    market.winning_outcome = Some(String::from_str(&env, "yes"));
+    market.winning_outcomes = Some(soroban_sdk::vec![&env, yes]);
 
     let payout = QueryManager::calculate_payout(&env, &market, stake).unwrap();
 
     // Should be less than stake due to fee (2%)
-    assert!(payout < stake, "Payout should be less than stake due to fees");
     assert!(
-        payout > stake * 98 / 100,
-        "Payout should be approximately 98% of stake"
+        payout < stake,
+        "Payout should be less than stake due to fees"
+    );
+    assert!(
+        payout >= stake * 98 / 100,
+        "Payout should be approximately 98% of stake, got {}",
+        payout
     );
 }
 
@@ -570,7 +634,7 @@ fn test_negative_values_handled() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -578,10 +642,13 @@ fn test_negative_values_handled() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 
@@ -601,7 +668,7 @@ fn test_large_number_handling() {
         &env,
         admin,
         String::from_str(&env, "Test"),
-        vec![
+        svec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
@@ -609,10 +676,13 @@ fn test_large_number_handling() {
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
             OracleProvider::Reflector,
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
             String::from_str(&env, "gt"),
         ),
+        None,
+        86400,
         MarketState::Active,
     );
 

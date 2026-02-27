@@ -1696,7 +1696,7 @@ impl DisputeManager {
         // Validate timeout hours
         if timeout_hours == 0 || timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::TimeoutError);
         }
 
         // Create timeout configuration
@@ -1741,7 +1741,7 @@ impl DisputeManager {
     ) -> Result<DisputeTimeoutOutcome, Error> {
         // Check if timeout has expired
         if !Self::check_dispute_timeout(env, dispute_id.clone())? {
-            return Err(Error::TimeoutNotExpired);
+            return Err(Error::InvalidState);
         }
 
         // Get timeout configuration
@@ -1846,7 +1846,7 @@ impl DisputeManager {
         // Validate additional hours
         if additional_hours == 0 || additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::TimeoutError);
         }
 
         // Get current timeout
@@ -1854,7 +1854,7 @@ impl DisputeManager {
 
         // Check if timeout can be extended
         if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
-            return Err(Error::TimeoutNotExpired);
+            return Err(Error::InvalidState);
         }
 
         // Update timeout
@@ -1888,8 +1888,7 @@ impl DisputeValidator {
     /// Validate market state for dispute
     pub fn validate_market_for_dispute(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market has ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
+        if market.is_active(env) {
             return Err(Error::MarketClosed);
         }
 
@@ -1987,12 +1986,12 @@ impl DisputeValidator {
         // Check if voting period is active
         let current_time = env.ledger().timestamp();
         if current_time < voting_data.voting_start || current_time > voting_data.voting_end {
-            return Err(Error::DisputeVoteExpired);
+            return Err(Error::DisputeError);
         }
 
         // Check if voting is still active
         if !matches!(voting_data.status, DisputeVotingStatus::Active) {
-            return Err(Error::DisputeVoteDenied);
+            return Err(Error::DisputeError);
         }
 
         Ok(())
@@ -2008,7 +2007,7 @@ impl DisputeValidator {
 
         for vote in votes.iter() {
             if vote.user == *user {
-                return Err(Error::DisputeAlreadyVoted);
+                return Err(Error::DisputeError);
             }
         }
 
@@ -2018,7 +2017,7 @@ impl DisputeValidator {
     /// Validate voting is completed
     pub fn validate_voting_completed(voting_data: &DisputeVoting) -> Result<(), Error> {
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeCondNotMet);
+            return Err(Error::DisputeError);
         }
 
         Ok(())
@@ -2033,13 +2032,13 @@ impl DisputeValidator {
         let voting_data = DisputeUtils::get_dispute_voting(env, dispute_id)?;
 
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeCondNotMet);
+            return Err(Error::DisputeError);
         }
 
         // Check if fees haven't been distributed yet
         let fee_distribution = DisputeUtils::get_dispute_fee_distribution(env, dispute_id)?;
         if fee_distribution.fees_distributed {
-            return Err(Error::DisputeFeeFailed);
+            return Err(Error::DisputeError);
         }
 
         Ok(true)
@@ -2063,13 +2062,13 @@ impl DisputeValidator {
         }
 
         if !has_participated {
-            return Err(Error::DisputeNoEscalate);
+            return Err(Error::DisputeError);
         }
 
         // Check if escalation already exists
         let escalation = DisputeUtils::get_dispute_escalation(env, dispute_id);
         if escalation.is_some() {
-            return Err(Error::DisputeNoEscalate);
+            return Err(Error::DisputeError);
         }
 
         Ok(())
@@ -2078,12 +2077,12 @@ impl DisputeValidator {
     /// Validate dispute timeout parameters
     pub fn validate_dispute_timeout_parameters(timeout_hours: u32) -> Result<(), Error> {
         if timeout_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::TimeoutError);
         }
 
         if timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::TimeoutError);
         }
 
         Ok(())
@@ -2094,12 +2093,12 @@ impl DisputeValidator {
         additional_hours: u32,
     ) -> Result<(), Error> {
         if additional_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::TimeoutError);
         }
 
         if additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::TimeoutError);
         }
 
         Ok(())
@@ -2110,7 +2109,7 @@ impl DisputeValidator {
         timeout: &DisputeTimeout,
     ) -> Result<(), Error> {
         if !matches!(timeout.status, DisputeTimeoutStatus::Active) {
-            return Err(Error::TimeoutNotExpired);
+            return Err(Error::InvalidState);
         }
 
         Ok(())
@@ -2460,7 +2459,7 @@ impl DisputeUtils {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::TimeoutNotSet)
+            .ok_or(Error::TimeoutError)
     }
 
     /// Check if dispute timeout exists
@@ -2765,7 +2764,7 @@ pub mod testing {
     /// Validate timeout structure
     pub fn validate_timeout_structure(timeout: &DisputeTimeout) -> Result<(), Error> {
         if timeout.timeout_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::TimeoutError);
         }
 
         if timeout.expires_at <= timeout.created_at {
@@ -2816,10 +2815,16 @@ mod tests {
             end_time,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
+                Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),
             ),
+            None,
+            86400,
             crate::types::MarketState::Active,
         )
     }

@@ -32,8 +32,35 @@ pub const MIN_MARKET_OUTCOMES: u32 = 2;
 /// Maximum question length in characters
 pub const MAX_QUESTION_LENGTH: u32 = 500;
 
+/// Minimum question length in characters
+pub const MIN_QUESTION_LENGTH: u32 = 10;
+
 /// Maximum outcome length in characters
 pub const MAX_OUTCOME_LENGTH: u32 = 100;
+
+/// Minimum outcome length in characters
+pub const MIN_OUTCOME_LENGTH: u32 = 2;
+
+/// Maximum description length in characters
+pub const MAX_DESCRIPTION_LENGTH: u32 = 1000;
+
+/// Minimum description length in characters (optional field, can be 0)
+pub const MIN_DESCRIPTION_LENGTH: u32 = 0;
+
+/// Maximum tag length in characters
+pub const MAX_TAG_LENGTH: u32 = 50;
+
+/// Minimum tag length in characters
+pub const MIN_TAG_LENGTH: u32 = 2;
+
+/// Maximum number of tags per market
+pub const MAX_TAGS_PER_MARKET: u32 = 10;
+
+/// Maximum category name length in characters
+pub const MAX_CATEGORY_LENGTH: u32 = 100;
+
+/// Minimum category name length in characters
+pub const MIN_CATEGORY_LENGTH: u32 = 2;
 
 // ===== FEE CONSTANTS =====
 
@@ -94,6 +121,11 @@ pub const EXTENSION_FEE_PER_DAY: i128 = 100_000_000;
 
 /// Maximum total extensions per market
 pub const MAX_TOTAL_EXTENSIONS: u32 = 3;
+
+// ===== POOL SIZE CONSTANTS =====
+
+/// Default minimum pool size (0 = no minimum)
+pub const DEFAULT_MIN_POOL_SIZE: i128 = 0;
 
 // ===== RESOLUTION CONSTANTS =====
 
@@ -638,6 +670,14 @@ pub struct MarketConfig {
     ///
     /// Typical range: 50-200 characters
     pub max_outcome_length: u32,
+
+    /// Maximum number of active events a single creator (admin) can have.
+    ///
+    /// Limits how many unresolved/uncancelled events a single address can create
+    /// to prevent spam and manage platform capacity.
+    ///
+    /// Typical range: 5-50 events
+    pub max_active_events_per_creator: u32,
 }
 
 /// Market duration extension configuration and fee structure.
@@ -843,10 +883,10 @@ pub struct ResolutionConfig {
 /// # Example
 ///
 /// ```rust
-/// # use predictify_hybrid::config::OracleConfig;
+/// # use predictify_hybrid::config::OracleRuntimeConfig;
 ///
 /// // Create production oracle configuration
-/// let oracle_config = OracleConfig {
+/// let oracle_config = OracleRuntimeConfig {
 ///     max_price_age: 3600,      // 1 hour maximum data age
 ///     retry_attempts: 3,        // Try up to 3 times
 ///     timeout_seconds: 30,      // 30 second timeout per attempt
@@ -861,9 +901,11 @@ pub struct ResolutionConfig {
 /// let is_fresh = data_age <= oracle_config.max_price_age;
 /// println!("Data is fresh: {}", is_fresh); // true
 /// ```
+/// Runtime/config settings for oracle requests (age, retries, timeout).
+/// Named to avoid conflict with types::OracleConfig (market oracle config).
 #[derive(Clone, Debug)]
 #[contracttype]
-pub struct OracleConfig {
+pub struct OracleRuntimeConfig {
     /// Maximum age of oracle data before it's considered stale (in seconds).
     ///
     /// Ensures oracle data is sufficiently recent for accurate market
@@ -1023,7 +1065,7 @@ pub struct ContractConfig {
     ///
     /// Controls how the contract interacts with external
     /// oracle services for market resolution data.
-    pub oracle: OracleConfig,
+    pub oracle: OracleRuntimeConfig,
 }
 
 // ===== CONFIGURATION MANAGER =====
@@ -1686,6 +1728,7 @@ impl ConfigManager {
             min_outcomes: MIN_MARKET_OUTCOMES,
             max_question_length: MAX_QUESTION_LENGTH,
             max_outcome_length: MAX_OUTCOME_LENGTH,
+            max_active_events_per_creator: 20,
         }
     }
 
@@ -1842,7 +1885,7 @@ impl ConfigManager {
     ///
     /// # Returns
     ///
-    /// Returns an `OracleConfig` with balanced default values suitable for
+    /// Returns an `OracleRuntimeConfig` with balanced default values suitable for
     /// reliable oracle integration with reasonable performance characteristics.
     ///
     /// # Example
@@ -1896,8 +1939,8 @@ impl ConfigManager {
     /// - System reliability (adequate retries)
     /// - Resource usage (bounded timeouts)
     /// - Data quality (freshness requirements)
-    pub fn get_default_oracle_config() -> OracleConfig {
-        OracleConfig {
+    pub fn get_default_oracle_config() -> OracleRuntimeConfig {
+        OracleRuntimeConfig {
             max_price_age: MAX_ORACLE_PRICE_AGE,
             retry_attempts: ORACLE_RETRY_ATTEMPTS,
             timeout_seconds: ORACLE_TIMEOUT_SECONDS,
@@ -1919,7 +1962,7 @@ impl ConfigManager {
     ///
     /// # Returns
     ///
-    /// Returns an `OracleConfig` with mainnet-optimized values designed for
+    /// Returns an `OracleRuntimeConfig` with mainnet-optimized values designed for
     /// production deployment with enhanced data quality and reliability.
     ///
     /// # Example
@@ -1956,8 +1999,8 @@ impl ConfigManager {
     /// - Network congestion and latency issues
     /// - Oracle provider diversity and failover
     /// - Regulatory compliance and audit requirements
-    pub fn get_mainnet_oracle_config() -> OracleConfig {
-        OracleConfig {
+    pub fn get_mainnet_oracle_config() -> OracleRuntimeConfig {
+        OracleRuntimeConfig {
             max_price_age: 1800, // 30 minutes for mainnet
             retry_attempts: 5,   // More retries for mainnet
             timeout_seconds: 60, // Longer timeout for mainnet
@@ -2565,7 +2608,7 @@ impl ConfigValidator {
     }
 
     /// Validate oracle configuration
-    pub fn validate_oracle_config(config: &OracleConfig) -> Result<(), Error> {
+    pub fn validate_oracle_config(config: &OracleRuntimeConfig) -> Result<(), Error> {
         if config.max_price_age == 0 {
             return Err(Error::InvalidInput);
         }
@@ -2661,7 +2704,7 @@ impl ConfigUtils {
     }
 
     /// Get oracle configuration
-    pub fn get_oracle_config(config: &ContractConfig) -> &OracleConfig {
+    pub fn get_oracle_config(config: &ContractConfig) -> &OracleRuntimeConfig {
         &config.oracle
     }
 }
@@ -2764,6 +2807,7 @@ impl ConfigTesting {
                 min_outcomes: 2,
                 max_question_length: 200,
                 max_outcome_length: 50,
+                max_active_events_per_creator: 20,
             },
             extension: ExtensionConfig {
                 max_extension_days: 7,
@@ -2778,7 +2822,7 @@ impl ConfigTesting {
                 community_weight_percentage: 40,
                 min_votes_for_consensus: 3,
             },
-            oracle: OracleConfig {
+            oracle: OracleRuntimeConfig {
                 max_price_age: 1800,
                 retry_attempts: 2,
                 timeout_seconds: 15,

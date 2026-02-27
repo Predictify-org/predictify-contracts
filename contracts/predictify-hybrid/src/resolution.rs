@@ -980,7 +980,7 @@ impl OracleResolutionManager {
                 &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
             );
 
-            return Err(Error::ResolutionTimeoutReached);
+            return Err(Error::InvalidState);
         }
 
         // Validate market for oracle resolution
@@ -994,7 +994,8 @@ impl OracleResolutionManager {
             Ok(res) => res,
             Err(_) => {
                 // 3. Try fallback oracle if primary fails
-                if let Some(ref fallback_config) = market.fallback_oracle_config {
+                if market.has_fallback {
+                    let fallback_config = &market.fallback_oracle_config;
                     match Self::try_fetch_from_config(env, fallback_config) {
                         Ok(res) => {
                             crate::events::EventEmitter::emit_fallback_used(
@@ -1006,7 +1007,7 @@ impl OracleResolutionManager {
                             used_config = fallback_config.clone();
                             res
                         }
-                        Err(_) => return Err(Error::FallbackOracleUnavailable),
+                        Err(_) => return Err(Error::OracleUnavailable),
                     }
                 } else {
                     return Err(Error::OracleUnavailable);
@@ -1284,8 +1285,24 @@ impl MarketResolutionManager {
         // Get the market from storage
         let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        // Validate market for resolution
-        MarketResolutionValidator::validate_market_for_resolution(env, &market)?;
+        // Validate market for resolution (includes min pool size check)
+        let validation = MarketResolutionValidator::validate_market_for_resolution(env, &market);
+        if let Err(Error::InvalidState) = validation {
+            let global_min: i128 = env
+                .storage()
+                .persistent()
+                .get(&Symbol::new(env, "global_min_pool"))
+                .unwrap_or(0);
+            let min_pool = market.min_pool_size.unwrap_or(global_min);
+            crate::events::EventEmitter::emit_min_pool_size_not_met(
+                env,
+                market_id,
+                market.total_staked,
+                min_pool,
+            );
+            return Err(Error::InvalidState);
+        }
+        validation?;
 
         // Retrieve the oracle result
         let oracle_result = market
@@ -1348,6 +1365,9 @@ impl MarketResolutionManager {
             Some(market_id),
         );
         MarketStateManager::update_market(env, market_id, &market);
+
+        // Decrement active event count since the event is resolved
+        crate::storage::CreatorLimitsManager::decrement_active_events(env, &market.admin);
 
         // Emit market resolved event
         let oracle_result_str = market
@@ -1421,6 +1441,9 @@ impl MarketResolutionManager {
         winning_outcomes.push_back(outcome.clone());
         MarketStateManager::set_winning_outcomes(&mut market, winning_outcomes, Some(market_id));
         MarketStateManager::update_market(env, market_id, &market);
+
+        // Decrement active event count since the event is manually finalized
+        crate::storage::CreatorLimitsManager::decrement_active_events(env, &market.admin);
 
         Ok(resolution)
     }
@@ -1509,9 +1532,19 @@ impl MarketResolutionValidator {
         }
 
         // Check if market has ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
+        if market.is_active(env) {
             return Err(Error::MarketClosed);
+        }
+
+        // Check minimum pool size requirement (per-market override, else global)
+        let global_min: i128 = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "global_min_pool"))
+            .unwrap_or(0);
+        let min_pool = market.min_pool_size.unwrap_or(global_min);
+        if min_pool > 0 && market.total_staked < min_pool {
+            return Err(Error::InvalidState);
         }
 
         Ok(())
@@ -1677,14 +1710,12 @@ impl ResolutionUtils {
 
     /// Check if market can be resolved
     pub fn can_resolve_market(env: &Env, market: &Market) -> bool {
-        market.has_ended(env.ledger().timestamp())
-            && market.oracle_result.is_some()
-            && market.winning_outcomes.is_none()
+        market.has_ended(env) && market.oracle_result.is_some() && market.winning_outcomes.is_none()
     }
 
     /// Get resolution eligibility
     pub fn get_resolution_eligibility(env: &Env, market: &Market) -> (bool, String) {
-        if !market.has_ended(env.ledger().timestamp()) {
+        if !market.has_ended(env) {
             return (false, String::from_str(env, "Market has not ended"));
         }
 
@@ -1886,6 +1917,8 @@ mod tests {
                 threshold: 2500000,
                 comparison: String::from_str(&env, "gt"),
             },
+            None,
+            86400,
             MarketState::Active,
         );
 

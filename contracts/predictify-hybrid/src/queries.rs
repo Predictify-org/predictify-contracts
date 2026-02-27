@@ -90,6 +90,7 @@ impl QueryManager {
 
         // Get oracle provider name
         let oracle_provider = market.oracle_config.provider.name();
+        let winning_outcome = market.get_winning_outcome();
 
         let response = EventDetailsQuery {
             market_id,
@@ -101,7 +102,7 @@ impl QueryManager {
             oracle_provider: String::from_str(env, oracle_provider),
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
-            winning_outcome: market.winning_outcome.clone(),
+            winning_outcome,
             oracle_result: market.oracle_result.clone(),
             participant_count,
             vote_count,
@@ -204,23 +205,17 @@ impl QueryManager {
         let market = Self::get_market_from_storage(env, &market_id)?;
 
         // Check if user has participated
-        let outcome = market
-            .votes
-            .get(user.clone())
-            .ok_or(Error::InvalidInput)?;
+        let outcome = market.votes.get(user.clone()).ok_or(Error::InvalidInput)?;
 
-        let stake_amount = market
-            .stakes
-            .get(user.clone())
-            .ok_or(Error::InvalidInput)?;
+        let stake_amount = market.stakes.get(user.clone()).ok_or(Error::InvalidInput)?;
 
         let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
 
-        // Determine if user is winning
+        // Determine if user is winning (supports single or multiple winning outcomes / ties)
         let is_winning = market
-            .winning_outcome
+            .winning_outcomes
             .as_ref()
-            .map(|wo| wo == &outcome)
+            .map(|wos: &Vec<String>| wos.contains(&outcome))
             .unwrap_or(false);
 
         // Calculate potential payout
@@ -429,7 +424,7 @@ impl QueryManager {
             resolved_markets,
             total_value_locked,
             total_fees_collected: 0i128, // TODO: Retrieve from fees module
-            unique_users: 0u32, // TODO: Calculate from user index
+            unique_users: 0u32,          // TODO: Calculate from user index
             contract_version: String::from_str(env, "1.0.0"),
             last_update: env.ledger().timestamp(),
         };
@@ -455,14 +450,21 @@ impl QueryManager {
     /// - User's stake proportion
     /// - Total winning stakes
     /// - Platform fee deduction
-    fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    pub(crate) fn calculate_payout(
+        env: &Env,
+        market: &Market,
+        user_stake: i128,
+    ) -> Result<i128, Error> {
         if user_stake <= 0 {
             return Ok(0);
         }
 
-        // Get total winning stakes
-        if let Some(winning_outcome) = &market.winning_outcome {
-            let winning_total = Self::calculate_outcome_pool(env, market, winning_outcome)?;
+        // Get total winning stakes (sum across all winning outcomes for proportional tie payout)
+        if let Some(winning_outcomes) = &market.winning_outcomes {
+            let mut winning_total = 0i128;
+            for outcome in winning_outcomes.iter() {
+                winning_total += Self::calculate_outcome_pool(env, market, &outcome)?;
+            }
 
             if winning_total <= 0 {
                 return Ok(0);
@@ -484,7 +486,7 @@ impl QueryManager {
     /// Calculate total stake for a specific outcome.
     ///
     /// Sums all user stakes that voted for the given outcome.
-    fn calculate_outcome_pool(
+    pub(crate) fn calculate_outcome_pool(
         env: &Env,
         market: &Market,
         outcome: &String,
@@ -507,7 +509,7 @@ impl QueryManager {
     ///
     /// Uses stake distribution to infer market's probability estimates
     /// for "yes" and "no" outcomes. Returns percentages (0-100).
-    fn calculate_implied_probabilities(
+    pub(crate) fn calculate_implied_probabilities(
         env: &Env,
         market: &Market,
     ) -> Result<(u32, u32), Error> {
@@ -539,6 +541,7 @@ impl QueryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::Env;
 
     #[test]
@@ -562,10 +565,16 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
+                Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            86400,
             MarketState::Active,
         );
 
@@ -590,10 +599,16 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
+                Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            86400,
             MarketState::Active,
         );
 
@@ -625,10 +640,16 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
+                Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
             ),
+            None,
+            86400,
             MarketState::Active,
         );
 

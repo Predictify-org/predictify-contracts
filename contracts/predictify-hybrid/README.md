@@ -1,3 +1,50 @@
+# Custom Stellar Token/Asset Support
+
+## Multi-Asset Markets
+
+Markets can now accept and pay out in any Stellar asset (e.g., USDC, custom token, XLM) using the Soroban token interface.
+
+### Admin Controls
+- Admin can set allowed tokens globally or per event
+- Allowed assets are validated and stored in contract registry
+- Use `initialize` to set global allowed assets
+- Use market creation functions to specify per-event asset
+
+### Secure Token Handling
+- Bets and payouts use Soroban token transfer interface
+- Contract validates token contract and decimals
+- Handles approval/allowance if required by token
+- Emits events with asset info for transparency
+- Does not break XLM-native flow if still supported
+
+### Example Usage
+```rust
+// Initialize contract with allowed assets
+PredictifyHybrid::initialize(env, admin, Some(2), Some(vec![Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }]));
+
+// Create market with custom asset
+PredictifyHybrid::create_market(env, admin, question, outcomes, duration_days, oracle_config, Some(Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }));
+
+// Place bet with custom asset
+BetManager::place_bet(env, user, market_id, outcome, amount, Some(Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }));
+```
+
+### Security Notes
+- All token transfers are validated
+- Only allowed assets can be used for bets/payouts
+- Minimum 95% test coverage required
+- Comprehensive input validation and event emission
+
+### Events
+- Asset info is included in bet and payout events
+- Admin can query allowed assets per event or globally
+
+### Testing
+- Tests cover XLM and custom token flows
+- Insufficient balance and invalid asset scenarios are handled
+
+### Commit Message Example
+`feat: implement custom Stellar token/asset support for bets and payouts`
 # Predictify Hybrid Contract with Real Oracle Integration
 
 ## Overview
@@ -16,6 +63,35 @@ This is a hybrid prediction market contract built on Stellar using Soroban that 
 - **Dispute System**: Stake-based dispute mechanism with 24-hour extensions
 - **Fee Structure**: 2% platform fee + 1 XLM creation fee
 - **Batch Bet Placement**: Place multiple bets in a single atomic transaction for gas efficiency
+- **Admin Fee Withdrawal Schedule**: Timelock + optional cap for fee withdrawals to reduce abuse risk
+
+## Admin Fee Vault & Withdrawal Schedule
+
+Collected platform fees accumulate inside the contract and are withdrawn by the admin through a
+schedule to reduce abuse risk and improve monitoring/auditability.
+
+### How It Works
+
+- **Collect fees (per market)**: `collect_fees(admin, market_id)` calculates the market fee and
+  credits it to the **fee vault** (stored under the `tot_fees` key).
+- **Withdraw fees (scheduled)**: `withdraw_fees(admin, amount)` (alias: `withdraw_collected_fees`)
+  transfers fees from the contract to the admin **only when the schedule allows it**.
+
+### Default Schedule
+
+- **Timelock**: 7 days between *successful* withdrawals
+- **Cap**: 100% of the current vault per window (cap disabled by default)
+
+The schedule can be tightened (never loosened) via:
+
+- `set_fee_withdrawal_schedule(admin, timelock_seconds, max_withdrawal_bps)`
+
+### Events
+
+Withdrawals emit events for observability:
+
+- `FeeWithdrawalAttemptEvent` (topic key: `fwd_att`) on every attempt, including blocked attempts
+- `FeeWithdrawnEvent` (topic key: `fwd_ok`) on successful withdrawals
 
 ## Pyth Network Oracle Integration
 
@@ -73,7 +149,7 @@ The integration supports major crypto assets with their Pyth feed IDs:
 ```rust
 // Prices older than 60 seconds are considered stale
 let max_age = 60; // seconds
-if current_time > price_info.publish_time + max_age {
+if env.ledger().timestamp() > price_info.publish_time + max_age {
     return Err(Error::PythPriceStale);
 }
 ```
@@ -176,6 +252,29 @@ The Reflector oracle supports various assets including:
 - And other assets configured in the Reflector contract
 
 ## Contract Functions
+
+### Unclaimed Winnings Timeout & Sweep
+
+The contract supports configurable claim windows for winnings and administrative sweeping of unclaimed payouts.
+
+- **Global claim period**: `set_global_claim_period(admin, claim_period_seconds)`
+- **Per-market override**: `set_market_claim_period(admin, market_id, claim_period_seconds)`
+- **Treasury destination**: `set_treasury(admin, treasury)`
+- **Sweep unclaimed payouts**: `sweep_unclaimed_winnings(caller, market_id, burn)`
+
+Behavior and security:
+
+- Claims are allowed only before the effective claim deadline (`end_time + effective_claim_period`).
+- `claim_winnings` rejects claims after expiry (`ResolutionTimeoutReached`).
+- `sweep_unclaimed_winnings` rejects early sweeps (`InvalidState`).
+- Sweep includes only unclaimed winning payouts and marks swept winners as claimed to prevent double-withdrawal.
+- Caller must be contract admin or configured treasury.
+- Sweep emits dedicated events for auditability:
+  - `ClaimPeriodUpdatedEvent`
+  - `MarketClaimPeriodUpdatedEvent`
+  - `TreasuryUpdatedEvent`
+  - `UnclaimedWinningsSweptEvent`
+- Swept funds can be redirected to treasury (`burn = false`) or burned (`burn = true`).
 
 ### 1. Initialize Contract
 
