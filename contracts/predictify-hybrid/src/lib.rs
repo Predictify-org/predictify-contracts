@@ -152,6 +152,7 @@ use alloc::format;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, token, Address, Env, Map, String, Symbol, Vec,
 };
+use crate::circuit_breaker::CircuitBreaker;
 
 #[contract]
 pub struct PredictifyHybrid;
@@ -625,8 +626,7 @@ impl PredictifyHybrid {
 
         // Calculate end time
         let seconds_per_day: u64 = 24 * 60 * 60;
-        let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
-        let end_time: u64 = env.ledger().timestamp() + duration_seconds;
+        let end_time = env.ledger().timestamp() + (duration_days as u64 * seconds_per_day);
 
         // Bet deadline: if set, must be before end_time
         let bet_deadline: u64 = match bet_deadline_mins_before_end {
@@ -738,6 +738,11 @@ impl PredictifyHybrid {
         // Authenticate that the caller is the admin
         admin.require_auth();
 
+        // Enforce circuit breaker: if full pause blocks event creation
+        if !CircuitBreaker::is_operation_allowed(&env, "create_event")? {
+            panic_with_error!(env, Error::CBOpen);
+        }
+
         // Verify the caller is an admin
         let stored_admin: Address = env
             .storage()
@@ -839,6 +844,34 @@ impl PredictifyHybrid {
             &admin,
             end_time,
         );
+
+        event_id
+    }
+
+    /// Pause contract operations (admin only).
+    /// `betting_only` = true will only pause betting; false = full pause.
+    /// `allow_withdrawals` controls whether users can still withdraw during pause.
+    pub fn pause(
+        env: Env,
+        admin: Address,
+        betting_only: bool,
+        allow_withdrawals: bool,
+        reason: String,
+    ) -> Result<(), Error> {
+        // Validate admin and call circuit breaker
+        let scope = if betting_only {
+            crate::circuit_breaker::PauseScope::BettingOnly
+        } else {
+            crate::circuit_breaker::PauseScope::Full
+        };
+
+        CircuitBreaker::pause_with_options(&env, &admin, &reason, scope, allow_withdrawals)
+    }
+
+    /// Unpause/resume contract operations (admin only).
+    pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
+        CircuitBreaker::circuit_breaker_recovery(&env, &admin)
+    }
 
         if creation_fee > 0 {
             EventEmitter::emit_fee_collected(
@@ -2877,6 +2910,13 @@ impl PredictifyHybrid {
             return Err(Error::MarketClosed);
         }
 
+        // Get oracle result using the resolution module
+        let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
+            &env,
+            &market_id,
+        )?;
+
+        Ok(oracle_resolution.oracle_result)
         // Get oracle result using the resolution module (oracle_contract from market config is used internally)
         let oracle_resolution =
             resolution::OracleResolutionManager::fetch_oracle_result(&env, &market_id)?;

@@ -46,6 +46,7 @@ use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
 use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::{Bet, BetLimits, BetStats, BetStatus, EventVisibility, Market, MarketState};
 use crate::validation;
+use crate::circuit_breaker::CircuitBreaker;
 
 // ===== CONSTANTS =====
 
@@ -268,6 +269,9 @@ impl BetManager {
     ) -> Result<Bet, Error> {
         user.require_auth();
 
+        // Enforce circuit breaker: block betting when paused for betting
+        if !CircuitBreaker::is_operation_allowed(env, "betting")? {
+            return Err(Error::CBOpen);
         if crate::storage::EventManager::has_event(env, &market_id) {
             let event = crate::storage::EventManager::get_event(env, &market_id)?;
             if event.visibility == EventVisibility::Private && !event.allowlist.contains(&user) {
@@ -337,6 +341,11 @@ impl BetManager {
     ) -> Result<soroban_sdk::Vec<Bet>, Error> {
         // Require authentication from the user
         user.require_auth();
+
+        // Enforce circuit breaker for batch betting
+        if !CircuitBreaker::is_operation_allowed(env, "betting")? {
+            return Err(Error::CBOpen);
+        }
 
         // Validate batch size
         if bets.is_empty() {

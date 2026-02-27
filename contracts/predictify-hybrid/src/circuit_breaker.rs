@@ -63,6 +63,15 @@ pub struct CircuitBreakerState {
     pub half_open_requests: u32,
     pub total_requests: u32,
     pub error_count: u32,
+    pub pause_scope: PauseScope,
+    pub allow_withdrawals: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[contracttype]
+pub enum PauseScope {
+    BettingOnly,
+    Full,
 }
 
 // ===== CIRCUIT BREAKER IMPLEMENTATION =====
@@ -130,6 +139,8 @@ impl CircuitBreaker {
             half_open_requests: 0,
             total_requests: 0,
             error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: false,
         };
 
         env.storage()
@@ -211,9 +222,20 @@ impl CircuitBreaker {
 
     /// Emergency pause by admin
     pub fn emergency_pause(env: &Env, admin: &Address, reason: &String) -> Result<(), Error> {
+        // Default emergency pause uses BettingOnly scope and disallows withdrawals
+        Self::pause_with_options(env, admin, reason, PauseScope::BettingOnly, false)
+    }
+
+    /// Pause with explicit options
+    pub fn pause_with_options(
+        env: &Env,
+        admin: &Address,
+        reason: &String,
+        scope: PauseScope,
+        allow_withdrawals: bool,
+    ) -> Result<(), Error> {
         // Validate admin permissions
-        // TODO: Fix admin validation - need proper admin role and permission
-        // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
+        AdminAccessControl::validate_admin_for_action(env, admin, "emergency_actions")?;
 
         let mut state = Self::get_state(env)?;
 
@@ -225,6 +247,8 @@ impl CircuitBreaker {
         // Update state
         state.state = BreakerState::Open;
         state.opened_time = env.ledger().timestamp();
+        state.pause_scope = scope;
+        state.allow_withdrawals = allow_withdrawals;
         Self::update_state(env, &state)?;
 
         // Emit pause event
@@ -255,6 +279,41 @@ impl CircuitBreaker {
     pub fn is_half_open(env: &Env) -> Result<bool, Error> {
         let state = Self::get_state(env)?;
         Ok(state.state == BreakerState::HalfOpen)
+    }
+
+    /// Check whether a specific operation is allowed under current pause scope.
+    /// `op` examples: "betting", "create_event", "withdraw", etc.
+    pub fn is_operation_allowed(env: &Env, op: &str) -> Result<bool, Error> {
+        let state = Self::get_state(env)?;
+
+        match state.state {
+            BreakerState::Closed => Ok(true),
+            BreakerState::Open => {
+                match state.pause_scope {
+                    PauseScope::Full => Ok(false),
+                    PauseScope::BettingOnly => {
+                        if op == "betting" {
+                            Ok(false)
+                        } else {
+                            Ok(true)
+                        }
+                    }
+                }
+            }
+            BreakerState::HalfOpen => {
+                let config = Self::get_config(env)?;
+                Ok(state.half_open_requests < config.half_open_max_requests)
+            }
+        }
+    }
+
+    /// Returns whether withdrawals are allowed under the current pause state.
+    pub fn are_withdrawals_allowed(env: &Env) -> Result<bool, Error> {
+        let state = Self::get_state(env)?;
+        if state.state == BreakerState::Open && !state.allow_withdrawals {
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     // ===== AUTOMATIC TRIGGERS =====
@@ -358,8 +417,7 @@ impl CircuitBreaker {
     /// Circuit breaker recovery by admin
     pub fn circuit_breaker_recovery(env: &Env, admin: &Address) -> Result<(), Error> {
         // Validate admin permissions
-        // TODO: Fix admin validation - need proper admin role and permission
-        // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
+        AdminAccessControl::validate_admin_for_action(env, admin, "emergency_actions")?;
 
         let mut state = Self::get_state(env)?;
 
@@ -373,6 +431,9 @@ impl CircuitBreaker {
         state.failure_count = 0;
         state.half_open_requests = 0;
         state.last_success_time = env.ledger().timestamp();
+        // restore safe defaults
+        state.pause_scope = PauseScope::BettingOnly;
+        state.allow_withdrawals = false;
         Self::update_state(env, &state)?;
 
         // Emit recovery event
