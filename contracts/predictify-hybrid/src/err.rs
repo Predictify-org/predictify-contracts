@@ -94,6 +94,8 @@ pub enum Error {
     DisputeCondNotMet = 408,
     /// Dispute fee distribution failed
     DisputeFeeFailed = 409,
+    /// Generic dispute subsystem error
+    DisputeError = 410,
     /// Fee already collected
     FeeAlreadyCollected = 413,
     /// No fees to collect
@@ -114,6 +116,8 @@ pub enum Error {
     CBNotOpen = 502,
     /// Circuit breaker is open (operations blocked)
     CBOpen = 503,
+    /// Generic circuit breaker subsystem error
+    CBError = 504,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1105,6 +1109,7 @@ impl Error {
             Error::DisputeAlreadyVoted => "Already voted in dispute",
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
+            Error::DisputeError => "Generic dispute subsystem error",
             Error::FeeAlreadyCollected => "Fee already collected",
             Error::NoFeesToCollect => "No fees to collect",
             Error::InvalidExtensionDays => "Invalid extension days",
@@ -1121,6 +1126,7 @@ impl Error {
             Error::CBAlreadyOpen => "Circuit breaker is already open (paused)",
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
+            Error::CBError => "Generic circuit breaker subsystem error",
         }
     }
 
@@ -1219,6 +1225,7 @@ impl Error {
             Error::DisputeAlreadyVoted => "DISPUTE_ALREADY_VOTED",
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
+            Error::DisputeError => "DISPUTE_ERROR",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
@@ -1235,6 +1242,7 @@ impl Error {
             Error::CBAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
+            Error::CBError => "CIRCUIT_BREAKER_ERROR",
         }
     }
 }

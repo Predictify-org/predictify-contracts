@@ -776,8 +776,6 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
-    /// Asset used for bets and payouts (Stellar token/asset)
-    pub asset: Option<crate::tokens::Asset>,
 }
 
 // ===== BET LIMITS =====
@@ -980,13 +978,6 @@ impl Market {
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
             return Err(crate::Error::InvalidDuration);
-        }
-
-        // Validate asset if present
-        if let Some(asset) = &self.asset {
-            if !asset.validate(env) {
-                return Err(crate::Error::InvalidInput);
-            }
         }
 
         Ok(())

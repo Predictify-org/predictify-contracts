@@ -36,6 +36,7 @@ mod oracles;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
+mod reentrancy_guard;
 mod recovery;
 mod resolution;
 mod statistics;
@@ -421,6 +422,9 @@ impl PredictifyHybrid {
             extension_history: Vec::new(&env),
             category: None,
             tags: Vec::new(&env),
+            min_pool_size: None,
+            bet_deadline: 0,
+            dispute_window_seconds: 86400,
         };
 
         // Store the market
@@ -516,6 +520,8 @@ impl PredictifyHybrid {
             admin: admin.clone(),
             created_at: env.ledger().timestamp(),
             status: MarketState::Active,
+            visibility: EventVisibility::Public,
+            allowlist: Vec::new(&env),
         };
 
         // Store the event
