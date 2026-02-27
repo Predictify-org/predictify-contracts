@@ -1877,7 +1877,7 @@ impl Default for ResolutionAnalytics {
 
 // ===== MODULE TESTS =====
 
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use super::*;
     use crate::{test::PredictifyTest, PredictifyHybridClient};

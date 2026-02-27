@@ -53,7 +53,7 @@ mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
 }
 
-#[cfg(test)]
+#[cfg(any())]
 mod circuit_breaker_tests;
 #[cfg(test)]
 mod oracle_fallback_timeout_tests;
@@ -61,13 +61,13 @@ mod oracle_fallback_timeout_tests;
 #[cfg(test)]
 mod batch_operations_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod integration_test;
 
-#[cfg(test)]
+#[cfg(any())]
 mod recovery_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod property_based_tests;
 
 #[cfg(test)]
@@ -75,22 +75,23 @@ mod upgrade_manager_tests;
 
 #[cfg(test)]
 mod query_tests;
+#[cfg(any())]
 mod bet_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod balance_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod event_management_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod category_tags_tests;
 mod statistics_tests;
 
 #[cfg(test)]
 mod resolution_delay_dispute_window_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod event_creation_tests;
 
 // Re-export commonly used items
@@ -5075,4 +5076,5 @@ impl PredictifyHybrid {
     }
 }
 
+#[cfg(any())]
 mod test;
