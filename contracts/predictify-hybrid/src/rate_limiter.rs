@@ -3,10 +3,12 @@ use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RateLimitConfig {
-    pub voting_limit: u32,        // Max votes per time window
-    pub dispute_limit: u32,       // Max disputes per time window
-    pub oracle_call_limit: u32,   // Max oracle calls per time window
-    pub time_window_seconds: u64, // Time window in seconds
+    pub voting_limit: u32,             // Max votes per time window
+    pub dispute_limit: u32,             // Max disputes per time window
+    pub oracle_call_limit: u32,        // Max oracle calls per time window
+    pub bet_limit: u32,                // Max bets per user per time window (0 = no limit)
+    pub events_per_admin_limit: u32,   // Max events per admin per time window (0 = no limit)
+    pub time_window_seconds: u64,      // Time window in seconds
 }
 
 // Rate limit tracking
@@ -21,9 +23,11 @@ pub struct RateLimit {
 #[contracttype]
 pub enum RateLimiterData {
     Config,
-    UserVoting(Address, Symbol),   // user, market_id
-    UserDisputes(Address, Symbol), // user, market_id
+    UserVoting(Address, Symbol),    // user, market_id
+    UserDisputes(Address, Symbol),  // user, market_id
     OracleCalls(Symbol),           // market_id
+    UserBets(Address),             // user (global bet count per window)
+    AdminEvents(Address),          // admin (events created per window)
 }
 
 pub struct RateLimiter {
@@ -154,14 +158,41 @@ impl RateLimiter {
         Ok(())
     }
 
-    // Update rate limits (admin only)
+    /// Rate limit bets: max bets per user per time window (global across markets).
+    /// Returns Ok(()) if within limit or config not set; ConfigNotFound is used by caller to skip check.
+    /// Caller (e.g. place_bet) must have already authenticated user.
+    pub fn rate_limit_bets(&self, user: Address) -> Result<(), RateLimiterError> {
+        let config = self.get_config()?;
+        if config.bet_limit == 0 {
+            return Ok(());
+        }
+        let key = RateLimiterData::UserBets(user.clone());
+        let limit = self.get_or_create_limit(&key);
+        self.check_limit(limit.count, config.bet_limit)?;
+        self.update_limit(&key, limit, config.time_window_seconds)?;
+        Ok(())
+    }
+
+    /// Rate limit event creation: max events per admin per time window.
+    /// Caller (e.g. create_market) must have already authenticated admin.
+    pub fn rate_limit_admin_events(&self, admin: Address) -> Result<(), RateLimiterError> {
+        let config = self.get_config()?;
+        if config.events_per_admin_limit == 0 {
+            return Ok(());
+        }
+        let key = RateLimiterData::AdminEvents(admin.clone());
+        let limit = self.get_or_create_limit(&key);
+        self.check_limit(limit.count, config.events_per_admin_limit)?;
+        self.update_limit(&key, limit, config.time_window_seconds)?;
+        Ok(())
+    }
+
+    // Update rate limits (admin only). Caller must have already authenticated admin.
     pub fn update_rate_limits(
         &self,
-        admin: Address,
+        _admin: Address,
         limits: RateLimitConfig,
     ) -> Result<(), RateLimiterError> {
-        admin.require_auth();
-
         self.validate_rate_limit_configuration(&limits)?;
 
         self.env
@@ -213,6 +244,13 @@ impl RateLimiter {
             return Err(RateLimiterError::InvalidOracleCallLimit);
         }
 
+        if config.bet_limit > 10000 {
+            return Err(RateLimiterError::InvalidBetLimit);
+        }
+        if config.events_per_admin_limit > 1000 {
+            return Err(RateLimiterError::InvalidEventsLimit);
+        }
+
         // Time window should be between 1 minute and 30 days
         if config.time_window_seconds < 60 || config.time_window_seconds > 2592000 {
             return Err(RateLimiterError::InvalidTimeWindow);
@@ -244,6 +282,8 @@ pub enum RateLimiterError {
     InvalidOracleCallLimit = 5,
     InvalidTimeWindow = 6,
     Unauthorized = 7,
+    InvalidBetLimit = 8,
+    InvalidEventsLimit = 9,
 }
 
 #[contract]
@@ -334,6 +374,8 @@ mod tests {
             voting_limit: 10,
             dispute_limit: 5,
             oracle_call_limit: 20,
+            bet_limit: 50,
+            events_per_admin_limit: 10,
             time_window_seconds: 3600, // 1 hour
         }
     }
@@ -426,6 +468,8 @@ mod tests {
             voting_limit: 20000,
             dispute_limit: 5,
             oracle_call_limit: 20,
+            bet_limit: 0,
+            events_per_admin_limit: 0,
             time_window_seconds: 3600,
         };
         let result = RateLimiterContract::validate_rate_limit_config(env.clone(), invalid_config);
@@ -436,6 +480,8 @@ mod tests {
             voting_limit: 10,
             dispute_limit: 5,
             oracle_call_limit: 20,
+            bet_limit: 0,
+            events_per_admin_limit: 0,
             time_window_seconds: 30, // Less than 60
         };
         let result = RateLimiterContract::validate_rate_limit_config(env.clone(), invalid_config);
@@ -461,6 +507,8 @@ mod tests {
             voting_limit: 20,
             dispute_limit: 10,
             oracle_call_limit: 30,
+            bet_limit: 100,
+            events_per_admin_limit: 20,
             time_window_seconds: 7200,
         };
 

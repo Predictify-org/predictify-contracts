@@ -117,13 +117,15 @@ impl MarketCreator {
             outcomes,
             end_time,
             oracle_config,
-            None,    // fallback_oracle_config
-            86400,   // resolution_timeout (1 day)
+            None,  // fallback_oracle_config
+            86400, // resolution_timeout (1 day)
             MarketState::Active,
         );
 
         // Process market creation fee
-        MarketUtils::process_creation_fee(env, &admin)?;
+        // Market creator flow does not have the generated market id yet in this helper path.
+        // Use the generated id after creation in higher-level flows when event metadata is required.
+        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
@@ -458,8 +460,8 @@ impl MarketValidator {
         }
 
         // Load dynamic configuration
-        let cfg = crate::config::ConfigManager::get_config(_env)
-            .map_err(|_| Error::ConfigNotFound)?;
+        let cfg =
+            crate::config::ConfigManager::get_config(_env).map_err(|_| Error::ConfigNotFound)?;
 
         // Use the new MarketParameterValidator for comprehensive validation
         use crate::validation::MarketParameterValidator;
@@ -1797,7 +1799,7 @@ impl MarketUtils {
     ///     Err(e) => println!("Fee processing failed: {:?}", e),
     /// }
     /// ```
-    pub fn process_creation_fee(_env: &Env, admin: &Address) -> Result<(), Error> {
+    pub fn process_creation_fee(_env: &Env, admin: &Address) -> Result<i128, Error> {
         // Delegate to the fees module
         crate::fees::FeeManager::process_creation_fee(_env, admin)
     }
@@ -2374,7 +2376,10 @@ impl MarketTestHelpers {
             30,
             OracleConfig::new(
                 OracleProvider::Pyth,
-                Address::from_str(_env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::from_str(
+                    _env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(_env, "BTC/USD"),
                 25_000_00,
                 String::from_str(_env, "gt"),
@@ -3092,7 +3097,10 @@ mod tests {
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Pyth,
-                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "BTC/USD"),
                 25_000_00,
                 String::from_str(&env, "gt"),

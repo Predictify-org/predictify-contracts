@@ -114,6 +114,8 @@ pub struct EventCreatedEvent {
     pub outcomes: Vec<String>,
     /// Event end time
     pub end_time: u64,
+    /// Creation fee amount charged for this event (in stroops)
+    pub creation_fee_amount: i128,
     /// Event admin
     pub admin: Address,
     /// Creation timestamp
@@ -679,6 +681,50 @@ pub struct FeeCollectedEvent {
     pub timestamp: u64,
 }
 
+/// Admin fee withdrawal attempt event
+///
+/// Emitted on every admin call to withdraw fees, including blocked attempts
+/// (e.g., timelock not satisfied or no fees available). This provides an
+/// audit trail for monitoring and abuse detection.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeWithdrawalAttemptEvent {
+    /// Admin address attempting withdrawal
+    pub admin: Address,
+    /// Amount requested by admin (0 means "withdraw max")
+    pub requested_amount: i128,
+    /// Fee vault balance available at the time of attempt
+    pub available_fees: i128,
+    /// Amount that will be withdrawn for this attempt (0 if blocked)
+    pub withdrawal_amount: i128,
+    /// Attempt status (executed / timelocked / capped / no-fees)
+    pub status: crate::fees::FeeWithdrawalStatus,
+    /// Last successful withdrawal timestamp (0 if never)
+    pub last_withdrawal_ts: u64,
+    /// Next timestamp when a withdrawal will be allowed (0 if never withdrawn yet)
+    pub next_allowed_ts: u64,
+    /// Configured timelock (seconds)
+    pub timelock_seconds: u64,
+    /// Configured max withdrawal cap (basis points of current vault balance)
+    pub max_withdrawal_bps: u32,
+    /// Attempt timestamp
+    pub timestamp: u64,
+}
+
+/// Admin fee withdrawal success event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeWithdrawnEvent {
+    /// Admin address receiving the fees
+    pub admin: Address,
+    /// Amount withdrawn
+    pub amount: i128,
+    /// Remaining fee vault balance after withdrawal
+    pub remaining_fees: i128,
+    /// Withdrawal timestamp
+    pub timestamp: u64,
+}
+
 // ===== ORACLE RESULT VERIFICATION EVENTS =====
 
 /// Event emitted when oracle result verification is initiated for a market.
@@ -690,10 +736,10 @@ pub struct FeeCollectedEvent {
 ///
 /// ```rust
 /// # use soroban_sdk::{Env, Symbol, String, Address};
-/// # use predictify_hybrid::events::OracleVerificationInitiatedEvent;
+/// # use predictify_hybrid::events::OracleVerifInitiatedEvent;
 /// # let env = Env::default();
 ///
-/// let event = OracleVerificationInitiatedEvent {
+/// let event = OracleVerifInitiatedEvent {
 ///     market_id: Symbol::new(&env, \"btc_50k\"),
 ///     initiator: Address::generate(&env),
 ///     feed_id: String::from_str(&env, \"BTC/USD\"),
@@ -703,7 +749,7 @@ pub struct FeeCollectedEvent {
 /// ```
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OracleVerificationInitiatedEvent {
+pub struct OracleVerifInitiatedEvent {
     /// Market ID being verified
     pub market_id: Symbol,
     /// Address that initiated verification
@@ -1113,6 +1159,31 @@ pub struct AdminInitializedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when the contract admin is transferred to a new address.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminTransferredEvent {
+    pub previous_admin: Address,
+    pub new_admin: Address,
+    pub timestamp: u64,
+}
+
+/// Event emitted when the contract is paused by admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractPausedEvent {
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+/// Event emitted when the contract is unpaused by admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractUnpausedEvent {
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractInitializedEvent {
@@ -1411,6 +1482,80 @@ pub struct WinningsClaimedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a user claims winnings from multiple resolved markets in a batch operation.
+///
+/// Provides information about batch winnings claims including each market claim
+/// and the total amount claimed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WinningsClaimedBatchEvent {
+    /// User claiming winnings
+    pub user: Address,
+    /// Vector of (market_id, amount) tuples for each claimed market
+    pub market_claims: Vec<(Symbol, i128)>,
+    /// Total amount claimed across all markets
+    pub total_amount: i128,
+    /// Number of markets in this batch claim
+    pub claim_count: u32,
+     /// Event timestamp
+    pub timestamp: u64,
+}
+/// Event emitted when global claim period is updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimPeriodUpdatedEvent {
+    /// Admin who updated claim period
+    pub admin: Address,
+    /// New claim period in seconds
+    pub claim_period_seconds: u64,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when market-specific claim period is updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketClaimPeriodUpdatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Admin who updated claim period
+    pub admin: Address,
+    /// New claim period in seconds
+    pub claim_period_seconds: u64,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when treasury address is updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryUpdatedEvent {
+    /// Admin who updated treasury
+    pub admin: Address,
+    /// New treasury address
+    pub treasury: Address,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
+/// Event emitted when unclaimed winnings are swept after timeout.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnclaimedWinningsSweptEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Caller performing the sweep
+    pub caller: Address,
+    /// Recipient address (None when burned)
+    pub recipient: Option<Address>,
+    /// Swept amount
+    pub amount: i128,
+    /// Whether funds were burned
+    pub burned: bool,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 /// Contract upgraded event - emitted when contract Wasm is upgraded
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1662,6 +1807,20 @@ pub struct CircuitBreakerEvent {
     pub admin: Option<Address>,
 }
 
+/// Event emitted when a market's total pool size does not meet the required minimum.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MinPoolSizeNotMetEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Current total pool size
+    pub current_pool: i128,
+    /// Required minimum pool size
+    pub required_min: i128,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Event emission utilities
@@ -1729,6 +1888,7 @@ impl EventEmitter {
             event_id: event_id.clone(),
             description: description.clone(),
             outcomes: outcomes.clone(),
+            creation_fee_amount: crate::fees::MARKET_CREATION_FEE,
             admin: admin.clone(),
             end_time,
             timestamp: env.ledger().timestamp(),
@@ -1907,7 +2067,7 @@ impl EventEmitter {
         feed_id: &String,
         oracle_count: u32,
     ) {
-        let event = OracleVerificationInitiatedEvent {
+        let event = OracleVerifInitiatedEvent {
             market_id: market_id.clone(),
             initiator: initiator.clone(),
             feed_id: feed_id.clone(),
@@ -2127,6 +2287,22 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("mkt_res"), &event);
     }
 
+    /// Emit event when minimum pool size is not met at resolution time
+    pub fn emit_min_pool_size_not_met(
+        env: &Env,
+        market_id: &Symbol,
+        current_pool: i128,
+        required_min: i128,
+    ) {
+        let event = MinPoolSizeNotMetEvent {
+            market_id: market_id.clone(),
+            current_pool,
+            required_min,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("pool_lo"), &event);
+    }
+
     /// Emit dispute created event
     pub fn emit_dispute_created(
         env: &Env,
@@ -2184,6 +2360,62 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("fee_col"), &event);
+    }
+
+    /// Emit an admin fee withdrawal attempt event.
+    ///
+    /// This event is emitted for both successful and blocked attempts, enabling
+    /// off-chain monitoring of fee withdrawal behavior.
+    pub fn emit_fee_withdrawal_attempt(
+        env: &Env,
+        admin: &Address,
+        requested_amount: i128,
+        available_fees: i128,
+        withdrawal_amount: i128,
+        status: crate::fees::FeeWithdrawalStatus,
+        last_withdrawal_ts: u64,
+        next_allowed_ts: u64,
+        schedule: &crate::fees::FeeWithdrawalSchedule,
+    ) {
+        let event = FeeWithdrawalAttemptEvent {
+            admin: admin.clone(),
+            requested_amount,
+            available_fees,
+            withdrawal_amount,
+            status,
+            last_withdrawal_ts,
+            next_allowed_ts,
+            timelock_seconds: schedule.timelock_seconds,
+            max_withdrawal_bps: schedule.max_withdrawal_bps,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        // Publish to the Soroban event stream
+        env.events()
+            .publish((symbol_short!("fwd_att"), admin.clone()), event.clone());
+
+        // Also store the last event for simple on-chain querying/debugging
+        Self::store_event(env, &symbol_short!("fwd_att"), &event);
+    }
+
+    /// Emit an admin fee withdrawal success event.
+    pub fn emit_fee_withdrawn(
+        env: &Env,
+        admin: &Address,
+        amount: i128,
+        remaining_fees: i128,
+        timestamp: u64,
+    ) {
+        let event = FeeWithdrawnEvent {
+            admin: admin.clone(),
+            amount,
+            remaining_fees,
+            timestamp,
+        };
+
+        env.events()
+            .publish((symbol_short!("fwd_ok"), admin.clone()), event.clone());
+        Self::store_event(env, &symbol_short!("fwd_ok"), &event);
     }
 
     /// Emit extension requested event
@@ -2328,6 +2560,34 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("adm_init"), &event);
+    }
+
+    /// Emit admin transferred event (primary admin role transferred to new address).
+    pub fn emit_admin_transferred(env: &Env, previous_admin: &Address, new_admin: &Address) {
+        let event = AdminTransferredEvent {
+            previous_admin: previous_admin.clone(),
+            new_admin: new_admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("adm_xfer"), &event);
+    }
+
+    /// Emit contract paused event.
+    pub fn emit_contract_paused(env: &Env, admin: &Address) {
+        let event = ContractPausedEvent {
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ctr_pause"), &event);
+    }
+
+    /// Emit contract unpaused event.
+    pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
+        let event = ContractUnpausedEvent {
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ctr_unp"), &event);
     }
 
     /// Emit contract initialized event (full initialization with platform fee)
@@ -2666,6 +2926,87 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_clm"), &event);
+    }
+
+    /// Emit winnings claimed batch event
+    ///
+    /// Emits an event when a user claims winnings from multiple markets in a batch.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - Soroban environment
+    /// - `user` - User address claiming winnings
+    /// - `market_claims` - Vector of (market_id, claim_amount) tuples
+    /// - `total_amount` - Total amount claimed across all markets
+    pub fn emit_winnings_claimed_batch(
+        env: &Env,
+        user: &Address,
+        market_claims: &Vec<(Symbol, i128)>,
+        total_amount: i128,
+    ) {
+        let event = WinningsClaimedBatchEvent {
+            user: user.clone(),
+            market_claims: market_claims.clone(),
+            total_amount,
+            claim_count: market_claims.len() as u32,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("win_btc"), &event);
+          }
+    /// Emit global claim period updated event.
+    pub fn emit_claim_period_updated(env: &Env, admin: &Address, claim_period_seconds: u64) {
+        let event = ClaimPeriodUpdatedEvent {
+            admin: admin.clone(),
+            claim_period_seconds,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("clm_prd"), &event);
+    }
+
+    /// Emit market claim period updated event.
+    pub fn emit_market_claim_period_updated(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+        claim_period_seconds: u64,
+    ) {
+        let event = MarketClaimPeriodUpdatedEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            claim_period_seconds,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("m_clm_pd"), &event);
+    }
+
+    /// Emit treasury updated event.
+    pub fn emit_treasury_updated(env: &Env, admin: &Address, treasury: &Address) {
+        let event = TreasuryUpdatedEvent {
+            admin: admin.clone(),
+            treasury: treasury.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("treas_up"), &event);
+    }
+
+    /// Emit unclaimed winnings swept event.
+    pub fn emit_unclaimed_winnings_swept(
+        env: &Env,
+        market_id: &Symbol,
+        caller: &Address,
+        recipient: &Option<Address>,
+        amount: i128,
+        burned: bool,
+    ) {
+        let event = UnclaimedWinningsSweptEvent {
+            market_id: market_id.clone(),
+            caller: caller.clone(),
+            recipient: recipient.clone(),
+            amount,
+            burned,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("unc_swip"), &event);
     }
 
     /// Emit market deadline extended event
@@ -3064,6 +3405,32 @@ impl EventEmitter {
         T: Clone + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
         env.storage().persistent().set(event_key, event_data);
+    }
+
+    /// Emit event visibility set event
+    pub fn emit_event_visibility_set(
+        env: &Env,
+        event_id: &Symbol,
+        visibility: &crate::types::EventVisibility,
+        admin: &Address,
+    ) {
+        env.events().publish(
+            (symbol_short!("evt_vis"), event_id.clone()),
+            (visibility.clone(), admin.clone(), env.ledger().timestamp()),
+        );
+    }
+
+    /// Emit allowlist updated event
+    pub fn emit_allowlist_updated(
+        env: &Env,
+        event_id: &Symbol,
+        addresses: &Vec<Address>,
+        admin: &Address,
+    ) {
+        env.events().publish(
+            (symbol_short!("allowlst"), event_id.clone()),
+            (addresses.clone(), admin.clone(), env.ledger().timestamp()),
+        );
     }
 }
 

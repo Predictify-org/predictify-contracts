@@ -205,15 +205,9 @@ impl QueryManager {
         let market = Self::get_market_from_storage(env, &market_id)?;
 
         // Check if user has participated
-        let outcome = market
-            .votes
-            .get(user.clone())
-            .ok_or(Error::InvalidInput)?;
+        let outcome = market.votes.get(user.clone()).ok_or(Error::InvalidInput)?;
 
-        let stake_amount = market
-            .stakes
-            .get(user.clone())
-            .ok_or(Error::InvalidInput)?;
+        let stake_amount = market.stakes.get(user.clone()).ok_or(Error::InvalidInput)?;
 
         let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
 
@@ -221,7 +215,7 @@ impl QueryManager {
         let is_winning = market
             .winning_outcomes
             .as_ref()
-            .map(|wos| wos.contains(&outcome))
+            .map(|wos: &Vec<String>| wos.contains(&outcome))
             .unwrap_or(false);
 
         // Calculate potential payout
@@ -430,7 +424,7 @@ impl QueryManager {
             resolved_markets,
             total_value_locked,
             total_fees_collected: 0i128, // TODO: Retrieve from fees module
-            unique_users: 0u32, // TODO: Calculate from user index
+            unique_users: 0u32,          // TODO: Calculate from user index
             contract_version: String::from_str(env, "1.0.0"),
             last_update: env.ledger().timestamp(),
         };
@@ -456,7 +450,11 @@ impl QueryManager {
     /// - User's stake proportion
     /// - Total winning stakes
     /// - Platform fee deduction
-    pub(crate) fn calculate_payout(env: &Env, market: &Market, user_stake: i128) -> Result<i128, Error> {
+    pub(crate) fn calculate_payout(
+        env: &Env,
+        market: &Market,
+        user_stake: i128,
+    ) -> Result<i128, Error> {
         if user_stake <= 0 {
             return Ok(0);
         }
@@ -567,7 +565,10 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
-                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
@@ -598,7 +599,10 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
-                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),
@@ -636,7 +640,10 @@ mod tests {
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Reflector,
-                Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::from_str(
+                    &env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(&env, "TEST"),
                 100,
                 String::from_str(&env, "gt"),

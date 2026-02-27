@@ -10,7 +10,7 @@ use crate::validation::{
     ValidationDocumentation, ValidationError, ValidationErrorHandler, ValidationResult,
     ValidationTestingUtils, VoteValidator,
 };
-use soroban_sdk::testutils::Address as _;
+use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
 
 #[cfg(test)]
@@ -1506,6 +1506,153 @@ fn test_validate_address_format_comprehensive() {
         let addr = Address::generate(&env);
         assert!(InputValidator::validate_address_format(&addr).is_ok());
     }
+}
+
+#[test]
+fn test_oracle_response_validation_fresh_and_confident() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10_000;
+    });
+
+    let market_id = Symbol::new(&env, "oracle_market");
+    let oracle_result = crate::types::OracleResult {
+        market_id: market_id.clone(),
+        outcome: String::from_str(&env, "yes"),
+        price: 1_000_000,
+        threshold: 500_000,
+        comparison: String::from_str(&env, "gt"),
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&env, "BTC/USD"),
+        timestamp: env.ledger().timestamp(), // fresh data
+        block_number: 1,
+        is_verified: true,
+        confidence_score: 80, // above minimum confidence threshold
+        sources_count: 1,
+        signature: None,
+        error_message: None,
+    };
+
+    assert!(OracleValidator::validate_oracle_response(&env, &oracle_result).is_ok());
+}
+
+#[test]
+fn test_oracle_response_rejected_when_stale() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10_000;
+    });
+
+    let market_id = Symbol::new(&env, "oracle_market");
+    let stale_timestamp = 0; // far in the past relative to current ledger time
+
+    let oracle_result = crate::types::OracleResult {
+        market_id,
+        outcome: String::from_str(&env, "yes"),
+        price: 1_000_000,
+        threshold: 500_000,
+        comparison: String::from_str(&env, "gt"),
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&env, "BTC/USD"),
+        timestamp: stale_timestamp,
+        block_number: 1,
+        is_verified: true,
+        confidence_score: 80,
+        sources_count: 1,
+        signature: None,
+        error_message: None,
+    };
+
+    let result = OracleValidator::validate_oracle_response(&env, &oracle_result);
+    assert!(matches!(result, Err(ValidationError::InvalidOracle)));
+}
+
+#[test]
+fn test_oracle_response_rejected_when_confidence_too_low() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10_000;
+    });
+
+    let market_id = Symbol::new(&env, "oracle_market");
+    let oracle_result = crate::types::OracleResult {
+        market_id,
+        outcome: String::from_str(&env, "yes"),
+        price: 1_000_000,
+        threshold: 500_000,
+        comparison: String::from_str(&env, "gt"),
+        provider: OracleProvider::Reflector,
+        feed_id: String::from_str(&env, "BTC/USD"),
+        timestamp: env.ledger().timestamp(),
+        block_number: 1,
+        is_verified: true,
+        confidence_score: 10, // below minimum threshold
+        sources_count: 1,
+        signature: None,
+        error_message: None,
+    };
+
+    let result = OracleValidator::validate_oracle_response(&env, &oracle_result);
+    assert!(matches!(result, Err(ValidationError::InvalidOracle)));
+}
+
+#[test]
+fn test_oracle_validation_integration_with_resolution_flow() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10_000;
+    });
+
+    let admin = Address::generate(&env);
+    let question = String::from_str(&env, "Will BTC be above 50k?");
+    let outcomes = vec![
+        &env,
+        String::from_str(&env, "yes"),
+        String::from_str(&env, "no"),
+    ];
+
+    let end_time = env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig::new(
+        OracleProvider::Reflector,
+        Address::generate(&env),
+        String::from_str(&env, "BTC/USD"),
+        50_000_00,
+        String::from_str(&env, "gt"),
+    );
+
+    let market = Market::new(
+        &env,
+        admin,
+        question,
+        outcomes.clone(),
+        end_time,
+        oracle_config.clone(),
+        None,
+        86400,
+        MarketState::Active,
+    );
+
+    let oracle_result = crate::types::OracleResult {
+        market_id: Symbol::new(&env, "oracle_market"),
+        outcome: String::from_str(&env, "yes"),
+        price: 60_000_00,
+        threshold: oracle_config.threshold,
+        comparison: oracle_config.comparison.clone(),
+        provider: oracle_config.provider,
+        feed_id: oracle_config.feed_id.clone(),
+        timestamp: env.ledger().timestamp(),
+        block_number: 1,
+        is_verified: true,
+        confidence_score: 90,
+        sources_count: 3,
+        signature: None,
+        error_message: None,
+    };
+
+    // This exercises OracleValidator::validate_for_resolution, which in turn uses
+    // the staleness and confidence checks used during resolution.
+    let result = OracleValidator::validate_for_resolution(&env, &oracle_result, &market);
+    assert!(result.is_ok());
 }
 
 #[test]
