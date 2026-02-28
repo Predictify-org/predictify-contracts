@@ -2992,6 +2992,7 @@ mod oracle_integration_tests {
     use super::*;
     use crate::events::OracleValidationFailedEvent;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::Ledger as _;
 
     #[test]
     fn test_validate_price_range() {
@@ -3106,6 +3107,9 @@ mod oracle_integration_tests {
         let market_id = Symbol::new(&env, "stale_market");
 
         env.as_contract(&contract_id, || {
+            env.ledger().with_mut(|li| {
+                li.timestamp = 100;
+            });
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 10,
                 max_confidence_bps: 500,
@@ -3220,6 +3224,9 @@ mod oracle_integration_tests {
         let market_id = Symbol::new(&env, "override_market");
 
         env.as_contract(&contract_id, || {
+            env.ledger().with_mut(|li| {
+                li.timestamp = 100;
+            });
             let global = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
@@ -3255,29 +3262,18 @@ mod oracle_integration_tests {
     fn test_oracle_validation_admin_config_auth() {
         let env = Env::default();
         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let non_admin = Address::generate(&env);
+        let default_fee_pct: Option<i128> = None;
 
-        env.as_contract(&contract_id, || {
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+        env.mock_all_auths();
+        client.initialize(&admin, &default_fee_pct);
 
-            let unauthorized = crate::PredictifyHybrid::set_oracle_val_cfg_global(
-                env.clone(),
-                non_admin.clone(),
-                60,
-                500,
-            );
-            assert_eq!(unauthorized.unwrap_err(), Error::Unauthorized);
+        let unauthorized = client.try_set_oracle_val_cfg_global(&non_admin, &60, &500);
+        assert!(unauthorized.is_err());
 
-            let ok = crate::PredictifyHybrid::set_oracle_val_cfg_event(
-                env.clone(),
-                admin.clone(),
-                Symbol::new(&env, "admin_evt"),
-                60,
-                500,
-            );
-            assert!(ok.is_ok());
-        });
+        client.set_oracle_val_cfg_event(&admin, &Symbol::new(&env, "admin_evt"), &60, &500);
     }
 }
 
