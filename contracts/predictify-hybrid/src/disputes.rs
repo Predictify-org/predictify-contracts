@@ -1696,7 +1696,7 @@ impl DisputeManager {
         // Validate timeout hours
         if timeout_hours == 0 || timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::TimeoutError);
+            return Err(Error::InvalidDuration);
         }
 
         // Create timeout configuration
@@ -1846,7 +1846,7 @@ impl DisputeManager {
         // Validate additional hours
         if additional_hours == 0 || additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::TimeoutError);
+            return Err(Error::InvalidDuration);
         }
 
         // Get current timeout
@@ -1888,7 +1888,8 @@ impl DisputeValidator {
     /// Validate market state for dispute
     pub fn validate_market_for_dispute(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market has ended
-        if market.is_active(env) {
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
             return Err(Error::MarketClosed);
         }
 
@@ -1986,12 +1987,12 @@ impl DisputeValidator {
         // Check if voting period is active
         let current_time = env.ledger().timestamp();
         if current_time < voting_data.voting_start || current_time > voting_data.voting_end {
-            return Err(Error::DisputeError);
+            return Err(Error::DisputeVoteExpired);
         }
 
         // Check if voting is still active
         if !matches!(voting_data.status, DisputeVotingStatus::Active) {
-            return Err(Error::DisputeError);
+            return Err(Error::DisputeVoteDenied);
         }
 
         Ok(())
@@ -2007,7 +2008,7 @@ impl DisputeValidator {
 
         for vote in votes.iter() {
             if vote.user == *user {
-                return Err(Error::DisputeError);
+                return Err(Error::DisputeAlreadyVoted);
             }
         }
 
@@ -2017,7 +2018,7 @@ impl DisputeValidator {
     /// Validate voting is completed
     pub fn validate_voting_completed(voting_data: &DisputeVoting) -> Result<(), Error> {
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeError);
+            return Err(Error::DisputeCondNotMet);
         }
 
         Ok(())
@@ -2032,13 +2033,13 @@ impl DisputeValidator {
         let voting_data = DisputeUtils::get_dispute_voting(env, dispute_id)?;
 
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
-            return Err(Error::DisputeError);
+            return Err(Error::DisputeCondNotMet);
         }
 
         // Check if fees haven't been distributed yet
         let fee_distribution = DisputeUtils::get_dispute_fee_distribution(env, dispute_id)?;
         if fee_distribution.fees_distributed {
-            return Err(Error::DisputeError);
+            return Err(Error::DisputeFeeFailed);
         }
 
         Ok(true)
@@ -2062,13 +2063,13 @@ impl DisputeValidator {
         }
 
         if !has_participated {
-            return Err(Error::DisputeError);
+            return Err(Error::DisputeCondNotMet);
         }
 
         // Check if escalation already exists
         let escalation = DisputeUtils::get_dispute_escalation(env, dispute_id);
         if escalation.is_some() {
-            return Err(Error::DisputeError);
+            return Err(Error::DisputeCondNotMet);
         }
 
         Ok(())
@@ -2077,12 +2078,12 @@ impl DisputeValidator {
     /// Validate dispute timeout parameters
     pub fn validate_dispute_timeout_parameters(timeout_hours: u32) -> Result<(), Error> {
         if timeout_hours == 0 {
-            return Err(Error::TimeoutError);
+            return Err(Error::InvalidDuration);
         }
 
         if timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::TimeoutError);
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())
@@ -2093,12 +2094,12 @@ impl DisputeValidator {
         additional_hours: u32,
     ) -> Result<(), Error> {
         if additional_hours == 0 {
-            return Err(Error::TimeoutError);
+            return Err(Error::InvalidDuration);
         }
 
         if additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::TimeoutError);
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())
@@ -2459,7 +2460,7 @@ impl DisputeUtils {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::TimeoutError)
+            .ok_or(Error::ConfigNotFound)
     }
 
     /// Check if dispute timeout exists
@@ -2764,7 +2765,7 @@ pub mod testing {
     /// Validate timeout structure
     pub fn validate_timeout_structure(timeout: &DisputeTimeout) -> Result<(), Error> {
         if timeout.timeout_hours == 0 {
-            return Err(Error::TimeoutError);
+            return Err(Error::InvalidDuration);
         }
 
         if timeout.expires_at <= timeout.created_at {
@@ -2815,10 +2816,7 @@ mod tests {
             end_time,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::Pyth,
-                Address::from_str(
-                    env,
-                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                ),
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),

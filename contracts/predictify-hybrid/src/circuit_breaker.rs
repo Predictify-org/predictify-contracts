@@ -859,6 +859,8 @@ impl CircuitBreakerTesting {
             half_open_requests: 0,
             total_requests: 0,
             error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: false,
         }
     }
 
