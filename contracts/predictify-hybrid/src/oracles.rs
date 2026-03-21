@@ -93,6 +93,19 @@ pub trait OracleInterface {
     /// Get the current price for a given feed ID
     fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
 
+    /// Get the current price plus validation metadata for a given feed ID.
+    ///
+    /// Default implementation uses `get_price()` and the current ledger timestamp.
+    fn get_price_data(&self, env: &Env, feed_id: &String) -> Result<OraclePriceData, Error> {
+        let price = self.get_price(env, feed_id)?;
+        Ok(OraclePriceData {
+            price,
+            publish_time: env.ledger().timestamp(),
+            confidence: None,
+            exponent: 0,
+        })
+    }
+
     /// Get the oracle provider type
     fn provider(&self) -> OracleProvider;
 
@@ -860,6 +873,28 @@ impl OracleInterface for ReflectorOracle {
         self.get_reflector_price(env, feed_id)
     }
 
+    fn get_price_data(&self, env: &Env, feed_id: &String) -> Result<OraclePriceData, Error> {
+        let asset = self.parse_feed_id(env, feed_id)?;
+        let reflector_client = ReflectorOracleClient::new(env, self.contract_id.clone());
+
+        if let Some(price_data) = reflector_client.lastprice(asset) {
+            return Ok(OraclePriceData {
+                price: price_data.price,
+                publish_time: price_data.timestamp,
+                confidence: None,
+                exponent: 0,
+            });
+        }
+
+        let price = self.get_reflector_price(env, feed_id)?;
+        Ok(OraclePriceData {
+            price,
+            publish_time: env.ledger().timestamp(),
+            confidence: None,
+            exponent: 0,
+        })
+    }
+
     fn provider(&self) -> OracleProvider {
         OracleProvider::Reflector
     }
@@ -1289,6 +1324,15 @@ impl OracleInstance {
             OracleInstance::Pyth(oracle) => oracle.get_price(env, feed_id),
             OracleInstance::Reflector(oracle) => oracle.get_price(env, feed_id),
             OracleInstance::Band(oracle) => oracle.get_price(env, feed_id),
+        }
+    }
+
+    /// Get the price plus validation metadata from the oracle
+    pub fn get_price_data(&self, env: &Env, feed_id: &String) -> Result<OraclePriceData, Error> {
+        match self {
+            OracleInstance::Pyth(oracle) => oracle.get_price_data(env, feed_id),
+            OracleInstance::Reflector(oracle) => oracle.get_price_data(env, feed_id),
+            OracleInstance::Band(oracle) => oracle.get_price_data(env, feed_id),
         }
     }
 
@@ -2202,6 +2246,178 @@ pub enum OracleIntegrationKey {
     RetryCount(Symbol),
 }
 
+/// Storage keys for oracle validation configuration.
+#[derive(Clone)]
+#[contracttype]
+pub enum OracleValidationKey {
+    GlobalConfig,
+    EventConfig,
+}
+
+/// Oracle validation configuration manager.
+///
+/// Provides global defaults and per-event overrides for staleness and
+/// confidence interval validation. Per-event configuration takes precedence
+/// over global configuration.
+pub struct OracleValidationConfigManager;
+
+impl OracleValidationConfigManager {
+    /// Default maximum data staleness (60 seconds)
+    const DEFAULT_MAX_STALENESS_SECS: u64 = 60;
+    /// Default maximum confidence interval (5% = 500 bps)
+    const DEFAULT_MAX_CONFIDENCE_BPS: u32 = 500;
+    /// Maximum allowed confidence interval (100% = 10_000 bps)
+    const MAX_CONFIDENCE_BPS: u32 = 10_000;
+
+    /// Get global validation config (defaults if not set).
+    pub fn get_global_config(env: &Env) -> GlobalOracleValidationConfig {
+        env.storage()
+            .persistent()
+            .get(&OracleValidationKey::GlobalConfig)
+            .unwrap_or_else(|| GlobalOracleValidationConfig {
+                max_staleness_secs: Self::DEFAULT_MAX_STALENESS_SECS,
+                max_confidence_bps: Self::DEFAULT_MAX_CONFIDENCE_BPS,
+            })
+    }
+
+    /// Set global validation config (admin-only at caller).
+    pub fn set_global_config(
+        env: &Env,
+        config: &GlobalOracleValidationConfig,
+    ) -> Result<(), Error> {
+        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps)?;
+        env.storage()
+            .persistent()
+            .set(&OracleValidationKey::GlobalConfig, config);
+        Ok(())
+    }
+
+    /// Get per-event validation config override.
+    pub fn get_event_config(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Option<EventOracleValidationConfig> {
+        let per_event: soroban_sdk::Map<Symbol, EventOracleValidationConfig> = env
+            .storage()
+            .persistent()
+            .get(&OracleValidationKey::EventConfig)
+            .unwrap_or_else(|| soroban_sdk::Map::new(env));
+        per_event.get(market_id.clone())
+    }
+
+    /// Set per-event validation config override (admin-only at caller).
+    pub fn set_event_config(
+        env: &Env,
+        market_id: &Symbol,
+        config: &EventOracleValidationConfig,
+    ) -> Result<(), Error> {
+        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps)?;
+        let mut per_event: soroban_sdk::Map<Symbol, EventOracleValidationConfig> = env
+            .storage()
+            .persistent()
+            .get(&OracleValidationKey::EventConfig)
+            .unwrap_or_else(|| soroban_sdk::Map::new(env));
+        per_event.set(market_id.clone(), config.clone());
+        env.storage()
+            .persistent()
+            .set(&OracleValidationKey::EventConfig, &per_event);
+        Ok(())
+    }
+
+    /// Resolve effective validation config for a market.
+    pub fn get_effective_config(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> GlobalOracleValidationConfig {
+        if let Some(event_cfg) = Self::get_event_config(env, market_id) {
+            GlobalOracleValidationConfig {
+                max_staleness_secs: event_cfg.max_staleness_secs,
+                max_confidence_bps: event_cfg.max_confidence_bps,
+            }
+        } else {
+            Self::get_global_config(env)
+        }
+    }
+
+    /// Validate oracle data for staleness and confidence interval.
+    ///
+    /// Confidence validation is applied only when the provider supplies a confidence
+    /// interval (e.g., Pyth) and the value is present. The confidence ratio is
+    /// computed as: `abs(confidence) / abs(price)` and compared against the
+    /// configured threshold in basis points (bps).
+    pub fn validate_oracle_data(
+        env: &Env,
+        market_id: &Symbol,
+        provider: &OracleProvider,
+        feed_id: &String,
+        data: &OraclePriceData,
+    ) -> Result<(), Error> {
+        use crate::events::EventEmitter;
+
+        let config = Self::get_effective_config(env, market_id);
+        let now = env.ledger().timestamp();
+        let observed_age = now.saturating_sub(data.publish_time);
+
+        if observed_age > config.max_staleness_secs {
+            EventEmitter::emit_oracle_validation_failed(
+                env,
+                market_id,
+                &String::from_str(env, provider.name()),
+                feed_id,
+                &String::from_str(env, "stale_data"),
+                observed_age,
+                config.max_staleness_secs,
+                None,
+                config.max_confidence_bps,
+            );
+            return Err(Error::OracleStale);
+        }
+
+        if *provider == OracleProvider::Pyth {
+            if let Some(confidence) = data.confidence {
+                let price_abs = if data.price < 0 { -data.price } else { data.price };
+                if price_abs == 0 {
+                    return Err(Error::InvalidInput);
+                }
+                let conf_abs = if confidence < 0 { -confidence } else { confidence };
+                let confidence_bps =
+                    ((conf_abs * 10_000) / price_abs).min(Self::MAX_CONFIDENCE_BPS as i128);
+                let confidence_bps_u32 = confidence_bps as u32;
+
+                if confidence_bps_u32 > config.max_confidence_bps {
+                    EventEmitter::emit_oracle_validation_failed(
+                        env,
+                        market_id,
+                        &String::from_str(env, provider.name()),
+                        feed_id,
+                        &String::from_str(env, "confidence_too_wide"),
+                        observed_age,
+                        config.max_staleness_secs,
+                        Some(confidence_bps_u32),
+                        config.max_confidence_bps,
+                    );
+                    return Err(Error::OracleConfidenceTooWide);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_config_values(
+        max_staleness_secs: u64,
+        max_confidence_bps: u32,
+    ) -> Result<(), Error> {
+        if max_staleness_secs == 0 || max_confidence_bps == 0 {
+            return Err(Error::InvalidInput);
+        }
+        if max_confidence_bps > Self::MAX_CONFIDENCE_BPS {
+            return Err(Error::InvalidInput);
+        }
+        Ok(())
+    }
+}
+
 /// Comprehensive oracle integration manager for automatic result verification.
 ///
 /// This manager provides a complete oracle integration system with:
@@ -2243,9 +2459,9 @@ pub enum OracleIntegrationKey {
 pub struct OracleIntegrationManager;
 
 impl OracleIntegrationManager {
-    /// Maximum data staleness allowed (5 minutes)
-    const MAX_DATA_AGE_SECONDS: u64 = 300;
-    /// Minimum confidence score required
+    /// Legacy defaults (actual validation uses OracleValidationConfigManager)
+    const MAX_DATA_AGE_SECONDS: u64 = 60;
+    /// Minimum confidence score required (not currently enforced here)
     const MIN_CONFIDENCE_SCORE: u32 = 50;
     /// Maximum retry attempts for verification
     const MAX_RETRY_ATTEMPTS: u32 = 3;
@@ -2359,6 +2575,7 @@ impl OracleIntegrationManager {
         for oracle_address in oracle_sources.iter() {
             match Self::fetch_single_oracle_result(
                 env,
+                market_id,
                 &oracle_address,
                 &oracle_config.feed_id,
                 &oracle_config.provider,
@@ -2475,6 +2692,7 @@ impl OracleIntegrationManager {
     /// Fetch result from a single oracle source.
     fn fetch_single_oracle_result(
         env: &Env,
+        market_id: &Symbol,
         oracle_address: &Address,
         feed_id: &String,
         provider: &crate::types::OracleProvider,
@@ -2493,13 +2711,22 @@ impl OracleIntegrationManager {
             return Err(Error::OracleUnavailable);
         }
 
-        // Get price
-        let price = oracle_instance.get_price(env, feed_id)?;
+        // Get price data with metadata
+        let price_data = oracle_instance.get_price_data(env, feed_id)?;
+
+        // Validate staleness/confidence
+        OracleValidationConfigManager::validate_oracle_data(
+            env,
+            market_id,
+            provider,
+            feed_id,
+            &price_data,
+        )?;
 
         // Validate price
-        OracleUtils::validate_oracle_response(price)?;
+        OracleUtils::validate_oracle_response(price_data.price)?;
 
-        Ok(price)
+        Ok(price_data.price)
     }
 
     /// Determine consensus outcome from multiple oracle results.
@@ -2763,7 +2990,9 @@ impl OracleIntegrationManager {
 #[cfg(test)]
 mod oracle_integration_tests {
     use super::*;
+    use crate::events::OracleValidationFailedEvent;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::Ledger as _;
 
     #[test]
     fn test_validate_price_range() {
@@ -2869,6 +3098,182 @@ mod oracle_integration_tests {
             assert_eq!(retrieved.price, 52_000_00);
             assert_eq!(retrieved.confidence_score, 95);
         });
+    }
+
+    #[test]
+    fn test_oracle_validation_stale_data_rejected() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "stale_market");
+
+        env.as_contract(&contract_id, || {
+            env.ledger().with_mut(|li| {
+                li.timestamp = 100;
+            });
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 10,
+                max_confidence_bps: 500,
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            let data = OraclePriceData {
+                price: 100_00,
+                publish_time: env.ledger().timestamp().saturating_sub(11),
+                confidence: None,
+                exponent: 0,
+            };
+
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env,
+                &market_id,
+                &OracleProvider::Reflector,
+                &String::from_str(&env, "BTC/USD"),
+                &data,
+            );
+
+            assert_eq!(result.unwrap_err(), Error::OracleStale);
+
+            let event: OracleValidationFailedEvent = env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("orc_val"))
+                .unwrap();
+            assert_eq!(event.reason, String::from_str(&env, "stale_data"));
+            assert_eq!(event.observed_age_secs, 11);
+            assert_eq!(event.max_age_secs, 10);
+        });
+    }
+
+    #[test]
+    fn test_oracle_validation_confidence_too_wide_rejected() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "conf_market");
+
+        env.as_contract(&contract_id, || {
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            let data = OraclePriceData {
+                price: 1_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: Some(100_00), // 10% confidence interval
+                exponent: 0,
+            };
+
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env,
+                &market_id,
+                &OracleProvider::Pyth,
+                &String::from_str(&env, "BTC/USD"),
+                &data,
+            );
+
+            assert_eq!(result.unwrap_err(), Error::OracleConfidenceTooWide);
+
+            let event: OracleValidationFailedEvent = env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("orc_val"))
+                .unwrap();
+            assert_eq!(event.reason, String::from_str(&env, "confidence_too_wide"));
+            assert_eq!(event.max_confidence_bps, 500);
+            assert_eq!(event.observed_confidence_bps, Some(1000));
+        });
+    }
+
+    #[test]
+    fn test_oracle_validation_success() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "ok_market");
+
+        env.as_contract(&contract_id, || {
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            let data = OraclePriceData {
+                price: 1_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: Some(20_00), // 2%
+                exponent: 0,
+            };
+
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env,
+                &market_id,
+                &OracleProvider::Pyth,
+                &String::from_str(&env, "BTC/USD"),
+                &data,
+            );
+
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_oracle_validation_per_event_override() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "override_market");
+
+        env.as_contract(&contract_id, || {
+            env.ledger().with_mut(|li| {
+                li.timestamp = 100;
+            });
+            let global = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+            };
+            OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
+
+            let event_cfg = EventOracleValidationConfig {
+                max_staleness_secs: 5,
+                max_confidence_bps: 500,
+            };
+            OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
+
+            let data = OraclePriceData {
+                price: 1_000_00,
+                publish_time: env.ledger().timestamp().saturating_sub(10),
+                confidence: None,
+                exponent: 0,
+            };
+
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env,
+                &market_id,
+                &OracleProvider::Reflector,
+                &String::from_str(&env, "BTC/USD"),
+                &data,
+            );
+
+            assert_eq!(result.unwrap_err(), Error::OracleStale);
+        });
+    }
+
+    #[test]
+    fn test_oracle_validation_admin_config_auth() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let non_admin = Address::generate(&env);
+        let default_fee_pct: Option<i128> = None;
+
+        env.mock_all_auths();
+        client.initialize(&admin, &default_fee_pct);
+
+        let unauthorized = client.try_set_oracle_val_cfg_global(&non_admin, &60, &500);
+        assert!(unauthorized.is_err());
+
+        client.set_oracle_val_cfg_event(&admin, &Symbol::new(&env, "admin_evt"), &60, &500);
     }
 }
 

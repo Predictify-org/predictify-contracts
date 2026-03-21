@@ -778,10 +778,6 @@ pub struct Market {
     pub dispute_window_seconds: u64,
 }
 
-    /// Asset used for bets and payouts (Stellar token/asset)
-    pub asset: Option<crate::tokens::Asset>,
-}
-        /// Validate market parameters
 // ===== BET LIMITS =====
 
 /// Configurable minimum and maximum bet amount for an event or globally.
@@ -982,13 +978,6 @@ impl Market {
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
             return Err(crate::Error::InvalidDuration);
-        }
-
-        // Validate asset if present
-        if let Some(asset) = &self.asset {
-            if !asset.validate(env) {
-                return Err(crate::Error::InvalidInput);
-            }
         }
 
         Ok(())
@@ -1266,6 +1255,42 @@ impl OracleResult {
     pub fn is_fresh(&self, env: &Env, max_age_seconds: u64) -> bool {
         env.ledger().timestamp().saturating_sub(self.timestamp) <= max_age_seconds
     }
+}
+
+/// Lightweight oracle price payload with validation metadata.
+///
+/// This structure captures the minimum data needed for staleness and
+/// confidence interval validation without provider-specific dependencies.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OraclePriceData {
+    /// Price value in oracle base units
+    pub price: i128,
+    /// Publish time of the oracle data (unix timestamp seconds)
+    pub publish_time: u64,
+    /// Confidence interval (absolute) in the same base units as `price`
+    pub confidence: Option<i128>,
+    /// Exponent/decimals scale used by the oracle (e.g., Pyth exponent)
+    pub exponent: i32,
+}
+
+/// Global oracle validation configuration applied when no per-event override exists.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalOracleValidationConfig {
+    /// Maximum age of oracle data in seconds before it is rejected
+    pub max_staleness_secs: u64,
+    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
+    pub max_confidence_bps: u32,
+}
+
+/// Per-event oracle validation configuration override.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventOracleValidationConfig {
+    /// Maximum age of oracle data in seconds before it is rejected
+    pub max_staleness_secs: u64,
+    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
+    pub max_confidence_bps: u32,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.
