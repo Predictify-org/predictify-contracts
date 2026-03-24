@@ -854,6 +854,13 @@ impl DisputeManager {
             stake,
             reason_for_event,
         );
+        crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
+            env,
+            &market_id,
+            &soroban_sdk::String::from_str(env, "created"),
+            &user,
+            &soroban_sdk::String::from_str(env, "dispute_created"),
+        );
 
         Ok(())
     }
@@ -975,6 +982,13 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+        crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
+            env,
+            &market_id,
+            &soroban_sdk::String::from_str(env, "resolved"),
+            &admin,
+            &soroban_sdk::String::from_str(env, "dispute_resolved"),
+        );
 
         Ok(resolution)
     }
