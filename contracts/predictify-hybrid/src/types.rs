@@ -974,6 +974,9 @@ impl Market {
 
         // Validate oracle config
         self.oracle_config.validate(env)?;
+        if self.has_fallback {
+            self.fallback_oracle_config.validate(env)?;
+        }
 
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
@@ -3194,4 +3197,78 @@ pub struct Balance {
     pub user: Address,
     pub asset: ReflectorAsset,
     pub amount: i128,
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn valid_oracle_config(env: &Env) -> OracleConfig {
+        OracleConfig::new(
+            OracleProvider::Reflector,
+            Address::generate(env),
+            String::from_str(env, "BTC/USD"),
+            1_000_000,
+            String::from_str(env, "gt"),
+        )
+    }
+
+    #[test]
+    fn market_validate_rejects_invalid_fallback_when_enabled() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let outcomes = Vec::from_array(
+            &env,
+            [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+        );
+
+        let invalid_fallback = OracleConfig::new(
+            OracleProvider::Pyth,
+            Address::generate(&env),
+            String::from_str(&env, "BTC/USD"),
+            1_000_000,
+            String::from_str(&env, "gt"),
+        );
+
+        let market = Market::new(
+            &env,
+            admin,
+            String::from_str(&env, "Will BTC be above $10,000?"),
+            outcomes,
+            env.ledger().timestamp() + 1000,
+            valid_oracle_config(&env),
+            Some(invalid_fallback),
+            3600,
+            MarketState::Active,
+        );
+
+        assert_eq!(market.validate(&env), Err(crate::Error::InvalidOracleConfig));
+    }
+
+    #[test]
+    fn market_validate_allows_no_fallback_sentinel_path() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let outcomes = Vec::from_array(
+            &env,
+            [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+        );
+
+        let market = Market::new(
+            &env,
+            admin,
+            String::from_str(&env, "Will BTC be above $10,000?"),
+            outcomes,
+            env.ledger().timestamp() + 1000,
+            valid_oracle_config(&env),
+            None,
+            3600,
+            MarketState::Active,
+        );
+
+        assert_eq!(market.validate(&env), Ok(()));
+    }
 }
