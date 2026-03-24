@@ -231,6 +231,24 @@ const getContractVersion = async (contractId: string): Promise<string> => {
 
 ## 🔧 Core API Reference
 
+### Rustdoc Coverage Contract
+
+All exported contract entrypoints in `contracts/predictify-hybrid/src/lib.rs` are documented with
+Rust doc comments (`///`) and include explicit `# Errors` and `# Events` sections.
+
+This is intended to make API behavior auditable without reading all internals:
+
+- **Errors**: Each entrypoint documents how `Error` values are surfaced.
+  Functions returning `Result<_, Error>` propagate errors directly.
+  Non-`Result` entrypoints surface contract failures via panic.
+- **Events**: Each entrypoint documents event behavior.
+  State-changing flows may emit events through internal managers (for example via `EventEmitter`),
+  while read-only query flows emit no events.
+
+For exact runtime behavior and error variants, also reference:
+- `contracts/predictify-hybrid/src/err.rs`
+- `contracts/predictify-hybrid/src/events.rs`
+
 ### Market Management Functions
 
 #### `create_market()`
