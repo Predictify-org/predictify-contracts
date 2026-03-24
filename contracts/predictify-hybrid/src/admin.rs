@@ -11,6 +11,7 @@ use crate::fees::{FeeConfig, FeeManager};
 use crate::markets::MarketStateManager;
 use crate::resolution::MarketResolutionManager;
 use alloc::string::ToString;
+use crate::audit_trail::{AuditAction, AuditTrailManager};
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -244,6 +245,8 @@ impl AdminInitializer {
 
         // Log admin action
         AdminActionLogger::log_action(env, admin, "initialize", None, Map::new(env), true, None)?;
+
+        AuditTrailManager::append_record(env, AuditAction::ContractInitialized, admin.clone(), Map::new(env));
 
         Ok(())
     }
@@ -621,6 +624,7 @@ impl ContractPauseManager {
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &true);
         EventEmitter::emit_contract_paused(env, admin);
+        AuditTrailManager::append_record(env, AuditAction::ContractPaused, admin.clone(), Map::new(env));
         Ok(())
     }
 
@@ -639,6 +643,7 @@ impl ContractPauseManager {
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &false);
         EventEmitter::emit_contract_unpaused(env, admin);
+        AuditTrailManager::append_record(env, AuditAction::ContractUnpaused, admin.clone(), Map::new(env));
         Ok(())
     }
 
@@ -670,6 +675,7 @@ impl ContractPauseManager {
             .persistent()
             .set(&Symbol::new(env, "Admin"), new_admin);
         EventEmitter::emit_admin_transferred(env, current_admin, new_admin);
+        AuditTrailManager::append_record(env, AuditAction::AdminTransferred, current_admin.clone(), Map::new(env));
         Ok(())
     }
 }
@@ -986,6 +992,13 @@ impl AdminRoleManager {
             AdminRole::ReadOnlyAdmin => crate::events::AdminRole::Moderator,
         };
         EventEmitter::emit_admin_role_assigned(env, admin, &events_role, assigned_by);
+
+        let action = if role == AdminRole::SuperAdmin && !env.storage().persistent().has(&key) {
+            AuditAction::ContractInitialized // Fallback or logic
+        } else {
+            AuditAction::AdminAdded
+        };
+        AuditTrailManager::append_record(env, AuditAction::AdminRoleUpdated, assigned_by.clone(), Map::new(env));
 
         Ok(())
     }

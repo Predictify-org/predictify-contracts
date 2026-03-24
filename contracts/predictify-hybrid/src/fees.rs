@@ -757,6 +757,13 @@ impl FeeManager {
             &soroban_sdk::String::from_str(env, "platform_fee"),
         );
 
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::FeesCollected, 
+            admin.clone(), 
+            Map::new(env)
+        );
+
         Ok(fee_amount)
     }
 
@@ -816,6 +823,13 @@ impl FeeManager {
         // Record configuration change
         FeeTracker::record_config_change(env, &admin, &new_config)?;
 
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::FeeConfigUpdated, 
+            admin.clone(), 
+            Map::new(env)
+        );
+
         Ok(new_config)
     }
 
@@ -858,6 +872,13 @@ impl FeeManager {
 
         // Record fee structure update
         FeeTracker::record_fee_structure_update(env, &admin, &new_fee_tiers)?;
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::FeeConfigUpdated, 
+            admin.clone(), 
+            Map::new(env)
+        );
 
         Ok(())
     }
@@ -1659,6 +1680,13 @@ impl FeeWithdrawalManager {
             withdrawal_amount,
             remaining_fees,
             now,
+        );
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::FeesWithdrawn, 
+            admin.clone(), 
+            Map::new(env)
         );
 
         Ok(withdrawal_amount)

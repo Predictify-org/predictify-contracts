@@ -48,6 +48,10 @@ mod validation;
 mod validation_tests;
 mod versioning;
 mod voting;
+pub mod audit_trail;
+
+#[cfg(test)]
+mod test_audit_trail;
 // THis is the band protocol wasm std_reference.wasm
 mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
@@ -102,6 +106,7 @@ pub mod errors {
     pub use crate::err::*;
 }
 pub use queries::QueryManager;
+pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
 use crate::config::{
@@ -247,6 +252,26 @@ impl PredictifyHybrid {
     /// * `asset` - The asset to check.
     pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
         storage::BalanceStorage::get_balance(&env, &user, &asset)
+    }
+
+    /// Retrieves a specific audit record by index.
+    pub fn get_audit_record(env: Env, index: u64) -> Option<AuditRecord> {
+        AuditTrailManager::get_record(&env, index)
+    }
+
+    /// Retrieves the latest audit records (up to limit).
+    pub fn get_latest_audit_records(env: Env, limit: u64) -> Vec<AuditRecord> {
+        AuditTrailManager::get_latest_records(&env, limit)
+    }
+
+    /// Retrieves the current head of the audit trail.
+    pub fn get_audit_trail_head(env: Env) -> Option<AuditTrailHead> {
+        AuditTrailManager::get_head(&env)
+    }
+
+    /// Verifies the integrity of the audit trail up to a certain depth.
+    pub fn verify_audit_integrity(env: Env, depth: u64) -> bool {
+        AuditTrailManager::verify_integrity(&env, depth)
     }
 
     /// Creates a new prediction market with specified parameters and oracle configuration.
@@ -437,6 +462,8 @@ impl PredictifyHybrid {
         // Record statistics
         statistics::StatisticsManager::record_market_created(&env);
 
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketCreated, admin.clone(), Map::new(&env));
+
         market_id
     }
 
@@ -540,6 +567,8 @@ impl PredictifyHybrid {
 
         // Record statistics (optional, can reuse market stats for now)
         // statistics::StatisticsManager::record_market_created(&env);
+
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::EventCreated, admin.clone(), Map::new(&env));
 
         event_id
     }
@@ -2695,6 +2724,13 @@ impl PredictifyHybrid {
         let fee_key = Symbol::new(&env, "platform_fee");
         env.storage().persistent().set(&fee_key, &fee_percentage);
 
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::FeeConfigUpdated,
+            admin.clone(),
+            Map::new(&env),
+        );
+
         Ok(())
     }
 
@@ -2716,10 +2752,18 @@ impl PredictifyHybrid {
         if admin != stored_admin {
             return Err(Error::Unauthorized);
         }
-        let limits = BetLimits { min_bet, max_bet };
+        let limits = crate::types::BetLimits { min_bet, max_bet };
         crate::bets::set_global_bet_limits(&env, &limits)?;
         let scope = Symbol::new(&env, "global");
         EventEmitter::emit_bet_limits_updated(&env, &admin, &scope, min_bet, max_bet);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::BetLimitsUpdated,
+            admin.clone(),
+            Map::new(&env),
+        );
+
         Ok(())
     }
 
@@ -2778,6 +2822,14 @@ impl PredictifyHybrid {
             max_confidence_bps,
         };
         crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::OracleConfigUpdated,
+            admin.clone(),
+            Map::new(&env),
+        );
+
         Ok(())
     }
 
@@ -2810,6 +2862,17 @@ impl PredictifyHybrid {
             &market_id,
             &config,
         )?;
+
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "market_id"), String::from_str(&env, "market_updated"));
+        
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::OracleConfigUpdated,
+            admin.clone(),
+            details,
+        );
+
         Ok(())
     }
 
@@ -3183,6 +3246,10 @@ impl PredictifyHybrid {
             &admin,
         );
 
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "description"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+
         Ok(())
     }
 
@@ -3327,6 +3394,10 @@ impl PredictifyHybrid {
             &admin,
         );
 
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "outcomes"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+
         Ok(())
     }
 
@@ -3430,6 +3501,10 @@ impl PredictifyHybrid {
 
         // Emit category update event
         EventEmitter::emit_category_updated(&env, &market_id, &old_category, &category, &admin);
+
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "category"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
 
         Ok(())
     }
@@ -3549,6 +3624,10 @@ impl PredictifyHybrid {
 
         // Emit tags update event
         EventEmitter::emit_tags_updated(&env, &market_id, &old_tags, &tags, &admin);
+
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "tags"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
 
         Ok(())
     }
@@ -3696,6 +3775,12 @@ impl PredictifyHybrid {
         // Calculate total refunded (sum of all bets)
         let total_refunded = market.total_staked;
 
+        let mut details = Map::new(&env);
+        if let Some(r) = &reason {
+            details.set(Symbol::new(&env, "reason"), r.clone());
+        }
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::EventCancelled, admin.clone(), details);
+
         // Emit cancellation event
         EventEmitter::emit_state_change_event(
             &env,
@@ -3832,7 +3917,16 @@ impl PredictifyHybrid {
         from_format: storage::StorageFormat,
         to_format: storage::StorageFormat,
     ) -> Result<storage::StorageMigration, Error> {
-        storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format)
+        let result = storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::StorageMigrated,
+            env.current_contract_address(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Monitor storage usage and return statistics
@@ -3994,10 +4088,19 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id) {
+        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id) {
             Ok(res) => res,
             Err(e) => panic_with_error!(env, e),
-        }
+        };
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::ErrorRecovered,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Executes partial refund mechanism for selected users in a failed/corrupted market. Only admin.
@@ -4011,10 +4114,19 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        match crate::recovery::RecoveryManager::partial_refund_mechanism(&env, &market_id, &users) {
+        let result = match crate::recovery::RecoveryManager::partial_refund_mechanism(&env, &market_id, &users) {
             Ok(total_refunded) => total_refunded,
             Err(e) => panic_with_error!(env, e),
-        }
+        };
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::PartialRefundExecuted,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Validates market state integrity; returns true if consistent.
@@ -4335,7 +4447,16 @@ impl PredictifyHybrid {
         new_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         admin.require_auth();
-        upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash)
+        let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::ContractUpgraded,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Rollback contract to previous version
@@ -4359,7 +4480,16 @@ impl PredictifyHybrid {
         rollback_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         admin.require_auth();
-        upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash)
+        let result = upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::UpgradeRolledBack,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Get current contract version
