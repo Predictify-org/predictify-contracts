@@ -855,6 +855,13 @@ impl DisputeManager {
             reason_for_event,
         );
 
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::DisputeCreated, 
+            user.clone(), 
+            Map::new(env)
+        );
+
         Ok(())
     }
 
@@ -975,6 +982,13 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::DisputeResolved, 
+            admin.clone(), 
+            Map::new(env)
+        );
 
         Ok(resolution)
     }
