@@ -991,6 +991,13 @@ impl OracleResolutionManager {
                 &crate::types::MarketState::Cancelled,
                 &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
             );
+            crate::monitoring::ContractMonitor::emit_resolution_transition_hook(
+                env,
+                market_id,
+                &old_state,
+                &crate::types::MarketState::Cancelled,
+                &soroban_sdk::String::from_str(env, "timeout_cancelled"),
+            );
 
             return Err(Error::InvalidState);
         }
@@ -1413,6 +1420,13 @@ impl MarketResolutionManager {
             &old_state,
             &crate::types::MarketState::Resolved,
             &soroban_sdk::String::from_str(env, "Automated resolution completed"),
+        );
+        crate::monitoring::ContractMonitor::emit_resolution_transition_hook(
+            env,
+            market_id,
+            &old_state,
+            &crate::types::MarketState::Resolved,
+            &resolution_method_str,
         );
 
         Ok(resolution)

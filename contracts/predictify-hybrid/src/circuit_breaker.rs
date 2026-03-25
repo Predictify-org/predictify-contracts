@@ -259,6 +259,12 @@ impl CircuitBreaker {
             reason,
             Some(admin.clone()),
         );
+        crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+            env,
+            &String::from_str(env, "paused"),
+            Some(admin.clone()),
+            reason,
+        );
 
         Ok(())
     }
@@ -444,6 +450,12 @@ impl CircuitBreaker {
             &String::from_str(env, "Circuit breaker recovered"),
             Some(admin.clone()),
         );
+        crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+            env,
+            &String::from_str(env, "unpaused"),
+            Some(admin.clone()),
+            &String::from_str(env, "manual_recovery"),
+        );
 
         Ok(())
     }
@@ -472,6 +484,12 @@ impl CircuitBreaker {
                     BreakerCondition::ManualOverride,
                     &String::from_str(env, "Auto-recovery: circuit breaker closed"),
                     None,
+                );
+                crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+                    env,
+                    &String::from_str(env, "unpaused"),
+                    None,
+                    &String::from_str(env, "auto_recovery"),
                 );
             }
         }

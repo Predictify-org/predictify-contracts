@@ -173,12 +173,54 @@ pub struct MonitoringData {
     pub system_status: MonitoringStatus,
 }
 
+/// Critical contract transitions that indexers should track.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[contracttype]
+pub enum TransitionDomain {
+    Resolution,
+    Dispute,
+    Pause,
+}
+
+/// Generic transition hook payload for indexer consumption.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[contracttype]
+pub struct TransitionHookEvent {
+    /// Transition domain.
+    pub domain: TransitionDomain,
+    /// Action label within the domain (e.g., "resolved", "created", "paused").
+    pub action: String,
+    /// Related market when applicable.
+    pub market_id: Option<Symbol>,
+    /// State before transition when applicable.
+    pub old_state: Option<String>,
+    /// State after transition when applicable.
+    pub new_state: Option<String>,
+    /// Actor that initiated the transition when known.
+    pub actor: Option<Address>,
+    /// Human-readable transition details.
+    pub details: String,
+    /// Event timestamp.
+    pub timestamp: u64,
+}
+
 // ===== CONTRACT MONITOR STRUCT =====
 
 /// Main contract monitoring system
 pub struct ContractMonitor;
 
 impl ContractMonitor {
+    fn market_state_label(env: &Env, state: &MarketState) -> String {
+        match state {
+            MarketState::Active => String::from_str(env, "Active"),
+            MarketState::Ended => String::from_str(env, "Ended"),
+            MarketState::Disputed => String::from_str(env, "Disputed"),
+            MarketState::Resolved => String::from_str(env, "Resolved"),
+            MarketState::Closed => String::from_str(env, "Closed"),
+            MarketState::Cancelled => String::from_str(env, "Cancelled"),
+        }
+    }
+
     /// Monitor market health for a specific market
     pub fn monitor_market_health(
         env: &Env,
@@ -382,6 +424,91 @@ impl ContractMonitor {
         Self::store_alert(env, &alert)?;
 
         Ok(())
+    }
+
+    /// Emit an indexer-friendly hook for resolution state transitions.
+    pub fn emit_resolution_transition_hook(
+        env: &Env,
+        market_id: &Symbol,
+        old_state: &MarketState,
+        new_state: &MarketState,
+        details: &String,
+    ) {
+        let event = TransitionHookEvent {
+            domain: TransitionDomain::Resolution,
+            action: String::from_str(env, "state_transition"),
+            market_id: Some(market_id.clone()),
+            old_state: Some(Self::market_state_label(env, old_state)),
+            new_state: Some(Self::market_state_label(env, new_state)),
+            actor: None,
+            details: details.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        env.events().publish(
+            (
+                Symbol::new(env, "idx_transition"),
+                Symbol::new(env, "resolution"),
+                market_id.clone(),
+            ),
+            event,
+        );
+    }
+
+    /// Emit an indexer-friendly hook for dispute lifecycle transitions.
+    pub fn emit_dispute_transition_hook(
+        env: &Env,
+        market_id: &Symbol,
+        action: &String,
+        actor: &Address,
+        details: &String,
+    ) {
+        let event = TransitionHookEvent {
+            domain: TransitionDomain::Dispute,
+            action: action.clone(),
+            market_id: Some(market_id.clone()),
+            old_state: None,
+            new_state: None,
+            actor: Some(actor.clone()),
+            details: details.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        env.events().publish(
+            (
+                Symbol::new(env, "idx_transition"),
+                Symbol::new(env, "dispute"),
+                market_id.clone(),
+            ),
+            event,
+        );
+    }
+
+    /// Emit an indexer-friendly hook for contract pause/unpause transitions.
+    pub fn emit_pause_transition_hook(
+        env: &Env,
+        action: &String,
+        actor: Option<Address>,
+        details: &String,
+    ) {
+        let event = TransitionHookEvent {
+            domain: TransitionDomain::Pause,
+            action: action.clone(),
+            market_id: None,
+            old_state: None,
+            new_state: None,
+            actor,
+            details: details.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        env.events().publish(
+            (
+                Symbol::new(env, "idx_transition"),
+                Symbol::new(env, "pause"),
+            ),
+            event,
+        );
     }
 
     /// Validate monitoring data integrity
@@ -1018,7 +1145,7 @@ impl MonitoringTestingUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address;
+    use soroban_sdk::testutils::{Address as _, Events};
 
     #[test]
     fn test_market_health_monitoring() {
@@ -1174,5 +1301,59 @@ mod tests {
         // Test monitoring data creation
         let data = MonitoringTestingUtils::create_test_monitoring_data(&env);
         assert_eq!(data.system_status, MonitoringStatus::Healthy);
+    }
+
+    #[test]
+    fn test_resolution_transition_hook_emits_indexer_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "mkt_1");
+        env.as_contract(&contract_id, || {
+            ContractMonitor::emit_resolution_transition_hook(
+                &env,
+                &market_id,
+                &MarketState::Ended,
+                &MarketState::Resolved,
+                &String::from_str(&env, "oracle resolution"),
+            );
+        });
+
+        assert_eq!(env.events().all().len(), 1);
+    }
+
+    #[test]
+    fn test_dispute_transition_hook_emits_indexer_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "mkt_2");
+        let actor = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            ContractMonitor::emit_dispute_transition_hook(
+                &env,
+                &market_id,
+                &String::from_str(&env, "created"),
+                &actor,
+                &String::from_str(&env, "stake posted"),
+            );
+        });
+
+        assert_eq!(env.events().all().len(), 1);
+    }
+
+    #[test]
+    fn test_pause_transition_hook_emits_indexer_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let actor = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            ContractMonitor::emit_pause_transition_hook(
+                &env,
+                &String::from_str(&env, "paused"),
+                Some(actor),
+                &String::from_str(&env, "manual emergency pause"),
+            );
+        });
+
+        assert_eq!(env.events().all().len(), 1);
     }
 }
