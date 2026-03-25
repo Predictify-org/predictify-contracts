@@ -1072,6 +1072,10 @@ impl OracleFactory {
         oracle_config: &OracleConfig,
         contract_id: Address,
     ) -> Result<OracleInstance, Error> {
+        if oracle_config.is_none_sentinel() {
+            return Err(Error::InvalidOracleConfig);
+        }
+
         Self::create_oracle(oracle_config.provider.clone(), contract_id)
     }
 
@@ -1178,6 +1182,10 @@ impl OracleFactory {
     /// # Returns
     /// Result indicating if the configuration is valid for Stellar
     pub fn validate_stellar_compatibility(oracle_config: &OracleConfig) -> Result<(), Error> {
+        if oracle_config.is_none_sentinel() {
+            return Err(Error::InvalidOracleConfig);
+        }
+
         match oracle_config.provider {
             OracleProvider::Reflector => {
                 // Reflector is fully supported
@@ -2293,10 +2301,7 @@ impl OracleValidationConfigManager {
     }
 
     /// Get per-event validation config override.
-    pub fn get_event_config(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> Option<EventOracleValidationConfig> {
+    pub fn get_event_config(env: &Env, market_id: &Symbol) -> Option<EventOracleValidationConfig> {
         let per_event: soroban_sdk::Map<Symbol, EventOracleValidationConfig> = env
             .storage()
             .persistent()
@@ -2325,10 +2330,7 @@ impl OracleValidationConfigManager {
     }
 
     /// Resolve effective validation config for a market.
-    pub fn get_effective_config(
-        env: &Env,
-        market_id: &Symbol,
-    ) -> GlobalOracleValidationConfig {
+    pub fn get_effective_config(env: &Env, market_id: &Symbol) -> GlobalOracleValidationConfig {
         if let Some(event_cfg) = Self::get_event_config(env, market_id) {
             GlobalOracleValidationConfig {
                 max_staleness_secs: event_cfg.max_staleness_secs,
@@ -2375,11 +2377,19 @@ impl OracleValidationConfigManager {
 
         if *provider == OracleProvider::Pyth {
             if let Some(confidence) = data.confidence {
-                let price_abs = if data.price < 0 { -data.price } else { data.price };
+                let price_abs = if data.price < 0 {
+                    -data.price
+                } else {
+                    data.price
+                };
                 if price_abs == 0 {
                     return Err(Error::InvalidInput);
                 }
-                let conf_abs = if confidence < 0 { -confidence } else { confidence };
+                let conf_abs = if confidence < 0 {
+                    -confidence
+                } else {
+                    confidence
+                };
                 let confidence_bps =
                     ((conf_abs * 10_000) / price_abs).min(Self::MAX_CONFIDENCE_BPS as i128);
                 let confidence_bps_u32 = confidence_bps as u32;

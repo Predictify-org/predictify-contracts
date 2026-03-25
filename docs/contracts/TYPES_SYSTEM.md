@@ -34,11 +34,34 @@ pub enum OracleProvider {
 ```rust
 pub struct OracleConfig {
     pub provider: OracleProvider,
+    pub oracle_address: Address,
     pub feed_id: String,
     pub threshold: i128,
     pub comparison: String,
 }
 ```
+
+**Fallback Sentinel Encoding**
+
+Optional fallback oracles are stored as a `(has_fallback, fallback_oracle_config)` pair rather
+than `Option<OracleConfig>`. When `has_fallback` is `false`, the contracts write
+`OracleConfig::none_sentinel()` into `fallback_oracle_config`.
+
+The reserved sentinel semantics are:
+
+- `provider == OracleProvider::Reflector`
+- `feed_id == ""`
+- `threshold == 0`
+- `comparison == ""`
+
+That tuple is intentionally outside the valid oracle-config domain:
+
+- valid configs require a non-empty `feed_id`
+- valid configs require `threshold > 0`
+- valid configs require a supported comparison operator such as `gt`, `lt`, or `eq`
+
+Because of those invariants, the sentinel cannot collide with any configuration that is valid for
+live oracle creation or resolution, even if the placeholder `oracle_address` is reused elsewhere.
 
 #### 2. Market Types
 
@@ -79,10 +102,14 @@ pub struct ReflectorPriceData {
 ### 1. Creating Oracle Configurations
 
 ```rust
-use types::{OracleProvider, OracleConfig};
+use soroban_sdk::{Address, String};
+use types::{OracleConfig, OracleProvider};
+
+let oracle_address = Address::generate(&env);
 
 let oracle_config = OracleConfig::new(
     OracleProvider::Pyth,
+    oracle_address,
     String::from_str(&env, "BTC/USD"),
     2500000, // $25,000 threshold
     String::from_str(&env, "gt"), // greater than
