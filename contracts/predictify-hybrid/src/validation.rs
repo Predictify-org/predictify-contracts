@@ -7,7 +7,6 @@ use crate::{
     errors::Error,
     types::{BetLimits, Market, OracleConfig, OracleProvider},
 };
-use alloc::string::ToString;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
@@ -5122,10 +5121,9 @@ impl OracleConfigValidator {
             return Err(ValidationError::InvalidOracle);
         }
 
-        let comparison_value = comparison.to_string();
         if supported_operators
             .iter()
-            .any(|operator| *operator == comparison_value)
+            .any(|operator| comparison == &String::from_str(comparison.env(), operator))
         {
             return Ok(());
         }
