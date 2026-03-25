@@ -491,7 +491,17 @@ impl OracleConfig {
         }
     }
 
-    /// Sentinel value for "no fallback" (used when has_fallback is false). Do not use for resolution.
+    /// Returns the reserved sentinel used to encode "no fallback oracle" in storage.
+    ///
+    /// The contracts persist fallback-oracle state as a `(has_fallback, fallback_oracle_config)`
+    /// pair instead of `Option<OracleConfig>` for Soroban contract-type compatibility. When
+    /// `has_fallback` is `false`, this sentinel is written into `fallback_oracle_config`.
+    ///
+    /// Sentinel semantics are reserved by the tuple `(provider=Reflector, feed_id="", threshold=0,
+    /// comparison="")`. Those values are intentionally outside the valid oracle-config domain, so
+    /// the sentinel cannot collide with any configuration that passes validation.
+    ///
+    /// This value must never be used for live oracle creation or resolution.
     pub fn none_sentinel(env: &Env) -> Self {
         Self {
             provider: OracleProvider::Reflector,
@@ -504,11 +514,27 @@ impl OracleConfig {
             comparison: String::from_str(env, ""),
         }
     }
+
+    /// Returns `true` when this configuration is the reserved "no fallback" sentinel.
+    ///
+    /// The sentinel identity intentionally ignores `oracle_address`: the reserved semantics are
+    /// carried by the invalid `feed_id` / `threshold` / `comparison` tuple, which keeps the
+    /// sentinel unambiguous even if a caller reuses the placeholder address elsewhere.
+    pub fn is_none_sentinel(&self) -> bool {
+        self.provider == OracleProvider::Reflector
+            && self.feed_id.is_empty()
+            && self.threshold == 0
+            && self.comparison.is_empty()
+    }
 }
 
 impl OracleConfig {
     /// Validate the oracle configuration
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+        if self.is_none_sentinel() || self.feed_id.is_empty() {
+            return Err(crate::Error::InvalidOracleConfig);
+        }
+
         // Validate threshold
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
@@ -732,7 +758,10 @@ pub struct Market {
     pub oracle_config: OracleConfig,
     /// Whether a fallback oracle is configured (avoids Option in contract type for SDK compatibility)
     pub has_fallback: bool,
-    /// Fallback oracle configuration (only valid when has_fallback is true)
+    /// Fallback oracle configuration.
+    ///
+    /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
+    /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
     pub fallback_oracle_config: OracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
@@ -3169,7 +3198,10 @@ pub struct Event {
     pub oracle_config: OracleConfig,
     /// Whether a fallback oracle is configured
     pub has_fallback: bool,
-    /// Fallback oracle configuration (only valid when has_fallback is true)
+    /// Fallback oracle configuration.
+    ///
+    /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
+    /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
     pub fallback_oracle_config: OracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,

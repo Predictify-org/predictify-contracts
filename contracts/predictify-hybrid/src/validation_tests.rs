@@ -918,6 +918,7 @@ fn test_validation_error_messages() {
 #[cfg(test)]
 mod oracle_config_validator_tests {
     use super::*;
+    use crate::oracles::OracleFactory;
     use crate::types::{OracleConfig, OracleProvider};
     use crate::validation::OracleConfigValidator;
 
@@ -1434,6 +1435,40 @@ mod oracle_config_validator_tests {
 
         // Overall validation should fail due to provider not being supported
         assert!(OracleConfigValidator::validate_oracle_config_all_together(&pyth_config).is_err());
+    }
+
+    #[test]
+    fn test_none_sentinel_is_reserved_and_invalid() {
+        let env = soroban_sdk::Env::default();
+        let sentinel = OracleConfig::none_sentinel(&env);
+
+        assert!(sentinel.is_none_sentinel());
+        assert_eq!(sentinel.validate(&env), Err(Error::InvalidOracleConfig));
+        assert!(OracleConfigValidator::validate_oracle_config_all_together(&sentinel).is_err());
+        assert!(
+            OracleFactory::create_from_config(&sentinel, sentinel.oracle_address.clone()).is_err()
+        );
+        assert!(OracleFactory::validate_stellar_compatibility(&sentinel).is_err());
+    }
+
+    #[test]
+    fn test_valid_config_does_not_collide_with_none_sentinel() {
+        let env = soroban_sdk::Env::default();
+        let sentinel = OracleConfig::none_sentinel(&env);
+        let valid_with_placeholder_address = OracleConfig::new(
+            OracleProvider::Reflector,
+            sentinel.oracle_address.clone(),
+            String::from_str(&env, "BTC/USD"),
+            50_000_00,
+            String::from_str(&env, "gt"),
+        );
+
+        assert!(!valid_with_placeholder_address.is_none_sentinel());
+        assert!(valid_with_placeholder_address.validate(&env).is_ok());
+        assert!(OracleConfigValidator::validate_oracle_config_all_together(
+            &valid_with_placeholder_address
+        )
+        .is_ok());
     }
 }
 

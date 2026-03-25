@@ -7,7 +7,6 @@ use crate::{
     errors::Error,
     types::{BetLimits, Market, OracleConfig, OracleProvider},
 };
-// use alloc::string::ToString; // Removed to fix Display/ToString trait errors
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
@@ -1391,16 +1390,16 @@ impl InputValidator {
     /// ```
     pub fn validate_description_length(description: &String) -> Result<(), ValidationError> {
         let length = description.len() as u32;
-        
+
         // Description is optional, so empty is allowed
         if length == 0 {
             return Ok(());
         }
-        
+
         if length > config::MAX_DESCRIPTION_LENGTH {
             return Err(ValidationError::StringTooLong);
         }
-        
+
         Ok(())
     }
 
@@ -1426,11 +1425,7 @@ impl InputValidator {
     /// assert!(InputValidator::validate_tag_length(&tag).is_ok());
     /// ```
     pub fn validate_tag_length(tag: &String) -> Result<(), ValidationError> {
-        Self::validate_string_length_range(
-            tag,
-            config::MIN_TAG_LENGTH,
-            config::MAX_TAG_LENGTH,
-        )
+        Self::validate_string_length_range(tag, config::MIN_TAG_LENGTH, config::MAX_TAG_LENGTH)
     }
 
     /// Validate market category with length limits
@@ -1489,17 +1484,17 @@ impl InputValidator {
     pub fn validate_outcomes(outcomes: &Vec<String>) -> Result<(), ValidationError> {
         // Validate array size
         Self::validate_array_size(outcomes, config::MAX_MARKET_OUTCOMES)?;
-        
+
         // Validate minimum number of outcomes
         if (outcomes.len() as u32) < config::MIN_MARKET_OUTCOMES {
             return Err(ValidationError::ArrayTooSmall);
         }
-        
+
         // Validate each outcome length
         for outcome in outcomes.iter() {
             Self::validate_outcome_length(&outcome)?;
         }
-        
+
         Ok(())
     }
 
@@ -1532,17 +1527,17 @@ impl InputValidator {
         if tags.is_empty() {
             return Ok(());
         }
-        
+
         // Validate maximum number of tags
         if (tags.len() as u32) > config::MAX_TAGS_PER_MARKET {
             return Err(ValidationError::ArrayTooLarge);
         }
-        
+
         // Validate each tag length
         for tag in tags.iter() {
             Self::validate_tag_length(&tag)?;
         }
-        
+
         Ok(())
     }
 
@@ -1572,7 +1567,7 @@ impl InputValidator {
     /// let description = String::from_str(&env, "Market about Bitcoin price prediction");
     /// let category = String::from_str(&env, "Cryptocurrency");
     /// let tags = vec![&env, String::from_str(&env, "crypto"), String::from_str(&env, "bitcoin")];
-    /// 
+    ///
     /// assert!(InputValidator::validate_market_metadata(
     ///     &question,
     ///     &outcomes,
@@ -1590,23 +1585,23 @@ impl InputValidator {
     ) -> Result<(), ValidationError> {
         // Validate question
         Self::validate_question_length(question)?;
-        
+
         // Validate outcomes
         Self::validate_outcomes(outcomes)?;
-        
+
         // Validate description if provided
         if let Some(desc) = description {
             Self::validate_description_length(desc)?;
         }
-        
+
         // Validate category if provided
         if let Some(cat) = category {
             Self::validate_category_length(cat)?;
         }
-        
+
         // Validate tags
         Self::validate_tags(tags)?;
-        
+
         Ok(())
     }
 }
@@ -4880,7 +4875,7 @@ impl OracleConfigValidator {
         let supported_operators = Self::get_supported_operators_for_provider(&config.provider);
 
         // Validate comparison operator
-        Self::validate_comparison_operator(&config.comparison, &supported_operators)?;
+        Self::validate_comparison_operator_literals(&config.comparison, supported_operators)?;
 
         // Additional consistency checks
         match config.provider {
@@ -5070,6 +5065,11 @@ impl OracleConfigValidator {
     pub fn validate_oracle_config_all_together(
         config: &OracleConfig,
     ) -> Result<(), ValidationError> {
+        // Reserve the storage-only sentinel so it can never become a live oracle config.
+        if config.is_none_sentinel() {
+            return Err(ValidationError::InvalidConfig);
+        }
+
         // Step 1: Validate provider support
         Self::validate_oracle_provider(&config.provider)?;
 
@@ -5081,7 +5081,7 @@ impl OracleConfigValidator {
 
         // Step 4: Get supported operators and validate comparison
         let supported_operators = Self::get_supported_operators_for_provider(&config.provider);
-        Self::validate_comparison_operator(&config.comparison, &supported_operators)?;
+        Self::validate_comparison_operator_literals(&config.comparison, supported_operators)?;
 
         // Step 5: Validate configuration consistency
         Self::validate_config_consistency(config)?;
@@ -5095,7 +5095,7 @@ impl OracleConfigValidator {
     /// * `provider` - The oracle provider to get operators for
     ///
     /// # Returns
-    /// * `Vec<String>` - Vector of supported comparison operators
+    /// * `&[&str]` - Provider-specific supported comparison operators
     ///
     /// # Provider-Specific Operators
     ///
@@ -5113,29 +5113,29 @@ impl OracleConfigValidator {
     ///
     /// **Band Protocol & DIA:**
     /// - Empty vector (not supported)
-    fn get_supported_operators_for_provider(provider: &OracleProvider) -> Vec<String> {
+    fn validate_comparison_operator_literals(
+        comparison: &String,
+        supported_operators: &[&str],
+    ) -> Result<(), ValidationError> {
+        if comparison.is_empty() {
+            return Err(ValidationError::InvalidOracle);
+        }
+
+        if supported_operators
+            .iter()
+            .any(|operator| comparison == &String::from_str(comparison.env(), operator))
+        {
+            return Ok(());
+        }
+
+        Err(ValidationError::InvalidOracle)
+    }
+
+    fn get_supported_operators_for_provider(provider: &OracleProvider) -> &'static [&'static str] {
         match provider {
-            OracleProvider::Reflector => {
-                vec![
-                    &soroban_sdk::Env::default(),
-                    String::from_str(&soroban_sdk::Env::default(), "gt"),
-                    String::from_str(&soroban_sdk::Env::default(), "lt"),
-                    String::from_str(&soroban_sdk::Env::default(), "eq"),
-                ]
-            }
-            OracleProvider::Pyth => {
-                vec![
-                    &soroban_sdk::Env::default(),
-                    String::from_str(&soroban_sdk::Env::default(), "gt"),
-                    String::from_str(&soroban_sdk::Env::default(), "gte"),
-                    String::from_str(&soroban_sdk::Env::default(), "lt"),
-                    String::from_str(&soroban_sdk::Env::default(), "lte"),
-                    String::from_str(&soroban_sdk::Env::default(), "eq"),
-                ]
-            }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
-                vec![&soroban_sdk::Env::default()]
-            }
+            OracleProvider::Reflector => &["gt", "lt", "eq"],
+            OracleProvider::Pyth => &["gt", "gte", "lt", "lte", "eq"],
+            OracleProvider::BandProtocol | OracleProvider::DIA => &[],
         }
     }
 }
