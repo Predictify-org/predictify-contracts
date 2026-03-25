@@ -231,6 +231,24 @@ const getContractVersion = async (contractId: string): Promise<string> => {
 
 ## 🔧 Core API Reference
 
+### Rustdoc Coverage Contract
+
+All exported contract entrypoints in `contracts/predictify-hybrid/src/lib.rs` are documented with
+Rust doc comments (`///`) and include explicit `# Errors` and `# Events` sections.
+
+This is intended to make API behavior auditable without reading all internals:
+
+- **Errors**: Each entrypoint documents how `Error` values are surfaced.
+  Functions returning `Result<_, Error>` propagate errors directly.
+  Non-`Result` entrypoints surface contract failures via panic.
+- **Events**: Each entrypoint documents event behavior.
+  State-changing flows may emit events through internal managers (for example via `EventEmitter`),
+  while read-only query flows emit no events.
+
+For exact runtime behavior and error variants, also reference:
+- `contracts/predictify-hybrid/src/err.rs`
+- `contracts/predictify-hybrid/src/events.rs`
+
 ### Market Management Functions
 
 #### `create_market()`
@@ -707,6 +725,67 @@ soroban contract invoke \
 
 ---
 
-**Last Updated:** 2025-01-15  
-**API Version:** v1.0.0  
-**Documentation Version:** 1.0
+## 🛡️ Validation Module
+
+The validation module (`contracts/predictify-hybrid/src/validation.rs`) provides layered, composable validators for every contract operation. Each validator returns a `ValidationResult` or a `Result<(), ValidationError>` and can be used independently or composed through `ComprehensiveValidator`.
+
+### Validators
+
+| Validator | Responsibility |
+|-----------|---------------|
+| `InputValidator` | Primitives: string length, numeric range, array size, address format, timestamps |
+| `MarketValidator` | Market lifecycle guards: creation params, voting eligibility, resolution eligibility, fee collection eligibility |
+| `OracleValidator` | Oracle config fields: provider support, comparison operator, result presence and format |
+| `FeeValidator` | Fee config integrity: percentage bounds (0–100), min/max fee amounts, collection threshold |
+| `VoteValidator` | Vote correctness: outcome membership, stake ≥ `MIN_VOTE_STAKE`, duplicate detection |
+| `DisputeValidator` | Dispute correctness: winning outcome required, stake ≥ `MIN_DISPUTE_STAKE`, duplicate detection |
+| `EventValidator` | Event creation: admin address, description format, outcome count (2–10), future end time |
+| `OracleConfigValidator` | Deep oracle config: provider-specific threshold ranges, comparison operator support per provider, resolution timeout bounds |
+| `MarketParameterValidator` | Standalone parameter ranges: duration (days), stake amounts, threshold values |
+| `ConfigValidator` | Contract-level config: admin/token addresses, `config::Environment` values |
+| `ComprehensiveValidator` | Orchestrates the above validators for full market creation and state checks |
+
+### Key Constants
+
+| Constant | Value | Used by |
+|----------|-------|---------|
+| `MIN_VOTE_STAKE` | 1,000,000 stroops | `VoteValidator` |
+| `MIN_DISPUTE_STAKE` | 10,000,000 stroops | `DisputeValidator` |
+| `MIN_FEE_AMOUNT` | 1,000,000 | `FeeValidator` |
+| `MAX_FEE_AMOUNT` | 1,000,000,000 | `FeeValidator` |
+| `FEE_COLLECTION_THRESHOLD` | 100,000,000 | `MarketValidator` |
+| `MIN_MARKET_DURATION_DAYS` | 1 | `MarketValidator`, `MarketParameterValidator` |
+| `MAX_MARKET_DURATION_DAYS` | 365 | `MarketValidator`, `MarketParameterValidator` |
+| `MIN_MARKET_OUTCOMES` | 2 | `InputValidator`, `MarketValidator` |
+| `MAX_MARKET_OUTCOMES` | 10 | `InputValidator`, `MarketValidator` |
+| `MIN_QUESTION_LENGTH` | 10 chars | `InputValidator` |
+| `MAX_QUESTION_LENGTH` | 500 chars | `InputValidator` |
+| `MIN_OUTCOME_LENGTH` | 2 chars | `InputValidator` |
+| `MAX_OUTCOME_LENGTH` | 100 chars | `InputValidator` |
+
+### Known Limitations
+
+**`OracleConfigValidator::validate_config_consistency` / `validate_oracle_config_all_together` with Reflector or Pyth providers** — the private `get_supported_operators_for_provider` helper creates multiple independent `soroban_sdk::Env::default()` instances inside a single `vec![]` call. Strings built against different Env instances cannot be compared safely in the test harness and cause SIGSEGV. Affected public paths (`MarketValidator::validate_market_creation`, `ComprehensiveValidator::validate_complete_market_creation`) must not be exercised with Reflector/Pyth configs in unit tests until this upstream SDK usage is corrected. Individual field validators (question, duration, outcomes, resolution timeout) remain fully testable.
+
+### Test Coverage Summary
+
+All 118 unit tests in `contracts/predictify-hybrid/src/validation_tests.rs` pass (`cargo test -p predictify-hybrid --lib "validation_tests"`). Coverage includes:
+
+- Every `InputValidator` branch (string length, numeric range, array bounds, address format, timestamp, outcomes, tags, description, category, outcome format)
+- `MarketValidator` lifecycle guards (voting, resolution, fee collection — active, ended, and empty-question paths)
+- `OracleValidator` (provider, comparison operator, result presence, result-against-outcomes)
+- `FeeValidator` (valid config, invalid percentage, min > max, zero threshold)
+- `VoteValidator` (valid vote, too-low stake, invalid outcome, duplicate vote)
+- `DisputeValidator` (valid dispute, no winning outcome, too-low stake, duplicate dispute)
+- `EventValidator` (valid creation, short description, past end time, too-few/too-many outcomes)
+- `OracleConfigValidator` (provider support, threshold range, feed ID format, comparison operator, resolution timeout, BandProtocol/DIA always-fail paths)
+- `MarketParameterValidator` (duration limits, stake amounts, threshold values)
+- `ConfigValidator` (contract config, all `Environment` variants)
+- `ComprehensiveValidator` (input validation, market state — active and empty-question)
+- `ValidationResult` and `ValidationError` helpers
+
+---
+
+**Last Updated:** 2026-03-25
+**API Version:** v1.0.0
+**Documentation Version:** 1.1
