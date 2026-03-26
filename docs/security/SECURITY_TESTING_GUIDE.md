@@ -16,3 +16,14 @@
 - Tools help in detecting SQL injections,and other vulnerabilities
 - SonarQube, Fortify are commonly used tools
 - Integrate with IDEs and CI/CD pipelines
+
+## 5. Property-Based Testing (Proptest)
+- Smart contract invariants (especially around financial logic like stake distributions, payouts, and fee deductions) are verified using property-based fuzzing.
+- **Threat Model Covered**: Payout calculation overflow/underflow, rounding errors giving away more funds than total pooled, double-claim attacks, zero-winner scenarios, fee evasion.
+- **Invariants Proven**:
+  - `distribute_payouts`: Total distributed to all users is `total_pool` (minus fees/truncation) and mathematically proportional.
+  - Payout is strictly zero when there are no winners.
+  - Fees are deducted exactly according to the percentage configuration.
+  - Double distributions and double claims result in zero extra payouts.
+- **Explicit Non-Goals**: Property testing of off-chain components or exact sub-stroop distribution (small 1 stroop differences due to integer div truncation are securely kept in contract).
+- **Execution**: Run with `cargo test -p predictify-hybrid --test property_based_tests`.

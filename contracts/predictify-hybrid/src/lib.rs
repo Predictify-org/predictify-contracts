@@ -1349,6 +1349,11 @@ impl PredictifyHybrid {
     /// - User must have voted for the winning outcome
     /// - User must not have previously claimed winnings
     ///
+    /// # Security & Testing
+    ///
+    /// - Fuzzed against state duplication where claiming double results in an explicit abort/fail.
+    /// - Ensures payout formula distributes properly without rounding vulnerabilities.
+    ///
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
@@ -2653,6 +2658,14 @@ impl PredictifyHybrid {
     /// - **No Winners**: If no users bet on the winning outcome, no payouts are made
     /// - **All Winners**: If all users bet on the winning outcome, they receive proportional shares
     /// - **Double Payout Prevention**: Users who already claimed are skipped
+    ///
+    /// # Security & Testing
+    ///
+    /// - Tested for invariants using `proptest` to ensure:
+    ///   - Total distributed `<= total pool` mathematically strictly.
+    ///   - Fees are deducted predictably and exactly.
+    ///   - Split pools evenly and proportionately distribute to tie winners without underflow.
+    ///   - Failsafes prevent re-distribution.
     ///
     /// # Events
     ///
