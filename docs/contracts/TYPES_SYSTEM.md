@@ -20,15 +20,43 @@ Types are organized into logical categories for better understanding and mainten
 
 #### 1. Oracle Types
 
-**OracleProvider Enum**
+**OracleProvider Struct (Forward-Compatible)**
 ```rust
-pub enum OracleProvider {
-    BandProtocol,
-    DIA,
-    Reflector,
-    Pyth,
+pub struct OracleProvider {
+    provider_id: String,
 }
 ```
+
+**Key Features:**
+- **Forward Compatibility**: String-based representation allows new providers without breaking existing markets
+- **Backward Compatibility**: Existing markets continue to work across contract upgrades
+- **Graceful Degradation**: Unknown providers are handled safely with fallback behavior
+
+**Standard Provider Identifiers:**
+- `"reflector"` - Reflector oracle (primary for Stellar Network)
+- `"pyth"` - Pyth Network oracle (placeholder for future Stellar support)
+- `"band_protocol"` - Band Protocol oracle (not available on Stellar)
+- `"dia"` - DIA oracle (not available on Stellar)
+
+**Constructor Methods:**
+```rust
+let provider = OracleProvider::reflector();
+let provider = OracleProvider::pyth();
+let provider = OracleProvider::from_str(String::from_str(&env, "new_provider"));
+```
+
+**Validation Methods:**
+```rust
+provider.is_known()      // Recognized by current contract version
+provider.is_supported()  // Available on current network (Stellar)
+provider.validate_for_market(&env)?  // Strict validation for new markets
+```
+
+**Forward Compatibility Strategy:**
+- New providers use descriptive lowercase names with underscores
+- Unknown providers return "Unknown Provider (name)" for display
+- Validation fails safely for unsupported providers
+- No storage migration required for new provider additions
 
 **OracleConfig Struct**
 ```rust
@@ -49,7 +77,7 @@ than `Option<OracleConfig>`. When `has_fallback` is `false`, the contracts write
 
 The reserved sentinel semantics are:
 
-- `provider == OracleProvider::Reflector`
+- `provider_id == "reflector"`
 - `feed_id == ""`
 - `threshold == 0`
 - `comparison == ""`
@@ -108,7 +136,7 @@ use types::{OracleConfig, OracleProvider};
 let oracle_address = Address::generate(&env);
 
 let oracle_config = OracleConfig::new(
-    OracleProvider::Pyth,
+    OracleProvider::reflector(), // Use constructor method
     oracle_address,
     String::from_str(&env, "BTC/USD"),
     2500000, // $25,000 threshold
@@ -117,6 +145,29 @@ let oracle_config = OracleConfig::new(
 
 // Validate the configuration
 oracle_config.validate(&env)?;
+```
+
+### Forward Compatibility Examples
+
+```rust
+// Creating markets with future oracle providers
+let future_provider = OracleProvider::from_str(String::from_str(&env, "chainlink"));
+let config = OracleConfig::new(
+    future_provider,
+    oracle_address,
+    String::from_str(&env, "ETH/USD"),
+    2000000,
+    String::from_str(&env, "gt"),
+);
+
+// Older contract versions can read this safely
+assert!(!config.provider.is_known()); // Not recognized in this version
+assert!(!config.provider.is_supported()); // Not supported on Stellar
+assert_eq!(config.provider.as_str(), "chainlink"); // But can read the identifier
+
+// Display name provides graceful fallback
+let display_name = config.provider.name();
+// Returns: "Unknown Provider (chainlink)"
 ```
 
 ### 2. Creating Markets
@@ -291,7 +342,7 @@ let total_disputes = market.total_dispute_stakes();
 let winning_total = market.winning_stake_total();
 ```
 
-## Oracle Integration
+### Oracle Integration
 
 ### Oracle Provider Support
 
@@ -299,13 +350,53 @@ let winning_total = market.winning_stake_total();
 // Check if provider is supported
 if oracle_provider.is_supported() {
     // Use the provider
+} else {
+    // Handle unsupported provider gracefully
 }
 
-// Get provider name
+// Get provider identifier
+let provider_id = oracle_provider.as_str();
+
+// Get human-readable name
 let name = oracle_provider.name();
 
-// Get default feed format
-let format = oracle_provider.default_feed_format();
+// Validate for market creation (strict)
+oracle_provider.validate_for_market(&env)?;
+
+// Check if provider is known (less strict)
+if oracle_provider.is_known() {
+    // Provider is recognized by this contract version
+} else {
+    // Provider from future contract version - handle gracefully
+}
+```
+
+### Forward Compatibility Patterns
+
+```rust
+// Safe handling of unknown providers
+match oracle_provider.as_str() {
+    "reflector" => handle_reflector_oracle(),
+    "pyth" => handle_pyth_oracle(),
+    unknown => {
+        println!("Unknown provider: {}", oracle_provider.name());
+        use_fallback_oracle();
+    }
+}
+
+// Validation for different contexts
+fn validate_for_read(provider: &OracleProvider) -> Result<(), Error> {
+    // Less strict validation - just check if provider exists
+    if provider.as_str().is_empty() {
+        return Err(Error::InvalidOracleConfig);
+    }
+    Ok(())
+}
+
+fn validate_for_creation(provider: &OracleProvider, env: &Env) -> Result<(), Error> {
+    // Strict validation for new markets
+    provider.validate_for_market(env)
+}
 ```
 
 ### Oracle Configuration
@@ -517,8 +608,8 @@ fn test_validation_helpers() {
 
 | Type | Purpose | Key Methods |
 |------|---------|-------------|
-| `OracleProvider` | Oracle service enumeration | `name()`, `is_supported()`, `default_feed_format()` |
-| `OracleConfig` | Oracle configuration | `new()`, `validate()`, `is_supported()`, `is_greater_than()` |
+| `OracleProvider` | Forward-compatible oracle provider | `reflector()`, `pyth()`, `from_str()`, `as_str()`, `name()`, `is_known()`, `is_supported()`, `validate_for_market()` |
+| `OracleConfig` | Oracle configuration | `new()`, `validate()`, `none_sentinel()`, `is_none_sentinel()` |
 | `PythPrice` | Pyth price data | `new()`, `price_in_cents()`, `is_stale()`, `validate()` |
 | `ReflectorPriceData` | Reflector price data | `new()`, `price_in_cents()`, `is_stale()`, `validate()` |
 
@@ -554,6 +645,92 @@ fn test_validation_helpers() {
 | `string_to_oracle_provider()` | Convert string to provider | `s: &str` |
 | `oracle_provider_to_string()` | Convert provider to string | `provider: &OracleProvider` |
 | `validate_comparison()` | Validate comparison operator | `comparison: &String, env: &Env` |
+
+## Forward Compatibility Guide
+
+### Adding New Oracle Providers
+
+When adding new oracle providers to future contract versions:
+
+1. **Choose Provider ID**: Use descriptive lowercase names with underscores
+   ```rust
+   // Good examples
+   "chainlink"
+   "uniswap_oracle"
+   "custom_provider_v2"
+   ```
+
+2. **Update Constructor Methods**: Add new constructor methods in future versions
+   ```rust
+   // Future contract version
+   impl OracleProvider {
+       pub fn chainlink() -> Self {
+           Self { provider_id: String::from_str(&env, "chainlink") }
+       }
+   }
+   ```
+
+3. **Update Validation Logic**: Add new providers to `is_known()` and `is_supported()` methods
+   ```rust
+   // Future contract version
+   pub fn is_known(&self) -> bool {
+       matches!(self.as_str(), "reflector" | "pyth" | "band_protocol" | "dia" | "chainlink")
+   }
+   ```
+
+4. **No Storage Migration Required**: Existing markets continue to work without migration
+
+### Handling Unknown Providers
+
+When reading markets created by newer contract versions:
+
+```rust
+fn handle_oracle_provider(provider: &OracleProvider) -> Result<(), Error> {
+    match provider.as_str() {
+        "reflector" => use_reflector_oracle(),
+        "pyth" => use_pyth_oracle(),
+        "band_protocol" => use_band_protocol_oracle(),
+        "dia" => use_dia_oracle(),
+        unknown => {
+            // Provider from future contract version
+            println!("Unknown oracle provider: {}", provider.name());
+            
+            // Option 1: Fail gracefully
+            return Err(Error::UnsupportedOracleProvider);
+            
+            // Option 2: Use fallback oracle
+            use_fallback_oracle();
+            
+            // Option 3: Read-only mode (no new operations)
+            enter_read_only_mode();
+        }
+    }
+}
+```
+
+### Migration from Enum-Based System
+
+For contracts migrating from the old enum system:
+
+```rust
+// Old enum (deprecated)
+pub enum OldOracleProvider {
+    Reflector,
+    Pyth,
+    BandProtocol,
+    DIA,
+}
+
+// Migration function
+fn migrate_oracle_provider(old: OldOracleProvider, env: &Env) -> OracleProvider {
+    match old {
+        OldOracleProvider::Reflector => OracleProvider::reflector(),
+        OldOracleProvider::Pyth => OracleProvider::pyth(),
+        OldOracleProvider::BandProtocol => OracleProvider::band_protocol(),
+        OldOracleProvider::DIA => OracleProvider::dia(),
+    }
+}
+```
 
 ## Future Enhancements
 

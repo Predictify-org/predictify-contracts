@@ -66,7 +66,7 @@ use crate::types::*;
 ///     }
 ///     
 ///     // Verify provider type
-///     assert_eq!(oracle.provider(), OracleProvider::Reflector);
+///     assert_eq!(oracle.provider(), OracleProvider::reflector());
 /// } else {
 ///     println!("Oracle is not healthy, using fallback");
 /// }
@@ -165,7 +165,7 @@ pub trait OracleInterface {
 /// assert!(price_result.is_err());
 ///
 /// // Check oracle provider
-/// assert_eq!(oracle.provider(), OracleProvider::Pyth);
+/// assert_eq!(oracle.provider(), OracleProvider::pyth());
 ///
 /// // Validate feed configurations
 /// assert_eq!(oracle.get_feed_count(), 1);
@@ -480,9 +480,9 @@ impl OracleInterface for PythOracle {
     /// Get the oracle provider type
     ///
     /// # Returns
-    /// OracleProvider::Pyth
+    /// OracleProvider::pyth()
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Pyth
+        OracleProvider::pyth()
     }
 
     /// Get the oracle contract ID
@@ -702,7 +702,7 @@ impl<'a> ReflectorOracleClient<'a> {
 /// let oracle = ReflectorOracle::new(oracle_address.clone());
 ///
 /// // Verify oracle provider type
-/// assert_eq!(oracle.provider(), OracleProvider::Reflector);
+/// assert_eq!(oracle.provider(), OracleProvider::reflector());
 /// assert_eq!(oracle.contract_id(), oracle_address);
 ///
 /// // Check oracle health before use
@@ -896,7 +896,7 @@ impl OracleInterface for ReflectorOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -960,13 +960,13 @@ impl OracleInterface for ReflectorOracle {
 /// }
 ///
 /// // Check provider support before creation
-/// if OracleFactory::is_provider_supported(&OracleProvider::Reflector) {
+/// if OracleFactory::is_provider_supported(&OracleProvider::reflector()) {
 ///     println!("Reflector is supported on Stellar");
 /// }
 ///
 /// // Get recommended provider for Stellar
 /// let recommended = OracleFactory::get_recommended_provider();
-/// assert_eq!(recommended, OracleProvider::Reflector);
+/// assert_eq!(recommended, OracleProvider::reflector());
 ///
 /// // Create from configuration
 /// let config = OracleConfig {
@@ -1055,8 +1055,8 @@ impl OracleFactory {
             return Err(Error::InvalidOracleConfig);
         }
 
-        match provider {
-            OracleProvider::Reflector => {
+        match provider.as_str() {
+            "reflector" => {
                 let oracle = ReflectorOracle::new(contract_id);
                 Ok(OracleInstance::Reflector(oracle))
             }
@@ -1082,15 +1082,12 @@ impl OracleFactory {
     /// Check if a provider is supported on Stellar
 
     pub fn is_provider_supported(provider: &OracleProvider) -> bool {
-        match provider {
-            OracleProvider::Reflector => true,
-            OracleProvider::Pyth | OracleProvider::BandProtocol | OracleProvider::DIA => false,
-        }
+        provider.is_supported()
     }
 
     /// Get the recommended oracle provider for Stellar
     pub fn get_recommended_provider() -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     /// Create a Pyth oracle with pre-configured feeds
@@ -1186,18 +1183,22 @@ impl OracleFactory {
             return Err(Error::InvalidOracleConfig);
         }
 
-        match oracle_config.provider {
-            OracleProvider::Reflector => {
+        match oracle_config.provider.as_str() {
+            "reflector" => {
                 // Reflector is fully supported
                 Ok(())
             }
-            OracleProvider::Pyth => {
+            "pyth" => {
                 // Pyth is not supported on Stellar, but we'll allow it for future compatibility
                 // The implementation will return errors when used
                 Ok(())
             }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
+            "band_protocol" | "dia" => {
                 // These providers are not supported on Stellar
+                Err(Error::InvalidOracleConfig)
+            }
+            unknown => {
+                // Unknown provider - fail safely for new market creation
                 Err(Error::InvalidOracleConfig)
             }
         }
@@ -1347,9 +1348,9 @@ impl OracleInstance {
     /// Get the oracle provider type
     pub fn provider(&self) -> OracleProvider {
         match self {
-            OracleInstance::Pyth(_) => OracleProvider::Pyth,
-            OracleInstance::Reflector(_) => OracleProvider::Reflector,
-            OracleInstance::Band(_) => OracleProvider::BandProtocol,
+            OracleInstance::Pyth(_) => OracleProvider::pyth(),
+            OracleInstance::Reflector(_) => OracleProvider::reflector(),
+            OracleInstance::Band(_) => OracleProvider::band_protocol(),
         }
     }
 
@@ -1626,7 +1627,7 @@ impl OracleInterface for BandProtocolOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::BandProtocol
+        OracleProvider::band_protocol()
     }
 
     fn is_healthy(&self, env: &Env) -> Result<bool, Error> {
@@ -1652,7 +1653,7 @@ mod tests {
         let oracle = PythOracle::new(contract_id.clone());
 
         assert_eq!(oracle.contract_id(), contract_id);
-        assert_eq!(oracle.provider(), OracleProvider::Pyth);
+        assert_eq!(oracle.provider(), OracleProvider::pyth());
     }
 
     #[test]
@@ -1662,7 +1663,7 @@ mod tests {
         let oracle = ReflectorOracle::new(contract_id.clone());
 
         assert_eq!(oracle.contract_id(), contract_id);
-        assert_eq!(oracle.provider(), OracleProvider::Reflector);
+        assert_eq!(oracle.provider(), OracleProvider::reflector());
     }
 
     #[test]
@@ -1671,18 +1672,18 @@ mod tests {
         let contract_id = Address::generate(&env);
 
         // Test Pyth oracle creation (should fail)
-        let pyth_oracle = OracleFactory::create_oracle(OracleProvider::Pyth, contract_id.clone());
+        let pyth_oracle = OracleFactory::create_oracle(OracleProvider::pyth(), contract_id.clone());
         assert!(pyth_oracle.is_err());
         assert_eq!(pyth_oracle.unwrap_err(), Error::InvalidOracleConfig);
 
         // Test Reflector oracle creation
         let reflector_oracle =
-            OracleFactory::create_oracle(OracleProvider::Reflector, contract_id.clone());
+            OracleFactory::create_oracle(OracleProvider::reflector(), contract_id.clone());
         assert!(reflector_oracle.is_ok());
 
         // Test unsupported provider
         let unsupported_oracle =
-            OracleFactory::create_oracle(OracleProvider::BandProtocol, contract_id);
+            OracleFactory::create_oracle(OracleProvider::band_protocol(), contract_id);
         assert!(unsupported_oracle.is_err());
         assert_eq!(unsupported_oracle.unwrap_err(), Error::InvalidOracleConfig);
     }
@@ -2375,7 +2376,7 @@ impl OracleValidationConfigManager {
             return Err(Error::OracleStale);
         }
 
-        if *provider == OracleProvider::Pyth {
+        if *provider == OracleProvider::pyth() {
             if let Some(confidence) = data.confidence {
                 let price_abs = if data.price < 0 {
                     -data.price
@@ -2961,7 +2962,7 @@ impl OracleIntegrationManager {
             price: 0, // Manual override - no price
             threshold: market.oracle_config.threshold,
             comparison: market.oracle_config.comparison.clone(),
-            provider: crate::types::OracleProvider::Reflector, // Placeholder
+            provider: crate::types::OracleProvider::reflector(), // Placeholder
             feed_id: market.oracle_config.feed_id.clone(),
             timestamp: env.ledger().timestamp(),
             block_number: env.ledger().sequence(),
@@ -3083,7 +3084,7 @@ mod oracle_integration_tests {
                 price: 52_000_00,
                 threshold: 50_000_00,
                 comparison: String::from_str(&env, "gt"),
-                provider: crate::types::OracleProvider::Reflector,
+                provider: crate::types::OracleProvider::reflector(),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 timestamp: env.ledger().timestamp(),
                 block_number: env.ledger().sequence(),
