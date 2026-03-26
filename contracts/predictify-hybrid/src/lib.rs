@@ -48,6 +48,10 @@ mod validation;
 mod validation_tests;
 mod versioning;
 mod voting;
+pub mod audit_trail;
+
+#[cfg(test)]
+mod test_audit_trail;
 // THis is the band protocol wasm std_reference.wasm
 mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
@@ -91,6 +95,9 @@ mod statistics_tests;
 #[cfg(test)]
 mod resolution_delay_dispute_window_tests;
 
+#[cfg(test)]
+mod tests;
+
 #[cfg(any())]
 mod event_creation_tests;
 
@@ -102,6 +109,7 @@ pub mod errors {
     pub use crate::err::*;
 }
 pub use queries::QueryManager;
+pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
 use crate::config::{
@@ -178,6 +186,14 @@ impl PredictifyHybrid {
     ///
     /// This function can only be called once. Any subsequent calls will panic with
     /// `Error::AlreadyInitialized` to prevent admin takeover attacks.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>) {
         // Determine platform fee (default 2% if not specified)
         let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
@@ -214,6 +230,14 @@ impl PredictifyHybrid {
     /// * `user` - The user depositing funds.
     /// * `asset` - The asset to deposit (e.g., XLM, BTC, ETH).
     /// * `amount` - The amount to deposit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn deposit(
         env: Env,
         user: Address,
@@ -230,6 +254,14 @@ impl PredictifyHybrid {
     /// * `user` - The user withdrawing funds.
     /// * `asset` - The asset to withdraw.
     /// * `amount` - The amount to withdraw.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn withdraw(
         env: Env,
         user: Address,
@@ -245,8 +277,36 @@ impl PredictifyHybrid {
     /// * `env` - The environment.
     /// * `user` - The user to check.
     /// * `asset` - The asset to check.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
         storage::BalanceStorage::get_balance(&env, &user, &asset)
+    }
+
+    /// Retrieves a specific audit record by index.
+    pub fn get_audit_record(env: Env, index: u64) -> Option<AuditRecord> {
+        AuditTrailManager::get_record(&env, index)
+    }
+
+    /// Retrieves the latest audit records (up to limit).
+    pub fn get_latest_audit_records(env: Env, limit: u64) -> Vec<AuditRecord> {
+        AuditTrailManager::get_latest_records(&env, limit)
+    }
+
+    /// Retrieves the current head of the audit trail.
+    pub fn get_audit_trail_head(env: Env) -> Option<AuditTrailHead> {
+        AuditTrailManager::get_head(&env)
+    }
+
+    /// Verifies the integrity of the audit trail up to a certain depth.
+    pub fn verify_audit_integrity(env: Env, depth: u64) -> bool {
+        AuditTrailManager::verify_integrity(&env, depth)
     }
 
     /// Creates a new prediction market with specified parameters and oracle configuration.
@@ -352,6 +412,14 @@ impl PredictifyHybrid {
     ///
     /// New markets are created in `MarketState::Active` state, allowing immediate voting.
     /// The market will automatically transition to `MarketState::Ended` when the duration expires.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn create_market(
         env: Env,
         admin: Address,
@@ -438,6 +506,8 @@ impl PredictifyHybrid {
         // Record statistics
         statistics::StatisticsManager::record_market_created(&env);
 
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketCreated, admin.clone(), Map::new(&env));
+
         market_id
     }
 
@@ -465,6 +535,14 @@ impl PredictifyHybrid {
     /// Panics if:
     /// - Caller is not the contract admin
     /// - validation fails (invalid description, outcomes, or end time)
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn create_event(
         env: Env,
         admin: Address,
@@ -543,6 +621,8 @@ impl PredictifyHybrid {
         // Record statistics (optional, can reuse market stats for now)
         // statistics::StatisticsManager::record_market_created(&env);
 
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::EventCreated, admin.clone(), Map::new(&env));
+
         event_id
     }
 
@@ -556,6 +636,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// Returns `Some(Event)` if found, or `None` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_event(env: Env, event_id: Symbol) -> Option<Event> {
         crate::storage::EventManager::get_event(&env, &event_id).ok()
     }
@@ -612,6 +700,14 @@ impl PredictifyHybrid {
     /// - Market must be in `Active` state
     /// - Current time must be before market end time
     /// - Market must not be cancelled or resolved
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
         user.require_auth();
 
@@ -785,6 +881,14 @@ impl PredictifyHybrid {
     ///     10_0000000, // 10 XLM
     /// );
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn place_bet(
         env: Env,
         user: Address,
@@ -857,6 +961,14 @@ impl PredictifyHybrid {
     ///
     /// let placed_bets = PredictifyHybrid::place_bets(env.clone(), user, bets);
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn place_bets(
         env: Env,
         user: Address,
@@ -905,6 +1017,14 @@ impl PredictifyHybrid {
     ///     }
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_bet(env: Env, market_id: Symbol, user: Address) -> Option<crate::types::Bet> {
         bets::BetManager::get_bet(&env, &market_id, &user)
     }
@@ -939,6 +1059,14 @@ impl PredictifyHybrid {
     ///     println!("User can place a bet");
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn has_user_bet(env: Env, market_id: Symbol, user: Address) -> bool {
         bets::BetManager::has_user_bet(&env, &market_id, &user)
     }
@@ -970,6 +1098,14 @@ impl PredictifyHybrid {
     /// println!("Total locked: {} stroops", stats.total_amount_locked);
     /// println!("Unique bettors: {}", stats.unique_bettors);
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market_bet_stats(env: Env, market_id: Symbol) -> crate::types::BetStats {
         bets::BetManager::get_market_bet_stats(&env, &market_id)
     }
@@ -1066,6 +1202,10 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Error: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn calculate_bet_payout(env: Env, market_id: Symbol, user: Address) -> Result<i128, Error> {
         bets::BetManager::calculate_bet_payout(&env, &market_id, &user)
     }
@@ -1100,6 +1240,14 @@ impl PredictifyHybrid {
     /// );
     /// println!("Implied probability for 'Yes': {}%", prob);
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_implied_probability(env: Env, market_id: Symbol, outcome: String) -> i128 {
         bets::BetAnalytics::calculate_implied_probability(&env, &market_id, &outcome)
     }
@@ -1135,6 +1283,14 @@ impl PredictifyHybrid {
     /// let actual_multiplier = multiplier as f64 / 100.0;
     /// println!("Payout multiplier for 'Yes': {:.2}x", actual_multiplier);
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_payout_multiplier(env: Env, market_id: Symbol, outcome: String) -> i128 {
         bets::BetAnalytics::calculate_payout_multiplier(&env, &market_id, &outcome)
     }
@@ -1194,6 +1350,19 @@ impl PredictifyHybrid {
     /// - Market must be in `Resolved` state with a winning outcome set
     /// - User must have voted for the winning outcome
     /// - User must not have previously claimed winnings
+    ///
+    /// # Security & Testing
+    ///
+    /// - Fuzzed against state duplication where claiming double results in an explicit abort/fail.
+    /// - Ensures payout formula distributes properly without rounding vulnerabilities.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
         user.require_auth();
 
@@ -1363,6 +1532,14 @@ impl PredictifyHybrid {
     ///
     /// This is a read-only operation that doesn't modify contract state.
     /// It retrieves data from persistent storage with minimal computational overhead.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
         env.storage().persistent().get(&market_id)
     }
@@ -1425,6 +1602,14 @@ impl PredictifyHybrid {
     ///
     /// This function requires admin privileges and should be used carefully.
     /// Manual resolutions should be transparent and follow established governance procedures.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn resolve_market_manual(
         env: Env,
         admin: Address,
@@ -1563,6 +1748,14 @@ impl PredictifyHybrid {
     /// - Total pool is split proportionally among all winners
     /// - Each winner receives: (their_stake / total_winning_stakes) * total_pool * (1 - fee)
     /// - This ensures fair distribution even when outcomes are tied
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn resolve_market_with_ties(
         env: Env,
         admin: Address,
@@ -1717,6 +1910,10 @@ impl PredictifyHybrid {
     /// - Market must exist and be past its end time
     /// - Market must not already have an oracle result
     /// - Oracle contract must be accessible and responsive
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn fetch_oracle_result(
         env: Env,
         market_id: Symbol,
@@ -1898,6 +2095,14 @@ impl PredictifyHybrid {
     ///     3
     /// );
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn verify_result_with_retry(
         env: Env,
         caller: Address,
@@ -1947,6 +2152,14 @@ impl PredictifyHybrid {
     ///     }
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_verified_result(env: Env, market_id: Symbol) -> Option<OracleResult> {
         oracles::OracleIntegrationManager::get_oracle_result(&env, &market_id)
     }
@@ -1961,6 +2174,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// Returns `bool` - `true` if verified, `false` otherwise
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn is_result_verified(env: Env, market_id: Symbol) -> bool {
         oracles::OracleIntegrationManager::is_result_verified(&env, &market_id)
     }
@@ -1991,6 +2212,14 @@ impl PredictifyHybrid {
     /// - Automatic oracle verification has failed repeatedly
     /// - Oracle data is known to be incorrect
     /// - Emergency situations requiring immediate resolution
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn admin_override_verification(
         env: Env,
         admin: Address,
@@ -2077,6 +2306,10 @@ impl PredictifyHybrid {
     /// - Winning outcome is set
     /// - Users can claim winnings
     /// - Market statistics are finalized
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
         // Use the resolution module to resolve the market
         let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
@@ -2162,6 +2395,10 @@ impl PredictifyHybrid {
     /// This function performs read-only analytics calculations and may take
     /// longer for platforms with many resolved markets. Results may be cached
     /// for performance optimization.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
         resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
     }
@@ -2249,6 +2486,10 @@ impl PredictifyHybrid {
     /// This function performs calculations on market data and may have
     /// computational overhead for markets with many participants. Consider
     /// caching results for frequently accessed markets.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market_analytics(
         env: Env,
         market_id: Symbol,
@@ -2266,6 +2507,14 @@ impl PredictifyHybrid {
     }
 
     /// Dispute a market resolution
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn dispute_market(
         env: Env,
         user: Address,
@@ -2278,6 +2527,14 @@ impl PredictifyHybrid {
     }
 
     /// Vote on a dispute
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn vote_on_dispute(
         env: Env,
         user: Address,
@@ -2294,6 +2551,14 @@ impl PredictifyHybrid {
     }
 
     /// Resolve a dispute (admin only)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
@@ -2318,6 +2583,14 @@ impl PredictifyHybrid {
     }
 
     /// Collect fees from a market (admin only)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
         admin.require_auth();
 
@@ -2388,9 +2661,21 @@ impl PredictifyHybrid {
     /// - **All Winners**: If all users bet on the winning outcome, they receive proportional shares
     /// - **Double Payout Prevention**: Users who already claimed are skipped
     ///
+    /// # Security & Testing
+    ///
+    /// - Tested for invariants using `proptest` to ensure:
+    ///   - Total distributed `<= total pool` mathematically strictly.
+    ///   - Fees are deducted predictably and exactly.
+    ///   - Split pools evenly and proportionately distribute to tie winners without underflow.
+    ///   - Failsafes prevent re-distribution.
+    ///
     /// # Events
     ///
     /// This function emits `WinningsClaimedEvent` for each user who receives a payout.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
     pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
         let mut market: Market = env
             .storage()
@@ -2590,12 +2875,28 @@ impl PredictifyHybrid {
     /// Mark a resolved or cancelled event (market) as archived. Admin only.
     /// Market must be in Resolved or Cancelled state. Returns InvalidState if not
     /// eligible, AlreadyClaimed if already archived.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn archive_event(env: Env, admin: Address, market_id: Symbol) -> Result<(), Error> {
         crate::event_archive::EventArchive::archive_event(&env, &admin, &market_id)
     }
 
     /// Query events by creation time range. Returns public metadata only (no votes/stakes).
     /// Paginated: cursor is start index, limit capped at 30. Returns (entries, next_cursor).
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn query_events_history(
         env: Env,
         from_ts: u64,
@@ -2609,6 +2910,14 @@ impl PredictifyHybrid {
     }
 
     /// Query events by resolution status (e.g. Resolved, Cancelled). Paginated.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn query_events_by_status(
         env: Env,
         status: MarketState,
@@ -2621,6 +2930,14 @@ impl PredictifyHybrid {
     }
 
     /// Query events by category (oracle feed_id). Paginated.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn query_events_by_category(
         env: Env,
         category: String,
@@ -2673,6 +2990,14 @@ impl PredictifyHybrid {
     /// - Minimum fee: 0% (0 basis points)
     /// - Maximum fee: 10% (1000 basis points)
     /// - Default fee: 2% (200 basis points)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn set_platform_fee(env: Env, admin: Address, fee_percentage: i128) -> Result<(), Error> {
         // Require authentication
         admin.require_auth();
@@ -2697,12 +3022,27 @@ impl PredictifyHybrid {
         let fee_key = Symbol::new(&env, "platform_fee");
         env.storage().persistent().set(&fee_key, &fee_percentage);
 
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::FeeConfigUpdated,
+            admin.clone(),
+            Map::new(&env),
+        );
+
         Ok(())
     }
 
     /// Set global minimum and maximum bet limits (admin only).
     /// Applies to all events that do not have per-event limits.
     /// Rejects if min > max or outside absolute bounds (MIN_BET_AMOUNT..=MAX_BET_AMOUNT).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn set_global_bet_limits(
         env: Env,
         admin: Address,
@@ -2718,15 +3058,31 @@ impl PredictifyHybrid {
         if admin != stored_admin {
             return Err(Error::Unauthorized);
         }
-        let limits = BetLimits { min_bet, max_bet };
+        let limits = crate::types::BetLimits { min_bet, max_bet };
         crate::bets::set_global_bet_limits(&env, &limits)?;
         let scope = Symbol::new(&env, "global");
         EventEmitter::emit_bet_limits_updated(&env, &admin, &scope, min_bet, max_bet);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::BetLimitsUpdated,
+            admin.clone(),
+            Map::new(&env),
+        );
+
         Ok(())
     }
 
     /// Set per-event minimum and maximum bet limits (admin only).
     /// Overrides global limits for the given market.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn set_event_bet_limits(
         env: Env,
         admin: Address,
@@ -2750,6 +3106,14 @@ impl PredictifyHybrid {
     }
 
     /// Get effective bet limits for a market (per-event if set, else global, else defaults).
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_effective_bet_limits(env: Env, market_id: Symbol) -> BetLimits {
         crate::bets::get_effective_bet_limits(&env, &market_id)
     }
@@ -2759,6 +3123,14 @@ impl PredictifyHybrid {
     /// - `max_staleness_secs`: maximum allowed age in seconds.
     /// - `max_confidence_bps`: maximum confidence interval in basis points.
     /// Per-event overrides, if set, take precedence over this global config.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn set_oracle_val_cfg_global(
         env: Env,
         admin: Address,
@@ -2780,12 +3152,28 @@ impl PredictifyHybrid {
             max_confidence_bps,
         };
         crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::OracleConfigUpdated,
+            admin.clone(),
+            Map::new(&env),
+        );
+
         Ok(())
     }
 
     /// Set per-event oracle validation config (admin only).
     ///
     /// Overrides global validation settings for the given market.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn set_oracle_val_cfg_event(
         env: Env,
         admin: Address,
@@ -2812,10 +3200,29 @@ impl PredictifyHybrid {
             &market_id,
             &config,
         )?;
+
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "market_id"), String::from_str(&env, "market_updated"));
+        
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::OracleConfigUpdated,
+            admin.clone(),
+            details,
+        );
+
         Ok(())
     }
 
     /// Get effective oracle validation config for a market.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_oracle_val_cfg_effective(
         env: Env,
         market_id: Symbol,
@@ -2861,6 +3268,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Withdrawal failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
         admin.require_auth();
 
@@ -2976,6 +3391,10 @@ impl PredictifyHybrid {
     /// This function requires admin authentication and should be used carefully.
     /// Excessive extensions may affect user trust and market integrity. All
     /// extensions are logged with timestamps and reasons for transparency.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn extend_deadline(
         env: Env,
         admin: Address,
@@ -3120,6 +3539,10 @@ impl PredictifyHybrid {
     /// This function requires admin authentication and validates that no user
     /// funds are at risk. Updates are only allowed before any betting activity
     /// to maintain fairness and transparency.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn update_event_description(
         env: Env,
         admin: Address,
@@ -3184,6 +3607,10 @@ impl PredictifyHybrid {
             &new_description,
             &admin,
         );
+
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "description"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
 
         Ok(())
     }
@@ -3257,6 +3684,10 @@ impl PredictifyHybrid {
     /// This function requires admin authentication and validates that no user
     /// funds are at risk. Updates are only allowed before any betting activity
     /// to maintain fairness and transparency.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn update_event_outcomes(
         env: Env,
         admin: Address,
@@ -3329,6 +3760,10 @@ impl PredictifyHybrid {
             &admin,
         );
 
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "outcomes"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+
         Ok(())
     }
 
@@ -3379,6 +3814,10 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Update failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn update_event_category(
         env: Env,
         admin: Address,
@@ -3432,6 +3871,10 @@ impl PredictifyHybrid {
 
         // Emit category update event
         EventEmitter::emit_category_updated(&env, &market_id, &old_category, &category, &admin);
+
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "category"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
 
         Ok(())
     }
@@ -3491,6 +3934,10 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Update failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn update_event_tags(
         env: Env,
         admin: Address,
@@ -3552,6 +3999,10 @@ impl PredictifyHybrid {
         // Emit tags update event
         EventEmitter::emit_tags_updated(&env, &market_id, &old_tags, &tags, &admin);
 
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "update"), String::from_str(&env, "tags"));
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+
         Ok(())
     }
 
@@ -3569,6 +4020,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// Tuple of (events, next_cursor)
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn query_events_by_tags(
         env: Env,
         tags: Vec<String>,
@@ -3639,6 +4098,14 @@ impl PredictifyHybrid {
     /// 3. Bet status is updated to "Refunded"
     /// 4. Market state is updated to "Cancelled"
     /// 5. Cancellation and refund events are emitted
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn cancel_event(
         env: Env,
         admin: Address,
@@ -3698,6 +4165,12 @@ impl PredictifyHybrid {
         // Calculate total refunded (sum of all bets)
         let total_refunded = market.total_staked;
 
+        let mut details = Map::new(&env);
+        if let Some(r) = &reason {
+            details.set(Symbol::new(&env, "reason"), r.clone());
+        }
+        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::EventCancelled, admin.clone(), details);
+
         // Emit cancellation event
         EventEmitter::emit_state_change_event(
             &env,
@@ -3719,6 +4192,14 @@ impl PredictifyHybrid {
     /// timeout has passed since market end, or (2) caller is admin (confirmed failure).
     /// Refunds full bet amount per user (no fee deduction). Marks market as cancelled and
     /// prevents further resolution. Emits refund events. Idempotent when already cancelled.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn refund_on_oracle_failure(
         env: Env,
         caller: Address,
@@ -3776,6 +4257,14 @@ impl PredictifyHybrid {
     }
 
     /// Extend market duration (admin only)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn extend_market(
         env: Env,
         admin: Address,
@@ -3811,6 +4300,14 @@ impl PredictifyHybrid {
     // ===== STORAGE OPTIMIZATION FUNCTIONS =====
 
     /// Compress market data for storage optimization
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn compress_market_data(
         env: Env,
         market_id: Symbol,
@@ -3824,35 +4321,92 @@ impl PredictifyHybrid {
     }
 
     /// Clean up old market data based on age and state
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn cleanup_old_market_data(env: Env, market_id: Symbol) -> Result<bool, Error> {
         storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)
     }
 
     /// Migrate storage format from old to new format
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn migrate_storage_format(
         env: Env,
         from_format: storage::StorageFormat,
         to_format: storage::StorageFormat,
     ) -> Result<storage::StorageMigration, Error> {
-        storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format)
+        let result = storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::StorageMigrated,
+            env.current_contract_address(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Monitor storage usage and return statistics
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn monitor_storage_usage(env: Env) -> Result<storage::StorageUsageStats, Error> {
         storage::StorageOptimizer::monitor_storage_usage(&env)
     }
 
     /// Optimize storage layout for a specific market
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn optimize_storage_layout(env: Env, market_id: Symbol) -> Result<bool, Error> {
         storage::StorageOptimizer::optimize_storage_layout(&env, &market_id)
     }
 
     /// Get storage usage statistics
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_storage_usage_statistics(env: Env) -> Result<storage::StorageUsageStats, Error> {
         storage::StorageOptimizer::get_storage_usage_statistics(&env)
     }
 
     /// Validate storage integrity for a specific market
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_storage_integrity(
         env: Env,
         market_id: Symbol,
@@ -3861,16 +4415,40 @@ impl PredictifyHybrid {
     }
 
     /// Get storage configuration
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_storage_config(env: Env) -> storage::StorageConfig {
         storage::StorageOptimizer::get_storage_config(&env)
     }
 
     /// Update storage configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn update_storage_config(env: Env, config: storage::StorageConfig) -> Result<(), Error> {
         storage::StorageOptimizer::update_storage_config(&env, &config)
     }
 
     /// Calculate storage cost for a market
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn calculate_storage_cost(env: Env, market_id: Symbol) -> Result<u64, Error> {
         let market = match markets::MarketStateManager::get_market(&env, &market_id) {
             Ok(m) => m,
@@ -3881,6 +4459,14 @@ impl PredictifyHybrid {
     }
 
     /// Get storage efficiency score for a market
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_storage_efficiency_score(env: Env, market_id: Symbol) -> Result<u32, Error> {
         let market = match markets::MarketStateManager::get_market(&env, &market_id) {
             Ok(m) => m,
@@ -3891,6 +4477,14 @@ impl PredictifyHybrid {
     }
 
     /// Get storage recommendations for a market
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_storage_recommendations(env: Env, market_id: Symbol) -> Result<Vec<String>, Error> {
         let market = match markets::MarketStateManager::get_market(&env, &market_id) {
             Ok(m) => m,
@@ -3903,6 +4497,14 @@ impl PredictifyHybrid {
     // ===== ERROR RECOVERY FUNCTIONS =====
 
     /// Recover from an error using appropriate recovery strategy
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn recover_from_error(
         env: Env,
         error: Error,
@@ -3912,6 +4514,14 @@ impl PredictifyHybrid {
     }
 
     /// Validate error recovery configuration and state
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_error_recovery(
         env: Env,
         recovery: errors::ErrorRecovery,
@@ -3920,16 +4530,40 @@ impl PredictifyHybrid {
     }
 
     /// Get current error recovery status and statistics
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_error_recovery_status(env: Env) -> Result<errors::ErrorRecoveryStatus, Error> {
         errors::ErrorHandler::get_error_recovery_status(&env)
     }
 
     /// Emit error recovery event for monitoring and logging
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn emit_error_recovery_event(env: Env, recovery: errors::ErrorRecovery) {
         errors::ErrorHandler::emit_error_recovery_event(&env, &recovery);
     }
 
     /// Validate resilience patterns configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_resilience_patterns(
         env: Env,
         patterns: Vec<errors::ResiliencePattern>,
@@ -3938,6 +4572,14 @@ impl PredictifyHybrid {
     }
 
     /// Document error recovery procedures and best practices
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn document_error_recovery(env: Env) -> Result<soroban_sdk::Map<String, String>, Error> {
         errors::ErrorHandler::document_error_recovery_procedures(&env)
     }
@@ -3945,11 +4587,27 @@ impl PredictifyHybrid {
     // ===== EDGE CASE HANDLING ENTRY POINTS =====
 
     /// Handle zero stake scenario for a specific market
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn handle_zero_stake_scenario(env: Env, market_id: Symbol) -> Result<(), Error> {
         edge_cases::EdgeCaseHandler::handle_zero_stake_scenario(&env, market_id)
     }
 
     /// Implement tie-breaking mechanism for equal outcomes
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn implement_tie_breaking_mechanism(
         env: Env,
         outcomes: Vec<String>,
@@ -3958,11 +4616,27 @@ impl PredictifyHybrid {
     }
 
     /// Detect orphaned markets and return their IDs
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn detect_orphaned_markets(env: Env) -> Result<Vec<Symbol>, Error> {
         edge_cases::EdgeCaseHandler::detect_orphaned_markets(&env)
     }
 
     /// Handle partial resolution with incomplete data
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn handle_partial_resolution(
         env: Env,
         market_id: Symbol,
@@ -3972,6 +4646,14 @@ impl PredictifyHybrid {
     }
 
     /// Validate edge case handling scenario
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_edge_case_handling(
         env: Env,
         scenario: edge_cases::EdgeCaseScenario,
@@ -3980,29 +4662,70 @@ impl PredictifyHybrid {
     }
 
     /// Run comprehensive edge case testing scenarios
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn test_edge_case_scenarios(env: Env) -> Result<(), Error> {
         edge_cases::EdgeCaseHandler::test_edge_case_scenarios(&env)
     }
 
     /// Get comprehensive edge case statistics
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_edge_case_statistics(env: Env) -> Result<edge_cases::EdgeCaseStats, Error> {
         edge_cases::EdgeCaseHandler::get_edge_case_statistics(&env)
     }
 
     // ===== RECOVERY PUBLIC METHODS =====
     /// Initiates or performs recovery of a potentially corrupted market state. Only admin.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn recover_market_state(env: Env, admin: Address, market_id: Symbol) -> bool {
         admin.require_auth();
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id) {
+        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id) {
             Ok(res) => res,
             Err(e) => panic_with_error!(env, e),
-        }
+        };
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::ErrorRecovered,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Executes partial refund mechanism for selected users in a failed/corrupted market. Only admin.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn partial_refund_mechanism(
         env: Env,
         admin: Address,
@@ -4013,13 +4736,30 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        match crate::recovery::RecoveryManager::partial_refund_mechanism(&env, &market_id, &users) {
+        let result = match crate::recovery::RecoveryManager::partial_refund_mechanism(&env, &market_id, &users) {
             Ok(total_refunded) => total_refunded,
             Err(e) => panic_with_error!(env, e),
-        }
+        };
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::PartialRefundExecuted,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Validates market state integrity; returns true if consistent.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_market_state_integrity(env: Env, market_id: Symbol) -> bool {
         match crate::recovery::RecoveryValidator::validate_market_state_integrity(&env, &market_id)
         {
@@ -4029,6 +4769,14 @@ impl PredictifyHybrid {
     }
 
     /// Returns recovery status for a market.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_recovery_status(env: Env, market_id: Symbol) -> String {
         crate::recovery::RecoveryManager::get_recovery_status(&env, &market_id)
             .unwrap_or_else(|_| String::from_str(&env, "unknown"))
@@ -4037,11 +4785,27 @@ impl PredictifyHybrid {
     // ===== VERSIONING FUNCTIONS =====
 
     /// Track contract version for versioning system
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
         versioning::VersionManager::new(&env).track_contract_version(&env, version)
     }
 
     /// Migrate data between contract versions
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn migrate_data_between_versions(
         env: Env,
         old_version: versioning::Version,
@@ -4055,6 +4819,14 @@ impl PredictifyHybrid {
     }
 
     /// Validate version compatibility
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_version_compatibility(
         env: Env,
         old_version: versioning::Version,
@@ -4068,21 +4840,53 @@ impl PredictifyHybrid {
     }
 
     /// Upgrade to a specific version
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
         versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)
     }
 
     /// Rollback to a specific version
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
         versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)
     }
 
     /// Get version history
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_version_history(env: Env) -> Result<versioning::VersionHistory, Error> {
         versioning::VersionManager::new(&env).get_version_history(&env)
     }
 
     /// Test version migration
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn test_version_migration(
         env: Env,
         migration: versioning::VersionMigration,
@@ -4093,6 +4897,14 @@ impl PredictifyHybrid {
     // ===== MONITORING FUNCTIONS =====
 
     /// Monitor market health for a specific market
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn monitor_market_health(
         env: Env,
         market_id: Symbol,
@@ -4101,6 +4913,14 @@ impl PredictifyHybrid {
     }
 
     /// Monitor oracle health for a specific oracle provider
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn monitor_oracle_health(
         env: Env,
         oracle: OracleProvider,
@@ -4109,6 +4929,14 @@ impl PredictifyHybrid {
     }
 
     /// Monitor fee collection performance
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn monitor_fee_collection(
         env: Env,
         timeframe: monitoring::TimeFrame,
@@ -4117,6 +4945,14 @@ impl PredictifyHybrid {
     }
 
     /// Monitor dispute resolution performance
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn monitor_dispute_resolution(
         env: Env,
         market_id: Symbol,
@@ -4125,6 +4961,14 @@ impl PredictifyHybrid {
     }
 
     /// Get comprehensive contract performance metrics
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_contract_performance_metrics(
         env: Env,
         timeframe: monitoring::TimeFrame,
@@ -4133,6 +4977,14 @@ impl PredictifyHybrid {
     }
 
     /// Emit monitoring alert
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn emit_monitoring_alert(
         env: Env,
         alert: monitoring::MonitoringAlert,
@@ -4141,6 +4993,14 @@ impl PredictifyHybrid {
     }
 
     /// Validate monitoring data integrity
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_monitoring_data(
         env: Env,
         data: monitoring::MonitoringData,
@@ -4151,6 +5011,14 @@ impl PredictifyHybrid {
     // ===== ORACLE FALLBACK FUNCTIONS =====
 
     /// Get oracle data with backup if primary fails
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_oracle_with_backup(
         env: Env,
         market_id: Symbol,
@@ -4211,6 +5079,14 @@ impl PredictifyHybrid {
     }
 
     /// Check if oracle is working
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn check_oracle_status(
         env: Env,
         oracle: OracleProvider,
@@ -4226,6 +5102,14 @@ impl PredictifyHybrid {
     // ===== MULTI-ADMIN MANAGEMENT FUNCTIONS =====
 
     /// Add a new admin with specified role (SuperAdmin only)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn add_admin(
         env: Env,
         current_admin: Address,
@@ -4237,6 +5121,14 @@ impl PredictifyHybrid {
     }
 
     /// Remove an admin from the system (SuperAdmin only)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn remove_admin(
         env: Env,
         current_admin: Address,
@@ -4247,6 +5139,14 @@ impl PredictifyHybrid {
     }
 
     /// Update an admin's role (SuperAdmin only)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn update_admin_role(
         env: Env,
         current_admin: Address,
@@ -4258,6 +5158,14 @@ impl PredictifyHybrid {
     }
 
     /// Validate admin permission for specific action
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_admin_permission(
         env: Env,
         admin: Address,
@@ -4267,27 +5175,67 @@ impl PredictifyHybrid {
     }
 
     /// Get all admin roles in the system
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_admin_roles(env: Env) -> Map<Address, AdminRole> {
         AdminManager::get_admin_roles(&env)
     }
 
     /// Get comprehensive admin analytics
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_admin_analytics(env: Env) -> AdminAnalyticsResult {
         admin::EnhancedAdminAnalytics::get_admin_analytics(&env)
     }
 
     /// Migrate from single-admin to multi-admin system
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn migrate_to_multi_admin(env: Env, admin: Address) -> Result<(), Error> {
         admin.require_auth();
         admin::AdminSystemIntegration::migrate_to_multi_admin(&env)
     }
 
     /// Check if multi-admin migration is complete
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn is_multi_admin_migrated(env: Env) -> bool {
         admin::AdminSystemIntegration::is_migrated(&env)
     }
 
     /// Check role permissions against a specific permission
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn check_role_permissions(env: Env, role: AdminRole, permission: AdminPermission) -> bool {
         AdminManager::check_role_permissions(&env, role, permission)
     }
@@ -4331,13 +5279,30 @@ impl PredictifyHybrid {
     /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash)?;
     /// # Ok::<(), predictify_hybrid::errors::Error>(())
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn upgrade_contract(
         env: Env,
         admin: Address,
         new_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         admin.require_auth();
-        upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash)
+        let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::ContractUpgraded,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Rollback contract to previous version
@@ -4355,13 +5320,30 @@ impl PredictifyHybrid {
     ///
     /// * `Ok(())` if rollback succeeds
     /// * `Err(Error)` if authorization fails or rollback is invalid
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn rollback_upgrade(
         env: Env,
         admin: Address,
         rollback_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         admin.require_auth();
-        upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash)
+        let result = upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::UpgradeRolledBack,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        result
     }
 
     /// Get current contract version
@@ -4372,6 +5354,14 @@ impl PredictifyHybrid {
     ///
     /// * `Ok(Version)` - Current contract version
     /// * `Err(Error)` - If version cannot be retrieved
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_contract_version(env: Env) -> Result<versioning::Version, Error> {
         upgrade_manager::UpgradeManager::get_contract_version(&env)
     }
@@ -4383,6 +5373,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// * `Ok(bool)` - True if upgrade is available
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn check_upgrade_available(env: Env) -> Result<bool, Error> {
         upgrade_manager::UpgradeManager::check_upgrade_available(&env)
     }
@@ -4394,6 +5392,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// * `Ok(Vec<UpgradeRecord>)` - List of all upgrade records
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_upgrade_history(env: Env) -> Result<Vec<upgrade_manager::UpgradeRecord>, Error> {
         upgrade_manager::UpgradeManager::get_upgrade_history(&env)
     }
@@ -4405,6 +5411,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// * `Ok(UpgradeStats)` - Upgrade statistics and analytics
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_upgrade_statistics(env: Env) -> Result<upgrade_manager::UpgradeStats, Error> {
         upgrade_manager::UpgradeManager::get_upgrade_statistics(&env)
     }
@@ -4422,6 +5436,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// * `Ok(CompatibilityCheckResult)` - Detailed compatibility analysis
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_upgrade_compatibility(
         env: Env,
         proposal: upgrade_manager::UpgradeProposal,
@@ -4441,6 +5463,14 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// * `Ok(bool)` - True if upgrade would succeed
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn test_upgrade_safety(
         env: Env,
         proposal: upgrade_manager::UpgradeProposal,
@@ -4489,6 +5519,10 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Analytics unavailable: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market_statistics(
         env: Env,
         market_id: Symbol,
@@ -4529,6 +5563,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Voting analytics unavailable: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_voting_analytics(
         env: Env,
         market_id: Symbol,
@@ -4569,6 +5611,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Oracle stats unavailable: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_oracle_performance_stats(
         env: Env,
         oracle: OracleProvider,
@@ -4608,6 +5658,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Fee analytics unavailable: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_fee_analytics(
         env: Env,
         timeframe: market_analytics::TimeFrame,
@@ -4648,6 +5706,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Dispute analytics unavailable: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_dispute_analytics(
         env: Env,
         market_id: Symbol,
@@ -4689,6 +5755,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Participation metrics unavailable: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_participation_metrics(
         env: Env,
         market_id: Symbol,
@@ -4734,6 +5808,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Comparison analytics unavailable: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market_comparison_analytics(
         env: Env,
         markets: Vec<Symbol>,
@@ -4782,6 +5864,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Benchmark failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn benchmark_gas_usage(
         env: Env,
         function: String,
@@ -4831,6 +5921,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Storage benchmark failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn benchmark_storage_usage(
         env: Env,
         operation: performance_benchmarks::StorageOperation,
@@ -4875,6 +5973,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Oracle benchmark failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn benchmark_oracle_performance(
         env: Env,
         oracle: OracleProvider,
@@ -4925,6 +6031,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Batch benchmark failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn benchmark_batch_operations(
         env: Env,
         operations: Vec<performance_benchmarks::BatchOperation>,
@@ -4968,6 +6082,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Scalability benchmark failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn benchmark_scalability(
         env: Env,
         market_size: u32,
@@ -5014,6 +6136,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Report generation failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn generate_performance_report(
         env: Env,
         benchmark_suite: performance_benchmarks::PerformanceBenchmarkSuite,
@@ -5058,6 +6188,14 @@ impl PredictifyHybrid {
     ///     Err(e) => println!("Validation failed: {:?}", e),
     /// }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn validate_performance_thresholds(
         env: Env,
         metrics: performance_benchmarks::PerformanceMetrics,
@@ -5068,11 +6206,27 @@ impl PredictifyHybrid {
         )
     }
     /// Get platform-wide statistics
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_platform_statistics(env: Env) -> PlatformStatistics {
         statistics::StatisticsManager::get_platform_stats(&env)
     }
 
     /// Get user-specific statistics
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_user_statistics(env: Env, user: Address) -> UserStatistics {
         statistics::StatisticsManager::get_user_stats(&env, &user)
     }

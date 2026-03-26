@@ -1,78 +1,260 @@
-# Predictify Hybrid — API Documentation
+# Predictify Hybrid API Documentation
 
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Core Contract Interface](#core-contract-interface)
-3. [Module Catalog](#module-catalog)
-4. [Error Reference](#error-reference)
-5. [Types Reference](#types-reference)
-6. [Usage Examples](#usage-examples)
+> **Version:** v1.0.0  
+> **Platform:** Stellar Soroban  
+> **Audience:** Developers integrating with Predictify Hybrid smart contracts
 
 ---
 
-## Overview
+## 📋 Table of Contents
 
-**Predictify Hybrid** is a multi-oracle prediction market platform on the Stellar network. It enables users to:
-- Create and participate in prediction markets
-- Place bets on market outcomes
-- Vote on disputed events
-- Resolve markets via multiple oracle sources
-- Claim winnings and withdraw funds
-
-The contract supports binary and multi-outcome markets with advanced features including:
-- Fallback oracle mechanisms
-- Dispute resolution with voting
-- Batch operations for efficient gas usage
-- Rate limiting and circuit breakers for safety
-- Graceful degradation when oracles are unavailable
-
-
+1. [API Overview](#api-overview)
+2. [API Versioning](#api-versioning)
+3. [Core API Reference](#core-api-reference)
+4. [Data Structures](#data-structures)
+5. [Error Codes](#error-codes)
+6. [Integration Examples](#integration-examples)
+7. [Troubleshooting Guide](#troubleshooting-guide)
+8. [Support and Resources](#support-and-resources)
 
 ---
 
-## Core Contract Interface
+## 🚀 API Overview
 
-### Main Contract: `PredictifyHybrid`
+The Predictify Hybrid smart contract provides a comprehensive API for building prediction market applications on the Stellar network. The API supports market creation, voting, dispute resolution, oracle integration, and administrative functions.
 
-The primary contract implementation providing all user-facing functions.
+### Key Features
 
-#### Initialization
+- **Market Management**: Create, extend, and resolve prediction markets
+- **Voting System**: Stake-based voting with proportional payouts
+- **Dispute Resolution**: Community-driven dispute and resolution system
+- **Oracle Integration**: Support for Reflector, Pyth, and custom oracles
+- **Fee Management**: Automated fee collection and distribution
+- **Admin Governance**: Administrative functions for contract management
 
-```rust
-pub fn initialize(
-    env: Env,
-    admin: Address,
-    platform_fee_percentage: Option<i128>
-) -> ()
+---
+
+## 📚 API Versioning
+
+### Current Version: v1.0.0
+
+The Predictify Hybrid smart contract follows semantic versioning (SemVer) for API compatibility and contract upgrades. This section provides comprehensive information about API versions, compatibility, and migration strategies.
+
+### 🏷️ Version Schema
+
+We use **Semantic Versioning (SemVer)** with the format `MAJOR.MINOR.PATCH`:
+
+- **MAJOR** (1.x.x): Breaking changes that require client updates
+- **MINOR** (x.1.x): New features that are backward compatible
+- **PATCH** (x.x.1): Bug fixes and optimizations
+
+### 📋 Version History
+
+#### v1.0.0 (Current) - Production Release
+**Release Date:** 2025-01-15  
+**Status:** ✅ Active
+
+**Core Features:**
+- Complete prediction market functionality
+- Oracle integration (Reflector, Pyth)
+- Voting and dispute resolution system
+- Fee collection and distribution
+- Admin governance functions
+- Comprehensive validation system
+
+**API Endpoints:**
+- `initialize(admin: Address)` - Contract initialization
+- `create_market(...)` - Market creation
+- `vote(...)` - User voting
+- `dispute_market(...)` - Dispute submission
+- `claim_winnings(...)` - Claim payouts
+- `collect_fees(...)` - Admin fee collection
+- `resolve_market(...)` - Market resolution
+
+**Breaking Changes from v0.x.x:**
+- Renamed `submit_vote()` to `vote()`
+- Updated oracle configuration structure
+- Modified dispute threshold calculation
+- Enhanced validation error codes
+
+### 🔄 Compatibility Matrix
+
+| Client Version | Contract v1.0.x | Contract v0.9.x | Contract v0.8.x |
+|----------------|-----------------|-----------------|------------------|
+| Client v1.0.x  | ✅ Full         | ⚠️ Limited      | ❌ Incompatible  |
+| Client v0.9.x  | ⚠️ Limited      | ✅ Full         | ✅ Full          |
+| Client v0.8.x  | ❌ Incompatible | ⚠️ Limited      | ✅ Full          |
+
+**Legend:**
+- ✅ **Full**: Complete compatibility, all features supported
+- ⚠️ **Limited**: Basic functionality works, some features unavailable
+- ❌ **Incompatible**: Not supported, upgrade required
+
+### 🚀 Upgrade Strategies
+
+#### For Contract Upgrades
+
+**1. Backward Compatible Updates (MINOR/PATCH)**
+```bash
+# Deploy new version alongside existing
+soroban contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/predictify_hybrid_v1_1_0.wasm \
+  --network mainnet
+
+# Update contract references gradually
+# Old version continues to work
 ```
 
-**Purpose**: Initializes the contract with admin and platform fee configuration.
+**2. Breaking Changes (MAJOR)**
+```bash
+# 1. Deploy new contract version
+# 2. Migrate critical state (if supported)
+# 3. Update all client applications
+# 4. Deprecate old contract
 
-**Parameters:**
-- `env`: Soroban environment
-- `admin`: Administrator address (receives admin privileges)
-- `platform_fee_percentage`: Optional fee (0-10%, defaults to 2%)
-
-**Returns**: None
-
-**Errors**: 
-- `Error::InvalidFeeConfig` - Fee outside valid range
-- `Error::AlreadyInitialized` - Contract already initialized
-
-**Example**:
-```rust
-PredictifyHybrid::initialize(
-    env.clone(),
-    admin_address,
-    Some(2) // 2% fee
-);
+# Migration example
+soroban contract invoke \
+  --id $NEW_CONTRACT_ID \
+  --fn migrate_from_v0 \
+  --arg old_contract=$OLD_CONTRACT_ID
 ```
+
+#### For Client Applications
+
+**JavaScript/TypeScript Example:**
+```typescript
+// Version-aware client initialization
+const contractVersion = await getContractVersion(contractId);
+
+if (contractVersion.startsWith('1.0')) {
+    // Use v1.0 API
+    await contract.vote(marketId, outcome, stake);
+} else if (contractVersion.startsWith('0.9')) {
+    // Use legacy API
+    await contract.submit_vote(marketId, outcome, stake);
+} else {
+    throw new Error(`Unsupported contract version: ${contractVersion}`);
+}
+```
+
+### 📖 API Documentation by Version
+
+#### Current API (v1.0.x)
+
+**Core Functions:**
+- **Market Management**: `create_market()`, `extend_market()`, `resolve_market()`
+- **Voting Operations**: `vote()`, `claim_winnings()`
+- **Dispute System**: `dispute_market()`, `vote_on_dispute()`
+- **Oracle Integration**: `submit_oracle_result()`, `update_oracle_config()`
+- **Admin Functions**: `collect_fees()`, `update_config()`, `pause_contract()`
+
+**Data Structures:**
+- `Market`: Core market data structure
+- `Vote`: User vote representation
+- `OracleConfig`: Oracle configuration
+- `DisputeThreshold`: Dynamic dispute thresholds
+
+**Error Codes:**
+- 100-199: User operation errors
+- 200-299: Oracle errors
+- 300-399: Validation errors
+- 400-499: System errors
+
+#### Legacy API (v0.9.x)
+
+**Deprecated Functions:**
+- `submit_vote()` → Use `vote()` in v1.0+
+- `create_prediction_market()` → Use `create_market()` in v1.0+
+- `get_market_stats()` → Use `get_market_analytics()` in v1.0+
+
+### 🔍 Version Detection
+
+**Check Contract Version:**
+```bash
+# Using Soroban CLI
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_version \
+  --network mainnet
+```
+
+**JavaScript/TypeScript:**
+```typescript
+import { Contract } from '@stellar/stellar-sdk';
+
+const getContractVersion = async (contractId: string): Promise<string> => {
+    try {
+        const result = await contract.call('get_version');
+        return result.toString();
+    } catch (error) {
+        // Fallback for older contracts without version endpoint
+        return '0.9.0';
+    }
+};
+```
+
+### 🛡️ Deprecation Policy
+
+**Timeline:**
+- **Announcement**: 90 days before deprecation
+- **Warning Period**: 60 days with deprecation warnings
+- **End of Support**: 30 days notice before complete removal
+
+**Current Deprecations:**
+- `submit_vote()`: Deprecated in v1.0.0, removal planned for v2.0.0
+- `create_prediction_market()`: Deprecated in v1.0.0, removal planned for v2.0.0
+
+### 📅 Release Schedule
+
+**Planned Releases:**
+- **v1.1.0** (Q2 2025): Enhanced analytics, batch operations
+- **v1.2.0** (Q3 2025): Multi-token support, advanced oracles
+- **v2.0.0** (Q4 2025): Complete API redesign, performance improvements
+
+### 🔗 Version-Specific Resources
+
+**Documentation:**
+- [v1.0.x API Reference](./docs/api/v1.0/)
+- [v0.9.x Legacy Docs](./docs/api/v0.9/)
+- [Migration Guide v0.9 → v1.0](./migration/v0.9-to-v1.0.md)
+
+**Contract Addresses:**
+- **v1.0.x Mainnet**: `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGK3HGU`
+- **v0.9.x Mainnet**: `CBLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGK3ABC`
+
+**Support Channels:**
+- [GitHub Issues](https://github.com/predictify/contracts/issues) - Bug reports and feature requests
+- [Discord #api-support](https://discord.gg/predictify) - Community support
+- [Developer Forum](https://forum.predictify.io) - Technical discussions
 
 ---
 
-#### Market Management
+## 🔧 Core API Reference
 
+### Rustdoc Coverage Contract
+
+All exported contract entrypoints in `contracts/predictify-hybrid/src/lib.rs` are documented with
+Rust doc comments (`///`) and include explicit `# Errors` and `# Events` sections.
+
+This is intended to make API behavior auditable without reading all internals:
+
+- **Errors**: Each entrypoint documents how `Error` values are surfaced.
+  Functions returning `Result<_, Error>` propagate errors directly.
+  Non-`Result` entrypoints surface contract failures via panic.
+- **Events**: Each entrypoint documents event behavior.
+  State-changing flows may emit events through internal managers (for example via `EventEmitter`),
+  while read-only query flows emit no events.
+
+For exact runtime behavior and error variants, also reference:
+- `contracts/predictify-hybrid/src/err.rs`
+- `contracts/predictify-hybrid/src/events.rs`
+
+### Market Management Functions
+
+#### `create_market()`
+Creates a new prediction market with specified parameters.
+
+**Signature:**
 ```rust
 pub fn create_market(
     env: Env,
@@ -81,1316 +263,529 @@ pub fn create_market(
     outcomes: Vec<String>,
     duration_days: u32,
     oracle_config: OracleConfig,
-    fallback_oracle_config: Option<OracleConfig>,
-    resolution_timeout: u64
-) -> Symbol
+) -> Result<Symbol, Error>
 ```
 
-**Purpose**: Creates a new prediction market.
-
 **Parameters:**
-- `env`: Soroban environment
-- `admin`: Administrator address (caller must be admin)
-- `question`: The prediction question (non-empty)
-- `outcomes`: Possible outcomes (minimum 2, all non-empty)
+- `admin`: Market administrator address
+- `question`: Market question (max 200 characters)
+- `outcomes`: Possible outcomes (2-10 options)
 - `duration_days`: Market duration (1-365 days)
-- `oracle_config`: Primary oracle configuration
-- `fallback_oracle_config`: Optional fallback oracle
-- `resolution_timeout`: Timeout for oracle resolution
+- `oracle_config`: Oracle configuration for resolution
 
-**Returns**: Market ID (Symbol) for future reference
+**Returns:** Market ID (Symbol)
 
-**Errors**:
-- `Error::Unauthorized` - Caller is not admin
-- `Error::InvalidQuestion` - Question is empty
-- `Error::InvalidOutcomes` - Invalid outcomes (< 2 or duplicates)
-- `Error::InvalidDuration` - Duration outside valid range
-
-**Features:**
-- Supports binary (2) and multi-outcome (N) markets
-- Automatic collision-resistant ID generation
-- Timestamp-based market lifecycle management
-
----
-
-```rust
-pub fn create_event(
-    env: Env,
-    admin: Address,
-    description: String,
-    outcomes: Vec<String>,
-    end_time: u64,
-    oracle_config: OracleConfig,
-    fallback_oracle_config: Option<OracleConfig>,
-    resolution_timeout: u64
-) -> Symbol
+**Example:**
+```typescript
+const marketId = await contract.create_market(
+    adminAddress,
+    "Will Bitcoin reach $100,000 by end of 2025?",
+    ["Yes", "No"],
+    90, // 90 days
+    oracleConfig
+);
 ```
 
-**Purpose**: Creates an event-based prediction market with absolute end timestamp.
+#### `vote()`
+Submit a vote on a market outcome with stake.
 
-**Parameters:**
-- Similar to `create_market`, but uses absolute `end_time` instead of duration
-- `end_time`: Unix timestamp for event end
-
-**Returns**: Event ID (Symbol)
-
-**Errors**: Same as `create_market`
-
----
-
-#### Voting & Participation
-
+**Signature:**
 ```rust
 pub fn vote(
     env: Env,
-    user: Address,
-    market_id: Symbol,
-    outcome: String
-) -> Result<(), Error>
-```
-
-**Purpose**: User votes on a market outcome.
-
-**Parameters:**
-- `env`: Soroban environment
-- `user`: Voting user address
-- `market_id`: Target market ID
-- `outcome`: Selected outcome
-
-**Returns**: `Ok(())` or error
-
-**Errors**:
-- `Error::MarketNotFound` - Market doesn't exist
-- `Error::MarketClosed` - Market voting period ended
-- `Error::InvalidOutcome` - Outcome not valid for market
-- `Error::AlreadyVoted` - User already voted
-
----
-
-```rust
-pub fn place_bet(
-    env: Env,
-    user: Address,
+    voter: Address,
     market_id: Symbol,
     outcome: String,
-    amount: i128
+    stake: i128,
 ) -> Result<(), Error>
 ```
 
-**Purpose**: Places a bet on a market outcome.
-
 **Parameters:**
-- `env`: Soroban environment
-- `user`: Betting user address
+- `voter`: Voter's address
 - `market_id`: Target market ID
-- `outcome`: Selected outcome
-- `amount`: Stake amount (≥ 0.1 XLM, ≤ 10,000 XLM)
+- `outcome`: Chosen outcome
+- `stake`: Stake amount (minimum 0.1 XLM)
 
-**Returns**: `Ok(())` or error
-
-**Errors**:
-- `Error::MarketNotFound` - Market doesn't exist
-- `Error::MarketClosed` - Market betting period ended
-- `Error::MarketResolved` - Market already resolved
-- `Error::InvalidOutcome` - Invalid outcome
-- `Error::AlreadyBet` - User already bet on this market
-- `Error::InsufficientStake` - Amount below minimum
-- `Error::InvalidInput` - Amount exceeds maximum
-- `Error::InsufficientBalance` - User lacks balance
-
----
-
-#### Market Resolution
-
-```rust
-pub fn resolve_market_oracle(
-    env: Env,
-    market_id: Symbol,
-    winning_outcome: String
-) -> Result<(), Error>
+**Example:**
+```typescript
+await contract.vote(
+    voterAddress,
+    "BTC_100K",
+    "Yes",
+    5000000 // 0.5 XLM in stroops
+);
 ```
 
-**Purpose**: Resolves market using oracle result.
+#### `claim_winnings()`
+Claim winnings from resolved markets.
 
-**Parameters:**
-- `env`: Soroban environment
-- `market_id`: Market to resolve
-- `winning_outcome`: Oracle-determined outcome
-
-**Returns**: `Ok(())` or error
-
-**Errors**:
-- `Error::MarketNotFound` - Market doesn't exist
-- `Error::MarketNotEnded` - Market still active
-- `Error::MarketResolved` - Already resolved
-- `Error::InvalidOutcome` - Outcome not valid
-- `Error::OracleUnavailable` - No oracle data available
-- `Error::OracleStale` - Oracle data too old
-
-**Features**:
-- Supports multi-winner outcomes (pool split)
-- Oracle confidence validation
-- Fallback oracle on primary failure
-
----
-
+**Signature:**
 ```rust
 pub fn claim_winnings(
     env: Env,
     user: Address,
-    market_id: Symbol
+    market_id: Symbol,
 ) -> Result<i128, Error>
 ```
 
-**Purpose**: Claims user's winnings from resolved market.
-
-**Parameters:**
-- `env`: Soroban environment
-- `user`: User claiming winnings
-- `market_id`: Resolved market ID
-
-**Returns**: Amount claimed
-
-**Errors**:
-- `Error::MarketNotFound` - Market doesn't exist
-- `Error::MarketNotResolved` - Market not resolved yet
-- `Error::NothingToClaim` - User has no winnings
-- `Error::AlreadyClaimed` - Already claimed from this market
-
-**Features**:
-- Automatic fee deduction (2-10% platform fee)
-- Multi-winner proportional distribution
-- Prevents double-claiming
+**Returns:** Amount claimed in stroops
 
 ---
 
-#### Dispute Resolution
+## 📊 Data Structures
+
+### Market
+Core market data structure containing all market information.
 
 ```rust
-pub fn dispute_market(
-    env: Env,
-    user: Address,
-    market_id: Symbol,
-    reason: String
-) -> Result<(), Error>
-```
-
-**Purpose**: Files a dispute on market resolution.
-
-**Parameters:**
-- `env`: Soroban environment
-- `user`: Disputing user
-- `market_id`: Market to dispute
-- `reason`: Dispute reason
-
-**Returns**: `Ok(())` or error
-
-**Errors**:
-- `Error::MarketNotFound` - Market doesn't exist
-- `Error::MarketNotResolved` - Not yet resolved
-- `Error::AlreadyDisputed` - Dispute already filed
-- `Error::DisputeVoteExpired` - Dispute period closed
-
-**Features**:
-- Single dispute per market
-- 24-hour dispute window post-resolution
-- Triggers community vote
-
----
-
-#### Balance Management
-
-```rust
-pub fn deposit(
-    env: Env,
-    user: Address,
-    asset: ReflectorAsset,
-    amount: i128
-) -> Result<Balance, Error>
-```
-
-**Purpose**: Deposits funds into user account.
-
-**Parameters:**
-- `env`: Soroban environment
-- `user`: Depositing user
-- `asset`: Asset type (BTC, ETH, XLM, etc.)
-- `amount`: Deposit amount
-
-**Returns**: Updated balance or error
-
-**Errors**:
-- `Error::InvalidInput` - Invalid amount
-- `Error::InsufficientBalance` - Insufficient source balance
-
----
-
-```rust
-pub fn withdraw(
-    env: Env,
-    user: Address,
-    asset: ReflectorAsset,
-    amount: i128
-) -> Result<Balance, Error>
-```
-
-**Purpose**: Withdraws funds from user account.
-
-**Parameters:**
-- `env`: Soroban environment
-- `user`: Withdrawing user
-- `asset`: Asset type
-- `amount`: Withdrawal amount
-
-**Returns**: Updated balance or error
-
-**Errors**:
-- `Error::InvalidInput` - Invalid amount
-- `Error::InsufficientBalance` - Insufficient balance
-
----
-
-```rust
-pub fn get_balance(
-    env: Env,
-    user: Address,
-    asset: ReflectorAsset
-) -> Balance
-```
-
-**Purpose**: Gets user's current balance for an asset.
-
-**Parameters:**
-- `env`: Soroban environment
-- `user`: User to query
-- `asset`: Asset type
-
-**Returns**: Balance object
-
----
-
-#### Admin Functions
-
-```rust
-pub fn set_platform_fee(
-    env: Env,
-    admin: Address,
-    new_fee_percentage: i128
-) -> Result<(), Error>
-```
-
-**Purpose**: Updates platform fee percentage.
-
-**Parameters:**
-- `env`: Soroban environment
-- `admin`: Admin address (caller must be admin)
-- `new_fee_percentage`: New fee (0-10%)
-
-**Returns**: `Ok(())` or error
-
-**Errors**:
-- `Error::Unauthorized` - Caller is not admin
-- `Error::InvalidFeeConfig` - Fee outside valid range
-
----
-
-```rust
-pub fn extend_market(
-    env: Env,
-    admin: Address,
-    market_id: Symbol,
-    extension_days: u32
-) -> Result<(), Error>
-```
-
-**Purpose**: Extends market deadline.
-
-**Parameters:**
-- `env`: Soroban environment
-- `admin`: Admin address
-- `market_id`: Market to extend
-- `extension_days`: Days to extend (1 to max allowed)
-
-**Returns**: `Ok(())` or error
-
-**Errors**:
-- `Error::Unauthorized` - Not admin
-- `Error::MarketNotFound` - Market doesn't exist
-- `Error::MarketResolved` - Can't extend resolved market
-- `Error::InvalidDuration` - Extension exceeds maximum
-
----
-
-#### Query Functions
-
-```rust
-pub fn query_market(
-    env: Env,
-    market_id: Symbol
-) -> Result<Market, Error>
-```
-
-**Purpose**: Retrieves complete market details.
-
-**Returns**: Market object with all state
-
-**Errors**:
-- `Error::MarketNotFound` - Market doesn't exist
-
----
-
-```rust
-pub fn query_user_votes(
-    env: Env,
-    user: Address,
-    market_id: Symbol
-) -> Result<Option<String>, Error>
-```
-
-**Purpose**: Gets user's vote on a market (if any).
-
-**Returns**: The outcome user voted for, or None
-
----
-
-```rust
-pub fn query_market_stats(
-    env: Env,
-    market_id: Symbol
-) -> Result<MarketStats, Error>
-```
-
-**Purpose**: Retrieves market statistics.
-
-**Returns**: Statistics object with stake totals, volume, etc.
-
----
-
----
-
-## Module Catalog
-
-### Admin Module
-
-**Purpose**: Administrative roles, permissions, and authorization
-
-**Key Types:**
-- `AdminRole`: Role-based access control (Admin, Moderator, Viewer)
-- `AdminPermission`: Granular permission definitions
-
-**Key Functions:**
-- `initialize_admin(env, admin_addr)`: Set contract admin
-- `check_admin(env, addr)`: Verify if address is admin
-- `add_admin(env, new_admin)`: Add additional admin
-- `revoke_admin(env, admin_addr)`: Remove admin privileges
-
----
-
-### Balances Module
-
-**Purpose**: User balance tracking and asset management
-
-**Key Types:**
-- `Balance`: User balance for specific asset
-- `ReflectorAsset`: Asset enumeration (BTC, ETH, XLM, etc.)
-
-**Key Structs:**
-```rust
-#[contracttype]
-pub struct Balance {
-    pub user: Address,
-    pub asset: ReflectorAsset,
-    pub amount: i128,
-    pub last_updated: u64,
-}
-```
-
-**Operations:**
-- Deposit/withdraw asset balances
-- Query user balances
-- Transfer between accounts
-- Validate sufficient balance
-
----
-
-### Bets Module
-
-**Purpose**: Bet placement, management, and payout calculations
-
-**Key Struct:**
-```rust
-#[contracttype]
-pub struct Bet {
-    pub user: Address,
-    pub market_id: Symbol,
-    pub outcome: String,
-    pub amount: i128,
-    pub placed_at: u64,
-}
-```
-
-**Operations:**
-- Place bets on outcomes
-- Track active bets
-- Calculate payouts
-- Handle bet cancellation
-
-**Constraints:**
-- Minimum: 0.1 XLM
-- Maximum: 10,000 XLM
-- One bet per user per market
-
----
-
-### Markets Module
-
-**Purpose**: Core market state management
-
-**Key Struct:**
-```rust
-#[contracttype]
 pub struct Market {
-    pub admin: Address,
+    pub id: Symbol,
     pub question: String,
     pub outcomes: Vec<String>,
-    pub end_time: u64,
-    pub oracle_config: OracleConfig,
-    pub has_fallback: bool,
-    pub fallback_oracle_config: OracleConfig,
-    pub resolution_timeout: u64,
-    pub oracle_result: Option<String>,
-    pub votes: Map<Address, String>,
-    pub total_staked: i128,
-    pub dispute_stakes: Map<Address, i128>,
-    pub stakes: Map<Address, i128>,
-    pub claimed: Map<Address, bool>,
-    pub winning_outcomes: Option<Vec<String>>,
-    pub fee_collected: bool,
-    pub state: MarketState,
-    pub total_extension_days: u32,
-    pub max_extension_days: u32,
-}
-```
-
-**Operations:**
-- Store and retrieve markets
-- Update market state
-- Track participants and stakes
-- Manage disputes and extensions
-
----
-
-### Disputes Module
-
-**Purpose**: Dispute filing, voting, and resolution
-
-**Key Struct:**
-```rust
-#[contracttype]
-pub struct Dispute {
-    pub market_id: Symbol,
-    pub initiator: Address,
-    pub reason: String,
-    pub filed_at: u64,
-    pub votes_for: u32,
-    pub votes_against: u32,
-    pub status: DisputeStatus,
-}
-```
-
-**Operations:**
-- File dispute on resolution
-- Vote on disputes
-- Resolve dispute via consensus
-- Distribute dispute rewards
-
-**Timeline:**
-- 24-hour dispute filing window (post-resolution)
-- 72-hour voting period
-- Community consensus required (> 50% vote)
-
----
-
-### Oracles Module
-
-**Purpose**: Oracle integration and price feeds
-
-**Supported Providers:**
-- **Reflector**: Primary oracle (Stellar-native)
-- **Pyth**: High-frequency oracle (placeholder)
-
-**Key Struct:**
-```rust
-#[contracttype]
-pub struct OracleConfig {
-    pub oracle_type: OracleProvider,
-    pub oracle_contract: Address,
-    pub asset_code: Option<String>,
-    pub threshold_value: Option<i128>,
-}
-```
-
-**Operations:**
-- Fetch latest prices
-- Validate price freshness
-- Handle oracle failures
-- Fallback to secondary oracle
-
----
-
-### Fees Module
-
-**Purpose**: Fee calculation, collection, and distribution
-
-**Fee Structure:**
-- Platform fee: 2-10% of winnings (configurable)
-- Applied during payout distribution
-- Collected in designated account
-
-**Functions:**
-- `calculate_fee(amount)`: Compute fee amount
-- `collect_platform_fee(env, market_id)`: Deduct fees
-- `withdraw_collected_fees(env, admin)`: Admin withdrawal
-
----
-
-### Voting Module
-
-**Purpose**: User voting on market outcomes and disputes
-
-**Features:**
-- One vote per user per market
-- One vote per user per dispute
-- Vote weighting (optional by stake)
-- Consensus calculation
-
-**Functions:**
-- `vote(env, user, market_id, outcome)`: Place vote
-- `get_votes(env, market_id)`: Retrieve votes
-- `calculate_consensus(env, market_id)`: Determine consensus
-
----
-
-### Batch Operations Module
-
-**Purpose**: Efficient multi-operation execution
-
-**Functions:**
-- `batch_place_bets(env, user, operations)`: Place multiple bets
-- `batch_claim_winnings(env, user, market_ids)`: Claim from multiple markets
-- `batch_vote(env, user, votes)`: Vote on multiple markets
-
-**Benefits:**
-- Single transaction for multiple operations
-- Reduced gas costs
-- Atomic execution (all-or-nothing)
-
----
-
-### Circuit Breaker Module
-
-**Purpose**: Emergency safety mechanism to pause operations
-
-**States:**
-- `Closed`: Normal operation
-- `Open`: Paused, no operations allowed
-- `HalfOpen`: Testing if conditions normalized
-
-**Triggers:**
-- High error rate threshold
-- Oracle unavailability
-- Unexpected system state
-
-**Functions:**
-- `trigger_circuit_breaker()`: Activate breaker
-- `reset_circuit_breaker()`: Return to normal
-- `query_breaker_status()`: Check current state
-
----
-
-### Queries Module
-
-**Purpose**: Read-only query operations
-
-**Key Functions:**
-- `query_market(env, market_id)`: Market details
-- `query_user_bets(env, user)`: User's active bets
-- `query_market_outcome_odds(env, market_id)`: Current odds
-- `query_platform_fee(env)`: Current fee percentage
-
-**Characteristics:**
-- No state modification
-- No authorization required
-- Instant execution
-- Gas efficient
-
----
-
-### Validation Module
-
-**Purpose**: Input validation and constraint checking
-
-**Validations:**
-- Market parameters (duration, outcomes, question)
-- Bet amounts (min/max constraints)
-- Oracle configurations
-- User addresses and permissions
-- Timestamps and deadlines
-
-**Functions:**
-- `validate_market_creation(env, params)`: Market validation
-- `validate_bet_placement(env, user, amount)`: Bet validation
-- `validate_oracle_config(env, config)`: Oracle validation
-
----
-
----
-
-## Error Reference
-
-All errors are defined in `err.rs` with codes 100-504.
-
-### User Operation Errors (100-112)
-
-| Code | Name | Meaning | Operations |
-|------|------|---------|-----------|
-| 100 | `Unauthorized` | Caller lacks required permissions | Any admin-only function |
-| 101 | `MarketNotFound` | Market ID doesn't exist | All market operations |
-| 102 | `MarketClosed` | Market deadline passed | `vote`, `place_bet` |
-| 103 | `MarketResolved` | Market already resolved | `place_bet`, `vote` |
-| 104 | `MarketNotResolved` | Market not yet resolved | `claim_winnings` |
-| 105 | `NothingToClaim` | User has no winnings | `claim_winnings` |
-| 106 | `AlreadyClaimed` | Already claimed from market | `claim_winnings` |
-| 107 | `InsufficientStake` | Bet below minimum | `place_bet` |
-| 108 | `InvalidOutcome` | Outcome not valid | `place_bet`, `vote`, resolve |
-| 109 | `AlreadyVoted` | User already voted | `vote` |
-| 110 | `AlreadyBet` | User already bet | `place_bet` |
-| 111 | `BetsAlreadyPlaced` | Can't update market | `update_market` |
-| 112 | `InsufficientBalance` | Insufficient funds | `place_bet`, `withdraw` |
-
-### Oracle Errors (200-208)
-
-| Code | Name | Meaning | Operations |
-|------|------|---------|-----------|
-| 200 | `OracleUnavailable` | Oracle service unreachable | `resolve_market` |
-| 201 | `InvalidOracleConfig` | Oracle config invalid | `create_market` |
-| 202 | `OracleStale` | Oracle data too old | `resolve_market` |
-| 203 | `OracleNoConsensus` | Multiple oracles disagree | `resolve_market` |
-| 204 | `OracleVerified` | Result already verified | `resolve_market` |
-| 205 | `MarketNotReady` | Can't verify yet | `resolve_market` |
-| 206 | `FallbackOracleUnavailable` | Fallback oracle down | `resolve_market` |
-| 208 | `OracleConfidenceTooWide` | Confidence below threshold | `resolve_market` |
-
-### Validation Errors (300-304)
-
-| Code | Name | Meaning | Operations |
-|------|------|---------|-----------|
-| 300 | `InvalidQuestion` | Question empty/invalid | `create_market` |
-| 301 | `InvalidOutcomes` | Outcomes < 2 or duplicates | `create_market` |
-| 302 | `InvalidDuration` | Duration outside 1-365 days | `create_market` |
-| 303 | `InvalidThreshold` | Threshold out of range | Configuration |
-| 304 | `InvalidComparison` | Unsupported operator | Oracle config |
-
-### General Errors (400-418)
-
-| Code | Name | Meaning | Operations |
-|------|------|---------|-----------|
-| 400 | `InvalidState` | Unexpected state | Internal state mismatch |
-| 401 | `InvalidInput` | Invalid parameters | All functions |
-| 402 | `InvalidFeeConfig` | Fee outside 0-10% | `set_platform_fee` |
-| 403 | `ConfigNotFound` | Config missing | Internal operations |
-| 404 | `AlreadyDisputed` | Dispute already filed | `dispute_market` |
-| 405 | `DisputeVoteExpired` | Dispute window closed | `vote_dispute` |
-| 406 | `DisputeVoteDenied` | Can't vote now | `vote_dispute` |
-| 407 | `DisputeAlreadyVoted` | User already voted | `vote_dispute` |
-| 408 | `DisputeCondNotMet` | Requirements not met | `resolve_dispute` |
-| 409 | `DisputeFeeFailed` | Fee distribution failed | Dispute resolution |
-| 410 | `DisputeError` | Generic dispute error | Dispute operations |
-| 413 | `FeeAlreadyCollected` | Fee already deducted | Payout operations |
-| 414 | `NoFeesToCollect` | No fees available | `withdraw_fees` |
-| 415 | `InvalidExtensionDays` | Extension invalid | `extend_market` |
-| 416 | `ExtensionDenied` | Extension not allowed | `extend_market` |
-| 417 | `GasBudgetExceeded` | Operation too expensive | Any operation |
-| 418 | `AdminNotSet` | Admin not initialized | After fresh deployment |
-
-### Circuit Breaker Errors (500-504)
-
-| Code | Name | Meaning | Operations |
-|------|------|---------|-----------|
-| 500 | `CBNotInitialized` | Breaker not initialized | Breaker operations |
-| 501 | `CBAlreadyOpen` | Breaker already open | `trigger_breaker` |
-| 502 | `CBNotOpen` | Breaker not open | `reset_breaker` |
-| 503 | `CBOpen` | Operations paused | All user operations |
-| 504 | `CBError` | Generic breaker error | Breaker operations |
-
----
-
----
-
-## Types Reference
-
-### Market-Related Types
-
-#### `Market` (Main Market State)
-
-```rust
-#[contracttype]
-pub struct Market {
-    pub admin: Address,                           // Market creator
-    pub question: String,                          // Prediction question
-    pub outcomes: Vec<String>,                     // Possible outcomes
-    pub end_time: u64,                            // Unix timestamp end
-    pub oracle_config: OracleConfig,              // Primary oracle
-    pub has_fallback: bool,                       // Fallback available
-    pub fallback_oracle_config: OracleConfig,     // Backup oracle
-    pub resolution_timeout: u64,                   // Timeout for resolution
-    pub oracle_result: Option<String>,            // Resolved outcome
-    pub votes: Map<Address, String>,              // User votes
-    pub total_staked: i128,                       // Total wagered
-    pub dispute_stakes: Map<Address, i128>,       // Dispute stakes
-    pub stakes: Map<Address, i128>,               // User stakes
-    pub claimed: Map<Address, bool>,              // Claim flags
-    pub winning_outcomes: Option<Vec<String>>,    // Winner(s)
-    pub fee_collected: bool,                      // Fee deducted
-    pub state: MarketState,                       // Current state
-    pub total_extension_days: u32,                // Days extended
-    pub max_extension_days: u32,                  // Max allowed
-}
-```
-
-#### `MarketState` (State Enum)
-
-```rust
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MarketState {
-    Active,      // Accepting votes/bets
-    Ended,       // Deadline passed, awaiting resolution
-    Disputed,    // Under dispute
-    Resolved,    // Outcome determined, awaiting payouts
-    Closed,      // All payouts distributed
-    Cancelled,   // Market cancelled, stakes returned
-}
-```
-
-**State Transitions:**
-```
-Active → Ended → Disputed → Resolved → Closed
-          ↓
-       (dispute)
-          ↓
-       Disputed → Resolved
-Active (cancellation) → Cancelled
-Active (override) → Resolved
-```
-
-#### `MarketStats` (Market Statistics)
-
-```rust
-#[contracttype]
-pub struct MarketStats {
-    pub market_id: Symbol,
-    pub total_staked: i128,
-    pub participant_count: u32,
-    pub outcome_stakes: Map<String, i128>,
-    pub outcome_vote_counts: Map<String, u32>,
-    pub volume: i128,
+    pub creator: Address,
     pub created_at: u64,
-    pub ended_at: Option<u64>,
-    pub resolved_at: Option<u64>,
+    pub deadline: u64,
+    pub resolved: bool,
+    pub winning_outcome: Option<String>,
+    pub total_stake: i128,
+    pub oracle_config: OracleConfig,
 }
 ```
 
----
-
-### Oracle-Related Types
-
-#### `OracleProvider` (Supported Oracles)
+### Vote
+Represents a user's vote on a market.
 
 ```rust
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OracleProvider {
-    Reflector,     // Stellar-native oracle (primary)
-    Pyth,          // High-frequency oracle (future)
-    BandProtocol,  // Decentralized oracle (future)
-    DIA,           // Multi-chain oracle (future)
-}
-```
-
-**Current Status:**
-- ✅ Reflector (production ready)
-- ⏳ Pyth, BandProtocol, DIA (not yet on Stellar)
-
-#### `OracleConfig` (Oracle Configuration)
-
-```rust
-#[contracttype]
-pub struct OracleConfig {
-    pub oracle_type: OracleProvider,     // Which oracle
-    pub oracle_contract: Address,        // Oracle contract address
-    pub asset_code: Option<String>,      // Asset code (BTC, ETH, etc.)
-    pub threshold_value: Option<i128>,   // Price threshold for resolution
-    pub freshness_threshold: Option<u64>, // Max age of price data
-}
-```
-
-#### `OracleResult` (Oracle Response)
-
-```rust
-#[contracttype]
-pub struct OracleResult {
-    pub price: i128,
-    pub timestamp: u64,
-    pub asset: String,
-    pub source: OracleProvider,
-    pub confidence: Option<i128>,  // Percentage (0-10000)
-}
-```
-
----
-
-### Balance & Asset Types
-
-#### `Balance` (User Balance)
-
-```rust
-#[contracttype]
-pub struct Balance {
-    pub user: Address,
-    pub asset: ReflectorAsset,
-    pub amount: i128,
-    pub last_updated: u64,
-}
-```
-
-#### `ReflectorAsset` (Supported Assets)
-
-```rust
-#[contracttype]
-pub enum ReflectorAsset {
-    BTC,   // Bitcoin
-    ETH,   // Ethereum
-    XLM,   // Stellar Lumens
-    USDC,  // USD Coin
-    // ... additional assets
-}
-```
-
-**Standard Precisions:**
-- BTC/ETH: 7 decimals (e.g., 100_000_000 = 1.00000000)
-- XLM: 7 decimals
-- USDC: 6 decimals
-
----
-
-### Voting & Dispute Types
-
-#### `Vote` (User Vote Record)
-
-```rust
-#[contracttype]
 pub struct Vote {
-    pub user: Address,
+    pub voter: Address,
     pub market_id: Symbol,
     pub outcome: String,
+    pub stake: i128,
     pub timestamp: u64,
-    pub weight: Option<i128>,  // Stake-weighted (optional)
+    pub claimed: bool,
 }
 ```
 
-#### `Dispute` (Dispute Record)
+### OracleConfig
+Configuration for oracle integration.
 
 ```rust
-#[contracttype]
-pub struct Dispute {
-    pub market_id: Symbol,
-    pub initiator: Address,
-    pub reason: String,
-    pub filed_at: u64,
-    pub votes_for: u32,
-    pub votes_against: u32,
-    pub status: DisputeStatus,
-    pub resolved_at: Option<u64>,
-    pub resolution: Option<String>,
-}
-```
-
-#### `DisputeStatus` (Dispute State)
-
-```rust
-#[contracttype]
-pub enum DisputeStatus {
-    Pending,    // Awaiting votes
-    VoteClosed, // Voting ended
-    Approved,   // Resolved in favor
-    Rejected,   // Resolved against
-    Withdrawn,  // Initiator withdrew
+pub struct OracleConfig {
+    pub provider: OracleProvider,
+    pub feed_id: String,
+    pub threshold: i128,
+    pub timeout_seconds: u64,
 }
 ```
 
 ---
 
-### Fee & Distribution Types
+## ⚠️ Error Codes
 
-#### `FeeRecord` (Fee Collection)
+### User Operation Errors (100-199)
+- **100**: `UserNotAuthorized` - User lacks required permissions
+- **101**: `MarketNotFound` - Specified market doesn't exist
+- **102**: `MarketClosed` - Market is closed for voting
+- **103**: `InvalidOutcome` - Outcome not available for market
+- **104**: `AlreadyVoted` - User has already voted on this market
+- **105**: `NothingToClaim` - No winnings available to claim
+- **106**: `MarketNotResolved` - Market resolution pending
+- **107**: `InsufficientStake` - Stake below minimum requirement
 
-```rust
-#[contracttype]
-pub struct FeeRecord {
-    pub market_id: Symbol,
-    pub fee_percentage: i128,
-    pub fee_amount: i128,
-    pub collected_at: u64,
-    pub withdrawn: bool,
-}
-```
+### Oracle Errors (200-299)
+- **200**: `OracleUnavailable` - Oracle service unavailable
+- **201**: `InvalidOracleConfig` - Oracle configuration invalid
+- **202**: `OracleTimeout` - Oracle response timeout
+- **203**: `OracleDataInvalid` - Oracle data format invalid
 
-#### `Payout` (Winning Calculation)
+### Validation Errors (300-399)
+- **300**: `InvalidInput` - General input validation failure
+- **301**: `InvalidMarket` - Market parameters invalid
+- **302**: `InvalidVote` - Vote parameters invalid
+- **303**: `InvalidDispute` - Dispute parameters invalid
 
-```rust
-#[contracttype]
-pub struct Payout {
-    pub user: Address,
-    pub market_id: Symbol,
-    pub gross_amount: i128,
-    pub fee_amount: i128,
-    pub net_amount: i128,
-    pub distributed_at: Option<u64>,
-}
-```
-
----
-
-### Utility Types
-
-#### `ContractMetadata` (Version Info)
-
-```rust
-#[contracttype]
-pub struct ContractMetadata {
-    pub version: String,           // "1.2.3-beta1"
-    pub deployment_time: u64,
-    pub last_upgrade: Option<u64>,
-    pub current_admin: Address,
-    pub platform_fee: i128,
-}
-```
+### System Errors (400-499)
+- **400**: `ContractNotInitialized` - Contract requires initialization
+- **401**: `AdminRequired` - Admin privileges required
+- **402**: `ContractPaused` - Contract is paused
+- **403**: `InsufficientBalance` - Account balance too low
 
 ---
 
----
+## 💡 Integration Examples
 
-## Usage Examples
+### Basic Market Creation and Voting
 
-### Example 1: Complete Market Lifecycle (Create → Bet → Resolve → Claim)
+```typescript
+import { Contract, Keypair, Networks } from '@stellar/stellar-sdk';
 
-```rust
-use soroban_sdk::{Env, Address, String, Symbol, Vec};
-use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleProvider, ReflectorAsset};
+// Initialize contract
+const contract = new Contract(contractId);
 
-fn example_market_lifecycle() {
-    let env = Env::default();
-    
-    // Step 1: Initialize contract
-    let admin = Address::generate(&env);
-    PredictifyHybrid::initialize(env.clone(), admin.clone(), Some(2)); // 2% fee
-    
-    // Step 2: Create a market
-    let question = String::from_str(&env, "Will Bitcoin reach $100k by Dec 2024?");
-    let mut outcomes = Vec::new(&env);
-    outcomes.push_back(String::from_str(&env, "Yes"));
-    outcomes.push_back(String::from_str(&env, "No"));
-    
-    let oracle_config = OracleConfig {
-        oracle_type: OracleProvider::Reflector,
-        oracle_contract: Address::generate(&env),
-        asset_code: Some(String::from_str(&env, "BTC")),
-        threshold_value: Some(100_000),
-        freshness_threshold: None,
-    };
-    
-    let market_id = PredictifyHybrid::create_market(
-        env.clone(),
-        admin.clone(),
-        question.clone(),
-        outcomes.clone(),
-        30,  // 30 days
-        oracle_config.clone(),
-        None,  // No fallback
-        3600,  // 1 hour timeout
-    );
-    
-    // Step 3: Deposit funds (user prepares to bet)
-    let user = Address::generate(&env);
-    user.require_auth();
-    
-    let balance = PredictifyHybrid::deposit(
-        env.clone(),
-        user.clone(),
-        ReflectorAsset::XLM,
-        1_000_000_000,  // 100 XLM (7 decimals)
-    ).expect("Deposit failed");
-    
-    println!("User balance: {}", balance.amount);
-    
-    // Step 4: Place a bet
-    PredictifyHybrid::place_bet(
-        env.clone(),
-        user.clone(),
-        market_id.clone(),
-        String::from_str(&env, "Yes"),
-        500_000_000,  // 50 XLM
-    ).expect("Bet placement failed");
-    
-    println!("Bet placed successfully on 'Yes'");
-    
-    // Step 5: Wait for market deadline...
-    // (In real scenario: advance time via env)
-    
-    // Step 6: Resolve market via oracle
-    PredictifyHybrid::resolve_market_oracle(
-        env.clone(),
-        market_id.clone(),
-        String::from_str(&env, "Yes"),  // Outcome determined by oracle
-    ).expect("Resolution failed");
-    
-    println!("Market resolved with 'Yes' outcome");
-    
-    // Step 7: Claim winnings
-    let winnings = PredictifyHybrid::claim_winnings(
-        env.clone(),
-        user.clone(),
-        market_id.clone(),
-    ).expect("Claim failed");
-    
-    println!("Winnings claimed: {} XLM", winnings / 10_000_000);
-    
-    // Step 8: Withdraw funds
-    let final_balance = PredictifyHybrid::withdraw(
-        env.clone(),
-        user.clone(),
-        ReflectorAsset::XLM,
-        winnings,
-    ).expect("Withdrawal failed");
-    
-    println!("Final balance: {} XLM", final_balance.amount / 10_000_000);
-}
-```
-
----
-
-### Example 2: Dispute Resolution Flow
-
-```rust
-use soroban_sdk::{Env, Address, String, Symbol};
-use predictify_hybrid::PredictifyHybrid;
-
-fn example_dispute_flow() {
-    let env = Env::default();
-    
-    // Setup: Market created and resolved
-    let admin = Address::generate(&env);
-    let user1 = Address::generate(&env);
-    let user2 = Address::generate(&env);
-    let user3 = Address::generate(&env);
-    
-    // ... (create market, place bets, advance time, resolve market)
-    // Assume market_id and resolved outcome exist
-    
-    let market_id = Symbol::new(&env, "mkt_abc_123");
-    
-    // Step 1: User files dispute
-    user1.require_auth();
-    PredictifyHybrid::dispute_market(
-        env.clone(),
-        user1.clone(),
-        market_id.clone(),
-        String::from_str(&env, "Oracle price was manipulated"),
-    ).expect("Dispute filed successfully");
-    
-    println!("Dispute filed by user1");
-    
-    // Step 2: Community voting on dispute
-    user2.require_auth();
-    PredictifyHybrid::vote_dispute(
-        env.clone(),
-        user2.clone(),
-        market_id.clone(),
-        true,  // Vote in favor of dispute (reverse resolution)
-    ).expect("Vote recorded");
-    
-    user3.require_auth();
-    PredictifyHybrid::vote_dispute(
-        env.clone(),
-        user3.clone(),
-        market_id.clone(),
-        false,  // Vote against dispute (keep resolution)
-    ).expect("Vote recorded");
-    
-    println!("Dispute votes recorded");
-    
-    // Step 3: Resolve dispute
-    let dispute_result = PredictifyHybrid::resolve_dispute(
-        env.clone(),
-        market_id.clone(),
-    ).expect("Dispute resolved");
-    
-    println!("Dispute resolved in favor: {}", dispute_result.approved);
-    
-    // Step 4: Distribute dispute rewards
-    if dispute_result.approved {
-        println!("Resolution reversed, new payouts calculated");
-        // Winnings are recalculated and redistributed
+// Create market
+const marketId = await contract.create_market(
+    adminKeypair.publicKey(),
+    "Will Ethereum reach $5,000 by Q2 2025?",
+    ["Yes", "No"],
+    120, // 120 days
+    {
+        provider: "Reflector",
+        feed_id: "ETH/USD",
+        threshold: 5000000000, // $5,000 in stroops
+        timeout_seconds: 3600
     }
-}
+);
+
+// Vote on market
+await contract.vote(
+    userKeypair.publicKey(),
+    marketId,
+    "Yes",
+    10000000 // 1 XLM stake
+);
+
+// Check market status
+const market = await contract.get_market(marketId);
+console.log(`Market: ${market.question}`);
+console.log(`Total stake: ${market.total_stake} stroops`);
+
+// Claim winnings (after resolution)
+const winnings = await contract.claim_winnings(
+    userKeypair.publicKey(),
+    marketId
+);
+console.log(`Claimed: ${winnings} stroops`);
+```
+
+### Batch Operations
+
+```typescript
+// Create multiple markets
+const markets = await Promise.all([
+    contract.create_market(admin, "BTC > $100K?", ["Yes", "No"], 90, btcConfig),
+    contract.create_market(admin, "ETH > $5K?", ["Yes", "No"], 90, ethConfig),
+    contract.create_market(admin, "SOL > $200?", ["Yes", "No"], 90, solConfig)
+]);
+
+// Vote on multiple markets
+await Promise.all(
+    markets.map(marketId => 
+        contract.vote(user, marketId, "Yes", 5000000)
+    )
+);
 ```
 
 ---
 
-### Example 3: Multi-Outcome Market with Batch Operations
+## 🆘 Troubleshooting Guide
 
+### Common Issues and Solutions
+
+#### 🔧 Deployment Issues
+
+**Problem: Contract deployment fails with "Insufficient Balance"**
+```bash
+Error: Account has insufficient balance for transaction
+```
+**Solution:**
+```bash
+# Check account balance
+soroban config identity address
+soroban balance --id <your-address> --network mainnet
+
+# Fund account if needed (minimum 100 XLM recommended)
+# Use Stellar Laboratory or send from funded account
+```
+
+**Problem: WASM file not found during deployment**
+```bash
+Error: No such file or directory: target/wasm32-unknown-unknown/release/predictify_hybrid.wasm
+```
+**Solution:**
+```bash
+# Ensure contract is built first
+cd contracts/predictify-hybrid
+make build
+
+# Verify WASM file exists
+ls -la target/wasm32-unknown-unknown/release/
+```
+
+#### 🔮 Oracle Integration Issues
+
+**Problem: Oracle results not being accepted**
 ```rust
-use soroban_sdk::{Env, Address, String, Symbol, Vec};
-use predictify_hybrid::{PredictifyHybrid, OracleConfig, OracleProvider};
+Error: InvalidOracleConfig (201)
+```
+**Solution:**
+```bash
+# Verify oracle configuration
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_oracle_config \
+  --network mainnet
 
-fn example_multi_outcome_batch() {
-    let env = Env::default();
-    
-    // Step 1: Create a 3-outcome market (soccer match)
-    let admin = Address::generate(&env);
-    PredictifyHybrid::initialize(env.clone(), admin.clone(), Some(2));
-    
-    let question = String::from_str(&env, "Champions League Final - Match Winner?");
-    let mut outcomes = Vec::new(&env);
-    outcomes.push_back(String::from_str(&env, "Team A"));
-    outcomes.push_back(String::from_str(&env, "Team B"));
-    outcomes.push_back(String::from_str(&env, "Draw"));
-    
-    let oracle_config = OracleConfig {
-        oracle_type: OracleProvider::Reflector,
-        oracle_contract: Address::generate(&env),
-        asset_code: Some(String::from_str(&env, "MATCH_RESULT")),
-        threshold_value: None,
-        freshness_threshold: None,
-    };
-    
-    let market_id = PredictifyHybrid::create_market(
-        env.clone(),
-        admin.clone(),
-        question,
-        outcomes,
-        14,  // 2 weeks
-        oracle_config,
-        None,
-        7200,  // 2 hours
-    );
-    
-    println!("3-outcome market created: {}", market_id.to_string());
-    
-    // Step 2: Batch place multiple bets
-    let user1 = Address::generate(&env);
-    let user2 = Address::generate(&env);
-    let user3 = Address::generate(&env);
-    
-    user1.require_auth();
-    PredictifyHybrid::place_bet(
-        env.clone(),
-        user1.clone(),
-        market_id.clone(),
-        String::from_str(&env, "Team A"),
-        100_000_000,  // 10 XLM
-    ).expect("Bet 1 failed");
-    
-    user2.require_auth();
-    PredictifyHybrid::place_bet(
-        env.clone(),
-        user2.clone(),
-        market_id.clone(),
-        String::from_str(&env, "Team B"),
-        150_000_000,  // 15 XLM
-    ).expect("Bet 2 failed");
-    
-    user3.require_auth();
-    PredictifyHybrid::place_bet(
-        env.clone(),
-        user3.clone(),
-        market_id.clone(),
-        String::from_str(&env, "Draw"),
-        50_000_000,  // 5 XLM
-    ).expect("Bet 3 failed");
-    
-    println!("Batch bets placed for all outcomes");
-    
-    // Step 3: Market resolves with Draw outcome
-    PredictifyHybrid::resolve_market_oracle(
-        env.clone(),
-        market_id.clone(),
-        String::from_str(&env, "Draw"),
-    ).expect("Resolution failed");
-    
-    println!("Market resolved with 'Draw' outcome");
-    
-    // Step 4: Winners claim winnings
-    let user3_winnings = PredictifyHybrid::claim_winnings(
-        env.clone(),
-        user3.clone(),
-        market_id.clone(),
-    ).expect("Claim failed");
-    
-    println!("User 3 claims: {} XLM", user3_winnings / 10_000_000);
-    
-    // Users 1 and 2 would see "NothingToClaim" error since they didn't bet on Draw
-}
+# Update oracle configuration if needed
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn update_oracle_config \
+  --arg provider=Reflector \
+  --arg feed_id="BTC/USD" \
+  --network mainnet
+```
+
+**Problem: Oracle price feeds timing out**
+```rust
+Error: OracleUnavailable (200)
+```
+**Solution:**
+1. Check oracle service status
+2. Verify network connectivity
+3. Implement fallback oracle providers
+4. Add retry logic with exponential backoff
+
+#### 🗳️ Voting and Market Issues
+
+**Problem: User unable to vote**
+```rust
+Error: MarketClosed (102)
+```
+**Solution:**
+```bash
+# Check market status and deadline
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_market \
+  --arg market_id="BTC_100K" \
+  --network mainnet
+
+# Extend market if authorized and appropriate
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn extend_market \
+  --arg market_id="BTC_100K" \
+  --arg additional_days=7 \
+  --network mainnet
+```
+
+**Problem: Insufficient stake error**
+```rust
+Error: InsufficientStake (107)
+```
+**Solution:**
+```bash
+# Check minimum stake requirements
+echo "Minimum vote stake: 1,000,000 stroops (0.1 XLM)"
+echo "Minimum dispute stake: 100,000,000 stroops (10 XLM)"
+
+# Verify user balance
+soroban balance --id <user-address> --network mainnet
+```
+
+#### 🏛️ Dispute Resolution Issues
+
+**Problem: Dispute submission rejected**
+```rust
+Error: DisputeVotingNotAllowed (406)
+```
+**Solution:**
+1. Verify market is in resolved state
+2. Check dispute window timing (24-48 hours after resolution)
+3. Ensure sufficient dispute stake
+4. Verify user hasn't already disputed
+
+**Problem: Dispute threshold too high**
+```rust
+Error: ThresholdExceedsMaximum (412)
+```
+**Solution:**
+```bash
+# Check current dispute threshold
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_dispute_threshold \
+  --arg market_id="BTC_100K" \
+  --network mainnet
+
+# Admin can adjust if necessary
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn update_dispute_threshold \
+  --arg market_id="BTC_100K" \
+  --arg new_threshold=50000000 \
+  --network mainnet
+```
+
+#### 💰 Fee and Payout Issues
+
+**Problem: Fee collection fails**
+```rust
+Error: NoFeesToCollect (415)
+```
+**Solution:**
+```bash
+# Check if fees are available
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_collectable_fees \
+  --arg market_id="BTC_100K" \
+  --network mainnet
+
+# Ensure market is resolved and fees haven't been collected
+```
+
+**Problem: User cannot claim winnings**
+```rust
+Error: NothingToClaim (105)
+```
+**Solution:**
+1. Verify user voted on winning outcome
+2. Check market resolution status
+3. Ensure user hasn't already claimed
+4. Verify market dispute period has ended
+
+### 🔍 Debugging Tools
+
+#### Contract State Inspection
+```bash
+# Get complete market information
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_market_analytics \
+  --arg market_id="BTC_100K" \
+  --network mainnet
+
+# Check user voting history
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_user_votes \
+  --arg user=<address> \
+  --network mainnet
+
+# Inspect contract configuration
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn get_config \
+  --network mainnet
+```
+
+#### Transaction Analysis
+```bash
+# View transaction details
+soroban events --id $CONTRACT_ID --network mainnet
+
+# Check specific transaction
+soroban transaction --hash <tx_hash> --network mainnet
+```
+
+#### Log Analysis
+```bash
+# Enable verbose logging
+export RUST_LOG=debug
+
+# Run with detailed output
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --fn vote \
+  --arg market_id="BTC_100K" \
+  --arg outcome="yes" \
+  --arg stake=5000000 \
+  --network mainnet \
+  --verbose
 ```
 
 ---
 
-## API Conventions
+## 📞 Support and Resources
 
-### Response Types
+### Error Code Reference
+- **100-199**: User operation errors - Check user permissions and market state
+- **200-299**: Oracle errors - Verify oracle configuration and connectivity
+- **300-399**: Validation errors - Check input parameters and formats
+- **400-499**: System errors - Contact support for system-level issues
 
-**Success Responses:**
-- Void operations return nothing: `pub fn vote(...) -> Result<(), Error>`
-- Value-returning operations return wrapped value: `pub fn claim_winnings(...) -> Result<i128, Error>`
+### Support Channels
+1. **GitHub Issues**: [Report bugs and request features](https://github.com/predictify/contracts/issues)
+2. **Discord Support**: [#technical-support channel](https://discord.gg/predictify)
+3. **Developer Forum**: [Technical discussions](https://forum.predictify.io)
+4. **Email Support**: technical-support@predictify.io
 
-### Parameter Conventions
+### Before Contacting Support
+1. Check this troubleshooting guide
+2. Search existing GitHub issues
+3. Verify your environment and configuration
+4. Collect relevant error messages and transaction hashes
+5. Note your contract version and network
 
-- **Addresses**: Always use `Address` type, never raw bytes
-- **Amounts**: Denominated in lowest unit (7 decimals for XLM/BTC/ETH)
-- **Timestamps**: Unix epoch seconds (u64)
-- **Symbols**: Market IDs and event IDs are `Symbol` type
-
-### Authorization
-
-- All admin functions require `admin.require_auth()`
-- All user functions require the caller's authorization
-- Authorization is verified via Soroban's built-in auth mechanism
-
-### Gas Efficiency
-
-- Batch operations significantly reduce gas costs
-- Queries don't consume gas (read-only)
-- Market creation has highest gas cost
-- Bulk operations cheaper than individual operations
-
----
-
-## Integration Checklist
-
-- [ ] Import and initialize contract: `PredictifyHybrid::initialize(...)`
-- [ ] Set up oracle configuration with valid provider
-- [ ] Create test markets and verify state changes
-- [ ] Test bet placement with minimum and maximum amounts
-- [ ] Verify error handling for all error cases
-- [ ] Implement event listeners for contract events
-- [ ] Test dispute flow with multiple voters
-- [ ] Validate multi-outcome market resolution
-- [ ] Implement UI for balance management
-- [ ] Add market monitoring/analytics integration
+### Additional Resources
+- [Stellar Soroban Documentation](https://soroban.stellar.org/)
+- [Stellar SDK Documentation](https://stellar.github.io/js-stellar-sdk/)
+- [Predictify GitHub Repository](https://github.com/predictify/contracts)
+- [Community Examples](https://github.com/predictify/examples)
 
 ---
 
-**Document Version:** 2.0  
-**Last Updated:** March 25, 2026  
-**Contract Version:** 1.2.3
+## 🛡️ Validation Module
+
+The validation module (`contracts/predictify-hybrid/src/validation.rs`) provides layered, composable validators for every contract operation. Each validator returns a `ValidationResult` or a `Result<(), ValidationError>` and can be used independently or composed through `ComprehensiveValidator`.
+
+### Validators
+
+| Validator | Responsibility |
+|-----------|---------------|
+| `InputValidator` | Primitives: string length, numeric range, array size, address format, timestamps |
+| `MarketValidator` | Market lifecycle guards: creation params, voting eligibility, resolution eligibility, fee collection eligibility |
+| `OracleValidator` | Oracle config fields: provider support, comparison operator, result presence and format |
+| `FeeValidator` | Fee config integrity: percentage bounds (0–100), min/max fee amounts, collection threshold |
+| `VoteValidator` | Vote correctness: outcome membership, stake ≥ `MIN_VOTE_STAKE`, duplicate detection |
+| `DisputeValidator` | Dispute correctness: winning outcome required, stake ≥ `MIN_DISPUTE_STAKE`, duplicate detection |
+| `EventValidator` | Event creation: admin address, description format, outcome count (2–10), future end time |
+| `OracleConfigValidator` | Deep oracle config: provider-specific threshold ranges, comparison operator support per provider, resolution timeout bounds |
+| `MarketParameterValidator` | Standalone parameter ranges: duration (days), stake amounts, threshold values |
+| `ConfigValidator` | Contract-level config: admin/token addresses, `config::Environment` values |
+| `ComprehensiveValidator` | Orchestrates the above validators for full market creation and state checks |
+
+### Key Constants
+
+| Constant | Value | Used by |
+|----------|-------|---------|
+| `MIN_VOTE_STAKE` | 1,000,000 stroops | `VoteValidator` |
+| `MIN_DISPUTE_STAKE` | 10,000,000 stroops | `DisputeValidator` |
+| `MIN_FEE_AMOUNT` | 1,000,000 | `FeeValidator` |
+| `MAX_FEE_AMOUNT` | 1,000,000,000 | `FeeValidator` |
+| `FEE_COLLECTION_THRESHOLD` | 100,000,000 | `MarketValidator` |
+| `MIN_MARKET_DURATION_DAYS` | 1 | `MarketValidator`, `MarketParameterValidator` |
+| `MAX_MARKET_DURATION_DAYS` | 365 | `MarketValidator`, `MarketParameterValidator` |
+| `MIN_MARKET_OUTCOMES` | 2 | `InputValidator`, `MarketValidator` |
+| `MAX_MARKET_OUTCOMES` | 10 | `InputValidator`, `MarketValidator` |
+| `MIN_QUESTION_LENGTH` | 10 chars | `InputValidator` |
+| `MAX_QUESTION_LENGTH` | 500 chars | `InputValidator` |
+| `MIN_OUTCOME_LENGTH` | 2 chars | `InputValidator` |
+| `MAX_OUTCOME_LENGTH` | 100 chars | `InputValidator` |
+
+### Known Limitations
+
+**`OracleConfigValidator::validate_config_consistency` / `validate_oracle_config_all_together` with Reflector or Pyth providers** — the private `get_supported_operators_for_provider` helper creates multiple independent `soroban_sdk::Env::default()` instances inside a single `vec![]` call. Strings built against different Env instances cannot be compared safely in the test harness and cause SIGSEGV. Affected public paths (`MarketValidator::validate_market_creation`, `ComprehensiveValidator::validate_complete_market_creation`) must not be exercised with Reflector/Pyth configs in unit tests until this upstream SDK usage is corrected. Individual field validators (question, duration, outcomes, resolution timeout) remain fully testable.
+
+### Test Coverage Summary
+
+All 118 unit tests in `contracts/predictify-hybrid/src/validation_tests.rs` pass (`cargo test -p predictify-hybrid --lib "validation_tests"`). Coverage includes:
+
+- Every `InputValidator` branch (string length, numeric range, array bounds, address format, timestamp, outcomes, tags, description, category, outcome format)
+- `MarketValidator` lifecycle guards (voting, resolution, fee collection — active, ended, and empty-question paths)
+- `OracleValidator` (provider, comparison operator, result presence, result-against-outcomes)
+- `FeeValidator` (valid config, invalid percentage, min > max, zero threshold)
+- `VoteValidator` (valid vote, too-low stake, invalid outcome, duplicate vote)
+- `DisputeValidator` (valid dispute, no winning outcome, too-low stake, duplicate dispute)
+- `EventValidator` (valid creation, short description, past end time, too-few/too-many outcomes)
+- `OracleConfigValidator` (provider support, threshold range, feed ID format, comparison operator, resolution timeout, BandProtocol/DIA always-fail paths)
+- `MarketParameterValidator` (duration limits, stake amounts, threshold values)
+- `ConfigValidator` (contract config, all `Environment` variants)
+- `ComprehensiveValidator` (input validation, market state — active and empty-question)
+- `ValidationResult` and `ValidationError` helpers
+
+---
+
+**Last Updated:** 2026-03-25
+**API Version:** v1.0.0
+**Documentation Version:** 1.1

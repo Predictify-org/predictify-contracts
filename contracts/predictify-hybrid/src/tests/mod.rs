@@ -15,6 +15,7 @@ pub mod error_scenarios;
 pub mod integration {
     pub mod oracle_integration_tests;
     pub mod custom_token_tests;
+    pub mod oracle_provider_compatibility_tests;
 }
 
 // Test mocks
