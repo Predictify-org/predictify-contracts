@@ -95,6 +95,9 @@ mod statistics_tests;
 #[cfg(test)]
 mod resolution_delay_dispute_window_tests;
 
+#[cfg(test)]
+mod tests;
+
 #[cfg(any())]
 mod event_creation_tests;
 
