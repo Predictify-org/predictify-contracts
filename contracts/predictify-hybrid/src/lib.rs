@@ -55,6 +55,8 @@ mod voting;
 pub mod audit_trail;
 
 #[cfg(test)]
+mod utils_tests;
+#[cfg(test)]
 mod test_audit_trail;
 // THis is the band protocol wasm std_reference.wasm
 mod bandprotocol {
