@@ -891,6 +891,22 @@ impl StringUtils {
 pub struct NumericUtils;
 
 impl NumericUtils {
+    /// Calculate a percentage of an amount using basis points (1/10000).
+    pub fn calculate_bps(amount: i128, bps: u32) -> i128 {
+        if amount <= 0 {
+            return 0;
+        }
+        amount.saturating_mul(bps as i128) / 10000
+    }
+
+    /// Calculates the proportional share of a pool for a specific stake.
+    pub fn calculate_payout_share(total_pool: i128, user_stake: i128, total_winning_stakes: i128) -> i128 {
+        if total_winning_stakes <= 0 || total_pool <= 0 || user_stake <= 0 {
+            return 0;
+        }
+        total_pool.saturating_mul(user_stake) / total_winning_stakes
+    }
+
     /// Calculate percentage
     pub fn calculate_percentage(percentage: &i128, value: &i128, denominator: &i128) -> i128 {
         (*percentage * *value) / *denominator
