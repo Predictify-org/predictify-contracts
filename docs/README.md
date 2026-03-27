@@ -5,11 +5,13 @@ Welcome to the Predictify Contracts documentation! This directory contains compr
 ## 📁 Documentation Structure
 
 ### 🚀 [API Documentation](./api/API_DOCUMENTATION.md)
-Complete API reference for the Predictify Hybrid contract, including:
+Complete API reference for Predictify Hybrid contract, including:
 - Contract functions and their parameters
 - Return types and error handling
 - Integration examples
 - Client usage patterns
+- **ReflectorAsset Coverage Matrix** - Comprehensive asset testing and validation
+- **Token and Asset Management** - Multi-asset support documentation
 
 ### 🔒 [Security Documentation](./security/)
 Comprehensive security documentation and guidelines:
@@ -50,10 +52,12 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 4. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
 5. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
 
+
 ## 🔗 Related Resources
 
 - **[Main Project README](../README.md)** - Project overview and setup instructions
 - **[Contracts Directory](../contracts/)** - Source code for all smart contracts
+- **[Predictify Hybrid: Reproducible WASM Builds & Checksums](../contracts/predictify-hybrid/README.md#reproducible-wasm-builds--checksums)**
 - **[GitHub Repository](https://github.com/your-org/predictify-contracts)** - Source code repository
 
 ## 📝 Contributing to Documentation

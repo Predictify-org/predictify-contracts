@@ -25,7 +25,7 @@ use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
 use crate::types::{Bet, BetLimits, BetStatus, BetStats, Market, MarketState};
-use crate::validation;
+// use crate::validation;
 
 // ===== CONSTANTS =====
 
@@ -827,7 +827,14 @@ impl BetValidator {
         amount: i128,
     ) -> Result<(), Error> {
         let limits = get_effective_bet_limits(env, market_id);
-        validation::validate_bet_amount_against_limits(amount, &limits)
+        // Temporarily disabled due to validation module being disabled
+        // validation::validate_bet_amount_against_limits(amount, &limits)
+        
+        // Simple validation for now
+        if amount < limits.min_bet || amount > limits.max_bet {
+            return Err(Error::InvalidInput);
+        }
+        Ok(())
     }
 
     /// Validate bet amount using default constants (for tests / backward compatibility).

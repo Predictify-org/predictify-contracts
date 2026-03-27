@@ -567,7 +567,7 @@ impl ContractMonitor {
             outcomes: Vec::new(env),
             end_time: env.ledger().timestamp() + 86400,
             oracle_config: OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: Address::from_str(
                     env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -1113,7 +1113,7 @@ impl MonitoringTestingUtils {
 
         let oracle_health = vec![
             &env,
-            Self::create_test_oracle_health_metrics(env, OracleProvider::Reflector),
+            Self::create_test_oracle_health_metrics(env, OracleProvider::reflector()),
         ];
 
         let active_alerts = vec![&env, Self::create_test_monitoring_alert(env)];
@@ -1162,7 +1162,7 @@ mod tests {
     #[test]
     fn test_oracle_health_monitoring() {
         let env = Env::default();
-        let oracle = OracleProvider::Reflector;
+        let oracle = OracleProvider::reflector();
 
         let metrics = ContractMonitor::monitor_oracle_health(&env, oracle.clone()).unwrap();
 
@@ -1294,7 +1294,7 @@ mod tests {
         // Test oracle health metrics creation
         let oracle_health = MonitoringTestingUtils::create_test_oracle_health_metrics(
             &env,
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
         );
         assert_eq!(oracle_health.confidence_score, 95);
 

@@ -99,7 +99,7 @@ impl QueryManager {
             created_at: 0, // TODO: Retrieve from storage if available
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
-            oracle_provider: String::from_str(env, oracle_provider),
+            oracle_provider: oracle_provider,
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
             winning_outcome,
