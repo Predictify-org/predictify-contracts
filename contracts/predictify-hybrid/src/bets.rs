@@ -518,20 +518,26 @@ impl BetManager {
             if let Some(bet_key) = bets.get(i) {
                 if let Some(mut bet) = BetStorage::get_bet(env, market_id, &bet_key) {
                     // Determine if bet won or lost (check if outcome is in winning outcomes)
-                    if winning_outcomes.contains(&bet.outcome) {
+                    let new_status = if winning_outcomes.contains(&bet.outcome) {
                         bet.mark_as_won();
+                        String::from_str(env, "Won")
                     } else {
                         bet.mark_as_lost();
-                    }
+                        String::from_str(env, "Lost")
+                    };
 
-                    // Update bet status
+                    // Update bet status in storage
                     BetStorage::store_bet(env, &bet)?;
 
-                    // Skip event emission to avoid potential segfaults
-                    // Events can be emitted separately if needed
+                    // Emit per-bet status change event so indexers can track each settlement.
+                    // `emit_bet_resolved` wraps `emit_bet_status_updated` with the old status
+                    // fixed as "Active" and payout_amount = None (payout is computed at
+                    // claim time, not at resolution time).
+                    EventEmitter::emit_bet_resolved(env, market_id, &bet.user, &new_status);
                 }
             }
         }
+
 
         Ok(())
     }
@@ -559,15 +565,9 @@ impl BetManager {
                     bet.mark_as_refunded();
                     BetStorage::store_bet(env, &bet)?;
 
-                    // Emit status update event
-                    EventEmitter::emit_bet_status_updated(
-                        env,
-                        market_id,
-                        &bet.user,
-                        &String::from_str(env, "Active"),
-                        &String::from_str(env, "Refunded"),
-                        Some(bet.amount),
-                    );
+                    // Emit cancellation event with refunded amount so indexers track
+                    // each individual refund atomically with the market cancellation.
+                    EventEmitter::emit_bet_cancelled(env, market_id, &bet.user, bet.amount);
                 }
             }
         }

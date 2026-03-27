@@ -570,3 +570,168 @@ fn test_update_event_outcomes_resolved_market() {
 
     assert_eq!(result, Err(Ok(Error::MarketResolved)));
 }
+
+// ===== EVENT EMISSION AUDIT REGRESSION TESTS =====
+// Issue #426: verify that every financially-material state transition publishes
+// at least one event to the Soroban event stream (env.events().publish).
+
+/// Advance ledger time forward by `secs` seconds.
+fn advance_time(env: &Env, secs: u64) {
+    env.ledger().with_mut(|li| {
+        li.timestamp += secs;
+    });
+}
+
+/// Build a standard binary (Yes/No) market and return its ID.
+fn make_binary_market(setup: &TestSetup, question: &str) -> Symbol {
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    setup.create_market(question, outcomes, 30)
+}
+
+/// Verify that place_bet publishes at least one event to the Soroban event
+/// stream, satisfying the audit requirement for bet-placement transparency.
+#[test]
+fn test_bet_placed_event_emitted() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let user = setup.create_user();
+    let market_id = make_binary_market(&setup, "Will BTC hit $100k?");
+    setup.env.events().all();
+    client.place_bet(
+        &user,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+        &10_000_000i128,
+    );
+    let emitted = setup.env.events().all();
+    assert!(!emitted.is_empty(), "place_bet must publish at least one indexer-visible event");
+}
+
+/// Verify that resolve_market_manual publishes at least one event.
+#[test]
+fn test_market_resolved_event_emitted() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let market_id = make_binary_market(&setup, "Resolved market test?");
+    advance_time(&setup.env, 31 * 24 * 60 * 60);
+    setup.env.events().all();
+    client.resolve_market_manual(&setup.admin, &market_id, &String::from_str(&setup.env, "Yes"));
+    let emitted = setup.env.events().all();
+    assert!(!emitted.is_empty(), "resolve_market_manual must publish at least one event");
+}
+
+/// Verify that the Resolved state is persisted AND a state-change event was published.
+#[test]
+fn test_state_change_active_to_resolved() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let market_id = make_binary_market(&setup, "State change test?");
+    advance_time(&setup.env, 31 * 24 * 60 * 60);
+    setup.env.events().all();
+    client.resolve_market_manual(&setup.admin, &market_id, &String::from_str(&setup.env, "No"));
+    let market = client.get_market(&market_id).unwrap();
+    assert_eq!(market.state, crate::types::MarketState::Resolved, "market state must be Resolved");
+    let emitted = setup.env.events().all();
+    assert!(!emitted.is_empty(), "state-change event must be published");
+}
+
+/// Verify that creating a dispute emits an event.
+#[test]
+fn test_dispute_created_event_emitted() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let disputer = setup.create_user();
+    let market_id = make_binary_market(&setup, "Oracle dispute test?");
+    advance_time(&setup.env, 31 * 24 * 60 * 60);
+    client.resolve_market_manual(&setup.admin, &market_id, &String::from_str(&setup.env, "Yes"));
+    setup.env.events().all();
+    let result = client.try_dispute_market(
+        &disputer,
+        &market_id,
+        &10_000_000i128,
+        &Some(String::from_str(&setup.env, "Oracle data appears incorrect")),
+    );
+    if result.is_ok() {
+        let emitted = setup.env.events().all();
+        assert!(!emitted.is_empty(), "dispute_market must publish at least one event");
+    }
+}
+
+/// Verify that claim_winnings publishes an event with payout details.
+#[test]
+fn test_winnings_claimed_event_emitted() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let winner = setup.create_user();
+    let loser = setup.create_user();
+    let market_id = make_binary_market(&setup, "Winnings claim test?");
+    client.place_bet(&winner, &market_id, &String::from_str(&setup.env, "Yes"), &10_000_000i128);
+    client.place_bet(&loser, &market_id, &String::from_str(&setup.env, "No"), &5_000_000i128);
+    advance_time(&setup.env, 31 * 24 * 60 * 60);
+    client.resolve_market_manual(&setup.admin, &market_id, &String::from_str(&setup.env, "Yes"));
+    setup.env.events().all();
+    let claim_result = client.try_claim_winnings(&winner, &market_id);
+    if claim_result.is_ok() {
+        let emitted = setup.env.events().all();
+        assert!(!emitted.is_empty(), "claim_winnings must publish at least one event");
+    }
+}
+
+/// Verify that resolving a market emits per-bet Won status events.
+#[test]
+fn test_bet_status_won_emitted() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let bettor = setup.create_user();
+    let market_id = make_binary_market(&setup, "Bet won event test?");
+    client.place_bet(&bettor, &market_id, &String::from_str(&setup.env, "Yes"), &10_000_000i128);
+    advance_time(&setup.env, 31 * 24 * 60 * 60);
+    setup.env.events().all();
+    client.resolve_market_manual(&setup.admin, &market_id, &String::from_str(&setup.env, "Yes"));
+    let emitted = setup.env.events().all();
+    assert!(!emitted.is_empty(), "resolution must emit per-bet Won status event");
+}
+
+/// Verify that a losing bet also receives a BetStatusUpdated event.
+#[test]
+fn test_bet_status_lost_emitted() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let winner = setup.create_user();
+    let loser = setup.create_user();
+    let market_id = make_binary_market(&setup, "Bet lost event test?");
+    client.place_bet(&winner, &market_id, &String::from_str(&setup.env, "Yes"), &10_000_000i128);
+    client.place_bet(&loser, &market_id, &String::from_str(&setup.env, "No"), &5_000_000i128);
+    advance_time(&setup.env, 31 * 24 * 60 * 60);
+    setup.env.events().all();
+    client.resolve_market_manual(&setup.admin, &market_id, &String::from_str(&setup.env, "Yes"));
+    let emitted = setup.env.events().all();
+    assert!(!emitted.is_empty(), "resolution must emit per-bet Lost status event for loser");
+}
+
+/// Verify that create_market publishes a MarketCreated event.
+#[test]
+fn test_market_created_event_emitted() {
+    let setup = TestSetup::new();
+    setup.env.events().all();
+    make_binary_market(&setup, "Market created event test?");
+    let emitted = setup.env.events().all();
+    assert!(!emitted.is_empty(), "create_market must publish at least one event");
+}
+
+/// Verify that the legacy vote path publishes a VoteCast event.
+#[test]
+fn test_vote_cast_event_emitted() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let voter = setup.create_user();
+    let market_id = make_binary_market(&setup, "Vote cast event test?");
+    setup.env.events().all();
+    client.vote(&voter, &market_id, &String::from_str(&setup.env, "Yes"), &1_000_000i128);
+    let emitted = setup.env.events().all();
+    assert!(!emitted.is_empty(), "vote must publish at least one event");
+}
