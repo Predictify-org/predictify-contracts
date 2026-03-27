@@ -62,7 +62,7 @@ impl GasTracker {
         // Optional: admin-set gas budget cap per call (abort if exceeded)
         if let Some(limit) = Self::get_limit(env, operation) {
             if actual_cost > limit {
-                panic!("Gas budget cap exceeded");
+                panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
             }
         }
     }
