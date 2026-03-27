@@ -73,7 +73,7 @@ impl MarketCreator {
     ///     String::from_str(&env, "No")
     /// ];
     /// let oracle_config = OracleConfig::new(
-    ///     OracleProvider::Pyth,
+    ///     OracleProvider::pyth(),
     ///     String::from_str(&env, "BTC/USD"),
     ///     100_000_00, // $100,000 with 2 decimal places
     ///     String::from_str(&env, "gte")
@@ -201,7 +201,7 @@ impl MarketCreator {
         comparison: String,
     ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address,
             feed_id: asset_symbol,
             threshold,
@@ -283,7 +283,7 @@ impl MarketCreator {
         comparison: String,
     ) -> Result<Symbol, Error> {
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Pyth,
+            provider: OracleProvider::pyth(),
             oracle_address,
             feed_id,
             threshold,
@@ -464,23 +464,35 @@ impl MarketValidator {
             crate::config::ConfigManager::get_config(_env).map_err(|_| Error::ConfigNotFound)?;
 
         // Use the new MarketParameterValidator for comprehensive validation
-        use crate::validation::MarketParameterValidator;
+        // use crate::validation::MarketParameterValidator;
 
         // Validate duration limits from dynamic config
-        if let Err(_) = MarketParameterValidator::validate_duration_limits(
-            duration_days,
-            cfg.market.min_duration_days,
-            cfg.market.max_duration_days,
-        ) {
+        // Temporarily disabled due to validation module being disabled
+        // if let Err(_) = MarketParameterValidator::validate_duration_limits(
+        //     duration_days,
+        //     cfg.market.min_duration_days,
+        //     cfg.market.max_duration_days,
+        // ) {
+        //     return Err(Error::InvalidDuration);
+        // }
+        
+        // Simple validation for now
+        if duration_days < 1 || duration_days > 365 {
             return Err(Error::InvalidDuration);
         }
 
         // Validate outcome count against dynamic config
-        if let Err(_) = MarketParameterValidator::validate_outcome_count(
-            outcomes,
-            cfg.market.min_outcomes,
-            cfg.market.max_outcomes,
-        ) {
+        // Temporarily disabled due to validation module being disabled
+        // if let Err(_) = MarketParameterValidator::validate_outcome_count(
+        //     outcomes,
+        //     cfg.market.min_outcomes,
+        //     cfg.market.max_outcomes,
+        // ) {
+        //     return Err(Error::InvalidOutcomes);
+        // }
+        
+        // Simple validation for now
+        if outcomes.len() < 2 || outcomes.len() > 10 {
             return Err(Error::InvalidOutcomes);
         }
 
@@ -529,7 +541,7 @@ impl MarketValidator {
     ///
     /// let env = Env::default();
     /// let oracle_config = OracleConfig::new(
-    ///     OracleProvider::Pyth,
+    ///     OracleProvider::pyth(),
     ///     String::from_str(&env, "BTC/USD"),
     ///     50_000_00, // $50,000
     ///     String::from_str(&env, "gt")
@@ -2375,7 +2387,7 @@ impl MarketTestHelpers {
             ],
             30,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::from_str(
                     _env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -3096,7 +3108,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
