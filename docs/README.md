@@ -5,11 +5,13 @@ Welcome to the Predictify Contracts documentation! This directory contains compr
 ## 📁 Documentation Structure
 
 ### 🚀 [API Documentation](./api/API_DOCUMENTATION.md)
-Complete API reference for the Predictify Hybrid contract, including:
+Complete API reference for Predictify Hybrid contract, including:
 - Contract functions and their parameters
 - Return types and error handling
 - Integration examples
 - Client usage patterns
+- **ReflectorAsset Coverage Matrix** - Comprehensive asset testing and validation
+- **Token and Asset Management** - Multi-asset support documentation
 
 ### 🔒 [Security Documentation](./security/)
 Comprehensive security documentation and guidelines:
