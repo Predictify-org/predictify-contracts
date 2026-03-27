@@ -434,13 +434,14 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify the caller is an admin
-        let stored_admin: Address = env
+        let stored_admin: Address = match env
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic!("Admin not set");
-            });
+        {
+            Some(admin_addr) => admin_addr,
+            None => panic_with_error!(env, Error::AdminNotSet),
+        };
 
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
@@ -556,13 +557,14 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify the caller is an admin
-        let stored_admin: Address = env
+        let stored_admin: Address = match env
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic!("Admin not set");
-            });
+        {
+            Some(admin_addr) => admin_addr,
+            None => panic_with_error!(env, Error::AdminNotSet),
+        };
 
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
