@@ -50,10 +50,12 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 4. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
 5. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
 
+
 ## 🔗 Related Resources
 
 - **[Main Project README](../README.md)** - Project overview and setup instructions
 - **[Contracts Directory](../contracts/)** - Source code for all smart contracts
+- **[Predictify Hybrid: Reproducible WASM Builds & Checksums](../contracts/predictify-hybrid/README.md#reproducible-wasm-builds--checksums)**
 - **[GitHub Repository](https://github.com/your-org/predictify-contracts)** - Source code repository
 
 ## 📝 Contributing to Documentation
