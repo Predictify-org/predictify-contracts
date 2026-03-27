@@ -2390,11 +2390,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        // Publish to the Soroban event stream
-        env.events()
-            .publish((symbol_short!("fwd_att"), admin.clone()), event.clone());
-
-        // Also store the last event for simple on-chain querying/debugging
+        // Publish to the Soroban event stream and cache in storage (via unified helper)
         Self::store_event(env, &symbol_short!("fwd_att"), &event);
     }
 
@@ -2413,8 +2409,6 @@ impl EventEmitter {
             timestamp,
         };
 
-        env.events()
-            .publish((symbol_short!("fwd_ok"), admin.clone()), event.clone());
         Self::store_event(env, &symbol_short!("fwd_ok"), &event);
     }
 
@@ -3399,11 +3393,30 @@ impl EventEmitter {
         );
     }
 
-    /// Store event in persistent storage
+    /// Publish an event to the Soroban indexer-visible event stream **and** write the
+    /// latest instance to persistent storage so on-chain helpers can query it.
+    ///
+    /// # Indexer Visibility
+    ///
+    /// `env.events().publish(…)` is the mechanism that surfaces events in the Stellar
+    /// transaction meta / Horizon event stream.  Writing only to `persistent()` storage
+    /// is NOT visible to off-chain indexers.  This helper ensures both paths are handled
+    /// consistently for every financially-material state change.
+    ///
+    /// # Parameters
+    ///
+    /// - `env`        – Soroban environment
+    /// - `event_key`  – Short symbol used as both the event topic and the storage key
+    /// - `event_data` – The typed event struct to publish and cache
     fn store_event<T>(env: &Env, event_key: &Symbol, event_data: &T)
     where
-        T: Clone + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
+        T: Clone
+            + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>
+            + soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
+        // Publish to the indexer-visible Soroban event stream
+        env.events().publish((event_key.clone(),), event_data.clone());
+        // Also keep the latest-event slot for simple on-chain queries
         env.storage().persistent().set(event_key, event_data);
     }
 
@@ -3430,6 +3443,88 @@ impl EventEmitter {
         env.events().publish(
             (symbol_short!("allowlst"), event_id.clone()),
             (addresses.clone(), admin.clone(), env.ledger().timestamp()),
+        );
+    }
+
+    /// Emit a per-bet resolution event when a bet transitions to Won or Lost.
+    ///
+    /// Called once per settled bet inside `BetManager::resolve_market_bets`.
+    /// `payout_amount` is `None` because the actual payout is computed lazily at
+    /// claim time via `calculate_bet_payout`.
+    ///
+    /// # Parameters
+    ///
+    /// - `env`        – Soroban environment
+    /// - `market_id`  – Market being resolved
+    /// - `bettor`     – Address of the bet owner
+    /// - `new_status` – `"Won"` or `"Lost"`
+    pub fn emit_bet_resolved(
+        env: &Env,
+        market_id: &Symbol,
+        bettor: &Address,
+        new_status: &String,
+    ) {
+        Self::emit_bet_status_updated(
+            env,
+            market_id,
+            bettor,
+            &String::from_str(env, "Active"),
+            new_status,
+            None,
+        );
+    }
+
+    /// Emit a bet-cancelled event when an active bet is refunded on market cancellation.
+    ///
+    /// Wraps [`BetStatusUpdatedEvent`] with `new_status = "Cancelled"` and the
+    /// full refunded amount in `payout_amount` for financial reconciliation.
+    ///
+    /// # Parameters
+    ///
+    /// - `env`           – Soroban environment
+    /// - `market_id`     – Cancelled market identifier
+    /// - `bettor`        – Address of the bet owner
+    /// - `refund_amount` – Amount returned to the user (equals original bet amount)
+    pub fn emit_bet_cancelled(
+        env: &Env,
+        market_id: &Symbol,
+        bettor: &Address,
+        refund_amount: i128,
+    ) {
+        Self::emit_bet_status_updated(
+            env,
+            market_id,
+            bettor,
+            &String::from_str(env, "Active"),
+            &String::from_str(env, "Cancelled"),
+            Some(refund_amount),
+        );
+    }
+
+    /// Emit a market-cancelled state-change event.
+    ///
+    /// Wraps [`StateChangeEvent`] transitioning to [`MarketState::Cancelled`].
+    /// Must be called from every market cancellation / emergency refund code path
+    /// so that off-chain indexers can detect market cancellation atomically.
+    ///
+    /// # Parameters
+    ///
+    /// - `env`       – Soroban environment
+    /// - `market_id` – Market being cancelled
+    /// - `old_state` – Market state prior to cancellation
+    /// - `reason`    – Human-readable reason string for auditors and integrators
+    pub fn emit_market_cancelled(
+        env: &Env,
+        market_id: &Symbol,
+        old_state: &crate::types::MarketState,
+        reason: &String,
+    ) {
+        Self::emit_state_change_event(
+            env,
+            market_id,
+            old_state,
+            &crate::types::MarketState::Cancelled,
+            reason,
         );
     }
 }

@@ -987,8 +987,22 @@ impl DisputeManager {
         };
 
         // Update market with final outcome
-        DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
+        DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome.clone())?;
         MarketStateManager::update_market(env, &market_id, &market);
+
+        // Emit dispute resolved event so indexers track the final outcome and weights.
+        // Winners/losers and fee distribution are computed separately during payout;
+        // emit with empty vecs here for the state-change notification.
+        let empty_addresses = soroban_sdk::Vec::new(env);
+        crate::events::EventEmitter::emit_dispute_resolved(
+            env,
+            &market_id,
+            &final_outcome,
+            &empty_addresses,
+            &empty_addresses,
+            0, // fee_distribution computed separately during payout
+        );
+
         crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
             env,
             &market_id,

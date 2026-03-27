@@ -19,6 +19,7 @@ Comprehensive security documentation and guidelines:
 - **[Security Best Practices](./security/SECURITY_BEST_PRACTICES.md)** - Development and deployment security guidelines
 - **[Security Considerations](./security/SECURITY_CONSIDERATIONS.md)** - Important security considerations for the system
 - **[Security Testing Guide](./security/SECURITY_TESTING_GUIDE.md)** - Security testing procedures and tools
+  - [§6 Event Emission Audit (Issue #426)](./security/SECURITY_TESTING_GUIDE.md#6-event-emission-audit-issue-426) — threat model, invariants, financially-material event table, and test invocation for indexer-visibility verification
 
 ### ⛽ [Gas Optimization Documentation](./gas/)
 Complete gas optimization and cost analysis:
@@ -49,6 +50,7 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 3. **For Security Auditors**: Review [Security Documentation](./security/)
 4. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
 5. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
+6. **For Indexers / Integrators**: Read [§6 Event Emission Audit](./security/SECURITY_TESTING_GUIDE.md#6-event-emission-audit-issue-426) for the complete financially-material event table and verification test patterns
 
 ## 🔗 Related Resources
 

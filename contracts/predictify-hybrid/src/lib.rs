@@ -85,7 +85,7 @@ mod bet_tests;
 #[cfg(any())]
 mod balance_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod event_management_tests;
 
 #[cfg(any())]
