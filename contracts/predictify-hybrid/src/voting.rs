@@ -381,8 +381,8 @@ impl VotingManager {
             VotingUtils::transfer_winnings(env, &user, payout)?;
         }
 
-        // Mark as claimed
-        MarketStateManager::mark_claimed(&mut market, user, Some(&market_id));
+        // Mark as claimed with timestamp and payout tracking
+        MarketStateManager::mark_claimed(&mut market, user, Some(&market_id), payout, env);
         MarketStateManager::update_market(env, &market_id, &market);
 
         Ok(payout)
@@ -955,7 +955,11 @@ impl VotingValidator {
         user: &Address,
     ) -> Result<(), Error> {
         // Check if user has already claimed
-        let claimed = market.claimed.get(user.clone()).unwrap_or(false);
+        let claimed = market
+            .claimed
+            .get(user.clone())
+            .map(|info| info.is_claimed())
+            .unwrap_or(false);
         if claimed {
             return Err(Error::AlreadyClaimed);
         }
@@ -1212,7 +1216,11 @@ impl VotingUtils {
 
     /// Check if user has claimed winnings
     pub fn has_user_claimed(market: &Market, user: &Address) -> bool {
-        market.claimed.get(user.clone()).unwrap_or(false)
+        market
+            .claimed
+            .get(user.clone())
+            .map(|info| info.is_claimed())
+            .unwrap_or(false)
     }
 }
 

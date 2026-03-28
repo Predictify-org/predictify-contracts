@@ -177,18 +177,21 @@ fn test_sweep_after_timeout_only_unclaimed_to_treasury() {
     assert_eq!(treasury_balance, swept);
 
     let market = setup.client().get_market(&setup.market_id).unwrap();
-    assert_eq!(
-        market.claimed.get(setup.winner_1.clone()).unwrap_or(false),
-        true
-    );
-    assert_eq!(
-        market.claimed.get(setup.winner_2.clone()).unwrap_or(false),
-        true
-    );
-    assert_eq!(
-        market.claimed.get(setup.loser.clone()).unwrap_or(false),
-        false
-    );
+    assert!(market
+        .claimed
+        .get(setup.winner_1.clone())
+        .map(|info| info.is_claimed())
+        .unwrap_or(false));
+    assert!(market
+        .claimed
+        .get(setup.winner_2.clone())
+        .map(|info| info.is_claimed())
+        .unwrap_or(false));
+    assert!(!market
+        .claimed
+        .get(setup.loser.clone())
+        .map(|info| info.is_claimed())
+        .unwrap_or(false));
 }
 
 #[test]
