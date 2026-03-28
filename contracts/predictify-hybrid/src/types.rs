@@ -396,6 +396,66 @@ impl OracleProvider {
             OracleProvider::Pyth => String::from_str(env, "Pyth Network"),
             OracleProvider::BandProtocol => String::from_str(env, "Band Protocol"),
             OracleProvider::DIA => String::from_str(env, "DIA"),
+        // Since soroban_sdk::String doesn't have easy conversion to &str,
+        // we'll use a different approach based on the provider_id content
+        let env = soroban_sdk::Env::default();
+        
+        // Compare with known provider IDs
+        let reflector_id = String::from_str(&env, "reflector");
+        let pyth_id = String::from_str(&env, "pyth");
+        let band_id = String::from_str(&env, "band_protocol");
+        let dia_id = String::from_str(&env, "dia");
+        
+        if self.provider_id == reflector_id {
+            "reflector"
+        } else if self.provider_id == pyth_id {
+            "pyth"
+        } else if self.provider_id == band_id {
+            "band_protocol"
+        } else if self.provider_id == dia_id {
+            "dia"
+        } else {
+            "unknown"
+        }
+    }
+
+    /// Returns a human-readable name for the oracle provider.
+    ///
+    /// This method provides formatted display names for UI and logging purposes.
+    /// Unknown providers return a generic "Unknown Provider" label.
+    ///
+    /// # Returns
+    ///
+    /// String containing the formatted provider name
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::types::OracleProvider;
+    /// # let env = Env::default();
+    ///
+    /// let reflector = OracleProvider::reflector();
+    /// assert_eq!(reflector.name(), "Reflector");
+    ///
+    /// let unknown = OracleProvider::from_str(String::from_str(&env, "new_oracle"));
+    /// assert_eq!(unknown.name(), "Unknown Provider (new_oracle)");
+    /// ```
+    pub fn name(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self.as_str() {
+            "reflector" => String::from_str(&env, "Reflector"),
+            "pyth" => String::from_str(&env, "Pyth Network"),
+            "band_protocol" => String::from_str(&env, "Band Protocol"),
+            "dia" => String::from_str(&env, "DIA"),
+            unknown => {
+                let prefix = String::from_str(&env, "Unknown Provider (");
+                let suffix = String::from_str(&env, ")");
+                // Use string slicing for soroban_sdk::String
+                let result = prefix.clone();
+                // For simplicity, just return a basic message for unknown providers
+                String::from_str(&env, "Unknown Provider")
+            }
         }
     }
 
@@ -3427,8 +3487,111 @@ pub struct Event {
 }
 
 impl ReflectorAsset {
+    /// Check if this asset is Stellar Lumens (XLM)
     pub fn is_xlm(&self) -> bool {
         matches!(self, ReflectorAsset::Stellar)
+    }
+
+    /// Returns the symbol string for this asset
+    pub fn symbol(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
+            ReflectorAsset::BTC => String::from_str(&env, "BTC"),
+            ReflectorAsset::ETH => String::from_str(&env, "ETH"),
+            ReflectorAsset::Other(symbol) => symbol.clone(),
+        }
+    }
+
+    /// Returns the human-readable name for this asset
+    pub fn name(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "Stellar Lumens"),
+            ReflectorAsset::BTC => String::from_str(&env, "Bitcoin"),
+            ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
+            ReflectorAsset::Other(symbol) => {
+                let prefix = String::from_str(&env, "Custom Asset (");
+                let suffix = String::from_str(&env, ")");
+                prefix + symbol + suffix
+            }
+        }
+    }
+
+    /// Returns the number of decimal places for this asset
+    pub fn decimals(&self) -> u8 {
+        match self {
+            ReflectorAsset::Stellar => 7,
+            ReflectorAsset::BTC => 8,
+            ReflectorAsset::ETH => 18,
+            ReflectorAsset::Other(_) => 7, // Default to 7 for custom assets
+        }
+    }
+
+    /// Returns the Reflector feed ID for this asset (e.g., "BTC/USD")
+    pub fn feed_id(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "XLM/USD"),
+            ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
+            ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
+            ReflectorAsset::Other(symbol) => {
+                let suffix = String::from_str(&env, "/USD");
+                symbol.clone() + &suffix
+            }
+        }
+    }
+
+    /// Checks if this asset is supported by Reflector oracle
+    pub fn is_supported(&self) -> bool {
+        match self {
+            ReflectorAsset::Stellar | ReflectorAsset::BTC | ReflectorAsset::ETH => true,
+            ReflectorAsset::Other(_) => false, // Custom assets not supported by default
+        }
+    }
+
+    /// Checks if this asset is a known asset (including custom ones)
+    pub fn is_known(&self) -> bool {
+        true // All ReflectorAsset variants are known by definition
+    }
+
+    /// Validates the asset for use in market creation
+    pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
+        if !self.is_supported() {
+            return Err(crate::Error::InvalidOracleConfig);
+        }
+        Ok(())
+    }
+
+    /// Creates a ReflectorAsset from a symbol string
+    pub fn from_symbol(symbol: String) -> Self {
+        match symbol.to_string().as_str() {
+            "XLM" => ReflectorAsset::Stellar,
+            "BTC" => ReflectorAsset::BTC,
+            "ETH" => ReflectorAsset::ETH,
+            _ => ReflectorAsset::Other(symbol),
+        }
+    }
+
+    /// Returns all supported assets for testing purposes
+    pub fn all_supported() -> Vec<Self> {
+        let env = soroban_sdk::Env::default();
+        Vec::from_array(&env, [
+            ReflectorAsset::Stellar,
+            ReflectorAsset::BTC,
+            ReflectorAsset::ETH,
+        ])
+    }
+
+    /// Returns all known assets (including unsupported) for testing purposes
+    pub fn all_known() -> Vec<Self> {
+        let env = soroban_sdk::Env::default();
+        Vec::from_array(&env, [
+            ReflectorAsset::Stellar,
+            ReflectorAsset::BTC,
+            ReflectorAsset::ETH,
+            ReflectorAsset::Other(Symbol::new(&env, "CUSTOM")),
+        ])
     }
 }
 

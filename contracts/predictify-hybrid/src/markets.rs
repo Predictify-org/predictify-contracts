@@ -464,23 +464,35 @@ impl MarketValidator {
             crate::config::ConfigManager::get_config(_env).map_err(|_| Error::ConfigNotFound)?;
 
         // Use the new MarketParameterValidator for comprehensive validation
-        use crate::validation::MarketParameterValidator;
+        // use crate::validation::MarketParameterValidator;
 
         // Validate duration limits from dynamic config
-        if let Err(_) = MarketParameterValidator::validate_duration_limits(
-            duration_days,
-            cfg.market.min_duration_days,
-            cfg.market.max_duration_days,
-        ) {
+        // Temporarily disabled due to validation module being disabled
+        // if let Err(_) = MarketParameterValidator::validate_duration_limits(
+        //     duration_days,
+        //     cfg.market.min_duration_days,
+        //     cfg.market.max_duration_days,
+        // ) {
+        //     return Err(Error::InvalidDuration);
+        // }
+        
+        // Simple validation for now
+        if duration_days < 1 || duration_days > 365 {
             return Err(Error::InvalidDuration);
         }
 
         // Validate outcome count against dynamic config
-        if let Err(_) = MarketParameterValidator::validate_outcome_count(
-            outcomes,
-            cfg.market.min_outcomes,
-            cfg.market.max_outcomes,
-        ) {
+        // Temporarily disabled due to validation module being disabled
+        // if let Err(_) = MarketParameterValidator::validate_outcome_count(
+        //     outcomes,
+        //     cfg.market.min_outcomes,
+        //     cfg.market.max_outcomes,
+        // ) {
+        //     return Err(Error::InvalidOutcomes);
+        // }
+        
+        // Simple validation for now
+        if outcomes.len() < 2 || outcomes.len() > 10 {
             return Err(Error::InvalidOutcomes);
         }
 

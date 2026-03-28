@@ -100,6 +100,7 @@ impl QueryManager {
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
             oracle_provider,
+            oracle_provider: oracle_provider,
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
             winning_outcome,

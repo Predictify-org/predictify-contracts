@@ -2,7 +2,7 @@
 
 use crate::errors::Error;
 use crate::events::EventEmitter;
-use crate::oracles::{OracleInterface, ReflectorOracle};
+// use crate::oracles::{OracleInterface, ReflectorOracle};
 use crate::types::OracleProvider;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
@@ -45,9 +45,11 @@ impl OracleBackup {
         feed_id: &String,
     ) -> Result<i128, Error> {
         match oracle {
-            OracleProvider::Reflector => {
-                let reflector = ReflectorOracle::new(address.clone());
-                reflector.get_price(env, feed_id)
+            oracle if oracle == &OracleProvider::reflector() => {
+                // Temporarily disabled due to oracles module being disabled
+            // let reflector = ReflectorOracle::new(address.clone());
+            // reflector.get_price(env, feed_id)
+            Err(Error::OracleUnavailable)
             }
             _ => Err(Error::OracleUnavailable),
         }

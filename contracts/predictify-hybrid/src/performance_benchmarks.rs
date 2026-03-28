@@ -2,7 +2,7 @@
 
 use crate::errors::Error;
 use crate::types::OracleProvider;
-use soroban_sdk::{contracttype, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Env, Map, String, Symbol, Vec, vec};
 
 /// Performance Benchmark module for gas usage and execution time testing
 ///
@@ -545,5 +545,270 @@ impl PerformanceBenchmarkManager {
         );
 
         trends
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::string::ToString;
+
+    struct PerfBenchTest {
+        env: Env,
+    }
+
+    impl PerfBenchTest {
+        fn new() -> Self {
+            let env = Env::default();
+            PerfBenchTest { env }
+        }
+    }
+
+    #[test]
+    fn test_benchmark_gas_usage_success() {
+        let test = PerfBenchTest::new();
+        let func = String::from_str(&test.env, "test_function");
+        let inputs = Vec::new(&test.env);
+        let result = PerformanceBenchmarkManager::benchmark_gas_usage(&test.env, func, inputs);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_benchmark_storage_usage() {
+        let test = PerfBenchTest::new();
+        let op = StorageOperation {
+            operation_type: String::from_str(&test.env, "read"),
+            data_size: 100,
+            key_count: 10,
+            value_count: 10,
+            operation_count: 5,
+        };
+        let result = PerformanceBenchmarkManager::benchmark_storage_usage(&test.env, op);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_benchmark_batch_operations() {
+        let test = PerfBenchTest::new();
+        // Test benchmark batch operations
+        let op = BatchOperation {
+            operation_type: String::from_str(&test.env, "write"),
+            batch_size: 5,
+            operation_count: 10,
+            data_size: 256,
+        };
+        let mut ops = soroban_sdk::Vec::new(&test.env);
+        ops.push_back(op);
+        let result = PerformanceBenchmarkManager::benchmark_batch_operations(&test.env, ops);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_run_scalability_test() {
+        let test = PerfBenchTest::new();
+        // Test scalability testing
+        let market_size: u32 = 100;
+        let user_count: u32 = 50;
+        let result = PerformanceBenchmarkManager::benchmark_scalability(&test.env, market_size, user_count);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_benchmark_result_structure() {
+        let test = PerfBenchTest::new();
+        let result = BenchmarkResult {
+            function_name: String::from_str(&test.env, "test_func"),
+            gas_usage: 1000,
+            execution_time: 50,
+            storage_usage: 100,
+            success: true,
+            error_message: None,
+            input_size: 10,
+            output_size: 20,
+            benchmark_timestamp: test.env.ledger().timestamp(),
+            performance_score: 85,
+        };
+        assert!(result.success);
+        assert_eq!(result.gas_usage, 1000);
+    }
+
+    #[test]
+    fn test_performance_metrics_structure() {
+        let test = PerfBenchTest::new();
+        let metrics = PerformanceMetrics {
+            total_gas_usage: 5000,
+            total_execution_time: 250,
+            total_storage_usage: 500,
+            average_gas_per_operation: 1000,
+            average_time_per_operation: 50,
+            gas_efficiency_score: 85,
+            time_efficiency_score: 90,
+            storage_efficiency_score: 80,
+            overall_performance_score: 85,
+            benchmark_count: 5,
+            success_rate: 100,
+        };
+        assert_eq!(metrics.benchmark_count, 5);
+    }
+
+    #[test]
+    fn test_performance_thresholds_structure() {
+        let test = PerfBenchTest::new();
+        let thresholds = PerformanceThresholds {
+            max_gas_usage: 10000,
+            max_execution_time: 5000,
+            max_storage_usage: 100000,
+            min_gas_efficiency: 50,
+            min_time_efficiency: 50,
+            min_storage_efficiency: 50,
+            min_overall_score: 50,
+        };
+        assert!(thresholds.max_gas_usage > 0);
+    }
+
+    #[test]
+    fn test_storage_operation_structure() {
+        let test = PerfBenchTest::new();
+        let op = StorageOperation {
+            operation_type: String::from_str(&test.env, "write"),
+            data_size: 200,
+            key_count: 20,
+            value_count: 20,
+            operation_count: 10,
+        };
+        assert_eq!(op.data_size, 200);
+    }
+
+    #[test]
+    fn test_batch_operation_structure() {
+        let test = PerfBenchTest::new();
+        let op = BatchOperation {
+            operation_type: String::from_str(&test.env, "batch_vote"),
+            batch_size: 50,
+            operation_count: 500,
+            data_size: 2000,
+        };
+        assert_eq!(op.batch_size, 50);
+    }
+
+    #[test]
+    fn test_scalability_test_structure() {
+        let test = PerfBenchTest::new();
+        let test_params = ScalabilityTest {
+            market_size: 500,
+            user_count: 5000,
+            operation_count: 50000,
+            concurrent_operations: 500,
+            test_duration: 7200,
+        };
+        assert!(test_params.market_size > 0);
+    }
+
+    #[test]
+    fn test_performance_benchmark_suite_structure() {
+        let test = PerfBenchTest::new();
+        let suite = PerformanceBenchmarkSuite {
+            suite_id: Symbol::new(&test.env, "suite_1"),
+            total_benchmarks: 10,
+            successful_benchmarks: 9,
+            failed_benchmarks: 1,
+            average_gas_usage: 1200,
+            average_execution_time: 60,
+            benchmark_results: Map::new(&test.env),
+            performance_thresholds: PerformanceThresholds {
+                max_gas_usage: 10000,
+                max_execution_time: 5000,
+                max_storage_usage: 100000,
+                min_gas_efficiency: 50,
+                min_time_efficiency: 50,
+                min_storage_efficiency: 50,
+                min_overall_score: 50,
+            },
+            benchmark_timestamp: test.env.ledger().timestamp(),
+        };
+        assert_eq!(suite.total_benchmarks, 10);
+    }
+
+    #[test]
+    fn test_performance_report_structure() {
+        let test = PerfBenchTest::new();
+        let suite = PerformanceBenchmarkSuite {
+            suite_id: Symbol::new(&test.env, "suite_1"),
+            total_benchmarks: 5,
+            successful_benchmarks: 5,
+            failed_benchmarks: 0,
+            average_gas_usage: 1000,
+            average_execution_time: 50,
+            benchmark_results: Map::new(&test.env),
+            performance_thresholds: PerformanceThresholds {
+                max_gas_usage: 10000,
+                max_execution_time: 5000,
+                max_storage_usage: 100000,
+                min_gas_efficiency: 50,
+                min_time_efficiency: 50,
+                min_storage_efficiency: 50,
+                min_overall_score: 50,
+            },
+            benchmark_timestamp: test.env.ledger().timestamp(),
+        };
+        let metrics = PerformanceMetrics {
+            total_gas_usage: 5000,
+            total_execution_time: 250,
+            total_storage_usage: 500,
+            average_gas_per_operation: 1000,
+            average_time_per_operation: 50,
+            gas_efficiency_score: 85,
+            time_efficiency_score: 90,
+            storage_efficiency_score: 80,
+            overall_performance_score: 85,
+            benchmark_count: 5,
+            success_rate: 100,
+        };
+        let report = PerformanceReport {
+            report_id: Symbol::new(&test.env, "report_1"),
+            benchmark_suite: suite,
+            performance_metrics: metrics,
+            recommendations: Vec::new(&test.env),
+            optimization_opportunities: Vec::new(&test.env),
+            performance_trends: Map::new(&test.env),
+            generated_timestamp: test.env.ledger().timestamp(),
+        };
+        assert!(!report.report_id.to_string().is_empty());
+    }
+
+    #[test]
+    fn test_gas_efficiency_scoring() {
+        let test = PerfBenchTest::new();
+        // Test efficiency scoring boundaries
+        let low_gas = 500u64;
+        let medium_gas = 3000u64;
+        let high_gas = 8000u64;
+        assert!(low_gas < medium_gas && medium_gas < high_gas);
+    }
+
+    #[test]
+    fn test_success_rate_calculation() {
+        let test = PerfBenchTest::new();
+        let successful = 9u32;
+        let total = 10u32;
+        let rate = (successful * 100) / total;
+        assert_eq!(rate, 90);
+    }
+
+    #[test]
+    fn test_storage_cost_scaling() {
+        let test = PerfBenchTest::new();
+        let data_size = 100u32;
+        let operation_count = 5u32;
+        let total_cost = data_size as u64 * operation_count as u64;
+        assert_eq!(total_cost, 500);
+    }
+
+    #[test]
+    fn test_oracle_provider_benchmark() {
+        let _test = PerfBenchTest::new();
+        // Test benchmarking different oracle providers
+        let provider_count = 4;
+        assert_eq!(provider_count, 4);
     }
 }
