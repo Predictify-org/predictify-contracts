@@ -4642,38 +4642,15 @@ impl OracleConfigValidator {
             return Err(ValidationError::InvalidOracle);
         }
 
-        match provider {
-            OracleProvider::Reflector => {
-                // Reflector feed ID validation
-                // Check length (3-20 characters)
-                if feed_id.len() < 3 || feed_id.len() > 20 {
-                    return Err(ValidationError::InvalidOracle);
-                }
-
-                // Basic format validation for Reflector
-                // Valid formats: "BTC/USD", "ETH", "XLM/USD"
-                // For now, just check length and basic structure
-                // In a full implementation, we would parse the string properly
-
-                Ok(())
+        if provider.is_supported() {
+            // Reflector feed ID validation
+            if feed_id.len() < 3 || feed_id.len() > 20 {
+                return Err(ValidationError::InvalidOracle);
             }
-            OracleProvider::Pyth => {
-                // Pyth feed ID validation (66-character hex with 0x prefix)
-                // Check exact length (64 hex chars + 2 for "0x" prefix)
-                if feed_id.len() != 66 {
-                    return Err(ValidationError::InvalidOracle);
-                }
-
-                // Basic hex format validation
-                // For now, just check length
-                // In a full implementation, we would validate hex format properly
-
-                Ok(())
-            }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
-                // Not supported on Stellar
-                Err(ValidationError::InvalidOracle)
-            }
+            Ok(())
+        } else {
+            // Not supported on Stellar
+            Err(ValidationError::InvalidOracle)
         }
     }
 
@@ -4711,33 +4688,29 @@ impl OracleConfigValidator {
             return Err(ValidationError::InvalidOracle);
         }
 
-        match provider {
-            OracleProvider::Reflector => {
-                // Reflector threshold validation (cents precision)
-                let min_threshold = 1; // $0.01 in cents
-                let max_threshold = 1_000_000_00; // $10,000,000 in cents
+        if provider.is_reflector() {
+            // Reflector threshold validation (cents precision)
+            let min_threshold = 1; // $0.01 in cents
+            let max_threshold = 1_000_000_00; // $10,000,000 in cents
 
-                if *threshold < min_threshold || *threshold > max_threshold {
-                    return Err(ValidationError::InvalidOracle);
-                }
-
-                Ok(())
+            if *threshold < min_threshold || *threshold > max_threshold {
+                return Err(ValidationError::InvalidOracle);
             }
-            OracleProvider::Pyth => {
-                // Pyth threshold validation (8 decimal precision)
-                let min_threshold = 1_000_000; // $0.01 in 8-decimal units
-                let max_threshold = 100_000_000_000_000; // $1,000,000 in 8-decimal units
 
-                if *threshold < min_threshold || *threshold > max_threshold {
-                    return Err(ValidationError::InvalidOracle);
-                }
+            Ok(())
+        } else if provider.is_pyth() {
+            // Pyth threshold validation (8 decimal precision)
+            let min_threshold = 1_000_000; // $0.01 in 8-decimal units
+            let max_threshold = 100_000_000_000_000; // $1,000,000 in 8-decimal units
 
-                Ok(())
+            if *threshold < min_threshold || *threshold > max_threshold {
+                return Err(ValidationError::InvalidOracle);
             }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
-                // Not supported on Stellar
-                Err(ValidationError::InvalidOracle)
-            }
+
+            Ok(())
+        } else {
+            // Not supported on Stellar
+            Err(ValidationError::InvalidOracle)
         }
     }
 
@@ -4821,20 +4794,15 @@ impl OracleConfigValidator {
     /// - ❌ No Stellar integration
     /// - ❌ Multi-chain but no Stellar
     pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), ValidationError> {
-        match provider {
-            OracleProvider::Reflector => {
-                // Reflector is fully supported on Stellar
-                Ok(())
-            }
-            OracleProvider::Pyth => {
-                // Pyth is placeholder for future Stellar support
-                // Currently returns error but could be changed when Pyth supports Stellar
-                Err(ValidationError::InvalidOracle)
-            }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
-                // Not supported on Stellar network
-                Err(ValidationError::InvalidOracle)
-            }
+        if provider.is_reflector() {
+            // Reflector is fully supported on Stellar
+            Ok(())
+        } else if provider.is_pyth() {
+            // Pyth is placeholder for future Stellar support
+            Err(ValidationError::InvalidOracle)
+        } else {
+            // Not supported on Stellar network
+            Err(ValidationError::InvalidOracle)
         }
     }
 
@@ -4881,19 +4849,17 @@ impl OracleConfigValidator {
         match config.provider {
             OracleProvider::Reflector => {
                 // Reflector-specific consistency checks
-                // Basic validation - check length and format
                 if config.feed_id.len() < 2 || config.feed_id.len() > 20 {
                     return Err(ValidationError::InvalidOracle);
                 }
             }
             OracleProvider::Pyth => {
                 // Pyth-specific consistency checks
-                // Ensure feed ID is 66 characters (64 hex + 0x prefix)
                 if config.feed_id.len() != 66 {
                     return Err(ValidationError::InvalidOracle);
                 }
             }
-            OracleProvider::BandProtocol | OracleProvider::DIA => {
+            _ => {
                 // Not supported providers
                 return Err(ValidationError::InvalidOracle);
             }
@@ -4925,6 +4891,7 @@ impl OracleConfigValidator {
         provider: &OracleProvider,
     ) -> Map<String, String> {
         let mut rules = Map::new(env);
+
 
         match provider {
             OracleProvider::Reflector => {
@@ -4979,33 +4946,7 @@ impl OracleConfigValidator {
                     String::from_str(env, "Placeholder implementation"),
                 );
             }
-            OracleProvider::BandProtocol => {
-                rules.set(
-                    String::from_str(env, "feed_id_format"),
-                    String::from_str(env, "Not supported on Stellar"),
-                );
-                rules.set(
-                    String::from_str(env, "threshold_range"),
-                    String::from_str(env, "Not supported on Stellar"),
-                );
-                rules.set(
-                    String::from_str(env, "supported_operators"),
-                    String::from_str(env, "Not supported on Stellar"),
-                );
-                rules.set(
-                    String::from_str(env, "precision"),
-                    String::from_str(env, "Not supported on Stellar"),
-                );
-                rules.set(
-                    String::from_str(env, "network_support"),
-                    String::from_str(env, "No Stellar integration"),
-                );
-                rules.set(
-                    String::from_str(env, "integration_status"),
-                    String::from_str(env, "Not available"),
-                );
-            }
-            OracleProvider::DIA => {
+            _ => {
                 rules.set(
                     String::from_str(env, "feed_id_format"),
                     String::from_str(env, "Not supported on Stellar"),
@@ -5135,7 +5076,7 @@ impl OracleConfigValidator {
         match provider {
             OracleProvider::Reflector => &["gt", "lt", "eq"],
             OracleProvider::Pyth => &["gt", "gte", "lt", "lte", "eq"],
-            OracleProvider::BandProtocol | OracleProvider::DIA => &[],
+            _ => &[],
         }
     }
 }

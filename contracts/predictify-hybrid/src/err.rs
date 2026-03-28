@@ -60,6 +60,8 @@ pub enum Error {
     ResolutionTimeoutReached = 207,
     /// Oracle confidence interval exceeds configured threshold
     OracleConfidenceTooWide = 208,
+    /// Invalid oracle feed ID
+    InvalidOracleFeed = 209,
 
     // ===== VALIDATION ERRORS =====
     /// Invalid question format
@@ -1127,6 +1129,7 @@ impl Error {
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
+            Error::InvalidOracleFeed => "Invalid oracle feed or malformed response",
         }
     }
 
@@ -1243,6 +1246,7 @@ impl Error {
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
+            Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
         }
     }
 }

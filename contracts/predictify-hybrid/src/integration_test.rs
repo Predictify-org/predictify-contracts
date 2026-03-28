@@ -90,7 +90,7 @@ impl IntegrationTestSuite {
             &outcomes,
             &duration_days,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: Address::generate(&self.env),
                 feed_id: String::from_str(&self.env, "BTC"),
                 threshold: 2500000,

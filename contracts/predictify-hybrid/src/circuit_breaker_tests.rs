@@ -428,7 +428,7 @@ mod circuit_breaker_tests {
                 &outcomes,
                 &30u32,
                 &crate::types::OracleConfig {
-                    provider: crate::types::OracleProvider::Reflector,
+                    provider: crate::types::OracleProvider::reflector(),
                     feed_id: String::from_str(&env, "BTC/USD"),
                     threshold: 100_000_00000000,
                     comparison: String::from_str(&env, "gte"),

@@ -66,7 +66,7 @@ impl TimeoutSweepSetup {
                 outcomes,
                 end_time,
                 OracleConfig {
-                    provider: OracleProvider::Reflector,
+                    provider: OracleProvider::reflector(),
                     oracle_address: Address::from_str(
                         &env,
                         "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",

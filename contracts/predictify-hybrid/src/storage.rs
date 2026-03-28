@@ -808,7 +808,7 @@ mod tests {
             ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Reflector,
+                OracleProvider::reflector(),
                 soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -866,7 +866,7 @@ mod tests {
             ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Reflector,
+                OracleProvider::reflector(),
                 soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -886,6 +886,6 @@ mod tests {
 
         let recommendations = StorageUtils::get_storage_recommendations(&market);
         // Recommendations may be empty for small markets, so we just check it doesn't panic
-        assert!(recommendations.len() >= 0);
+        // len() is always >= 0 for Vec
     }
 }

@@ -57,7 +57,7 @@ impl TestSetup {
     fn create_market(&self, question: &str, outcomes: Vec<String>, duration_days: u32) -> Symbol {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         let oracle_config = OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(
                 &self.env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",

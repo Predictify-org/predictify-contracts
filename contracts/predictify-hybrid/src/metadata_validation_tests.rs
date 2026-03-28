@@ -60,7 +60,7 @@ impl MetadataTest {
 
     fn create_valid_oracle_config(&self) -> OracleConfig {
         OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&self.env),
             feed_id: String::from_str(&self.env, "BTC/USD"),
             threshold: 100_000_00,

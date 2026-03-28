@@ -1082,7 +1082,7 @@ impl VotingValidator {
 /// #     vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
 /// #     env.ledger().timestamp() + 86400,
 /// #     crate::types::OracleConfig::new(
-/// #         crate::types::OracleProvider::Reflector,
+/// #         crate::types::OracleProvider::reflector(),
 /// #         String::from_str(&env, "BTC/USD"),
 /// #         100000000000i128,
 /// #         String::from_str(&env, "gte")
@@ -1258,7 +1258,7 @@ impl VotingUtils {
 /// #     vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
 /// #     env.ledger().timestamp() + 86400,
 /// #     crate::types::OracleConfig::new(
-/// #         crate::types::OracleProvider::Reflector,
+/// #         crate::types::OracleProvider::reflector(),
 /// #         String::from_str(&env, "BTC/USD"),
 /// #         100000000000i128,
 /// #         String::from_str(&env, "gte")
@@ -1591,7 +1591,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,
@@ -1621,7 +1621,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,
@@ -1657,7 +1657,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,

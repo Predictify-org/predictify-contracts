@@ -44,7 +44,7 @@ mod event_visibility_tests {
 
     fn create_test_oracle_config(env: &Env) -> OracleConfig {
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::generate(env),
             String::from_str(env, "BTC/USD"),
             50_000_00,

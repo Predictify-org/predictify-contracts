@@ -189,7 +189,7 @@ impl CircuitBreaker {
             .set(&Symbol::new(env, Self::CONFIG_KEY), config);
 
         // Emit configuration update event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Reset,
             BreakerCondition::ManualOverride,
@@ -252,7 +252,7 @@ impl CircuitBreaker {
         Self::update_state(env, &state)?;
 
         // Emit pause event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Pause,
             BreakerCondition::ManualOverride,
@@ -340,7 +340,7 @@ impl CircuitBreaker {
                 state.half_open_requests = 0;
                 Self::update_state(env, &state)?;
 
-                Self::emit_circuit_breaker_event(
+                let _ = Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Reset,
                     BreakerCondition::ManualOverride,
@@ -404,7 +404,7 @@ impl CircuitBreaker {
             state.opened_time = current_time;
             Self::update_state(env, &state)?;
 
-            Self::emit_circuit_breaker_event(
+            let _ = Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
                 condition.clone(),
@@ -443,7 +443,7 @@ impl CircuitBreaker {
         Self::update_state(env, &state)?;
 
         // Emit recovery event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Resume,
             BreakerCondition::ManualOverride,
@@ -478,7 +478,7 @@ impl CircuitBreaker {
                 state.failure_count = 0;
                 state.half_open_requests = 0;
 
-                Self::emit_circuit_breaker_event(
+                let _ = Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Resume,
                     BreakerCondition::ManualOverride,
@@ -513,7 +513,7 @@ impl CircuitBreaker {
             state.opened_time = current_time;
             state.half_open_requests = 0;
 
-            Self::emit_circuit_breaker_event(
+            let _ = Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
                 BreakerCondition::HighErrorRate,

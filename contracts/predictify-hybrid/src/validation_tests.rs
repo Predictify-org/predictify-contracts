@@ -623,7 +623,7 @@ fn test_validate_comprehensive_inputs() {
     ];
     let duration_days = 30;
     let oracle_config = OracleConfig {
-        provider: OracleProvider::Pyth,
+        provider: OracleProvider::pyth(),
         oracle_address: Address::generate(&env),
         feed_id: String::from_str(&env, "BTC/USD"),
         threshold: 100000,
@@ -656,7 +656,7 @@ fn test_validate_market_creation() {
     ];
     let duration_days = 30;
     let oracle_config = OracleConfig {
-        provider: OracleProvider::Pyth,
+        provider: OracleProvider::pyth(),
         oracle_address: Address::generate(&env),
         feed_id: String::from_str(&env, "BTC/USD"),
         threshold: 100000,
@@ -757,7 +757,7 @@ fn test_fee_validation() {
 //     let env = Env::default();
 
 //     let oracle_config = OracleConfig {
-//         provider: OracleProvider::Pyth,
+//         provider: OracleProvider::pyth(),
 //         feed_id: String::from_str(&env, "BTC/USD"),
 //         threshold: 100000,
 //         comparison: String::from_str(&env, "gt"),
@@ -768,7 +768,7 @@ fn test_fee_validation() {
 
 //     // Test invalid comparison operator
 //     let invalid_config = OracleConfig {
-//         provider: OracleProvider::Pyth,
+//         provider: OracleProvider::pyth(),
 //         feed_id: String::from_str(&env, "BTC/USD"),
 //         threshold: 100000,
 //         comparison: String::from_str(&env, "invalid"),
@@ -927,32 +927,32 @@ mod oracle_config_validator_tests {
         // Valid Reflector feed IDs
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD"),
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_ok());
 
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "ETH"),
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_ok());
 
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "XLM/USD"),
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_ok());
 
         // Invalid Reflector feed IDs
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), ""),
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_err());
 
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "A"),
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_err());
 
@@ -960,7 +960,7 @@ mod oracle_config_validator_tests {
         // In full implementation, this should be rejected
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD/EXTRA"),
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_ok());
 
@@ -972,34 +972,34 @@ mod oracle_config_validator_tests {
                 &soroban_sdk::Env::default(),
                 "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
             ),
-            &OracleProvider::Pyth
+            &OracleProvider::pyth()
         )
         .is_ok());
 
         // Invalid Pyth feed IDs
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "invalid_hex"),
-            &OracleProvider::Pyth
+            &OracleProvider::pyth()
         )
         .is_err());
 
         // Invalid Pyth feed ID - wrong length
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "0x123"),
-            &OracleProvider::Pyth
+            &OracleProvider::pyth()
         )
         .is_err());
 
         // Unsupported providers
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD"),
-            &OracleProvider::BandProtocol
+            &OracleProvider::band_protocol()
         )
         .is_err());
 
         assert!(OracleConfigValidator::validate_feed_id_format(
             &String::from_str(&soroban_sdk::Env::default(), "BTC/USD"),
-            &OracleProvider::DIA
+            &OracleProvider::dia()
         )
         .is_err());
     }
@@ -1009,72 +1009,72 @@ mod oracle_config_validator_tests {
         // Valid Reflector thresholds
         assert!(OracleConfigValidator::validate_threshold_range(
             &1, // $0.01
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_ok());
 
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000_00, // $10,000,000
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_ok());
 
         assert!(OracleConfigValidator::validate_threshold_range(
             &50_000_00, // $50,000
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_ok());
 
         // Invalid Reflector thresholds
         assert!(
-            OracleConfigValidator::validate_threshold_range(&0, &OracleProvider::Reflector)
+            OracleConfigValidator::validate_threshold_range(&0, &OracleProvider::reflector())
                 .is_err()
         );
 
         assert!(
-            OracleConfigValidator::validate_threshold_range(&-1, &OracleProvider::Reflector)
+            OracleConfigValidator::validate_threshold_range(&-1, &OracleProvider::reflector())
                 .is_err()
         );
 
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000_01, // Above max
-            &OracleProvider::Reflector
+            &OracleProvider::reflector()
         )
         .is_err());
 
         // Valid Pyth thresholds
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000, // $0.01 in 8-decimal units
-            &OracleProvider::Pyth
+            &OracleProvider::pyth()
         )
         .is_ok());
 
         assert!(OracleConfigValidator::validate_threshold_range(
             &100_000_000_000_000, // $1,000,000 in 8-decimal units
-            &OracleProvider::Pyth
+            &OracleProvider::pyth()
         )
         .is_ok());
 
         // Invalid Pyth thresholds
         assert!(
-            OracleConfigValidator::validate_threshold_range(&0, &OracleProvider::Pyth).is_err()
+            OracleConfigValidator::validate_threshold_range(&0, &OracleProvider::pyth()).is_err()
         );
 
         assert!(OracleConfigValidator::validate_threshold_range(
             &999_999, // Below min
-            &OracleProvider::Pyth
+            &OracleProvider::pyth()
         )
         .is_err());
 
         // Unsupported providers
         assert!(OracleConfigValidator::validate_threshold_range(
             &1_000_000,
-            &OracleProvider::BandProtocol
+            &OracleProvider::band_protocol()
         )
         .is_err());
 
         assert!(
-            OracleConfigValidator::validate_threshold_range(&1_000_000, &OracleProvider::DIA)
+            OracleConfigValidator::validate_threshold_range(&1_000_000, &OracleProvider::dia())
                 .is_err()
         );
     }
@@ -1155,17 +1155,17 @@ mod oracle_config_validator_tests {
     fn test_validate_oracle_provider() {
         // Supported provider
         assert!(
-            OracleConfigValidator::validate_oracle_provider(&OracleProvider::Reflector).is_ok()
+            OracleConfigValidator::validate_oracle_provider(&OracleProvider::reflector()).is_ok()
         );
 
         // Unsupported providers
-        assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::Pyth).is_err());
+        assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::pyth()).is_err());
 
         assert!(
-            OracleConfigValidator::validate_oracle_provider(&OracleProvider::BandProtocol).is_err()
+            OracleConfigValidator::validate_oracle_provider(&OracleProvider::band_protocol()).is_err()
         );
 
-        assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::DIA).is_err());
+        assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::dia()).is_err());
     }
 
     // #[test]
@@ -1174,7 +1174,7 @@ mod oracle_config_validator_tests {
     //
     //     // Valid Reflector configuration
     //     let valid_reflector_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "BTC/USD"),
     //         50_000_00, // $50,000
     //         String::from_str(&env, "gt")
@@ -1186,7 +1186,7 @@ mod oracle_config_validator_tests {
 
     //     // Invalid Reflector configuration - wrong feed format
     //     let invalid_feed_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "INVALID_FEED_FORMAT"),
     //         50_000_00,
     //         String::from_str(&env, "gt")
@@ -1198,7 +1198,7 @@ mod oracle_config_validator_tests {
 
     //     // Invalid Reflector configuration - unsupported operator
     //     let invalid_operator_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "BTC/USD"),
     //         50_000_00,
     //         String::from_str(&env, "gte")
@@ -1210,7 +1210,7 @@ mod oracle_config_validator_tests {
 
     //     // Invalid configuration - unsupported provider
     //      let oracle_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         Address::generate(&env),
     //         String::from_str(&env, "BTC/USD"),
     //         50_000_00,
@@ -1229,7 +1229,7 @@ mod oracle_config_validator_tests {
         // Test Reflector rules
         let reflector_rules = OracleConfigValidator::get_provider_specific_validation_rules(
             &env,
-            &OracleProvider::Reflector,
+            &OracleProvider::reflector(),
         );
 
         assert!(reflector_rules
@@ -1251,7 +1251,7 @@ mod oracle_config_validator_tests {
         // Test Pyth rules
         let pyth_rules = OracleConfigValidator::get_provider_specific_validation_rules(
             &env,
-            &OracleProvider::Pyth,
+            &OracleProvider::pyth(),
         );
 
         assert!(pyth_rules
@@ -1267,7 +1267,7 @@ mod oracle_config_validator_tests {
         // Test unsupported provider rules
         let band_rules = OracleConfigValidator::get_provider_specific_validation_rules(
             &env,
-            &OracleProvider::BandProtocol,
+            &OracleProvider::band_protocol(),
         );
 
         assert!(band_rules
@@ -1284,7 +1284,7 @@ mod oracle_config_validator_tests {
     //
     //     // Valid complete configuration
     //     let valid_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "BTC/USD"),
     //         50_000_00, // $50,000
     //         String::from_str(&env, "gt")
@@ -1296,7 +1296,7 @@ mod oracle_config_validator_tests {
 
     //     // Invalid configuration - unsupported provider
     //     let invalid_provider_config = OracleConfig::new(
-    //         OracleProvider::BandProtocol,
+    //         OracleProvider::band_protocol(),
     //         String::from_str(&env, "BTC/USD"),
     //         50_000_00,
     //         String::from_str(&env, "gt")
@@ -1308,7 +1308,7 @@ mod oracle_config_validator_tests {
 
     //     // Invalid configuration - wrong feed format for provider
     //     let invalid_feed_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "0x1234567890abcdef"), // Pyth format for Reflector
     //         50_000_00,
     //         String::from_str(&env, "gt")
@@ -1320,7 +1320,7 @@ mod oracle_config_validator_tests {
 
     //     // Invalid configuration - threshold out of range
     //     let invalid_threshold_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "BTC/USD"),
     //         0, // Invalid threshold
     //         String::from_str(&env, "gt")
@@ -1332,7 +1332,7 @@ mod oracle_config_validator_tests {
 
     //     // Invalid configuration - unsupported operator
     //     let invalid_operator_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "BTC/USD"),
     //         50_000_00,
     //         String::from_str(&env, "gte") // Not supported by Reflector
@@ -1349,7 +1349,7 @@ mod oracle_config_validator_tests {
     //
     //     // Edge case: Minimum valid Reflector feed ID
     //     let min_feed_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "BTC"),
     //         1, // Minimum threshold
     //         String::from_str(&env, "gt")
@@ -1361,7 +1361,7 @@ mod oracle_config_validator_tests {
 
     //     // Edge case: Maximum valid Reflector threshold
     //     let max_threshold_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "BTC/USD"),
     //         1_000_000_00, // Maximum threshold
     //         String::from_str(&env, "eq")
@@ -1373,7 +1373,7 @@ mod oracle_config_validator_tests {
 
     //     // Edge case: Single asset format for Reflector
     //     let single_asset_config = OracleConfig::new(
-    //         OracleProvider::Reflector,
+    //         OracleProvider::reflector(),
     //         String::from_str(&env, "ETH"),
     //         100_000_00, // $100,000
     //         String::from_str(&env, "lt")
@@ -1390,7 +1390,7 @@ mod oracle_config_validator_tests {
 
         // Test Reflector-specific validation
         let reflector_config = OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::generate(&env),
             String::from_str(&env, "BTC_USD"),
             2500000,
@@ -1411,7 +1411,7 @@ mod oracle_config_validator_tests {
 
         // Test Pyth-specific validation (should fail for provider support but pass format validation)
         let pyth_config = OracleConfig::new(
-            OracleProvider::Pyth,
+            OracleProvider::pyth(),
             Address::generate(&env),
             String::from_str(
                 &env,
@@ -1456,7 +1456,7 @@ mod oracle_config_validator_tests {
         let env = soroban_sdk::Env::default();
         let sentinel = OracleConfig::none_sentinel(&env);
         let valid_with_placeholder_address = OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             sentinel.oracle_address.clone(),
             String::from_str(&env, "BTC/USD"),
             50_000_00,
@@ -1557,7 +1557,7 @@ fn test_oracle_response_validation_fresh_and_confident() {
         price: 1_000_000,
         threshold: 500_000,
         comparison: String::from_str(&env, "gt"),
-        provider: OracleProvider::Reflector,
+        provider: OracleProvider::reflector(),
         feed_id: String::from_str(&env, "BTC/USD"),
         timestamp: env.ledger().timestamp(), // fresh data
         block_number: 1,
@@ -1587,7 +1587,7 @@ fn test_oracle_response_rejected_when_stale() {
         price: 1_000_000,
         threshold: 500_000,
         comparison: String::from_str(&env, "gt"),
-        provider: OracleProvider::Reflector,
+        provider: OracleProvider::reflector(),
         feed_id: String::from_str(&env, "BTC/USD"),
         timestamp: stale_timestamp,
         block_number: 1,
@@ -1616,7 +1616,7 @@ fn test_oracle_response_rejected_when_confidence_too_low() {
         price: 1_000_000,
         threshold: 500_000,
         comparison: String::from_str(&env, "gt"),
-        provider: OracleProvider::Reflector,
+        provider: OracleProvider::reflector(),
         feed_id: String::from_str(&env, "BTC/USD"),
         timestamp: env.ledger().timestamp(),
         block_number: 1,
@@ -1648,7 +1648,7 @@ fn test_oracle_validation_integration_with_resolution_flow() {
 
     let end_time = env.ledger().timestamp() + 3600;
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -2754,7 +2754,7 @@ fn test_market_validator_for_voting_empty_question() {
     env.ledger().with_mut(|li| li.timestamp = 10_000);
 
     let oracle_config = OracleConfig {
-        provider: OracleProvider::Reflector,
+        provider: OracleProvider::reflector(),
         oracle_address: Address::generate(&env),
         feed_id: String::from_str(&env, "BTC/USD"),
         threshold: 1_000_00,
@@ -2803,7 +2803,7 @@ fn test_market_validator_for_resolution_already_resolved() {
     env.ledger().with_mut(|li| li.timestamp = 200_000);
 
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -2842,7 +2842,7 @@ fn test_market_validator_for_fee_collection_not_resolved() {
     env.ledger().with_mut(|li| li.timestamp = 200_000);
 
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -2877,7 +2877,7 @@ fn test_market_validator_for_fee_collection_already_collected() {
     env.ledger().with_mut(|li| li.timestamp = 200_000);
 
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -2915,7 +2915,7 @@ fn test_market_validator_for_fee_collection_insufficient_stake() {
     env.ledger().with_mut(|li| li.timestamp = 200_000);
 
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -3061,7 +3061,7 @@ fn test_vote_validator_validate_vote_duplicate() {
 
     // Build a market where the user has already voted.
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -3153,7 +3153,7 @@ fn test_dispute_validator_creation_valid() {
 
     // Build a resolved market with a winning outcome so that disputes are possible.
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -3192,7 +3192,7 @@ fn test_dispute_validator_creation_stake_too_low() {
     let low_stake = 1_000_000i128; // below MIN_DISPUTE_STAKE (10_000_000)
 
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -3250,7 +3250,7 @@ fn test_dispute_validator_creation_already_disputed() {
     let stake = 10_000_000i128;
 
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00,
@@ -3387,10 +3387,10 @@ fn test_oracle_validator_comparison_operator() {
 #[test]
 fn test_oracle_validator_provider() {
     // All four providers are accepted by OracleValidator (it is a permissive check).
-    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::Reflector).is_ok());
-    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::Pyth).is_ok());
-    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::BandProtocol).is_ok());
-    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::DIA).is_ok());
+    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::reflector()).is_ok());
+    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::pyth()).is_ok());
+    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::band_protocol()).is_ok());
+    assert!(OracleValidator::validate_oracle_provider(&OracleProvider::dia()).is_ok());
 }
 
 #[test]
@@ -3464,7 +3464,7 @@ fn test_oracle_response_rejected_when_price_zero() {
         price: 0, // invalid: must be >= MIN_VALID_PRICE (1)
         threshold: 500_000,
         comparison: String::from_str(&env, "gt"),
-        provider: OracleProvider::Reflector,
+        provider: OracleProvider::reflector(),
         feed_id: String::from_str(&env, "BTC/USD"),
         timestamp: env.ledger().timestamp(),
         block_number: 1,
@@ -3518,7 +3518,7 @@ fn test_oracle_config_consistency_unsupported_provider() {
 
     // BandProtocol is never supported.
     let config = OracleConfig::new(
-        OracleProvider::BandProtocol,
+        OracleProvider::band_protocol(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00i128,
@@ -3541,7 +3541,7 @@ fn test_oracle_config_all_together_unsupported_provider_fails() {
 
     // Pyth is marked as "placeholder" — should fail validate_oracle_provider.
     let config = OracleConfig::new(
-        OracleProvider::Pyth,
+        OracleProvider::pyth(),
         Address::generate(&env),
         String::from_str(
             &env,
@@ -3559,7 +3559,7 @@ fn test_oracle_config_all_together_zero_threshold_fails() {
     let env = Env::default();
 
     let config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         0i128, // invalid threshold
@@ -3579,7 +3579,7 @@ fn test_oracle_config_all_together_zero_threshold_fails() {
 fn test_band_and_dia_configs_always_fail_consistency() {
     let env = Env::default();
 
-    for provider in &[OracleProvider::BandProtocol, OracleProvider::DIA] {
+    for provider in &[OracleProvider::band_protocol(), OracleProvider::dia()] {
         let config = OracleConfig::new(
             provider.clone(),
             Address::generate(&env),
@@ -3718,7 +3718,7 @@ fn test_comprehensive_validator_market_state_empty_question() {
     env.ledger().with_mut(|li| li.timestamp = 10_000);
 
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC/USD"),
         50_000_00i128,

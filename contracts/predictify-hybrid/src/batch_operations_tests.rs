@@ -306,7 +306,7 @@ mod batch_operations_tests {
         let feed_data = BatchTesting::create_test_oracle_feed_data(&env, &market_id);
         assert_eq!(feed_data.market_id, market_id);
         assert_eq!(feed_data.feed_id, String::from_str(&env, "BTC/USD"));
-        assert_eq!(feed_data.provider, OracleProvider::Reflector);
+        assert_eq!(feed_data.provider, OracleProvider::reflector());
         assert_eq!(feed_data.threshold, 100_000_000_000);
         assert_eq!(feed_data.comparison, String::from_str(&env, "gt"));
 
@@ -410,7 +410,7 @@ mod batch_operations_tests {
             ],
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
-                provider: crate::types::OracleProvider::Reflector,
+                provider: crate::types::OracleProvider::reflector(),
                 oracle_address: soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -431,7 +431,7 @@ mod batch_operations_tests {
             ],
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
-                provider: crate::types::OracleProvider::Reflector,
+                provider: crate::types::OracleProvider::reflector(),
                 oracle_address: soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -448,7 +448,7 @@ mod batch_operations_tests {
             outcomes: vec![&env, String::from_str(&env, "Yes")],
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
-                provider: crate::types::OracleProvider::Reflector,
+                provider: crate::types::OracleProvider::reflector(),
                 oracle_address: soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -469,7 +469,7 @@ mod batch_operations_tests {
             ],
             duration_days: 0,
             oracle_config: crate::types::OracleConfig {
-                provider: crate::types::OracleProvider::Reflector,
+                provider: crate::types::OracleProvider::reflector(),
                 oracle_address: soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -485,7 +485,7 @@ mod batch_operations_tests {
         let _valid_feed = OracleFeed {
             market_id: market_id.clone(),
             feed_id: String::from_str(&env, "BTC/USD"),
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             threshold: 100_000_000_000,
             comparison: String::from_str(&env, "gt"),
         };
@@ -494,7 +494,7 @@ mod batch_operations_tests {
         let _invalid_feed = OracleFeed {
             market_id: market_id.clone(),
             feed_id: String::from_str(&env, ""),
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             threshold: 100_000_000_000,
             comparison: String::from_str(&env, "gt"),
         };
@@ -503,7 +503,7 @@ mod batch_operations_tests {
         let _invalid_feed2 = OracleFeed {
             market_id: market_id.clone(),
             feed_id: String::from_str(&env, "BTC/USD"),
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             threshold: 0,
             comparison: String::from_str(&env, "gt"),
         };
@@ -635,8 +635,8 @@ mod batch_operations_tests {
             let stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
             assert_eq!(stats.total_batches_processed, 3); // 2 votes + 1 claim + 1 oracle (market creation skipped)
             assert_eq!(stats.total_operations_processed, 4); // 2 votes + 1 claim + 1 oracle
-            assert!(stats.total_successful_operations >= 0);
-            assert!(stats.total_failed_operations >= 0);
+            // counts are always >= 0
+            // counts are always >= 0
 
             // 4. Test utilities
             assert!(BatchUtils::is_batch_processing_enabled(&env).unwrap());

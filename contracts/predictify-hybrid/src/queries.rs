@@ -89,7 +89,7 @@ impl QueryManager {
         let vote_count = market.votes.len() as u32;
 
         // Get oracle provider name
-        let oracle_provider = market.oracle_config.provider.name();
+        let oracle_provider = market.oracle_config.provider.name(env);
         let winning_outcome = market.get_winning_outcome();
 
         let response = EventDetailsQuery {
@@ -99,7 +99,7 @@ impl QueryManager {
             created_at: 0, // TODO: Retrieve from storage if available
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
-            oracle_provider: String::from_str(env, oracle_provider),
+            oracle_provider,
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
             winning_outcome,
@@ -564,7 +564,7 @@ mod tests {
             vec![&env, String::from_str(&env, "yes")],
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
-                crate::types::OracleProvider::Reflector,
+                crate::types::OracleProvider::reflector(),
                 Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -598,7 +598,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
-                crate::types::OracleProvider::Reflector,
+                crate::types::OracleProvider::reflector(),
                 Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -639,7 +639,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 1000,
             crate::types::OracleConfig::new(
-                crate::types::OracleProvider::Reflector,
+                crate::types::OracleProvider::reflector(),
                 Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",

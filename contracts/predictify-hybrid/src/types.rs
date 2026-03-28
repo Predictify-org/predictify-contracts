@@ -242,9 +242,11 @@ pub enum MarketState {
 /// - **Efficient**: String storage is optimized in Soroban
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OracleProvider {
-    /// String identifier for the oracle provider
-    provider_id: String,
+pub enum OracleProvider {
+    Reflector,
+    Pyth,
+    BandProtocol,
+    DIA,
 }
 
 impl OracleProvider {
@@ -267,9 +269,7 @@ impl OracleProvider {
     /// assert!(provider.is_supported());
     /// ```
     pub fn reflector() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "reflector"),
-        }
+        OracleProvider::Reflector
     }
 
     /// Creates a Pyth Network oracle provider instance.
@@ -291,9 +291,7 @@ impl OracleProvider {
     /// assert!(!provider.is_supported()); // Not available on Stellar
     /// ```
     pub fn pyth() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "pyth"),
-        }
+        OracleProvider::Pyth
     }
 
     /// Creates a Band Protocol oracle provider instance.
@@ -315,9 +313,7 @@ impl OracleProvider {
     /// assert!(!provider.is_supported()); // Not available on Stellar
     /// ```
     pub fn band_protocol() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "band_protocol"),
-        }
+        OracleProvider::BandProtocol
     }
 
     /// Creates a DIA oracle provider instance.
@@ -339,9 +335,7 @@ impl OracleProvider {
     /// assert!(!provider.is_supported()); // Not available on Stellar
     /// ```
     pub fn dia() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "dia"),
-        }
+        OracleProvider::DIA
     }
 
     /// Creates an OracleProvider from a string identifier.
@@ -373,65 +367,35 @@ impl OracleProvider {
     /// let unknown = OracleProvider::from_str(String::from_str(&env, "future_oracle"));
     /// assert!(!unknown.is_known());
     /// ```
-    pub fn from_str(provider_id: String) -> Self {
-        Self { provider_id }
+    pub fn from_str(env: &Env, provider_id: String) -> Self {
+        if provider_id == String::from_str(env, "reflector") {
+            OracleProvider::Reflector
+        } else if provider_id == String::from_str(env, "pyth") {
+            OracleProvider::Pyth
+        } else if provider_id == String::from_str(env, "band_protocol") {
+            OracleProvider::BandProtocol
+        } else if provider_id == String::from_str(env, "dia") {
+            OracleProvider::DIA
+        } else {
+            OracleProvider::Reflector // Default
+        }
     }
 
-    /// Returns the string identifier for this oracle provider.
-    ///
-    /// This method provides access to the underlying string representation,
-    /// useful for debugging, logging, and serialization.
-    ///
-    /// # Returns
-    ///
-    /// String slice containing the provider identifier
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use predictify_hybrid::types::OracleProvider;
-    ///
-    /// let provider = OracleProvider::reflector();
-    /// assert_eq!(provider.as_str(), "reflector");
-    /// ```
     pub fn as_str(&self) -> &str {
-        &self.provider_id
+        match self {
+            OracleProvider::Reflector => "reflector",
+            OracleProvider::Pyth => "pyth",
+            OracleProvider::BandProtocol => "band_protocol",
+            OracleProvider::DIA => "dia",
+        }
     }
 
-    /// Returns a human-readable name for the oracle provider.
-    ///
-    /// This method provides formatted display names for UI and logging purposes.
-    /// Unknown providers return a generic "Unknown Provider" label.
-    ///
-    /// # Returns
-    ///
-    /// String containing the formatted provider name
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use soroban_sdk::{Env, String};
-    /// # use predictify_hybrid::types::OracleProvider;
-    /// # let env = Env::default();
-    ///
-    /// let reflector = OracleProvider::reflector();
-    /// assert_eq!(reflector.name(), "Reflector");
-    ///
-    /// let unknown = OracleProvider::from_str(String::from_str(&env, "new_oracle"));
-    /// assert_eq!(unknown.name(), "Unknown Provider (new_oracle)");
-    /// ```
-    pub fn name(&self) -> String {
-        let env = soroban_sdk::Env::default();
-        match self.as_str() {
-            "reflector" => String::from_str(&env, "Reflector"),
-            "pyth" => String::from_str(&env, "Pyth Network"),
-            "band_protocol" => String::from_str(&env, "Band Protocol"),
-            "dia" => String::from_str(&env, "DIA"),
-            unknown => {
-                let prefix = String::from_str(&env, "Unknown Provider (");
-                let suffix = String::from_str(&env, ")");
-                prefix + unknown + suffix
-            }
+    pub fn name(&self, env: &Env) -> String {
+        match self {
+            OracleProvider::Reflector => String::from_str(env, "Reflector"),
+            OracleProvider::Pyth => String::from_str(env, "Pyth Network"),
+            OracleProvider::BandProtocol => String::from_str(env, "Band Protocol"),
+            OracleProvider::DIA => String::from_str(env, "DIA"),
         }
     }
 
@@ -457,7 +421,7 @@ impl OracleProvider {
     /// assert!(pyth.is_known()); // Known but unsupported
     /// ```
     pub fn is_known(&self) -> bool {
-        matches!(self.as_str(), "reflector" | "pyth" | "band_protocol" | "dia")
+        true
     }
 
     /// Checks if this oracle provider is supported on the current network.
@@ -491,7 +455,23 @@ impl OracleProvider {
     /// assert!(!pyth.is_supported()); // Not available on Stellar
     /// ```
     pub fn is_supported(&self) -> bool {
-        matches!(self.as_str(), "reflector")
+        matches!(self, OracleProvider::Reflector)
+    }
+    
+    pub fn is_reflector(&self) -> bool {
+        matches!(self, OracleProvider::Reflector)
+    }
+
+    pub fn is_pyth(&self) -> bool {
+        matches!(self, OracleProvider::Pyth)
+    }
+
+    pub fn is_band_protocol(&self) -> bool {
+        matches!(self, OracleProvider::BandProtocol)
+    }
+
+    pub fn is_dia(&self) -> bool {
+        matches!(self, OracleProvider::DIA)
     }
 
     /// Validates the oracle provider for market creation.

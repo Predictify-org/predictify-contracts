@@ -188,7 +188,7 @@ impl BetTestSetup {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: Address::from_str(
                     env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",

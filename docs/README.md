@@ -5,22 +5,26 @@ Welcome to the Predictify Contracts documentation! This directory contains compr
 ## 📁 Documentation Structure
 
 ### 🚀 [API Documentation](./api/API_DOCUMENTATION.md)
+
 Complete API reference for the Predictify Hybrid contract, including:
+
 - Contract functions and their parameters
 - Return types and error handling
 - Integration examples
 - Client usage patterns
 
 ### 🔒 [Security Documentation](./security/)
+
 Comprehensive security documentation and guidelines:
 
 - **[Attack Vectors](./security/ATTACK-VECTORS.md)** - Known attack vectors and mitigation strategies
 - **[Audit Checklist](./security/AUDIT_CHECKLIST.md)** - Security audit requirements and checklist
 - **[Security Best Practices](./security/SECURITY_BEST_PRACTICES.md)** - Development and deployment security guidelines
 - **[Security Considerations](./security/SECURITY_CONSIDERATIONS.md)** - Important security considerations for the system
-- **[Security Testing Guide](./security/SECURITY_TESTING_GUIDE.md)** - Security testing procedures and tools
+- **[Security Testing Guide](./security/SECURITY_TESTING_GUIDE.md)** - Executable security checklist mapped to automated tests
 
 ### ⛽ [Gas Optimization Documentation](./gas/)
+
 Complete gas optimization and cost analysis:
 
 - **[Gas Benchmarking](./gas/GAS_BENCHMARKING.md)** - Performance benchmarks and metrics
@@ -32,11 +36,13 @@ Complete gas optimization and cost analysis:
 - **[Gas Troubleshooting](./gas/GAS_TROUBLESHOOTING.md)** - Common gas-related issues and solutions
 
 ### 🛠️ [Operations Documentation](./operations/)
+
 Operational procedures and incident management:
 
 - **[Incident Response](./operations/INCIDENT_RESPONSE.md)** - Incident response procedures and protocols
 
 ### 📋 [Contract Documentation](./contracts/)
+
 Implementation-specific documentation for the Predictify Hybrid contract:
 
 - **[Types System](./contracts/TYPES_SYSTEM.md)** - Comprehensive type system and data structures
@@ -75,5 +81,5 @@ When adding new documentation:
 
 ---
 
-*Last updated: $(date)*
-*For questions or suggestions about documentation, please open an issue in the repository.* 
+_Last updated: $(date)_
+_For questions or suggestions about documentation, please open an issue in the repository._
