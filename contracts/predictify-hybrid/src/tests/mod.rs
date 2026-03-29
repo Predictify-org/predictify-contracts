@@ -1,3 +1,7 @@
+#[cfg(any())]
+mod oracle_provider_compatibility_tests;
+pub mod security;
+mod mocks;
 //! Test module organization for Predictify Hybrid.
 //!
 //! This module organizes all test suites and utilities for structured testing

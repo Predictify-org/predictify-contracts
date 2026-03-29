@@ -51,7 +51,7 @@ fn test_payout_calculation_zero_stake() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -87,7 +87,7 @@ fn test_payout_calculation_unresolved_market() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -127,7 +127,7 @@ fn test_implied_probabilities_zero_pool() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -162,7 +162,7 @@ fn test_implied_probabilities_sum_to_100() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -201,7 +201,7 @@ fn test_outcome_pool_empty_market() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -239,7 +239,7 @@ fn test_outcome_pool_with_single_vote() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -280,7 +280,7 @@ fn test_outcome_pool_with_multiple_votes() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -361,7 +361,7 @@ fn test_probabilities_are_percentages() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -376,8 +376,8 @@ fn test_probabilities_are_percentages() {
     assert!(probs.is_ok());
     let (p1, p2) = probs.unwrap();
 
-    assert!(p1 >= 0 && p1 <= 100, "Probability 1 out of range: {}", p1);
-    assert!(p2 >= 0 && p2 <= 100, "Probability 2 out of range: {}", p2);
+    assert!(p1 <= 100, "Probability 1 out of range: {}", p1);
+    assert!(p2 <= 100, "Probability 2 out of range: {}", p2);
 }
 
 #[test]
@@ -397,7 +397,7 @@ fn test_payout_never_exceeds_total_pool() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -440,7 +440,7 @@ fn test_pool_calculation_commutative() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -473,7 +473,7 @@ fn test_pool_calculation_commutative() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -542,7 +542,7 @@ fn test_outcome_pool_consistency() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -593,7 +593,7 @@ fn test_payout_with_high_fees() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -641,7 +641,7 @@ fn test_negative_values_handled() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,
@@ -675,7 +675,7 @@ fn test_large_number_handling() {
         ],
         env.ledger().timestamp() + 1000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(&env, TEST_ORACLE_ADDRESS),
             String::from_str(&env, "TEST"),
             100,

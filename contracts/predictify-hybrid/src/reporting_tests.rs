@@ -20,7 +20,7 @@ fn test_get_active_events_pagination() {
     let q3 = String::from_str(&env, "Question 3");
     let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC"),
         100,
@@ -83,7 +83,7 @@ fn test_get_platform_stats() {
     // Create a market
     let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC"),
         100,
@@ -119,7 +119,7 @@ fn test_get_event_snapshot() {
     let question = String::from_str(&env, "Snapshot Question");
     let outcomes = vec![&env, String::from_str(&env, "A"), String::from_str(&env, "B")];
     let oracle_config = OracleConfig::new(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         Address::generate(&env),
         String::from_str(&env, "BTC"),
         100,

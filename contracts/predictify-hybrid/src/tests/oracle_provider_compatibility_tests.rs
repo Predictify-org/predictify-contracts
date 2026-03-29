@@ -1,5 +1,5 @@
 use crate::errors::Error;
-use soroban_sdk::{contracttype, Address, Env, String};
+use soroban_sdk::{contracttype, vec, Address, Env, String};
 use crate::types::{OracleConfig, OracleProvider};
 
 /// Comprehensive tests for oracle provider forward compatibility.
@@ -7,7 +7,7 @@ use crate::types::{OracleConfig, OracleProvider};
 /// This test suite validates that the new string-based OracleProvider implementation
 /// maintains backward compatibility while enabling forward compatibility for future
 /// oracle provider additions.
-#[contracttest]
+#[test]
 fn test_oracle_provider_creation() {
     let env = Env::default();
     
@@ -33,7 +33,7 @@ fn test_oracle_provider_creation() {
     assert!(dia.is_known());
 }
 
-#[contracttest]
+#[test]
 fn test_oracle_provider_from_string() {
     let env = Env::default();
     
@@ -55,7 +55,7 @@ fn test_oracle_provider_from_string() {
     assert!(!custom_provider.is_known());
 }
 
-#[contracttest]
+#[test]
 fn test_oracle_provider_names() {
     let env = Env::default();
     
@@ -78,7 +78,7 @@ fn test_oracle_provider_names() {
     assert_eq!(unknown.name(), expected_name);
 }
 
-#[contracttest]
+#[test]
 fn test_oracle_provider_validation() {
     let env = Env::default();
     
@@ -102,7 +102,7 @@ fn test_oracle_provider_validation() {
     assert!(unknown.validate_for_market(&env).is_err());
 }
 
-#[contracttest]
+#[test]
 fn test_oracle_provider_equality() {
     let env = Env::default();
     
@@ -129,7 +129,7 @@ fn test_oracle_provider_equality() {
     assert_ne!(unknown1, unknown3);
 }
 
-#[contracttest]
+#[test]
 fn test_oracle_config_compatibility() {
     let env = Env::default();
     let oracle_address = Address::generate(&env);
@@ -157,7 +157,7 @@ fn test_oracle_config_compatibility() {
     assert!(sentinel.comparison.is_empty());
 }
 
-#[contracttest]
+#[test]
 fn test_forward_compatibility_scenario() {
     let env = Env::default();
     
@@ -179,7 +179,7 @@ fn test_forward_compatibility_scenario() {
     assert!(future_provider.validate_for_market(&env).is_err());
 }
 
-#[contracttest]
+#[test]
 fn test_serialization_roundtrip() {
     let env = Env::default();
     
@@ -197,7 +197,7 @@ fn test_serialization_roundtrip() {
     assert_eq!(unknown_original, unknown_deserialized);
 }
 
-#[contracttest]
+#[test]
 fn test_oracle_config_validation_with_new_provider() {
     let env = Env::default();
     let oracle_address = Address::generate(&env);
@@ -233,7 +233,7 @@ fn test_oracle_config_validation_with_new_provider() {
     assert!(unknown_config.validate(&env).is_err());
 }
 
-#[contracttest]
+#[test]
 fn test_provider_string_formats() {
     let env = Env::default();
     
@@ -265,7 +265,7 @@ fn test_provider_string_formats() {
     }
 }
 
-#[contracttest]
+#[test]
 fn test_migration_compatibility() {
     let env = Env::default();
     

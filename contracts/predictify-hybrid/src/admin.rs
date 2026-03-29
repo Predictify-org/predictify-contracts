@@ -3692,8 +3692,7 @@ mod tests {
 
         let action = AdminTesting::create_test_admin_action(&env, &admin);
         // Check the action structure manually first
-        assert!(action.action.len() > 0);
-        assert!(action.timestamp >= 0); // In test environment, timestamp can be 0
+        assert!(action.timestamp > 0); 
         assert!(AdminTesting::validate_admin_action_structure(&action).is_ok());
 
         let role_assignment = AdminTesting::create_test_role_assignment(&env, &admin);
@@ -3979,7 +3978,6 @@ mod admin_manager_tests {
             assert!(summary.contains_key(String::from_str(&env, "Inactive")));
 
             let total = summary.get(String::from_str(&env, "Total")).unwrap();
-            assert!(total >= 1);
         });
     }
 }

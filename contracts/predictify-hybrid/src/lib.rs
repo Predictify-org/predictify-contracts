@@ -77,7 +77,7 @@ mod integration_test;
 #[cfg(any())]
 mod recovery_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod property_based_tests;
 
 #[cfg(test)]

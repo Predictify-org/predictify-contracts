@@ -73,6 +73,8 @@ pub enum Error {
     ResolutionTimeoutReached = 207,
     /// Oracle confidence interval is too wide. Accuracy threshold not met for reliable resolution.
     OracleConfidenceTooWide = 208,
+    /// Invalid oracle feed ID
+    InvalidOracleFeed = 209,
 
     // ===== VALIDATION ERRORS =====
     /// Market question is empty or invalid. Question must be non-empty and descriptive.
@@ -1346,6 +1348,7 @@ impl Error {
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
+            Error::InvalidOracleFeed => "Invalid oracle feed or malformed response",
         }
     }
 
@@ -1409,6 +1412,7 @@ impl Error {
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
+            Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
         }
     }
 }

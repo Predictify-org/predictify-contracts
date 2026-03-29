@@ -158,16 +158,16 @@ mod tests {
 
     #[test]
     fn can_create_backup() {
-        let backup = OracleBackup::new(OracleProvider::Reflector, OracleProvider::Pyth);
-        assert_eq!(backup.primary, OracleProvider::Reflector);
-        assert_eq!(backup.backup, OracleProvider::Pyth);
+        let backup = OracleBackup::new(OracleProvider::reflector(), OracleProvider::pyth());
+        assert_eq!(backup.primary, OracleProvider::reflector());
+        assert_eq!(backup.backup, OracleProvider::pyth());
     }
 
     #[test]
     fn can_check_health() {
         let env = Env::default();
         let addr = Address::generate(&env);
-        let health = monitor_oracle_health(&env, OracleProvider::Reflector, &addr);
+        let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
         assert!(matches!(
             health,
             OracleHealth::Working | OracleHealth::Broken

@@ -24,7 +24,7 @@ fn test_place_bet_with_custom_token() {
         // Create market with custom asset
         let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&env),
             feed_id: String::from_str(&env, "BTC/USD"),
             threshold: 10000000,
@@ -69,7 +69,7 @@ fn test_place_bet_with_xlm_native() {
         // Create market (XLM-native)
         let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&env),
             feed_id: String::from_str(&env, "BTC/USD"),
             threshold: 10000000,
@@ -116,7 +116,7 @@ fn test_insufficient_balance_for_custom_token() {
         PredictifyHybrid::initialize(env.clone(), admin.clone(), None, Some(vec![&env, asset.clone()]));
         let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&env),
             feed_id: String::from_str(&env, "BTC/USD"),
             threshold: 10000000,

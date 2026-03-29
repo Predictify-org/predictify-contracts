@@ -874,7 +874,7 @@ pub struct ResolutionValidation {
 ///
 /// // Create oracle instance based on provider
 /// let oracle = OracleFactory::create_oracle(
-///     OracleProvider::Reflector, // Primary provider for Stellar
+///     OracleProvider::reflector(), // Primary provider for Stellar
 ///     oracle_contract
 /// )?;
 ///
@@ -1052,10 +1052,8 @@ impl OracleResolutionManager {
 
         // Emit oracle result event
         let provider_str = match used_config.provider {
-            crate::types::OracleProvider::Reflector => {
-                soroban_sdk::String::from_str(env, "Reflector")
-            }
-            crate::types::OracleProvider::Pyth => soroban_sdk::String::from_str(env, "Pyth"),
+            OracleProvider::Reflector => soroban_sdk::String::from_str(env, "Reflector"),
+            OracleProvider::Pyth => soroban_sdk::String::from_str(env, "Pyth"),
             _ => soroban_sdk::String::from_str(env, "Custom"),
         };
         let feed_str = used_config.feed_id.clone();
@@ -1801,7 +1799,7 @@ impl ResolutionTesting {
             threshold: 2500000,
             comparison: String::from_str(env, "gt"),
             timestamp: env.ledger().timestamp(),
-            provider: OracleProvider::Pyth,
+            provider: OracleProvider::pyth(),
             feed_id: String::from_str(env, "BTC/USD"),
         }
     }
@@ -1937,7 +1935,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig {
-                provider: OracleProvider::Pyth,
+                provider: OracleProvider::pyth(),
                 oracle_address: Address::generate(&env),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 2500000,

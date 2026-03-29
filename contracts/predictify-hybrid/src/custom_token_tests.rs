@@ -57,7 +57,7 @@ impl CustomTokenTestSetup {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: oracle_address.clone(),
                 feed_id: String::from_str(&env, "RAIN"),
                 threshold: 1,

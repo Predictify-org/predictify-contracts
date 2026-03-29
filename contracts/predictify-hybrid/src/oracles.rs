@@ -947,7 +947,7 @@ impl OracleInterface for ReflectorOracle {
 ///
 /// // Create Reflector oracle (recommended for Stellar)
 /// let reflector_oracle = OracleFactory::create_oracle(
-///     OracleProvider::Reflector,
+///     OracleProvider::reflector(),
 ///     oracle_address.clone()
 /// );
 ///
@@ -970,7 +970,7 @@ impl OracleInterface for ReflectorOracle {
 ///
 /// // Create from configuration
 /// let config = OracleConfig {
-///     provider: OracleProvider::Reflector,
+///     provider: OracleProvider::reflector(),
 ///     // ... other config fields
 /// };
 ///
@@ -1055,8 +1055,8 @@ impl OracleFactory {
             return Err(Error::InvalidOracleConfig);
         }
 
-        match provider.as_str() {
-            "reflector" => {
+        match provider {
+            OracleProvider::Reflector => {
                 let oracle = ReflectorOracle::new(contract_id);
                 Ok(OracleInstance::Reflector(oracle))
             }
@@ -1241,7 +1241,7 @@ impl OracleFactory {
 ///
 /// // Create oracle instance through factory
 /// let oracle_result = OracleFactory::create_oracle(
-///     OracleProvider::Reflector,
+///     OracleProvider::reflector(),
 ///     oracle_address
 /// );
 ///
@@ -1292,7 +1292,7 @@ impl OracleFactory {
 ///
 /// // Select oracle based on configuration or conditions
 /// let preferred_provider = if cfg!(feature = "use-reflector") {
-///     OracleProvider::Reflector
+///     OracleProvider::reflector()
 /// } else {
 ///     OracleFactory::get_recommended_provider()
 /// };
@@ -1775,7 +1775,7 @@ pub struct OracleMetadata {
 ///
 /// // Add Reflector oracle to whitelist
 /// let metadata = OracleMetadata {
-///     provider: OracleProvider::Reflector,
+///     provider: OracleProvider::reflector(),
 ///     contract_address: oracle_address.clone(),
 ///     added_at: env.ledger().timestamp(),
 ///     added_by: admin.clone(),
@@ -2365,7 +2365,7 @@ impl OracleValidationConfigManager {
             EventEmitter::emit_oracle_validation_failed(
                 env,
                 market_id,
-                &String::from_str(env, provider.name()),
+                &provider.name(env),
                 feed_id,
                 &String::from_str(env, "stale_data"),
                 observed_age,
@@ -2399,7 +2399,7 @@ impl OracleValidationConfigManager {
                     EventEmitter::emit_oracle_validation_failed(
                         env,
                         market_id,
-                        &String::from_str(env, provider.name()),
+                        &provider.name(env),
                         feed_id,
                         &String::from_str(env, "confidence_too_wide"),
                         observed_age,
@@ -2557,7 +2557,7 @@ impl OracleIntegrationManager {
             oracle_result.price,
             oracle_result.threshold,
             &oracle_result.comparison,
-            &String::from_str(env, oracle_result.provider.name()),
+            &oracle_result.provider.name(env),
             &oracle_result.feed_id,
             oracle_result.confidence_score,
             oracle_result.sources_count,
@@ -3137,7 +3137,7 @@ mod oracle_integration_tests {
             let result = OracleValidationConfigManager::validate_oracle_data(
                 &env,
                 &market_id,
-                &OracleProvider::Reflector,
+                &OracleProvider::reflector(),
                 &String::from_str(&env, "BTC/USD"),
                 &data,
             );
@@ -3178,7 +3178,7 @@ mod oracle_integration_tests {
             let result = OracleValidationConfigManager::validate_oracle_data(
                 &env,
                 &market_id,
-                &OracleProvider::Pyth,
+                &OracleProvider::pyth(),
                 &String::from_str(&env, "BTC/USD"),
                 &data,
             );
@@ -3219,7 +3219,7 @@ mod oracle_integration_tests {
             let result = OracleValidationConfigManager::validate_oracle_data(
                 &env,
                 &market_id,
-                &OracleProvider::Pyth,
+                &OracleProvider::pyth(),
                 &String::from_str(&env, "BTC/USD"),
                 &data,
             );
@@ -3260,7 +3260,7 @@ mod oracle_integration_tests {
             let result = OracleValidationConfigManager::validate_oracle_data(
                 &env,
                 &market_id,
-                &OracleProvider::Reflector,
+                &OracleProvider::reflector(),
                 &String::from_str(&env, "BTC/USD"),
                 &data,
             );
@@ -3319,7 +3319,7 @@ mod whitelist_tests {
             OracleWhitelist::initialize(&env, admin.clone()).unwrap();
 
             let metadata = OracleMetadata {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 contract_address: oracle_address.clone(),
                 added_at: env.ledger().timestamp(),
                 added_by: admin.clone(),
@@ -3353,7 +3353,7 @@ mod whitelist_tests {
             OracleWhitelist::initialize(&env, admin.clone()).unwrap();
 
             let metadata = OracleMetadata {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 contract_address: oracle_address.clone(),
                 added_at: env.ledger().timestamp(),
                 added_by: admin.clone(),
@@ -3391,7 +3391,7 @@ mod whitelist_tests {
             OracleWhitelist::initialize(&env, admin.clone()).unwrap();
 
             let metadata = OracleMetadata {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 contract_address: oracle_address.clone(),
                 added_at: env.ledger().timestamp(),
                 added_by: admin.clone(),
@@ -3436,7 +3436,7 @@ mod whitelist_tests {
             OracleWhitelist::initialize(&env, admin).unwrap();
 
             let metadata = OracleMetadata {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 contract_address: oracle_address.clone(),
                 added_at: env.ledger().timestamp(),
                 added_by: non_admin.clone(),
