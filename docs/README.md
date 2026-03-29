@@ -79,5 +79,5 @@ When adding new documentation:
 
 ---
 
-*Last updated: $(date)*
+*Last updated: 2026-03-27*
 *For questions or suggestions about documentation, please open an issue in the repository.* 
