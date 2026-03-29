@@ -44,6 +44,11 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 - **[Types System](./contracts/TYPES_SYSTEM.md)** - Comprehensive type system and data structures
 - **[Voting System](./contracts/VOTING_SYSTEM.md)** - Voting mechanism and dispute resolution
 
+### 💰 [Claims Documentation](./claims/)
+Claim idempotency and payout tracking:
+
+- **[Claim Idempotency Guide](./claims/CLAIM_IDEMPOTENCY.md)** - Comprehensive guide to idempotent winnings claims
+
 ## 🎯 Quick Start
 
 1. **For Developers**: Start with [API Documentation](./api/API_DOCUMENTATION.md)

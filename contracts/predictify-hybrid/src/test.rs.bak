@@ -1,16 +1,16 @@
-//! # Test Suite Status
+﻿//! # Test Suite Status
 //!
 //! All core functionality tests are now active and comprehensive:
 //!
-//! - ✅ Market Creation Tests: Complete with validation and error handling
-//! - ✅ Voting Tests: Complete with authentication and validation
-//! - ✅ Fee Management Tests: Re-enabled with calculation and validation tests
-//! - ✅ Configuration Tests: Re-enabled with constants and limits validation
-//! - ✅ Validation Tests: Re-enabled with question and outcome validation
-//! - ✅ Utility Tests: Re-enabled with percentage and time calculations
-//! - ✅ Event Tests: Re-enabled with data integrity validation
-//! - ✅ Oracle Tests: Re-enabled with configuration and provider tests
-//! - ✅ Payout Distribution Tests: Added comprehensive tests for payout calculation and distribution
+//! - âœ… Market Creation Tests: Complete with validation and error handling
+//! - âœ… Voting Tests: Complete with authentication and validation
+//! - âœ… Fee Management Tests: Re-enabled with calculation and validation tests
+//! - âœ… Configuration Tests: Re-enabled with constants and limits validation
+//! - âœ… Validation Tests: Re-enabled with question and outcome validation
+//! - âœ… Utility Tests: Re-enabled with percentage and time calculations
+//! - âœ… Event Tests: Re-enabled with data integrity validation
+//! - âœ… Oracle Tests: Re-enabled with configuration and provider tests
+//! - âœ… Payout Distribution Tests: Added comprehensive tests for payout calculation and distribution
 //!
 //! This test suite now provides comprehensive coverage of all contract features
 //! and addresses the maintainer's concern about removed test cases.
@@ -1797,21 +1797,9 @@ fn test_automatic_payout_distribution() {
             .unwrap()
     });
     assert_eq!(market_after.state, MarketState::Resolved);
-    assert!(market_after
-        .claimed
-        .get(user1.clone())
-        .map(|info| info.is_claimed())
-        .unwrap_or(false));
-    assert!(market_after
-        .claimed
-        .get(user2.clone())
-        .map(|info| info.is_claimed())
-        .unwrap_or(false));
-    assert!(!market_after
-        .claimed
-        .get(user3.clone())
-        .map(|info| info.is_claimed())
-        .unwrap_or(false)); // Loser not claimed
+    assert!(market_after.claimed.get(user1.clone()).unwrap_or(false));
+    assert!(market_after.claimed.get(user2.clone()).unwrap_or(false));
+    assert!(!market_after.claimed.get(user3.clone()).unwrap_or(false)); // Loser not claimed
 }
 
 #[test]
@@ -5944,7 +5932,7 @@ fn test_upgrade_incompatible_version_rejected() {
         );
         vm.track_contract_version(&env, v2).unwrap();
 
-        // Try to "upgrade" to 1.0.0 (downgrade) — should fail compatibility
+        // Try to "upgrade" to 1.0.0 (downgrade) â€” should fail compatibility
         let proposal = crate::upgrade_manager::UpgradeProposal::new(
             &env,
             soroban_sdk::BytesN::from_array(&env, &[1u8; 32]),
@@ -6100,7 +6088,7 @@ fn test_major_upgrade_without_rollback_plan_warns() {
         // has_rollback_hash should be false by default
         assert!(!proposal.has_rollback_hash);
 
-        // Validate compatibility — should produce warnings
+        // Validate compatibility â€” should produce warnings
         let result =
             crate::upgrade_manager::UpgradeManager::validate_upgrade_compatibility(&env, &proposal)
                 .unwrap();
@@ -6128,15 +6116,15 @@ fn test_version_compatibility_validation() {
             crate::versioning::Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
         let v2 = crate::versioning::Version::new(&env, 2, 0, 0, String::from_str(&env, ""), false);
 
-        // Same major, higher minor — compatible
+        // Same major, higher minor â€” compatible
         let compat = vm.validate_version_compatibility(&env, &v1, &v1_1).unwrap();
         assert!(compat);
 
-        // Different major — incompatible (breaking change)
+        // Different major â€” incompatible (breaking change)
         let compat = vm.validate_version_compatibility(&env, &v1, &v2).unwrap();
         assert!(!compat);
 
-        // Downgrade — incompatible
+        // Downgrade â€” incompatible
         let compat = vm.validate_version_compatibility(&env, &v1_1, &v1).unwrap();
         assert!(!compat);
     });
@@ -7216,7 +7204,7 @@ fn test_global_blacklist_priority() {
         Ok(())
     });
 
-    assert!(can_bet.is_err(), "La Blacklist global debería bloquear al usuario incluso si está en Whitelist");
+    assert!(can_bet.is_err(), "La Blacklist global deberÃ­a bloquear al usuario incluso si estÃ¡ en Whitelist");
 }
 
 #[test]
@@ -7233,3 +7221,4 @@ fn test_empty_lists_allow_access() {
     
     assert!(res.is_ok(), "Sin restricciones, el acceso debe ser libre");
 }
+

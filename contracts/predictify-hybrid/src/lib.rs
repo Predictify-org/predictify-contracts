@@ -88,6 +88,9 @@ mod query_tests;
 #[cfg(any())]
 mod bet_tests;
 
+#[cfg(test)]
+mod claim_idempotency_tests;
+
 #[cfg(any())]
 mod balance_tests;
 
