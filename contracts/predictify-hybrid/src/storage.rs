@@ -650,22 +650,29 @@ impl StorageOptimizer {
 pub struct EventManager;
 
 impl EventManager {
+    fn event_storage_key(env: &Env, event_id: &Symbol) -> (Symbol, Symbol) {
+        (Symbol::new(env, "Event"), event_id.clone())
+    }
+
     /// Store a new event in persistent storage
     pub fn store_event(env: &Env, event: &Event) {
-        env.storage().persistent().set(&event.id, event);
+        let key = Self::event_storage_key(env, &event.id);
+        env.storage().persistent().set(&key, event);
     }
 
     /// Retrieve an event from persistent storage
     pub fn get_event(env: &Env, event_id: &Symbol) -> Result<Event, Error> {
+        let key = Self::event_storage_key(env, event_id);
         env.storage()
             .persistent()
-            .get(event_id)
+            .get(&key)
             .ok_or(Error::MarketNotFound)
     }
 
     /// Check if an event exists
     pub fn has_event(env: &Env, event_id: &Symbol) -> bool {
-        env.storage().persistent().has(event_id)
+        let key = Self::event_storage_key(env, event_id);
+        env.storage().persistent().has(&key)
     }
 
     /// Update an existing event
@@ -801,7 +808,7 @@ mod tests {
             ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Reflector,
+                OracleProvider::reflector(),
                 soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -859,7 +866,7 @@ mod tests {
             ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Reflector,
+                OracleProvider::reflector(),
                 soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -879,6 +886,6 @@ mod tests {
 
         let recommendations = StorageUtils::get_storage_recommendations(&market);
         // Recommendations may be empty for small markets, so we just check it doesn't panic
-        assert!(recommendations.len() >= 0);
+        // len() is always >= 0 for Vec
     }
 }

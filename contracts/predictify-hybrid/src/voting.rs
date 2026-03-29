@@ -381,8 +381,8 @@ impl VotingManager {
             VotingUtils::transfer_winnings(env, &user, payout)?;
         }
 
-        // Mark as claimed
-        MarketStateManager::mark_claimed(&mut market, user, Some(&market_id));
+        // Mark as claimed with timestamp and payout tracking
+        MarketStateManager::mark_claimed(&mut market, user, Some(&market_id), payout, env);
         MarketStateManager::update_market(env, &market_id, &market);
 
         Ok(payout)
@@ -412,7 +412,7 @@ impl VotingManager {
         // Calculate adjusted threshold and enforce dynamic bounds
         let mut adjusted_threshold = base + factors.total_adjustment;
         if adjusted_threshold < cfg.voting.min_dispute_stake {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
         if adjusted_threshold > cfg.voting.max_dispute_threshold {
             adjusted_threshold = cfg.voting.max_dispute_threshold;
@@ -652,11 +652,11 @@ impl ThresholdUtils {
 
         // Ensure within limits
         if adjusted < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if adjusted > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(adjusted)
@@ -742,11 +742,11 @@ impl ThresholdUtils {
     /// Validate dispute threshold
     pub fn validate_dispute_threshold(threshold: i128, _market_id: &Symbol) -> Result<bool, Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(true)
@@ -808,11 +808,11 @@ impl ThresholdValidator {
     /// Validate threshold limits
     pub fn validate_threshold_limits(threshold: i128) -> Result<(), Error> {
         if threshold < MIN_DISPUTE_STAKE {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if threshold > MAX_DISPUTE_THRESHOLD {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(())
@@ -955,7 +955,11 @@ impl VotingValidator {
         user: &Address,
     ) -> Result<(), Error> {
         // Check if user has already claimed
-        let claimed = market.claimed.get(user.clone()).unwrap_or(false);
+        let claimed = market
+            .claimed
+            .get(user.clone())
+            .map(|info| info.is_claimed())
+            .unwrap_or(false);
         if claimed {
             return Err(Error::AlreadyClaimed);
         }
@@ -1082,7 +1086,7 @@ impl VotingValidator {
 /// #     vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
 /// #     env.ledger().timestamp() + 86400,
 /// #     crate::types::OracleConfig::new(
-/// #         crate::types::OracleProvider::Reflector,
+/// #         crate::types::OracleProvider::reflector(),
 /// #         String::from_str(&env, "BTC/USD"),
 /// #         100000000000i128,
 /// #         String::from_str(&env, "gte")
@@ -1212,7 +1216,11 @@ impl VotingUtils {
 
     /// Check if user has claimed winnings
     pub fn has_user_claimed(market: &Market, user: &Address) -> bool {
-        market.claimed.get(user.clone()).unwrap_or(false)
+        market
+            .claimed
+            .get(user.clone())
+            .map(|info| info.is_claimed())
+            .unwrap_or(false)
     }
 }
 
@@ -1258,7 +1266,7 @@ impl VotingUtils {
 /// #     vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
 /// #     env.ledger().timestamp() + 86400,
 /// #     crate::types::OracleConfig::new(
-/// #         crate::types::OracleProvider::Reflector,
+/// #         crate::types::OracleProvider::reflector(),
 /// #         String::from_str(&env, "BTC/USD"),
 /// #         100000000000i128,
 /// #         String::from_str(&env, "gte")
@@ -1591,7 +1599,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,
@@ -1621,7 +1629,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,
@@ -1657,7 +1665,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
-                OracleProvider::Pyth,
+                OracleProvider::pyth(),
                 Address::generate(&env),
                 String::from_str(&env, "BTC/USD"),
                 2500000,

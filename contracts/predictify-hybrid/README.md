@@ -1,3 +1,96 @@
+# Custom Stellar Token/Asset Support
+
+## Multi-Asset Markets
+
+Markets can now accept and pay out in any Stellar asset (e.g., USDC, custom token, XLM) using the Soroban token interface.
+
+### Admin Controls
+- Admin can set allowed tokens globally or per event
+- Allowed assets are validated and stored in contract registry
+- Use `initialize` to set global allowed assets
+- Use market creation functions to specify per-event asset
+
+### Secure Token Handling
+- Bets and payouts use Soroban token transfer interface
+- Contract validates token contract and decimals
+- Handles approval/allowance if required by token
+- Emits events with asset info for transparency
+- Does not break XLM-native flow if still supported
+
+### Example Usage
+```rust
+// Initialize contract with allowed assets
+PredictifyHybrid::initialize(env, admin, Some(2), Some(vec![Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }]));
+
+// Create market with custom asset
+PredictifyHybrid::create_market(env, admin, question, outcomes, duration_days, oracle_config, Some(Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }));
+
+// Place bet with custom asset
+BetManager::place_bet(env, user, market_id, outcome, amount, Some(Asset { contract: usdc_address, symbol: Symbol::new(&env, "USDC"), decimals: 7 }));
+```
+
+### Security Notes
+- All token transfers are validated
+- Only allowed assets can be used for bets/payouts
+- Minimum 95% test coverage required
+- Comprehensive input validation and event emission
+
+### Events
+- Asset info is included in bet and payout events
+- Admin can query allowed assets per event or globally
+
+### Testing
+- Tests cover XLM and custom token flows
+- Insufficient balance and invalid asset scenarios are handled
+
+### Commit Message Example
+`feat: implement custom Stellar token/asset support for bets and payouts`
+
+# Reproducible WASM Builds & Checksums
+
+## Secure, Auditable Release Artifacts
+
+Predictify Hybrid contract WASM artifacts are built reproducibly and published with SHA256 checksums for auditor and integrator verification.
+
+### Build Flags for Reproducibility
+
+Release builds use strict flags in Cargo.toml and workspace Cargo.toml:
+
+```
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+```
+
+### Building and Verifying WASM Artifacts
+
+To build and generate a checksum for the release WASM:
+
+```sh
+make build-checksum
+# or, separately:
+make build
+make checksum
+```
+
+This will output the WASM file and a corresponding `.sha256` file in `target/wasm32-unknown-unknown/release/`.
+
+To verify the checksum:
+
+```sh
+sha256sum -c target/wasm32-unknown-unknown/release/<artifact>.wasm.sha256
+```
+
+Replace `<artifact>` with the actual WASM filename.
+
+**Note:** Always use the documented build flags for reproducibility. Artifacts built with different flags may produce different checksums.
+
 # Predictify Hybrid Contract with Real Oracle Integration
 
 ## Overview

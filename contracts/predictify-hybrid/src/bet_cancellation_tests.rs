@@ -92,7 +92,7 @@ impl BetCancellationTestSetup {
         ];
 
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Pyth,
+            provider: OracleProvider::pyth(),
             oracle_address: Address::generate(env),
             feed_id: String::from_str(env, "test_feed"),
             threshold: 100_000_000,

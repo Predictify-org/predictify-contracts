@@ -7,6 +7,7 @@
 use super::super::super::*;
 use super::super::mocks::oracle::*;
 use soroban_sdk::testutils::Address as _;
+use crate::oracles::{OracleFactory, OracleWhitelist, OracleMetadata};
 
 /// Test unauthorized oracle access
 #[test]
@@ -15,7 +16,7 @@ fn test_unauthorized_oracle_access() {
     let contract_id = Address::generate(&env);
 
     // Create unauthorized signer mock
-    let unauthorized_oracle = MockOracleFactory::create_unauthorized_signer_oracle(contract_id.clone());
+    let unauthorized_oracle = MockOracleFactory::create_unauthorized_signer_oracle(&env, contract_id.clone());
 
     // Attempt to get price - should fail with Unauthorized
     let result = unauthorized_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
@@ -30,7 +31,7 @@ fn test_invalid_signature_rejection() {
     let contract_id = Address::generate(&env);
 
     // Create malicious signature mock
-    let malicious_oracle = MockOracleFactory::create_malicious_signature_oracle(contract_id.clone());
+    let malicious_oracle = MockOracleFactory::create_malicious_signature_oracle(&env, contract_id.clone());
 
     // Attempt to get price - should fail with Unauthorized (representing invalid signature)
     let result = malicious_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
@@ -45,7 +46,7 @@ fn test_replay_attack_protection() {
     let contract_id = Address::generate(&env);
 
     // Create valid oracle
-    let valid_oracle = MockOracleFactory::create_valid_oracle(contract_id.clone(), 2600000);
+    let valid_oracle = MockOracleFactory::create_valid_oracle(&env, contract_id.clone(), 2600000);
 
     // First request should succeed
     let result1 = valid_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
@@ -77,7 +78,7 @@ fn test_oracle_whitelist_validation() {
 
         // Add oracle to whitelist
         let metadata = OracleMetadata {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
             added_at: env.ledger().timestamp(),
             added_by: admin.clone(),
@@ -107,7 +108,7 @@ fn test_oracle_deactivation_security() {
         OracleWhitelist::initialize(&env, admin.clone()).unwrap();
 
         let metadata = OracleMetadata {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
             added_at: env.ledger().timestamp(),
             added_by: admin.clone(),
@@ -139,14 +140,14 @@ fn test_oracle_health_check_manipulation() {
     let contract_id = Address::generate(&env);
 
     // Create timeout oracle (unhealthy)
-    let unhealthy_oracle = MockOracleFactory::create_timeout_oracle(contract_id.clone());
+    let unhealthy_oracle = MockOracleFactory::create_timeout_oracle(&env, contract_id.clone());
 
     // Health check should fail
     let is_healthy = unhealthy_oracle.is_healthy(&env).unwrap();
     assert!(!is_healthy);
 
     // Create valid oracle (healthy)
-    let healthy_oracle = MockOracleFactory::create_valid_oracle(contract_id.clone(), 2600000);
+    let healthy_oracle = MockOracleFactory::create_valid_oracle(&env, contract_id.clone(), 2600000);
 
     // Health check should pass
     let is_healthy = healthy_oracle.is_healthy(&env).unwrap();
@@ -160,19 +161,19 @@ fn test_extreme_value_validation() {
     let contract_id = Address::generate(&env);
 
     // Test with extremely high value
-    let extreme_high_oracle = MockOracleFactory::create_extreme_value_oracle(contract_id.clone(), i128::MAX);
+    let extreme_high_oracle = MockOracleFactory::create_extreme_value_oracle(&env, contract_id.clone(), i128::MAX);
     let result = extreme_high_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), i128::MAX);
 
     // Test with zero value (should be validated elsewhere)
-    let zero_oracle = MockOracleFactory::create_extreme_value_oracle(contract_id.clone(), 0);
+    let zero_oracle = MockOracleFactory::create_extreme_value_oracle(&env, contract_id.clone(), 0);
     let result = zero_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), 0);
 
     // Test with negative value
-    let negative_oracle = MockOracleFactory::create_extreme_value_oracle(contract_id.clone(), -1000);
+    let negative_oracle = MockOracleFactory::create_extreme_value_oracle(&env, contract_id.clone(), -1000);
     let result = negative_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), -1000);
@@ -182,12 +183,12 @@ fn test_extreme_value_validation() {
 #[test]
 fn test_oracle_provider_validation() {
     // Test supported providers
-    assert!(OracleFactory::is_provider_supported(&OracleProvider::Reflector));
+    assert!(OracleFactory::is_provider_supported(&OracleProvider::reflector()));
 
     // Test unsupported providers
-    assert!(!OracleFactory::is_provider_supported(&OracleProvider::Pyth));
-    assert!(!OracleFactory::is_provider_supported(&OracleProvider::BandProtocol));
-    assert!(!OracleFactory::is_provider_supported(&OracleProvider::DIA));
+    assert!(!OracleFactory::is_provider_supported(&OracleProvider::pyth()));
+    assert!(!OracleFactory::is_provider_supported(&OracleProvider::band_protocol()));
+    assert!(!OracleFactory::is_provider_supported(&OracleProvider::dia()));
 }
 
 /// Test oracle configuration security
@@ -197,12 +198,12 @@ fn test_oracle_configuration_security() {
     let contract_id = Address::generate(&env);
 
     // Test creating oracle with unsupported provider
-    let result = OracleFactory::create_oracle(OracleProvider::Pyth, contract_id.clone());
+    let result = OracleFactory::create_oracle(OracleProvider::pyth(), contract_id.clone());
     assert!(result.is_err());
     assert_eq!(result.unwrap_err(), Error::InvalidOracleConfig);
 
     // Test creating oracle with supported provider
-    let result = OracleFactory::create_oracle(OracleProvider::Reflector, contract_id.clone());
+    let result = OracleFactory::create_oracle(OracleProvider::reflector(), contract_id.clone());
     assert!(result.is_ok());
 }
 
@@ -218,7 +219,7 @@ fn test_oracle_metadata_integrity() {
         OracleWhitelist::initialize(&env, admin.clone()).unwrap();
 
         let metadata = OracleMetadata {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
             added_at: env.ledger().timestamp(),
             added_by: admin.clone(),
@@ -231,7 +232,7 @@ fn test_oracle_metadata_integrity() {
 
         // Retrieve metadata and verify integrity
         let retrieved_metadata = OracleWhitelist::get_oracle_metadata(&env, &oracle_address).unwrap();
-        assert_eq!(retrieved_metadata.provider, OracleProvider::Reflector);
+        assert_eq!(retrieved_metadata.provider, OracleProvider::reflector());
         assert_eq!(retrieved_metadata.contract_address, oracle_address);
         assert_eq!(retrieved_metadata.added_by, admin);
         assert!(retrieved_metadata.is_active);
@@ -252,7 +253,7 @@ fn test_admin_authorization_oracle_management() {
 
         // Non-admin should not be able to add oracle
         let metadata = OracleMetadata {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
             added_at: env.ledger().timestamp(),
             added_by: non_admin.clone(),
@@ -280,7 +281,7 @@ fn test_oracle_removal_security() {
         OracleWhitelist::initialize(&env, admin.clone()).unwrap();
 
         let metadata = OracleMetadata {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
             added_at: env.ledger().timestamp(),
             added_by: admin.clone(),

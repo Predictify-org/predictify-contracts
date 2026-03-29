@@ -24,9 +24,8 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
-use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::{Bet, BetLimits, BetStats, BetStatus, Market, MarketState};
-use crate::validation;
+// use crate::validation;
 
 // ===== CONSTANTS =====
 
@@ -217,7 +216,6 @@ impl BetManager {
     /// - `Error::InsufficientStake` - Bet amount below minimum
     /// - `Error::InvalidOutcome` - Selected outcome not valid for this market
     /// - `Error::InsufficientBalance` - User doesn't have enough funds
-    /// - `Error::Unauthorized` - User not on allowlist for private event
     ///
     /// # Security
     ///
@@ -226,7 +224,6 @@ impl BetManager {
     /// - Validates user has not already bet on this market
     /// - Validates user has sufficient balance
     /// - Locks funds atomically with bet creation
-    /// - Enforces allowlist for private events
     ///
     /// # Example
     ///
@@ -248,10 +245,6 @@ impl BetManager {
     ) -> Result<Bet, Error> {
         // Require authentication from the user
         user.require_auth();
-
-        // Note: Event visibility checking is disabled to avoid deserialization issues
-        // when markets and events share the same ID space. Events should use a different
-        // ID prefix (e.g., "evt_") to enable visibility checks.
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
@@ -439,11 +432,7 @@ impl BetManager {
     ///
     /// Returns `true` if the user has already placed a bet, `false` otherwise.
     pub fn has_user_bet(env: &Env, market_id: &Symbol, user: &Address) -> bool {
-        if let Some(bet) = BetStorage::get_bet(env, market_id, user) {
-            bet.is_active()
-        } else {
-            false
-        }
+        BetStorage::get_bet(env, market_id, user).is_some()
     }
 
     /// Get a user's bet on a specific market.
@@ -681,7 +670,6 @@ impl BetManager {
 
         Ok(payout)
     }
-
     /// Cancel a bet before the market deadline and refund the user.
     ///
     /// This function allows users to cancel their active bets before the market
@@ -949,16 +937,6 @@ impl BetValidator {
             return Err(Error::MarketClosed);
         }
 
-        // Bet deadline: no bets after deadline (0 = use end_time)
-        let deadline = if market.bet_deadline > 0 {
-            market.bet_deadline
-        } else {
-            market.end_time
-        };
-        if current_time >= deadline {
-            return Err(Error::MarketClosed);
-        }
-
         // Check if market is not already resolved
         if market.winning_outcomes.is_some() {
             return Err(Error::MarketResolved);
@@ -989,7 +967,14 @@ impl BetValidator {
         amount: i128,
     ) -> Result<(), Error> {
         let limits = get_effective_bet_limits(env, market_id);
-        validation::validate_bet_amount_against_limits(amount, &limits)
+        // Temporarily disabled due to validation module being disabled
+        // validation::validate_bet_amount_against_limits(amount, &limits)
+
+        // Simple validation for now
+        if amount < limits.min_bet || amount > limits.max_bet {
+            return Err(Error::InvalidInput);
+        }
+        Ok(())
     }
 
     /// Validate bet amount using default constants (for tests / backward compatibility).
@@ -1028,14 +1013,9 @@ impl BetUtils {
     /// # Returns
     ///
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
-    ///
-    /// Reentrancy: takes the reentrancy lock before the token transfer and
-    /// releases it after. Prevents reentrant calls into the contract during transfer.
     pub fn lock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
-        ReentrancyGuard::before_external_call(env).map_err(|_| Error::InvalidState)?;
         let token_client = MarketUtils::get_token_client(env)?;
         token_client.transfer(user, &env.current_contract_address(), &amount);
-        ReentrancyGuard::after_external_call(env);
         Ok(())
     }
 

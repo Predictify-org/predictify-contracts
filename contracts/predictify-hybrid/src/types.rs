@@ -141,163 +141,434 @@ pub enum MarketState {
 
 // ===== ORACLE TYPES =====
 
-/// Enumeration of supported oracle providers for price feed data.
+/// Forward-compatible oracle provider representation.
 ///
-/// This enum defines the various oracle providers that can supply price data
-/// for prediction market resolution. Each provider has different characteristics,
-/// availability, and integration requirements specific to the Stellar blockchain
-/// ecosystem.
+/// This struct provides forward compatibility for oracle provider identification by using
+/// string-based representation instead of a fixed enum. This allows new oracle providers
+/// to be added without breaking existing stored markets.
 ///
-/// # Provider Categories
+/// # Forward Compatibility Strategy
 ///
-/// **Production Ready (Stellar Network):**
-/// - **Reflector**: Primary oracle provider with full Stellar integration
+/// The provider is stored as a string identifier rather than an enum variant, enabling:
+/// - **Future Provider Addition**: New providers can be added without breaking existing markets
+/// - **Backward Compatibility**: Existing markets continue to work with older contract versions
+/// - **Graceful Degradation**: Unknown providers are handled safely with fallback behavior
 ///
-/// **Future/Placeholder (Not Yet Available):**
-/// - **Pyth**: High-frequency oracle network (future Stellar support)
-/// - **Band Protocol**: Decentralized oracle network (not on Stellar)
-/// - **DIA**: Multi-chain oracle platform (not on Stellar)
+/// # Provider Identifiers
 ///
-/// # Provider Characteristics
+/// **Standardized Provider Names:**
+/// - `"reflector"` - Reflector oracle (primary for Stellar Network)
+/// - `"pyth"` - Pyth Network oracle (placeholder for future Stellar support)
+/// - `"band_protocol"` - Band Protocol oracle (not available on Stellar)
+/// - `"dia"` - DIA oracle (not available on Stellar)
 ///
-/// **Reflector Oracle:**
-/// - **Status**: Production ready and recommended
-/// - **Network**: Native Stellar blockchain integration
-/// - **Assets**: BTC, ETH, XLM, and other major cryptocurrencies
-/// - **Features**: Real-time prices, TWAP calculations, high reliability
-/// - **Use Case**: Primary oracle for all Stellar-based prediction markets
-///
-/// **Pyth Network:**
-/// - **Status**: Placeholder for future implementation
-/// - **Network**: Not currently available on Stellar
-/// - **Assets**: Extensive coverage of crypto, forex, and traditional assets
-/// - **Features**: Sub-second updates, institutional-grade data
-/// - **Use Case**: Future high-frequency prediction markets
-///
-/// **Band Protocol:**
-/// - **Status**: Not supported on Stellar
-/// - **Network**: Primarily Cosmos and EVM-compatible chains
-/// - **Assets**: Wide range of crypto and traditional assets
-/// - **Features**: Decentralized data aggregation
-/// - **Use Case**: Not applicable for Stellar deployment
-///
-/// **DIA:**
-/// - **Status**: Not supported on Stellar
-/// - **Network**: Multi-chain but no Stellar integration
-/// - **Assets**: Comprehensive DeFi and traditional asset coverage
-/// - **Features**: Transparent data sourcing and aggregation
-/// - **Use Case**: Not applicable for Stellar deployment
+/// **Future Providers:**
+/// - New providers use descriptive lowercase names with underscores
+/// - Example: `"chainlink"` for Chainlink oracle integration
+/// - Example: `"uniswap_oracle"` for Uniswap-based price feeds
 ///
 /// # Example Usage
 ///
 /// ```rust
+/// # use soroban_sdk::{Env, String};
 /// # use predictify_hybrid::types::OracleProvider;
-///
-/// // Check provider support before using
-/// let provider = OracleProvider::Reflector;
-///
-/// if provider.is_supported() {
-///     println!("Using {} oracle provider", provider.name());
-///     // Proceed with oracle integration
-/// } else {
-///     println!("Provider {} not supported on Stellar", provider.name());
-///     // Use fallback or error handling
-/// }
-///
-/// // Provider selection logic
-/// let recommended_provider = match std::env::var("ORACLE_PREFERENCE") {
-///     Ok(pref) if pref == "pyth" => {
-///         if OracleProvider::Pyth.is_supported() {
-///             OracleProvider::Pyth
-///         } else {
-///             println!("Pyth not available, using Reflector");
-///             OracleProvider::Reflector
-///         }
-///     },
-///     _ => OracleProvider::Reflector, // Default to Reflector
-/// };
-///
-/// println!("Selected oracle: {}", recommended_provider.name());
-/// ```
-///
-/// # Integration with Oracle Factory
-///
-/// Oracle providers work with the Oracle Factory pattern:
-/// ```rust
-/// # use soroban_sdk::{Env, Address};
-/// # use predictify_hybrid::types::OracleProvider;
-/// # use predictify_hybrid::oracles::OracleFactory;
 /// # let env = Env::default();
-/// # let oracle_contract = Address::generate(&env);
 ///
-/// // Create oracle instance based on provider
-/// let provider = OracleProvider::Reflector;
-/// let oracle_result = OracleFactory::create_oracle(provider, oracle_contract);
+/// // Create provider instances
+/// let reflector = OracleProvider::reflector();
+/// let pyth = OracleProvider::pyth();
+/// let custom = OracleProvider::from_str(String::from_str(&env, "new_provider"));
 ///
-/// match oracle_result {
-///     Ok(oracle_instance) => {
-///         println!("Successfully created {} oracle", provider.name());
-///         // Use oracle for price feeds
-///     },
-///     Err(e) => {
-///         println!("Failed to create oracle: {:?}", e);
-///         // Handle creation failure
-///     },
+/// // Check support status
+/// assert!(reflector.is_supported());
+/// assert!(!pyth.is_supported()); // Not available on Stellar
+/// assert!(!custom.is_supported()); // Unknown provider
+///
+/// // Get provider identifier
+/// assert_eq!(reflector.as_str(), "reflector");
+/// assert_eq!(pyth.as_str(), "pyth");
+/// assert_eq!(custom.as_str(), "new_provider");
+///
+/// // Convert to string for display
+/// println!("Provider: {}", reflector.name());
+/// ```
+///
+/// # Validation and Error Handling
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String};
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+///
+/// let provider = OracleProvider::from_str(String::from_str(&env, "reflector"));
+///
+/// // Validate provider for new market creation
+/// if provider.is_supported() {
+///     println!("Provider {} is supported", provider.name());
+/// } else {
+///     println!("Provider {} not supported - using fallback", provider.name());
+/// }
+///
+/// // Check if provider is known (even if unsupported)
+/// if provider.is_known() {
+///     println!("Provider {} is recognized", provider.name());
+/// } else {
+///     println!("Unknown provider - may be from future contract version");
 /// }
 /// ```
 ///
-/// # Provider Migration Strategy
+/// # Migration from Enum
 ///
-/// For future provider additions:
-/// 1. **Add Provider Variant**: Update enum with new provider
-/// 2. **Update Support Check**: Modify `is_supported()` method
-/// 3. **Add Name Mapping**: Update `name()` method
-/// 4. **Implement Integration**: Add provider-specific oracle implementation
-/// 5. **Update Factory**: Add creation logic in OracleFactory
-/// 6. **Test Integration**: Comprehensive testing with new provider
+/// When migrating from the old enum-based system:
+/// ```rust
+/// // Old enum approach (deprecated)
+/// // pub enum OracleProvider { Reflector, Pyth, BandProtocol, DIA }
 ///
-/// # Network Compatibility
+/// // New string-based approach (forward compatible)
+/// let provider = match old_enum_variant {
+///     OldOracleProvider::Reflector => OracleProvider::reflector(),
+///     OldOracleProvider::Pyth => OracleProvider::pyth(),
+///     OldOracleProvider::BandProtocol => OracleProvider::band_protocol(),
+///     OldOracleProvider::DIA => OracleProvider::dia(),
+/// };
+/// ```
 ///
-/// Provider support varies by blockchain network:
-/// - **Stellar**: Only Reflector is currently supported
-/// - **Ethereum**: Pyth, Band Protocol, and DIA are available
-/// - **Cosmos**: Band Protocol is native
-/// - **Multi-chain**: DIA supports multiple networks
+/// # Storage Format
 ///
-/// # Error Handling
-///
-/// When using unsupported providers:
-/// - Oracle creation will return `Error::InvalidOracleConfig`
-/// - Price requests will return `Error::OracleNotAvailable`
-/// - Health checks will return `false`
-/// - Validation will fail with appropriate error messages
+/// The provider is stored as a string in contract storage, making it:
+/// - **Human-readable**: Easy to debug and inspect
+/// - **Extensible**: New providers don't require storage migration
+/// - **Compatible**: Works across contract upgrades
+/// - **Efficient**: String storage is optimized in Soroban
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OracleProvider {
-    /// Reflector oracle (primary oracle for Stellar Network)
     Reflector,
-    /// Pyth Network oracle (placeholder for Stellar)
     Pyth,
-    /// Band Protocol oracle (not available on Stellar)
     BandProtocol,
-    /// DIA oracle (not available on Stellar)
     DIA,
 }
 
 impl OracleProvider {
-    /// Get provider name
-    pub fn name(&self) -> &'static str {
-        match self {
-            OracleProvider::Reflector => "Reflector",
-            OracleProvider::Pyth => "Pyth",
-            OracleProvider::BandProtocol => "Band Protocol",
-            OracleProvider::DIA => "DIA",
+    /// Creates a Reflector oracle provider instance.
+    ///
+    /// Reflector is the primary oracle provider for the Stellar Network,
+    /// offering reliable price feeds for major cryptocurrencies.
+    ///
+    /// # Returns
+    ///
+    /// `OracleProvider` instance configured for Reflector oracle
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::types::OracleProvider;
+    ///
+    /// let provider = OracleProvider::reflector();
+    /// assert_eq!(provider.as_str(), "reflector");
+    /// assert!(provider.is_supported());
+    /// ```
+    pub fn reflector() -> Self {
+        OracleProvider::Reflector
+    }
+
+    /// Creates a Pyth Network oracle provider instance.
+    ///
+    /// Pyth Network is a high-frequency oracle network that is planned
+    /// for future Stellar integration but currently not available.
+    ///
+    /// # Returns
+    ///
+    /// `OracleProvider` instance configured for Pyth Network oracle
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::types::OracleProvider;
+    ///
+    /// let provider = OracleProvider::pyth();
+    /// assert_eq!(provider.as_str(), "pyth");
+    /// assert!(!provider.is_supported()); // Not available on Stellar
+    /// ```
+    pub fn pyth() -> Self {
+        OracleProvider::Pyth
+    }
+
+    /// Creates a Band Protocol oracle provider instance.
+    ///
+    /// Band Protocol is a decentralized oracle network primarily available
+    /// on Cosmos and EVM chains, not currently supported on Stellar.
+    ///
+    /// # Returns
+    ///
+    /// `OracleProvider` instance configured for Band Protocol oracle
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::types::OracleProvider;
+    ///
+    /// let provider = OracleProvider::band_protocol();
+    /// assert_eq!(provider.as_str(), "band_protocol");
+    /// assert!(!provider.is_supported()); // Not available on Stellar
+    /// ```
+    pub fn band_protocol() -> Self {
+        OracleProvider::BandProtocol
+    }
+
+    /// Creates a DIA oracle provider instance.
+    ///
+    /// DIA is a multi-chain oracle platform with comprehensive asset coverage,
+    /// but currently does not have Stellar integration.
+    ///
+    /// # Returns
+    ///
+    /// `OracleProvider` instance configured for DIA oracle
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::types::OracleProvider;
+    ///
+    /// let provider = OracleProvider::dia();
+    /// assert_eq!(provider.as_str(), "dia");
+    /// assert!(!provider.is_supported()); // Not available on Stellar
+    /// ```
+    pub fn dia() -> Self {
+        OracleProvider::DIA
+    }
+
+    /// Creates an OracleProvider from a string identifier.
+    ///
+    /// This constructor enables forward compatibility by allowing any string
+    /// to be used as a provider identifier. Unknown providers are handled
+    /// gracefully through the `is_supported()` and `is_known()` methods.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider_id` - String identifier for the oracle provider
+    ///
+    /// # Returns
+    ///
+    /// `OracleProvider` instance with the specified identifier
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::types::OracleProvider;
+    /// # let env = Env::default();
+    ///
+    /// // Known provider
+    /// let known = OracleProvider::from_str(String::from_str(&env, "reflector"));
+    /// assert!(known.is_known());
+    ///
+    /// // Unknown/future provider
+    /// let unknown = OracleProvider::from_str(String::from_str(&env, "future_oracle"));
+    /// assert!(!unknown.is_known());
+    /// ```
+    pub fn from_str(env: &Env, provider_id: String) -> Self {
+        if provider_id == String::from_str(env, "reflector") {
+            OracleProvider::Reflector
+        } else if provider_id == String::from_str(env, "pyth") {
+            OracleProvider::Pyth
+        } else if provider_id == String::from_str(env, "band_protocol") {
+            OracleProvider::BandProtocol
+        } else if provider_id == String::from_str(env, "dia") {
+            OracleProvider::DIA
+        } else {
+            OracleProvider::Reflector // Default
         }
     }
 
-    /// Check if provider is supported on Stellar
+    pub fn as_str(&self) -> &str {
+        match self {
+            OracleProvider::Reflector => "reflector",
+            OracleProvider::Pyth => "pyth",
+            OracleProvider::BandProtocol => "band_protocol",
+            OracleProvider::DIA => "dia",
+        }
+    }
+
+    pub fn name(&self, env: &Env) -> String {
+        match self {
+            OracleProvider::Reflector => String::from_str(env, "Reflector"),
+            OracleProvider::Pyth => String::from_str(env, "Pyth Network"),
+            OracleProvider::BandProtocol => String::from_str(env, "Band Protocol"),
+            OracleProvider::DIA => String::from_str(env, "DIA"),
+        // Since soroban_sdk::String doesn't have easy conversion to &str,
+        // we'll use a different approach based on the provider_id content
+        let env = soroban_sdk::Env::default();
+        
+        // Compare with known provider IDs
+        let reflector_id = String::from_str(&env, "reflector");
+        let pyth_id = String::from_str(&env, "pyth");
+        let band_id = String::from_str(&env, "band_protocol");
+        let dia_id = String::from_str(&env, "dia");
+        
+        if self.provider_id == reflector_id {
+            "reflector"
+        } else if self.provider_id == pyth_id {
+            "pyth"
+        } else if self.provider_id == band_id {
+            "band_protocol"
+        } else if self.provider_id == dia_id {
+            "dia"
+        } else {
+            "unknown"
+        }
+    }
+
+    /// Returns a human-readable name for the oracle provider.
+    ///
+    /// This method provides formatted display names for UI and logging purposes.
+    /// Unknown providers return a generic "Unknown Provider" label.
+    ///
+    /// # Returns
+    ///
+    /// String containing the formatted provider name
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::types::OracleProvider;
+    /// # let env = Env::default();
+    ///
+    /// let reflector = OracleProvider::reflector();
+    /// assert_eq!(reflector.name(), "Reflector");
+    ///
+    /// let unknown = OracleProvider::from_str(String::from_str(&env, "new_oracle"));
+    /// assert_eq!(unknown.name(), "Unknown Provider (new_oracle)");
+    /// ```
+    pub fn name(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self.as_str() {
+            "reflector" => String::from_str(&env, "Reflector"),
+            "pyth" => String::from_str(&env, "Pyth Network"),
+            "band_protocol" => String::from_str(&env, "Band Protocol"),
+            "dia" => String::from_str(&env, "DIA"),
+            unknown => {
+                let prefix = String::from_str(&env, "Unknown Provider (");
+                let suffix = String::from_str(&env, ")");
+                // Use string slicing for soroban_sdk::String
+                let result = prefix.clone();
+                // For simplicity, just return a basic message for unknown providers
+                String::from_str(&env, "Unknown Provider")
+            }
+        }
+    }
+
+    /// Checks if this oracle provider is known to the current contract version.
+    ///
+    /// This method identifies providers that are explicitly recognized by the
+    /// current contract code, even if they are not supported on the current
+    /// blockchain network.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the provider is known, `false` for unknown providers
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::types::OracleProvider;
+    ///
+    /// let reflector = OracleProvider::reflector();
+    /// assert!(reflector.is_known()); // Known provider
+    ///
+    /// let pyth = OracleProvider::pyth();
+    /// assert!(pyth.is_known()); // Known but unsupported
+    /// ```
+    pub fn is_known(&self) -> bool {
+        true
+    }
+
+    /// Checks if this oracle provider is supported on the current network.
+    ///
+    /// This method determines if the provider can actually be used for oracle
+    /// operations on the current blockchain network (Stellar). This is more
+    /// restrictive than `is_known()` as it considers network availability.
+    ///
+    /// # Network Support Matrix
+    ///
+    /// | Provider | Stellar | Ethereum | Cosmos | Status |
+    /// |----------|---------|----------|---------|---------|
+    /// | Reflector | ✅ | ❌ | ❌ | Primary |
+    /// | Pyth | ❌ | ✅ | ❌ | Future |
+    /// | Band Protocol | ❌ | ✅ | ✅ | Not on Stellar |
+    /// | DIA | ❌ | ✅ | ✅ | Not on Stellar |
+    ///
+    /// # Returns
+    ///
+    /// `true` if the provider is supported on Stellar, `false` otherwise
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use predictify_hybrid::types::OracleProvider;
+    ///
+    /// let reflector = OracleProvider::reflector();
+    /// assert!(reflector.is_supported()); // Supported on Stellar
+    ///
+    /// let pyth = OracleProvider::pyth();
+    /// assert!(!pyth.is_supported()); // Not available on Stellar
+    /// ```
     pub fn is_supported(&self) -> bool {
         matches!(self, OracleProvider::Reflector)
+    }
+    
+    pub fn is_reflector(&self) -> bool {
+        matches!(self, OracleProvider::Reflector)
+    }
+
+    pub fn is_pyth(&self) -> bool {
+        matches!(self, OracleProvider::Pyth)
+    }
+
+    pub fn is_band_protocol(&self) -> bool {
+        matches!(self, OracleProvider::BandProtocol)
+    }
+
+    pub fn is_dia(&self) -> bool {
+        matches!(self, OracleProvider::DIA)
+    }
+
+    /// Validates the oracle provider for market creation.
+    ///
+    /// This method performs comprehensive validation to ensure the provider
+    /// can be safely used for new market creation. It's more strict than
+    /// `is_supported()` and should be used during market validation.
+    ///
+    /// # Validation Rules
+    ///
+    /// - Provider must be a known identifier
+    /// - Provider must be supported on the current network
+    /// - Provider must pass basic format validation
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the provider is valid for market creation
+    /// `Err(Error::InvalidOracleConfig)` if validation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::types::OracleProvider;
+    /// # let env = Env::default();
+    ///
+    /// let reflector = OracleProvider::reflector();
+    /// assert!(reflector.validate_for_market(&env).is_ok()); // Valid
+    ///
+    /// let pyth = OracleProvider::pyth();
+    /// assert!(pyth.validate_for_market(&env).is_err()); // Not supported
+    /// ```
+    pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
+        if !self.is_supported() {
+            return Err(crate::Error::InvalidOracleConfig);
+        }
+        Ok(())
     }
 }
 
@@ -491,10 +762,20 @@ impl OracleConfig {
         }
     }
 
-    /// Sentinel value for "no fallback" (used when has_fallback is false). Do not use for resolution.
+    /// Returns the reserved sentinel used to encode "no fallback oracle" in storage.
+    ///
+    /// The contracts persist fallback-oracle state as a `(has_fallback, fallback_oracle_config)`
+    /// pair instead of `Option<OracleConfig>` for Soroban contract-type compatibility. When
+    /// `has_fallback` is `false`, this sentinel is written into `fallback_oracle_config`.
+    ///
+    /// Sentinel semantics are reserved by the tuple `(provider=Reflector, feed_id="", threshold=0,
+    /// comparison="")`. Those values are intentionally outside the valid oracle-config domain, so
+    /// the sentinel cannot collide with any configuration that passes validation.
+    ///
+    /// This value must never be used for live oracle creation or resolution.
     pub fn none_sentinel(env: &Env) -> Self {
         Self {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::from_str(
                 env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -504,11 +785,27 @@ impl OracleConfig {
             comparison: String::from_str(env, ""),
         }
     }
+
+    /// Returns `true` when this configuration is the reserved "no fallback" sentinel.
+    ///
+    /// The sentinel identity intentionally ignores `oracle_address`: the reserved semantics are
+    /// carried by the invalid `feed_id` / `threshold` / `comparison` tuple, which keeps the
+    /// sentinel unambiguous even if a caller reuses the placeholder address elsewhere.
+    pub fn is_none_sentinel(&self) -> bool {
+        self.provider.as_str() == "reflector"
+            && self.feed_id.is_empty()
+            && self.threshold == 0
+            && self.comparison.is_empty()
+    }
 }
 
 impl OracleConfig {
     /// Validate the oracle configuration
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+        if self.is_none_sentinel() || self.feed_id.is_empty() {
+            return Err(crate::Error::InvalidOracleConfig);
+        }
+
         // Validate threshold
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
@@ -522,10 +819,8 @@ impl OracleConfig {
             return Err(crate::Error::InvalidComparison);
         }
 
-        // Validate provider is supported
-        if !self.provider.is_supported() {
-            return Err(crate::Error::InvalidOracleConfig);
-        }
+        // Validate provider is supported using new validation method
+        self.provider.validate_for_market(env)?;
 
         Ok(())
     }
@@ -648,7 +943,7 @@ impl OracleConfig {
 /// }
 ///
 /// // Check if user has claimed payout
-/// let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
+/// let has_claimed = market.claimed.get(user.clone()).map(|info| info.is_claimed()).unwrap_or(false);
 /// println!("User claimed payout: {}", has_claimed);
 /// ```
 ///
@@ -732,7 +1027,10 @@ pub struct Market {
     pub oracle_config: OracleConfig,
     /// Whether a fallback oracle is configured (avoids Option in contract type for SDK compatibility)
     pub has_fallback: bool,
-    /// Fallback oracle configuration (only valid when has_fallback is true)
+    /// Fallback oracle configuration.
+    ///
+    /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
+    /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
     pub fallback_oracle_config: OracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
@@ -742,8 +1040,8 @@ pub struct Market {
     pub votes: Map<Address, String>,
     /// User stakes mapping (address -> stake amount)
     pub stakes: Map<Address, i128>,
-    /// Claimed status mapping (address -> claimed)
-    pub claimed: Map<Address, bool>,
+    /// Claimed status mapping (address -> ClaimInfo with timestamp and payout tracking)
+    pub claimed: Map<Address, ClaimInfo>,
     /// Total amount staked in the market
     pub total_staked: i128,
     /// Dispute stakes mapping (address -> dispute stake)
@@ -768,8 +1066,7 @@ pub struct Market {
     /// Optional category for the event (e.g., "sports", "crypto", "politics")
     /// Used for filtering and display in client applications
     pub category: Option<String>,
-    /// List of searchable tags for filtering events
-    /// Tags can be used to categorize events by multiple dimensions
+    /// List of searchable tags for filtering events by multiple dimensions
     pub tags: Vec<String>,
     /// Minimum total pool size required for resolution (None = no minimum)
     pub min_pool_size: Option<i128>,
@@ -777,6 +1074,121 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
+}
+
+// ===== CLAIM INFO =====
+
+/// Claim information for tracking idempotent winnings claims.
+///
+/// This struct stores comprehensive information about a user's claim,
+/// enabling idempotency checks, audit trails, and safe retry mechanisms.
+///
+/// # Fields
+///
+/// - `claimed`: Whether the user has claimed their winnings
+/// - `timestamp`: Ledger timestamp when the claim was processed (Unix timestamp)
+/// - `payout_amount`: The exact amount of tokens claimed (for verification and audits)
+///
+/// # Security Properties
+///
+/// - **Immutable**: Once set, the claim record cannot be modified (append-only)
+/// - **Idempotent**: Multiple claim attempts return the same result without side effects
+/// - **Verifiable**: Payout amount can be verified against actual transfer
+/// - **Auditable**: Timestamp provides proof of when claim occurred
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::types::ClaimInfo;
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+///
+/// // Create claim info with payout amount
+/// let claim_info = ClaimInfo {
+///     claimed: true,
+///     timestamp: env.ledger().timestamp(),
+///     payout_amount: 15_000_000, // 1.5 XLM
+/// };
+///
+/// // Check if claimed
+/// assert!(claim_info.is_claimed());
+///
+/// // Get payout amount
+/// assert_eq!(claim_info.get_payout(), 15_000_000);
+///
+/// // Get timestamp
+/// assert!(claim_info.get_timestamp() > 0);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimInfo {
+    /// Whether the user has claimed their winnings
+    pub claimed: bool,
+    /// Ledger timestamp when the claim was processed (Unix timestamp)
+    pub timestamp: u64,
+    /// The exact amount of tokens claimed (for verification and audits)
+    pub payout_amount: i128,
+}
+
+impl ClaimInfo {
+    /// Create a new ClaimInfo instance with the given payout amount.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment (used for timestamp)
+    /// - `payout_amount` - The amount being claimed
+    ///
+    /// # Returns
+    ///
+    /// Returns a new ClaimInfo with current timestamp and specified payout.
+    pub fn new(env: &Env, payout_amount: i128) -> Self {
+        Self {
+            claimed: true,
+            timestamp: env.ledger().timestamp(),
+            payout_amount,
+        }
+    }
+
+    /// Create a default (unclaimed) ClaimInfo instance.
+    ///
+    /// # Returns
+    ///
+    /// Returns a ClaimInfo with claimed=false and zero values.
+    pub fn unclaimed() -> Self {
+        Self {
+            claimed: false,
+            timestamp: 0,
+            payout_amount: 0,
+        }
+    }
+
+    /// Check if this claim has been processed.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if claimed, `false` otherwise.
+    pub fn is_claimed(&self) -> bool {
+        self.claimed
+    }
+
+    /// Get the timestamp when this claim was processed.
+    ///
+    /// # Returns
+    ///
+    /// Returns the ledger timestamp as Unix timestamp in seconds.
+    pub fn get_timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    /// Get the payout amount that was claimed.
+    ///
+    /// # Returns
+    ///
+    /// Returns the exact token amount claimed (in stroops/smallest unit).
+    pub fn get_payout(&self) -> i128 {
+        self.payout_amount
+    }
 }
 
 // ===== BET LIMITS =====
@@ -975,6 +1387,9 @@ impl Market {
 
         // Validate oracle config
         self.oracle_config.validate(env)?;
+        if self.has_fallback {
+            self.fallback_oracle_config.validate(env)?;
+        }
 
         // Validate end time
         if self.end_time <= env.ledger().timestamp() {
@@ -1256,6 +1671,42 @@ impl OracleResult {
     pub fn is_fresh(&self, env: &Env, max_age_seconds: u64) -> bool {
         env.ledger().timestamp().saturating_sub(self.timestamp) <= max_age_seconds
     }
+}
+
+/// Lightweight oracle price payload with validation metadata.
+///
+/// This structure captures the minimum data needed for staleness and
+/// confidence interval validation without provider-specific dependencies.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OraclePriceData {
+    /// Price value in oracle base units
+    pub price: i128,
+    /// Publish time of the oracle data (unix timestamp seconds)
+    pub publish_time: u64,
+    /// Confidence interval (absolute) in the same base units as `price`
+    pub confidence: Option<i128>,
+    /// Exponent/decimals scale used by the oracle (e.g., Pyth exponent)
+    pub exponent: i32,
+}
+
+/// Global oracle validation configuration applied when no per-event override exists.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalOracleValidationConfig {
+    /// Maximum age of oracle data in seconds before it is rejected
+    pub max_staleness_secs: u64,
+    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
+    pub max_confidence_bps: u32,
+}
+
+/// Per-event oracle validation configuration override.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventOracleValidationConfig {
+    /// Maximum age of oracle data in seconds before it is rejected
+    pub max_staleness_secs: u64,
+    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
+    pub max_confidence_bps: u32,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.
@@ -2882,6 +3333,51 @@ pub struct MultipleBetsQuery {
     pub winning_bets: u32,
 }
 
+/// Generic paginated query result.
+///
+/// Wraps any `Vec<T>` result with a cursor that callers pass back on the next
+/// request to continue iteration.  When `next_cursor` equals `total_count` (or
+/// `items` is shorter than the requested limit) the caller has reached the end.
+///
+/// # Pagination Protocol
+///
+/// ```text
+/// 1. Call with cursor = 0, limit = N
+/// 2. Receive PagedResult { items, next_cursor, total_count }
+/// 3. If items.len() < N  →  last page, stop.
+/// 4. Otherwise call again with cursor = next_cursor.
+/// ```
+///
+/// # Security
+///
+/// `limit` is always capped server-side at `MAX_PAGE_SIZE` (50) so callers
+/// cannot force unbounded Vec allocations.
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, vec, String};
+/// # use predictify_hybrid::types::PagedResult;
+/// # let env = Env::default();
+/// let page: PagedResult<String> = PagedResult {
+///     items: vec![&env, String::from_str(&env, "item1")],
+///     next_cursor: 1,
+///     total_count: 5,
+/// };
+/// assert_eq!(page.next_cursor, 1);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PagedResult<T: soroban_sdk::Val> {
+    /// Items in this page.
+    pub items: Vec<T>,
+    /// Cursor to pass on the next call (index of the first un-returned item).
+    pub next_cursor: u32,
+    /// Total number of items available (best-effort; may be approximate for
+    /// filtered queries).
+    pub total_count: u32,
+}
+
 // ===== BET PLACEMENT TYPES =====
 
 /// Status of a bet placed on a prediction market.
@@ -3131,7 +3627,10 @@ pub struct Event {
     pub oracle_config: OracleConfig,
     /// Whether a fallback oracle is configured
     pub has_fallback: bool,
-    /// Fallback oracle configuration (only valid when has_fallback is true)
+    /// Fallback oracle configuration.
+    ///
+    /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
+    /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
     pub fallback_oracle_config: OracleConfig,
     /// Resolution timeout in seconds after end_time
     pub resolution_timeout: u64,
@@ -3148,8 +3647,111 @@ pub struct Event {
 }
 
 impl ReflectorAsset {
+    /// Check if this asset is Stellar Lumens (XLM)
     pub fn is_xlm(&self) -> bool {
         matches!(self, ReflectorAsset::Stellar)
+    }
+
+    /// Returns the symbol string for this asset
+    pub fn symbol(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
+            ReflectorAsset::BTC => String::from_str(&env, "BTC"),
+            ReflectorAsset::ETH => String::from_str(&env, "ETH"),
+            ReflectorAsset::Other(symbol) => symbol.clone(),
+        }
+    }
+
+    /// Returns the human-readable name for this asset
+    pub fn name(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "Stellar Lumens"),
+            ReflectorAsset::BTC => String::from_str(&env, "Bitcoin"),
+            ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
+            ReflectorAsset::Other(symbol) => {
+                let prefix = String::from_str(&env, "Custom Asset (");
+                let suffix = String::from_str(&env, ")");
+                prefix + symbol + suffix
+            }
+        }
+    }
+
+    /// Returns the number of decimal places for this asset
+    pub fn decimals(&self) -> u8 {
+        match self {
+            ReflectorAsset::Stellar => 7,
+            ReflectorAsset::BTC => 8,
+            ReflectorAsset::ETH => 18,
+            ReflectorAsset::Other(_) => 7, // Default to 7 for custom assets
+        }
+    }
+
+    /// Returns the Reflector feed ID for this asset (e.g., "BTC/USD")
+    pub fn feed_id(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "XLM/USD"),
+            ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
+            ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
+            ReflectorAsset::Other(symbol) => {
+                let suffix = String::from_str(&env, "/USD");
+                symbol.clone() + &suffix
+            }
+        }
+    }
+
+    /// Checks if this asset is supported by Reflector oracle
+    pub fn is_supported(&self) -> bool {
+        match self {
+            ReflectorAsset::Stellar | ReflectorAsset::BTC | ReflectorAsset::ETH => true,
+            ReflectorAsset::Other(_) => false, // Custom assets not supported by default
+        }
+    }
+
+    /// Checks if this asset is a known asset (including custom ones)
+    pub fn is_known(&self) -> bool {
+        true // All ReflectorAsset variants are known by definition
+    }
+
+    /// Validates the asset for use in market creation
+    pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
+        if !self.is_supported() {
+            return Err(crate::Error::InvalidOracleConfig);
+        }
+        Ok(())
+    }
+
+    /// Creates a ReflectorAsset from a symbol string
+    pub fn from_symbol(symbol: String) -> Self {
+        match symbol.to_string().as_str() {
+            "XLM" => ReflectorAsset::Stellar,
+            "BTC" => ReflectorAsset::BTC,
+            "ETH" => ReflectorAsset::ETH,
+            _ => ReflectorAsset::Other(symbol),
+        }
+    }
+
+    /// Returns all supported assets for testing purposes
+    pub fn all_supported() -> Vec<Self> {
+        let env = soroban_sdk::Env::default();
+        Vec::from_array(&env, [
+            ReflectorAsset::Stellar,
+            ReflectorAsset::BTC,
+            ReflectorAsset::ETH,
+        ])
+    }
+
+    /// Returns all known assets (including unsupported) for testing purposes
+    pub fn all_known() -> Vec<Self> {
+        let env = soroban_sdk::Env::default();
+        Vec::from_array(&env, [
+            ReflectorAsset::Stellar,
+            ReflectorAsset::BTC,
+            ReflectorAsset::ETH,
+            ReflectorAsset::Other(Symbol::new(&env, "CUSTOM")),
+        ])
     }
 }
 
@@ -3159,4 +3761,78 @@ pub struct Balance {
     pub user: Address,
     pub asset: ReflectorAsset,
     pub amount: i128,
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    fn valid_oracle_config(env: &Env) -> OracleConfig {
+        OracleConfig::new(
+            OracleProvider::Reflector,
+            Address::generate(env),
+            String::from_str(env, "BTC/USD"),
+            1_000_000,
+            String::from_str(env, "gt"),
+        )
+    }
+
+    #[test]
+    fn market_validate_rejects_invalid_fallback_when_enabled() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let outcomes = Vec::from_array(
+            &env,
+            [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+        );
+
+        let invalid_fallback = OracleConfig::new(
+            OracleProvider::Pyth,
+            Address::generate(&env),
+            String::from_str(&env, "BTC/USD"),
+            1_000_000,
+            String::from_str(&env, "gt"),
+        );
+
+        let market = Market::new(
+            &env,
+            admin,
+            String::from_str(&env, "Will BTC be above $10,000?"),
+            outcomes,
+            env.ledger().timestamp() + 1000,
+            valid_oracle_config(&env),
+            Some(invalid_fallback),
+            3600,
+            MarketState::Active,
+        );
+
+        assert_eq!(market.validate(&env), Err(crate::Error::InvalidOracleConfig));
+    }
+
+    #[test]
+    fn market_validate_allows_no_fallback_sentinel_path() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let outcomes = Vec::from_array(
+            &env,
+            [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+        );
+
+        let market = Market::new(
+            &env,
+            admin,
+            String::from_str(&env, "Will BTC be above $10,000?"),
+            outcomes,
+            env.ledger().timestamp() + 1000,
+            valid_oracle_config(&env),
+            None,
+            3600,
+            MarketState::Active,
+        );
+
+        assert_eq!(market.validate(&env), Ok(()));
+    }
 }

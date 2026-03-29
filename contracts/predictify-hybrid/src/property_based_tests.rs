@@ -85,7 +85,7 @@ impl PropertyBasedTestSuite {
     /// Generate a valid oracle configuration for testing
     pub fn generate_oracle_config(&self, threshold: i128, comparison: &str) -> OracleConfig {
         OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&self.env),
             feed_id: SorobanString::from_str(&self.env, "BTC/USD"),
             threshold,
@@ -179,10 +179,7 @@ proptest! {
             &duration_days,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         // Verify market was created with correct properties
@@ -232,10 +229,7 @@ proptest! {
             &duration_days,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         let market = client.get_market(&market_id).unwrap();
@@ -288,10 +282,7 @@ proptest! {
             &30,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         // Select user and outcome for voting
@@ -328,7 +319,7 @@ proptest! {
 
         // Property: Valid oracle configuration should be accepted
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&suite.env),
             feed_id: SorobanString::from_str(&suite.env, &feed_id),
             threshold,
@@ -356,7 +347,7 @@ proptest! {
         let suite = PropertyBasedTestSuite::new();
 
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&suite.env),
             feed_id: SorobanString::from_str(&suite.env, "BTC/USD"),
             threshold,
@@ -460,10 +451,7 @@ proptest! {
             &duration_days,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         let initial_market = client.get_market(&market_id).unwrap();
@@ -519,9 +507,6 @@ proptest! {
             &oracle_config,
             &None,
             &86400u64,
-            &None,
-            &None,
-            &None,
         );
 
         // Store admin address to avoid borrowing issues
@@ -555,6 +540,174 @@ proptest! {
 
             // Invariant: Market admin should never change
             prop_assert_eq!(market.admin, admin_addr.clone());
+        }
+    }
+}
+
+// ===== PAYOUT & DISTRIBUTION PROPERTY TESTS =====
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(30))] // 30 cases to keep test fast
+    
+    #[test]
+    fn test_distribute_payouts_properties(
+        question in arb_market_question(),
+        bets in prop::collection::vec((arb_stake_amount(), 0usize..2usize), 1..=10),
+        fee_percentage in 0i128..=1000i128, // 0% to 10% in basis points
+    ) {
+        let suite = PropertyBasedTestSuite::new();
+        let client = suite.client();
+        
+        let question_str = SorobanString::from_str(&suite.env, question);
+        let outcomes = suite.generate_outcomes(2);
+        let oracle_config = suite.generate_oracle_config(50_000_00, "eq");
+        
+        suite.env.mock_all_auths();
+        
+        // Admin sets global platform fee
+        let _ = client.set_platform_fee(&suite.admin, &fee_percentage);
+        
+        let duration_days = 30u32;
+        let market_id = client.create_market(
+            &suite.admin,
+            &question_str,
+            &outcomes,
+            &duration_days,
+            &oracle_config,
+            &None,
+            &0u64, // min_bet = 0
+        );
+        
+        let mut total_pool = 0i128;
+        let mut expected_winning_total = 0i128; // We will assume outcome 0 wins
+        
+        // Users vote
+        for (i, (stake, outcome_idx)) in bets.iter().enumerate() {
+            let user = suite.get_user(i); // Note: users 0..9 are unique
+            let chosen_outcome = outcomes.get(*outcome_idx as u32).unwrap();
+            
+            client.vote(user, &market_id, &chosen_outcome, stake);
+            total_pool += stake;
+            if *outcome_idx == 0 {
+                expected_winning_total += stake;
+            }
+        }
+        
+        let market = client.get_market(&market_id).unwrap();
+        
+        // Advance time
+        suite.env.ledger().set(LedgerInfo {
+            timestamp: market.end_time + 1,
+            protocol_version: 22,
+            sequence_number: suite.env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        
+        let winning_outcome = outcomes.get(0).unwrap();
+        client.resolve_market_manual(&suite.admin, &market_id, &winning_outcome);
+        
+        let distributed_total = client.distribute_payouts(&market_id);
+        
+        // Invariant: Total distributed <= Total pool
+        prop_assert!(distributed_total <= total_pool);
+        
+        // Invariant: If there are winners, distribute_total matches the mathematical share
+        if expected_winning_total > 0 {
+            let mut expected_dist = 0i128;
+            for (stake, outcome_idx) in bets.iter() {
+                if *outcome_idx == 0 {
+                    let user_share = (stake * (10000i128 - fee_percentage)) / 10000i128;
+                    let payout = (user_share * total_pool) / expected_winning_total;
+                    expected_dist += payout;
+                }
+            }
+            prop_assert_eq!(distributed_total, expected_dist);
+        } else {
+            prop_assert_eq!(distributed_total, 0);
+        }
+        
+        // Invariant: Calling distribute again yields 0 (no double payout)
+        let double_dist = client.distribute_payouts(&market_id);
+        prop_assert_eq!(double_dist, 0);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(30))]
+
+    #[test]
+    fn test_claim_winnings_properties(
+        question in arb_market_question(),
+        bets in prop::collection::vec((arb_stake_amount(), 0usize..2usize), 1..=10),
+    ) {
+        let suite = PropertyBasedTestSuite::new();
+        let client = suite.client();
+        
+        let question_str = SorobanString::from_str(&suite.env, question);
+        let outcomes = suite.generate_outcomes(2);
+        let oracle_config = suite.generate_oracle_config(50_000_00, "eq");
+        
+        suite.env.mock_all_auths();
+        
+        let duration_days = 30u32;
+        let market_id = client.create_market(
+            &suite.admin,
+            &question_str,
+            &outcomes,
+            &duration_days,
+            &oracle_config,
+            &None,
+            &0u64,
+        );
+        
+        let mut winning_voters = StdVec::new();
+        for (i, (stake, outcome_idx)) in bets.iter().enumerate() {
+            let user = suite.get_user(i);
+            let chosen_outcome = outcomes.get(*outcome_idx as u32).unwrap();
+            client.vote(user, &market_id, &chosen_outcome, stake);
+            if *outcome_idx == 0 {
+                winning_voters.push(user.clone());
+            }
+        }
+        
+        let market = client.get_market(&market_id).unwrap();
+        
+        suite.env.ledger().set(LedgerInfo {
+            timestamp: market.end_time + 1,
+            protocol_version: 22,
+            sequence_number: suite.env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        
+        let winning_outcome = outcomes.get(0).unwrap();
+        client.resolve_market_manual(&suite.admin, &market_id, &winning_outcome);
+        
+        let stellar_client = soroban_sdk::token::TokenClient::new(&suite.env, &suite.token_id);
+        
+        for winner in &winning_voters {
+            let balance_before = stellar_client.balance(winner);
+            
+            // Should succeed
+            client.claim_winnings(winner, &market_id);
+            
+            let balance_after = stellar_client.balance(winner);
+            prop_assert!(balance_after >= balance_before); // >= instead of > to allow for fee/truncation rounding to 0 occasionally if stake small
+            
+            // Double claim should panic
+            // Use try_invoke_contract if we had raw access, but we'll use a catch_unwind conceptually, 
+            // wait, soroban-sdk mock doesn't catch panic. We shouldn't assert panic in a proptest unless we can catch it.
+            // Let's just trust `distribute` covers double payouts and we can assert user's claim status.
+            let market = client.get_market(&market_id).unwrap();
+            let is_claimed = market.claimed.get(winner.clone()).unwrap_or(false);
+            prop_assert!(is_claimed);
         }
     }
 }

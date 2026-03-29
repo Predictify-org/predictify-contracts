@@ -39,7 +39,7 @@ fn create_test_market(env: &Env, market_id: &str) -> (Market, Address) {
         ],
         env.ledger().timestamp() + 10000,
         OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(env, TEST_ORACLE_ADDRESS),
             String::from_str(env, "TEST"),
             100,

@@ -861,7 +861,7 @@ impl BatchTesting {
             ],
             duration_days: 30,
             oracle_config: crate::types::OracleConfig {
-                provider: crate::types::OracleProvider::Reflector,
+                provider: crate::types::OracleProvider::reflector(),
                 oracle_address: soroban_sdk::Address::from_str(
                     env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -878,7 +878,7 @@ impl BatchTesting {
         OracleFeed {
             market_id: market_id.clone(),
             feed_id: String::from_str(env, "BTC/USD"),
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             threshold: 100_000_000_000, // $100,000
             comparison: String::from_str(env, "gt"),
         }

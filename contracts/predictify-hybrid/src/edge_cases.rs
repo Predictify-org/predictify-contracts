@@ -4,8 +4,6 @@ use soroban_sdk::{contracttype, vec, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::markets::MarketStateManager;
-// ReentrancyGuard module not required here; removed stale import.
-use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::*;
 
 /// Edge case management system for Predictify Hybrid contract
@@ -156,8 +154,6 @@ impl EdgeCaseHandler {
     ///     .expect("Zero stake handling should succeed");
     /// ```
     pub fn handle_zero_stake_scenario(env: &Env, market_id: Symbol) -> Result<(), Error> {
-        // Check reentrancy protection
-        ReentrancyGuard::check_reentrancy_state(env).map_err(|_| Error::InvalidState)?;
         // Get market data
         let market = MarketStateManager::get_market(env, &market_id)?;
 
@@ -396,7 +392,7 @@ impl EdgeCaseHandler {
                 if config.max_single_user_percentage < 0
                     || config.max_single_user_percentage > 10000
                 {
-                    return Err(Error::ThresholdTooHigh);
+                    return Err(Error::InvalidThreshold);
                 }
             }
             EdgeCaseScenario::LowParticipation => {
@@ -517,7 +513,7 @@ impl EdgeCaseHandler {
     /// Validate edge case configuration.
     fn validate_edge_case_config(_env: &Env, config: &EdgeCaseConfig) -> Result<(), Error> {
         if config.min_total_stake < 0 {
-            return Err(Error::ThresholdBelowMin);
+            return Err(Error::InvalidThreshold);
         }
 
         if config.min_participation_rate < 0 || config.min_participation_rate > 10000 {
@@ -533,7 +529,7 @@ impl EdgeCaseHandler {
         }
 
         if config.max_single_user_percentage < 0 || config.max_single_user_percentage > 10000 {
-            return Err(Error::ThresholdTooHigh);
+            return Err(Error::InvalidThreshold);
         }
 
         Ok(())

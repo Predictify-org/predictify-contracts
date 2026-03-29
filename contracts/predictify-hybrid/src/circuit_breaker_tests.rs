@@ -382,6 +382,90 @@ mod circuit_breaker_tests {
     }
 
     #[test]
+    fn test_pause_blocks_betting_and_unpause_restores() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            // Initialize systems
+            CircuitBreaker::initialize(&env).unwrap();
+
+            // Setup admin and token
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            crate::admin::AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            // Register token and set TokenID
+            let token_admin = <soroban_sdk::Address as Address>::generate(&env);
+            let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+            let token_id = token_contract.address();
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_id);
+
+            // Mint and approve for user
+            let user = <soroban_sdk::Address as Address>::generate(&env);
+            let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+            stellar_client.mint(&admin, &10_000_0000000);
+            stellar_client.mint(&user, &1_000_0000000);
+
+            let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+            token_client.approve(&user, &contract_id, &i128::MAX, &1000000);
+
+            // Create market
+            let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+            let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
+            let market_id = client.create_market(
+                &admin,
+                &String::from_str(&env, "Will BTC reach $100k?"),
+                &outcomes,
+                &30u32,
+                &crate::types::OracleConfig {
+                    provider: crate::types::OracleProvider::reflector(),
+                    feed_id: String::from_str(&env, "BTC/USD"),
+                    threshold: 100_000_00000000,
+                    comparison: String::from_str(&env, "gte"),
+                },
+            );
+
+            // Pause for betting only
+            let reason = String::from_str(&env, "Test pause betting only");
+            CircuitBreaker::pause_with_options(&env, &admin, &reason, crate::circuit_breaker::PauseScope::BettingOnly, false).unwrap();
+
+            // Attempt to place bet should be blocked
+            let bet_result = crate::bets::BetManager::place_bet(
+                &env,
+                user.clone(),
+                market_id.clone(),
+                String::from_str(&env, "yes"),
+                10_0000000,
+            );
+            assert!(bet_result.is_err());
+            assert_eq!(bet_result.unwrap_err(), crate::Error::CBOpen);
+
+            // Unpause
+            CircuitBreaker::circuit_breaker_recovery(&env, &admin).unwrap();
+
+            // Now placing a bet should succeed
+            let bet_result2 = crate::bets::BetManager::place_bet(
+                &env,
+                user.clone(),
+                market_id.clone(),
+                String::from_str(&env, "yes"),
+                10_0000000,
+            );
+            assert!(bet_result2.is_ok());
+        });
+    }
+
+    #[test]
     fn test_config_validation() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());

@@ -854,6 +854,20 @@ impl DisputeManager {
             stake,
             reason_for_event,
         );
+        crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
+            env,
+            &market_id,
+            &soroban_sdk::String::from_str(env, "created"),
+            &user,
+            &soroban_sdk::String::from_str(env, "dispute_created"),
+        );
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::DisputeCreated, 
+            user.clone(), 
+            Map::new(env)
+        );
 
         Ok(())
     }
@@ -975,6 +989,20 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+        crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
+            env,
+            &market_id,
+            &soroban_sdk::String::from_str(env, "resolved"),
+            &admin,
+            &soroban_sdk::String::from_str(env, "dispute_resolved"),
+        );
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env, 
+            crate::audit_trail::AuditAction::DisputeResolved, 
+            admin.clone(), 
+            Map::new(env)
+        );
 
         Ok(resolution)
     }
@@ -1696,7 +1724,7 @@ impl DisputeManager {
         // Validate timeout hours
         if timeout_hours == 0 || timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvalidDuration);
         }
 
         // Create timeout configuration
@@ -1846,7 +1874,7 @@ impl DisputeManager {
         // Validate additional hours
         if additional_hours == 0 || additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvalidDuration);
         }
 
         // Get current timeout
@@ -1888,7 +1916,8 @@ impl DisputeValidator {
     /// Validate market state for dispute
     pub fn validate_market_for_dispute(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market has ended
-        if market.is_active(env) {
+        let current_time = env.ledger().timestamp();
+        if current_time < market.end_time {
             return Err(Error::MarketClosed);
         }
 
@@ -2062,13 +2091,13 @@ impl DisputeValidator {
         }
 
         if !has_participated {
-            return Err(Error::DisputeNoEscalate);
+            return Err(Error::DisputeCondNotMet);
         }
 
         // Check if escalation already exists
         let escalation = DisputeUtils::get_dispute_escalation(env, dispute_id);
         if escalation.is_some() {
-            return Err(Error::DisputeNoEscalate);
+            return Err(Error::DisputeCondNotMet);
         }
 
         Ok(())
@@ -2077,12 +2106,12 @@ impl DisputeValidator {
     /// Validate dispute timeout parameters
     pub fn validate_dispute_timeout_parameters(timeout_hours: u32) -> Result<(), Error> {
         if timeout_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvalidDuration);
         }
 
         if timeout_hours > 720 {
             // Max 30 days
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())
@@ -2093,12 +2122,12 @@ impl DisputeValidator {
         additional_hours: u32,
     ) -> Result<(), Error> {
         if additional_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvalidDuration);
         }
 
         if additional_hours > 168 {
             // Max 7 days extension
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())
@@ -2459,7 +2488,7 @@ impl DisputeUtils {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::TimeoutNotSet)
+            .ok_or(Error::ConfigNotFound)
     }
 
     /// Check if dispute timeout exists
@@ -2764,7 +2793,7 @@ pub mod testing {
     /// Validate timeout structure
     pub fn validate_timeout_structure(timeout: &DisputeTimeout) -> Result<(), Error> {
         if timeout.timeout_hours == 0 {
-            return Err(Error::InvalidTimeoutHours);
+            return Err(Error::InvalidDuration);
         }
 
         if timeout.expires_at <= timeout.created_at {
@@ -2814,11 +2843,8 @@ mod tests {
             outcomes,
             end_time,
             crate::types::OracleConfig::new(
-                crate::types::OracleProvider::Pyth,
-                Address::from_str(
-                    env,
-                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                ),
+                crate::types::OracleProvider::pyth(),
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),

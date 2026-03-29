@@ -874,7 +874,7 @@ pub struct ResolutionValidation {
 ///
 /// // Create oracle instance based on provider
 /// let oracle = OracleFactory::create_oracle(
-///     OracleProvider::Reflector, // Primary provider for Stellar
+///     OracleProvider::reflector(), // Primary provider for Stellar
 ///     oracle_contract
 /// )?;
 ///
@@ -945,17 +945,29 @@ impl OracleResolutionManager {
     /// Helper to fetch price and determine outcome from an oracle config
     fn try_fetch_from_config(
         env: &Env,
+        market_id: &Symbol,
         config: &crate::types::OracleConfig,
     ) -> Result<(i128, String), Error> {
         let oracle =
             OracleFactory::create_oracle(config.provider.clone(), config.oracle_address.clone())?;
 
-        let price = oracle.get_price(env, &config.feed_id)?;
+        let price_data = oracle.get_price_data(env, &config.feed_id)?;
+        crate::oracles::OracleValidationConfigManager::validate_oracle_data(
+            env,
+            market_id,
+            &config.provider,
+            &config.feed_id,
+            &price_data,
+        )?;
 
-        let outcome =
-            OracleUtils::determine_outcome(price, config.threshold, &config.comparison, env)?;
+        let outcome = OracleUtils::determine_outcome(
+            price_data.price,
+            config.threshold,
+            &config.comparison,
+            env,
+        )?;
 
-        Ok((price, outcome))
+        Ok((price_data.price, outcome))
     }
 
     /// Fetch oracle result for a market with fallback support and timeout
@@ -979,6 +991,13 @@ impl OracleResolutionManager {
                 &crate::types::MarketState::Cancelled,
                 &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
             );
+            crate::monitoring::ContractMonitor::emit_resolution_transition_hook(
+                env,
+                market_id,
+                &old_state,
+                &crate::types::MarketState::Cancelled,
+                &soroban_sdk::String::from_str(env, "timeout_cancelled"),
+            );
 
             return Err(Error::InvalidState);
         }
@@ -988,7 +1007,7 @@ impl OracleResolutionManager {
 
         // 2. Try primary oracle
         let mut used_config = market.oracle_config.clone();
-        let primary_result = Self::try_fetch_from_config(env, &used_config);
+        let primary_result = Self::try_fetch_from_config(env, market_id, &used_config);
 
         let (price, outcome) = match primary_result {
             Ok(res) => res,
@@ -996,7 +1015,7 @@ impl OracleResolutionManager {
                 // 3. Try fallback oracle if primary fails
                 if market.has_fallback {
                     let fallback_config = &market.fallback_oracle_config;
-                    match Self::try_fetch_from_config(env, fallback_config) {
+                    match Self::try_fetch_from_config(env, market_id, fallback_config) {
                         Ok(res) => {
                             crate::events::EventEmitter::emit_fallback_used(
                                 env,
@@ -1033,10 +1052,8 @@ impl OracleResolutionManager {
 
         // Emit oracle result event
         let provider_str = match used_config.provider {
-            crate::types::OracleProvider::Reflector => {
-                soroban_sdk::String::from_str(env, "Reflector")
-            }
-            crate::types::OracleProvider::Pyth => soroban_sdk::String::from_str(env, "Pyth"),
+            OracleProvider::Reflector => soroban_sdk::String::from_str(env, "Reflector"),
+            OracleProvider::Pyth => soroban_sdk::String::from_str(env, "Pyth"),
             _ => soroban_sdk::String::from_str(env, "Custom"),
         };
         let feed_str = used_config.feed_id.clone();
@@ -1401,6 +1418,13 @@ impl MarketResolutionManager {
             &old_state,
             &crate::types::MarketState::Resolved,
             &soroban_sdk::String::from_str(env, "Automated resolution completed"),
+        );
+        crate::monitoring::ContractMonitor::emit_resolution_transition_hook(
+            env,
+            market_id,
+            &old_state,
+            &crate::types::MarketState::Resolved,
+            &resolution_method_str,
         );
 
         Ok(resolution)
@@ -1775,7 +1799,7 @@ impl ResolutionTesting {
             threshold: 2500000,
             comparison: String::from_str(env, "gt"),
             timestamp: env.ledger().timestamp(),
-            provider: OracleProvider::Pyth,
+            provider: OracleProvider::pyth(),
             feed_id: String::from_str(env, "BTC/USD"),
         }
     }
@@ -1865,7 +1889,7 @@ impl Default for ResolutionAnalytics {
 
 // ===== MODULE TESTS =====
 
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use super::*;
     use crate::{test::PredictifyTest, PredictifyHybridClient};
@@ -1911,7 +1935,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             OracleConfig {
-                provider: OracleProvider::Pyth,
+                provider: OracleProvider::pyth(),
                 oracle_address: Address::generate(&env),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 2500000,

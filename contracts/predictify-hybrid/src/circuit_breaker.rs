@@ -63,6 +63,15 @@ pub struct CircuitBreakerState {
     pub half_open_requests: u32,
     pub total_requests: u32,
     pub error_count: u32,
+    pub pause_scope: PauseScope,
+    pub allow_withdrawals: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[contracttype]
+pub enum PauseScope {
+    BettingOnly,
+    Full,
 }
 
 // ===== CIRCUIT BREAKER IMPLEMENTATION =====
@@ -130,6 +139,8 @@ impl CircuitBreaker {
             half_open_requests: 0,
             total_requests: 0,
             error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: false,
         };
 
         env.storage()
@@ -158,7 +169,7 @@ impl CircuitBreaker {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::CONFIG_KEY))
-            .ok_or(Error::CBNotInitialized)
+            .ok_or(Error::CBError)
     }
 
     /// Update circuit breaker configuration
@@ -178,7 +189,7 @@ impl CircuitBreaker {
             .set(&Symbol::new(env, Self::CONFIG_KEY), config);
 
         // Emit configuration update event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Reset,
             BreakerCondition::ManualOverride,
@@ -196,7 +207,7 @@ impl CircuitBreaker {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::STATE_KEY))
-            .ok_or(Error::CBNotInitialized)
+            .ok_or(Error::CBError)
     }
 
     /// Update circuit breaker state
@@ -211,29 +222,48 @@ impl CircuitBreaker {
 
     /// Emergency pause by admin
     pub fn emergency_pause(env: &Env, admin: &Address, reason: &String) -> Result<(), Error> {
+        // Default emergency pause uses BettingOnly scope and disallows withdrawals
+        Self::pause_with_options(env, admin, reason, PauseScope::BettingOnly, false)
+    }
+
+    /// Pause with explicit options
+    pub fn pause_with_options(
+        env: &Env,
+        admin: &Address,
+        reason: &String,
+        scope: PauseScope,
+        allow_withdrawals: bool,
+    ) -> Result<(), Error> {
         // Validate admin permissions
-        // TODO: Fix admin validation - need proper admin role and permission
-        // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
+        AdminAccessControl::validate_admin_for_action(env, admin, "emergency_actions")?;
 
         let mut state = Self::get_state(env)?;
 
         // Check if already paused
         if state.state == BreakerState::Open {
-            return Err(Error::CBAlreadyOpen);
+            return Err(Error::CBError);
         }
 
         // Update state
         state.state = BreakerState::Open;
         state.opened_time = env.ledger().timestamp();
+        state.pause_scope = scope;
+        state.allow_withdrawals = allow_withdrawals;
         Self::update_state(env, &state)?;
 
         // Emit pause event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Pause,
             BreakerCondition::ManualOverride,
             reason,
             Some(admin.clone()),
+        );
+        crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+            env,
+            &String::from_str(env, "paused"),
+            Some(admin.clone()),
+            reason,
         );
 
         Ok(())
@@ -257,6 +287,41 @@ impl CircuitBreaker {
         Ok(state.state == BreakerState::HalfOpen)
     }
 
+    /// Check whether a specific operation is allowed under current pause scope.
+    /// `op` examples: "betting", "create_event", "withdraw", etc.
+    pub fn is_operation_allowed(env: &Env, op: &str) -> Result<bool, Error> {
+        let state = Self::get_state(env)?;
+
+        match state.state {
+            BreakerState::Closed => Ok(true),
+            BreakerState::Open => {
+                match state.pause_scope {
+                    PauseScope::Full => Ok(false),
+                    PauseScope::BettingOnly => {
+                        if op == "betting" {
+                            Ok(false)
+                        } else {
+                            Ok(true)
+                        }
+                    }
+                }
+            }
+            BreakerState::HalfOpen => {
+                let config = Self::get_config(env)?;
+                Ok(state.half_open_requests < config.half_open_max_requests)
+            }
+        }
+    }
+
+    /// Returns whether withdrawals are allowed under the current pause state.
+    pub fn are_withdrawals_allowed(env: &Env) -> Result<bool, Error> {
+        let state = Self::get_state(env)?;
+        if state.state == BreakerState::Open && !state.allow_withdrawals {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
     // ===== AUTOMATIC TRIGGERS =====
 
     /// Automatic circuit breaker trigger based on conditions
@@ -275,7 +340,7 @@ impl CircuitBreaker {
                 state.half_open_requests = 0;
                 Self::update_state(env, &state)?;
 
-                Self::emit_circuit_breaker_event(
+                let _ = Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Reset,
                     BreakerCondition::ManualOverride,
@@ -339,7 +404,7 @@ impl CircuitBreaker {
             state.opened_time = current_time;
             Self::update_state(env, &state)?;
 
-            Self::emit_circuit_breaker_event(
+            let _ = Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
                 condition.clone(),
@@ -358,14 +423,13 @@ impl CircuitBreaker {
     /// Circuit breaker recovery by admin
     pub fn circuit_breaker_recovery(env: &Env, admin: &Address) -> Result<(), Error> {
         // Validate admin permissions
-        // TODO: Fix admin validation - need proper admin role and permission
-        // crate::admin::AdminRoleManager::has_permission(env, &admin_role, &permission)?;
+        AdminAccessControl::validate_admin_for_action(env, admin, "emergency_actions")?;
 
         let mut state = Self::get_state(env)?;
 
         // Check if circuit breaker is open
         if state.state != BreakerState::Open && state.state != BreakerState::HalfOpen {
-            return Err(Error::CBNotOpen);
+            return Err(Error::CBError);
         }
 
         // Reset state
@@ -373,15 +437,24 @@ impl CircuitBreaker {
         state.failure_count = 0;
         state.half_open_requests = 0;
         state.last_success_time = env.ledger().timestamp();
+        // restore safe defaults
+        state.pause_scope = PauseScope::BettingOnly;
+        state.allow_withdrawals = false;
         Self::update_state(env, &state)?;
 
         // Emit recovery event
-        Self::emit_circuit_breaker_event(
+        let _ = Self::emit_circuit_breaker_event(
             env,
             BreakerAction::Resume,
             BreakerCondition::ManualOverride,
             &String::from_str(env, "Circuit breaker recovered"),
             Some(admin.clone()),
+        );
+        crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+            env,
+            &String::from_str(env, "unpaused"),
+            Some(admin.clone()),
+            &String::from_str(env, "manual_recovery"),
         );
 
         Ok(())
@@ -405,12 +478,18 @@ impl CircuitBreaker {
                 state.failure_count = 0;
                 state.half_open_requests = 0;
 
-                Self::emit_circuit_breaker_event(
+                let _ = Self::emit_circuit_breaker_event(
                     env,
                     BreakerAction::Resume,
                     BreakerCondition::ManualOverride,
                     &String::from_str(env, "Auto-recovery: circuit breaker closed"),
                     None,
+                );
+                crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+                    env,
+                    &String::from_str(env, "unpaused"),
+                    None,
+                    &String::from_str(env, "auto_recovery"),
                 );
             }
         }
@@ -434,7 +513,7 @@ impl CircuitBreaker {
             state.opened_time = current_time;
             state.half_open_requests = 0;
 
-            Self::emit_circuit_breaker_event(
+            let _ = Self::emit_circuit_breaker_event(
                 env,
                 BreakerAction::Trigger,
                 BreakerCondition::HighErrorRate,
@@ -494,7 +573,7 @@ impl CircuitBreaker {
         env.storage()
             .instance()
             .get(&Symbol::new(env, Self::EVENTS_KEY))
-            .ok_or(Error::CBNotInitialized)
+            .ok_or(Error::CBError)
     }
 
     // ===== STATUS AND MONITORING =====
@@ -715,7 +794,7 @@ impl CircuitBreakerUtils {
     {
         // Check if operation should be allowed
         if !Self::should_allow_operation(env)? {
-            return Err(Error::CBOpen);
+            return Err(Error::CBError);
         }
 
         // Execute operation
@@ -798,6 +877,8 @@ impl CircuitBreakerTesting {
             half_open_requests: 0,
             total_requests: 0,
             error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: false,
         }
     }
 
@@ -822,5 +903,261 @@ impl CircuitBreakerTesting {
     pub fn reset(env: &Env, admin: &Address) -> Result<(), Error> {
         CircuitBreaker::circuit_breaker_recovery(env, admin)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+    use alloc::string::ToString;
+
+    struct CircuitBreakerTest {
+        env: Env,
+    }
+
+    impl CircuitBreakerTest {
+        fn new() -> Self {
+            let env = Env::default();
+            CircuitBreakerTest { env }
+        }
+    }
+
+    #[test]
+    fn test_breaker_state_closed() {
+        let _test = CircuitBreakerTest::new();
+        let state = BreakerState::Closed;
+        assert_eq!(state, BreakerState::Closed);
+    }
+
+    #[test]
+    fn test_breaker_state_open() {
+        let _test = CircuitBreakerTest::new();
+        let state = BreakerState::Open;
+        assert_eq!(state, BreakerState::Open);
+    }
+
+    #[test]
+    fn test_breaker_state_half_open() {
+        let _test = CircuitBreakerTest::new();
+        let state = BreakerState::HalfOpen;
+        assert_eq!(state, BreakerState::HalfOpen);
+    }
+
+    #[test]
+    fn test_breaker_action_pause() {
+        let _test = CircuitBreakerTest::new();
+        let action = BreakerAction::Pause;
+        assert_eq!(action, BreakerAction::Pause);
+    }
+
+    #[test]
+    fn test_breaker_action_resume() {
+        let _test = CircuitBreakerTest::new();
+        let action = BreakerAction::Resume;
+        assert_eq!(action, BreakerAction::Resume);
+    }
+
+    #[test]
+    fn test_breaker_condition_high_error_rate() {
+        let _test = CircuitBreakerTest::new();
+        let condition = BreakerCondition::HighErrorRate;
+        assert_eq!(condition, BreakerCondition::HighErrorRate);
+    }
+
+    #[test]
+    fn test_breaker_condition_oracle_failure() {
+        let _test = CircuitBreakerTest::new();
+        let condition = BreakerCondition::OracleFailure;
+        assert_eq!(condition, BreakerCondition::OracleFailure);
+    }
+
+    #[test]
+    fn test_pause_scope_betting_only() {
+        let _test = CircuitBreakerTest::new();
+        let scope = PauseScope::BettingOnly;
+        assert_eq!(scope, PauseScope::BettingOnly);
+    }
+
+    #[test]
+    fn test_pause_scope_full() {
+        let _test = CircuitBreakerTest::new();
+        let scope = PauseScope::Full;
+        assert_eq!(scope, PauseScope::Full);
+    }
+
+    #[test]
+    fn test_config_initialization() {
+        let test = CircuitBreakerTest::new();
+        let config = CircuitBreakerConfig {
+            max_error_rate: 10,
+            max_latency_ms: 5000,
+            min_liquidity: 1_000_000_000,
+            failure_threshold: 5,
+            recovery_timeout: 300,
+            half_open_max_requests: 3,
+            auto_recovery_enabled: true,
+        };
+        assert_eq!(config.max_error_rate, 10);
+        assert_eq!(config.half_open_max_requests, 3);
+    }
+
+    #[test]
+    fn test_state_initialization() {
+        let test = CircuitBreakerTest::new();
+        let state = CircuitBreakerState {
+            state: BreakerState::Closed,
+            failure_count: 0,
+            last_failure_time: 0,
+            last_success_time: test.env.ledger().timestamp(),
+            opened_time: 0,
+            half_open_requests: 0,
+            total_requests: 0,
+            error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: false,
+        };
+        assert_eq!(state.state, BreakerState::Closed);
+        assert_eq!(state.failure_count, 0);
+    }
+
+    #[test]
+    fn test_circuit_breaker_initialize() {
+        let test = CircuitBreakerTest::new();
+        let contract_id = test.env.register(crate::PredictifyHybrid, ());
+        let result = test.env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&test.env)
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_config_after_init() {
+        let test = CircuitBreakerTest::new();
+        let contract_id = test.env.register(crate::PredictifyHybrid, ());
+        let result = test.env.as_contract(&contract_id, || {
+            let _ = CircuitBreaker::initialize(&test.env);
+            CircuitBreaker::get_config(&test.env)
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_state_after_init() {
+        let test = CircuitBreakerTest::new();
+        let contract_id = test.env.register(crate::PredictifyHybrid, ());
+        let result = test.env.as_contract(&contract_id, || {
+            let _ = CircuitBreaker::initialize(&test.env);
+            CircuitBreaker::get_state(&test.env)
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_breaker_condition_all_variants() {
+        let _test = CircuitBreakerTest::new();
+        let _ = BreakerCondition::HighErrorRate;
+        let _ = BreakerCondition::HighLatency;
+        let _ = BreakerCondition::LowLiquidity;
+        let _ = BreakerCondition::OracleFailure;
+        let _ = BreakerCondition::NetworkCongestion;
+        let _ = BreakerCondition::SecurityThreat;
+        let _ = BreakerCondition::ManualOverride;
+        let _ = BreakerCondition::SystemOverload;
+        let _ = BreakerCondition::InvalidData;
+        let _ = BreakerCondition::UnauthorizedAccess;
+    }
+
+    #[test]
+    fn test_breaker_action_all_variants() {
+        let _test = CircuitBreakerTest::new();
+        let _ = BreakerAction::Pause;
+        let _ = BreakerAction::Resume;
+        let _ = BreakerAction::Trigger;
+        let _ = BreakerAction::Reset;
+    }
+
+    #[test]
+    fn test_validate_config() {
+        let test = CircuitBreakerTest::new();
+        let config = CircuitBreakerConfig {
+            max_error_rate: 15,
+            max_latency_ms: 3000,
+            min_liquidity: 500_000_000,
+            failure_threshold: 3,
+            recovery_timeout: 600,
+            half_open_max_requests: 5,
+            auto_recovery_enabled: true,
+        };
+        let result = CircuitBreaker::validate_config(&config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_state_transitions() {
+        let test = CircuitBreakerTest::new();
+        // Test state transitions
+        let mut state = CircuitBreakerState {
+            state: BreakerState::Closed,
+            failure_count: 0,
+            last_failure_time: 0,
+            last_success_time: test.env.ledger().timestamp(),
+            opened_time: 0,
+            half_open_requests: 0,
+            total_requests: 0,
+            error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: false,
+        };
+        assert_eq!(state.state, BreakerState::Closed);
+        state.state = BreakerState::Open;
+        assert_eq!(state.state, BreakerState::Open);
+    }
+
+    #[test]
+    fn test_failure_count_increment() {
+        let test = CircuitBreakerTest::new();
+        let mut state = CircuitBreakerState {
+            state: BreakerState::Closed,
+            failure_count: 0,
+            last_failure_time: 0,
+            last_success_time: 0,
+            opened_time: 0,
+            half_open_requests: 0,
+            total_requests: 0,
+            error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: false,
+        };
+        assert_eq!(state.failure_count, 0);
+        state.failure_count += 1;
+        assert_eq!(state.failure_count, 1);
+    }
+
+    #[test]
+    fn test_error_rate_calculation() {
+        let _test = CircuitBreakerTest::new();
+        let total_requests = 100u32;
+        let error_count = 10u32;
+        let error_rate = (error_count * 100) / total_requests;
+        assert_eq!(error_rate, 10);
+    }
+
+    #[test]
+    fn test_withdrawal_permissions() {
+        let test = CircuitBreakerTest::new();
+        let state = CircuitBreakerState {
+            state: BreakerState::Closed,
+            failure_count: 0,
+            last_failure_time: 0,
+            last_success_time: test.env.ledger().timestamp(),
+            opened_time: 0,
+            half_open_requests: 0,
+            total_requests: 0,
+            error_count: 0,
+            pause_scope: PauseScope::BettingOnly,
+            allow_withdrawals: true,
+        };
+        assert!(state.allow_withdrawals);
     }
 }
