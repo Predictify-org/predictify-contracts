@@ -4060,6 +4060,100 @@ impl PredictifyHybrid {
         event_archive::EventArchive::query_events_by_tags(&env, &tags, cursor, limit)
     }
 
+    /// Return a paginated page of market IDs.
+    ///
+    /// Avoids unbounded `Vec` returns by slicing the market index.
+    /// Pass `next_cursor` from the previous response as `cursor` on the next
+    /// call.  Iteration is complete when `items.len() < limit`.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `cursor` - Zero-based start index (0 for first page)
+    /// * `limit` - Desired page size; capped server-side at 50
+    ///
+    /// # Returns
+    ///
+    /// `PagedResult<Symbol>` with `items`, `next_cursor`, and `total_count`.
+    ///
+    /// # Errors
+    ///
+    /// Panics with `Error::ContractStateError` if the market index is corrupted.
+    ///
+    /// # Events
+    ///
+    /// Read-only; no events emitted.
+    pub fn get_all_markets_paged(env: Env, cursor: u32, limit: u32) -> PagedResult<Symbol> {
+        crate::queries::QueryManager::get_all_markets_paged(&env, cursor, limit)
+            .unwrap_or_else(|e| panic_with_error!(&env, e))
+    }
+
+    /// Return a paginated page of a user's bets across markets.
+    ///
+    /// Scans the market index slice `[cursor, cursor+limit)` and returns only
+    /// markets where `user` has placed a bet.  Prevents gas exhaustion on
+    /// large market lists.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `user` - Address to query
+    /// * `cursor` - Zero-based start index into the market list
+    /// * `limit` - Page size; capped server-side at 50
+    ///
+    /// # Returns
+    ///
+    /// `PagedResult<UserBetQuery>` with `items`, `next_cursor`, and `total_count`.
+    ///
+    /// # Errors
+    ///
+    /// Panics with `Error::ContractStateError` if the market index is corrupted.
+    ///
+    /// # Events
+    ///
+    /// Read-only; no events emitted.
+    pub fn query_user_bets_paged(
+        env: Env,
+        user: Address,
+        cursor: u32,
+        limit: u32,
+    ) -> PagedResult<UserBetQuery> {
+        crate::queries::QueryManager::query_user_bets_paged(&env, user, cursor, limit)
+            .unwrap_or_else(|e| panic_with_error!(&env, e))
+    }
+
+    /// Return partial contract state statistics for a market-list page.
+    ///
+    /// Processes only the market slice `[cursor, cursor+limit)`.  Callers
+    /// accumulate results across pages to build a full aggregate.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `cursor` - Start index into the market list
+    /// * `limit` - Page size; capped server-side at 50
+    ///
+    /// # Returns
+    ///
+    /// `(ContractStateQuery, next_cursor)` — partial stats and the cursor for
+    /// the next call.
+    ///
+    /// # Errors
+    ///
+    /// Panics with `Error::ContractStateError` if the market index is corrupted.
+    ///
+    /// # Events
+    ///
+    /// Read-only; no events emitted.
+    pub fn query_contract_state_paged(
+        env: Env,
+        cursor: u32,
+        limit: u32,
+    ) -> (ContractStateQuery, u32) {
+        crate::queries::QueryManager::query_contract_state_paged(&env, cursor, limit)
+            .unwrap_or_else(|e| panic_with_error!(&env, e))
+    }
+
     /// Cancel an event and automatically refund all placed bets (admin only).
     ///
     /// This function allows admins to cancel events before resolution and

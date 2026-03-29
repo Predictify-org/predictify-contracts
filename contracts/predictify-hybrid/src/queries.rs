@@ -19,7 +19,7 @@
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
-    types::{Market, MarketState},
+    types::{Market, MarketState, PagedResult},
     voting::VotingStats,
 };
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
@@ -28,6 +28,9 @@ use crate::types::{
     ContractStateQuery, EventDetailsQuery, MarketPoolQuery, MarketStatus, MultipleBetsQuery,
     UserBalanceQuery, UserBetQuery,
 };
+
+/// Maximum items returned per paginated query (gas safety cap).
+pub const MAX_PAGE_SIZE: u32 = 50;
 
 // ===== QUERY MANAGER =====
 
@@ -161,6 +164,56 @@ impl QueryManager {
         Ok(markets)
     }
 
+    /// Get a paginated page of market IDs.
+    ///
+    /// Avoids unbounded `Vec` returns by slicing the market index with a
+    /// caller-supplied cursor and a server-capped limit.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `cursor` - Zero-based start index (pass `next_cursor` from previous call)
+    /// * `limit` - Desired page size; capped at [`MAX_PAGE_SIZE`] (50)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(PagedResult<Symbol>)` - Page of market IDs with pagination metadata
+    /// * `Err(Error::ContractStateError)` - If market index is corrupted
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::Env;
+    /// # use predictify_hybrid::queries::QueryManager;
+    /// # let env = Env::default();
+    /// let page = QueryManager::get_all_markets_paged(&env, 0, 20).unwrap();
+    /// // page.next_cursor is the cursor for the next call
+    /// ```
+    pub fn get_all_markets_paged(
+        env: &Env,
+        cursor: u32,
+        limit: u32,
+    ) -> Result<PagedResult<Symbol>, Error> {
+        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let all = Self::get_all_markets(env)?;
+        let total_count = all.len();
+        let mut items: Vec<Symbol> = vec![env];
+
+        let end = core::cmp::min(cursor + limit, total_count);
+        for i in cursor..end {
+            if let Some(id) = all.get(i) {
+                items.push_back(id);
+            }
+        }
+
+        let next_cursor = cursor + items.len();
+        Ok(PagedResult {
+            items,
+            next_cursor,
+            total_count,
+        })
+    }
+
     // ===== USER BET QUERIES =====
 
     /// Query detailed information about a user's bet on a specific market.
@@ -281,6 +334,61 @@ impl QueryManager {
             total_stake,
             total_potential_payout,
             winning_bets,
+        })
+    }
+
+    /// Query a user's bets across markets, paginated.
+    ///
+    /// Scans the market index in `[cursor, cursor+limit)` order and returns
+    /// only markets where the user has an active bet.  This avoids loading the
+    /// entire market list into memory on large deployments.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `user` - User address to query
+    /// * `cursor` - Zero-based start index into the market list
+    /// * `limit` - Page size; capped at [`MAX_PAGE_SIZE`] (50)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(PagedResult<UserBetQuery>)` - Page of bets with pagination metadata
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address};
+    /// # use predictify_hybrid::queries::QueryManager;
+    /// # let env = Env::default();
+    /// # let user = Address::generate(&env);
+    /// let page = QueryManager::query_user_bets_paged(&env, user, 0, 20).unwrap();
+    /// // Iterate pages until page.items.len() < limit
+    /// ```
+    pub fn query_user_bets_paged(
+        env: &Env,
+        user: Address,
+        cursor: u32,
+        limit: u32,
+    ) -> Result<PagedResult<UserBetQuery>, Error> {
+        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let all_markets = Self::get_all_markets(env)?;
+        let total_count = all_markets.len();
+        let mut items: Vec<UserBetQuery> = vec![env];
+
+        let end = core::cmp::min(cursor + limit, total_count);
+        for i in cursor..end {
+            if let Some(market_id) = all_markets.get(i) {
+                if let Ok(bet) = Self::query_user_bet(env, user.clone(), market_id) {
+                    items.push_back(bet);
+                }
+            }
+        }
+
+        let next_cursor = core::cmp::min(cursor + limit, total_count);
+        Ok(PagedResult {
+            items,
+            next_cursor,
+            total_count,
         })
     }
 
@@ -431,6 +539,63 @@ impl QueryManager {
         };
 
         Ok(response)
+    }
+
+    /// Query global contract state, paginated over the market list.
+    ///
+    /// Identical to [`query_contract_state`] but processes only the market
+    /// slice `[cursor, cursor+limit)`, preventing gas exhaustion on large
+    /// deployments.  Aggregate callers should iterate until `next_cursor`
+    /// equals `total_count`.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `cursor` - Start index into the market list
+    /// * `limit` - Page size; capped at [`MAX_PAGE_SIZE`] (50)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((ContractStateQuery, u32))` - Partial state and next cursor
+    pub fn query_contract_state_paged(
+        env: &Env,
+        cursor: u32,
+        limit: u32,
+    ) -> Result<(ContractStateQuery, u32), Error> {
+        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let all_markets = Self::get_all_markets(env)?;
+        let total_markets = all_markets.len();
+
+        let mut active_markets = 0u32;
+        let mut resolved_markets = 0u32;
+        let mut total_value_locked = 0i128;
+
+        let end = core::cmp::min(cursor + limit, total_markets);
+        for i in cursor..end {
+            if let Some(market_id) = all_markets.get(i) {
+                if let Ok(market) = Self::get_market_from_storage(env, &market_id) {
+                    match market.state {
+                        MarketState::Active => active_markets += 1,
+                        MarketState::Resolved | MarketState::Closed => resolved_markets += 1,
+                        _ => {}
+                    }
+                    total_value_locked += market.total_staked;
+                }
+            }
+        }
+
+        let next_cursor = core::cmp::min(cursor + limit, total_markets);
+        let state = ContractStateQuery {
+            total_markets,
+            active_markets,
+            resolved_markets,
+            total_value_locked,
+            total_fees_collected: 0i128,
+            unique_users: 0u32,
+            contract_version: String::from_str(env, "1.0.0"),
+            last_update: env.ledger().timestamp(),
+        };
+        Ok((state, next_cursor))
     }
 
     // ===== HELPER FUNCTIONS =====
