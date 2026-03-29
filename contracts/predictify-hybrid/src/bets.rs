@@ -528,6 +528,8 @@ impl BetManager {
         for i in 0..bet_count {
             if let Some(bet_key) = bets.get(i) {
                 if let Some(mut bet) = BetStorage::get_bet(env, market_id, &bet_key) {
+                    let old_status = bet.status;
+
                     // Determine if bet won or lost (check if outcome is in winning outcomes)
                     if winning_outcomes.contains(&bet.outcome) {
                         bet.mark_as_won();
@@ -538,8 +540,36 @@ impl BetManager {
                     // Update bet status
                     BetStorage::store_bet(env, &bet)?;
 
-                    // Skip event emission to avoid potential segfaults
-                    // Events can be emitted separately if needed
+                    if old_status != bet.status {
+                        let old_status_str = match old_status {
+                            crate::types::BetStatus::Active => String::from_str(env, "Active"),
+                            crate::types::BetStatus::Won => String::from_str(env, "Won"),
+                            crate::types::BetStatus::Lost => String::from_str(env, "Lost"),
+                            crate::types::BetStatus::Refunded => String::from_str(env, "Refunded"),
+                            crate::types::BetStatus::Cancelled => {
+                                String::from_str(env, "Cancelled")
+                            }
+                        };
+                        let new_status_str = match bet.status {
+                            crate::types::BetStatus::Active => String::from_str(env, "Active"),
+                            crate::types::BetStatus::Won => String::from_str(env, "Won"),
+                            crate::types::BetStatus::Lost => String::from_str(env, "Lost"),
+                            crate::types::BetStatus::Refunded => String::from_str(env, "Refunded"),
+                            crate::types::BetStatus::Cancelled => {
+                                String::from_str(env, "Cancelled")
+                            }
+                        };
+
+                        // Resolution status is visible on-ledger for indexers and auditors.
+                        EventEmitter::emit_bet_status_updated(
+                            env,
+                            market_id,
+                            &bet.user,
+                            &old_status_str,
+                            &new_status_str,
+                            None,
+                        );
+                    }
                 }
             }
         }
@@ -691,17 +721,12 @@ impl BetManager {
     ///     Symbol::new(&env, "BTC_100K"),
     /// )?;
     /// ```
-    pub fn cancel_bet(
-        env: &Env,
-        user: Address,
-        market_id: Symbol,
-    ) -> Result<(), Error> {
+    pub fn cancel_bet(env: &Env, user: Address, market_id: Symbol) -> Result<(), Error> {
         // Require authentication from the user
         user.require_auth();
 
         // Get user's bet
-        let mut bet = BetStorage::get_bet(env, &market_id, &user)
-            .ok_or(Error::NothingToClaim)?;
+        let mut bet = BetStorage::get_bet(env, &market_id, &user).ok_or(Error::NothingToClaim)?;
 
         // Ensure bet is active
         if !bet.is_active() {
@@ -711,7 +736,7 @@ impl BetManager {
         // Get market and validate it hasn't ended
         let market = MarketStateManager::get_market(env, &market_id)?;
         let current_time = env.ledger().timestamp();
-        
+
         if current_time >= market.end_time {
             return Err(Error::MarketClosed);
         }

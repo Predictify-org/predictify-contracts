@@ -1472,7 +1472,7 @@ pub struct WinningsClaimedBatchEvent {
     pub total_amount: i128,
     /// Number of markets in this batch claim
     pub claim_count: u32,
-     /// Event timestamp
+    /// Event timestamp
     pub timestamp: u64,
 }
 /// Event emitted when global claim period is updated.
@@ -2900,7 +2900,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_btc"), &event);
-          }
+    }
     /// Emit global claim period updated event.
     pub fn emit_claim_period_updated(env: &Env, admin: &Address, claim_period_seconds: u64) {
         let event = ClaimPeriodUpdatedEvent {
@@ -3347,12 +3347,17 @@ impl EventEmitter {
         );
     }
 
-    /// Store event in persistent storage
+    /// Store event in persistent storage and publish it to ledger events.
+    ///
+    /// Persisting the payload keeps the existing `EventLogger` helpers working,
+    /// while publishing makes the transition visible to indexers and auditors.
     fn store_event<T>(env: &Env, event_key: &Symbol, event_data: &T)
     where
         T: Clone + soroban_sdk::IntoVal<soroban_sdk::Env, soroban_sdk::Val>,
     {
         env.storage().persistent().set(event_key, event_data);
+        env.events()
+            .publish((event_key.clone(),), event_data.clone());
     }
 
     /// Emit event visibility set event
