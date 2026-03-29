@@ -943,7 +943,7 @@ impl OracleConfig {
 /// }
 ///
 /// // Check if user has claimed payout
-/// let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
+/// let has_claimed = market.claimed.get(user.clone()).map(|info| info.is_claimed()).unwrap_or(false);
 /// println!("User claimed payout: {}", has_claimed);
 /// ```
 ///
@@ -1040,8 +1040,8 @@ pub struct Market {
     pub votes: Map<Address, String>,
     /// User stakes mapping (address -> stake amount)
     pub stakes: Map<Address, i128>,
-    /// Claimed status mapping (address -> claimed)
-    pub claimed: Map<Address, bool>,
+    /// Claimed status mapping (address -> ClaimInfo with timestamp and payout tracking)
+    pub claimed: Map<Address, ClaimInfo>,
     /// Total amount staked in the market
     pub total_staked: i128,
     /// Dispute stakes mapping (address -> dispute stake)
@@ -1074,6 +1074,121 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
+}
+
+// ===== CLAIM INFO =====
+
+/// Claim information for tracking idempotent winnings claims.
+///
+/// This struct stores comprehensive information about a user's claim,
+/// enabling idempotency checks, audit trails, and safe retry mechanisms.
+///
+/// # Fields
+///
+/// - `claimed`: Whether the user has claimed their winnings
+/// - `timestamp`: Ledger timestamp when the claim was processed (Unix timestamp)
+/// - `payout_amount`: The exact amount of tokens claimed (for verification and audits)
+///
+/// # Security Properties
+///
+/// - **Immutable**: Once set, the claim record cannot be modified (append-only)
+/// - **Idempotent**: Multiple claim attempts return the same result without side effects
+/// - **Verifiable**: Payout amount can be verified against actual transfer
+/// - **Auditable**: Timestamp provides proof of when claim occurred
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::types::ClaimInfo;
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+///
+/// // Create claim info with payout amount
+/// let claim_info = ClaimInfo {
+///     claimed: true,
+///     timestamp: env.ledger().timestamp(),
+///     payout_amount: 15_000_000, // 1.5 XLM
+/// };
+///
+/// // Check if claimed
+/// assert!(claim_info.is_claimed());
+///
+/// // Get payout amount
+/// assert_eq!(claim_info.get_payout(), 15_000_000);
+///
+/// // Get timestamp
+/// assert!(claim_info.get_timestamp() > 0);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimInfo {
+    /// Whether the user has claimed their winnings
+    pub claimed: bool,
+    /// Ledger timestamp when the claim was processed (Unix timestamp)
+    pub timestamp: u64,
+    /// The exact amount of tokens claimed (for verification and audits)
+    pub payout_amount: i128,
+}
+
+impl ClaimInfo {
+    /// Create a new ClaimInfo instance with the given payout amount.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment (used for timestamp)
+    /// - `payout_amount` - The amount being claimed
+    ///
+    /// # Returns
+    ///
+    /// Returns a new ClaimInfo with current timestamp and specified payout.
+    pub fn new(env: &Env, payout_amount: i128) -> Self {
+        Self {
+            claimed: true,
+            timestamp: env.ledger().timestamp(),
+            payout_amount,
+        }
+    }
+
+    /// Create a default (unclaimed) ClaimInfo instance.
+    ///
+    /// # Returns
+    ///
+    /// Returns a ClaimInfo with claimed=false and zero values.
+    pub fn unclaimed() -> Self {
+        Self {
+            claimed: false,
+            timestamp: 0,
+            payout_amount: 0,
+        }
+    }
+
+    /// Check if this claim has been processed.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if claimed, `false` otherwise.
+    pub fn is_claimed(&self) -> bool {
+        self.claimed
+    }
+
+    /// Get the timestamp when this claim was processed.
+    ///
+    /// # Returns
+    ///
+    /// Returns the ledger timestamp as Unix timestamp in seconds.
+    pub fn get_timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    /// Get the payout amount that was claimed.
+    ///
+    /// # Returns
+    ///
+    /// Returns the exact token amount claimed (in stroops/smallest unit).
+    pub fn get_payout(&self) -> i128 {
+        self.payout_amount
+    }
 }
 
 // ===== BET LIMITS =====

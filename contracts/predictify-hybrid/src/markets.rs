@@ -1059,7 +1059,7 @@ impl MarketStateManager {
     ///
     /// # Side Effects
     ///
-    /// * Updates `market.claimed` mapping to mark user as claimed
+    /// * Updates `market.claimed` mapping to mark user as claimed with timestamp and payout amount
     ///
     /// # Example
     ///
@@ -1077,22 +1077,34 @@ impl MarketStateManager {
     /// assert_eq!(market.state, MarketState::Resolved);
     ///
     /// // Check if user hasn't claimed yet
-    /// assert!(!market.claimed.get(winner.clone()).unwrap_or(false));
+    /// let claim_info = market.claimed.get(winner.clone()).unwrap_or(crate::types::ClaimInfo { claimed: false, timestamp: 0, payout_amount: 0 });
+    /// assert!(!claim_info.claimed);
     ///
     /// // Process payout (external logic)
+    /// let payout_amount = 15_000_000; // 1.5 XLM
     /// // ...
     ///
-    /// // Mark as claimed
-    /// MarketStateManager::mark_claimed(&mut market, winner.clone(), Some(&market_id));
+    /// // Mark as claimed with payout info
+    /// MarketStateManager::mark_claimed(&mut market, winner.clone(), Some(&market_id), payout_amount, &env);
     ///
     /// // Verify claim status
-    /// assert!(market.claimed.get(winner).unwrap_or(false));
+    /// let claim_info = market.claimed.get(winner).unwrap();
+    /// assert!(claim_info.is_claimed());
+    /// assert_eq!(claim_info.get_payout(), payout_amount);
+    /// assert!(claim_info.get_timestamp() > 0);
     ///
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-    pub fn mark_claimed(market: &mut Market, user: Address, _market_id: Option<&Symbol>) {
+    pub fn mark_claimed(
+        market: &mut Market,
+        user: Address,
+        _market_id: Option<&Symbol>,
+        payout_amount: i128,
+        env: &Env,
+    ) {
         MarketStateLogic::check_function_access_for_state("claim", market.state).unwrap();
-        market.claimed.set(user, true);
+        let claim_info = crate::types::ClaimInfo::new(env, payout_amount);
+        market.claimed.set(user, claim_info);
     }
 
     /// Sets the oracle result for a market that has reached its end time.
@@ -1534,7 +1546,11 @@ impl MarketAnalytics {
         let has_voted = market.votes.contains_key(user.clone());
         let stake = market.stakes.get(user.clone()).unwrap_or(0);
         let dispute_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
-        let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
+        let has_claimed = market
+            .claimed
+            .get(user.clone())
+            .map(|info| info.is_claimed())
+            .unwrap_or(false);
         let voted_outcome = market.votes.get(user.clone());
 
         UserStats {
