@@ -31,6 +31,9 @@ mod graceful_degradation;
 mod market_analytics;
 mod market_id_generator;
 mod markets;
+mod metadata_limits;
+#[cfg(test)]
+mod metadata_limits_tests;
 mod monitoring;
 #[cfg(any())]
 mod oracles;

@@ -806,6 +806,12 @@ impl OracleConfig {
             return Err(crate::Error::InvalidOracleConfig);
         }
 
+        // Validate feed ID length
+        crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
+
+        // Validate comparison length
+        crate::metadata_limits::validate_comparison_length(&self.comparison)?;
+
         // Validate threshold
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
@@ -1379,11 +1385,20 @@ impl Market {
         if self.question.is_empty() {
             return Err(crate::Error::InvalidQuestion);
         }
+        
+        // Validate question length
+        crate::metadata_limits::validate_question_length(&self.question)?;
 
         // Validate outcomes
         if self.outcomes.len() < 2 {
             return Err(crate::Error::InvalidOutcomes);
         }
+        
+        // Validate outcomes count
+        crate::metadata_limits::validate_outcomes_count(&self.outcomes)?;
+        
+        // Validate each outcome length
+        crate::metadata_limits::validate_outcomes_length(&self.outcomes)?;
 
         // Validate oracle config
         self.oracle_config.validate(env)?;
@@ -1395,6 +1410,15 @@ impl Market {
         if self.end_time <= env.ledger().timestamp() {
             return Err(crate::Error::InvalidDuration);
         }
+        
+        // Validate category if present
+        if let Some(ref category) = self.category {
+            crate::metadata_limits::validate_category_length(category)?;
+        }
+        
+        // Validate tags
+        crate::metadata_limits::validate_tags_count(&self.tags)?;
+        crate::metadata_limits::validate_tags_length(&self.tags)?;
 
         Ok(())
     }
@@ -2309,6 +2333,14 @@ impl MarketExtension {
             fee_amount,
             timestamp: env.ledger().timestamp(),
         }
+    }
+    
+    /// Validate the market extension
+    pub fn validate(&self) -> Result<(), crate::Error> {
+        // Validate reason length
+        crate::metadata_limits::validate_extension_reason_length(&self.reason)?;
+        
+        Ok(())
     }
 }
 
@@ -3836,3 +3868,4 @@ mod tests {
         assert_eq!(market.validate(&env), Ok(()));
     }
 }
+
