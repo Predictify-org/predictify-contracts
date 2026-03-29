@@ -12,6 +12,7 @@ Complete API reference for Predictify Hybrid contract, including:
 - Client usage patterns
 - **ReflectorAsset Coverage Matrix** - Comprehensive asset testing and validation
 - **Token and Asset Management** - Multi-asset support documentation
+- **[Query Implementation Guide](./api/QUERY_IMPLEMENTATION_GUIDE.md)** - Paginated query API, `PagedResult<T>`, security notes, and integrator quick-start
 
 ### 🔒 [Security Documentation](./security/)
 Comprehensive security documentation and guidelines:

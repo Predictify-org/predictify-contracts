@@ -690,3 +690,255 @@ fn test_large_number_handling() {
     let payout = QueryManager::calculate_payout(&env, &market, i128::MAX / 2);
     assert!(payout.is_ok() || payout.is_err()); // Either succeeds or returns error gracefully
 }
+
+// ===== PAGINATION TESTS =====
+
+/// Helper: build a minimal Market for pagination tests.
+fn make_market(env: &Env) -> crate::types::Market {
+    let admin = Address::generate(env);
+    crate::types::Market::new(
+        env,
+        admin,
+        String::from_str(env, "Will BTC hit 100k?"),
+        svec![
+            env,
+            String::from_str(env, "yes"),
+            String::from_str(env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::Reflector,
+            Address::from_str(env, TEST_ORACLE_ADDRESS),
+            String::from_str(env, "BTC"),
+            100,
+            String::from_str(env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    )
+}
+
+#[test]
+fn test_get_all_markets_paged_empty() {
+    // Empty market index → empty first page, next_cursor = 0, total_count = 0.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::get_all_markets_paged(&env, 0, 10).unwrap()
+    });
+    assert_eq!(page.items.len(), 0);
+    assert_eq!(page.next_cursor, 0);
+    assert_eq!(page.total_count, 0);
+}
+
+#[test]
+fn test_get_all_markets_paged_limit_capped() {
+    // Requesting more than MAX_PAGE_SIZE (50) must be silently capped.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    // With an empty index the cap doesn't change the result count, but we can
+    // verify the function doesn't panic with an oversized limit.
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::get_all_markets_paged(&env, 0, 9999).unwrap()
+    });
+    assert_eq!(page.items.len(), 0);
+}
+
+#[test]
+fn test_get_all_markets_paged_cursor_beyond_end() {
+    // A cursor past the end of the list returns an empty page.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::get_all_markets_paged(&env, 100, 10).unwrap()
+    });
+    assert_eq!(page.items.len(), 0);
+    // next_cursor must not exceed total_count
+    assert!(page.next_cursor <= page.total_count);
+}
+
+#[test]
+fn test_get_all_markets_paged_next_cursor_monotone() {
+    // next_cursor must be >= cursor (never goes backwards).
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::get_all_markets_paged(&env, 5, 10).unwrap()
+    });
+    assert!(page.next_cursor >= 5);
+}
+
+#[test]
+fn test_query_user_bets_paged_empty_markets() {
+    // No markets → empty page for any user.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let user = Address::generate(&env);
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::query_user_bets_paged(&env, user, 0, 10).unwrap()
+    });
+    assert_eq!(page.items.len(), 0);
+    assert_eq!(page.next_cursor, 0);
+    assert_eq!(page.total_count, 0);
+}
+
+#[test]
+fn test_query_user_bets_paged_limit_capped() {
+    // Oversized limit must not panic.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let user = Address::generate(&env);
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::query_user_bets_paged(&env, user, 0, 9999).unwrap()
+    });
+    assert_eq!(page.items.len(), 0);
+}
+
+#[test]
+fn test_query_user_bets_paged_cursor_beyond_end() {
+    // Cursor past end → empty page, next_cursor ≤ total_count.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let user = Address::generate(&env);
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::query_user_bets_paged(&env, user, 200, 10).unwrap()
+    });
+    assert_eq!(page.items.len(), 0);
+    assert!(page.next_cursor <= page.total_count);
+}
+
+#[test]
+fn test_query_user_bets_paged_next_cursor_monotone() {
+    // next_cursor must be ≥ cursor.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let user = Address::generate(&env);
+    let page = env.as_contract(&contract_id, || {
+        QueryManager::query_user_bets_paged(&env, user, 3, 5).unwrap()
+    });
+    assert!(page.next_cursor >= 3);
+}
+
+#[test]
+fn test_query_contract_state_paged_empty() {
+    // Empty market list → zero counts, next_cursor = 0.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let (state, next_cursor) = env.as_contract(&contract_id, || {
+        QueryManager::query_contract_state_paged(&env, 0, 10).unwrap()
+    });
+    assert_eq!(state.active_markets, 0);
+    assert_eq!(state.resolved_markets, 0);
+    assert_eq!(state.total_value_locked, 0);
+    assert_eq!(next_cursor, 0);
+}
+
+#[test]
+fn test_query_contract_state_paged_limit_capped() {
+    // Oversized limit must not panic.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let result = env.as_contract(&contract_id, || {
+        QueryManager::query_contract_state_paged(&env, 0, 9999)
+    });
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_query_contract_state_paged_cursor_beyond_end() {
+    // Cursor past end → zero counts, next_cursor ≤ total_markets.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let (state, next_cursor) = env.as_contract(&contract_id, || {
+        QueryManager::query_contract_state_paged(&env, 100, 10).unwrap()
+    });
+    assert_eq!(state.active_markets, 0);
+    assert!(next_cursor <= state.total_markets);
+}
+
+#[test]
+fn test_query_contract_state_paged_next_cursor_monotone() {
+    // next_cursor must be ≥ cursor.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let (_, next_cursor) = env.as_contract(&contract_id, || {
+        QueryManager::query_contract_state_paged(&env, 5, 10).unwrap()
+    });
+    assert!(next_cursor >= 5);
+}
+
+// ===== INVARIANT / PROPERTY TESTS FOR PAGINATION =====
+
+#[test]
+fn test_paged_result_items_never_exceed_limit() {
+    // Property: items.len() ≤ min(limit, MAX_PAGE_SIZE) for any cursor.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    for limit in [1u32, 5, 10, 50, 100] {
+        let page = env.as_contract(&contract_id, || {
+            QueryManager::get_all_markets_paged(&env, 0, limit).unwrap()
+        });
+        let effective_limit = core::cmp::min(limit, crate::queries::MAX_PAGE_SIZE);
+        assert!(
+            page.items.len() <= effective_limit,
+            "items.len()={} > effective_limit={} for limit={}",
+            page.items.len(),
+            effective_limit,
+            limit
+        );
+    }
+}
+
+#[test]
+fn test_paged_result_next_cursor_never_exceeds_total() {
+    // Property: next_cursor ≤ total_count always.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    for cursor in [0u32, 1, 10, 50] {
+        let page = env.as_contract(&contract_id, || {
+            QueryManager::get_all_markets_paged(&env, cursor, 10).unwrap()
+        });
+        assert!(
+            page.next_cursor <= page.total_count,
+            "next_cursor={} > total_count={} at cursor={}",
+            page.next_cursor,
+            page.total_count,
+            cursor
+        );
+    }
+}
+
+#[test]
+fn test_user_bets_paged_items_never_exceed_limit() {
+    // Property: items.len() ≤ min(limit, MAX_PAGE_SIZE).
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let user = Address::generate(&env);
+    for limit in [1u32, 5, 10, 50, 200] {
+        let page = env.as_contract(&contract_id, || {
+            QueryManager::query_user_bets_paged(&env, user.clone(), 0, limit).unwrap()
+        });
+        let effective_limit = core::cmp::min(limit, crate::queries::MAX_PAGE_SIZE);
+        assert!(page.items.len() <= effective_limit);
+    }
+}
+
+#[test]
+fn test_contract_state_paged_next_cursor_never_exceeds_total() {
+    // Property: next_cursor ≤ total_markets always.
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    for cursor in [0u32, 5, 20] {
+        let (state, next_cursor) = env.as_contract(&contract_id, || {
+            QueryManager::query_contract_state_paged(&env, cursor, 10).unwrap()
+        });
+        assert!(next_cursor <= state.total_markets);
+    }
+}
+
+#[test]
+fn test_max_page_size_constant_value() {
+    // Regression: MAX_PAGE_SIZE must be 50 (gas budget assumption).
+    assert_eq!(crate::queries::MAX_PAGE_SIZE, 50u32);
+}

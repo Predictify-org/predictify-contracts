@@ -3201,6 +3201,51 @@ pub struct MultipleBetsQuery {
     pub winning_bets: u32,
 }
 
+/// Generic paginated query result.
+///
+/// Wraps any `Vec<T>` result with a cursor that callers pass back on the next
+/// request to continue iteration.  When `next_cursor` equals `total_count` (or
+/// `items` is shorter than the requested limit) the caller has reached the end.
+///
+/// # Pagination Protocol
+///
+/// ```text
+/// 1. Call with cursor = 0, limit = N
+/// 2. Receive PagedResult { items, next_cursor, total_count }
+/// 3. If items.len() < N  →  last page, stop.
+/// 4. Otherwise call again with cursor = next_cursor.
+/// ```
+///
+/// # Security
+///
+/// `limit` is always capped server-side at `MAX_PAGE_SIZE` (50) so callers
+/// cannot force unbounded Vec allocations.
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, vec, String};
+/// # use predictify_hybrid::types::PagedResult;
+/// # let env = Env::default();
+/// let page: PagedResult<String> = PagedResult {
+///     items: vec![&env, String::from_str(&env, "item1")],
+///     next_cursor: 1,
+///     total_count: 5,
+/// };
+/// assert_eq!(page.next_cursor, 1);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PagedResult<T: soroban_sdk::Val> {
+    /// Items in this page.
+    pub items: Vec<T>,
+    /// Cursor to pass on the next call (index of the first un-returned item).
+    pub next_cursor: u32,
+    /// Total number of items available (best-effort; may be approximate for
+    /// filtered queries).
+    pub total_count: u32,
+}
+
 // ===== BET PLACEMENT TYPES =====
 
 /// Status of a bet placed on a prediction market.
