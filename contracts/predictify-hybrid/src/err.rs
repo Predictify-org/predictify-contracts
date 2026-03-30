@@ -75,6 +75,16 @@ pub enum Error {
     OracleConfidenceTooWide = 208,
     /// Invalid oracle feed ID
     InvalidOracleFeed = 209,
+    /// Oracle callback authentication failed. Signature verification or authorization check failed.
+    OracleCallbackAuthFailed = 210,
+    /// Oracle callback not authorized. Caller is not in the authorized oracle whitelist.
+    OracleCallbackUnauthorized = 211,
+    /// Oracle callback signature is invalid or malformed.
+    OracleCallbackInvalidSignature = 212,
+    /// Oracle callback replay detected. Nonce or timestamp already used.
+    OracleCallbackReplayDetected = 213,
+    /// Oracle callback timeout. Response time exceeded maximum allowed duration.
+    OracleCallbackTimeout = 214,
 
     // ===== VALIDATION ERRORS =====
     /// Market question is empty or invalid. Question must be non-empty and descriptive.
