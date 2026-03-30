@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use alloc::{format, string::ToString};
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
@@ -396,66 +397,6 @@ impl OracleProvider {
             OracleProvider::Pyth => String::from_str(env, "Pyth Network"),
             OracleProvider::BandProtocol => String::from_str(env, "Band Protocol"),
             OracleProvider::DIA => String::from_str(env, "DIA"),
-        // Since soroban_sdk::String doesn't have easy conversion to &str,
-        // we'll use a different approach based on the provider_id content
-        let env = soroban_sdk::Env::default();
-        
-        // Compare with known provider IDs
-        let reflector_id = String::from_str(&env, "reflector");
-        let pyth_id = String::from_str(&env, "pyth");
-        let band_id = String::from_str(&env, "band_protocol");
-        let dia_id = String::from_str(&env, "dia");
-        
-        if self.provider_id == reflector_id {
-            "reflector"
-        } else if self.provider_id == pyth_id {
-            "pyth"
-        } else if self.provider_id == band_id {
-            "band_protocol"
-        } else if self.provider_id == dia_id {
-            "dia"
-        } else {
-            "unknown"
-        }
-    }
-
-    /// Returns a human-readable name for the oracle provider.
-    ///
-    /// This method provides formatted display names for UI and logging purposes.
-    /// Unknown providers return a generic "Unknown Provider" label.
-    ///
-    /// # Returns
-    ///
-    /// String containing the formatted provider name
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use soroban_sdk::{Env, String};
-    /// # use predictify_hybrid::types::OracleProvider;
-    /// # let env = Env::default();
-    ///
-    /// let reflector = OracleProvider::reflector();
-    /// assert_eq!(reflector.name(), "Reflector");
-    ///
-    /// let unknown = OracleProvider::from_str(String::from_str(&env, "new_oracle"));
-    /// assert_eq!(unknown.name(), "Unknown Provider (new_oracle)");
-    /// ```
-    pub fn name(&self) -> String {
-        let env = soroban_sdk::Env::default();
-        match self.as_str() {
-            "reflector" => String::from_str(&env, "Reflector"),
-            "pyth" => String::from_str(&env, "Pyth Network"),
-            "band_protocol" => String::from_str(&env, "Band Protocol"),
-            "dia" => String::from_str(&env, "DIA"),
-            unknown => {
-                let prefix = String::from_str(&env, "Unknown Provider (");
-                let suffix = String::from_str(&env, ")");
-                // Use string slicing for soroban_sdk::String
-                let result = prefix.clone();
-                // For simplicity, just return a basic message for unknown providers
-                String::from_str(&env, "Unknown Provider")
-            }
         }
     }
 
@@ -3247,6 +3188,15 @@ pub struct UserBetQuery {
     pub dispute_stake: i128,
 }
 
+/// Paginated response containing user bet query rows.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UserBetPagedResult {
+    pub items: Vec<UserBetQuery>,
+    pub next_cursor: u32,
+    pub total_count: u32,
+}
+
 /// User balance and account status query response.
 ///
 /// Provides comprehensive view of a user's account with current balance
@@ -3356,11 +3306,11 @@ pub struct MultipleBetsQuery {
 /// # Example
 ///
 /// ```rust
-/// # use soroban_sdk::{Env, vec, String};
-/// # use predictify_hybrid::types::PagedResult;
+/// # use soroban_sdk::{symbol_short, Env, vec};
+/// # use predictify_hybrid::types::SymbolPagedResult;
 /// # let env = Env::default();
-/// let page: PagedResult<String> = PagedResult {
-///     items: vec![&env, String::from_str(&env, "item1")],
+/// let page = SymbolPagedResult {
+///     items: vec![&env, symbol_short!("item1")],
 ///     next_cursor: 1,
 ///     total_count: 5,
 /// };
@@ -3368,9 +3318,9 @@ pub struct MultipleBetsQuery {
 /// ```
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PagedResult<T: soroban_sdk::Val> {
+pub struct SymbolPagedResult {
     /// Items in this page.
-    pub items: Vec<T>,
+    pub items: Vec<Symbol>,
     /// Cursor to pass on the next call (index of the first un-returned item).
     pub next_cursor: u32,
     /// Total number of items available (best-effort; may be approximate for
@@ -3659,7 +3609,7 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH"),
-            ReflectorAsset::Other(symbol) => symbol.clone(),
+            ReflectorAsset::Other(symbol) => String::from_str(&env, &symbol.to_string()),
         }
     }
 
@@ -3671,9 +3621,7 @@ impl ReflectorAsset {
             ReflectorAsset::BTC => String::from_str(&env, "Bitcoin"),
             ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
             ReflectorAsset::Other(symbol) => {
-                let prefix = String::from_str(&env, "Custom Asset (");
-                let suffix = String::from_str(&env, ")");
-                prefix + symbol + suffix
+                String::from_str(&env, &format!("Custom Asset ({})", symbol.to_string()))
             }
         }
     }
@@ -3695,10 +3643,7 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM/USD"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
-            ReflectorAsset::Other(symbol) => {
-                let suffix = String::from_str(&env, "/USD");
-                symbol.clone() + &suffix
-            }
+            ReflectorAsset::Other(symbol) => String::from_str(&env, &format!("{}/USD", symbol.to_string())),
         }
     }
 
@@ -3725,11 +3670,13 @@ impl ReflectorAsset {
 
     /// Creates a ReflectorAsset from a symbol string
     pub fn from_symbol(symbol: String) -> Self {
-        match symbol.to_string().as_str() {
+        let env = soroban_sdk::Env::default();
+        let symbol_str = symbol.to_string();
+        match symbol_str.as_str() {
             "XLM" => ReflectorAsset::Stellar,
             "BTC" => ReflectorAsset::BTC,
             "ETH" => ReflectorAsset::ETH,
-            _ => ReflectorAsset::Other(symbol),
+            _ => ReflectorAsset::Other(Symbol::new(&env, &symbol_str)),
         }
     }
 
