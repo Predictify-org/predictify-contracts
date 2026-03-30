@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Address, Env, Symbol};
 
 /// Stores the gas limit configured by an admin for a specific operation.
 #[contracttype]
@@ -82,12 +82,12 @@ impl GasTracker {
         
         if let Some(limit) = cpu_limit {
             if cost.cpu > limit {
-                crate::err::panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
+                panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
             }
         }
         if let Some(limit) = mem_limit {
             if cost.mem > limit {
-                crate::err::panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
+                panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
             }
         }
     }

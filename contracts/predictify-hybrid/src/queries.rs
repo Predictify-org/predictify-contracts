@@ -19,7 +19,7 @@
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
-    types::{Market, MarketState, PagedResult},
+    types::{Market, MarketState, SymbolPagedResult, UserBetPagedResult},
     voting::VotingStats,
 };
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
@@ -103,7 +103,6 @@ impl QueryManager {
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
             oracle_provider,
-            oracle_provider: oracle_provider,
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
             winning_outcome,
@@ -193,7 +192,7 @@ impl QueryManager {
         env: &Env,
         cursor: u32,
         limit: u32,
-    ) -> Result<PagedResult<Symbol>, Error> {
+    ) -> Result<SymbolPagedResult, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
         let all = Self::get_all_markets(env)?;
         let total_count = all.len();
@@ -207,7 +206,7 @@ impl QueryManager {
         }
 
         let next_cursor = cursor + items.len();
-        Ok(PagedResult {
+        Ok(SymbolPagedResult {
             items,
             next_cursor,
             total_count,
@@ -263,7 +262,11 @@ impl QueryManager {
 
         let stake_amount = market.stakes.get(user.clone()).ok_or(Error::InvalidInput)?;
 
-        let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
+        let has_claimed = market
+            .claimed
+            .get(user.clone())
+            .map(|claim| claim.is_claimed())
+            .unwrap_or(false);
 
         // Determine if user is winning (supports single or multiple winning outcomes / ties)
         let is_winning = market
@@ -369,7 +372,7 @@ impl QueryManager {
         user: Address,
         cursor: u32,
         limit: u32,
-    ) -> Result<PagedResult<UserBetQuery>, Error> {
+    ) -> Result<UserBetPagedResult, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
         let all_markets = Self::get_all_markets(env)?;
         let total_count = all_markets.len();
@@ -385,7 +388,7 @@ impl QueryManager {
         }
 
         let next_cursor = core::cmp::min(cursor + limit, total_count);
-        Ok(PagedResult {
+        Ok(UserBetPagedResult {
             items,
             next_cursor,
             total_count,
