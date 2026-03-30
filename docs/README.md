@@ -21,6 +21,7 @@ Comprehensive security documentation and guidelines:
 
 - **[Attack Vectors](./security/ATTACK-VECTORS.md)** - Known attack vectors and mitigation strategies
 - **[Audit Checklist](./security/AUDIT_CHECKLIST.md)** - Security audit requirements and checklist
+- **[Soroban SDK Workspace Audit](./security/SOROBAN_SDK_AUDIT.md)** - Workspace Soroban SDK target, verification steps, and audit notes for Protocol 25 alignment
 - **[Security Best Practices](./security/SECURITY_BEST_PRACTICES.md)** - Development and deployment security guidelines
 - **[Security Considerations](./security/SECURITY_CONSIDERATIONS.md)** - Important security considerations for the system
 - **[Security Testing Guide](./security/SECURITY_TESTING_GUIDE.md)** - Executable security checklist mapped to automated tests
