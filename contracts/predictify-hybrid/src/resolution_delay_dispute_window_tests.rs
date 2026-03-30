@@ -47,7 +47,7 @@ impl TestSetup {
         outcomes.push_back(String::from_str(&self.env, "no"));
 
         let oracle_config = OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             soroban_sdk::Address::from_str(
                 &self.env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",

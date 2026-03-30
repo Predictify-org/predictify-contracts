@@ -35,7 +35,7 @@ fn create_test_market(
     outcomes.push_back(String::from_str(env, "no"));
 
     let oracle_config = OracleConfig {
-        provider: OracleProvider::Reflector,
+        provider: OracleProvider::reflector(),
         oracle_address: soroban_sdk::Address::from_str(
             env,
             "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -285,7 +285,7 @@ impl TokenTestSetup {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: soroban_sdk::Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",

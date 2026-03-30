@@ -45,6 +45,52 @@ BetManager::place_bet(env, user, market_id, outcome, amount, Some(Asset { contra
 
 ### Commit Message Example
 `feat: implement custom Stellar token/asset support for bets and payouts`
+
+# Reproducible WASM Builds & Checksums
+
+## Secure, Auditable Release Artifacts
+
+Predictify Hybrid contract WASM artifacts are built reproducibly and published with SHA256 checksums for auditor and integrator verification.
+
+### Build Flags for Reproducibility
+
+Release builds use strict flags in Cargo.toml and workspace Cargo.toml:
+
+```
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+```
+
+### Building and Verifying WASM Artifacts
+
+To build and generate a checksum for the release WASM:
+
+```sh
+make build-checksum
+# or, separately:
+make build
+make checksum
+```
+
+This will output the WASM file and a corresponding `.sha256` file in `target/wasm32-unknown-unknown/release/`.
+
+To verify the checksum:
+
+```sh
+sha256sum -c target/wasm32-unknown-unknown/release/<artifact>.wasm.sha256
+```
+
+Replace `<artifact>` with the actual WASM filename.
+
+**Note:** Always use the documented build flags for reproducibility. Artifacts built with different flags may produce different checksums.
+
 # Predictify Hybrid Contract with Real Oracle Integration
 
 ## Overview

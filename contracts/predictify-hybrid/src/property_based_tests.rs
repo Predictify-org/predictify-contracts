@@ -85,7 +85,7 @@ impl PropertyBasedTestSuite {
     /// Generate a valid oracle configuration for testing
     pub fn generate_oracle_config(&self, threshold: i128, comparison: &str) -> OracleConfig {
         OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&self.env),
             feed_id: SorobanString::from_str(&self.env, "BTC/USD"),
             threshold,
@@ -179,10 +179,7 @@ proptest! {
             &duration_days,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         // Verify market was created with correct properties
@@ -232,10 +229,7 @@ proptest! {
             &duration_days,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         let market = client.get_market(&market_id).unwrap();
@@ -288,10 +282,7 @@ proptest! {
             &30,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         // Select user and outcome for voting
@@ -328,7 +319,7 @@ proptest! {
 
         // Property: Valid oracle configuration should be accepted
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&suite.env),
             feed_id: SorobanString::from_str(&suite.env, &feed_id),
             threshold,
@@ -356,7 +347,7 @@ proptest! {
         let suite = PropertyBasedTestSuite::new();
 
         let oracle_config = OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&suite.env),
             feed_id: SorobanString::from_str(&suite.env, "BTC/USD"),
             threshold,
@@ -460,10 +451,7 @@ proptest! {
             &duration_days,
             &oracle_config,
             &None,
-            &0,
-            &None,
-            &None,
-            &None,
+            &0u64,
         );
 
         let initial_market = client.get_market(&market_id).unwrap();
@@ -519,9 +507,6 @@ proptest! {
             &oracle_config,
             &None,
             &86400u64,
-            &None,
-            &None,
-            &None,
         );
 
         // Store admin address to avoid borrowing issues
@@ -591,9 +576,6 @@ proptest! {
             &oracle_config,
             &None,
             &0u64, // min_bet = 0
-            &None,
-            &None,
-            &None,
         );
         
         let mut total_pool = 0i128;
@@ -680,9 +662,6 @@ proptest! {
             &oracle_config,
             &None,
             &0u64,
-            &None,
-            &None,
-            &None,
         );
         
         let mut winning_voters = StdVec::new();

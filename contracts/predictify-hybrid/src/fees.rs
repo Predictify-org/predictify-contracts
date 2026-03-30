@@ -1936,7 +1936,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             crate::types::OracleConfig::new(
-                crate::types::OracleProvider::Pyth,
+                crate::types::OracleProvider::pyth(),
                 Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -2005,7 +2005,7 @@ mod tests {
             ],
             env.ledger().timestamp() + 86400,
             crate::types::OracleConfig::new(
-                crate::types::OracleProvider::Pyth,
+                crate::types::OracleProvider::pyth(),
                 Address::from_str(
                     &env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",

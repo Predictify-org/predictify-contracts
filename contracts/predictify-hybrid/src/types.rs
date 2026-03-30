@@ -242,9 +242,11 @@ pub enum MarketState {
 /// - **Efficient**: String storage is optimized in Soroban
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OracleProvider {
-    /// String identifier for the oracle provider
-    provider_id: String,
+pub enum OracleProvider {
+    Reflector,
+    Pyth,
+    BandProtocol,
+    DIA,
 }
 
 impl OracleProvider {
@@ -267,9 +269,7 @@ impl OracleProvider {
     /// assert!(provider.is_supported());
     /// ```
     pub fn reflector() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "reflector"),
-        }
+        OracleProvider::Reflector
     }
 
     /// Creates a Pyth Network oracle provider instance.
@@ -291,9 +291,7 @@ impl OracleProvider {
     /// assert!(!provider.is_supported()); // Not available on Stellar
     /// ```
     pub fn pyth() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "pyth"),
-        }
+        OracleProvider::Pyth
     }
 
     /// Creates a Band Protocol oracle provider instance.
@@ -315,9 +313,7 @@ impl OracleProvider {
     /// assert!(!provider.is_supported()); // Not available on Stellar
     /// ```
     pub fn band_protocol() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "band_protocol"),
-        }
+        OracleProvider::BandProtocol
     }
 
     /// Creates a DIA oracle provider instance.
@@ -339,9 +335,7 @@ impl OracleProvider {
     /// assert!(!provider.is_supported()); // Not available on Stellar
     /// ```
     pub fn dia() -> Self {
-        Self {
-            provider_id: String::from_str(&soroban_sdk::Env::default(), "dia"),
-        }
+        OracleProvider::DIA
     }
 
     /// Creates an OracleProvider from a string identifier.
@@ -373,29 +367,56 @@ impl OracleProvider {
     /// let unknown = OracleProvider::from_str(String::from_str(&env, "future_oracle"));
     /// assert!(!unknown.is_known());
     /// ```
-    pub fn from_str(provider_id: String) -> Self {
-        Self { provider_id }
+    pub fn from_str(env: &Env, provider_id: String) -> Self {
+        if provider_id == String::from_str(env, "reflector") {
+            OracleProvider::Reflector
+        } else if provider_id == String::from_str(env, "pyth") {
+            OracleProvider::Pyth
+        } else if provider_id == String::from_str(env, "band_protocol") {
+            OracleProvider::BandProtocol
+        } else if provider_id == String::from_str(env, "dia") {
+            OracleProvider::DIA
+        } else {
+            OracleProvider::Reflector // Default
+        }
     }
 
-    /// Returns the string identifier for this oracle provider.
-    ///
-    /// This method provides access to the underlying string representation,
-    /// useful for debugging, logging, and serialization.
-    ///
-    /// # Returns
-    ///
-    /// String slice containing the provider identifier
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use predictify_hybrid::types::OracleProvider;
-    ///
-    /// let provider = OracleProvider::reflector();
-    /// assert_eq!(provider.as_str(), "reflector");
-    /// ```
     pub fn as_str(&self) -> &str {
-        &self.provider_id
+        match self {
+            OracleProvider::Reflector => "reflector",
+            OracleProvider::Pyth => "pyth",
+            OracleProvider::BandProtocol => "band_protocol",
+            OracleProvider::DIA => "dia",
+        }
+    }
+
+    pub fn name(&self, env: &Env) -> String {
+        match self {
+            OracleProvider::Reflector => String::from_str(env, "Reflector"),
+            OracleProvider::Pyth => String::from_str(env, "Pyth Network"),
+            OracleProvider::BandProtocol => String::from_str(env, "Band Protocol"),
+            OracleProvider::DIA => String::from_str(env, "DIA"),
+        // Since soroban_sdk::String doesn't have easy conversion to &str,
+        // we'll use a different approach based on the provider_id content
+        let env = soroban_sdk::Env::default();
+        
+        // Compare with known provider IDs
+        let reflector_id = String::from_str(&env, "reflector");
+        let pyth_id = String::from_str(&env, "pyth");
+        let band_id = String::from_str(&env, "band_protocol");
+        let dia_id = String::from_str(&env, "dia");
+        
+        if self.provider_id == reflector_id {
+            "reflector"
+        } else if self.provider_id == pyth_id {
+            "pyth"
+        } else if self.provider_id == band_id {
+            "band_protocol"
+        } else if self.provider_id == dia_id {
+            "dia"
+        } else {
+            "unknown"
+        }
     }
 
     /// Returns a human-readable name for the oracle provider.
@@ -430,7 +451,10 @@ impl OracleProvider {
             unknown => {
                 let prefix = String::from_str(&env, "Unknown Provider (");
                 let suffix = String::from_str(&env, ")");
-                prefix + unknown + suffix
+                // Use string slicing for soroban_sdk::String
+                let result = prefix.clone();
+                // For simplicity, just return a basic message for unknown providers
+                String::from_str(&env, "Unknown Provider")
             }
         }
     }
@@ -457,7 +481,7 @@ impl OracleProvider {
     /// assert!(pyth.is_known()); // Known but unsupported
     /// ```
     pub fn is_known(&self) -> bool {
-        matches!(self.as_str(), "reflector" | "pyth" | "band_protocol" | "dia")
+        true
     }
 
     /// Checks if this oracle provider is supported on the current network.
@@ -491,7 +515,23 @@ impl OracleProvider {
     /// assert!(!pyth.is_supported()); // Not available on Stellar
     /// ```
     pub fn is_supported(&self) -> bool {
-        matches!(self.as_str(), "reflector")
+        matches!(self, OracleProvider::Reflector)
+    }
+    
+    pub fn is_reflector(&self) -> bool {
+        matches!(self, OracleProvider::Reflector)
+    }
+
+    pub fn is_pyth(&self) -> bool {
+        matches!(self, OracleProvider::Pyth)
+    }
+
+    pub fn is_band_protocol(&self) -> bool {
+        matches!(self, OracleProvider::BandProtocol)
+    }
+
+    pub fn is_dia(&self) -> bool {
+        matches!(self, OracleProvider::DIA)
     }
 
     /// Validates the oracle provider for market creation.
@@ -903,7 +943,7 @@ impl OracleConfig {
 /// }
 ///
 /// // Check if user has claimed payout
-/// let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
+/// let has_claimed = market.claimed.get(user.clone()).map(|info| info.is_claimed()).unwrap_or(false);
 /// println!("User claimed payout: {}", has_claimed);
 /// ```
 ///
@@ -1000,8 +1040,8 @@ pub struct Market {
     pub votes: Map<Address, String>,
     /// User stakes mapping (address -> stake amount)
     pub stakes: Map<Address, i128>,
-    /// Claimed status mapping (address -> claimed)
-    pub claimed: Map<Address, bool>,
+    /// Claimed status mapping (address -> ClaimInfo with timestamp and payout tracking)
+    pub claimed: Map<Address, ClaimInfo>,
     /// Total amount staked in the market
     pub total_staked: i128,
     /// Dispute stakes mapping (address -> dispute stake)
@@ -1034,6 +1074,121 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
+}
+
+// ===== CLAIM INFO =====
+
+/// Claim information for tracking idempotent winnings claims.
+///
+/// This struct stores comprehensive information about a user's claim,
+/// enabling idempotency checks, audit trails, and safe retry mechanisms.
+///
+/// # Fields
+///
+/// - `claimed`: Whether the user has claimed their winnings
+/// - `timestamp`: Ledger timestamp when the claim was processed (Unix timestamp)
+/// - `payout_amount`: The exact amount of tokens claimed (for verification and audits)
+///
+/// # Security Properties
+///
+/// - **Immutable**: Once set, the claim record cannot be modified (append-only)
+/// - **Idempotent**: Multiple claim attempts return the same result without side effects
+/// - **Verifiable**: Payout amount can be verified against actual transfer
+/// - **Auditable**: Timestamp provides proof of when claim occurred
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address};
+/// # use predictify_hybrid::types::ClaimInfo;
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+///
+/// // Create claim info with payout amount
+/// let claim_info = ClaimInfo {
+///     claimed: true,
+///     timestamp: env.ledger().timestamp(),
+///     payout_amount: 15_000_000, // 1.5 XLM
+/// };
+///
+/// // Check if claimed
+/// assert!(claim_info.is_claimed());
+///
+/// // Get payout amount
+/// assert_eq!(claim_info.get_payout(), 15_000_000);
+///
+/// // Get timestamp
+/// assert!(claim_info.get_timestamp() > 0);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimInfo {
+    /// Whether the user has claimed their winnings
+    pub claimed: bool,
+    /// Ledger timestamp when the claim was processed (Unix timestamp)
+    pub timestamp: u64,
+    /// The exact amount of tokens claimed (for verification and audits)
+    pub payout_amount: i128,
+}
+
+impl ClaimInfo {
+    /// Create a new ClaimInfo instance with the given payout amount.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment (used for timestamp)
+    /// - `payout_amount` - The amount being claimed
+    ///
+    /// # Returns
+    ///
+    /// Returns a new ClaimInfo with current timestamp and specified payout.
+    pub fn new(env: &Env, payout_amount: i128) -> Self {
+        Self {
+            claimed: true,
+            timestamp: env.ledger().timestamp(),
+            payout_amount,
+        }
+    }
+
+    /// Create a default (unclaimed) ClaimInfo instance.
+    ///
+    /// # Returns
+    ///
+    /// Returns a ClaimInfo with claimed=false and zero values.
+    pub fn unclaimed() -> Self {
+        Self {
+            claimed: false,
+            timestamp: 0,
+            payout_amount: 0,
+        }
+    }
+
+    /// Check if this claim has been processed.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if claimed, `false` otherwise.
+    pub fn is_claimed(&self) -> bool {
+        self.claimed
+    }
+
+    /// Get the timestamp when this claim was processed.
+    ///
+    /// # Returns
+    ///
+    /// Returns the ledger timestamp as Unix timestamp in seconds.
+    pub fn get_timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    /// Get the payout amount that was claimed.
+    ///
+    /// # Returns
+    ///
+    /// Returns the exact token amount claimed (in stroops/smallest unit).
+    pub fn get_payout(&self) -> i128 {
+        self.payout_amount
+    }
 }
 
 // ===== BET LIMITS =====
@@ -3178,6 +3333,51 @@ pub struct MultipleBetsQuery {
     pub winning_bets: u32,
 }
 
+/// Generic paginated query result.
+///
+/// Wraps any `Vec<T>` result with a cursor that callers pass back on the next
+/// request to continue iteration.  When `next_cursor` equals `total_count` (or
+/// `items` is shorter than the requested limit) the caller has reached the end.
+///
+/// # Pagination Protocol
+///
+/// ```text
+/// 1. Call with cursor = 0, limit = N
+/// 2. Receive PagedResult { items, next_cursor, total_count }
+/// 3. If items.len() < N  →  last page, stop.
+/// 4. Otherwise call again with cursor = next_cursor.
+/// ```
+///
+/// # Security
+///
+/// `limit` is always capped server-side at `MAX_PAGE_SIZE` (50) so callers
+/// cannot force unbounded Vec allocations.
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, vec, String};
+/// # use predictify_hybrid::types::PagedResult;
+/// # let env = Env::default();
+/// let page: PagedResult<String> = PagedResult {
+///     items: vec![&env, String::from_str(&env, "item1")],
+///     next_cursor: 1,
+///     total_count: 5,
+/// };
+/// assert_eq!(page.next_cursor, 1);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PagedResult<T: soroban_sdk::Val> {
+    /// Items in this page.
+    pub items: Vec<T>,
+    /// Cursor to pass on the next call (index of the first un-returned item).
+    pub next_cursor: u32,
+    /// Total number of items available (best-effort; may be approximate for
+    /// filtered queries).
+    pub total_count: u32,
+}
+
 // ===== BET PLACEMENT TYPES =====
 
 /// Status of a bet placed on a prediction market.
@@ -3447,8 +3647,111 @@ pub struct Event {
 }
 
 impl ReflectorAsset {
+    /// Check if this asset is Stellar Lumens (XLM)
     pub fn is_xlm(&self) -> bool {
         matches!(self, ReflectorAsset::Stellar)
+    }
+
+    /// Returns the symbol string for this asset
+    pub fn symbol(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
+            ReflectorAsset::BTC => String::from_str(&env, "BTC"),
+            ReflectorAsset::ETH => String::from_str(&env, "ETH"),
+            ReflectorAsset::Other(symbol) => symbol.clone(),
+        }
+    }
+
+    /// Returns the human-readable name for this asset
+    pub fn name(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "Stellar Lumens"),
+            ReflectorAsset::BTC => String::from_str(&env, "Bitcoin"),
+            ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
+            ReflectorAsset::Other(symbol) => {
+                let prefix = String::from_str(&env, "Custom Asset (");
+                let suffix = String::from_str(&env, ")");
+                prefix + symbol + suffix
+            }
+        }
+    }
+
+    /// Returns the number of decimal places for this asset
+    pub fn decimals(&self) -> u8 {
+        match self {
+            ReflectorAsset::Stellar => 7,
+            ReflectorAsset::BTC => 8,
+            ReflectorAsset::ETH => 18,
+            ReflectorAsset::Other(_) => 7, // Default to 7 for custom assets
+        }
+    }
+
+    /// Returns the Reflector feed ID for this asset (e.g., "BTC/USD")
+    pub fn feed_id(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self {
+            ReflectorAsset::Stellar => String::from_str(&env, "XLM/USD"),
+            ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
+            ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
+            ReflectorAsset::Other(symbol) => {
+                let suffix = String::from_str(&env, "/USD");
+                symbol.clone() + &suffix
+            }
+        }
+    }
+
+    /// Checks if this asset is supported by Reflector oracle
+    pub fn is_supported(&self) -> bool {
+        match self {
+            ReflectorAsset::Stellar | ReflectorAsset::BTC | ReflectorAsset::ETH => true,
+            ReflectorAsset::Other(_) => false, // Custom assets not supported by default
+        }
+    }
+
+    /// Checks if this asset is a known asset (including custom ones)
+    pub fn is_known(&self) -> bool {
+        true // All ReflectorAsset variants are known by definition
+    }
+
+    /// Validates the asset for use in market creation
+    pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
+        if !self.is_supported() {
+            return Err(crate::Error::InvalidOracleConfig);
+        }
+        Ok(())
+    }
+
+    /// Creates a ReflectorAsset from a symbol string
+    pub fn from_symbol(symbol: String) -> Self {
+        match symbol.to_string().as_str() {
+            "XLM" => ReflectorAsset::Stellar,
+            "BTC" => ReflectorAsset::BTC,
+            "ETH" => ReflectorAsset::ETH,
+            _ => ReflectorAsset::Other(symbol),
+        }
+    }
+
+    /// Returns all supported assets for testing purposes
+    pub fn all_supported() -> Vec<Self> {
+        let env = soroban_sdk::Env::default();
+        Vec::from_array(&env, [
+            ReflectorAsset::Stellar,
+            ReflectorAsset::BTC,
+            ReflectorAsset::ETH,
+        ])
+    }
+
+    /// Returns all known assets (including unsupported) for testing purposes
+    pub fn all_known() -> Vec<Self> {
+        let env = soroban_sdk::Env::default();
+        Vec::from_array(&env, [
+            ReflectorAsset::Stellar,
+            ReflectorAsset::BTC,
+            ReflectorAsset::ETH,
+            ReflectorAsset::Other(Symbol::new(&env, "CUSTOM")),
+        ])
     }
 }
 

@@ -32,7 +32,7 @@ fn test_successful_oracle_price_fetch_and_resolution() {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 2600000, // $26,000
                 comparison: String::from_str(&env, "gt"),
@@ -80,7 +80,7 @@ fn test_oracle_timeout_market_resolution() {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 feed_id: String::from_str(&env, "ETH/USD"),
                 threshold: 200000, // $2,000
                 comparison: String::from_str(&env, "gt"),
@@ -142,7 +142,7 @@ fn test_oracle_fallback_mechanism() {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 feed_id: String::from_str(&env, "XLM/USD"),
                 threshold: 12, // $0.12
                 comparison: String::from_str(&env, "gt"),
@@ -212,7 +212,7 @@ fn test_end_to_end_market_lifecycle_with_oracle() {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 2500000,
                 comparison: String::from_str(&env, "gt"),
@@ -287,7 +287,7 @@ fn test_oracle_health_monitoring_integration() {
 
         // Add healthy oracle
         let metadata = OracleMetadata {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
             added_at: env.ledger().timestamp(),
             added_by: admin.clone(),
@@ -321,7 +321,7 @@ fn test_oracle_data_freshness_requirements() {
 
     // In real implementation, would check timestamp freshness
     // For this test, we verify the oracle interface works
-    assert_eq!(oracle.provider(), OracleProvider::Reflector);
+    assert_eq!(oracle.provider(), OracleProvider::reflector());
     assert!(oracle.is_healthy(&env).unwrap());
 }
 
@@ -349,7 +349,7 @@ fn test_oracle_failure_recovery_market_resolution() {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 feed_id: String::from_str(&env, "ADA/USD"),
                 threshold: 50, // $0.50
                 comparison: String::from_str(&env, "gt"),

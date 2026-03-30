@@ -3,10 +3,12 @@
 //! This module provides mock oracle implementations for testing various scenarios
 //! including valid responses, invalid responses, timeouts, and malicious behavior.
 
+extern crate alloc;
+use alloc::boxed::Box;
 use crate::errors::Error;
-use crate::oracles::{OracleInterface, OracleProvider};
+use crate::oracles::OracleInterface;
 use crate::types::*;
-use soroban_sdk::{contracttype, Address, Env, String, Symbol};
+use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
 
 /// Mock Oracle Base Structure
 #[derive(Debug, Clone)]
@@ -65,7 +67,7 @@ impl OracleInterface for ValidMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -94,7 +96,7 @@ impl OracleInterface for InvalidResponseMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -123,7 +125,7 @@ impl OracleInterface for EmptyResponseMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -152,7 +154,7 @@ impl OracleInterface for TimeoutMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -181,7 +183,7 @@ impl OracleInterface for CorruptedPayloadMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -210,7 +212,7 @@ impl OracleInterface for MaliciousSignatureMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -239,7 +241,7 @@ impl OracleInterface for UnauthorizedSignerMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -268,7 +270,7 @@ impl OracleInterface for StaleDataMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -298,7 +300,7 @@ impl OracleInterface for ExtremeValueMockOracle {
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -331,13 +333,13 @@ impl OracleInterface for ConflictingResultsMockOracle {
     fn get_price(&self, _env: &Env, _feed_id: &String) -> Result<i128, Error> {
         let price = self
             .prices
-            .get(self.current_index % self.prices.len())
-            .unwrap_or(&0);
-        Ok(*price)
+            .get((self.current_index % (self.prices.len() as usize)) as u32)
+            .unwrap_or(0);
+        Ok(price)
     }
 
     fn provider(&self) -> OracleProvider {
-        OracleProvider::Reflector
+        OracleProvider::reflector()
     }
 
     fn contract_id(&self) -> Address {
@@ -353,39 +355,40 @@ impl OracleInterface for ConflictingResultsMockOracle {
 pub struct MockOracleFactory;
 
 impl MockOracleFactory {
-    pub fn create_valid_oracle(contract_id: Address, price: i128) -> Box<dyn OracleInterface> {
+    pub fn create_valid_oracle(env: &Env, contract_id: Address, price: i128) -> Box<dyn OracleInterface> {
         Box::new(ValidMockOracle::new(contract_id, price))
     }
 
-    pub fn create_invalid_response_oracle(contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_invalid_response_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
         Box::new(InvalidResponseMockOracle::new(contract_id))
     }
 
-    pub fn create_empty_response_oracle(contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_empty_response_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
         Box::new(EmptyResponseMockOracle::new(contract_id))
     }
 
-    pub fn create_timeout_oracle(contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_timeout_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
         Box::new(TimeoutMockOracle::new(contract_id))
     }
 
-    pub fn create_corrupted_payload_oracle(contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_corrupted_payload_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
         Box::new(CorruptedPayloadMockOracle::new(contract_id))
     }
 
-    pub fn create_malicious_signature_oracle(contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_malicious_signature_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
         Box::new(MaliciousSignatureMockOracle::new(contract_id))
     }
 
-    pub fn create_unauthorized_signer_oracle(contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_unauthorized_signer_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
         Box::new(UnauthorizedSignerMockOracle::new(contract_id))
     }
 
-    pub fn create_stale_data_oracle(contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_stale_data_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
         Box::new(StaleDataMockOracle::new(contract_id))
     }
 
     pub fn create_extreme_value_oracle(
+        _env: &Env,
         contract_id: Address,
         price: i128,
     ) -> Box<dyn OracleInterface> {
@@ -393,6 +396,7 @@ impl MockOracleFactory {
     }
 
     pub fn create_conflicting_results_oracle(
+        _env: &Env,
         contract_id: Address,
         prices: Vec<i128>,
     ) -> Box<dyn OracleInterface> {
@@ -417,7 +421,7 @@ mod tests {
                 .unwrap(),
             2600000
         );
-        assert_eq!(oracle.provider(), OracleProvider::Reflector);
+        assert_eq!(oracle.provider(), OracleProvider::reflector());
         assert_eq!(oracle.contract_id(), contract_id);
         assert!(oracle.is_healthy(&env).unwrap());
     }
@@ -431,7 +435,7 @@ mod tests {
         assert!(oracle
             .get_price(&env, &String::from_str(&env, "BTC"))
             .is_err());
-        assert_eq!(oracle.provider(), OracleProvider::Reflector);
+        assert_eq!(oracle.provider(), OracleProvider::reflector());
         assert_eq!(oracle.contract_id(), contract_id);
         assert!(!oracle.is_healthy(&env).unwrap());
     }
@@ -445,7 +449,7 @@ mod tests {
         let result = oracle.get_price(&env, &String::from_str(&env, "BTC"));
         assert!(result.is_err());
         // Note: Error type would need to be defined in errors.rs
-        assert_eq!(oracle.provider(), OracleProvider::Reflector);
+        assert_eq!(oracle.provider(), OracleProvider::reflector());
         assert!(!oracle.is_healthy(&env).unwrap());
     }
 
@@ -469,7 +473,7 @@ mod tests {
     fn test_conflicting_results_mock_oracle() {
         let env = Env::default();
         let contract_id = Address::generate(&env);
-        let prices = vec![&env, 2500000, 2600000, 2700000];
+        let prices = soroban_sdk::vec![&env, 2500000, 2600000, 2700000];
         let oracle = ConflictingResultsMockOracle::new(contract_id.clone(), prices);
 
         // Should cycle through prices

@@ -154,7 +154,7 @@ impl PredictifyTest {
             &outcomes,
             &30,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: Address::generate(&self.env),
                 feed_id: String::from_str(&self.env, "BTC"),
                 threshold: 2500000,
@@ -184,7 +184,7 @@ impl PredictifyTest {
             &outcomes,
             &(self.env.ledger().timestamp() + 86400),
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: Address::generate(&self.env),
                 feed_id: String::from_str(&self.env, "BTC"),
                 threshold: 50_000_00,
@@ -432,7 +432,7 @@ fn test_create_market_successful() {
         &outcomes,
         &duration_days,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "BTC"),
             threshold: 2500000,
@@ -924,7 +924,7 @@ fn test_oracle_configuration() {
     });
 
     // Verify oracle configuration is properly stored
-    assert_eq!(market.oracle_config.provider, OracleProvider::Reflector);
+    assert_eq!(market.oracle_config.provider, OracleProvider::reflector());
     assert_eq!(
         market.oracle_config.feed_id,
         String::from_str(&test.env, "BTC")
@@ -939,14 +939,14 @@ fn test_oracle_configuration() {
 #[test]
 fn test_oracle_provider_types() {
     // Test that oracle provider enum variants are available
-    let _pyth = OracleProvider::Pyth;
-    let _reflector = OracleProvider::Reflector;
-    let _band = OracleProvider::BandProtocol;
-    let _dia = OracleProvider::DIA;
+    let _pyth = OracleProvider::pyth();
+    let _reflector = OracleProvider::reflector();
+    let _band = OracleProvider::band_protocol();
+    let _dia = OracleProvider::dia();
 
     // Test oracle provider comparison
-    assert_ne!(OracleProvider::Pyth, OracleProvider::Reflector);
-    assert_eq!(OracleProvider::Pyth, OracleProvider::Pyth);
+    assert_ne!(OracleProvider::pyth(), OracleProvider::reflector());
+    assert_eq!(OracleProvider::pyth(), OracleProvider::pyth());
 }
 
 // ===== SUCCESS PATH TESTS =====
@@ -1040,7 +1040,7 @@ fn test_oracle_unavailable_handling() {
     // Test that oracle interface methods are callable
     // In test environment, we can't call real contracts, so we test the interface
     let provider = oracle.provider();
-    assert_eq!(provider, OracleProvider::Reflector);
+    assert_eq!(provider, OracleProvider::reflector());
 
     let contract_addr = oracle.contract_id();
     assert_eq!(contract_addr, contract_id);
@@ -1253,18 +1253,18 @@ fn test_oracle_response_validation() {
 fn test_oracle_factory_supported_providers() {
     // Test supported providers
     assert!(crate::oracles::OracleFactory::is_provider_supported(
-        &OracleProvider::Reflector
+        &OracleProvider::reflector()
     ));
 
     // Test unsupported providers
     assert!(!crate::oracles::OracleFactory::is_provider_supported(
-        &OracleProvider::Pyth
+        &OracleProvider::pyth()
     ));
     assert!(!crate::oracles::OracleFactory::is_provider_supported(
-        &OracleProvider::BandProtocol
+        &OracleProvider::band_protocol()
     ));
     assert!(!crate::oracles::OracleFactory::is_provider_supported(
-        &OracleProvider::DIA
+        &OracleProvider::dia()
     ));
 }
 
@@ -1275,13 +1275,13 @@ fn test_oracle_factory_creation() {
 
     // Test successful creation
     let result = crate::oracles::OracleFactory::create_oracle(
-        OracleProvider::Reflector,
+        OracleProvider::reflector(),
         contract_id.clone(),
     );
     assert!(result.is_ok());
 
     // Test failed creation
-    let result = crate::oracles::OracleFactory::create_oracle(OracleProvider::Pyth, contract_id);
+    let result = crate::oracles::OracleFactory::create_oracle(OracleProvider::pyth(), contract_id);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err(), Error::InvalidOracleConfig);
 }
@@ -1289,7 +1289,7 @@ fn test_oracle_factory_creation() {
 #[test]
 fn test_oracle_factory_recommended_provider() {
     let recommended = crate::oracles::OracleFactory::get_recommended_provider();
-    assert_eq!(recommended, OracleProvider::Reflector);
+    assert_eq!(recommended, OracleProvider::reflector());
 }
 
 #[test]
@@ -1797,9 +1797,21 @@ fn test_automatic_payout_distribution() {
             .unwrap()
     });
     assert_eq!(market_after.state, MarketState::Resolved);
-    assert!(market_after.claimed.get(user1.clone()).unwrap_or(false));
-    assert!(market_after.claimed.get(user2.clone()).unwrap_or(false));
-    assert!(!market_after.claimed.get(user3.clone()).unwrap_or(false)); // Loser not claimed
+    assert!(market_after
+        .claimed
+        .get(user1.clone())
+        .map(|info| info.is_claimed())
+        .unwrap_or(false));
+    assert!(market_after
+        .claimed
+        .get(user2.clone())
+        .map(|info| info.is_claimed())
+        .unwrap_or(false));
+    assert!(!market_after
+        .claimed
+        .get(user3.clone())
+        .map(|info| info.is_claimed())
+        .unwrap_or(false)); // Loser not claimed
 }
 
 #[test]
@@ -2414,7 +2426,7 @@ fn test_create_event_collects_configured_fee_and_emits_event() {
         &outcomes,
         &(test.env.ledger().timestamp() + 3600),
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "XLM/USD"),
             threshold: 100,
@@ -2484,7 +2496,7 @@ fn test_create_event_rejects_when_fee_insufficient() {
         &outcomes,
         &(test.env.ledger().timestamp() + 3600),
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "BTC/USD"),
             threshold: 50000,
@@ -2521,7 +2533,7 @@ fn test_create_event_rejects_when_fee_asset_not_configured() {
         &outcomes,
         &(test.env.ledger().timestamp() + 3600),
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "ETH/USD"),
             threshold: 3000,
@@ -2573,7 +2585,7 @@ fn test_create_event_uses_configured_fee_asset() {
         &outcomes,
         &(test.env.ledger().timestamp() + 3600),
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "SOL/USD"),
             threshold: 150,
@@ -2972,7 +2984,7 @@ fn test_refund_on_oracle_failure_uses_market_resolution_timeout() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "BTC"),
             threshold: 50_000_00,
@@ -3099,7 +3111,7 @@ fn test_multi_outcome_creation_binary() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "BTC"),
             threshold: 100,
@@ -3138,7 +3150,7 @@ fn test_multi_outcome_creation_three_outcomes() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "X"),
             threshold: 100,
@@ -3177,7 +3189,7 @@ fn test_multi_outcome_invalid_outcome_rejected() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "X"),
             threshold: 100,
@@ -3216,7 +3228,7 @@ fn test_multi_outcome_single_winner_payout() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "X"),
             threshold: 100,
@@ -3275,7 +3287,7 @@ fn test_multi_outcome_tie_split_payout() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "X"),
             threshold: 100,
@@ -3338,7 +3350,7 @@ fn test_multi_outcome_one_outcome_no_bets() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "X"),
             threshold: 100,
@@ -3392,7 +3404,7 @@ fn test_multi_outcome_all_same_outcome() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "X"),
             threshold: 100,
@@ -4393,7 +4405,7 @@ fn test_create_market_without_min_pool_size() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "BTC"),
             threshold: 10000000,
@@ -4697,7 +4709,7 @@ fn test_resolution_allowed_when_pool_exactly_at_min_pool_size() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -4779,7 +4791,7 @@ fn test_resolution_blocked_and_emits_event_when_pool_below_min_pool_size() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -4876,7 +4888,7 @@ fn test_resolution_allowed_when_min_pool_size_is_zero() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5005,7 +5017,7 @@ fn test_per_market_min_pool_overrides_global_min_pool() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5127,7 +5139,7 @@ fn test_create_market_with_min_pool_size() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5234,7 +5246,7 @@ fn test_resolution_blocked_when_pool_below_minimum() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5337,7 +5349,7 @@ fn test_multi_outcome_tie_three_way() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5454,7 +5466,7 @@ fn test_proportional_share_different_stakes() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5559,7 +5571,7 @@ fn test_no_dust_left_after_tie_payout() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5671,7 +5683,7 @@ fn test_claim_flow_for_tie_winners() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -5772,7 +5784,7 @@ fn test_edge_case_single_winner_not_tie() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -6311,7 +6323,7 @@ fn test_cancel_underfunded_event() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -6425,7 +6437,7 @@ fn test_tie_with_zero_stakers_on_losing_outcome() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -6511,7 +6523,7 @@ fn test_tie_with_very_small_stakes() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&test.env),
             feed_id: String::from_str(&test.env, "TEST"),
             threshold: 100,
@@ -6592,7 +6604,7 @@ fn test_unclaimed_winnings_sweep_comprehensive() {
     ];
 
     let oracle_config = OracleConfig {
-        provider: OracleProvider::Reflector,
+        provider: OracleProvider::reflector(),
         oracle_address: Address::generate(&test.env),
         feed_id: String::from_str(&test.env, "BTC"),
         threshold: 1000,

@@ -3,7 +3,7 @@
 use crate::errors::Error;
 use crate::types::{OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
-use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::testutils::{Address as _, Events, Ledger};
 use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
 
 // Test helper structure
@@ -57,7 +57,7 @@ impl TestSetup {
     fn create_market(&self, question: &str, outcomes: Vec<String>, duration_days: u32) -> Symbol {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         let oracle_config = OracleConfig::new(
-            OracleProvider::Reflector,
+            OracleProvider::reflector(),
             Address::from_str(
                 &self.env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -569,4 +569,91 @@ fn test_update_event_outcomes_resolved_market() {
     let result = client.try_update_event_outcomes(&setup.admin, &market_id, &new_outcomes);
 
     assert_eq!(result, Err(Ok(Error::MarketResolved)));
+}
+
+// ===== EVENT EMISSION TESTS =====
+
+#[test]
+fn test_event_market_created_published() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes.clone(), 30);
+
+    // Get emitted events
+    let all_events = setup.env.events().all();
+    let latest_event = all_events.last().unwrap();
+
+    // Verify event structure: (contract_id, (topic, market_id), data)
+    assert_eq!(latest_event.0, setup.contract_id);
+    assert_eq!(latest_event.1.get(0).unwrap(), Symbol::new(&setup.env, "mkt_crt"));
+    assert_eq!(latest_event.1.get(1).unwrap(), market_id);
+}
+
+#[test]
+fn test_event_vote_cast_published() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let user = setup.create_user();
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes.clone(), 30);
+
+    // Clear events from market creation
+    let _ = setup.env.events().all();
+
+    // Place a vote
+    client.vote(
+        &user,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+        &1000000i128,
+    );
+
+    // Get emitted events
+    let all_events = setup.env.events().all();
+    // In our implementation, vote calls publish twice or more? Let's check.
+    // EventEmitter::emit_vote_cast calls publish once.
+    // The vote function might call other emitters.
+    
+    let vote_event = all_events.iter().find(|e| {
+        e.1.get(0).unwrap() == Symbol::new(&setup.env, "vote")
+    }).expect("Vote event not found");
+
+    assert_eq!(vote_event.1.get(1).unwrap(), market_id);
+}
+
+#[test]
+fn test_event_contract_paused_unpaused_published() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    // Pause contract
+    client.pause(&setup.admin);
+    
+    let all_events = setup.env.events().all();
+    let pause_event = all_events.iter().find(|e| {
+        e.1.get(0).unwrap() == Symbol::new(&setup.env, "ctr_pause")
+    }).expect("Pause event not found");
+    assert_eq!(pause_event.1.get(1).unwrap(), setup.admin);
+
+    // Unpause contract
+    client.unpause(&setup.admin);
+    
+    let all_events = setup.env.events().all();
+    let unpause_event = all_events.iter().find(|e| {
+        e.1.get(0).unwrap() == Symbol::new(&setup.env, "ctr_unp")
+    }).expect("Unpause event not found");
+    assert_eq!(unpause_event.1.get(1).unwrap(), setup.admin);
 }

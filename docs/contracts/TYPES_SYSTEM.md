@@ -52,46 +52,96 @@ provider.is_supported()  // Available on current network (Stellar)
 provider.validate_for_market(&env)?  // Strict validation for new markets
 ```
 
-**Forward Compatibility Strategy:**
-- New providers use descriptive lowercase names with underscores
-- Unknown providers return "Unknown Provider (name)" for display
-- Validation fails safely for unsupported providers
-- No storage migration required for new provider additions
+#### 2. Outcome Deduplication System
 
-**OracleConfig Struct**
+**OutcomeDeduplicator Struct**
+
+The Predictify Hybrid contract includes a comprehensive outcome deduplication system that prevents duplicate or ambiguous outcome strings in prediction markets. This system ensures market clarity and prevents user confusion.
+
+**Key Features:**
+- **Deterministic Normalization**: Consistent string processing for reliable comparison
+- **Case-Insensitive Comparison**: "Yes" == "yes" == "YES"
+- **Whitespace Normalization**: "  yes  " -> "yes"
+- **Punctuation Removal**: "yes!" -> "yes"
+- **Similarity Detection**: Uses Levenshtein distance to detect ambiguous outcomes
+- **Semantic Grouping**: Identifies common synonyms (yes/yeah, no/nope)
+
+**Normalization Process:**
+1. **Trim whitespace**: Remove leading and trailing whitespace
+2. **Case normalization**: Convert to lowercase
+3. **Internal whitespace compression**: Multiple spaces → single space
+4. **Special character removal**: Remove common punctuation (!, ?, ., ,, etc.)
+
+**Validation Rules:**
+- **Exact Duplicates**: Case-insensitive exact matches are rejected
+- **High Similarity**: Outcomes > 80% similar are rejected as ambiguous
+- **Semantic Duplicates**: Common semantic duplicates are rejected
+- **Normalization Validation**: All outcomes must be normalizable
+
+**Usage Examples:**
 ```rust
-pub struct OracleConfig {
-    pub provider: OracleProvider,
-    pub oracle_address: Address,
-    pub feed_id: String,
-    pub threshold: i128,
-    pub comparison: String,
+use predictify_hybrid::validation::OutcomeDeduplicator;
+
+// Normalize individual outcome
+let normalized = OutcomeDeduplicator::normalize_outcome(&outcome)?;
+
+// Calculate similarity between outcomes
+let similarity = OutcomeDeduplicator::calculate_similarity(&outcome1, &outcome2);
+
+// Validate outcomes for duplicates and ambiguities
+OutcomeDeduplicator::validate_outcomes(&outcomes)?;
+
+// Get normalization statistics
+let stats = OutcomeDeduplicator::get_normalization_stats(&outcomes);
+```
+
+**Semantic Duplicate Groups:**
+- **Affirmative**: yes, yeah, yep, true, correct, agree, positive
+- **Negative**: no, nope, false, incorrect, disagree, negative
+- **Neutral**: maybe, possibly, uncertain, unclear, unknown
+
+**Error Types:**
+```rust
+#[contracterror]
+pub enum ValidationError {
+    // ... existing errors
+    DuplicateOutcome,           // Exact duplicate found
+    AmbiguousOutcome,           // Too similar to another outcome
+    OutcomeNormalizationFailed, // Cannot normalize outcome
 }
 ```
 
-**Fallback Sentinel Encoding**
+**Security Considerations:**
+- **Deterministic Processing**: Same input always produces same output
+- **No External Dependencies**: Pure string manipulation
+- **Gas Efficiency**: Optimized for blockchain execution
+- **Attack Resistance**: Hard to bypass through clever formatting
+- **Unicode Safety**: Handles Unicode characters correctly
 
-Optional fallback oracles are stored as a `(has_fallback, fallback_oracle_config)` pair rather
-than `Option<OracleConfig>`. When `has_fallback` is `false`, the contracts write
-`OracleConfig::none_sentinel()` into `fallback_oracle_config`.
+**Integration with Existing Validation:**
+```rust
+// Automatically integrated into existing outcome validation
+InputValidator::validate_outcomes(&outcomes)?;      // Includes deduplication
+MarketValidator::validate_outcomes(&env, &outcomes)?; // Includes deduplication
+```
 
-The reserved sentinel semantics are:
+**Performance Characteristics:**
+- **O(n²) Complexity**: For n outcomes, compares each pair
+- **Early Termination**: Stops on first duplicate/ambiguity found
+- **Optimized Levenshtein**: Efficient similarity calculation
+- **Gas Efficient**: Minimal computational overhead for typical use cases
 
-- `provider_id == "reflector"`
-- `feed_id == ""`
-- `threshold == 0`
-- `comparison == ""`
+**Testing Coverage:**
+- Basic normalization functionality
+- Edge cases (empty strings, Unicode, special characters)
+- Duplicate detection (case, whitespace, punctuation)
+- Ambiguity detection (similarity thresholds)
+- Semantic duplicate groups
+- Integration with existing validators
+- Performance characteristics
+- Attack vectors and security edge cases
 
-That tuple is intentionally outside the valid oracle-config domain:
-
-- valid configs require a non-empty `feed_id`
-- valid configs require `threshold > 0`
-- valid configs require a supported comparison operator such as `gt`, `lt`, or `eq`
-
-Because of those invariants, the sentinel cannot collide with any configuration that is valid for
-live oracle creation or resolution, even if the placeholder `oracle_address` is reused elsewhere.
-
-#### 2. Market Types
+#### 3. Market Types
 
 **Market Struct**
 ```rust

@@ -151,7 +151,7 @@ impl GasTestContext {
             &outcomes,
             &7,
             &OracleConfig {
-                provider: OracleProvider::Reflector,
+                provider: OracleProvider::reflector(),
                 oracle_address: Address::generate(&self.env),
                 feed_id: String::from_str(&self.env, "BTC"),
                 threshold: 1000,
@@ -209,7 +209,7 @@ fn test_gas_create_market_minimal() {
         &outcomes,
         &7,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&ctx.env),
             feed_id: String::from_str(&ctx.env, "BTC"),
             threshold: 1000,
@@ -254,7 +254,7 @@ fn test_gas_create_market_maximal() {
         &outcomes,
         &365,
         &OracleConfig {
-            provider: OracleProvider::Pyth,
+            provider: OracleProvider::pyth(),
             oracle_address: Address::generate(&ctx.env),
             feed_id: String::from_str(&ctx.env, "BTCUSD"),
             threshold: 10000000,
@@ -407,7 +407,7 @@ fn test_gas_operations_within_expected_ranges() {
         &outcomes,
         &30,
         &OracleConfig {
-            provider: OracleProvider::Reflector,
+            provider: OracleProvider::reflector(),
             oracle_address: Address::generate(&ctx.env),
             feed_id: String::from_str(&ctx.env, "BTC"),
             threshold: 1000,
