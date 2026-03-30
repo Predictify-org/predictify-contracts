@@ -14,6 +14,7 @@ Complete API reference for Predictify Hybrid contract, including:
 - **ReflectorAsset Coverage Matrix** - Comprehensive asset testing and validation
 - **Token and Asset Management** - Multi-asset support documentation
 - **[Query Implementation Guide](./api/QUERY_IMPLEMENTATION_GUIDE.md)** - Paginated query API, `PagedResult<T>`, security notes, and integrator quick-start
+  - **NEW**: [Dashboard Statistics Queries](#-dashboard-statistics-queries) - Platform aggregates, market metrics, leaderboards with stable field versioning
 
 ### 🔒 [Security Documentation](./security/)
 
@@ -58,10 +59,24 @@ Claim idempotency and payout tracking:
 ## 🎯 Quick Start
 
 1. **For Developers**: Start with [API Documentation](./api/API_DOCUMENTATION.md)
-2. **For Contract Contributors**: Review [Contract Documentation](./contracts/)
-3. **For Security Auditors**: Review [Security Documentation](./security/)
-4. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
-5. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
+2. **For Dashboard Integrators**: Review [Dashboard Statistics Queries](#-dashboard-statistics-queries) in the Query Implementation Guide
+3. **For Contract Contributors**: Review [Contract Documentation](./contracts/)
+4. **For Security Auditors**: Review [Security Documentation](./security/)
+5. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
+6. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
+
+## 📊 Dashboard Statistics Queries
+
+**NEW**: The Query Implementation Guide now includes comprehensive [Dashboard Statistics Queries](./api/QUERY_IMPLEMENTATION_GUIDE.md#dashboard-statistics-queries-new) with:
+
+- **Platform-Level Aggregates** - `get_dashboard_statistics()` for TVL, active users, and total metrics
+- **Per-Market Metrics** - `get_market_statistics()` for consensus strength and volatility
+- **Category Analytics** - `get_category_statistics()` for filtered market data
+- **User Leaderboards** - `get_top_users_by_winnings()` and `get_top_users_by_win_rate()` for rankings
+
+All response types use stable `V1` versioning for forward compatibility without breaking changes.
+
+**Use cases**: Dashboard display, analytics filtering, leaderboard rendering, TVL tracking
 
 
 ## 🔗 Related Resources
@@ -90,5 +105,5 @@ When adding new documentation:
 
 ---
 
-*Last updated: 2026-03-27*
-*For questions or suggestions about documentation, please open an issue in the repository.* 
+*Last updated: 2026-03-30*
+*For questions or suggestions about documentation, please open an issue in the repository.*
