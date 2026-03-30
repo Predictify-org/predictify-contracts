@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use alloc::{format, string::ToString};
+use alloc::{
+    format,
+    string::{String as StdString, ToString},
+};
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
@@ -3597,6 +3600,22 @@ pub struct Event {
 }
 
 impl ReflectorAsset {
+    fn soroban_string_to_host_string(value: &String) -> StdString {
+        let mut bytes = alloc::vec![0u8; value.len() as usize];
+        value.copy_into_slice(&mut bytes);
+        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn custom_symbol_to_host_string(symbol: &Symbol) -> StdString {
+        symbol.to_string()
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn custom_symbol_to_host_string(_symbol: &Symbol) -> StdString {
+        StdString::from("CUSTOM")
+    }
+
     /// Check if this asset is Stellar Lumens (XLM)
     pub fn is_xlm(&self) -> bool {
         matches!(self, ReflectorAsset::Stellar)
@@ -3609,7 +3628,9 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH"),
-            ReflectorAsset::Other(symbol) => String::from_str(&env, &symbol.to_string()),
+            ReflectorAsset::Other(symbol) => {
+                String::from_str(&env, &Self::custom_symbol_to_host_string(symbol))
+            }
         }
     }
 
@@ -3621,7 +3642,8 @@ impl ReflectorAsset {
             ReflectorAsset::BTC => String::from_str(&env, "Bitcoin"),
             ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
             ReflectorAsset::Other(symbol) => {
-                String::from_str(&env, &format!("Custom Asset ({})", symbol.to_string()))
+                let symbol_name = Self::custom_symbol_to_host_string(symbol);
+                String::from_str(&env, &format!("Custom Asset ({symbol_name})"))
             }
         }
     }
@@ -3643,7 +3665,10 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM/USD"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
-            ReflectorAsset::Other(symbol) => String::from_str(&env, &format!("{}/USD", symbol.to_string())),
+            ReflectorAsset::Other(symbol) => {
+                let symbol_name = Self::custom_symbol_to_host_string(symbol);
+                String::from_str(&env, &format!("{symbol_name}/USD"))
+            }
         }
     }
 
@@ -3671,7 +3696,7 @@ impl ReflectorAsset {
     /// Creates a ReflectorAsset from a symbol string
     pub fn from_symbol(symbol: String) -> Self {
         let env = soroban_sdk::Env::default();
-        let symbol_str = symbol.to_string();
+        let symbol_str = Self::soroban_string_to_host_string(&symbol);
         match symbol_str.as_str() {
             "XLM" => ReflectorAsset::Stellar,
             "BTC" => ReflectorAsset::BTC,
