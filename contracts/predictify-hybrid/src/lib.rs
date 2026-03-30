@@ -26,6 +26,7 @@ mod event_archive;
 mod events;
 mod extensions;
 mod fees;
+mod gas;
 mod governance;
 mod graceful_degradation;
 mod market_analytics;
