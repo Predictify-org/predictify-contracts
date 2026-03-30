@@ -208,6 +208,7 @@ println!("BTC feed ID: {}", btc_feed); // "BTC/USD"
 Represents a Stellar asset/token with contract address and metadata.
 
 ```rust
+#[soroban_sdk::contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Asset {
     pub contract: Address,
@@ -230,9 +231,9 @@ impl Asset {
     pub fn matches_reflector_asset(&self, env: &Env, reflector_asset: &ReflectorAsset) -> bool;
 
     /// Get human-readable asset name
-    pub fn name(&self) -> String;
+    pub fn name(&self, env: &Env) -> String;
 
-    /// Check if this is a native XLM asset (contract is zero address)
+    /// Check if this is a native XLM asset
     pub fn is_native_xlm(&self, env: &Env) -> bool;
 
     /// Validate asset for market creation
@@ -389,6 +390,46 @@ TokenRegistry::add_global(&env, &usdc_asset);
 
 // Validate asset usage
 TokenRegistry::validate_asset(&env, &usdc_asset, None)?;
+```
+
+### SAC Token Operations
+
+Predictify Hybrid provides high-level operations for interacting with Stellar Asset Contracts (SAC) through the standard Soroban token interface.
+
+#### `transfer_token()`
+Transfers tokens from one address to another (requires sender's authorization).
+```rust
+pub fn transfer_token(env: &Env, asset: &Asset, from: &Address, to: &Address, amount: i128);
+```
+
+#### `approve_token()`
+Approves a spender to use a specified amount of tokens from the owner.
+```rust
+pub fn approve_token(env: &Env, asset: &Asset, from: &Address, spender: &Address, amount: i128, expiration_ledger: u32);
+```
+
+#### `transfer_from_token()`
+Transfers tokens using a previously granted allowance (requires spender's authorization).
+```rust
+pub fn transfer_from_token(env: &Env, asset: &Asset, spender: &Address, from: &Address, to: &Address, amount: i128);
+```
+
+#### `get_token_balance()`
+Retrieves the token balance for a specified address.
+```rust
+pub fn get_token_balance(env: &Env, asset: &Asset, address: &Address) -> i128;
+```
+
+#### `get_token_allowance()`
+Retrieves the allowance granted by an owner to a spender.
+```rust
+pub fn get_token_allowance(env: &Env, asset: &Asset, owner: &Address, spender: &Address) -> i128;
+```
+
+#### `validate_token_operation()`
+Validates a token operation by checking asset validity and user balance.
+```rust
+pub fn validate_token_operation(env: &Env, asset: &Asset, user: &Address, amount: i128) -> Result<(), Error>;
 ```
 
 ---
