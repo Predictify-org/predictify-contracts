@@ -26,6 +26,7 @@ mod event_archive;
 mod events;
 mod extensions;
 mod fees;
+mod gas;
 mod governance;
 mod graceful_degradation;
 mod market_analytics;
@@ -85,6 +86,11 @@ mod upgrade_manager_tests;
 
 #[cfg(test)]
 mod query_tests;
+
+#[cfg(test)]
+mod gas_test;
+#[cfg(test)]
+mod gas_tracking_tests;
 #[cfg(any())]
 mod bet_tests;
 
@@ -438,6 +444,7 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
+        let gas_marker = GasTracker::start_tracking(&env);
         // Authenticate that the caller is the admin
         admin.require_auth();
 
@@ -508,14 +515,15 @@ impl PredictifyHybrid {
         // Store the market
         env.storage().persistent().set(&market_id, &market);
 
-        // Emit market created event
-        EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, end_time);
+        // Emit events
+        EventEmitter::emit_market_created(&env, &market_id, &admin, &question, &outcomes);
 
         // Record statistics
         statistics::StatisticsManager::record_market_created(&env);
 
         crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketCreated, admin.clone(), Map::new(&env));
 
+        GasTracker::end_tracking(&env, symbol_short!("create"), gas_marker);
         market_id
     }
 
@@ -709,6 +717,7 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
+        let gas_marker = GasTracker::start_tracking(&env);
         user.require_auth();
 
         let mut market: Market = env
@@ -750,6 +759,8 @@ impl PredictifyHybrid {
 
         // Emit vote cast event
         EventEmitter::emit_vote_cast(&env, &market_id, &user, &outcome, stake);
+
+        GasTracker::end_tracking(&env, symbol_short!("vote"), gas_marker);
     }
 
     /// Places a bet on a prediction market event by locking user funds.
@@ -1616,6 +1627,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         winning_outcome: String,
     ) {
+        let gas_marker = GasTracker::start_tracking(&env);
         admin.require_auth();
 
         // Verify admin
@@ -1694,6 +1706,8 @@ impl PredictifyHybrid {
 
         // Automatically distribute payouts to winners after resolution
         let _ = Self::distribute_payouts(env.clone(), market_id);
+
+        GasTracker::end_tracking(&env, symbol_short!("res_man"), gas_marker);
     }
 
     /// Resolves a market with multiple winning outcomes (for tie cases).
