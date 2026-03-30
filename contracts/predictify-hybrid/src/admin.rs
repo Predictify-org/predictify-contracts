@@ -3509,7 +3509,7 @@ impl AdminTesting {
             action: String::from_str(env, "test_action"),
             target: Some(String::from_str(env, "test_target")),
             parameters: Map::new(env),
-            timestamp: env.ledger().timestamp(),
+            timestamp: env.ledger().timestamp().max(1),
             success: true,
             error_message: None,
         }

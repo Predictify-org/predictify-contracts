@@ -3,7 +3,7 @@ use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;
-use crate::types::MarketState;
+use crate::types::{ClaimInfo, MarketState};
 use crate::Error;
 
 // ===== RECOVERY TYPES =====
@@ -214,7 +214,7 @@ impl RecoveryManager {
             if let Some(stake) = market.stakes.get(user.clone()) {
                 if stake > 0 {
                     // For now just mark claimed and reduce total; real implementation would transfer tokens
-                    market.claimed.set(user.clone(), true);
+                    market.claimed.set(user.clone(), ClaimInfo::new(env, stake));
                     market.total_staked = market.total_staked - stake;
                     total_refunded += stake;
                 }
