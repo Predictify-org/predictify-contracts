@@ -3,7 +3,7 @@ use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;
-use crate::types::MarketState;
+use crate::types::{ClaimInfo, MarketState};
 use crate::Error;
 
 // ===== RECOVERY TYPES =====

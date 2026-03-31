@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use soroban_sdk::{contracttype, symbol_short, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol};
 
 /// Stores the gas limit configured by an admin for a specific operation.
 #[contracttype]
@@ -65,5 +65,11 @@ impl GasTracker {
                 panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
             }
         }
+    }
+
+    /// Test helper to set the expected cost for an operation.
+    #[cfg(test)]
+    pub fn set_test_cost(env: &Env, cost: u64) {
+        env.storage().temporary().set(&symbol_short!("t_gas"), &cost);
     }
 }

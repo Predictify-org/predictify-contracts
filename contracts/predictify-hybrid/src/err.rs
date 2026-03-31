@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use alloc::format;
-use alloc::string::ToString;
+use alloc::string::{String as StdString, ToString};
 use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol, Vec};
 
 /// Comprehensive error codes for the Predictify Hybrid prediction market contract.
@@ -452,6 +452,12 @@ pub struct ErrorRecoveryStatus {
 pub struct ErrorHandler;
 
 impl ErrorHandler {
+    fn soroban_string_to_host_string(value: &String) -> StdString {
+        let mut bytes = alloc::vec![0u8; value.len() as usize];
+        value.copy_into_slice(&mut bytes);
+        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+    }
+
     // ===== PUBLIC API =====
 
     /// Categorizes an error with full classification, severity, recovery strategy, and messages.
@@ -1316,12 +1322,13 @@ impl ErrorHandler {
     ///
     /// A `String` formatted as: `code=NNN (STRING_CODE) ts=TIMESTAMP op=OPERATION`
     fn get_technical_details(env: &Env, error: &Error, context: &ErrorContext) -> String {
+        let operation = Self::soroban_string_to_host_string(&context.operation);
         let detail = format!(
             "code={} ({}) ts={} op={}",
             *error as u32,
             error.code(),
             context.timestamp,
-            context.operation.to_string(),
+            operation,
         );
         String::from_str(env, &detail)
     }

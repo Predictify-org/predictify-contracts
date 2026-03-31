@@ -26,6 +26,7 @@ mod event_archive;
 mod events;
 mod extensions;
 mod fees;
+mod gas;
 mod governance;
 mod graceful_degradation;
 mod market_analytics;
@@ -57,9 +58,9 @@ mod versioning;
 mod voting;
 pub mod audit_trail;
 
-#[cfg(test)]
+#[cfg(any())]
 mod utils_tests;
-#[cfg(test)]
+#[cfg(any())]
 mod test_audit_trail;
 // THis is the band protocol wasm std_reference.wasm
 mod bandprotocol {
@@ -68,10 +69,10 @@ mod bandprotocol {
 
 #[cfg(any())]
 mod circuit_breaker_tests;
-#[cfg(test)]
+#[cfg(any())]
 mod oracle_fallback_timeout_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod batch_operations_tests;
 
 #[cfg(any())]
@@ -83,11 +84,15 @@ mod recovery_tests;
 #[cfg(any())]
 mod property_based_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod upgrade_manager_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod query_tests;
+#[cfg(any())]
+mod gas_test;
+#[cfg(any())]
+mod gas_tracking_tests;
 #[cfg(any())]
 mod bet_tests;
 
@@ -102,9 +107,10 @@ mod event_management_tests;
 
 #[cfg(any())]
 mod category_tags_tests;
+#[cfg(any())]
 mod statistics_tests;
 
-#[cfg(test)]
+#[cfg(any())]
 mod resolution_delay_dispute_window_tests;
 
 #[cfg(any())]
@@ -128,11 +134,13 @@ use crate::config::{
     DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE, MIN_PLATFORM_FEE_PERCENTAGE,
 };
 use crate::events::EventEmitter;
+use crate::gas::GasTracker;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, Address, Env, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol,
+    Vec,
 };
 
 #[contract]

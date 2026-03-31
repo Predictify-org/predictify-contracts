@@ -321,7 +321,7 @@ fn test_asset_from_reflector_asset() {
     
     assert_eq!(btc_asset.contract, contract_address);
     assert_eq!(btc_asset.symbol, Symbol::new(&env, "BTC"));
-    assert_eq!(btc_asset.decimals(), 8);
+    assert_eq!(btc_asset.decimals, 8);
 }
 
 #[test]
@@ -365,10 +365,10 @@ fn test_asset_name_methods() {
         decimals: 9,
     };
     
-    assert_eq!(xlm_asset.name().to_string(), "Stellar Lumens");
-    assert_eq!(btc_asset.name().to_string(), "Bitcoin");
-    assert_eq!(usdc_asset.name().to_string(), "USD Coin");
-    assert!(custom_asset.name().to_string().contains("CUSTOM"));
+    assert_eq!(xlm_asset.name(&env).to_string(), "Stellar Lumens");
+    assert_eq!(btc_asset.name(&env).to_string(), "Bitcoin");
+    assert_eq!(usdc_asset.name(&env).to_string(), "USD Coin");
+    assert!(custom_asset.name(&env).to_string().contains("CUSTOM"));
 }
 
 #[test]
@@ -557,4 +557,85 @@ fn test_comprehensive_reflector_asset_matrix() {
         let feed_id = asset.feed_id().to_string();
         assert!(feed_id.contains("/USD"));
     }
+}
+
+// ===== SAC TOKEN INTEGRATION TESTS =====
+
+#[test]
+fn test_sac_token_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    let spender = Address::generate(&env);
+    
+    // Register a dummy token contract to simulate SAC
+    let token_id = env.register_stellar_asset_contract(admin.clone());
+    let token_client = token::Client::new(&env, &token_id);
+    let asset = crate::tokens::Asset::new(token_id.clone(), Symbol::new(&env, "TEST"), 7);
+    
+    // 1. Test Mint & Balance (Setup)
+    token_client.mint(&user1, &1000);
+    assert_eq!(crate::tokens::get_token_balance(&env, &asset, &user1), 1000);
+    
+    // 2. Test Transfer
+    crate::tokens::transfer_token(&env, &asset, &user1, &user2, 400);
+    assert_eq!(crate::tokens::get_token_balance(&env, &asset, &user1), 600);
+    assert_eq!(crate::tokens::get_token_balance(&env, &asset, &user2), 400);
+    
+    // 3. Test Approve & Allowance
+    let expiration = env.ledger().sequence() + 100;
+    crate::tokens::approve_token(&env, &asset, &user1, &spender, 200, expiration);
+    assert_eq!(crate::tokens::get_token_allowance(&env, &asset, &user1, &spender), 200);
+    
+    // 4. Test Transfer From
+    crate::tokens::transfer_from_token(&env, &asset, &spender, &user1, &user2, 100);
+    assert_eq!(crate::tokens::get_token_balance(&env, &asset, &user1), 500);
+    assert_eq!(crate::tokens::get_token_balance(&env, &asset, &user2), 500);
+    assert_eq!(crate::tokens::get_token_allowance(&env, &asset, &user1, &spender), 100);
+}
+
+#[test]
+fn test_sac_token_failure_modes() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    
+    let token_id = env.register_stellar_asset_contract(admin.clone());
+    let token_client = token::Client::new(&env, &token_id);
+    let asset = crate::tokens::Asset::new(token_id.clone(), Symbol::new(&env, "TEST"), 7);
+    
+    token_client.mint(&user, &100);
+    
+    // 1. Test insufficient balance with check_token_balance
+    assert!(crate::tokens::check_token_balance(&env, &asset, &user, 101).is_err());
+    assert!(crate::tokens::check_token_balance(&env, &asset, &user, 100).is_ok());
+    
+    // 2. Test transfer failing due to balance (panics in Soroban)
+    let result = std::panic::catch_unwind(|| {
+        crate::tokens::transfer_token(&env, &asset, &user, &recipient, 101);
+    });
+    assert!(result.is_err());
+    
+    // 3. Test validate_token_operation
+    assert!(crate::tokens::validate_token_operation(&env, &asset, &user, 100).is_ok());
+    assert!(crate::tokens::validate_token_operation(&env, &asset, &user, 0).is_err()); // Invalid amount
+    assert!(crate::tokens::validate_token_operation(&env, &asset, &user, 101).is_err()); // Insufficient balance
+}
+
+#[test]
+fn test_asset_native_xlm_detection() {
+    let env = Env::default();
+    
+    // Our is_native_xlm heuristic currently checks the symbol "XLM".
+    let asset = crate::tokens::Asset::new(Address::generate(&env), Symbol::new(&env, "XLM"), 7);
+    assert!(asset.is_native_xlm(&env));
+    
+    let btc = crate::tokens::Asset::new(Address::generate(&env), Symbol::new(&env, "BTC"), 8);
+    assert!(!btc.is_native_xlm(&env));
 }

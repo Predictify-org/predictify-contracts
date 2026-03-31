@@ -3251,6 +3251,15 @@ pub struct UserBetQuery {
     pub dispute_stake: i128,
 }
 
+/// Paginated response containing user bet query rows.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UserBetPagedResult {
+    pub items: Vec<UserBetQuery>,
+    pub next_cursor: u32,
+    pub total_count: u32,
+}
+
 /// User balance and account status query response.
 ///
 /// Provides comprehensive view of a user's account with current balance
@@ -3634,6 +3643,22 @@ pub struct Event {
 }
 
 impl ReflectorAsset {
+    fn soroban_string_to_host_string(value: &String) -> StdString {
+        let mut bytes = alloc::vec![0u8; value.len() as usize];
+        value.copy_into_slice(&mut bytes);
+        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn custom_symbol_to_host_string(symbol: &Symbol) -> StdString {
+        symbol.to_string()
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn custom_symbol_to_host_string(_symbol: &Symbol) -> StdString {
+        StdString::from("CUSTOM")
+    }
+
     /// Check if this asset is Stellar Lumens (XLM)
     pub fn is_xlm(&self) -> bool {
         matches!(self, ReflectorAsset::Stellar)
