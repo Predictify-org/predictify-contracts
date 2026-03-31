@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use alloc::string::ToString;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
@@ -390,35 +391,6 @@ impl OracleProvider {
         }
     }
 
-    pub fn name(&self, env: &Env) -> String {
-        match self {
-            OracleProvider::Reflector => String::from_str(env, "Reflector"),
-            OracleProvider::Pyth => String::from_str(env, "Pyth Network"),
-            OracleProvider::BandProtocol => String::from_str(env, "Band Protocol"),
-            OracleProvider::DIA => String::from_str(env, "DIA"),
-        // Since soroban_sdk::String doesn't have easy conversion to &str,
-        // we'll use a different approach based on the provider_id content
-        let env = soroban_sdk::Env::default();
-        
-        // Compare with known provider IDs
-        let reflector_id = String::from_str(&env, "reflector");
-        let pyth_id = String::from_str(&env, "pyth");
-        let band_id = String::from_str(&env, "band_protocol");
-        let dia_id = String::from_str(&env, "dia");
-        
-        if self.provider_id == reflector_id {
-            "reflector"
-        } else if self.provider_id == pyth_id {
-            "pyth"
-        } else if self.provider_id == band_id {
-            "band_protocol"
-        } else if self.provider_id == dia_id {
-            "dia"
-        } else {
-            "unknown"
-        }
-    }
-
     /// Returns a human-readable name for the oracle provider.
     ///
     /// This method provides formatted display names for UI and logging purposes.
@@ -517,7 +489,7 @@ impl OracleProvider {
     pub fn is_supported(&self) -> bool {
         matches!(self, OracleProvider::Reflector)
     }
-    
+
     pub fn is_reflector(&self) -> bool {
         matches!(self, OracleProvider::Reflector)
     }
@@ -3333,44 +3305,27 @@ pub struct MultipleBetsQuery {
     pub winning_bets: u32,
 }
 
-/// Generic paginated query result.
+/// Paginated market ID query result.
 ///
-/// Wraps any `Vec<T>` result with a cursor that callers pass back on the next
-/// request to continue iteration.  When `next_cursor` equals `total_count` (or
-/// `items` is shorter than the requested limit) the caller has reached the end.
-///
-/// # Pagination Protocol
-///
-/// ```text
-/// 1. Call with cursor = 0, limit = N
-/// 2. Receive PagedResult { items, next_cursor, total_count }
-/// 3. If items.len() < N  →  last page, stop.
-/// 4. Otherwise call again with cursor = next_cursor.
-/// ```
-///
-/// # Security
-///
-/// `limit` is always capped server-side at `MAX_PAGE_SIZE` (50) so callers
-/// cannot force unbounded Vec allocations.
-///
-/// # Example
-///
-/// ```rust
-/// # use soroban_sdk::{Env, vec, String};
-/// # use predictify_hybrid::types::PagedResult;
-/// # let env = Env::default();
-/// let page: PagedResult<String> = PagedResult {
-///     items: vec![&env, String::from_str(&env, "item1")],
-///     next_cursor: 1,
-///     total_count: 5,
-/// };
-/// assert_eq!(page.next_cursor, 1);
-/// ```
+/// Use `next_cursor` in the next call to continue iteration.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PagedResult<T: soroban_sdk::Val> {
-    /// Items in this page.
-    pub items: Vec<T>,
+pub struct PagedMarketIds {
+    /// Market IDs in this page.
+    pub items: Vec<Symbol>,
+    /// Cursor to pass on the next call (index of the first un-returned item).
+    pub next_cursor: u32,
+    /// Total number of items available (best-effort; may be approximate for
+    /// filtered queries).
+    pub total_count: u32,
+}
+
+/// Paginated user bet query result.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PagedUserBets {
+    /// Bets in this page.
+    pub items: Vec<UserBetQuery>,
     /// Cursor to pass on the next call (index of the first un-returned item).
     pub next_cursor: u32,
     /// Total number of items available (best-effort; may be approximate for
@@ -3659,7 +3614,7 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH"),
-            ReflectorAsset::Other(symbol) => symbol.clone(),
+            ReflectorAsset::Other(symbol) => String::from_str(&env, symbol.to_string().as_str()),
         }
     }
 
@@ -3670,11 +3625,10 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "Stellar Lumens"),
             ReflectorAsset::BTC => String::from_str(&env, "Bitcoin"),
             ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
-            ReflectorAsset::Other(symbol) => {
-                let prefix = String::from_str(&env, "Custom Asset (");
-                let suffix = String::from_str(&env, ")");
-                prefix + symbol + suffix
-            }
+            ReflectorAsset::Other(symbol) => String::from_str(
+                &env,
+                &alloc::format!("Custom Asset ({})", symbol.to_string()),
+            ),
         }
     }
 
@@ -3696,8 +3650,7 @@ impl ReflectorAsset {
             ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
             ReflectorAsset::Other(symbol) => {
-                let suffix = String::from_str(&env, "/USD");
-                symbol.clone() + &suffix
+                String::from_str(&env, &alloc::format!("{}/USD", symbol.to_string()))
             }
         }
     }
@@ -3724,34 +3677,40 @@ impl ReflectorAsset {
     }
 
     /// Creates a ReflectorAsset from a symbol string
-    pub fn from_symbol(symbol: String) -> Self {
+    pub fn from_symbol(env: &Env, symbol: String) -> Self {
         match symbol.to_string().as_str() {
             "XLM" => ReflectorAsset::Stellar,
             "BTC" => ReflectorAsset::BTC,
             "ETH" => ReflectorAsset::ETH,
-            _ => ReflectorAsset::Other(symbol),
+            _ => ReflectorAsset::Other(Symbol::new(env, symbol.to_string().as_str())),
         }
     }
 
     /// Returns all supported assets for testing purposes
     pub fn all_supported() -> Vec<Self> {
         let env = soroban_sdk::Env::default();
-        Vec::from_array(&env, [
-            ReflectorAsset::Stellar,
-            ReflectorAsset::BTC,
-            ReflectorAsset::ETH,
-        ])
+        Vec::from_array(
+            &env,
+            [
+                ReflectorAsset::Stellar,
+                ReflectorAsset::BTC,
+                ReflectorAsset::ETH,
+            ],
+        )
     }
 
     /// Returns all known assets (including unsupported) for testing purposes
     pub fn all_known() -> Vec<Self> {
         let env = soroban_sdk::Env::default();
-        Vec::from_array(&env, [
-            ReflectorAsset::Stellar,
-            ReflectorAsset::BTC,
-            ReflectorAsset::ETH,
-            ReflectorAsset::Other(Symbol::new(&env, "CUSTOM")),
-        ])
+        Vec::from_array(
+            &env,
+            [
+                ReflectorAsset::Stellar,
+                ReflectorAsset::BTC,
+                ReflectorAsset::ETH,
+                ReflectorAsset::Other(Symbol::new(&env, "CUSTOM")),
+            ],
+        )
     }
 }
 
@@ -3809,7 +3768,10 @@ mod tests {
             MarketState::Active,
         );
 
-        assert_eq!(market.validate(&env), Err(crate::Error::InvalidOracleConfig));
+        assert_eq!(
+            market.validate(&env),
+            Err(crate::Error::InvalidOracleConfig)
+        );
     }
 
     #[test]

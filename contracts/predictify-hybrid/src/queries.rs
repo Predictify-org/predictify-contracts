@@ -19,7 +19,7 @@
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
-    types::{Market, MarketState, PagedResult},
+    types::{Market, MarketState, PagedMarketIds, PagedUserBets},
     voting::VotingStats,
 };
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
@@ -92,7 +92,7 @@ impl QueryManager {
         let vote_count = market.votes.len() as u32;
 
         // Get oracle provider name
-        let oracle_provider = market.oracle_config.provider.name(env);
+        let oracle_provider = market.oracle_config.provider.name();
         let winning_outcome = market.get_winning_outcome();
 
         let response = EventDetailsQuery {
@@ -102,7 +102,6 @@ impl QueryManager {
             created_at: 0, // TODO: Retrieve from storage if available
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
-            oracle_provider,
             oracle_provider: oracle_provider,
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
@@ -177,7 +176,7 @@ impl QueryManager {
     ///
     /// # Returns
     ///
-    /// * `Ok(PagedResult<Symbol>)` - Page of market IDs with pagination metadata
+    /// * `Ok(PagedMarketIds)` - Page of market IDs with pagination metadata
     /// * `Err(Error::ContractStateError)` - If market index is corrupted
     ///
     /// # Example
@@ -193,7 +192,7 @@ impl QueryManager {
         env: &Env,
         cursor: u32,
         limit: u32,
-    ) -> Result<PagedResult<Symbol>, Error> {
+    ) -> Result<PagedMarketIds, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
         let all = Self::get_all_markets(env)?;
         let total_count = all.len();
@@ -207,7 +206,7 @@ impl QueryManager {
         }
 
         let next_cursor = cursor + items.len();
-        Ok(PagedResult {
+        Ok(PagedMarketIds {
             items,
             next_cursor,
             total_count,
@@ -263,7 +262,11 @@ impl QueryManager {
 
         let stake_amount = market.stakes.get(user.clone()).ok_or(Error::InvalidInput)?;
 
-        let has_claimed = market.claimed.get(user.clone()).unwrap_or(false);
+        let has_claimed = market
+            .claimed
+            .get(user.clone())
+            .map(|info| info.is_claimed())
+            .unwrap_or(false);
 
         // Determine if user is winning (supports single or multiple winning outcomes / ties)
         let is_winning = market
@@ -352,7 +355,7 @@ impl QueryManager {
     ///
     /// # Returns
     ///
-    /// * `Ok(PagedResult<UserBetQuery>)` - Page of bets with pagination metadata
+    /// * `Ok(PagedUserBets)` - Page of bets with pagination metadata
     ///
     /// # Example
     ///
@@ -369,7 +372,7 @@ impl QueryManager {
         user: Address,
         cursor: u32,
         limit: u32,
-    ) -> Result<PagedResult<UserBetQuery>, Error> {
+    ) -> Result<PagedUserBets, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
         let all_markets = Self::get_all_markets(env)?;
         let total_count = all_markets.len();
@@ -385,7 +388,7 @@ impl QueryManager {
         }
 
         let next_cursor = core::cmp::min(cursor + limit, total_count);
-        Ok(PagedResult {
+        Ok(PagedUserBets {
             items,
             next_cursor,
             total_count,
