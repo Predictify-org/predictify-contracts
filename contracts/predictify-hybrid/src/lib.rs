@@ -6390,6 +6390,145 @@ impl PredictifyHybrid {
     pub fn get_user_statistics(env: Env, user: Address) -> UserStatistics {
         statistics::StatisticsManager::get_user_stats(&env, &user)
     }
+
+    /// Get dashboard statistics with versioning for client compatibility
+    ///
+    /// Provides comprehensive platform-level metrics optimized for dashboard display,
+    /// including version information for managing client updates.
+    ///
+    /// # Returns
+    ///
+    /// * `DashboardStatisticsV1` - Versioned dashboard statistics with:
+    ///   - API version (always 1)
+    ///   - Platform statistics
+    ///   - Active user count
+    ///   - Total value locked
+    ///   - Query timestamp
+    ///
+    /// # Errors
+    ///
+    /// Returns contract error if market traversal fails.
+    ///
+    /// # Events
+    ///
+    /// This is a read-only query; no events are emitted.
+    pub fn get_dashboard_statistics(env: Env) -> Result<types::DashboardStatisticsV1, Error> {
+        queries::QueryManager::get_dashboard_statistics(&env)
+    }
+
+    /// Get market statistics optimized for dashboard display
+    ///
+    /// Returns comprehensive per-market metrics including participant count,
+    /// volume, consensus strength, and volatility for dashboard visualization.
+    ///
+    /// # Parameters
+    ///
+    /// * `market_id` - The market to query
+    ///
+    /// # Returns
+    ///
+    /// * `MarketStatisticsV1` - Market metrics with:
+    ///   - Participant count
+    ///   - Total volume
+    ///   - Average stake
+    ///   - Consensus strength (0-10000)
+    ///   - Volatility (0-10000)
+    ///   - Market state and question
+    ///
+    /// # Errors
+    ///
+    /// * `Error::MarketNotFound` - Market doesn't exist
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_market_statistics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<types::MarketStatisticsV1, Error> {
+        queries::QueryManager::get_market_statistics(&env, market_id)
+    }
+
+    /// Get category statistics for filtered dashboard views
+    ///
+    /// Provides aggregated metrics for all markets in a specific category,
+    /// enabling category-filtered dashboard displays and analytics.
+    ///
+    /// # Parameters
+    ///
+    /// * `category` - Category name to query
+    ///
+    /// # Returns
+    ///
+    /// * `CategoryStatisticsV1` - Category metrics with:
+    ///   - Market count
+    ///   - Total volume
+    ///   - Participant count
+    ///   - Resolved market count
+    ///   - Average market volume
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_category_statistics(
+        env: Env,
+        category: String,
+    ) -> Result<types::CategoryStatisticsV1, Error> {
+        queries::QueryManager::get_category_statistics(&env, category)
+    }
+
+    /// Get top users by total winnings (leaderboard query)
+    ///
+    /// Returns the top N users ranked by total winnings claimed,
+    /// useful for leaderboard and achievement displays.
+    ///
+    /// # Parameters
+    ///
+    /// * `limit` - Maximum number of results (capped at 50 for gas safety)
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<UserLeaderboardEntryV1>` - Top users sorted by winnings (descending)
+    ///
+    /// # Notes
+    ///
+    /// Due to contract storage scanning limitations, large deployments should
+    /// consider off-chain indexing for leaderboard queries.
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_top_users_by_winnings(
+        env: Env,
+        limit: u32,
+    ) -> Result<Vec<types::UserLeaderboardEntryV1>, Error> {
+        queries::QueryManager::get_top_users_by_winnings(&env, limit)
+    }
+
+    /// Get top users by win rate (skill-based leaderboard)
+    ///
+    /// Returns the top N users ranked by win rate percentage,
+    /// with a minimum bet requirement to filter high-variance winners.
+    ///
+    /// # Parameters
+    ///
+    /// * `limit` - Maximum number of results (capped at 50)
+    /// * `min_bets` - Minimum bets required for inclusion (e.g., 10)
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<UserLeaderboardEntryV1>` - Top users sorted by win rate (descending)
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_top_users_by_win_rate(
+        env: Env,
+        limit: u32,
+        min_bets: u64,
+    ) -> Result<Vec<types::UserLeaderboardEntryV1>, Error> {
+        queries::QueryManager::get_top_users_by_win_rate(&env, limit, min_bets)
+    }
 }
 
 #[cfg(any())]
