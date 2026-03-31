@@ -4173,3 +4173,110 @@ impl EventDocumentation {
         examples
     }
 }
+
+// ===== ORACLE CALLBACK AUTHENTICATION EVENTS =====
+
+/// Emit oracle callback authentication event
+///
+/// This event is emitted when an oracle callback is successfully authenticated
+/// and processed, providing audit trail for oracle data updates.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `oracle_address` - Address of the oracle contract
+/// * `feed_id` - Feed identifier for the oracle data
+/// * `price` - Price data from the oracle
+/// * `timestamp` - Timestamp of the oracle data
+pub fn emit_oracle_callback(
+    env: &Env,
+    oracle_address: &Address,
+    feed_id: &String,
+    price: i128,
+    timestamp: u64,
+) {
+    env.events().publish(
+        (
+            Symbol::new(env, "oracle_callback"),
+            oracle_address,
+            feed_id,
+            price,
+            timestamp,
+        ),
+        (),
+    );
+}
+
+/// Emit security event for monitoring and audit
+///
+/// This event is emitted for security-related events including
+/// authentication failures, authorization issues, and other security events.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `actor` - Address of the actor involved in the event
+/// * `message` - Security event message
+pub fn emit_security_event(
+    env: &Env,
+    actor: &Address,
+    message: &String,
+) {
+    env.events().publish(
+        (
+            Symbol::new(env, "security_event"),
+            actor,
+            message,
+            env.ledger().timestamp(),
+        ),
+        (),
+    );
+}
+
+/// Emit oracle degradation event
+///
+/// This event is emitted when an oracle experiences degradation or failure,
+/// providing monitoring and alerting capabilities.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `oracle` - Oracle provider experiencing degradation
+/// * `reason` - Reason for the degradation
+pub fn emit_oracle_degradation(
+    env: &Env,
+    oracle: &OracleProvider,
+    reason: &String,
+) {
+    env.events().publish(
+        (
+            Symbol::new(env, "oracle_degradation"),
+            oracle,
+            reason,
+            env.ledger().timestamp(),
+        ),
+        (),
+    );
+}
+
+/// Emit manual resolution required event
+///
+/// This event is emitted when manual resolution is required due to
+/// insufficient oracle data quality or confidence.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `market_id` - Market identifier requiring manual resolution
+/// * `reason` - Reason for manual resolution requirement
+pub fn emit_manual_resolution_required(
+    env: &Env,
+    market_id: &Symbol,
+    reason: &String,
+) {
+    env.events().publish(
+        (
+            Symbol::new(env, "manual_resolution_required"),
+            market_id,
+            reason,
+            env.ledger().timestamp(),
+        ),
+        (),
+    );
+}
