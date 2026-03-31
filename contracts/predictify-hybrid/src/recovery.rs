@@ -214,7 +214,9 @@ impl RecoveryManager {
             if let Some(stake) = market.stakes.get(user.clone()) {
                 if stake > 0 {
                     // For now just mark claimed and reduce total; real implementation would transfer tokens
-                    market.claimed.set(user.clone(), ClaimInfo::new(env, stake));
+                    market
+                        .claimed
+                        .set(user.clone(), crate::types::ClaimInfo::new(env, stake));
                     market.total_staked = market.total_staked - stake;
                     total_refunded += stake;
                 }
@@ -272,8 +274,8 @@ fn symbol_to_string(env: &Env, sym: &Symbol) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
     use alloc::string::ToString;
+    use soroban_sdk::testutils::Address as _;
 
     struct RecoveryTest {
         env: Env,

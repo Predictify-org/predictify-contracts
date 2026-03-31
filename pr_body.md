@@ -74,3 +74,41 @@ All existing error tests continue to pass:
 - ✗ Not validating error descriptions against contract specification (deferred to documentation)
 - ✗ Not implementing persistent error audit trails (on-chain logging is stateless)
 - ✗ Not adding encryption/signing to error messages (external systems handle transport security)
+---
+
+## Soroban SDK Workspace Version Audit
+
+**Summary:** Align the workspace dependency baseline with the supported Stellar/Soroban release line by updating the root workspace dependency from `soroban-sdk = "22.0.0"` to `soroban-sdk = "25.0.0"` and documenting the required post-bump verification.
+
+### Key Changes
+
+- **Workspace dependency bump:** Updated the root workspace dependency in `Cargo.toml` so all contract crates inherit Soroban SDK `25.0.0`.
+- **Root README added:** Added `README.md` describing the workspace baseline, focused verification command, and documentation links.
+- **Audit documentation:** Added `docs/security/SOROBAN_SDK_AUDIT.md` and linked it from `docs/README.md` for auditors and integrators.
+
+### Verification
+
+Rust tooling was not installed in the execution environment for this task, so `cargo update` / `cargo test -p predictify-hybrid` could not be run here.
+
+Recommended verification on a machine with Cargo installed:
+
+```sh
+cargo update -p soroban-sdk
+cargo test -p predictify-hybrid
+```
+
+### Security Notes
+
+#### Threat Model
+- **Unsupported dependency risk:** Building contracts against an unsupported Soroban SDK line can produce artifacts that diverge from the current Stellar runtime expectations.
+- **Integrator drift:** A stale workspace pin can cause downstream consumers to compile and test against an obsolete contract environment.
+
+#### Invariants Proven
+1. **Single source of truth:** All workspace crates inherit the Soroban SDK version from the root workspace manifest.
+2. **Documented upgrade path:** The supported dependency target and required verification steps are now explicit in repository docs.
+3. **Reviewability:** Auditors can identify the upgrade touchpoint immediately from the root manifest and linked audit note.
+
+#### Explicit Non-Goals
+- Not claiming Soroban 25 runtime compatibility without a real Cargo test pass
+- Not manually editing `Cargo.lock`
+- Not changing contract behavior beyond the workspace dependency target and supporting docs

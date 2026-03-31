@@ -75,6 +75,16 @@ pub enum Error {
     OracleConfidenceTooWide = 208,
     /// Invalid oracle feed ID
     InvalidOracleFeed = 209,
+    /// Oracle callback authentication failed. Signature verification or authorization check failed.
+    OracleCallbackAuthFailed = 210,
+    /// Oracle callback not authorized. Caller is not in the authorized oracle whitelist.
+    OracleCallbackUnauthorized = 211,
+    /// Oracle callback signature is invalid or malformed.
+    OracleCallbackInvalidSignature = 212,
+    /// Oracle callback replay detected. Nonce or timestamp already used.
+    OracleCallbackReplayDetected = 213,
+    /// Oracle callback timeout. Response time exceeded maximum allowed duration.
+    OracleCallbackTimeout = 214,
 
     // ===== VALIDATION ERRORS =====
     /// Market question is empty or invalid. Question must be non-empty and descriptive.
@@ -123,6 +133,38 @@ pub enum Error {
     GasBudgetExceeded = 417,
     /// Admin address has not been set. Contract initialization is incomplete.
     AdminNotSet = 418,
+
+    // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
+    /// Market question exceeds maximum allowed length.
+    QuestionTooLong = 420,
+    /// Outcome label exceeds maximum allowed length.
+    OutcomeTooLong = 421,
+    /// Too many outcomes specified for the market.
+    TooManyOutcomes = 422,
+    /// Oracle feed ID exceeds maximum allowed length.
+    FeedIdTooLong = 423,
+    /// Comparison operator exceeds maximum allowed length.
+    ComparisonTooLong = 424,
+    /// Category string exceeds maximum allowed length.
+    CategoryTooLong = 425,
+    /// Tag string exceeds maximum allowed length.
+    TagTooLong = 426,
+    /// Too many tags specified for the market.
+    TooManyTags = 427,
+    /// Extension reason exceeds maximum allowed length.
+    ExtensionReasonTooLong = 428,
+    /// Source identifier exceeds maximum allowed length.
+    SourceTooLong = 429,
+    /// Error message exceeds maximum allowed length.
+    ErrorMessageTooLong = 430,
+    /// Signature string exceeds maximum allowed length.
+    SignatureTooLong = 431,
+    /// Too many extension history entries.
+    TooManyExtensions = 432,
+    /// Too many oracle results in multi-oracle aggregation.
+    TooManyOracleResults = 433,
+    /// Too many winning outcomes specified.
+    TooManyWinningOutcomes = 434,
 
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -1338,6 +1380,38 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
+            Error::FeeAlreadyCollected => "Platform fee already collected",
+            Error::NoFeesToCollect => "No fees available to collect",
+            Error::InvalidExtensionDays => "Invalid extension days value",
+            Error::ExtensionDenied => "Market extension not allowed",
+            Error::AdminNotSet => "Admin address not set",
+            Error::OracleStale => "Oracle data is stale",
+            Error::OracleNoConsensus => "Oracle consensus not reached",
+            Error::OracleVerified => "Oracle result already verified",
+            Error::MarketNotReady => "Market not ready for verification",
+            Error::FallbackOracleUnavailable => "Fallback oracle unavailable",
+            Error::ResolutionTimeoutReached => "Resolution timeout reached",
+            Error::OracleConfidenceTooWide => "Oracle confidence interval too wide",
+            Error::InvalidOracleFeed => "Invalid oracle feed ID",
+            
+            // Metadata length limit errors
+            Error::QuestionTooLong => "Market question exceeds maximum allowed length",
+            Error::OutcomeTooLong => "Outcome label exceeds maximum allowed length",
+            Error::TooManyOutcomes => "Too many outcomes specified for the market",
+            Error::FeedIdTooLong => "Oracle feed ID exceeds maximum allowed length",
+            Error::ComparisonTooLong => "Comparison operator exceeds maximum allowed length",
+            Error::CategoryTooLong => "Category string exceeds maximum allowed length",
+            Error::TagTooLong => "Tag string exceeds maximum allowed length",
+            Error::TooManyTags => "Too many tags specified for the market",
+            Error::ExtensionReasonTooLong => "Extension reason exceeds maximum allowed length",
+            Error::SourceTooLong => "Source identifier exceeds maximum allowed length",
+            Error::ErrorMessageTooLong => "Error message exceeds maximum allowed length",
+            Error::SignatureTooLong => "Signature string exceeds maximum allowed length",
+            Error::TooManyExtensions => "Too many extension history entries",
+            Error::TooManyOracleResults => "Too many oracle results in multi-oracle aggregation",
+            Error::TooManyWinningOutcomes => "Too many winning outcomes specified",
+            
+            // Circuit breaker errors
             Error::FeeAlreadyCollected => "Fee already collected",
             Error::NoFeesToCollect => "No fees to collect",
             Error::InvalidExtensionDays => "Invalid extension days",
@@ -1414,6 +1488,26 @@ impl Error {
             Error::FallbackOracleUnavailable => "FALLBACK_ORACLE_UNAVAILABLE",
             Error::ResolutionTimeoutReached => "RESOLUTION_TIMEOUT_REACHED",
             Error::OracleConfidenceTooWide => "ORACLE_CONFIDENCE_TOO_WIDE",
+            Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
+            
+            // Metadata length limit errors
+            Error::QuestionTooLong => "QUESTION_TOO_LONG",
+            Error::OutcomeTooLong => "OUTCOME_TOO_LONG",
+            Error::TooManyOutcomes => "TOO_MANY_OUTCOMES",
+            Error::FeedIdTooLong => "FEED_ID_TOO_LONG",
+            Error::ComparisonTooLong => "COMPARISON_TOO_LONG",
+            Error::CategoryTooLong => "CATEGORY_TOO_LONG",
+            Error::TagTooLong => "TAG_TOO_LONG",
+            Error::TooManyTags => "TOO_MANY_TAGS",
+            Error::ExtensionReasonTooLong => "EXTENSION_REASON_TOO_LONG",
+            Error::SourceTooLong => "SOURCE_TOO_LONG",
+            Error::ErrorMessageTooLong => "ERROR_MESSAGE_TOO_LONG",
+            Error::SignatureTooLong => "SIGNATURE_TOO_LONG",
+            Error::TooManyExtensions => "TOO_MANY_EXTENSIONS",
+            Error::TooManyOracleResults => "TOO_MANY_ORACLE_RESULTS",
+            Error::TooManyWinningOutcomes => "TOO_MANY_WINNING_OUTCOMES",
+            
+            // Circuit breaker errors
             Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
             Error::CBAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
@@ -1491,6 +1585,27 @@ mod tests {
             Error::InvalidExtensionDays,
             Error::ExtensionDenied,
             Error::GasBudgetExceeded,
+            Error::AdminNotSet,
+            Error::InvalidOracleFeed,
+            
+            // Metadata length limit errors
+            Error::QuestionTooLong,
+            Error::OutcomeTooLong,
+            Error::TooManyOutcomes,
+            Error::FeedIdTooLong,
+            Error::ComparisonTooLong,
+            Error::CategoryTooLong,
+            Error::TagTooLong,
+            Error::TooManyTags,
+            Error::ExtensionReasonTooLong,
+            Error::SourceTooLong,
+            Error::ErrorMessageTooLong,
+            Error::SignatureTooLong,
+            Error::TooManyExtensions,
+            Error::TooManyOracleResults,
+            Error::TooManyWinningOutcomes,
+            
+            // Circuit breaker errors
             Error::AdminNotSet,
             Error::CBNotInitialized,
             Error::CBAlreadyOpen,

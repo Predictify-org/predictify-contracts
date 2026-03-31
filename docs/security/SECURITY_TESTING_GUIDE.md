@@ -1,45 +1,75 @@
 # Security Test Guide
 
-## 1. Dependency Scanning
-- Regularly check for source-code files with changes
-- Check for compatibility and resolve performance issues
+## Scope
+- Contract-only security verification for `predictify-hybrid`.
+- Focus on state transitions that move value or change claimability: market creation, bet placement, bet resolution, refund, fee collection, and cancellation.
 
-## 2. Penetration Testing
-- Use Kali Linux and Burp Suite to identify vulnerabilities
-- Use Wireshark to check network traffic
+## Threat Model
+- A transition updates storage but does not publish a ledger event, leaving indexers blind.
+- A transition emits an event before state changes are committed, creating a false audit trail.
+- A transition emits the wrong status or amount, causing downstream payout or analytics errors.
+
+## Event Invariants
+- Every financially material transition must publish a ledger event and persist the same payload for internal queries.
+- `mkt_crt` must reflect the created market ID, admin, outcomes, and timestamp.
+- `bet_plc` must reflect the bettor, market ID, outcome, amount, and timestamp.
+- `bet_upd` must reflect every change from `Active` to `Won`, `Lost`, `Refunded`, or `Cancelled`.
+- `mkt_res` must be published when a market is resolved.
+- Event publication must be atomic with the contract state change.
+
+## Verification Commands
+- `cargo test -p predictify-hybrid`
+- `cargo test -p predictify-hybrid event_management_tests`
+- `cargo test -p predictify-hybrid test_market_resolution_publishes_status_events`
+
+## Review Checklist
+- Confirm the ledger event topic matches the transition name.
+- Confirm event data decodes to the expected contract type.
+- Confirm the stored state matches the event payload.
+- Confirm unauthorized or invalid transitions emit no success event.
+
+## Non-Goals
+- This guide does not cover frontend indexing pipelines.
+- This guide does not define retention or archival policy for old events.
+- This guide does not replace contract-level authorization or balance checks.
+
+## Notes For Integrators
+- Prefer consuming ledger events first.
+- Use persistent storage only for reconciliation or backfill.
+- Treat missing events as a failed contract release until the regression tests pass.
 
 ## 3. Dynamic Application Security Testing (DAST)
-- DAST tools are used for identifying security misconfiguration, broken authentication and input/output validation
-- ZED Attack Proxy is an open source tool for security testing provided by OWASP
+- DAST tools are used for identifying security misconfiguration, broken authentication and input/output validation.
+- ZED Attack Proxy is an open source tool for security testing provided by OWASP.
 
 ## 4. Static Application Security Testing (SAST)
-- Tools help in detecting SQL injections, and other vulnerabilities
-- SonarQube, Fortify are commonly used tools
-- Integrate with IDEs and CI/CD pipelines
+- Tools help in detecting SQL injections and other vulnerabilities.
+- SonarQube, Fortify are commonly used tools.
+- Integrate with IDEs and CI/CD pipelines.
 
 ## 5. Property-Based Testing (Proptest)
-- Smart contract invariants (especially around financial logic like stake distributions, payouts, and fee deductions) are verified using property-based fuzzing.
-- **Threat Model Covered**: Payout calculation overflow/underflow, rounding errors giving away more funds than total pooled, double-claim attacks, zero-winner scenarios, fee evasion.
-- **Invariants Proven**:
-  - `distribute_payouts`: Total distributed to all users is `total_pool` (minus fees/truncation) and mathematically proportional.
+- Smart contract invariants, especially around financial logic like stake distributions, payouts, and fee deductions, are verified using property-based fuzzing.
+- Threat model covered: payout calculation overflow/underflow, rounding errors giving away more funds than total pooled, double-claim attacks, zero-winner scenarios, fee evasion.
+- Invariants proven:
+  - `distribute_payouts`: total distributed to all users is `total_pool` minus fees/truncation and mathematically proportional.
   - Payout is strictly zero when there are no winners.
   - Fees are deducted exactly according to the percentage configuration.
   - Double distributions and double claims result in zero extra payouts.
-- **Execution**: Run with `cargo test -p predictify-hybrid --test property_based_tests`.
+- Execution: run `cargo test -p predictify-hybrid --test property_based_tests`.
 
 ## 6. Event Emission Security (Audit Focus)
 
 Events are critical for off-chain transparency and indexer reliability. Every financially material transition must be published to the Soroban event stream.
 
 ### 6.1 Threat Model
-- **Invisible Payouts**: Winnings claimed without event emission, making it impossible for trackers to verify total supply and distributions.
-- **Silent Malfeasance**: Admin role transfers or market parameter changes (outcomes/durations) occurring without public audit logs.
-- **Indexer Desynchronization**: Missing state change events (e.g., `Active` -> `Cancelled`) leading to off-chain UIs showing stale/incorrect market statuses.
+- Invisible payouts: winnings claimed without event emission, making it impossible for trackers to verify total supply and distributions.
+- Silent malfeasance: admin role transfers or market parameter changes occurring without public audit logs.
+- Indexer desynchronization: missing state change events leading to off-chain UIs showing stale or incorrect market statuses.
 
 ### 6.2 Security Invariants
-- **Consistency**: Every `store_event()` call in the contract must be accompanied by a corresponding `env.events().publish()` call if the data is required for external auditing.
-- **Efficiency**: Events use specific, searchable topics `(Symbol, ScVal)` to allow indexers to filter by market ID or user without full chain scans.
-- **Atomicity**: Events are published within the same transaction as the state change they describe.
+- Consistency: every `store_event()` call in the contract must be accompanied by a corresponding `env.events().publish()` call if the data is required for external auditing.
+- Efficiency: events use specific, searchable topics `(Symbol, ScVal)` to allow indexers to filter by market ID or user without full chain scans.
+- Atomicity: events are published within the same transaction as the state change they describe.
 
 ### 6.3 Event Topic Reference
 

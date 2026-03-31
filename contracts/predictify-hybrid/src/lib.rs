@@ -32,6 +32,9 @@ mod graceful_degradation;
 mod market_analytics;
 mod market_id_generator;
 mod markets;
+mod metadata_limits;
+#[cfg(test)]
+mod metadata_limits_tests;
 mod monitoring;
 #[cfg(any())]
 mod oracles;
@@ -99,7 +102,7 @@ mod claim_idempotency_tests;
 #[cfg(any())]
 mod balance_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod event_management_tests;
 
 #[cfg(any())]
@@ -1386,7 +1389,7 @@ impl PredictifyHybrid {
         if market
             .claimed
             .get(user.clone())
-            .map(|claim| claim.is_claimed())
+            .map(|info| info.is_claimed())
             .unwrap_or(false)
         {
             panic_with_error!(env, Error::AlreadyClaimed);
@@ -1466,7 +1469,9 @@ impl PredictifyHybrid {
                 statistics::StatisticsManager::record_fees_collected(&env, fee_amount);
 
                 // Mark as claimed
-                market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+                market
+                    .claimed
+                    .set(user.clone(), ClaimInfo::new(&env, payout));
                 env.storage().persistent().set(&market_id, &market);
 
                 // Emit winnings claimed event
@@ -1488,7 +1493,9 @@ impl PredictifyHybrid {
         }
 
         // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
-        market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
+        market
+            .claimed
+            .set(user.clone(), ClaimInfo::new(&env, 0));
         env.storage().persistent().set(&market_id, &market);
     }
 
@@ -2742,7 +2749,7 @@ impl PredictifyHybrid {
                 if !market
                     .claimed
                     .get(user.clone())
-                    .map(|claim| claim.is_claimed())
+                    .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
                     has_unclaimed_winners = true;
@@ -2759,7 +2766,7 @@ impl PredictifyHybrid {
                         && !market
                             .claimed
                             .get(user.clone())
-                            .map(|claim| claim.is_claimed())
+                            .map(|info| info.is_claimed())
                             .unwrap_or(false)
                     {
                         has_unclaimed_winners = true;
@@ -2815,7 +2822,7 @@ impl PredictifyHybrid {
                 if market
                     .claimed
                     .get(user.clone())
-                    .map(|claim| claim.is_claimed())
+                    .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
                     continue;
@@ -2837,7 +2844,9 @@ impl PredictifyHybrid {
 
                     if payout >= 0 {
                         // Allow 0 payout but mark as claimed
-                        market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+                        market
+                            .claimed
+                            .set(user.clone(), ClaimInfo::new(&env, payout));
                         if payout > 0 {
                             total_distributed = total_distributed
                                 .checked_add(payout)
@@ -2866,7 +2875,7 @@ impl PredictifyHybrid {
                     if market
                         .claimed
                         .get(user.clone())
-                        .map(|claim| claim.is_claimed())
+                        .map(|info| info.is_claimed())
                         .unwrap_or(false)
                     {
                         // Already claimed (perhaps as a voter or double check)
@@ -2881,7 +2890,9 @@ impl PredictifyHybrid {
                         let payout = (user_share * total_pool) / winning_total;
 
                         if payout > 0 {
-                            market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+                            market
+                                .claimed
+                                .set(user.clone(), ClaimInfo::new(&env, payout));
                             total_distributed += payout;
 
                             // Update bet status
@@ -4106,7 +4117,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedResult<Symbol>` with `items`, `next_cursor`, and `total_count`.
+    /// `PagedMarketIds` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4115,7 +4126,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only; no events emitted.
-    pub fn get_all_markets_paged(env: Env, cursor: u32, limit: u32) -> SymbolPagedResult {
+    pub fn get_all_markets_paged(env: Env, cursor: u32, limit: u32) -> PagedMarketIds {
         crate::queries::QueryManager::get_all_markets_paged(&env, cursor, limit)
             .unwrap_or_else(|e| panic_with_error!(&env, e))
     }
@@ -4135,7 +4146,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedResult<UserBetQuery>` with `items`, `next_cursor`, and `total_count`.
+    /// `PagedUserBets` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4149,7 +4160,7 @@ impl PredictifyHybrid {
         user: Address,
         cursor: u32,
         limit: u32,
-    ) -> UserBetPagedResult {
+    ) -> PagedUserBets {
         crate::queries::QueryManager::query_user_bets_paged(&env, user, cursor, limit)
             .unwrap_or_else(|e| panic_with_error!(&env, e))
     }
