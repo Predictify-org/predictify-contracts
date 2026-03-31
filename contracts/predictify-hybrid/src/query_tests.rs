@@ -942,3 +942,463 @@ fn test_max_page_size_constant_value() {
     // Regression: MAX_PAGE_SIZE must be 50 (gas budget assumption).
     assert_eq!(crate::queries::MAX_PAGE_SIZE, 50u32);
 }
+
+// ===== DASHBOARD STATISTICS TESTS =====
+
+#[test]
+fn test_get_dashboard_statistics_empty_state() {
+    // Dashboard stats should initialize with zeros when no markets exist
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let stats = env.as_contract(&contract_id, || {
+        let stats = crate::statistics::StatisticsManager::create_dashboard_stats(&env, 0, 0);
+        stats
+    });
+
+    assert_eq!(stats.api_version, 1);
+    assert_eq!(stats.platform_stats.total_events_created, 0);
+    assert_eq!(stats.platform_stats.total_volume, 0);
+    assert_eq!(stats.active_user_count, 0);
+    assert_eq!(stats.total_value_locked, 0);
+}
+
+#[test]
+fn test_get_market_statistics_empty_market() {
+    // Market with no participants should compute zero consensus
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let market_id = Symbol::new(&env, "empty_market");
+
+    let market = Market::new(
+        &env,
+        admin,
+        String::from_str(&env, "Empty Market"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    );
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+        let stats = QueryManager::get_market_statistics(&env, market_id).unwrap();
+
+        assert_eq!(stats.participant_count, 0);
+        assert_eq!(stats.total_volume, 0);
+        assert_eq!(stats.average_stake, 0);
+        assert_eq!(stats.consensus_strength, 0);
+        assert_eq!(stats.volatility, 10000);
+        assert_eq!(stats.api_version, 1);
+    });
+}
+
+#[test]
+fn test_get_market_statistics_with_participants() {
+    // Market with participants should compute metricsorrectly
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    let market_id = Symbol::new(&env, "test_market");
+
+    let mut market = Market::new(
+        &env,
+        admin,
+        String::from_str(&env, "Test Market"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    );
+
+    // Add stakes
+    market.stakes.set(user1.clone(), 1000i128);
+    market.stakes.set(user2.clone(), 2000i128);
+    market.votes
+        .set(user1.clone(), String::from_str(&env, "yes"));
+    market.votes
+        .set(user2.clone(), String::from_str(&env, "yes"));
+    market.total_staked = 3000i128;
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+        let stats = QueryManager::get_market_statistics(&env, market_id).unwrap();
+
+        assert_eq!(stats.participant_count, 2);
+        assert_eq!(stats.total_volume, 3000);
+        assert_eq!(stats.average_stake, 1500);
+        assert_eq!(stats.consensus_strength, 10000); // All voted for same outcome
+        assert_eq!(stats.volatility, 0);
+        assert_eq!(stats.api_version, 1);
+    });
+}
+
+#[test]
+fn test_get_market_statistics_partial_consensus() {
+    // Market with split votes should show correct consensus strength
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    let market_id = Symbol::new(&env, "split_market");
+
+    let mut market = Market::new(
+        &env,
+        admin,
+        String::from_str(&env, "Split Market"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    );
+
+    // 70% on "yes", 30% on "no"
+    market.stakes.set(user1.clone(), 7000i128);
+    market.stakes.set(user2.clone(), 3000i128);
+    market.votes
+        .set(user1.clone(), String::from_str(&env, "yes"));
+    market.votes
+        .set(user2.clone(), String::from_str(&env, "no"));
+    market.total_staked = 10000i128;
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+        let stats = QueryManager::get_market_statistics(&env, market_id).unwrap();
+
+        assert_eq!(stats.participant_count, 2);
+        assert_eq!(stats.total_volume, 10000);
+        assert_eq!(stats.consensus_strength, 7000); // 70% on max outcome
+        assert!(stats.volatility > 0 && stats.volatility < 10000); // Partial consensus
+    });
+}
+
+#[test]
+fn test_get_category_statistics_no_markets() {
+    // Empty category should return zeros
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let category = String::from_str(&env, "sports");
+
+    env.as_contract(&contract_id, || {
+        let stats = QueryManager::get_category_statistics(&env, category).unwrap();
+
+        assert_eq!(stats.market_count, 0);
+        assert_eq!(stats.total_volume, 0);
+        assert_eq!(stats.participant_count, 0);
+        assert_eq!(stats.resolved_count, 0);
+        assert_eq!(stats.average_market_volume, 0);
+    });
+}
+
+#[test]
+fn test_get_category_statistics_with_markets() {
+    // Should aggregate metrics across markets in category
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    let market_id_1 = Symbol::new(&env, "market_1");
+    let market_id_2 = Symbol::new(&env, "market_2");
+    let category = String::from_str(&env, "sports");
+
+    // Create first market with category
+    let mut market1 = Market::new(
+        &env,
+        admin.clone(),
+        String::from_str(&env, "Market 1"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    );
+    market1.category = Some(category.clone());
+    market1.stakes.set(user1.clone(), 1000i128);
+    market1.votes
+        .set(user1.clone(), String::from_str(&env, "yes"));
+    market1.total_staked = 1000i128;
+
+    // Create second market with same category
+    let mut market2 = Market::new(
+        &env,
+        admin.clone(),
+        String::from_str(&env, "Market 2"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Resolved,
+    );
+    market2.category = Some(category.clone());
+    market2.stakes.set(user2.clone(), 2000i128);
+    market2.votes
+        .set(user2.clone(), String::from_str(&env, "yes"));
+    market2.total_staked = 2000i128;
+
+    env.as_contract(&contract_id, || {
+        // Store markets - need to set up market index
+        env.storage().persistent().set(&market_id_1, &market1);
+        env.storage().persistent().set(&market_id_2, &market2);
+        let mut market_ids: Vec<Symbol> = vec![&env];
+        market_ids.push_back(market_id_1);
+        market_ids.push_back(market_id_2);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "market_ids"), &market_ids);
+
+        let stats = QueryManager::get_category_statistics(&env, category).unwrap();
+
+        assert_eq!(stats.market_count, 2);
+        assert_eq!(stats.total_volume, 3000);
+        assert_eq!(stats.participant_count, 2);
+        assert_eq!(stats.resolved_count, 1);
+        assert_eq!(stats.average_market_volume, 1500);
+    });
+}
+
+#[test]
+fn test_category_statistics_version() {
+    // CategoryStatisticsV1 should have correct fields
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let category = String::from_str(&env, "test");
+
+    env.as_contract(&contract_id, || {
+        let stats = QueryManager::get_category_statistics(&env, category.clone()).unwrap();
+
+        assert_eq!(stats.category, category);
+        assert!(stats.market_count >= 0);
+        assert!(stats.total_volume >= 0);
+    });
+}
+
+#[test]
+fn test_top_users_by_winnings_limit_capped() {
+    // Should respect MAX_PAGE_SIZE limit
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+
+    env.as_contract(&contract_id, || {
+        let users = QueryManager::get_top_users_by_winnings(&env, 1000).unwrap();
+        assert!(
+            users.len() <= crate::queries::MAX_PAGE_SIZE as usize,
+            "Result exceeds MAX_PAGE_SIZE"
+        );
+    });
+}
+
+#[test]
+fn test_top_users_by_win_rate_limit_capped() {
+    // Should respect MAX_PAGE_SIZE limit
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+
+    env.as_contract(&contract_id, || {
+        let users = QueryManager::get_top_users_by_win_rate(&env, 1000, 10).unwrap();
+        assert!(
+            users.len() <= crate::queries::MAX_PAGE_SIZE as usize,
+            "Result exceeds MAX_PAGE_SIZE"
+        );
+    });
+}
+
+#[test]
+fn test_market_statistics_api_version() {
+    // MarketStatisticsV1 should always be version 1
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let market_id = Symbol::new(&env, "version_test");
+
+    let market = Market::new(
+        &env,
+        admin,
+        String::from_str(&env, "Version Test"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    );
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+        let stats = QueryManager::get_market_statistics(&env, market_id).unwrap();
+        assert_eq!(stats.api_version, 1);
+    });
+}
+
+#[test]
+fn test_dashboard_statistics_version() {
+    // DashboardStatisticsV1 should always be version 1
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+
+    env.as_contract(&contract_id, || {
+        let stats =
+            crate::statistics::StatisticsManager::create_dashboard_stats(&env, 0, 0);
+        assert_eq!(stats.api_version, 1);
+    });
+}
+
+#[test]
+fn test_market_statistics_consensus_strength_range() {
+    // Consensus strength should be 0-10000
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let market_id = Symbol::new(&env, "consensus_test");
+
+    let mut market = Market::new(
+        &env,
+        admin,
+        String::from_str(&env, "Consensus Test"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    );
+
+    market.stakes.set(user.clone(), 5000i128);
+    market.votes
+        .set(user.clone(), String::from_str(&env, "yes"));
+    market.total_staked = 5000i128;
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+        let stats = QueryManager::get_market_statistics(&env, market_id).unwrap();
+
+        assert!(stats.consensus_strength >= 0 && stats.consensus_strength <= 10000);
+    });
+}
+
+#[test]
+fn test_market_statistics_volatility_range() {
+    // Volatility should be 0-10000
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let market_id = Symbol::new(&env, "volatility_test");
+
+    let mut market = Market::new(
+        &env,
+        admin,
+        String::from_str(&env, "Volatility Test"),
+        svec![
+            &env,
+            String::from_str(&env, "yes"),
+            String::from_str(&env, "no"),
+        ],
+        env.ledger().timestamp() + 1000,
+        OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::from_str(&env, TEST_ORACLE_ADDRESS),
+            String::from_str(&env, "TEST"),
+            100,
+            String::from_str(&env, "gt"),
+        ),
+        None,
+        86400,
+        MarketState::Active,
+    );
+
+    market.stakes.set(user.clone(), 5000i128);
+    market.votes
+        .set(user.clone(), String::from_str(&env, "yes"));
+    market.total_staked = 5000i128;
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+        let stats = QueryManager::get_market_statistics(&env, market_id).unwrap();
+
+        assert!(stats.volatility >= 0 && stats.volatility <= 10000);
+        assert_eq!(stats.consensus_strength + stats.volatility, 10000);
+    });
+}

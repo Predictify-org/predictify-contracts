@@ -32,6 +32,9 @@ mod graceful_degradation;
 mod market_analytics;
 mod market_id_generator;
 mod markets;
+mod metadata_limits;
+#[cfg(test)]
+mod metadata_limits_tests;
 mod monitoring;
 #[cfg(any())]
 mod oracles;
@@ -92,6 +95,10 @@ mod gas_test;
 #[cfg(any())]
 mod gas_tracking_tests;
 #[cfg(any())]
+mod gas_test;
+#[cfg(any())]
+mod gas_tracking_tests;
+#[cfg(any())]
 mod bet_tests;
 
 #[cfg(any())]
@@ -100,7 +107,7 @@ mod claim_idempotency_tests;
 #[cfg(any())]
 mod balance_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod event_management_tests;
 
 #[cfg(any())]
@@ -1399,7 +1406,7 @@ impl PredictifyHybrid {
         if market
             .claimed
             .get(user.clone())
-            .map(|claim| claim.is_claimed())
+            .map(|info| info.is_claimed())
             .unwrap_or(false)
         {
             panic_with_error!(env, Error::AlreadyClaimed);
@@ -1479,7 +1486,9 @@ impl PredictifyHybrid {
                 statistics::StatisticsManager::record_fees_collected(&env, fee_amount);
 
                 // Mark as claimed
-                market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+                market
+                    .claimed
+                    .set(user.clone(), ClaimInfo::new(&env, payout));
                 env.storage().persistent().set(&market_id, &market);
 
                 // Emit winnings claimed event
@@ -1501,7 +1510,9 @@ impl PredictifyHybrid {
         }
 
         // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
-        market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
+        market
+            .claimed
+            .set(user.clone(), ClaimInfo::new(&env, 0));
         env.storage().persistent().set(&market_id, &market);
     }
 
@@ -2758,7 +2769,7 @@ impl PredictifyHybrid {
                 if !market
                     .claimed
                     .get(user.clone())
-                    .map(|claim| claim.is_claimed())
+                    .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
                     has_unclaimed_winners = true;
@@ -2775,7 +2786,7 @@ impl PredictifyHybrid {
                         && !market
                             .claimed
                             .get(user.clone())
-                            .map(|claim| claim.is_claimed())
+                            .map(|info| info.is_claimed())
                             .unwrap_or(false)
                     {
                         has_unclaimed_winners = true;
@@ -2831,7 +2842,7 @@ impl PredictifyHybrid {
                 if market
                     .claimed
                     .get(user.clone())
-                    .map(|claim| claim.is_claimed())
+                    .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
                     continue;
@@ -2853,7 +2864,9 @@ impl PredictifyHybrid {
 
                     if payout >= 0 {
                         // Allow 0 payout but mark as claimed
-                        market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+                        market
+                            .claimed
+                            .set(user.clone(), ClaimInfo::new(&env, payout));
                         if payout > 0 {
                             total_distributed = total_distributed
                                 .checked_add(payout)
@@ -2882,7 +2895,7 @@ impl PredictifyHybrid {
                     if market
                         .claimed
                         .get(user.clone())
-                        .map(|claim| claim.is_claimed())
+                        .map(|info| info.is_claimed())
                         .unwrap_or(false)
                     {
                         // Already claimed (perhaps as a voter or double check)
@@ -2897,7 +2910,9 @@ impl PredictifyHybrid {
                         let payout = (user_share * total_pool) / winning_total;
 
                         if payout > 0 {
-                            market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+                            market
+                                .claimed
+                                .set(user.clone(), ClaimInfo::new(&env, payout));
                             total_distributed += payout;
 
                             // Update bet status
@@ -4122,7 +4137,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedResult<Symbol>` with `items`, `next_cursor`, and `total_count`.
+    /// `PagedMarketIds` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4131,7 +4146,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only; no events emitted.
-    pub fn get_all_markets_paged(env: Env, cursor: u32, limit: u32) -> SymbolPagedResult {
+    pub fn get_all_markets_paged(env: Env, cursor: u32, limit: u32) -> PagedMarketIds {
         crate::queries::QueryManager::get_all_markets_paged(&env, cursor, limit)
             .unwrap_or_else(|e| panic_with_error!(&env, e))
     }
@@ -4151,7 +4166,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedResult<UserBetQuery>` with `items`, `next_cursor`, and `total_count`.
+    /// `PagedUserBets` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4165,7 +4180,7 @@ impl PredictifyHybrid {
         user: Address,
         cursor: u32,
         limit: u32,
-    ) -> UserBetPagedResult {
+    ) -> PagedUserBets {
         crate::queries::QueryManager::query_user_bets_paged(&env, user, cursor, limit)
             .unwrap_or_else(|e| panic_with_error!(&env, e))
     }
@@ -6394,6 +6409,145 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_user_statistics(env: Env, user: Address) -> UserStatistics {
         statistics::StatisticsManager::get_user_stats(&env, &user)
+    }
+
+    /// Get dashboard statistics with versioning for client compatibility
+    ///
+    /// Provides comprehensive platform-level metrics optimized for dashboard display,
+    /// including version information for managing client updates.
+    ///
+    /// # Returns
+    ///
+    /// * `DashboardStatisticsV1` - Versioned dashboard statistics with:
+    ///   - API version (always 1)
+    ///   - Platform statistics
+    ///   - Active user count
+    ///   - Total value locked
+    ///   - Query timestamp
+    ///
+    /// # Errors
+    ///
+    /// Returns contract error if market traversal fails.
+    ///
+    /// # Events
+    ///
+    /// This is a read-only query; no events are emitted.
+    pub fn get_dashboard_statistics(env: Env) -> Result<types::DashboardStatisticsV1, Error> {
+        queries::QueryManager::get_dashboard_statistics(&env)
+    }
+
+    /// Get market statistics optimized for dashboard display
+    ///
+    /// Returns comprehensive per-market metrics including participant count,
+    /// volume, consensus strength, and volatility for dashboard visualization.
+    ///
+    /// # Parameters
+    ///
+    /// * `market_id` - The market to query
+    ///
+    /// # Returns
+    ///
+    /// * `MarketStatisticsV1` - Market metrics with:
+    ///   - Participant count
+    ///   - Total volume
+    ///   - Average stake
+    ///   - Consensus strength (0-10000)
+    ///   - Volatility (0-10000)
+    ///   - Market state and question
+    ///
+    /// # Errors
+    ///
+    /// * `Error::MarketNotFound` - Market doesn't exist
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_market_statistics(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<types::MarketStatisticsV1, Error> {
+        queries::QueryManager::get_market_statistics(&env, market_id)
+    }
+
+    /// Get category statistics for filtered dashboard views
+    ///
+    /// Provides aggregated metrics for all markets in a specific category,
+    /// enabling category-filtered dashboard displays and analytics.
+    ///
+    /// # Parameters
+    ///
+    /// * `category` - Category name to query
+    ///
+    /// # Returns
+    ///
+    /// * `CategoryStatisticsV1` - Category metrics with:
+    ///   - Market count
+    ///   - Total volume
+    ///   - Participant count
+    ///   - Resolved market count
+    ///   - Average market volume
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_category_statistics(
+        env: Env,
+        category: String,
+    ) -> Result<types::CategoryStatisticsV1, Error> {
+        queries::QueryManager::get_category_statistics(&env, category)
+    }
+
+    /// Get top users by total winnings (leaderboard query)
+    ///
+    /// Returns the top N users ranked by total winnings claimed,
+    /// useful for leaderboard and achievement displays.
+    ///
+    /// # Parameters
+    ///
+    /// * `limit` - Maximum number of results (capped at 50 for gas safety)
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<UserLeaderboardEntryV1>` - Top users sorted by winnings (descending)
+    ///
+    /// # Notes
+    ///
+    /// Due to contract storage scanning limitations, large deployments should
+    /// consider off-chain indexing for leaderboard queries.
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_top_users_by_winnings(
+        env: Env,
+        limit: u32,
+    ) -> Result<Vec<types::UserLeaderboardEntryV1>, Error> {
+        queries::QueryManager::get_top_users_by_winnings(&env, limit)
+    }
+
+    /// Get top users by win rate (skill-based leaderboard)
+    ///
+    /// Returns the top N users ranked by win rate percentage,
+    /// with a minimum bet requirement to filter high-variance winners.
+    ///
+    /// # Parameters
+    ///
+    /// * `limit` - Maximum number of results (capped at 50)
+    /// * `min_bets` - Minimum bets required for inclusion (e.g., 10)
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<UserLeaderboardEntryV1>` - Top users sorted by win rate (descending)
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_top_users_by_win_rate(
+        env: Env,
+        limit: u32,
+        min_bets: u64,
+    ) -> Result<Vec<types::UserLeaderboardEntryV1>, Error> {
+        queries::QueryManager::get_top_users_by_win_rate(&env, limit, min_bets)
     }
 }
 
