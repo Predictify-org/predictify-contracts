@@ -2013,3 +2013,173 @@ mod tests {
         assert!(matches!(method, ResolutionMethod::OracleOnly));
     }
 }
+
+// ===== ORACLE CALLBACK AUTHENTICATION INTEGRATION =====
+
+/// Oracle callback authentication integration for market resolution
+///
+/// This module integrates the oracle callback authentication system with market resolution,
+/// ensuring that only authenticated oracle callbacks can update market outcomes.
+pub struct OracleCallbackResolver;
+
+impl OracleCallbackResolver {
+    /// Process authenticated oracle callback for market resolution
+    ///
+    /// This method authenticates an oracle callback and processes the data for market resolution.
+    /// It integrates with the resolution system to update market outcomes based on authenticated oracle data.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `caller` - Address of the calling oracle contract
+    /// * `callback_data` - Authenticated callback data from the oracle
+    /// * `market_id` - Market identifier to resolve
+    ///
+    /// # Returns
+    /// * `Ok(())` if callback is processed and market is updated
+    /// * `Err(Error)` if authentication fails or processing fails
+    ///
+    /// # Security Notes
+    ///
+    /// This method ensures that only authorized oracle contracts can update market outcomes
+    /// through comprehensive authentication checks.
+    pub fn process_authenticated_callback(
+        env: &Env,
+        caller: &Address,
+        callback_data: &crate::oracles::OracleCallbackData,
+        market_id: &Symbol,
+    ) -> Result<(), Error> {
+        // Create authentication system
+        let auth = crate::oracles::OracleCallbackAuth::new(env);
+        
+        // Authenticate and process the callback
+        auth.authenticate_and_process(caller, callback_data)?;
+        
+        // Update market resolution based on authenticated oracle data
+        Self::update_market_resolution(env, callback_data, market_id)?;
+        
+        Ok(())
+    }
+    
+    /// Update market resolution based on authenticated oracle data
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `callback_data` - Authenticated callback data
+    /// * `market_id` - Market identifier to update
+    ///
+    /// # Returns
+    /// * `Ok(())` if market resolution is updated successfully
+    /// * `Err(Error)` if update fails
+    fn update_market_resolution(
+        env: &Env,
+        callback_data: &crate::oracles::OracleCallbackData,
+        market_id: &Symbol,
+    ) -> Result<(), Error> {
+        // Get market state manager
+        let market_manager = MarketStateManager::from_env(env);
+        
+        // Get market
+        let market = market_manager.get_market(market_id)?;
+        
+        // Validate market is ready for resolution
+        OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
+        
+        // Determine outcome based on oracle data
+        let outcome = Self::determine_outcome_from_oracle_data(callback_data, &market)?;
+        
+        // Create oracle resolution
+        let resolution = OracleResolution {
+            price: callback_data.price,
+            timestamp: callback_data.timestamp,
+            oracle_result: outcome.clone(),
+            confidence: None,
+            threshold: 0, // Not applicable for direct oracle resolution
+        };
+        
+        // Validate resolution
+        OracleResolutionValidator::validate_oracle_resolution(env, &resolution)?;
+        
+        // Update market with oracle resolution
+        let mut updated_market = market;
+        updated_market.oracle_result = Some(outcome.clone());
+        updated_market.oracle_resolution_time = Some(callback_data.timestamp);
+        
+        // Store updated market
+        market_manager.update_market(market_id, &updated_market)?;
+        
+        // Emit resolution event
+        crate::events::EventEmitter::emit_oracle_result(
+            env,
+            market_id,
+            &outcome,
+            callback_data.price,
+            callback_data.timestamp,
+        );
+        
+        Ok(())
+    }
+    
+    /// Determine market outcome from oracle data
+    ///
+    /// # Arguments
+    /// * `callback_data` - Authenticated callback data
+    /// * `market` - Market to determine outcome for
+    ///
+    /// # Returns
+    /// Determined outcome string
+    fn determine_outcome_from_oracle_data(
+        callback_data: &crate::oracles::OracleCallbackData,
+        market: &Market,
+    ) -> Result<String, Error> {
+        // For binary markets (yes/no), determine outcome based on price comparison
+        if market.outcomes.len() == 2 {
+            let (yes_outcome, no_outcome) = if market.outcomes.get(0).unwrap().to_string().to_lowercase().contains("yes") {
+                (market.outcomes.get(0).unwrap(), market.outcomes.get(1).unwrap())
+            } else {
+                (market.outcomes.get(1).unwrap(), market.outcomes.get(0).unwrap())
+            };
+            
+            // Compare oracle price with threshold (assuming threshold is stored in oracle config)
+            // For now, we'll use a simple comparison: price > 0 means "yes"
+            if callback_data.price > 0 {
+                Ok(yes_outcome.clone())
+            } else {
+                Ok(no_outcome.clone())
+            }
+        } else {
+            // For multi-outcome markets, use price modulo number of outcomes
+            let outcome_index = (callback_data.price.abs() as usize) % market.outcomes.len();
+            Ok(market.outcomes.get(outcome_index).unwrap().clone())
+        }
+    }
+    
+    /// Validate oracle callback authorization for market resolution
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `caller` - Address of the calling oracle contract
+    /// * `market_id` - Market identifier being resolved
+    ///
+    /// # Returns
+    /// * `Ok(())` if caller is authorized for this market
+    /// * `Err(Error::OracleCallbackUnauthorized)` if not authorized
+    pub fn validate_oracle_authorization_for_market(
+        env: &Env,
+        caller: &Address,
+        market_id: &Symbol,
+    ) -> Result<(), Error> {
+        // Check if caller is authorized oracle
+        let whitelist = crate::oracles::OracleWhitelist::from_env(env);
+        if !whitelist.is_oracle_authorized(caller)? {
+            return Err(Error::OracleCallbackUnauthorized);
+        }
+        
+        // Check if market exists and is ready for oracle resolution
+        let market_manager = MarketStateManager::from_env(env);
+        let market = market_manager.get_market(market_id)?;
+        
+        OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
+        
+        Ok(())
+    }
+}

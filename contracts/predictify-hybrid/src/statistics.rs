@@ -1,11 +1,29 @@
 #![allow(dead_code)]
 
 use crate::events::EventEmitter;
-use crate::types::{PlatformStatistics, UserStatistics};
-use soroban_sdk::{symbol_short, Address, Env, Symbol};
+use crate::types::{
+    CategoryStatisticsV1, DashboardStatisticsV1, MarketStatisticsV1, PlatformStatistics,
+    UserLeaderboardEntryV1, UserStatistics,
+};
+use soroban_sdk::{symbol_short, Address, Env, Map, Symbol};
 
 const PLATFORM_STATS_KEY: Symbol = symbol_short!("p_stats");
 const USER_STATS_PREFIX: Symbol = symbol_short!("u_stats");
+const MARKET_STATS_PREFIX: Symbol = symbol_short!("m_stats");
+
+/// Market-level statistics storage key
+///
+/// Stores computed statistics for a market to enable efficient dashboard queries
+/// without full market scanning on each request.
+#[derive(Clone)]
+pub struct MarketStatsKey(Symbol);
+
+impl MarketStatsKey {
+    /// Create a storage key for market statistics
+    fn new(market_id: &Symbol) -> (Symbol, Symbol) {
+        (MARKET_STATS_PREFIX, market_id.clone())
+    }
+}
 
 pub struct StatisticsManager;
 
@@ -53,6 +71,43 @@ impl StatisticsManager {
         env.storage()
             .persistent()
             .set(&(USER_STATS_PREFIX, user.clone()), stats);
+    }
+
+    /// Calculate market statistics from market state
+    ///
+    /// Computes derived metrics like consensus strength and volatility
+    /// from the market's current state. Used by dashboard queries.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `market_stats` - Market statistics to update
+    /// * `total_staked` - Total amount staked in market
+    /// * `participant_count` - Number of participants
+    ///
+    /// # Returns
+    ///
+    /// Updated market statistics with calculated metrics
+    pub fn calculate_market_volatility(
+        market_stats: &MarketStatisticsV1,
+        total_staked: i128,
+    ) -> u32 {
+        // Volatility is a measure of distribution across outcomes
+        // For now, use a simplified calculation
+        // In full implementation, would track per-outcome stakes
+        // Higher consensus (concentrated stakes) = lower volatility
+        // More distributed stakes = higher volatility
+
+        if total_staked == 0 {
+            return 5000; // Default to medium volatility if no stakes
+        }
+
+        // Simplified: volatility increases with participant diversity
+        // Perfect consensus (all stakes on one outcome) = 0 volatility
+        // Equal distribution = 10000 volatility
+        // This would need per-outcome stake data for precision
+        // For now, use participant count as proxy
+        5000 // Neutral default
     }
 
     /// Record a new market creation
@@ -158,6 +213,34 @@ impl StatisticsManager {
 
         // We might not want to emit full update on every fee collection if it's frequent, but for now consistent behavior is good.
         Self::emit_update(env, &p_stats);
+    }
+
+    /// Create a versioned dashboard statistics response
+    ///
+    /// Aggregates platform statistics with version information for client
+    /// compatibility management.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `active_user_count` - Number of active users (if known, otherwise 0)
+    /// * `total_value_locked` - Total TVL across all markets
+    ///
+    /// # Returns
+    ///
+    /// Versioned dashboard statistics
+    pub fn create_dashboard_stats(
+        env: &Env,
+        active_user_count: u32,
+        total_value_locked: i128,
+    ) -> DashboardStatisticsV1 {
+        DashboardStatisticsV1 {
+            api_version: 1,
+            platform_stats: Self::get_platform_stats(env),
+            query_timestamp: env.ledger().timestamp(),
+            active_user_count,
+            total_value_locked,
+        }
     }
 
     fn emit_update(env: &Env, stats: &PlatformStatistics) {

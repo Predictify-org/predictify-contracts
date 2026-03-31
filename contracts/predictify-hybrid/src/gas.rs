@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use soroban_sdk::{contracttype, panic_with_error, symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol};
 
 /// Stores the gas limit configured by an admin for a specific operation.
 #[contracttype]
@@ -92,32 +92,9 @@ impl GasTracker {
         }
     }
 
-    /// Internal helper to retrieve cost, supporting test mocks.
-    fn get_actual_cost(env: &Env, operation: Symbol) -> GasUsage {
-        #[cfg(not(test))]
-        {
-            let _ = (env, operation);
-            GasUsage::default()
-        }
-
-        #[cfg(test)]
-        {
-            let cpu = env.storage().temporary()
-                .get::<_, u64>(&GasConfigKey::TestCost(symbol_short!("t_cpu"), operation.clone()))
-                .unwrap_or(0);
-            let mem = env.storage().temporary()
-                .get::<_, u64>(&GasConfigKey::TestCost(symbol_short!("t_mem"), operation))
-                .unwrap_or(0);
-            GasUsage { cpu, mem }
-        }
-    }
-
     /// Test helper to set the expected cost for an operation.
     #[cfg(test)]
-    pub fn set_test_cost(env: &Env, operation: Symbol, cpu: u64, mem: u64) {
-        env.storage().temporary()
-            .set(&GasConfigKey::TestCost(symbol_short!("t_cpu"), operation.clone()), &cpu);
-        env.storage().temporary()
-            .set(&GasConfigKey::TestCost(symbol_short!("t_mem"), operation), &mem);
+    pub fn set_test_cost(env: &Env, cost: u64) {
+        env.storage().temporary().set(&symbol_short!("t_gas"), &cost);
     }
 }

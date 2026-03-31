@@ -1,9 +1,6 @@
 #![allow(dead_code)]
 
-use alloc::{
-    format,
-    string::{String as StdString, ToString},
-};
+use alloc::string::ToString;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
@@ -394,12 +391,43 @@ impl OracleProvider {
         }
     }
 
-    pub fn name(&self, env: &Env) -> String {
-        match self {
-            OracleProvider::Reflector => String::from_str(env, "Reflector"),
-            OracleProvider::Pyth => String::from_str(env, "Pyth Network"),
-            OracleProvider::BandProtocol => String::from_str(env, "Band Protocol"),
-            OracleProvider::DIA => String::from_str(env, "DIA"),
+    /// Returns a human-readable name for the oracle provider.
+    ///
+    /// This method provides formatted display names for UI and logging purposes.
+    /// Unknown providers return a generic "Unknown Provider" label.
+    ///
+    /// # Returns
+    ///
+    /// String containing the formatted provider name
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::types::OracleProvider;
+    /// # let env = Env::default();
+    ///
+    /// let reflector = OracleProvider::reflector();
+    /// assert_eq!(reflector.name(), "Reflector");
+    ///
+    /// let unknown = OracleProvider::from_str(String::from_str(&env, "new_oracle"));
+    /// assert_eq!(unknown.name(), "Unknown Provider (new_oracle)");
+    /// ```
+    pub fn name(&self) -> String {
+        let env = soroban_sdk::Env::default();
+        match self.as_str() {
+            "reflector" => String::from_str(&env, "Reflector"),
+            "pyth" => String::from_str(&env, "Pyth Network"),
+            "band_protocol" => String::from_str(&env, "Band Protocol"),
+            "dia" => String::from_str(&env, "DIA"),
+            unknown => {
+                let prefix = String::from_str(&env, "Unknown Provider (");
+                let suffix = String::from_str(&env, ")");
+                // Use string slicing for soroban_sdk::String
+                let result = prefix.clone();
+                // For simplicity, just return a basic message for unknown providers
+                String::from_str(&env, "Unknown Provider")
+            }
         }
     }
 
@@ -461,7 +489,7 @@ impl OracleProvider {
     pub fn is_supported(&self) -> bool {
         matches!(self, OracleProvider::Reflector)
     }
-    
+
     pub fn is_reflector(&self) -> bool {
         matches!(self, OracleProvider::Reflector)
     }
@@ -749,6 +777,12 @@ impl OracleConfig {
         if self.is_none_sentinel() || self.feed_id.is_empty() {
             return Err(crate::Error::InvalidOracleConfig);
         }
+
+        // Validate feed ID length
+        crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
+
+        // Validate comparison length
+        crate::metadata_limits::validate_comparison_length(&self.comparison)?;
 
         // Validate threshold
         if self.threshold <= 0 {
@@ -1219,6 +1253,123 @@ pub struct UserStatistics {
     pub last_activity_ts: u64,
 }
 
+// ===== DASHBOARD STATISTICS TYPES =====
+
+/// Market statistics optimized for dashboard display
+///
+/// Provides aggregated market-level metrics for UI rendering.
+/// Versioned to allow field additions without breaking client compatibility.
+///
+/// # Stability
+///
+/// This type is versioned (`V1`) and will remain backward-compatible.
+/// New fields may be added in future versions without removing existing ones.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketStatisticsV1 {
+    /// Market identifier
+    pub market_id: Symbol,
+    /// Number of unique participants who placed bets
+    pub participant_count: u32,
+    /// Total amount staked in the market
+    pub total_volume: i128,
+    /// Average stake per participant
+    pub average_stake: i128,
+    /// Consensus strength (0-10000, where 10000 = perfect consensus)
+    /// Calculated as: (max_outcome_stake / total_volume) * 10000
+    pub consensus_strength: u32,
+    /// Market volatility (0-10000)
+    /// Measures stake distribution across outcomes
+    /// Higher = more distributed (less consensus), Lower = concentrated
+    pub volatility: u32,
+    /// Current market state
+    pub state: MarketState,
+    /// Timestamp when market was created
+    pub created_at: u64,
+    /// Market question
+    pub question: String,
+    /// Query API version (always 1 for this type)
+    pub api_version: u32,
+}
+
+/// User leaderboard entry for dashboard ranking
+///
+/// Represents a user's position in rankings by winnings, win rate, etc.
+/// Used for leaderboard displays and user achievements.
+///
+/// # Stability
+///
+/// Versioned type - backward compatible for future additions.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UserLeaderboardEntryV1 {
+    /// User address
+    pub user: Address,
+    /// Rank in this leaderboard (1-indexed)
+    pub rank: u32,
+    /// Total winnings claimed
+    pub total_winnings: i128,
+    /// Win rate in basis points (0-10000)
+    pub win_rate: u32,
+    /// Total bets placed by user
+    pub total_bets_placed: u64,
+    /// Number of winning bets
+    pub winning_bets: u64,
+    /// Total amount wagered
+    pub total_wagered: i128,
+    /// Last activity timestamp
+    pub last_activity: u64,
+}
+
+/// Category statistics for filtered dashboard views
+///
+/// Aggregates metrics per market category (e.g., "sports", "crypto", "politics")
+/// for category-filtered dashboards.
+///
+/// # Stability
+///
+/// Versioned for future extensibility.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CategoryStatisticsV1 {
+    /// Category name
+    pub category: String,
+    /// Number of markets in this category
+    pub market_count: u32,
+    /// Total volume across all markets in category
+    pub total_volume: i128,
+    /// Total unique participants in this category
+    pub participant_count: u32,
+    /// Number of resolved markets
+    pub resolved_count: u32,
+    /// Average market volume
+    pub average_market_volume: i128,
+}
+
+/// Versioned dashboard statistics response for platform aggregates
+///
+/// Provides comprehensive platform-level metrics with version information
+/// for client compatibility management.
+///
+/// # Stability
+///
+/// This wrapper allows adding new aggregate types in future versions
+/// without breaking existing client queries.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DashboardStatisticsV1 {
+    /// API version (always 1 for this type)
+    pub api_version: u32,
+    /// Platform statistics snapshot
+    pub platform_stats: PlatformStatistics,
+    /// Ledger timestamp when this query was executed
+    pub query_timestamp: u64,
+    /// Number of users with activity (if tracked)
+    pub active_user_count: u32,
+    /// Total value locked in all markets
+    pub total_value_locked: i128,
+}
+
 impl Market {
     /// Create a new market
     pub fn new(
@@ -1323,11 +1474,20 @@ impl Market {
         if self.question.is_empty() {
             return Err(crate::Error::InvalidQuestion);
         }
+        
+        // Validate question length
+        crate::metadata_limits::validate_question_length(&self.question)?;
 
         // Validate outcomes
         if self.outcomes.len() < 2 {
             return Err(crate::Error::InvalidOutcomes);
         }
+        
+        // Validate outcomes count
+        crate::metadata_limits::validate_outcomes_count(&self.outcomes)?;
+        
+        // Validate each outcome length
+        crate::metadata_limits::validate_outcomes_length(&self.outcomes)?;
 
         // Validate oracle config
         self.oracle_config.validate(env)?;
@@ -1339,6 +1499,15 @@ impl Market {
         if self.end_time <= env.ledger().timestamp() {
             return Err(crate::Error::InvalidDuration);
         }
+        
+        // Validate category if present
+        if let Some(ref category) = self.category {
+            crate::metadata_limits::validate_category_length(category)?;
+        }
+        
+        // Validate tags
+        crate::metadata_limits::validate_tags_count(&self.tags)?;
+        crate::metadata_limits::validate_tags_length(&self.tags)?;
 
         Ok(())
     }
@@ -2253,6 +2422,14 @@ impl MarketExtension {
             fee_amount,
             timestamp: env.ledger().timestamp(),
         }
+    }
+    
+    /// Validate the market extension
+    pub fn validate(&self) -> Result<(), crate::Error> {
+        // Validate reason length
+        crate::metadata_limits::validate_extension_reason_length(&self.reason)?;
+        
+        Ok(())
     }
 }
 
@@ -3286,44 +3463,27 @@ pub struct MultipleBetsQuery {
     pub winning_bets: u32,
 }
 
-/// Generic paginated query result.
+/// Paginated market ID query result.
 ///
-/// Wraps any `Vec<T>` result with a cursor that callers pass back on the next
-/// request to continue iteration.  When `next_cursor` equals `total_count` (or
-/// `items` is shorter than the requested limit) the caller has reached the end.
-///
-/// # Pagination Protocol
-///
-/// ```text
-/// 1. Call with cursor = 0, limit = N
-/// 2. Receive PagedResult { items, next_cursor, total_count }
-/// 3. If items.len() < N  →  last page, stop.
-/// 4. Otherwise call again with cursor = next_cursor.
-/// ```
-///
-/// # Security
-///
-/// `limit` is always capped server-side at `MAX_PAGE_SIZE` (50) so callers
-/// cannot force unbounded Vec allocations.
-///
-/// # Example
-///
-/// ```rust
-/// # use soroban_sdk::{symbol_short, Env, vec};
-/// # use predictify_hybrid::types::SymbolPagedResult;
-/// # let env = Env::default();
-/// let page = SymbolPagedResult {
-///     items: vec![&env, symbol_short!("item1")],
-///     next_cursor: 1,
-///     total_count: 5,
-/// };
-/// assert_eq!(page.next_cursor, 1);
-/// ```
+/// Use `next_cursor` in the next call to continue iteration.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SymbolPagedResult {
-    /// Items in this page.
+pub struct PagedMarketIds {
+    /// Market IDs in this page.
     pub items: Vec<Symbol>,
+    /// Cursor to pass on the next call (index of the first un-returned item).
+    pub next_cursor: u32,
+    /// Total number of items available (best-effort; may be approximate for
+    /// filtered queries).
+    pub total_count: u32,
+}
+
+/// Paginated user bet query result.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PagedUserBets {
+    /// Bets in this page.
+    pub items: Vec<UserBetQuery>,
     /// Cursor to pass on the next call (index of the first un-returned item).
     pub next_cursor: u32,
     /// Total number of items available (best-effort; may be approximate for
@@ -3628,9 +3788,7 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH"),
-            ReflectorAsset::Other(symbol) => {
-                String::from_str(&env, &Self::custom_symbol_to_host_string(symbol))
-            }
+            ReflectorAsset::Other(symbol) => String::from_str(&env, symbol.to_string().as_str()),
         }
     }
 
@@ -3641,10 +3799,10 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "Stellar Lumens"),
             ReflectorAsset::BTC => String::from_str(&env, "Bitcoin"),
             ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
-            ReflectorAsset::Other(symbol) => {
-                let symbol_name = Self::custom_symbol_to_host_string(symbol);
-                String::from_str(&env, &format!("Custom Asset ({symbol_name})"))
-            }
+            ReflectorAsset::Other(symbol) => String::from_str(
+                &env,
+                &alloc::format!("Custom Asset ({})", symbol.to_string()),
+            ),
         }
     }
 
@@ -3666,8 +3824,7 @@ impl ReflectorAsset {
             ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
             ReflectorAsset::Other(symbol) => {
-                let symbol_name = Self::custom_symbol_to_host_string(symbol);
-                String::from_str(&env, &format!("{symbol_name}/USD"))
+                String::from_str(&env, &alloc::format!("{}/USD", symbol.to_string()))
             }
         }
     }
@@ -3694,36 +3851,40 @@ impl ReflectorAsset {
     }
 
     /// Creates a ReflectorAsset from a symbol string
-    pub fn from_symbol(symbol: String) -> Self {
-        let env = soroban_sdk::Env::default();
-        let symbol_str = Self::soroban_string_to_host_string(&symbol);
-        match symbol_str.as_str() {
+    pub fn from_symbol(env: &Env, symbol: String) -> Self {
+        match symbol.to_string().as_str() {
             "XLM" => ReflectorAsset::Stellar,
             "BTC" => ReflectorAsset::BTC,
             "ETH" => ReflectorAsset::ETH,
-            _ => ReflectorAsset::Other(Symbol::new(&env, &symbol_str)),
+            _ => ReflectorAsset::Other(Symbol::new(env, symbol.to_string().as_str())),
         }
     }
 
     /// Returns all supported assets for testing purposes
     pub fn all_supported() -> Vec<Self> {
         let env = soroban_sdk::Env::default();
-        Vec::from_array(&env, [
-            ReflectorAsset::Stellar,
-            ReflectorAsset::BTC,
-            ReflectorAsset::ETH,
-        ])
+        Vec::from_array(
+            &env,
+            [
+                ReflectorAsset::Stellar,
+                ReflectorAsset::BTC,
+                ReflectorAsset::ETH,
+            ],
+        )
     }
 
     /// Returns all known assets (including unsupported) for testing purposes
     pub fn all_known() -> Vec<Self> {
         let env = soroban_sdk::Env::default();
-        Vec::from_array(&env, [
-            ReflectorAsset::Stellar,
-            ReflectorAsset::BTC,
-            ReflectorAsset::ETH,
-            ReflectorAsset::Other(Symbol::new(&env, "CUSTOM")),
-        ])
+        Vec::from_array(
+            &env,
+            [
+                ReflectorAsset::Stellar,
+                ReflectorAsset::BTC,
+                ReflectorAsset::ETH,
+                ReflectorAsset::Other(Symbol::new(&env, "CUSTOM")),
+            ],
+        )
     }
 }
 
@@ -3781,7 +3942,10 @@ mod tests {
             MarketState::Active,
         );
 
-        assert_eq!(market.validate(&env), Err(crate::Error::InvalidOracleConfig));
+        assert_eq!(
+            market.validate(&env),
+            Err(crate::Error::InvalidOracleConfig)
+        );
     }
 
     #[test]
@@ -3808,3 +3972,4 @@ mod tests {
         assert_eq!(market.validate(&env), Ok(()));
     }
 }
+

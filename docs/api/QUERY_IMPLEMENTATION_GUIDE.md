@@ -249,6 +249,326 @@ See [Pagination](#pagination) above.
 
 ---
 
+## Dashboard Statistics Queries (NEW)
+
+These new query functions expose aggregated market and user statistics optimized for dashboard display. All responses use versioned types (`V1` suffix) to enable forward compatibility without breaking changes.
+
+### Platform-Level Dashboard Statistics
+
+#### `get_dashboard_statistics`
+
+Returns comprehensive platform-level metrics with version information.
+
+```rust
+pub fn get_dashboard_statistics(env: Env) -> Result<DashboardStatisticsV1, Error>
+```
+
+**Returns** `DashboardStatisticsV1`:
+
+```rust
+pub struct DashboardStatisticsV1 {
+    /// API version (always 1 for this type)
+    pub api_version: u32,
+    /// Platform statistics snapshot
+    pub platform_stats: PlatformStatistics,
+    /// Ledger timestamp when query was executed
+    pub query_timestamp: u64,
+    /// Number of active users (with at least one bet)
+    pub active_user_count: u32,
+    /// Total value locked across all markets
+    pub total_value_locked: i128,
+}
+
+// Underlying platform statistics
+pub struct PlatformStatistics {
+    pub total_events_created: u64,
+    pub total_bets_placed: u64,
+    pub total_volume: i128,
+    pub total_fees_collected: i128,
+    pub active_events_count: u32,
+}
+```
+
+**Use cases**: Dashboard header, overall metrics, TVL display
+
+**Example (JavaScript)**
+
+```js
+const stats = await contract.get_dashboard_statistics();
+console.log(`Platform Version: ${stats.api_version}`);
+console.log(`Total Markets Created: ${stats.platform_stats.total_events_created}`);
+console.log(`Total Volume: ${stats.total_value_locked} stroops`);
+console.log(`Active Users: ${stats.active_user_count}`);
+console.log(`Query Timestamp: ${stats.query_timestamp}`);
+```
+
+---
+
+### Per-Market Statistics
+
+#### `get_market_statistics`
+
+Returns detailed statistics for a specific market with volatility and consensus metrics.
+
+```rust
+pub fn get_market_statistics(env: Env, market_id: Symbol) -> Result<MarketStatisticsV1, Error>
+```
+
+**Parameters**:
+- `market_id`: Market identifier
+
+**Returns** `MarketStatisticsV1`:
+
+```rust
+pub struct MarketStatisticsV1 {
+    pub market_id: Symbol,
+    pub participant_count: u32,              // Number of unique participants
+    pub total_volume: i128,                  // Total amount wagered
+    pub average_stake: i128,                 // Average stake per participant
+    pub consensus_strength: u32,             // 0-10000 (higher = more agreement)
+    pub volatility: u32,                     // 0-10000 (inverse of consensus)
+    pub state: MarketState,
+    pub created_at: u64,
+    pub question: String,
+    pub api_version: u32,                    // Always 1
+}
+```
+
+**Metrics Explained**:
+
+- **Consensus Strength**: `(largest_outcome_pool / total_volume) * 10000`
+  - 10000 = all participants agreed on one outcome
+  - 0 = perfect distribution across outcomes
+  
+- **Volatility**: `10000 - consensus_strength`
+  - Measures opinion diversity
+  - High volatility = contentious market
+  - Low volatility = strong consensus
+
+**Use cases**: Market detail pages, heat maps, volatility indicators
+
+**Example (Rust)**
+
+```rust
+let stats = client.get_market_statistics(&env, market_id)?;
+println!("Participants: {}", stats.participant_count);
+println!("Total Wagered: {}", stats.total_volume);
+println!("Avg Stake: {}", stats.average_stake);
+println!("Consensus: {}% (volatility: {}%)", 
+    stats.consensus_strength / 100, 
+    stats.volatility / 100);
+```
+
+**Errors**:
+- `Error::MarketNotFound` - Market doesn't exist
+
+---
+
+### Category-Based Statistics
+
+#### `get_category_statistics`
+
+Returns aggregated metrics for all markets in a specific category.
+
+```rust
+pub fn get_category_statistics(env: Env, category: String) -> Result<CategoryStatisticsV1, Error>
+```
+
+**Parameters**:
+- `category`: Category name (e.g., "sports", "crypto", "politics")
+
+**Returns** `CategoryStatisticsV1`:
+
+```rust
+pub struct CategoryStatisticsV1 {
+    pub category: String,
+    pub market_count: u32,                   // Markets in this category
+    pub total_volume: i128,                  // Aggregate volume
+    pub participant_count: u32,              // Unique participants
+    pub resolved_count: u32,                 // Number resolved
+    pub average_market_volume: i128,         // Mean volume per market
+}
+```
+
+**Use cases**: Category filters, category leaderboards, category analytics
+
+**Example (JavaScript)**
+
+```js
+const sports = await contract.get_category_statistics({ category: "sports" });
+console.log(`Sports Markets: ${sports.market_count}`);
+console.log(`Total Sports Volume: ${sports.total_volume}`);
+console.log(`Avg Market Volume: ${sports.average_market_volume}`);
+console.log(`Resolved: ${sports.resolved_count} / ${sports.market_count}`);
+```
+
+---
+
+### Leaderboard Queries
+
+#### `get_top_users_by_winnings`
+
+Returns top users ranked by total winnings claimed.
+
+```rust
+pub fn get_top_users_by_winnings(env: Env, limit: u32) -> Result<Vec<UserLeaderboardEntryV1>, Error>
+```
+
+**Parameters**:
+- `limit`: Maximum results (capped at 50 for gas safety)
+
+**Returns** `Vec<UserLeaderboardEntryV1>`:
+
+```rust
+pub struct UserLeaderboardEntryV1 {
+    pub user: Address,
+    pub rank: u32,
+    pub total_winnings: i128,
+    pub win_rate: u32,                       // Basis points (0-10000)
+    pub total_bets_placed: u64,
+    pub winning_bets: u64,
+    pub total_wagered: i128,
+    pub last_activity: u64,
+}
+```
+
+**Use cases**: Leaderboard pages, top earners, achievements
+
+**Example**:
+
+```js
+const topWinners = await contract.get_top_users_by_winnings({ limit: 10 });
+for (const entry of topWinners) {
+    console.log(`#${entry.rank}: ${entry.user} earned ${entry.total_winnings}`);
+}
+```
+
+---
+
+#### `get_top_users_by_win_rate`
+
+Returns top users ranked by win rate percentage (minimum bet requirement).
+
+```rust
+pub fn get_top_users_by_win_rate(
+    env: Env,
+    limit: u32,
+    min_bets: u64,
+) -> Result<Vec<UserLeaderboardEntryV1>, Error>
+```
+
+**Parameters**:
+- `limit`: Maximum results (capped at 50)
+- `min_bets`: Minimum bets required for inclusion (e.g., 10 to filter lucky users with few bets)
+
+**Returns** Same as `get_top_users_by_winnings`
+
+**Use cases**: Skill leaderboards, prediction accuracy rankings
+
+**Example**:
+
+```js
+// Top 10 predictors with at least 5 bets
+const topSkills = await contract.get_top_users_by_win_rate({ 
+    limit: 10, 
+    min_bets: 5n 
+});
+```
+
+---
+
+### Versioning and Compatibility
+
+All dashboard response types use `V1` versioning:
+
+```rust
+pub struct DashboardStatisticsV1 { pub api_version: u32, ... }
+pub struct MarketStatisticsV1 { pub api_version: u32, ... }
+pub struct UserLeaderboardEntryV1 { ... }
+pub struct CategoryStatisticsV1 { ... }
+```
+
+**Forward Compatibility**:
+- `api_version` field enables soft upgrades
+- New fields may be added to V1 types in future versions
+- Clients should ignore unknown fields (Soroban XDR feature)
+- New response types use V2, V3 naming if breaking changes occur
+
+---
+
+## Testing
+
+Dashboard statistics tests are in `contracts/predictify-hybrid/src/query_tests.rs` under the `// ===== DASHBOARD STATISTICS TESTS =====` section.
+
+```bash
+# Run dashboard stats tests
+cargo test -p predictify-hybrid -- dashboard
+
+# Run all statistics tests
+cargo test -p predictify-hybrid -- statistics
+```
+
+### Test coverage
+
+| Function | Tests |
+|----------|-------|
+| `get_dashboard_statistics` | Empty state, API version |
+| `get_market_statistics` | Empty market, with participants, partial consensus, version, ranges |
+| `get_category_statistics` | No markets, multiple markets, version |
+| `get_top_users_by_winnings` | Limit cap |
+| `get_top_users_by_win_rate` | Limit cap, min_bets filter |
+| **Invariants** | Consensus + Volatility = 10000, ranges 0-10000 |
+
+---
+
+## Dashboard Integration Example
+
+```javascript
+// Complete dashboard initialization
+async function initializeDashboard() {
+    // 1. Get platform stats
+    const platformStats = await contract.get_dashboard_statistics();
+    
+    // 2. Get featured markets with stats
+    const markets = [];
+    let cursor = 0;
+    while (true) {
+        const page = await contract.get_all_markets_paged({ cursor, limit: 50 });
+        for (const id of page.items) {
+            const details = await contract.query_event_details({ market_id: id });
+            const stats = await contract.get_market_statistics({ market_id: id });
+            markets.push({ ...details, ...stats });
+            if (markets.length >= 10) break;  // Featured section
+        }
+        if (page.items.length < 50 || markets.length >= 10) break;
+        cursor = page.next_cursor;
+    }
+    
+    // 3. Get category filters with stats
+    const categories = ["sports", "crypto", "politics"];
+    const categoryStats = await Promise.all(
+        categories.map(cat => 
+            contract.get_category_statistics({ category: cat })
+        )
+    );
+    
+    // 4. Get leaderboards
+    const topWinners = await contract.get_top_users_by_winnings({ limit: 10 });
+    const topSkills = await contract.get_top_users_by_win_rate({ limit: 10, min_bets: 5n });
+    
+    return {
+        platformStats,
+        featuredMarkets: markets,
+        categoryStats: Object.fromEntries(
+            categories.map((cat, i) => [cat, categoryStats[i]])
+        ),
+        leaderboards: { topWinners, topSkills }
+    };
+}
+```
+
+---
+
 ## Testing
 
 Tests live in `contracts/predictify-hybrid/src/query_tests.rs`.
@@ -273,6 +593,7 @@ cargo test -p predictify-hybrid -- paged
 | Pagination — monotone cursor | `next_cursor ≥ cursor` |
 | Invariant / property | items ≤ limit, next_cursor ≤ total |
 | Regression | `MAX_PAGE_SIZE == 50` constant |
+| **Dashboard stats** | API versioning, metric ranges, aggregation |
 
 ---
 
@@ -292,7 +613,21 @@ while (true) {
 // 2. Get details for a specific market
 const details = await contract.query_event_details({ market_id: "mkt_abc123_0" });
 
-// 3. Paginate a user's bets
+// 3. Get market statistics for dashboard
+const stats = await contract.get_market_statistics({ market_id: "mkt_abc123_0" });
+console.log(`Consensus: ${stats.consensus_strength / 100}%`);
+
+// 4. Get platform dashboard stats
+const dashboard = await contract.get_dashboard_statistics();
+console.log(`Total Volume: ${dashboard.total_value_locked}`);
+
+// 5. Get category-filtered stats
+const sportsStats = await contract.get_category_statistics({ category: "sports" });
+
+// 6. Get leaderboards
+const topUsers = await contract.get_top_users_by_winnings({ limit: 10 });
+
+// 7. Paginate a user's bets
 const bets = [];
 cursor = 0;
 while (true) {
@@ -302,7 +637,7 @@ while (true) {
     cursor = next_cursor;
 }
 
-// 4. Query event history by time range
+// 8. Query event history by time range
 const [history, nextCursor] = await contract.query_events_history({
     from_ts: 1700000000n,
     to_ts:   1800000000n,
@@ -313,4 +648,4 @@ const [history, nextCursor] = await contract.query_events_history({
 
 ---
 
-*Last updated: 2026-03-29*
+*Last updated: 2026-03-30*

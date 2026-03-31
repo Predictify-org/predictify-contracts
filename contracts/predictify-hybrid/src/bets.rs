@@ -24,7 +24,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
-use crate::types::{Bet, BetLimits, BetStatus, BetStats, Market, MarketState};
+use crate::types::{Bet, BetLimits, BetStats, BetStatus, Market, MarketState};
 // use crate::validation;
 
 // ===== CONSTANTS =====
@@ -517,6 +517,8 @@ impl BetManager {
         for i in 0..bet_count {
             if let Some(bet_key) = bets.get(i) {
                 if let Some(mut bet) = BetStorage::get_bet(env, market_id, &bet_key) {
+                    let old_status = bet.status;
+
                     // Determine if bet won or lost (check if outcome is in winning outcomes)
                     if winning_outcomes.contains(&bet.outcome) {
                         bet.mark_as_won();
@@ -527,8 +529,36 @@ impl BetManager {
                     // Update bet status
                     BetStorage::store_bet(env, &bet)?;
 
-                    // Skip event emission to avoid potential segfaults
-                    // Events can be emitted separately if needed
+                    if old_status != bet.status {
+                        let old_status_str = match old_status {
+                            crate::types::BetStatus::Active => String::from_str(env, "Active"),
+                            crate::types::BetStatus::Won => String::from_str(env, "Won"),
+                            crate::types::BetStatus::Lost => String::from_str(env, "Lost"),
+                            crate::types::BetStatus::Refunded => String::from_str(env, "Refunded"),
+                            crate::types::BetStatus::Cancelled => {
+                                String::from_str(env, "Cancelled")
+                            }
+                        };
+                        let new_status_str = match bet.status {
+                            crate::types::BetStatus::Active => String::from_str(env, "Active"),
+                            crate::types::BetStatus::Won => String::from_str(env, "Won"),
+                            crate::types::BetStatus::Lost => String::from_str(env, "Lost"),
+                            crate::types::BetStatus::Refunded => String::from_str(env, "Refunded"),
+                            crate::types::BetStatus::Cancelled => {
+                                String::from_str(env, "Cancelled")
+                            }
+                        };
+
+                        // Resolution status is visible on-ledger for indexers and auditors.
+                        EventEmitter::emit_bet_status_updated(
+                            env,
+                            market_id,
+                            &bet.user,
+                            &old_status_str,
+                            &new_status_str,
+                            None,
+                        );
+                    }
                 }
             }
         }
@@ -639,6 +669,116 @@ impl BetManager {
         )?;
 
         Ok(payout)
+    }
+    /// Cancel a bet before the market deadline and refund the user.
+    ///
+    /// This function allows users to cancel their active bets before the market
+    /// deadline, receiving a full refund of their locked funds.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `user` - Address of the user cancelling the bet
+    /// - `market_id` - Symbol identifying the market
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful cancellation and refund,
+    /// or `Err(Error)` if cancellation fails.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::NothingToClaim` - User has no bet on this market
+    /// - `Error::MarketNotFound` - Market does not exist
+    /// - `Error::MarketClosed` - Market deadline has passed
+    /// - `Error::InvalidState` - Bet is not in Active status
+    ///
+    /// # Security
+    ///
+    /// - Requires user authentication via `require_auth()`
+    /// - Only the bettor can cancel their own bet
+    /// - Can only cancel before market deadline
+    /// - Funds are refunded atomically with status update
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// BetManager::cancel_bet(
+    ///     &env,
+    ///     user.clone(),
+    ///     Symbol::new(&env, "BTC_100K"),
+    /// )?;
+    /// ```
+    pub fn cancel_bet(env: &Env, user: Address, market_id: Symbol) -> Result<(), Error> {
+        // Require authentication from the user
+        user.require_auth();
+
+        // Get user's bet
+        let mut bet = BetStorage::get_bet(env, &market_id, &user).ok_or(Error::NothingToClaim)?;
+
+        // Ensure bet is active
+        if !bet.is_active() {
+            return Err(Error::InvalidState);
+        }
+
+        // Get market and validate it hasn't ended
+        let market = MarketStateManager::get_market(env, &market_id)?;
+        let current_time = env.ledger().timestamp();
+
+        if current_time >= market.end_time {
+            return Err(Error::MarketClosed);
+        }
+
+        // Refund the locked funds
+        BetUtils::unlock_funds(env, &user, bet.amount)?;
+
+        // Mark bet as cancelled
+        bet.status = BetStatus::Cancelled;
+        BetStorage::store_bet(env, &bet)?;
+
+        // Update market betting stats
+        Self::update_market_bet_stats_on_cancel(env, &market_id, &bet.outcome, bet.amount)?;
+
+        // Emit bet cancelled event
+        EventEmitter::emit_bet_status_updated(
+            env,
+            &market_id,
+            &user,
+            &String::from_str(env, "Active"),
+            &String::from_str(env, "Cancelled"),
+            Some(bet.amount),
+        );
+
+        Ok(())
+    }
+
+    /// Update market betting statistics after a bet cancellation.
+    fn update_market_bet_stats_on_cancel(
+        env: &Env,
+        market_id: &Symbol,
+        outcome: &String,
+        amount: i128,
+    ) -> Result<(), Error> {
+        let mut stats = BetStorage::get_market_bet_stats(env, market_id);
+
+        // Update totals
+        stats.total_bets = stats.total_bets.saturating_sub(1);
+        stats.total_amount_locked = stats.total_amount_locked.saturating_sub(amount);
+        stats.unique_bettors = stats.unique_bettors.saturating_sub(1);
+
+        // Update outcome totals
+        let current_outcome_total = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
+        let new_total = current_outcome_total.saturating_sub(amount);
+        if new_total > 0 {
+            stats.outcome_totals.set(outcome.clone(), new_total);
+        } else {
+            stats.outcome_totals.remove(outcome.clone());
+        }
+
+        // Store updated stats
+        BetStorage::store_market_bet_stats(env, market_id, &stats)?;
+
+        Ok(())
     }
 }
 
@@ -829,7 +969,7 @@ impl BetValidator {
         let limits = get_effective_bet_limits(env, market_id);
         // Temporarily disabled due to validation module being disabled
         // validation::validate_bet_amount_against_limits(amount, &limits)
-        
+
         // Simple validation for now
         if amount < limits.min_bet || amount > limits.max_bet {
             return Err(Error::InvalidInput);
