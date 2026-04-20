@@ -9,7 +9,10 @@ mod tests {
     use crate::metadata_limits::*;
     use crate::types::*;
     use crate::Error;
-    use soroban_sdk::{Env, String, Vec, Address};
+    use alloc::format;
+    use alloc::string::ToString;
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Address, Env, String, Vec};
 
     // ===== STRING LENGTH VALIDATION TESTS =====
 
@@ -65,7 +68,8 @@ mod tests {
     fn test_feed_id_length_pyth_format() {
         let env = Env::default();
         // Pyth uses 64-character hex strings
-        let feed_id = String::from_str(&env, &"0x".to_string() + &"a".repeat(64));
+        let host_feed_id = format!("0x{}", "a".repeat(64));
+        let feed_id = String::from_str(&env, host_feed_id.as_str());
         assert!(validate_feed_id_length(&feed_id).is_ok());
     }
 
@@ -73,10 +77,7 @@ mod tests {
     fn test_feed_id_length_exceeds_limit() {
         let env = Env::default();
         let feed_id = String::from_str(&env, &"a".repeat((MAX_FEED_ID_LENGTH + 1) as usize));
-        assert_eq!(
-            validate_feed_id_length(&feed_id),
-            Err(Error::FeedIdTooLong)
-        );
+        assert_eq!(validate_feed_id_length(&feed_id), Err(Error::FeedIdTooLong));
     }
 
     #[test]
@@ -130,14 +131,20 @@ mod tests {
     #[test]
     fn test_extension_reason_length_valid() {
         let env = Env::default();
-        let reason = String::from_str(&env, "Low participation detected, extending to allow more users to participate.");
+        let reason = String::from_str(
+            &env,
+            "Low participation detected, extending to allow more users to participate.",
+        );
         assert!(validate_extension_reason_length(&reason).is_ok());
     }
 
     #[test]
     fn test_extension_reason_length_exceeds_limit() {
         let env = Env::default();
-        let reason = String::from_str(&env, &"a".repeat((MAX_EXTENSION_REASON_LENGTH + 1) as usize));
+        let reason = String::from_str(
+            &env,
+            &"a".repeat((MAX_EXTENSION_REASON_LENGTH + 1) as usize),
+        );
         assert_eq!(
             validate_extension_reason_length(&reason),
             Err(Error::ExtensionReasonTooLong)
@@ -155,10 +162,7 @@ mod tests {
     fn test_source_length_exceeds_limit() {
         let env = Env::default();
         let source = String::from_str(&env, &"a".repeat((MAX_SOURCE_LENGTH + 1) as usize));
-        assert_eq!(
-            validate_source_length(&source),
-            Err(Error::SourceTooLong)
-        );
+        assert_eq!(validate_source_length(&source), Err(Error::SourceTooLong));
     }
 
     #[test]
@@ -171,7 +175,8 @@ mod tests {
     #[test]
     fn test_error_message_length_exceeds_limit() {
         let env = Env::default();
-        let error_msg = String::from_str(&env, &"a".repeat((MAX_ERROR_MESSAGE_LENGTH + 1) as usize));
+        let error_msg =
+            String::from_str(&env, &"a".repeat((MAX_ERROR_MESSAGE_LENGTH + 1) as usize));
         assert_eq!(
             validate_error_message_length(&error_msg),
             Err(Error::ErrorMessageTooLong)
@@ -203,10 +208,7 @@ mod tests {
         let env = Env::default();
         let outcomes = Vec::from_array(
             &env,
-            [
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no"),
-            ],
+            [String::from_str(&env, "yes"), String::from_str(&env, "no")],
         );
         assert!(validate_outcomes_count(&outcomes).is_ok());
     }
@@ -366,10 +368,7 @@ mod tests {
         let env = Env::default();
         let outcomes = Vec::from_array(
             &env,
-            [
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no"),
-            ],
+            [String::from_str(&env, "yes"), String::from_str(&env, "no")],
         );
         assert!(validate_winning_outcomes_count(&outcomes).is_ok());
     }
@@ -403,15 +402,15 @@ mod tests {
     fn test_oracle_config_validates_feed_id_length() {
         let env = Env::default();
         let oracle_address = Address::generate(&env);
-        
+
         let config = OracleConfig::new(
             OracleProvider::Reflector,
             oracle_address,
             String::from_str(&env, &"a".repeat((MAX_FEED_ID_LENGTH + 1) as usize)),
-            100_000_00,
+            10_000_000,
             String::from_str(&env, "gt"),
         );
-        
+
         assert_eq!(config.validate(&env), Err(Error::FeedIdTooLong));
     }
 
@@ -419,15 +418,15 @@ mod tests {
     fn test_oracle_config_validates_comparison_length() {
         let env = Env::default();
         let oracle_address = Address::generate(&env);
-        
+
         let config = OracleConfig::new(
             OracleProvider::Reflector,
             oracle_address,
             String::from_str(&env, "BTC/USD"),
-            100_000_00,
+            10_000_000,
             String::from_str(&env, &"a".repeat((MAX_COMPARISON_LENGTH + 1) as usize)),
         );
-        
+
         assert_eq!(config.validate(&env), Err(Error::ComparisonTooLong));
     }
 
@@ -436,28 +435,28 @@ mod tests {
         let env = Env::default();
         let admin = Address::generate(&env);
         let oracle_address = Address::generate(&env);
-        
+
         let mut market = Market::new(
             &env,
             admin,
             String::from_str(&env, &"a".repeat((MAX_QUESTION_LENGTH + 1) as usize)),
-            Vec::from_array(&env, [
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no"),
-            ]),
+            Vec::from_array(
+                &env,
+                [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+            ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::Reflector,
                 oracle_address,
                 String::from_str(&env, "BTC/USD"),
-                100_000_00,
+                10_000_000,
                 String::from_str(&env, "gt"),
             ),
             None,
             3600,
             MarketState::Active,
         );
-        
+
         assert_eq!(market.validate(&env), Err(Error::QuestionTooLong));
     }
 
@@ -466,12 +465,12 @@ mod tests {
         let env = Env::default();
         let admin = Address::generate(&env);
         let oracle_address = Address::generate(&env);
-        
+
         let mut outcomes = Vec::new(&env);
         for i in 0..(MAX_OUTCOMES_COUNT + 1) {
             outcomes.push_back(String::from_str(&env, &format!("outcome_{}", i)));
         }
-        
+
         let mut market = Market::new(
             &env,
             admin,
@@ -482,14 +481,14 @@ mod tests {
                 OracleProvider::Reflector,
                 oracle_address,
                 String::from_str(&env, "BTC/USD"),
-                100_000_00,
+                10_000_000,
                 String::from_str(&env, "gt"),
             ),
             None,
             3600,
             MarketState::Active,
         );
-        
+
         assert_eq!(market.validate(&env), Err(Error::TooManyOutcomes));
     }
 
@@ -497,15 +496,18 @@ mod tests {
     fn test_market_extension_validates_reason_length() {
         let env = Env::default();
         let admin = Address::generate(&env);
-        
+
         let extension = MarketExtension::new(
             &env,
             7,
             admin,
-            String::from_str(&env, &"a".repeat((MAX_EXTENSION_REASON_LENGTH + 1) as usize)),
+            String::from_str(
+                &env,
+                &"a".repeat((MAX_EXTENSION_REASON_LENGTH + 1) as usize),
+            ),
             1_000_000,
         );
-        
+
         assert_eq!(extension.validate(), Err(Error::ExtensionReasonTooLong));
     }
 

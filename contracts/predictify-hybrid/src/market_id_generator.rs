@@ -210,8 +210,8 @@ impl MarketIdGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
     use alloc::string::ToString;
+    use soroban_sdk::testutils::Address as _;
 
     struct MarketIdTest {
         env: Env,
@@ -334,7 +334,7 @@ mod tests {
         let start = 0u32;
         let limit = 30u32;
         assert!(limit > 0);
-        assert!(start >= 0);
+        let _ = start;
     }
 
     #[test]
@@ -390,14 +390,14 @@ mod tests {
         let market_id = Symbol::new(&test.env, "test_market");
         let admin = test.admin.clone();
         let timestamp = test.env.ledger().timestamp();
-        
+
         // Verify registry entry can be constructed
         let entry = MarketIdRegistryEntry {
             market_id,
             admin,
             timestamp,
         };
-        assert!(entry.timestamp >= 0);
+        let _ = entry;
     }
 
     #[test]
@@ -447,7 +447,7 @@ mod tests {
             test.with_contract(|| MarketIdGenerator::get_admin_markets(&test.env, &admin1));
         let markets2 =
             test.with_contract(|| MarketIdGenerator::get_admin_markets(&test.env, &admin2));
-        
+
         // Both should be empty initially
         assert_eq!(markets1.len(), 0);
         assert_eq!(markets2.len(), 0);

@@ -37,20 +37,26 @@ fn test_successful_oracle_price_fetch_and_resolution() {
                 threshold: 2600000, // $26,000
                 comparison: String::from_str(&env, "gt"),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // Simulate oracle returning price above threshold
         // In real implementation, this would use actual oracle contract
         let oracle_price = 2700000; // $27,000 - above threshold
 
         // Manually set market resolution (simulating oracle response)
-        let market = env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap();
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap();
         let resolution_result = OracleUtils::determine_outcome(
             oracle_price,
             market.oracle_config.threshold,
             &market.oracle_config.comparison,
-            &env
-        ).unwrap();
+            &env,
+        )
+        .unwrap();
 
         assert_eq!(resolution_result, String::from_str(&env, "yes"));
     });
@@ -85,10 +91,15 @@ fn test_oracle_timeout_market_resolution() {
                 threshold: 200000, // $2,000
                 comparison: String::from_str(&env, "gt"),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // Simulate oracle timeout - market should remain unresolved
-        let market = env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap();
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap();
         assert!(!market.resolved);
         assert!(market.end_time > env.ledger().timestamp());
     });
@@ -114,7 +125,9 @@ fn test_multiple_oracle_consensus_resolution() {
 
     // Test threshold comparison with consensus price
     let threshold = 2550000; // $25.5k
-    let result = OracleUtils::compare_prices(average, threshold, &String::from_str(&env, "gt"), &env).unwrap();
+    let result =
+        OracleUtils::compare_prices(average, threshold, &String::from_str(&env, "gt"), &env)
+            .unwrap();
     assert!(result); // Average is above threshold
 }
 
@@ -147,19 +160,25 @@ fn test_oracle_fallback_mechanism() {
                 threshold: 12, // $0.12
                 comparison: String::from_str(&env, "gt"),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // Simulate primary oracle failure
         // In real implementation, would try fallback oracle
         let fallback_price = 15; // $0.15 from fallback
 
-        let market = env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap();
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap();
         let outcome = OracleUtils::determine_outcome(
             fallback_price,
             market.oracle_config.threshold,
             &market.oracle_config.comparison,
-            &env
-        ).unwrap();
+            &env,
+        )
+        .unwrap();
 
         assert_eq!(outcome, String::from_str(&env, "yes"));
     });
@@ -217,10 +236,15 @@ fn test_end_to_end_market_lifecycle_with_oracle() {
                 threshold: 2500000,
                 comparison: String::from_str(&env, "gt"),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // Verify market creation
-        let market = env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap();
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap();
         assert!(!market.resolved);
         assert_eq!(market.oracle_config.threshold, 2500000);
 
@@ -242,8 +266,9 @@ fn test_end_to_end_market_lifecycle_with_oracle() {
             oracle_price,
             market.oracle_config.threshold,
             &market.oracle_config.comparison,
-            &env
-        ).unwrap();
+            &env,
+        )
+        .unwrap();
 
         assert_eq!(outcome, String::from_str(&env, "yes"));
     });
@@ -257,19 +282,24 @@ fn test_oracle_price_comparison_operators() {
     let threshold = 4500000; // $45k
 
     // Test greater than
-    let gt_result = OracleUtils::compare_prices(price, threshold, &String::from_str(&env, "gt"), &env).unwrap();
+    let gt_result =
+        OracleUtils::compare_prices(price, threshold, &String::from_str(&env, "gt"), &env).unwrap();
     assert!(gt_result);
 
     // Test less than
-    let lt_result = OracleUtils::compare_prices(price, threshold, &String::from_str(&env, "lt"), &env).unwrap();
+    let lt_result =
+        OracleUtils::compare_prices(price, threshold, &String::from_str(&env, "lt"), &env).unwrap();
     assert!(!lt_result);
 
     // Test equal
-    let eq_result = OracleUtils::compare_prices(threshold, threshold, &String::from_str(&env, "eq"), &env).unwrap();
+    let eq_result =
+        OracleUtils::compare_prices(threshold, threshold, &String::from_str(&env, "eq"), &env)
+            .unwrap();
     assert!(eq_result);
 
     // Test invalid operator
-    let invalid_result = OracleUtils::compare_prices(price, threshold, &String::from_str(&env, "invalid"), &env);
+    let invalid_result =
+        OracleUtils::compare_prices(price, threshold, &String::from_str(&env, "invalid"), &env);
     assert!(invalid_result.is_err());
     assert_eq!(invalid_result.unwrap_err(), Error::InvalidComparison);
 }
@@ -296,7 +326,8 @@ fn test_oracle_health_monitoring_integration() {
             description: String::from_str(&env, "Healthy Test Oracle"),
         };
 
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
 
         // Verify oracle health check works
         let health_result = OracleWhitelist::verify_oracle_health(&env, &oracle_address);
@@ -354,19 +385,25 @@ fn test_oracle_failure_recovery_market_resolution() {
                 threshold: 50, // $0.50
                 comparison: String::from_str(&env, "gt"),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // Simulate oracle failure followed by recovery
         // In real implementation, this would involve retry logic
         let recovered_price = 60; // $0.60 from recovered oracle
 
-        let market = env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap();
+        let market = env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap();
         let outcome = OracleUtils::determine_outcome(
             recovered_price,
             market.oracle_config.threshold,
             &market.oracle_config.comparison,
-            &env
-        ).unwrap();
+            &env,
+        )
+        .unwrap();
 
         assert_eq!(outcome, String::from_str(&env, "yes"));
     });

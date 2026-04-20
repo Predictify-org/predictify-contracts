@@ -1,8 +1,8 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::reentrancy_guard::ReentrancyGuard;
 use crate::markets::{MarketStateManager, MarketUtils};
+use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;
 
 /// Fee management system for Predictify Hybrid contract
@@ -758,10 +758,10 @@ impl FeeManager {
         );
 
         crate::audit_trail::AuditTrailManager::append_record(
-            env, 
-            crate::audit_trail::AuditAction::FeesCollected, 
-            admin.clone(), 
-            Map::new(env)
+            env,
+            crate::audit_trail::AuditAction::FeesCollected,
+            admin.clone(),
+            Map::new(env),
         );
 
         Ok(fee_amount)
@@ -824,10 +824,10 @@ impl FeeManager {
         FeeTracker::record_config_change(env, &admin, &new_config)?;
 
         crate::audit_trail::AuditTrailManager::append_record(
-            env, 
-            crate::audit_trail::AuditAction::FeeConfigUpdated, 
-            admin.clone(), 
-            Map::new(env)
+            env,
+            crate::audit_trail::AuditAction::FeeConfigUpdated,
+            admin.clone(),
+            Map::new(env),
         );
 
         Ok(new_config)
@@ -874,10 +874,10 @@ impl FeeManager {
         FeeTracker::record_fee_structure_update(env, &admin, &new_fee_tiers)?;
 
         crate::audit_trail::AuditTrailManager::append_record(
-            env, 
-            crate::audit_trail::AuditAction::FeeConfigUpdated, 
-            admin.clone(), 
-            Map::new(env)
+            env,
+            crate::audit_trail::AuditAction::FeeConfigUpdated,
+            admin.clone(),
+            Map::new(env),
         );
 
         Ok(())
@@ -1683,10 +1683,10 @@ impl FeeWithdrawalManager {
         );
 
         crate::audit_trail::AuditTrailManager::append_record(
-            env, 
-            crate::audit_trail::AuditAction::FeesWithdrawn, 
-            admin.clone(), 
-            Map::new(env)
+            env,
+            crate::audit_trail::AuditAction::FeesWithdrawn,
+            admin.clone(),
+            Map::new(env),
         );
 
         Ok(withdrawal_amount)
@@ -1942,7 +1942,7 @@ mod tests {
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 ),
                 String::from_str(&env, "BTC/USD"),
-                25_000_00,
+                2_500_000,
                 String::from_str(&env, "gt"),
             ),
             None,
@@ -2011,7 +2011,7 @@ mod tests {
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 ),
                 String::from_str(&env, "BTC/USD"),
-                25_000_00,
+                2_500_000,
                 String::from_str(&env, "gt"),
             ),
             None,

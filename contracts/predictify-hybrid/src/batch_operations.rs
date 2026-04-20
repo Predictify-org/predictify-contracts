@@ -867,7 +867,7 @@ impl BatchTesting {
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 ),
                 feed_id: String::from_str(env, "BTC"),
-                threshold: 100_000_00, // $100,000
+                threshold: 10_000_000, // $100,000
                 comparison: String::from_str(env, "gt"),
             },
         }

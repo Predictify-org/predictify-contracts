@@ -350,8 +350,8 @@ impl GovernanceContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
     use alloc::string::ToString;
+    use soroban_sdk::testutils::Address as _;
 
     struct GovernanceTest {
         env: Env,
@@ -475,7 +475,7 @@ mod tests {
         // Test that voting before start_time fails
         // Would need to test with time manipulation
         let now = test.env.ledger().timestamp();
-        assert!(now >= 0);
+        let _ = now;
     }
 
     #[test]
@@ -483,7 +483,7 @@ mod tests {
         let test = GovernanceTest::new();
         // Test that voting after end_time fails
         let now = test.env.ledger().timestamp();
-        assert!(now >= 0);
+        let _ = now;
     }
 
     #[test]

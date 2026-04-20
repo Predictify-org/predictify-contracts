@@ -900,7 +900,11 @@ impl NumericUtils {
     }
 
     /// Calculates the proportional share of a pool for a specific stake.
-    pub fn calculate_payout_share(total_pool: i128, user_stake: i128, total_winning_stakes: i128) -> i128 {
+    pub fn calculate_payout_share(
+        total_pool: i128,
+        user_stake: i128,
+        total_winning_stakes: i128,
+    ) -> i128 {
         if total_winning_stakes <= 0 || total_pool <= 0 || user_stake <= 0 {
             return 0;
         }

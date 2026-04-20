@@ -200,7 +200,11 @@ impl IntegrationTestSuite {
     }
 
     /// Verify audit trail for an action
-    pub fn verify_audit_action(&self, action_index: u64, expected_action: crate::audit_trail::AuditAction) {
+    pub fn verify_audit_action(
+        &self,
+        action_index: u64,
+        expected_action: crate::audit_trail::AuditAction,
+    ) {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         let record = client.get_audit_record(&action_index);
         assert!(record.is_some());
@@ -269,7 +273,7 @@ impl IntegrationTestSuite {
 #[test]
 fn test_complete_market_lifecycle_with_betting_and_payouts() {
     let mut test_suite = IntegrationTestSuite::setup(8);
-    
+
     // Record initial balances
     let initial_balances: Vec<i128> = (0..8)
         .map(|i| test_suite.get_user_balance(&test_suite.get_user(i)))
@@ -297,20 +301,20 @@ fn test_complete_market_lifecycle_with_betting_and_payouts() {
 
     // Step 3: Multiple users place bets
     let bets = vec![
-        (0, "yes", 100_0000000),  // 100 XLM
-        (1, "yes", 50_0000000),   // 50 XLM
-        (2, "no", 75_0000000),    // 75 XLM
-        (3, "yes", 25_0000000),   // 25 XLM
-        (4, "no", 60_0000000),    // 60 XLM
-        (5, "yes", 40_0000000),   // 40 XLM
-        (6, "no", 30_0000000),    // 30 XLM
-        (7, "yes", 20_0000000),   // 20 XLM
+        (0, "yes", 100_0000000), // 100 XLM
+        (1, "yes", 50_0000000),  // 50 XLM
+        (2, "no", 75_0000000),   // 75 XLM
+        (3, "yes", 25_0000000),  // 25 XLM
+        (4, "no", 60_0000000),   // 60 XLM
+        (5, "yes", 40_0000000),  // 40 XLM
+        (6, "no", 30_0000000),   // 30 XLM
+        (7, "yes", 20_0000000),  // 20 XLM
     ];
 
     for (user_idx, outcome, amount) in bets {
         let user = test_suite.get_user(user_idx);
         test_suite.place_bet(&user, &market_id, outcome, amount);
-        
+
         // Verify bet was placed by checking balance decrease
         let new_balance = test_suite.get_user_balance(&user);
         assert_eq!(new_balance, initial_balances[user_idx] - amount);
@@ -329,7 +333,10 @@ fn test_complete_market_lifecycle_with_betting_and_payouts() {
 
     // Step 7: Resolve market (manual resolution for testing)
     test_suite.resolve_market(&market_id).unwrap();
-    assert_eq!(test_suite.get_market_state(&market_id), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_id),
+        MarketState::Resolved
+    );
 
     // Step 8: Verify winning outcome was set
     let market = test_suite.get_market(&market_id);
@@ -338,7 +345,7 @@ fn test_complete_market_lifecycle_with_betting_and_payouts() {
     // Step 9: Users claim winnings
     let winning_outcome = market.outcomes.get(0).unwrap(); // "yes"
     let total_winning_pool = 175_0000000; // Sum of "yes" bets
-    let total_losing_pool = 165_0000000;  // Sum of "no" bets
+    let total_losing_pool = 165_0000000; // Sum of "no" bets
     let total_pool = total_winning_pool + total_losing_pool;
 
     // Winners should receive proportional payouts
@@ -348,9 +355,9 @@ fn test_complete_market_lifecycle_with_betting_and_payouts() {
     for (i, user_idx) in yes_bettors.iter().enumerate() {
         let user = test_suite.get_user(*user_idx);
         let initial_balance = test_suite.get_user_balance(&user);
-        
+
         test_suite.claim_winnings(&user, &market_id);
-        
+
         let final_balance = test_suite.get_user_balance(&user);
         let expected_payout = (yes_amounts[i] * total_pool) / total_winning_pool;
         assert!(final_balance > initial_balance);
@@ -365,7 +372,7 @@ fn test_complete_market_lifecycle_with_betting_and_payouts() {
 #[test]
 fn test_market_cancellation_flow() {
     let mut test_suite = IntegrationTestSuite::setup(4);
-    
+
     // Record initial balances
     let initial_balances: Vec<i128> = (0..4)
         .map(|i| test_suite.get_user_balance(&test_suite.get_user(i)))
@@ -399,16 +406,19 @@ fn test_market_cancellation_flow() {
     test_suite.cancel_market(&market_id);
 
     // Step 5: Verify market is cancelled
-    assert_eq!(test_suite.get_market_state(&market_id), MarketState::Cancelled);
+    assert_eq!(
+        test_suite.get_market_state(&market_id),
+        MarketState::Cancelled
+    );
 
     // Step 6: Users should be able to claim refunds
     for i in 0..4 {
         let user = test_suite.get_user(i);
         let current_balance = test_suite.get_user_balance(&user);
-        
+
         // Claim refund (this should work for cancelled markets)
         test_suite.claim_winnings(&user, &market_id);
-        
+
         let refund_balance = test_suite.get_user_balance(&user);
         // Should get back the original bet amount
         assert_eq!(refund_balance, initial_balances[i]);
@@ -458,7 +468,10 @@ fn test_market_with_fallback_oracle() {
     test_suite.resolve_market(&market_id).unwrap();
 
     // Step 7: Verify market is resolved
-    assert_eq!(test_suite.get_market_state(&market_id), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_id),
+        MarketState::Resolved
+    );
 
     // Step 8: Verify audit trail shows resolution
     // (This would show fallback oracle usage in a real implementation)
@@ -503,19 +516,31 @@ fn test_multi_market_concurrent_execution() {
     // Step 2: Users participate in multiple markets
     for user_idx in 0..10 {
         let user = test_suite.get_user(user_idx);
-        
+
         // Bet on market 1
-        let outcome_1 = if user_idx % 2 == 0 { "above_45k" } else { "below_45k" };
+        let outcome_1 = if user_idx % 2 == 0 {
+            "above_45k"
+        } else {
+            "below_45k"
+        };
         let amount_1 = ((user_idx + 1) * 5) as i128 * 1_0000000;
         test_suite.place_bet(&user, &market_1, outcome_1, amount_1);
 
         // Bet on market 2
-        let outcome_2 = if user_idx % 3 == 0 { "above_3k" } else { "below_3k" };
+        let outcome_2 = if user_idx % 3 == 0 {
+            "above_3k"
+        } else {
+            "below_3k"
+        };
         let amount_2 = ((user_idx + 1) * 3) as i128 * 1_0000000;
         test_suite.place_bet(&user, &market_2, outcome_2, amount_2);
 
         // Bet on market 3
-        let outcome_3 = if user_idx % 4 == 0 { "above_0.5" } else { "below_0.5" };
+        let outcome_3 = if user_idx % 4 == 0 {
+            "above_0.5"
+        } else {
+            "below_0.5"
+        };
         let amount_3 = ((user_idx + 1) * 2) as i128 * 1_0000000;
         test_suite.place_bet(&user, &market_3, outcome_3, amount_3);
     }
@@ -530,15 +555,24 @@ fn test_multi_market_concurrent_execution() {
     // Step 4: Advance time and resolve markets at different times
     test_suite.advance_time(31);
     test_suite.resolve_market(&market_1).unwrap();
-    assert_eq!(test_suite.get_market_state(&market_1), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_1),
+        MarketState::Resolved
+    );
 
     test_suite.advance_time(15); // Total 46 days
     test_suite.resolve_market(&market_2).unwrap();
-    assert_eq!(test_suite.get_market_state(&market_2), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_2),
+        MarketState::Resolved
+    );
 
     test_suite.advance_time(15); // Total 61 days
     test_suite.resolve_market(&market_3).unwrap();
-    assert_eq!(test_suite.get_market_state(&market_3), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_3),
+        MarketState::Resolved
+    );
 
     // Step 5: Users claim winnings from all markets
     for user_idx in 0..10 {
@@ -608,9 +642,12 @@ fn test_market_lifecycle_edge_cases() {
     // Test Case 3: Market with no bettors
     test_suite.advance_time(2);
     test_suite.resolve_market(&market_min_duration).unwrap();
-    
+
     // Market should resolve even with no bets
-    assert_eq!(test_suite.get_market_state(&market_min_duration), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_min_duration),
+        MarketState::Resolved
+    );
 }
 
 #[test]
@@ -647,7 +684,10 @@ fn test_invalid_operations_by_market_state() {
 
     // Test Case 5: Resolve market
     test_suite.resolve_market(&market_id).unwrap();
-    assert_eq!(test_suite.get_market_state(&market_id), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_id),
+        MarketState::Resolved
+    );
 
     // Test Case 6: Cannot place bets on resolved market
     let user3 = test_suite.get_user(2);
@@ -731,7 +771,10 @@ fn test_market_state_transitions() {
 
     // Resolve market: Ended → Resolved
     test_suite.resolve_market(&market_id).unwrap();
-    assert_eq!(test_suite.get_market_state(&market_id), MarketState::Resolved);
+    assert_eq!(
+        test_suite.get_market_state(&market_id),
+        MarketState::Resolved
+    );
 
     // Claim winnings: Resolved → Closed (after all claims)
     test_suite.claim_winnings(&user, &market_id);
@@ -778,12 +821,15 @@ fn test_oracle_configuration_validation() {
     for market_id in [&market_no_fallback, &market_with_fallback] {
         let user = test_suite.get_user(0);
         test_suite.place_bet(&user, market_id, "yes", 25_0000000);
-        
+
         test_suite.advance_time(11);
         test_suite.resolve_market(market_id).unwrap();
         test_suite.claim_winnings(&user, market_id);
-        
-        assert_eq!(test_suite.get_market_state(market_id), MarketState::Resolved);
+
+        assert_eq!(
+            test_suite.get_market_state(market_id),
+            MarketState::Resolved
+        );
     }
 }
 
@@ -808,7 +854,7 @@ fn test_audit_trail_completeness() {
     // Place bets and verify audit trail grows
     let user1 = test_suite.get_user(0);
     let user2 = test_suite.get_user(1);
-    
+
     test_suite.place_bet(&user1, &market_id, "option_a", 30_0000000);
     test_suite.place_bet(&user2, &market_id, "option_b", 20_0000000);
 
@@ -823,7 +869,7 @@ fn test_audit_trail_completeness() {
     // Verify audit trail contains all major actions
     let client = PredictifyHybridClient::new(&test_suite.env, &test_suite.contract_id);
     let latest_records = client.get_latest_audit_records(&10);
-    
+
     // Should have records for: market creation, bets, resolution, claims
     assert!(latest_records.len() >= 4);
 }

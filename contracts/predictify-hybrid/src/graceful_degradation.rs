@@ -47,9 +47,9 @@ impl OracleBackup {
         match oracle {
             oracle if oracle == &OracleProvider::reflector() => {
                 // Temporarily disabled due to oracles module being disabled
-            // let reflector = ReflectorOracle::new(address.clone());
-            // reflector.get_price(env, feed_id)
-            Err(Error::OracleUnavailable)
+                // let reflector = ReflectorOracle::new(address.clone());
+                // reflector.get_price(env, feed_id)
+                Err(Error::OracleUnavailable)
             }
             _ => Err(Error::OracleUnavailable),
         }

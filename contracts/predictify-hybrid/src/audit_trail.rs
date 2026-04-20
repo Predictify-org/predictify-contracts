@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Env, Map, Symbol, String, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Map, String, Symbol, Vec};
 
 /// Represents the type of sensitive action recorded in the audit trail.
 #[contracttype]
@@ -93,7 +93,7 @@ impl AuditTrailManager {
             });
 
         let new_index = head.latest_index + 1;
-        
+
         let record = AuditRecord {
             index: new_index,
             action,

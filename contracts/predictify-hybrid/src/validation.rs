@@ -4899,7 +4899,6 @@ impl OracleConfigValidator {
     ) -> Map<String, String> {
         let mut rules = Map::new(env);
 
-
         match provider {
             OracleProvider::Reflector => {
                 rules.set(
@@ -5156,36 +5155,56 @@ impl OutcomeDeduplicator {
     pub fn normalize_outcome(outcome: &String) -> Result<String, ValidationError> {
         // Convert to string slice for manipulation
         let outcome_str = outcome.to_string();
-        
+
         // Step 1: Trim leading and trailing whitespace
         let trimmed = outcome_str.trim();
         if trimmed.is_empty() {
             return Err(ValidationError::OutcomeNormalizationFailed);
         }
-        
+
         // Step 2: Convert to lowercase for case-insensitive comparison
         let lowercased = trimmed.to_lowercase();
-        
+
         // Step 3: Compress internal whitespace (multiple spaces -> single space)
-        let compressed = lowercased.split_whitespace().collect::<Vec<&str>>().join(" ");
-        
+        let compressed = lowercased
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ");
+
         // Step 4: Remove common punctuation and special characters
         // Remove: !, ?, ., ,, ;, :, ", ', (, ), [, ], {, }
         let cleaned = compressed
             .chars()
-            .filter(|c| !matches!(c, '!' | '?' | '.' | ',' | ';' | ':' | '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}'))
+            .filter(|c| {
+                !matches!(
+                    c,
+                    '!' | '?'
+                        | '.'
+                        | ','
+                        | ';'
+                        | ':'
+                        | '"'
+                        | '\''
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '{'
+                        | '}'
+                )
+            })
             .collect::<String>();
-        
+
         // Final validation
         if cleaned.is_empty() {
             return Err(ValidationError::OutcomeNormalizationFailed);
         }
-        
+
         // Convert back to Soroban String
         let env = outcome.env();
         Ok(String::from_str(&env, &cleaned))
     }
-    
+
     /// Calculates similarity between two outcome strings.
     ///
     /// This function uses Levenshtein distance to calculate the similarity
@@ -5222,29 +5241,29 @@ impl OutcomeDeduplicator {
     pub fn calculate_similarity(outcome1: &String, outcome2: &String) -> u32 {
         let s1 = outcome1.to_string();
         let s2 = outcome2.to_string();
-        
+
         if s1.is_empty() && s2.is_empty() {
             return 100;
         }
         if s1.is_empty() || s2.is_empty() {
             return 0;
         }
-        
+
         if s1 == s2 {
             return 100;
         }
-        
+
         // Optimized Levenshtein distance calculation
         let len1 = s1.len();
         let len2 = s2.len();
-        
+
         // Early termination for very different lengths
         if len1.abs_diff(len2) > len1.max(len2) / 2 {
             return 0;
         }
-        
+
         let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
-        
+
         // Initialize first row and column
         for i in 0..=len1 {
             dp[i][0] = i;
@@ -5252,25 +5271,31 @@ impl OutcomeDeduplicator {
         for j in 0..=len2 {
             dp[0][j] = j;
         }
-        
+
         // Calculate distance
         for i in 1..=len1 {
             for j in 1..=len2 {
-                let cost = if s1.chars().nth(i - 1) == s2.chars().nth(j - 1) { 0 } else { 1 };
-                dp[i][j] = dp[i - 1][j].min(dp[i][j - 1] + 1).min(dp[i - 1][j - 1] + cost);
+                let cost = if s1.chars().nth(i - 1) == s2.chars().nth(j - 1) {
+                    0
+                } else {
+                    1
+                };
+                dp[i][j] = dp[i - 1][j]
+                    .min(dp[i][j - 1] + 1)
+                    .min(dp[i - 1][j - 1] + cost);
             }
         }
-        
+
         let distance = dp[len1][len2];
         let max_len = len1.max(len2);
-        
+
         if max_len == 0 {
             return 100;
         }
-        
+
         ((max_len - distance) * 100 / max_len) as u32
     }
-    
+
     /// Validates outcomes for duplicates and ambiguities.
     ///
     /// This is the main validation function that checks a vector of outcomes
@@ -5322,50 +5347,50 @@ impl OutcomeDeduplicator {
                 Err(e) => return Err(e),
             }
         }
-        
+
         // Step 2: Check for exact duplicates
         for (i, (idx1, norm1)) in normalized_outcomes.iter().enumerate() {
             for (j, (idx2, norm2)) in normalized_outcomes.iter().enumerate() {
                 if i >= j {
                     continue;
                 }
-                
+
                 if norm1 == norm2 {
                     return Err(ValidationError::DuplicateOutcome);
                 }
             }
         }
-        
+
         // Step 3: Check for high similarity (ambiguity)
         for (i, (idx1, norm1)) in normalized_outcomes.iter().enumerate() {
             for (j, (idx2, norm2)) in normalized_outcomes.iter().enumerate() {
                 if i >= j {
                     continue;
                 }
-                
+
                 let similarity = Self::calculate_similarity(norm1, norm2);
                 if similarity > 80 {
                     return Err(ValidationError::AmbiguousOutcome);
                 }
             }
         }
-        
+
         // Step 4: Check for semantic duplicates
         for (i, (idx1, norm1)) in normalized_outcomes.iter().enumerate() {
             for (j, (idx2, norm2)) in normalized_outcomes.iter().enumerate() {
                 if i >= j {
                     continue;
                 }
-                
+
                 if Self::is_semantic_duplicate(norm1, norm2) {
                     return Err(ValidationError::AmbiguousOutcome);
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Checks if two normalized outcomes are semantic duplicates.
     ///
     /// This function identifies common semantic duplicates that might not
@@ -5389,20 +5414,21 @@ impl OutcomeDeduplicator {
     fn is_semantic_duplicate(outcome1: &String, outcome2: &String) -> bool {
         let s1 = outcome1.to_string();
         let s2 = outcome2.to_string();
-        
+
         // Affirmative outcomes
         let affirmative = ["yes", "yeah", "yep", "true", "correct", "agree", "positive"];
         let negative = ["no", "nope", "false", "incorrect", "disagree", "negative"];
         let neutral = ["maybe", "possibly", "uncertain", "unclear", "unknown"];
-        
+
         // Check if both are in the same semantic group
-        let both_affirmative = affirmative.contains(&s1.as_str()) && affirmative.contains(&s2.as_str());
+        let both_affirmative =
+            affirmative.contains(&s1.as_str()) && affirmative.contains(&s2.as_str());
         let both_negative = negative.contains(&s1.as_str()) && negative.contains(&s2.as_str());
         let both_neutral = neutral.contains(&s1.as_str()) && neutral.contains(&s2.as_str());
-        
+
         both_affirmative || both_negative || both_neutral
     }
-    
+
     /// Gets normalization statistics for debugging and monitoring.
     ///
     /// This function provides detailed statistics about the normalization
@@ -5434,25 +5460,26 @@ impl OutcomeDeduplicator {
     /// ```
     pub fn get_normalization_stats(outcomes: &Vec<String>) -> OutcomeNormalizationStats {
         let mut stats = OutcomeNormalizationStats::new(outcomes.env());
-        
+
         for outcome in outcomes.iter() {
             stats.total_outcomes += 1;
-            
+
             match Self::normalize_outcome(outcome) {
                 Ok(normalized) => {
                     stats.successfully_normalized += 1;
-                    
+
                     // Track average length reduction
                     let original_length = outcome.len() as u32;
                     let normalized_length = normalized.len() as u32;
-                    stats.total_length_reduction += original_length.saturating_sub(normalized_length);
+                    stats.total_length_reduction +=
+                        original_length.saturating_sub(normalized_length);
                 }
                 Err(_) => {
                     stats.normalization_failures += 1;
                 }
             }
         }
-        
+
         stats
     }
 }
@@ -5484,7 +5511,7 @@ impl OutcomeNormalizationStats {
             total_length_reduction: 0,
         }
     }
-    
+
     /// Gets the normalization success rate as a percentage.
     pub fn success_rate(&self) -> u32 {
         if self.total_outcomes == 0 {
@@ -5492,7 +5519,7 @@ impl OutcomeNormalizationStats {
         }
         (self.successfully_normalized * 100) / self.total_outcomes
     }
-    
+
     /// Gets the average length reduction per outcome.
     pub fn avg_length_reduction(&self) -> u32 {
         if self.successfully_normalized == 0 {

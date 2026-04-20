@@ -4,10 +4,10 @@
 //! including valid responses, invalid responses, timeouts, and malicious behavior.
 
 extern crate alloc;
-use alloc::boxed::Box;
 use crate::errors::Error;
 use crate::oracles::OracleInterface;
 use crate::types::*;
+use alloc::boxed::Box;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
 
 /// Mock Oracle Base Structure
@@ -355,15 +355,25 @@ impl OracleInterface for ConflictingResultsMockOracle {
 pub struct MockOracleFactory;
 
 impl MockOracleFactory {
-    pub fn create_valid_oracle(env: &Env, contract_id: Address, price: i128) -> Box<dyn OracleInterface> {
+    pub fn create_valid_oracle(
+        env: &Env,
+        contract_id: Address,
+        price: i128,
+    ) -> Box<dyn OracleInterface> {
         Box::new(ValidMockOracle::new(contract_id, price))
     }
 
-    pub fn create_invalid_response_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_invalid_response_oracle(
+        _env: &Env,
+        contract_id: Address,
+    ) -> Box<dyn OracleInterface> {
         Box::new(InvalidResponseMockOracle::new(contract_id))
     }
 
-    pub fn create_empty_response_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_empty_response_oracle(
+        _env: &Env,
+        contract_id: Address,
+    ) -> Box<dyn OracleInterface> {
         Box::new(EmptyResponseMockOracle::new(contract_id))
     }
 
@@ -371,15 +381,24 @@ impl MockOracleFactory {
         Box::new(TimeoutMockOracle::new(contract_id))
     }
 
-    pub fn create_corrupted_payload_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_corrupted_payload_oracle(
+        _env: &Env,
+        contract_id: Address,
+    ) -> Box<dyn OracleInterface> {
         Box::new(CorruptedPayloadMockOracle::new(contract_id))
     }
 
-    pub fn create_malicious_signature_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_malicious_signature_oracle(
+        _env: &Env,
+        contract_id: Address,
+    ) -> Box<dyn OracleInterface> {
         Box::new(MaliciousSignatureMockOracle::new(contract_id))
     }
 
-    pub fn create_unauthorized_signer_oracle(_env: &Env, contract_id: Address) -> Box<dyn OracleInterface> {
+    pub fn create_unauthorized_signer_oracle(
+        _env: &Env,
+        contract_id: Address,
+    ) -> Box<dyn OracleInterface> {
         Box::new(UnauthorizedSignerMockOracle::new(contract_id))
     }
 

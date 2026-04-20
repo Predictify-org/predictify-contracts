@@ -198,8 +198,7 @@ fn scenario_cascading_validation_errors() {
     let context = ErrorTestScenarios::market_creation_context(&env);
 
     // First error: invalid duration
-    let recovery1 =
-        ErrorHandler::recover_from_error(&env, Error::InvalidDuration, context.clone());
+    let recovery1 = ErrorHandler::recover_from_error(&env, Error::InvalidDuration, context.clone());
     assert!(recovery1.is_ok());
 
     // User retries with invalid outcomes
@@ -279,12 +278,11 @@ fn scenario_oracle_resolution_with_timeout() {
     let current_time = env.ledger().timestamp();
     let timeout_threshold = current_time + 300; // 5 minute timeout
 
-    let context =
-        ErrorContextBuilder::new(&env, "resolve_market_with_timeout")
-            .market_id(Some(market_id))
-            .timestamp(current_time)
-            .with_data(&env, "timeout_at", &timeout_threshold.to_string())
-            .build();
+    let context = ErrorContextBuilder::new(&env, "resolve_market_with_timeout")
+        .market_id(Some(market_id))
+        .timestamp(current_time)
+        .with_data(&env, "timeout_at", &timeout_threshold.to_string())
+        .build();
 
     // If within timeout, should be retryable
     let recovery = ErrorHandler::recover_from_error(&env, Error::OracleUnavailable, context);
@@ -302,11 +300,7 @@ fn scenario_resolution_timeout_exceeded() {
         .market_id(Some(market_id))
         .build();
 
-    let detailed = ErrorHandler::categorize_error(
-        &env,
-        Error::ResolutionTimeoutReached,
-        context,
-    );
+    let detailed = ErrorHandler::categorize_error(&env, Error::ResolutionTimeoutReached, context);
 
     // Timeout errors are permanent failures
     assert!(!detailed.detailed_message.is_empty());

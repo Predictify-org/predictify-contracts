@@ -475,7 +475,7 @@ impl MarketValidator {
         // ) {
         //     return Err(Error::InvalidDuration);
         // }
-        
+
         // Simple validation for now
         if duration_days < 1 || duration_days > 365 {
             return Err(Error::InvalidDuration);
@@ -490,7 +490,7 @@ impl MarketValidator {
         // ) {
         //     return Err(Error::InvalidOutcomes);
         // }
-        
+
         // Simple validation for now
         if outcomes.len() < 2 || outcomes.len() > 10 {
             return Err(Error::InvalidOutcomes);
@@ -2409,7 +2409,7 @@ impl MarketTestHelpers {
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 ),
                 String::from_str(_env, "BTC/USD"),
-                25_000_00,
+                2_500_000,
                 String::from_str(_env, "gt"),
             ),
             1_000_000, // Creation fee: 1 XLM
@@ -3130,7 +3130,7 @@ mod tests {
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 ),
                 String::from_str(&env, "BTC/USD"),
-                25_000_00,
+                2_500_000,
                 String::from_str(&env, "gt"),
             ),
             None,

@@ -3,12 +3,12 @@ use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RateLimitConfig {
-    pub voting_limit: u32,             // Max votes per time window
-    pub dispute_limit: u32,             // Max disputes per time window
-    pub oracle_call_limit: u32,        // Max oracle calls per time window
-    pub bet_limit: u32,                // Max bets per user per time window (0 = no limit)
-    pub events_per_admin_limit: u32,   // Max events per admin per time window (0 = no limit)
-    pub time_window_seconds: u64,      // Time window in seconds
+    pub voting_limit: u32,           // Max votes per time window
+    pub dispute_limit: u32,          // Max disputes per time window
+    pub oracle_call_limit: u32,      // Max oracle calls per time window
+    pub bet_limit: u32,              // Max bets per user per time window (0 = no limit)
+    pub events_per_admin_limit: u32, // Max events per admin per time window (0 = no limit)
+    pub time_window_seconds: u64,    // Time window in seconds
 }
 
 // Rate limit tracking
@@ -23,8 +23,8 @@ pub struct RateLimit {
 #[contracttype]
 pub enum RateLimiterData {
     Config,
-    UserVoting(Address, Symbol),    // user, market_id
-    UserDisputes(Address, Symbol),  // user, market_id
+    UserVoting(Address, Symbol),   // user, market_id
+    UserDisputes(Address, Symbol), // user, market_id
     OracleCalls(Symbol),           // market_id
     UserBets(Address),             // user (global bet count per window)
     AdminEvents(Address),          // admin (events created per window)

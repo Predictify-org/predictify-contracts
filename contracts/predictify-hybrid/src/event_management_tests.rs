@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use crate::errors::Error;
 use crate::events::{BetStatusUpdatedEvent, MarketResolvedEvent};
 use crate::types::{OracleConfig, OracleProvider};
@@ -84,16 +82,19 @@ impl TestSetup {
 
 fn find_published_event<T>(env: &Env, topic: Symbol) -> Option<T>
 where
-    T: Clone + TryFromVal<Env, Val>,
+    T: Clone + TryFromVal<Env, soroban_sdk::xdr::ScVal>,
 {
-    env.events().all().iter().find_map(|event| {
-        let topics = &event.1;
-        let first_topic: Symbol = topics.get(0)?.try_into_val(env).ok()?;
-        if first_topic == topic {
-            event.2.clone().try_into_val(env).ok()
-        } else {
-            None
+    let events = env.events().all();
+    events.events().iter().find_map(|event| {
+        let body = match &event.body {
+            soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+        };
+        let first_topic_scval = body.topics.get(0)?;
+        let first_topic: Symbol = first_topic_scval.clone().try_into_val(env).ok()?;
+        if first_topic != topic {
+            return None;
         }
+        T::try_from_val(env, &body.data).ok()
     })
 }
 

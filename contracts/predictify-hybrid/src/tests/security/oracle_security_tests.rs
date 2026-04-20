@@ -6,9 +6,11 @@
 
 use super::super::super::*;
 use super::super::mocks::oracle::*;
-use soroban_sdk::testutils::Address as _;
-use crate::oracles::{OracleFactory, OracleWhitelist, OracleMetadata, OracleCallbackAuth, OracleCallbackData};
+use crate::oracles::{
+    OracleCallbackAuth, OracleCallbackData, OracleFactory, OracleMetadata, OracleWhitelist,
+};
 use crate::resolution::OracleCallbackResolver;
+use soroban_sdk::testutils::Address as _;
 
 /// Test unauthorized oracle access
 #[test]
@@ -17,7 +19,8 @@ fn test_unauthorized_oracle_access() {
     let contract_id = Address::generate(&env);
 
     // Create unauthorized signer mock
-    let unauthorized_oracle = MockOracleFactory::create_unauthorized_signer_oracle(&env, contract_id.clone());
+    let unauthorized_oracle =
+        MockOracleFactory::create_unauthorized_signer_oracle(&env, contract_id.clone());
 
     // Attempt to get price - should fail with Unauthorized
     let result = unauthorized_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
@@ -32,7 +35,8 @@ fn test_invalid_signature_rejection() {
     let contract_id = Address::generate(&env);
 
     // Create malicious signature mock
-    let malicious_oracle = MockOracleFactory::create_malicious_signature_oracle(&env, contract_id.clone());
+    let malicious_oracle =
+        MockOracleFactory::create_malicious_signature_oracle(&env, contract_id.clone());
 
     // Attempt to get price - should fail with Unauthorized (representing invalid signature)
     let result = malicious_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
@@ -69,10 +73,10 @@ fn test_oracle_callback_authentication_success() {
     // Setup oracle whitelist
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         // Add oracle to whitelist
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
@@ -83,13 +87,14 @@ fn test_oracle_callback_authentication_success() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
     });
 
     // Create authentication system
     let auth = OracleCallbackAuth::new(&env);
-    
+
     // Prepare valid callback data
     let callback_data = OracleCallbackData {
         feed_id: String::from_str(&env, "BTC/USD"),
@@ -115,10 +120,10 @@ fn test_oracle_callback_authentication_unauthorized() {
     let admin = Address::generate(&env);
     let authorized_oracle = Address::generate(&env);
     let unauthorized_caller = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         // Add authorized oracle to whitelist
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
@@ -129,13 +134,14 @@ fn test_oracle_callback_authentication_unauthorized() {
             is_active: true,
             description: String::from_str(&env, "Authorized Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, authorized_oracle.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, authorized_oracle.clone(), metadata)
+            .unwrap();
     });
 
     // Create authentication system
     let auth = OracleCallbackAuth::new(&env);
-    
+
     // Prepare callback data
     let callback_data = OracleCallbackData {
         feed_id: String::from_str(&env, "BTC/USD"),
@@ -161,10 +167,10 @@ fn test_oracle_callback_authentication_invalid_signature() {
     // Setup oracle whitelist
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
@@ -174,13 +180,14 @@ fn test_oracle_callback_authentication_invalid_signature() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
     });
 
     // Create authentication system
     let auth = OracleCallbackAuth::new(&env);
-    
+
     // Prepare callback data with invalid signature (wrong size)
     let callback_data = OracleCallbackData {
         feed_id: String::from_str(&env, "BTC/USD"),
@@ -206,10 +213,10 @@ fn test_oracle_callback_authentication_replay_attack() {
     // Setup oracle whitelist
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
@@ -219,13 +226,14 @@ fn test_oracle_callback_authentication_replay_attack() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
     });
 
     // Create authentication system
     let auth = OracleCallbackAuth::new(&env);
-    
+
     // Prepare callback data
     let callback_data = OracleCallbackData {
         feed_id: String::from_str(&env, "BTC/USD"),
@@ -255,10 +263,10 @@ fn test_oracle_callback_authentication_rate_limiting() {
     // Setup oracle whitelist
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
@@ -268,13 +276,14 @@ fn test_oracle_callback_authentication_rate_limiting() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
     });
 
     // Create authentication system
     let auth = OracleCallbackAuth::new(&env);
-    
+
     // Prepare first callback data
     let callback_data1 = OracleCallbackData {
         feed_id: String::from_str(&env, "BTC/USD"),
@@ -313,10 +322,10 @@ fn test_oracle_callback_authentication_invalid_data() {
     // Setup oracle whitelist
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
@@ -326,13 +335,14 @@ fn test_oracle_callback_authentication_invalid_data() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
     });
 
     // Create authentication system
     let auth = OracleCallbackAuth::new(&env);
-    
+
     // Test with empty feed ID
     let invalid_data1 = OracleCallbackData {
         feed_id: String::from_str(&env, ""), // Empty feed ID
@@ -384,11 +394,11 @@ fn test_oracle_callback_resolver_integration() {
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
     let market_id = Symbol::new(&env, "test_market");
-    
+
     env.as_contract(&contract_id, || {
         // Initialize oracle whitelist
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         // Add oracle to whitelist
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
@@ -399,9 +409,10 @@ fn test_oracle_callback_resolver_integration() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
-        
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
+
         // Create a test market (simplified for testing)
         // In a real implementation, this would use the actual market creation logic
     });
@@ -439,10 +450,10 @@ fn test_oracle_callback_authorization_validation() {
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
     let market_id = Symbol::new(&env, "test_market");
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
@@ -452,8 +463,9 @@ fn test_oracle_callback_authorization_validation() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
     });
 
     // Test authorized oracle
@@ -462,7 +474,7 @@ fn test_oracle_callback_authorization_validation() {
         &oracle_address,
         &market_id,
     );
-    
+
     // Note: This may fail due to missing market setup, but authorization check should pass
     // In a complete test environment, this would succeed
 }
@@ -478,10 +490,10 @@ fn test_comprehensive_oracle_callback_security() {
     let admin = Address::generate(&env);
     let oracle_address = Address::generate(&env);
     let unauthorized_caller = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         OracleWhitelist::initialize(&env, admin).unwrap();
-        
+
         let metadata = OracleMetadata {
             provider: crate::types::OracleProvider::reflector(),
             contract_address: oracle_address.clone(),
@@ -491,12 +503,13 @@ fn test_comprehensive_oracle_callback_security() {
             is_active: true,
             description: String::from_str(&env, "Test Oracle"),
         };
-        
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
     });
 
     let auth = OracleCallbackAuth::new(&env);
-    
+
     // Test 1: Valid authentication
     let valid_callback = OracleCallbackData {
         feed_id: String::from_str(&env, "BTC/USD"),
@@ -505,20 +518,20 @@ fn test_comprehensive_oracle_callback_security() {
         nonce: 12345,
         signature: vec![&env; 64],
     };
-    
+
     let result1 = auth.authenticate_and_process(&oracle_address, &valid_callback);
     assert!(result1.is_ok());
-    
+
     // Test 2: Unauthorized caller
     let result2 = auth.authenticate_and_process(&unauthorized_caller, &valid_callback);
     assert!(result2.is_err());
     assert_eq!(result2.unwrap_err(), Error::OracleCallbackUnauthorized);
-    
+
     // Test 3: Replay attack
     let result3 = auth.authenticate_and_process(&oracle_address, &valid_callback);
     assert!(result3.is_err());
     assert_eq!(result3.unwrap_err(), Error::OracleCallbackReplayDetected);
-    
+
     // Test 4: Rate limiting
     let new_callback = OracleCallbackData {
         feed_id: String::from_str(&env, "ETH/USD"),
@@ -527,11 +540,11 @@ fn test_comprehensive_oracle_callback_security() {
         nonce: 12346,
         signature: vec![&env; 64],
     };
-    
+
     let result4 = auth.authenticate_and_process(&oracle_address, &new_callback);
     assert!(result4.is_err());
     assert_eq!(result4.unwrap_err(), Error::OracleCallbackTimeout);
-    
+
     // Test 5: Invalid signature
     let invalid_sig_callback = OracleCallbackData {
         feed_id: String::from_str(&env, "LTC/USD"),
@@ -540,22 +553,10 @@ fn test_comprehensive_oracle_callback_security() {
         nonce: 12347,
         signature: vec![&env; 32], // Invalid size
     };
-    
+
     let result5 = auth.authenticate_and_process(&oracle_address, &invalid_sig_callback);
     assert!(result5.is_err());
     assert_eq!(result5.unwrap_err(), Error::OracleCallbackInvalidSignature);
-}
-
-    // First request should succeed
-    let result1 = valid_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
-    assert!(result1.is_ok());
-    assert_eq!(result1.unwrap(), 2600000);
-
-    // Second request with same parameters should still succeed (no replay protection at oracle level)
-    // In a real implementation, this would be handled at the contract level with nonces
-    let result2 = valid_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
-    assert!(result2.is_ok());
-    assert_eq!(result2.unwrap(), 2600000);
 }
 
 /// Test oracle whitelist validation
@@ -585,7 +586,8 @@ fn test_oracle_whitelist_validation() {
             description: String::from_str(&env, "Test Oracle"),
         };
 
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata).unwrap();
+        OracleWhitelist::add_oracle_to_whitelist(&env, admin, oracle_address.clone(), metadata)
+            .unwrap();
 
         // Now validation should pass
         let is_valid = OracleWhitelist::validate_oracle_contract(&env, &oracle_address).unwrap();
@@ -615,7 +617,13 @@ fn test_oracle_deactivation_security() {
             description: String::from_str(&env, "Test Oracle"),
         };
 
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin.clone(), oracle_address.clone(), metadata).unwrap();
+        OracleWhitelist::add_oracle_to_whitelist(
+            &env,
+            admin.clone(),
+            oracle_address.clone(),
+            metadata,
+        )
+        .unwrap();
 
         // Non-admin should not be able to deactivate
         let result = OracleWhitelist::deactivate_oracle(&env, non_admin, oracle_address.clone());
@@ -659,7 +667,8 @@ fn test_extreme_value_validation() {
     let contract_id = Address::generate(&env);
 
     // Test with extremely high value
-    let extreme_high_oracle = MockOracleFactory::create_extreme_value_oracle(&env, contract_id.clone(), i128::MAX);
+    let extreme_high_oracle =
+        MockOracleFactory::create_extreme_value_oracle(&env, contract_id.clone(), i128::MAX);
     let result = extreme_high_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), i128::MAX);
@@ -671,7 +680,8 @@ fn test_extreme_value_validation() {
     assert_eq!(result.unwrap(), 0);
 
     // Test with negative value
-    let negative_oracle = MockOracleFactory::create_extreme_value_oracle(&env, contract_id.clone(), -1000);
+    let negative_oracle =
+        MockOracleFactory::create_extreme_value_oracle(&env, contract_id.clone(), -1000);
     let result = negative_oracle.get_price(&env, &String::from_str(&env, "BTC/USD"));
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), -1000);
@@ -681,11 +691,17 @@ fn test_extreme_value_validation() {
 #[test]
 fn test_oracle_provider_validation() {
     // Test supported providers
-    assert!(OracleFactory::is_provider_supported(&OracleProvider::reflector()));
+    assert!(OracleFactory::is_provider_supported(
+        &OracleProvider::reflector()
+    ));
 
     // Test unsupported providers
-    assert!(!OracleFactory::is_provider_supported(&OracleProvider::pyth()));
-    assert!(!OracleFactory::is_provider_supported(&OracleProvider::band_protocol()));
+    assert!(!OracleFactory::is_provider_supported(
+        &OracleProvider::pyth()
+    ));
+    assert!(!OracleFactory::is_provider_supported(
+        &OracleProvider::band_protocol()
+    ));
     assert!(!OracleFactory::is_provider_supported(&OracleProvider::dia()));
 }
 
@@ -726,10 +742,17 @@ fn test_oracle_metadata_integrity() {
             description: String::from_str(&env, "Test Oracle"),
         };
 
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin.clone(), oracle_address.clone(), metadata).unwrap();
+        OracleWhitelist::add_oracle_to_whitelist(
+            &env,
+            admin.clone(),
+            oracle_address.clone(),
+            metadata,
+        )
+        .unwrap();
 
         // Retrieve metadata and verify integrity
-        let retrieved_metadata = OracleWhitelist::get_oracle_metadata(&env, &oracle_address).unwrap();
+        let retrieved_metadata =
+            OracleWhitelist::get_oracle_metadata(&env, &oracle_address).unwrap();
         assert_eq!(retrieved_metadata.provider, OracleProvider::reflector());
         assert_eq!(retrieved_metadata.contract_address, oracle_address);
         assert_eq!(retrieved_metadata.added_by, admin);
@@ -760,7 +783,8 @@ fn test_admin_authorization_oracle_management() {
             description: String::from_str(&env, "Test Oracle"),
         };
 
-        let result = OracleWhitelist::add_oracle_to_whitelist(&env, non_admin, oracle_address, metadata);
+        let result =
+            OracleWhitelist::add_oracle_to_whitelist(&env, non_admin, oracle_address, metadata);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), Error::Unauthorized);
     });
@@ -788,10 +812,17 @@ fn test_oracle_removal_security() {
             description: String::from_str(&env, "Test Oracle"),
         };
 
-        OracleWhitelist::add_oracle_to_whitelist(&env, admin.clone(), oracle_address.clone(), metadata).unwrap();
+        OracleWhitelist::add_oracle_to_whitelist(
+            &env,
+            admin.clone(),
+            oracle_address.clone(),
+            metadata,
+        )
+        .unwrap();
 
         // Non-admin should not be able to remove oracle
-        let result = OracleWhitelist::remove_oracle_from_whitelist(&env, non_admin, oracle_address.clone());
+        let result =
+            OracleWhitelist::remove_oracle_from_whitelist(&env, non_admin, oracle_address.clone());
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), Error::Unauthorized);
 

@@ -2050,16 +2050,16 @@ impl OracleCallbackResolver {
     ) -> Result<(), Error> {
         // Create authentication system
         let auth = crate::oracles::OracleCallbackAuth::new(env);
-        
+
         // Authenticate and process the callback
         auth.authenticate_and_process(caller, callback_data)?;
-        
+
         // Update market resolution based on authenticated oracle data
         Self::update_market_resolution(env, callback_data, market_id)?;
-        
+
         Ok(())
     }
-    
+
     /// Update market resolution based on authenticated oracle data
     ///
     /// # Arguments
@@ -2077,16 +2077,16 @@ impl OracleCallbackResolver {
     ) -> Result<(), Error> {
         // Get market state manager
         let market_manager = MarketStateManager::from_env(env);
-        
+
         // Get market
         let market = market_manager.get_market(market_id)?;
-        
+
         // Validate market is ready for resolution
         OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
-        
+
         // Determine outcome based on oracle data
         let outcome = Self::determine_outcome_from_oracle_data(callback_data, &market)?;
-        
+
         // Create oracle resolution
         let resolution = OracleResolution {
             price: callback_data.price,
@@ -2095,18 +2095,18 @@ impl OracleCallbackResolver {
             confidence: None,
             threshold: 0, // Not applicable for direct oracle resolution
         };
-        
+
         // Validate resolution
         OracleResolutionValidator::validate_oracle_resolution(env, &resolution)?;
-        
+
         // Update market with oracle resolution
         let mut updated_market = market;
         updated_market.oracle_result = Some(outcome.clone());
         updated_market.oracle_resolution_time = Some(callback_data.timestamp);
-        
+
         // Store updated market
         market_manager.update_market(market_id, &updated_market)?;
-        
+
         // Emit resolution event
         crate::events::EventEmitter::emit_oracle_result(
             env,
@@ -2115,10 +2115,10 @@ impl OracleCallbackResolver {
             callback_data.price,
             callback_data.timestamp,
         );
-        
+
         Ok(())
     }
-    
+
     /// Determine market outcome from oracle data
     ///
     /// # Arguments
@@ -2133,12 +2133,25 @@ impl OracleCallbackResolver {
     ) -> Result<String, Error> {
         // For binary markets (yes/no), determine outcome based on price comparison
         if market.outcomes.len() == 2 {
-            let (yes_outcome, no_outcome) = if market.outcomes.get(0).unwrap().to_string().to_lowercase().contains("yes") {
-                (market.outcomes.get(0).unwrap(), market.outcomes.get(1).unwrap())
+            let (yes_outcome, no_outcome) = if market
+                .outcomes
+                .get(0)
+                .unwrap()
+                .to_string()
+                .to_lowercase()
+                .contains("yes")
+            {
+                (
+                    market.outcomes.get(0).unwrap(),
+                    market.outcomes.get(1).unwrap(),
+                )
             } else {
-                (market.outcomes.get(1).unwrap(), market.outcomes.get(0).unwrap())
+                (
+                    market.outcomes.get(1).unwrap(),
+                    market.outcomes.get(0).unwrap(),
+                )
             };
-            
+
             // Compare oracle price with threshold (assuming threshold is stored in oracle config)
             // For now, we'll use a simple comparison: price > 0 means "yes"
             if callback_data.price > 0 {
@@ -2152,7 +2165,7 @@ impl OracleCallbackResolver {
             Ok(market.outcomes.get(outcome_index).unwrap().clone())
         }
     }
-    
+
     /// Validate oracle callback authorization for market resolution
     ///
     /// # Arguments
@@ -2173,13 +2186,13 @@ impl OracleCallbackResolver {
         if !whitelist.is_oracle_authorized(caller)? {
             return Err(Error::OracleCallbackUnauthorized);
         }
-        
+
         // Check if market exists and is ready for oracle resolution
         let market_manager = MarketStateManager::from_env(env);
         let market = market_manager.get_market(market_id)?;
-        
+
         OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
-        
+
         Ok(())
     }
 }

@@ -539,9 +539,7 @@ impl ErrorHandler {
             Error::MarketNotFound => {
                 "Market not found. The ID may be incorrect or the market has been removed."
             }
-            Error::MarketClosed => {
-                "Market is closed and cannot accept new operations."
-            }
+            Error::MarketClosed => "Market is closed and cannot accept new operations.",
             Error::OracleUnavailable => {
                 "Oracle service is unavailable. The external data source may be down."
             }
@@ -551,9 +549,7 @@ impl ErrorHandler {
             Error::AlreadyVoted => {
                 "User has already voted in this market. Only one vote per user is allowed."
             }
-            Error::InvalidInput => {
-                "Invalid input. Please check your parameters and try again."
-            }
+            Error::InvalidInput => "Invalid input. Please check your parameters and try again.",
             Error::InvalidState => {
                 "Invalid system state. The contract may be in an unexpected condition."
             }
@@ -679,9 +675,9 @@ impl ErrorHandler {
             | Error::AlreadyBet
             | Error::AlreadyClaimed
             | Error::FeeAlreadyCollected => RecoveryStrategy::Skip,
-            Error::Unauthorized
-            | Error::MarketClosed
-            | Error::MarketResolved => RecoveryStrategy::Abort,
+            Error::Unauthorized | Error::MarketClosed | Error::MarketResolved => {
+                RecoveryStrategy::Abort
+            }
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
@@ -798,10 +794,8 @@ impl ErrorHandler {
 
         // IMPROVEMENT: strategy string is derived from the same source-of-truth
         // enum rather than a parallel match.
-        let strategy_str = Self::recovery_strategy_to_str(
-            env,
-            &Self::get_error_recovery_strategy(&error),
-        );
+        let strategy_str =
+            Self::recovery_strategy_to_str(env, &Self::get_error_recovery_strategy(&error));
         let max_attempts = Self::get_max_recovery_attempts(&error);
 
         let mut recovery = ErrorRecovery {
@@ -974,7 +968,10 @@ impl ErrorHandler {
         );
         procedures.set(
             String::from_str(env, "oracle_recovery"),
-            String::from_str(env, "For oracle errors, try fallback oracle or cached data."),
+            String::from_str(
+                env,
+                "For oracle errors, try fallback oracle or cached data.",
+            ),
         );
         procedures.set(
             String::from_str(env, "validation_recovery"),
@@ -985,7 +982,10 @@ impl ErrorHandler {
         );
         procedures.set(
             String::from_str(env, "system_recovery"),
-            String::from_str(env, "For critical system errors, require manual intervention."),
+            String::from_str(
+                env,
+                "For critical system errors, require manual intervention.",
+            ),
         );
         Ok(procedures)
     }
@@ -1174,9 +1174,7 @@ impl ErrorHandler {
     /// # Returns
     ///
     /// A tuple of (severity, category, recovery_strategy) for the error.
-    fn get_error_classification(
-        error: &Error,
-    ) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
+    fn get_error_classification(error: &Error) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
         match error {
             // Critical
             Error::AdminNotSet => (
@@ -1269,30 +1267,20 @@ impl ErrorHandler {
     /// A `String` with recommended user actions.
     fn get_user_action(env: &Env, error: &Error, category: &ErrorCategory) -> String {
         let msg = match (error, category) {
-            (Error::Unauthorized, _) => {
-                "Ensure you have the required permissions before retrying."
-            }
+            (Error::Unauthorized, _) => "Ensure you have the required permissions before retrying.",
             (Error::InsufficientStake, _) => {
                 "Increase your stake amount to meet the minimum requirement."
             }
             (Error::MarketNotFound, _) => {
                 "Verify the market ID or check whether the market is still active."
             }
-            (Error::MarketClosed, _) => {
-                "This market is closed. Please look for an active market."
-            }
-            (Error::AlreadyVoted, _) => {
-                "You have already voted. No further action is required."
-            }
+            (Error::MarketClosed, _) => "This market is closed. Please look for an active market.",
+            (Error::AlreadyVoted, _) => "You have already voted. No further action is required.",
             (Error::OracleUnavailable, _) => {
                 "The oracle is temporarily unavailable. Please try again later."
             }
-            (Error::InvalidInput, _) => {
-                "Check your input parameters and try again."
-            }
-            (_, ErrorCategory::Validation) => {
-                "Review and correct the input data."
-            }
+            (Error::InvalidInput, _) => "Check your input parameters and try again.",
+            (_, ErrorCategory::Validation) => "Review and correct the input data.",
             (_, ErrorCategory::System) => {
                 "A system error occurred. Contact support if the issue persists."
             }
@@ -1393,7 +1381,12 @@ impl Error {
             Error::ResolutionTimeoutReached => "Resolution timeout reached",
             Error::OracleConfidenceTooWide => "Oracle confidence interval too wide",
             Error::InvalidOracleFeed => "Invalid oracle feed ID",
-            
+            Error::OracleCallbackAuthFailed => "Oracle callback authentication failed",
+            Error::OracleCallbackUnauthorized => "Oracle callback unauthorized",
+            Error::OracleCallbackInvalidSignature => "Oracle callback signature invalid",
+            Error::OracleCallbackReplayDetected => "Oracle callback replay detected",
+            Error::OracleCallbackTimeout => "Oracle callback timed out",
+
             // Metadata length limit errors
             Error::QuestionTooLong => "Market question exceeds maximum allowed length",
             Error::OutcomeTooLong => "Outcome label exceeds maximum allowed length",
@@ -1410,26 +1403,13 @@ impl Error {
             Error::TooManyExtensions => "Too many extension history entries",
             Error::TooManyOracleResults => "Too many oracle results in multi-oracle aggregation",
             Error::TooManyWinningOutcomes => "Too many winning outcomes specified",
-            
+
             // Circuit breaker errors
-            Error::FeeAlreadyCollected => "Fee already collected",
-            Error::NoFeesToCollect => "No fees to collect",
-            Error::InvalidExtensionDays => "Invalid extension days",
-            Error::ExtensionDenied => "Extension not allowed or exceeded",
-            Error::AdminNotSet => "Admin address is not set (initialization missing)",
-            Error::OracleStale => "Oracle data is stale or timed out",
-            Error::OracleNoConsensus => "Oracle consensus not reached",
-            Error::OracleVerified => "Oracle result already verified",
-            Error::MarketNotReady => "Market not ready for oracle verification",
-            Error::FallbackOracleUnavailable => "Fallback oracle is unavailable or unhealthy",
-            Error::ResolutionTimeoutReached => "Resolution timeout has been reached",
-            Error::OracleConfidenceTooWide => "Oracle confidence interval exceeds threshold",
             Error::CBNotInitialized => "Circuit breaker not initialized",
             Error::CBAlreadyOpen => "Circuit breaker is already open (paused)",
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
-            Error::InvalidOracleFeed => "Invalid oracle feed or malformed response",
         }
     }
 
@@ -1489,7 +1469,12 @@ impl Error {
             Error::ResolutionTimeoutReached => "RESOLUTION_TIMEOUT_REACHED",
             Error::OracleConfidenceTooWide => "ORACLE_CONFIDENCE_TOO_WIDE",
             Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
-            
+            Error::OracleCallbackAuthFailed => "ORACLE_CALLBACK_AUTH_FAILED",
+            Error::OracleCallbackUnauthorized => "ORACLE_CALLBACK_UNAUTHORIZED",
+            Error::OracleCallbackInvalidSignature => "ORACLE_CALLBACK_INVALID_SIGNATURE",
+            Error::OracleCallbackReplayDetected => "ORACLE_CALLBACK_REPLAY_DETECTED",
+            Error::OracleCallbackTimeout => "ORACLE_CALLBACK_TIMEOUT",
+
             // Metadata length limit errors
             Error::QuestionTooLong => "QUESTION_TOO_LONG",
             Error::OutcomeTooLong => "OUTCOME_TOO_LONG",
@@ -1506,14 +1491,13 @@ impl Error {
             Error::TooManyExtensions => "TOO_MANY_EXTENSIONS",
             Error::TooManyOracleResults => "TOO_MANY_ORACLE_RESULTS",
             Error::TooManyWinningOutcomes => "TOO_MANY_WINNING_OUTCOMES",
-            
+
             // Circuit breaker errors
             Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
             Error::CBAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
-            Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
         }
     }
 }
@@ -1587,7 +1571,6 @@ mod tests {
             Error::GasBudgetExceeded,
             Error::AdminNotSet,
             Error::InvalidOracleFeed,
-            
             // Metadata length limit errors
             Error::QuestionTooLong,
             Error::OutcomeTooLong,
@@ -1604,7 +1587,6 @@ mod tests {
             Error::TooManyExtensions,
             Error::TooManyOracleResults,
             Error::TooManyWinningOutcomes,
-            
             // Circuit breaker errors
             Error::AdminNotSet,
             Error::CBNotInitialized,
@@ -1702,16 +1684,21 @@ mod tests {
         let env = Env::default();
         let analytics = ErrorHandler::get_error_analytics(&env).unwrap();
         assert_eq!(analytics.total_errors, 0);
-        assert!(analytics.errors_by_category.get(ErrorCategory::UserOperation).is_some());
-        assert!(analytics.errors_by_severity.get(ErrorSeverity::Low).is_some());
+        assert!(analytics
+            .errors_by_category
+            .get(ErrorCategory::UserOperation)
+            .is_some());
+        assert!(analytics
+            .errors_by_severity
+            .get(ErrorSeverity::Low)
+            .is_some());
     }
 
     #[test]
     fn test_technical_details_not_placeholder() {
         let env = Env::default();
         let ctx = make_context(&env);
-        let details =
-            ErrorHandler::get_technical_details(&env, &Error::OracleUnavailable, &ctx);
+        let details = ErrorHandler::get_technical_details(&env, &Error::OracleUnavailable, &ctx);
         // Must contain the numeric error code, not just a generic string
         // (soroban String has no contains(), so we verify it is non-empty)
         assert!(!details.is_empty());
@@ -1722,10 +1709,12 @@ mod tests {
     fn test_gas_budget_exceeded_description_is_exhaustive() {
         let err = Error::GasBudgetExceeded;
         let desc = err.description();
-        assert!(!desc.is_empty(), "GasBudgetExceeded must have a non-empty description");
+        assert!(
+            !desc.is_empty(),
+            "GasBudgetExceeded must have a non-empty description"
+        );
         assert_ne!(
-            desc,
-            "An error occurred. Please verify your parameters and try again.",
+            desc, "An error occurred. Please verify your parameters and try again.",
             "GasBudgetExceeded must have its own description, not the catch-all fallback"
         );
     }
@@ -1875,8 +1864,11 @@ mod tests {
         }
 
         // Category fallback branches
-        let validation_msg =
-            ErrorHandler::get_user_action(&env, &Error::InvalidQuestion, &ErrorCategory::Validation);
+        let validation_msg = ErrorHandler::get_user_action(
+            &env,
+            &Error::InvalidQuestion,
+            &ErrorCategory::Validation,
+        );
         assert!(!validation_msg.is_empty());
         let system_msg =
             ErrorHandler::get_user_action(&env, &Error::CBError, &ErrorCategory::System);
@@ -1927,42 +1919,52 @@ mod tests {
             recovery_success_timestamp: None,
             recovery_failure_reason: None,
         };
-        assert!(ErrorHandler::execute_recovery_strategy(&env, &retry)
-            .unwrap()
-            .success);
+        assert!(
+            ErrorHandler::execute_recovery_strategy(&env, &retry)
+                .unwrap()
+                .success
+        );
 
         let retry_with_delay_fail = ErrorRecovery {
             recovery_strategy: String::from_str(&env, "retry_with_delay"),
             ..retry.clone()
         };
-        assert!(!ErrorHandler::execute_recovery_strategy(&env, &retry_with_delay_fail)
-            .unwrap()
-            .success);
+        assert!(
+            !ErrorHandler::execute_recovery_strategy(&env, &retry_with_delay_fail)
+                .unwrap()
+                .success
+        );
 
         let alt_success = ErrorRecovery {
             original_error_code: Error::OracleUnavailable as u32,
             recovery_strategy: String::from_str(&env, "alternative_method"),
             ..retry.clone()
         };
-        assert!(ErrorHandler::execute_recovery_strategy(&env, &alt_success)
-            .unwrap()
-            .success);
+        assert!(
+            ErrorHandler::execute_recovery_strategy(&env, &alt_success)
+                .unwrap()
+                .success
+        );
 
         let skip = ErrorRecovery {
             recovery_strategy: String::from_str(&env, "skip"),
             ..retry.clone()
         };
-        assert!(ErrorHandler::execute_recovery_strategy(&env, &skip)
-            .unwrap()
-            .success);
+        assert!(
+            ErrorHandler::execute_recovery_strategy(&env, &skip)
+                .unwrap()
+                .success
+        );
 
         let abort = ErrorRecovery {
             recovery_strategy: String::from_str(&env, "abort"),
             ..retry
         };
-        assert!(!ErrorHandler::execute_recovery_strategy(&env, &abort)
-            .unwrap()
-            .success);
+        assert!(
+            !ErrorHandler::execute_recovery_strategy(&env, &abort)
+                .unwrap()
+                .success
+        );
     }
 
     #[test]
@@ -2000,9 +2002,7 @@ mod tests {
             ErrorHandler::handle_error_recovery(&env, &Error::OracleConfidenceTooWide, &ctx),
             Ok(false)
         );
-        assert!(
-            ErrorHandler::handle_error_recovery(&env, &Error::AdminNotSet, &ctx).is_err()
-        );
+        assert!(ErrorHandler::handle_error_recovery(&env, &Error::AdminNotSet, &ctx).is_err());
     }
 
     #[test]
@@ -2044,7 +2044,10 @@ mod tests {
             pattern_type: ResiliencePatternType::RetryWithBackoff,
             pattern_config: {
                 let mut m = Map::new(&env);
-                m.set(String::from_str(&env, "attempts"), String::from_str(&env, "3"));
+                m.set(
+                    String::from_str(&env, "attempts"),
+                    String::from_str(&env, "3"),
+                );
                 m
             },
             enabled: true,
@@ -2073,7 +2076,10 @@ mod tests {
 
         valid_pattern.pattern_config = {
             let mut m = Map::new(&env);
-            m.set(String::from_str(&env, "attempts"), String::from_str(&env, "3"));
+            m.set(
+                String::from_str(&env, "attempts"),
+                String::from_str(&env, "3"),
+            );
             m
         };
         valid_pattern.priority = 0;
@@ -2102,26 +2108,18 @@ mod tests {
     fn test_document_error_recovery_procedures_contains_expected_keys() {
         let env = Env::default();
         let procedures = ErrorHandler::document_error_recovery_procedures(&env).unwrap();
-        assert!(
-            procedures
-                .get(String::from_str(&env, "retry_procedure"))
-                .is_some()
-        );
-        assert!(
-            procedures
-                .get(String::from_str(&env, "oracle_recovery"))
-                .is_some()
-        );
-        assert!(
-            procedures
-                .get(String::from_str(&env, "validation_recovery"))
-                .is_some()
-        );
-        assert!(
-            procedures
-                .get(String::from_str(&env, "system_recovery"))
-                .is_some()
-        );
+        assert!(procedures
+            .get(String::from_str(&env, "retry_procedure"))
+            .is_some());
+        assert!(procedures
+            .get(String::from_str(&env, "oracle_recovery"))
+            .is_some());
+        assert!(procedures
+            .get(String::from_str(&env, "validation_recovery"))
+            .is_some());
+        assert!(procedures
+            .get(String::from_str(&env, "system_recovery"))
+            .is_some());
     }
 
     #[test]

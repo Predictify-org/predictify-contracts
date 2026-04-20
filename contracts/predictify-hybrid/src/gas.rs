@@ -22,7 +22,7 @@ pub struct GasUsage {
 }
 
 /// GasTracker provides observability hooks and optimization limits.
-/// 
+///
 /// It allows tracking CPU and memory usage in tests via mocks and provides
 /// an administrative interface to set limits on production operations.
 pub struct GasTracker;
@@ -50,10 +50,12 @@ impl GasTracker {
 
     /// Retrieves the current gas budget limit for an operation.
     pub fn get_limits(env: &Env, operation: Symbol) -> (Option<u64>, Option<u64>) {
-        let cpu = env.storage()
+        let cpu = env
+            .storage()
             .instance()
             .get(&GasConfigKey::GasLimit(operation.clone()));
-        let mem = env.storage()
+        let mem = env
+            .storage()
             .instance()
             .get(&GasConfigKey::MemLimit(operation));
         (cpu, mem)
@@ -72,14 +74,12 @@ impl GasTracker {
         let cost = Self::get_actual_cost(env, operation.clone());
 
         // Publish observability event: [ "gas_used", operation ] -> cost
-        env.events().publish(
-            (symbol_short!("gas_used"), operation.clone()),
-            cost.clone(),
-        );
+        env.events()
+            .publish((symbol_short!("gas_used"), operation.clone()), cost.clone());
 
         // Optional: admin-set gas budget cap per call (abort if exceeded)
         let (cpu_limit, mem_limit) = Self::get_limits(env, operation);
-        
+
         if let Some(limit) = cpu_limit {
             if cost.cpu > limit {
                 panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
@@ -95,6 +95,39 @@ impl GasTracker {
     /// Test helper to set the expected cost for an operation.
     #[cfg(test)]
     pub fn set_test_cost(env: &Env, cost: u64) {
-        env.storage().temporary().set(&symbol_short!("t_gas"), &cost);
+        env.storage()
+            .temporary()
+            .set(&symbol_short!("t_gas"), &cost);
+    }
+
+    fn get_actual_cost(env: &Env, operation: Symbol) -> GasUsage {
+        // Contract code cannot read real CPU/memory usage from the host.
+        // For tests, allow a mocked cost to be injected via temporary storage.
+        #[cfg(test)]
+        {
+            let cpu: Option<u64> = env.storage().temporary().get(&symbol_short!("t_gas"));
+            return GasUsage {
+                cpu: cpu.unwrap_or(0),
+                mem: 0,
+            };
+        }
+
+        #[cfg(not(test))]
+        {
+            // Optional per-operation mock hooks (useful for off-chain simulation),
+            // otherwise default to zero.
+            let cpu: Option<u64> = env.storage().instance().get(&GasConfigKey::TestCost(
+                symbol_short!("t_cpu"),
+                operation.clone(),
+            ));
+            let mem: Option<u64> = env
+                .storage()
+                .instance()
+                .get(&GasConfigKey::TestCost(symbol_short!("t_mem"), operation));
+            GasUsage {
+                cpu: cpu.unwrap_or(0),
+                mem: mem.unwrap_or(0),
+            }
+        }
     }
 }

@@ -485,103 +485,102 @@ fn test_create_market_successful() {
         .get(test.user.clone())
         .unwrap_or(false));
 
+    // ===== VERSION & CAPABILITY DISCOVERY TESTS =====
 
-// ===== VERSION & CAPABILITY DISCOVERY TESTS =====
+    #[test]
+    fn test_version_discovery_format_and_no_state_change() {
+        let test = PredictifyTest::setup();
+        let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-#[test]
-fn test_version_discovery_format_and_no_state_change() {
-    let test = PredictifyTest::setup();
-    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+        let version_key = Symbol::new(&test.env, "VERSION_HISTORY");
+        let had_version_history = test.env.storage().persistent().has(&version_key);
+        let events_before = test.env.events().all().len();
 
-    let version_key = Symbol::new(&test.env, "VERSION_HISTORY");
-    let had_version_history = test.env.storage().persistent().has(&version_key);
-    let events_before = test.env.events().all().len();
+        let version = client.get_contract_version().unwrap();
 
-    let version = client.get_contract_version().unwrap();
+        assert!(version.description.len() > 0);
 
-    assert!(version.description.len() > 0);
+        let version_text = format!("{}.{}.{}", version.major, version.minor, version.patch);
+        let parts: Vec<&str> = version_text.split('.').collect();
+        assert_eq!(parts.len(), 3);
+        assert!(parts.iter().all(|part| !part.is_empty()));
+        assert!(parts
+            .iter()
+            .all(|part| part.chars().all(|c| c.is_ascii_digit())));
 
-    let version_text = format!("{}.{}.{}", version.major, version.minor, version.patch);
-    let parts: Vec<&str> = version_text.split('.').collect();
-    assert_eq!(parts.len(), 3);
-    assert!(parts.iter().all(|part| !part.is_empty()));
-    assert!(parts
-        .iter()
-        .all(|part| part.chars().all(|c| c.is_ascii_digit())));
+        let has_version_history = test.env.storage().persistent().has(&version_key);
+        assert_eq!(had_version_history, has_version_history);
+        assert_eq!(events_before, test.env.events().all().len());
+    }
 
-    let has_version_history = test.env.storage().persistent().has(&version_key);
-    assert_eq!(had_version_history, has_version_history);
-    assert_eq!(events_before, test.env.events().all().len());
-}
+    #[test]
+    fn test_capabilities_list_and_no_state_change() {
+        let test = PredictifyTest::setup();
+        let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-#[test]
-fn test_capabilities_list_and_no_state_change() {
-    let test = PredictifyTest::setup();
-    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+        let version_key = Symbol::new(&test.env, "VERSION_HISTORY");
+        let had_version_history = test.env.storage().persistent().has(&version_key);
+        let events_before = test.env.events().all().len();
 
-    let version_key = Symbol::new(&test.env, "VERSION_HISTORY");
-    let had_version_history = test.env.storage().persistent().has(&version_key);
-    let events_before = test.env.events().all().len();
+        let capabilities = client.capabilities();
 
-    let capabilities = client.capabilities();
+        let expected = vec![
+            &test.env,
+            String::from_str(&test.env, "versioning"),
+            String::from_str(&test.env, "upgrade-management"),
+            String::from_str(&test.env, "query-functions"),
+            String::from_str(&test.env, "market-management"),
+            String::from_str(&test.env, "betting"),
+            String::from_str(&test.env, "disputes"),
+            String::from_str(&test.env, "oracle-integration"),
+            String::from_str(&test.env, "governance"),
+            String::from_str(&test.env, "analytics"),
+            String::from_str(&test.env, "monitoring"),
+        ];
 
-    let expected = vec![
-        &test.env,
-        String::from_str(&test.env, "versioning"),
-        String::from_str(&test.env, "upgrade-management"),
-        String::from_str(&test.env, "query-functions"),
-        String::from_str(&test.env, "market-management"),
-        String::from_str(&test.env, "betting"),
-        String::from_str(&test.env, "disputes"),
-        String::from_str(&test.env, "oracle-integration"),
-        String::from_str(&test.env, "governance"),
-        String::from_str(&test.env, "analytics"),
-        String::from_str(&test.env, "monitoring"),
-    ];
+        assert!(!capabilities.is_empty());
+        assert_eq!(capabilities, expected);
 
-    assert!(!capabilities.is_empty());
-    assert_eq!(capabilities, expected);
+        let has_version_history = test.env.storage().persistent().has(&version_key);
+        assert_eq!(had_version_history, has_version_history);
+        assert_eq!(events_before, test.env.events().all().len());
+    }
 
-    let has_version_history = test.env.storage().persistent().has(&version_key);
-    assert_eq!(had_version_history, has_version_history);
-    assert_eq!(events_before, test.env.events().all().len());
-}
+    #[test]
+    fn test_version_and_capabilities_after_upgrade() {
+        let test = PredictifyTest::setup();
+        let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
-#[test]
-fn test_version_and_capabilities_after_upgrade() {
-    let test = PredictifyTest::setup();
-    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+        let initial_version = crate::versioning::Version::new(
+            &test.env,
+            1,
+            0,
+            0,
+            String::from_str(&test.env, "Initial version"),
+            false,
+        );
+        client.track_contract_version(&initial_version).unwrap();
 
-    let initial_version = crate::versioning::Version::new(
-        &test.env,
-        1,
-        0,
-        0,
-        String::from_str(&test.env, "Initial version"),
-        false,
-    );
-    client.track_contract_version(&initial_version).unwrap();
+        let upgraded_version = crate::versioning::Version::new(
+            &test.env,
+            1,
+            1,
+            0,
+            String::from_str(&test.env, "Upgrade"),
+            false,
+        );
+        client.upgrade_to_version(&upgraded_version).unwrap();
 
-    let upgraded_version = crate::versioning::Version::new(
-        &test.env,
-        1,
-        1,
-        0,
-        String::from_str(&test.env, "Upgrade"),
-        false,
-    );
-    client.upgrade_to_version(&upgraded_version).unwrap();
+        let current_version = client.get_contract_version().unwrap();
+        assert_eq!(current_version.major, 1);
+        assert_eq!(current_version.minor, 1);
+        assert_eq!(current_version.patch, 0);
 
-    let current_version = client.get_contract_version().unwrap();
-    assert_eq!(current_version.major, 1);
-    assert_eq!(current_version.minor, 1);
-    assert_eq!(current_version.patch, 0);
-
-    let capabilities = client.capabilities();
-    assert!(!capabilities.is_empty());
-    assert!(capabilities.contains(String::from_str(&test.env, "versioning")));
-    assert!(capabilities.contains(String::from_str(&test.env, "upgrade-management")));
-}
+        let capabilities = client.capabilities();
+        assert!(!capabilities.is_empty());
+        assert!(capabilities.contains(String::from_str(&test.env, "versioning")));
+        assert!(capabilities.contains(String::from_str(&test.env, "upgrade-management")));
+    }
     assert_eq!(
         market.question,
         String::from_str(&test.env, "Will BTC go above $25,000 by December 31?")
@@ -3050,11 +3049,26 @@ fn test_bet_rate_limit_enforced_when_config_set() {
     test.env.mock_all_auths();
     client.set_rate_limits(&test.admin, &config);
     test.env.mock_all_auths();
-    client.place_bet(&user, &market1, &String::from_str(&test.env, "yes"), &1_000_000);
+    client.place_bet(
+        &user,
+        &market1,
+        &String::from_str(&test.env, "yes"),
+        &1_000_000,
+    );
     test.env.mock_all_auths();
-    client.place_bet(&user, &market2, &String::from_str(&test.env, "yes"), &1_000_000);
+    client.place_bet(
+        &user,
+        &market2,
+        &String::from_str(&test.env, "yes"),
+        &1_000_000,
+    );
     test.env.mock_all_auths();
-    let res = client.try_place_bet(&user, &market3, &String::from_str(&test.env, "yes"), &1_000_000);
+    let res = client.try_place_bet(
+        &user,
+        &market3,
+        &String::from_str(&test.env, "yes"),
+        &1_000_000,
+    );
     assert!(res.is_err());
 }
 
@@ -3076,9 +3090,19 @@ fn test_bet_rate_limit_at_limit_ok() {
     test.env.mock_all_auths();
     client.set_rate_limits(&test.admin, &config);
     test.env.mock_all_auths();
-    client.place_bet(&user, &market1, &String::from_str(&test.env, "yes"), &1_000_000);
+    client.place_bet(
+        &user,
+        &market1,
+        &String::from_str(&test.env, "yes"),
+        &1_000_000,
+    );
     test.env.mock_all_auths();
-    client.place_bet(&user, &market2, &String::from_str(&test.env, "yes"), &1_000_000);
+    client.place_bet(
+        &user,
+        &market2,
+        &String::from_str(&test.env, "yes"),
+        &1_000_000,
+    );
     // Exactly at limit: both bets succeeded (different markets)
 }
 
@@ -3090,7 +3114,12 @@ fn test_bet_rate_limit_without_config_ok() {
     let user = test.create_funded_user();
     // No set_rate_limits called - place_bet should succeed
     test.env.mock_all_auths();
-    client.place_bet(&user, &market_id, &String::from_str(&test.env, "yes"), &1_000_000);
+    client.place_bet(
+        &user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &1_000_000,
+    );
     // No limit enforced when config not set
 }
 
@@ -3244,8 +3273,18 @@ fn test_multi_outcome_single_winner_payout() {
     let winner = test.create_funded_user();
     let loser = test.create_funded_user();
     test.env.mock_all_auths();
-    client.place_bet(&winner, &market_id, &String::from_str(&test.env, "win"), &100_0000000);
-    client.place_bet(&loser, &market_id, &String::from_str(&test.env, "lose"), &200_0000000);
+    client.place_bet(
+        &winner,
+        &market_id,
+        &String::from_str(&test.env, "win"),
+        &100_0000000,
+    );
+    client.place_bet(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "lose"),
+        &200_0000000,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -3303,8 +3342,18 @@ fn test_multi_outcome_tie_split_payout() {
     let u1 = test.create_funded_user();
     let u2 = test.create_funded_user();
     test.env.mock_all_auths();
-    client.place_bet(&u1, &market_id, &String::from_str(&test.env, "A1"), &100_0000000);
-    client.place_bet(&u2, &market_id, &String::from_str(&test.env, "B2"), &100_0000000);
+    client.place_bet(
+        &u1,
+        &market_id,
+        &String::from_str(&test.env, "A1"),
+        &100_0000000,
+    );
+    client.place_bet(
+        &u2,
+        &market_id,
+        &String::from_str(&test.env, "B2"),
+        &100_0000000,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -3365,7 +3414,12 @@ fn test_multi_outcome_one_outcome_no_bets() {
     );
     let user = test.create_funded_user();
     test.env.mock_all_auths();
-    client.place_bet(&user, &market_id, &String::from_str(&test.env, "A1"), &50_0000000);
+    client.place_bet(
+        &user,
+        &market_id,
+        &String::from_str(&test.env, "A1"),
+        &50_0000000,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -3420,8 +3474,18 @@ fn test_multi_outcome_all_same_outcome() {
     let u1 = test.create_funded_user();
     let u2 = test.create_funded_user();
     test.env.mock_all_auths();
-    client.place_bet(&u1, &market_id, &String::from_str(&test.env, "yes"), &10_0000000);
-    client.place_bet(&u2, &market_id, &String::from_str(&test.env, "yes"), &20_0000000);
+    client.place_bet(
+        &u1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &10_0000000,
+    );
+    client.place_bet(
+        &u2,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &20_0000000,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -6975,12 +7039,31 @@ fn test_claim_winnings_correct_proportional_amount() {
     let loser = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.vote(&winner1, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
-    client.vote(&winner2, &market_id, &String::from_str(&test.env, "yes"), &200_0000000);
-    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &300_0000000);
+    client.vote(
+        &winner1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    client.vote(
+        &winner2,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &200_0000000,
+    );
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &300_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7010,8 +7093,14 @@ fn test_claim_winnings_correct_proportional_amount() {
     });
 
     let payout = winner1_balance_after - winner1_balance_before;
-    assert!(payout > 100_0000000, "Winner should receive more than their stake");
-    assert!(payout < 600_0000000, "Winner should not receive entire pool");
+    assert!(
+        payout > 100_0000000,
+        "Winner should receive more than their stake"
+    );
+    assert!(
+        payout < 600_0000000,
+        "Winner should not receive entire pool"
+    );
 }
 
 #[test]
@@ -7024,11 +7113,25 @@ fn test_claim_winnings_with_platform_fee_deduction() {
     let loser = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.vote(&winner, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
-    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &100_0000000);
+    client.vote(
+        &winner,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &100_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7062,7 +7165,10 @@ fn test_claim_winnings_with_platform_fee_deduction() {
     let expected_fee = expected_gross * 200 / 10000;
     let expected_net = expected_gross - expected_fee;
 
-    assert_eq!(payout, expected_net, "Payout should equal gross minus 2% platform fee");
+    assert_eq!(
+        payout, expected_net,
+        "Payout should equal gross minus 2% platform fee"
+    );
 }
 
 #[test]
@@ -7076,12 +7182,31 @@ fn test_claim_winnings_multiple_winners_proportional_split() {
     let winner3 = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.vote(&winner1, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
-    client.vote(&winner2, &market_id, &String::from_str(&test.env, "yes"), &200_0000000);
-    client.vote(&winner3, &market_id, &String::from_str(&test.env, "yes"), &300_0000000);
+    client.vote(
+        &winner1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    client.vote(
+        &winner2,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &200_0000000,
+    );
+    client.vote(
+        &winner3,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &300_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7124,8 +7249,14 @@ fn test_claim_winnings_multiple_winners_proportional_split() {
     let payout1 = balance1_after - balance1_before;
     let payout2 = balance2_after - balance2_before;
 
-    assert!(payout2 > payout1, "Winner with 2x stake should receive more");
-    assert!(payout2 / payout1 >= 1 && payout2 / payout1 <= 3, "Payout ratio should be proportional");
+    assert!(
+        payout2 > payout1,
+        "Winner with 2x stake should receive more"
+    );
+    assert!(
+        payout2 / payout1 >= 1 && payout2 / payout1 <= 3,
+        "Payout ratio should be proportional"
+    );
 }
 
 #[test]
@@ -7136,10 +7267,19 @@ fn test_claim_winnings_unresolved_market_rejected() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     test.env.mock_all_auths();
-    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7168,10 +7308,19 @@ fn test_claim_winnings_non_voter_rejected() {
     let non_voter = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.vote(&voter, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(
+        &voter,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7198,10 +7347,19 @@ fn test_claim_winnings_event_emission() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     test.env.mock_all_auths();
-    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7245,11 +7403,25 @@ fn test_claim_winnings_zero_payout_for_loser_marked_claimed() {
     let loser = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.vote(&winner, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
-    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &100_0000000);
+    client.vote(
+        &winner,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &100_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7278,13 +7450,23 @@ fn test_claim_winnings_zero_payout_for_loser_marked_claimed() {
         token_client.balance(&loser)
     });
 
-    assert_eq!(balance_after, balance_before, "Loser should receive no payout");
+    assert_eq!(
+        balance_after, balance_before,
+        "Loser should receive no payout"
+    );
 
     let market_after = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
-    assert!(market_after.claimed.get(loser.clone()).unwrap_or(false), "Loser should be marked as claimed");
+    assert!(
+        market_after.claimed.get(loser.clone()).unwrap_or(false),
+        "Loser should be marked as claimed"
+    );
 }
 
 #[test]
@@ -7294,10 +7476,19 @@ fn test_claim_winnings_statistics_updated() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     test.env.mock_all_auths();
-    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7320,7 +7511,10 @@ fn test_claim_winnings_statistics_updated() {
         crate::statistics::StatisticsManager::get_user_stats(&test.env, &test.user)
     });
 
-    assert!(stats.total_winnings_claimed > 0, "User statistics should reflect claimed winnings");
+    assert!(
+        stats.total_winnings_claimed > 0,
+        "User statistics should reflect claimed winnings"
+    );
 }
 
 #[test]
@@ -7346,13 +7540,37 @@ fn test_claim_winnings_all_winners_can_claim() {
     let loser = test.create_funded_user();
 
     test.env.mock_all_auths();
-    client.vote(&winner1, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
-    client.vote(&winner2, &market_id, &String::from_str(&test.env, "yes"), &150_0000000);
-    client.vote(&winner3, &market_id, &String::from_str(&test.env, "yes"), &250_0000000);
-    client.vote(&loser, &market_id, &String::from_str(&test.env, "no"), &500_0000000);
+    client.vote(
+        &winner1,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+    client.vote(
+        &winner2,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &150_0000000,
+    );
+    client.vote(
+        &winner3,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &250_0000000,
+    );
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &500_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7374,7 +7592,11 @@ fn test_claim_winnings_all_winners_can_claim() {
     client.claim_winnings(&winner3, &market_id);
 
     let market_after = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     assert!(market_after.claimed.get(winner1.clone()).unwrap_or(false));
@@ -7390,10 +7612,19 @@ fn test_claim_winnings_after_claim_period_expired() {
     let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
     test.env.mock_all_auths();
-    client.vote(&test.user, &market_id, &String::from_str(&test.env, "yes"), &100_0000000);
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
 
     test.env.ledger().set(LedgerInfo {
@@ -7424,7 +7655,6 @@ fn test_claim_winnings_after_claim_period_expired() {
     client.claim_winnings(&test.user, &market_id);
 }
 
-
 // ===== WHITELIST & BLACKLIST ECS TESTS  =====
 
 #[test]
@@ -7435,35 +7665,49 @@ fn test_whitelist_access_control() {
     let restricted_user = test.create_funded_user();
     let allowed_user = test.create_funded_user();
 
-    
     test.env.as_contract(&test.contract_id, || {
-        let mut market = test.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap();
-        market.whitelist_enabled = true; 
+        let mut market = test
+            .env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap();
+        market.whitelist_enabled = true;
         test.env.storage().persistent().set(&market_id, &market);
     });
 
-    
     test.env.mock_all_auths();
-   
+
     let res = test.env.as_contract(&test.contract_id, || {
-         if !test.env.storage().persistent().has(&DataKey::Whitelisted(restricted_user.clone())) {
-             return Err(Error::Unauthorized);
-         }
-         Ok(())
+        if !test
+            .env
+            .storage()
+            .persistent()
+            .has(&DataKey::Whitelisted(restricted_user.clone()))
+        {
+            return Err(Error::Unauthorized);
+        }
+        Ok(())
     });
     assert!(res.is_err());
 
-    
     test.env.as_contract(&test.contract_id, || {
-        test.env.storage().persistent().set(&DataKey::Whitelisted(allowed_user.clone()), &true);
+        test.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Whitelisted(allowed_user.clone()), &true);
     });
 
-    
     let res_ok = test.env.as_contract(&test.contract_id, || {
-         if test.env.storage().persistent().has(&DataKey::Whitelisted(allowed_user.clone())) {
-             return Ok(());
-         }
-         Err(Error::Unauthorized)
+        if test
+            .env
+            .storage()
+            .persistent()
+            .has(&DataKey::Whitelisted(allowed_user.clone()))
+        {
+            return Ok(());
+        }
+        Err(Error::Unauthorized)
     });
     assert!(res_ok.is_ok());
 }
@@ -7474,19 +7718,30 @@ fn test_global_blacklist_priority() {
     let user = test.create_funded_user();
     let market_id = test.create_test_market();
 
-    
     test.env.as_contract(&test.contract_id, || {
-        
-        test.env.storage().persistent().set(&DataKey::Whitelisted(user.clone()), &true);
-        
-        test.env.storage().persistent().set(&DataKey::Blacklisted(user.clone()), &true);
+        test.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Whitelisted(user.clone()), &true);
+
+        test.env
+            .storage()
+            .persistent()
+            .set(&DataKey::Blacklisted(user.clone()), &true);
     });
 
-    
     let can_bet = test.env.as_contract(&test.contract_id, || {
-        let is_blacklisted = test.env.storage().persistent().has(&DataKey::Blacklisted(user.clone()));
-        let is_whitelisted = test.env.storage().persistent().has(&DataKey::Whitelisted(user.clone()));
-        
+        let is_blacklisted = test
+            .env
+            .storage()
+            .persistent()
+            .has(&DataKey::Blacklisted(user.clone()));
+        let is_whitelisted = test
+            .env
+            .storage()
+            .persistent()
+            .has(&DataKey::Whitelisted(user.clone()));
+
         if is_blacklisted {
             return Err(Error::Unauthorized); // La lista negra manda
         }
@@ -7496,20 +7751,30 @@ fn test_global_blacklist_priority() {
         Ok(())
     });
 
-    assert!(can_bet.is_err(), "La Blacklist global debería bloquear al usuario incluso si está en Whitelist");
+    assert!(
+        can_bet.is_err(),
+        "La Blacklist global debería bloquear al usuario incluso si está en Whitelist"
+    );
 }
 
 #[test]
 fn test_empty_lists_allow_access() {
     let test = PredictifyTest::setup();
     let user = test.create_funded_user();
-    
-    
+
     let res = test.env.as_contract(&test.contract_id, || {
-        let blacklisted = test.env.storage().persistent().has(&DataKey::Blacklisted(user.clone()));
-        
-        if !blacklisted { Ok(()) } else { Err(Error::Unauthorized) }
+        let blacklisted = test
+            .env
+            .storage()
+            .persistent()
+            .has(&DataKey::Blacklisted(user.clone()));
+
+        if !blacklisted {
+            Ok(())
+        } else {
+            Err(Error::Unauthorized)
+        }
     });
-    
+
     assert!(res.is_ok(), "Sin restricciones, el acceso debe ser libre");
 }

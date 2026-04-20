@@ -316,8 +316,8 @@ impl EventArchive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
     use alloc::string::ToString;
+    use soroban_sdk::testutils::Address as _;
 
     struct EventArchiveTest {
         env: Env,
@@ -578,8 +578,8 @@ mod tests {
         let (entries, cursor) = test.env.as_contract(&contract_id, || {
             EventArchive::query_events_history(&test.env, 0, 100, 0, 10)
         });
-        assert!(entries.len() >= 0);
-        assert!(cursor >= 0);
+        let _ = entries;
+        let _ = cursor;
     }
 
     #[test]

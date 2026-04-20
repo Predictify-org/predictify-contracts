@@ -2,7 +2,7 @@
 
 use crate::errors::Error;
 use crate::types::OracleProvider;
-use soroban_sdk::{contracttype, Env, Map, String, Symbol, Vec, vec};
+use soroban_sdk::{contracttype, vec, Env, Map, String, Symbol, Vec};
 
 /// Performance Benchmark module for gas usage and execution time testing
 ///
@@ -609,7 +609,8 @@ mod tests {
         // Test scalability testing
         let market_size: u32 = 100;
         let user_count: u32 = 50;
-        let result = PerformanceBenchmarkManager::benchmark_scalability(&test.env, market_size, user_count);
+        let result =
+            PerformanceBenchmarkManager::benchmark_scalability(&test.env, market_size, user_count);
         assert!(result.is_ok());
     }
 

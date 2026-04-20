@@ -548,7 +548,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(30))] // 30 cases to keep test fast
-    
+
     #[test]
     fn test_distribute_payouts_properties(
         question in arb_market_question(),
@@ -557,16 +557,16 @@ proptest! {
     ) {
         let suite = PropertyBasedTestSuite::new();
         let client = suite.client();
-        
+
         let question_str = SorobanString::from_str(&suite.env, question);
         let outcomes = suite.generate_outcomes(2);
         let oracle_config = suite.generate_oracle_config(50_000_00, "eq");
-        
+
         suite.env.mock_all_auths();
-        
+
         // Admin sets global platform fee
         let _ = client.set_platform_fee(&suite.admin, &fee_percentage);
-        
+
         let duration_days = 30u32;
         let market_id = client.create_market(
             &suite.admin,
@@ -577,24 +577,24 @@ proptest! {
             &None,
             &0u64, // min_bet = 0
         );
-        
+
         let mut total_pool = 0i128;
         let mut expected_winning_total = 0i128; // We will assume outcome 0 wins
-        
+
         // Users vote
         for (i, (stake, outcome_idx)) in bets.iter().enumerate() {
             let user = suite.get_user(i); // Note: users 0..9 are unique
             let chosen_outcome = outcomes.get(*outcome_idx as u32).unwrap();
-            
+
             client.vote(user, &market_id, &chosen_outcome, stake);
             total_pool += stake;
             if *outcome_idx == 0 {
                 expected_winning_total += stake;
             }
         }
-        
+
         let market = client.get_market(&market_id).unwrap();
-        
+
         // Advance time
         suite.env.ledger().set(LedgerInfo {
             timestamp: market.end_time + 1,
@@ -606,15 +606,15 @@ proptest! {
             min_persistent_entry_ttl: 1,
             max_entry_ttl: 10000,
         });
-        
+
         let winning_outcome = outcomes.get(0).unwrap();
         client.resolve_market_manual(&suite.admin, &market_id, &winning_outcome);
-        
+
         let distributed_total = client.distribute_payouts(&market_id);
-        
+
         // Invariant: Total distributed <= Total pool
         prop_assert!(distributed_total <= total_pool);
-        
+
         // Invariant: If there are winners, distribute_total matches the mathematical share
         if expected_winning_total > 0 {
             let mut expected_dist = 0i128;
@@ -629,7 +629,7 @@ proptest! {
         } else {
             prop_assert_eq!(distributed_total, 0);
         }
-        
+
         // Invariant: Calling distribute again yields 0 (no double payout)
         let double_dist = client.distribute_payouts(&market_id);
         prop_assert_eq!(double_dist, 0);
@@ -646,13 +646,13 @@ proptest! {
     ) {
         let suite = PropertyBasedTestSuite::new();
         let client = suite.client();
-        
+
         let question_str = SorobanString::from_str(&suite.env, question);
         let outcomes = suite.generate_outcomes(2);
         let oracle_config = suite.generate_oracle_config(50_000_00, "eq");
-        
+
         suite.env.mock_all_auths();
-        
+
         let duration_days = 30u32;
         let market_id = client.create_market(
             &suite.admin,
@@ -663,7 +663,7 @@ proptest! {
             &None,
             &0u64,
         );
-        
+
         let mut winning_voters = StdVec::new();
         for (i, (stake, outcome_idx)) in bets.iter().enumerate() {
             let user = suite.get_user(i);
@@ -673,9 +673,9 @@ proptest! {
                 winning_voters.push(user.clone());
             }
         }
-        
+
         let market = client.get_market(&market_id).unwrap();
-        
+
         suite.env.ledger().set(LedgerInfo {
             timestamp: market.end_time + 1,
             protocol_version: 22,
@@ -686,23 +686,23 @@ proptest! {
             min_persistent_entry_ttl: 1,
             max_entry_ttl: 10000,
         });
-        
+
         let winning_outcome = outcomes.get(0).unwrap();
         client.resolve_market_manual(&suite.admin, &market_id, &winning_outcome);
-        
+
         let stellar_client = soroban_sdk::token::TokenClient::new(&suite.env, &suite.token_id);
-        
+
         for winner in &winning_voters {
             let balance_before = stellar_client.balance(winner);
-            
+
             // Should succeed
             client.claim_winnings(winner, &market_id);
-            
+
             let balance_after = stellar_client.balance(winner);
             prop_assert!(balance_after >= balance_before); // >= instead of > to allow for fee/truncation rounding to 0 occasionally if stake small
-            
+
             // Double claim should panic
-            // Use try_invoke_contract if we had raw access, but we'll use a catch_unwind conceptually, 
+            // Use try_invoke_contract if we had raw access, but we'll use a catch_unwind conceptually,
             // wait, soroban-sdk mock doesn't catch panic. We shouldn't assert panic in a proptest unless we can catch it.
             // Let's just trust `distribute` covers double payouts and we can assert user's claim status.
             let market = client.get_market(&market_id).unwrap();

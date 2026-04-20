@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::{Env, String, Map};
-    use crate::utils::{TimeUtils, NumericUtils, ConversionUtils};
+    use crate::utils::{ConversionUtils, NumericUtils, TimeUtils};
+    use soroban_sdk::{Env, Map, String};
 
     #[test]
     fn test_time_utils_format_duration_table() {
@@ -35,14 +35,19 @@ mod tests {
         ];
 
         for (input, expected) in test_cases {
-            assert_eq!(NumericUtils::sqrt(&input), expected, "Sqrt failed for {}", input);
+            assert_eq!(
+                NumericUtils::sqrt(&input),
+                expected,
+                "Sqrt failed for {}",
+                input
+            );
         }
     }
 
     #[test]
     fn test_numeric_utils_weighted_average_table() {
         let env = Env::default();
-        
+
         // Success case: (10*1 + 20*2) / 3 = 50/3 = 16
         let mut vals = soroban_sdk::vec![&env, 10, 20];
         let mut weights = soroban_sdk::vec![&env, 1, 2];
@@ -65,10 +70,10 @@ mod tests {
     #[test]
     fn test_conversion_utils_maps_equal_table() {
         let env = Env::default();
-        
+
         let mut m1 = Map::new(&env);
         let mut m2 = Map::new(&env);
-        
+
         let k1 = String::from_str(&env, "k1");
         let v1 = String::from_str(&env, "v1");
         let v2 = String::from_str(&env, "v2");
@@ -108,13 +113,12 @@ mod tests {
         }
 
         // Payout Share Table
-        let share_cases = [
-            (1000, 500, 1000, 500),
-            (1000, 500, 0, 0),
-            (0, 500, 1000, 0),
-        ];
+        let share_cases = [(1000, 500, 1000, 500), (1000, 500, 0, 0), (0, 500, 1000, 0)];
         for (pool, stake, total, exp) in share_cases {
-            assert_eq!(NumericUtils::calculate_payout_share(pool, stake, total), exp);
+            assert_eq!(
+                NumericUtils::calculate_payout_share(pool, stake, total),
+                exp
+            );
         }
     }
 
@@ -129,7 +133,7 @@ mod tests {
 
         assert_eq!(NumericUtils::abs_difference(&10, &30), 20);
         assert_eq!(NumericUtils::abs_difference(&30, &10), 20);
-        
+
         assert_eq!(NumericUtils::round_to_nearest(&123, &10), 120);
     }
 }

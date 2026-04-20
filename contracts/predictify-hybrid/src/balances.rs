@@ -6,8 +6,8 @@ use crate::markets::MarketUtils;
 use crate::storage::BalanceStorage;
 use crate::types::{Balance, ReflectorAsset};
 // use crate::validation::InputValidator;
-use soroban_sdk::{Address, Env, String};
 use crate::circuit_breaker::CircuitBreaker;
+use soroban_sdk::{Address, Env, String};
 
 /// Manages user balances for deposits and withdrawals.
 ///
@@ -103,7 +103,7 @@ impl BalanceManager {
         // Temporarily disabled due to validation module being disabled
         // InputValidator::validate_sufficient_balance(current_balance.amount, amount)
         //     .map_err(|_| Error::InsufficientBalance)?;
-        
+
         // Simple balance check for now
         if current_balance.amount < amount {
             return Err(Error::InsufficientBalance);

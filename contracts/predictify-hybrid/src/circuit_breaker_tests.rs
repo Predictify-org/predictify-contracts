@@ -421,7 +421,11 @@ mod circuit_breaker_tests {
 
             // Create market
             let client = crate::PredictifyHybridClient::new(&env, &contract_id);
-            let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
+            let outcomes = vec![
+                &env,
+                String::from_str(&env, "yes"),
+                String::from_str(&env, "no"),
+            ];
             let market_id = client.create_market(
                 &admin,
                 &String::from_str(&env, "Will BTC reach $100k?"),
@@ -437,7 +441,14 @@ mod circuit_breaker_tests {
 
             // Pause for betting only
             let reason = String::from_str(&env, "Test pause betting only");
-            CircuitBreaker::pause_with_options(&env, &admin, &reason, crate::circuit_breaker::PauseScope::BettingOnly, false).unwrap();
+            CircuitBreaker::pause_with_options(
+                &env,
+                &admin,
+                &reason,
+                crate::circuit_breaker::PauseScope::BettingOnly,
+                false,
+            )
+            .unwrap();
 
             // Attempt to place bet should be blocked
             let bet_result = crate::bets::BetManager::place_bet(

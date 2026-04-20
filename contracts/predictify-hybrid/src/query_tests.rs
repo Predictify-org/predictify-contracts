@@ -1040,9 +1040,11 @@ fn test_get_market_statistics_with_participants() {
     // Add stakes
     market.stakes.set(user1.clone(), 1000i128);
     market.stakes.set(user2.clone(), 2000i128);
-    market.votes
+    market
+        .votes
         .set(user1.clone(), String::from_str(&env, "yes"));
-    market.votes
+    market
+        .votes
         .set(user2.clone(), String::from_str(&env, "yes"));
     market.total_staked = 3000i128;
 
@@ -1094,9 +1096,11 @@ fn test_get_market_statistics_partial_consensus() {
     // 70% on "yes", 30% on "no"
     market.stakes.set(user1.clone(), 7000i128);
     market.stakes.set(user2.clone(), 3000i128);
-    market.votes
+    market
+        .votes
         .set(user1.clone(), String::from_str(&env, "yes"));
-    market.votes
+    market
+        .votes
         .set(user2.clone(), String::from_str(&env, "no"));
     market.total_staked = 10000i128;
 
@@ -1165,7 +1169,8 @@ fn test_get_category_statistics_with_markets() {
     );
     market1.category = Some(category.clone());
     market1.stakes.set(user1.clone(), 1000i128);
-    market1.votes
+    market1
+        .votes
         .set(user1.clone(), String::from_str(&env, "yes"));
     market1.total_staked = 1000i128;
 
@@ -1193,7 +1198,8 @@ fn test_get_category_statistics_with_markets() {
     );
     market2.category = Some(category.clone());
     market2.stakes.set(user2.clone(), 2000i128);
-    market2.votes
+    market2
+        .votes
         .set(user2.clone(), String::from_str(&env, "yes"));
     market2.total_staked = 2000i128;
 
@@ -1308,8 +1314,7 @@ fn test_dashboard_statistics_version() {
     let contract_id = env.register(crate::PredictifyHybrid, ());
 
     env.as_contract(&contract_id, || {
-        let stats =
-            crate::statistics::StatisticsManager::create_dashboard_stats(&env, 0, 0);
+        let stats = crate::statistics::StatisticsManager::create_dashboard_stats(&env, 0, 0);
         assert_eq!(stats.api_version, 1);
     });
 }
@@ -1346,7 +1351,8 @@ fn test_market_statistics_consensus_strength_range() {
     );
 
     market.stakes.set(user.clone(), 5000i128);
-    market.votes
+    market
+        .votes
         .set(user.clone(), String::from_str(&env, "yes"));
     market.total_staked = 5000i128;
 
@@ -1390,7 +1396,8 @@ fn test_market_statistics_volatility_range() {
     );
 
     market.stakes.set(user.clone(), 5000i128);
-    market.votes
+    market
+        .votes
         .set(user.clone(), String::from_str(&env, "yes"));
     market.total_staked = 5000i128;
 

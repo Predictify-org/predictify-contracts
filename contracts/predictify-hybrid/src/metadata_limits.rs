@@ -25,7 +25,6 @@
 /// let question = String::from_str(&env, "Will BTC reach $100k?");
 /// validate_question_length(&question)?; // Returns Ok if within limits
 /// ```
-
 use soroban_sdk::{String, Vec};
 
 // ===== STRING LENGTH LIMITS =====
@@ -424,6 +423,7 @@ pub fn validate_winning_outcomes_count(winning_outcomes: &Vec<String>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
     use soroban_sdk::{Env, String, Vec};
 
     #[test]
@@ -455,10 +455,7 @@ mod tests {
         let env = Env::default();
         let outcomes = Vec::from_array(
             &env,
-            [
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no"),
-            ],
+            [String::from_str(&env, "yes"), String::from_str(&env, "no")],
         );
         assert!(validate_outcomes_count(&outcomes).is_ok());
     }
@@ -470,9 +467,6 @@ mod tests {
         for i in 0..11 {
             tags.push_back(String::from_str(&env, &format!("tag{}", i)));
         }
-        assert_eq!(
-            validate_tags_count(&tags),
-            Err(crate::Error::TooManyTags)
-        );
+        assert_eq!(validate_tags_count(&tags), Err(crate::Error::TooManyTags));
     }
 }

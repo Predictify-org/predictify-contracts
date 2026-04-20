@@ -1073,10 +1073,11 @@ mod oracle_config_validator_tests {
         )
         .is_err());
 
-        assert!(
-            OracleConfigValidator::validate_threshold_range(&1_000_000, &OracleProvider::dia())
-                .is_err()
-        );
+        assert!(OracleConfigValidator::validate_threshold_range(
+            &1_000_000,
+            &OracleProvider::dia()
+        )
+        .is_err());
     }
 
     #[test]
@@ -1162,7 +1163,8 @@ mod oracle_config_validator_tests {
         assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::pyth()).is_err());
 
         assert!(
-            OracleConfigValidator::validate_oracle_provider(&OracleProvider::band_protocol()).is_err()
+            OracleConfigValidator::validate_oracle_provider(&OracleProvider::band_protocol())
+                .is_err()
         );
 
         assert!(OracleConfigValidator::validate_oracle_provider(&OracleProvider::dia()).is_err());
@@ -2248,8 +2250,7 @@ fn test_validate_string_with_env_boundaries() {
 
     // Exactly at max.
     assert!(
-        InputValidator::validate_string(&env, &String::from_str(&env, "1234567890"), 1, 10)
-            .is_ok()
+        InputValidator::validate_string(&env, &String::from_str(&env, "1234567890"), 1, 10).is_ok()
     );
 
     // Below min.
@@ -2585,10 +2586,14 @@ fn test_event_validator_valid_creation() {
     ];
     let end_time = env.ledger().timestamp() + 86_400; // 1 day in the future
 
-    assert!(
-        EventValidator::validate_event_creation(&env, &admin, &description, &outcomes, &end_time)
-            .is_ok()
-    );
+    assert!(EventValidator::validate_event_creation(
+        &env,
+        &admin,
+        &description,
+        &outcomes,
+        &end_time
+    )
+    .is_ok());
 }
 
 #[test]
@@ -2680,10 +2685,14 @@ fn test_event_validator_end_time_in_past() {
     // End time equal to current ledger timestamp — not strictly future.
     let end_time = env.ledger().timestamp();
 
-    assert!(
-        EventValidator::validate_event_creation(&env, &admin, &description, &outcomes, &end_time)
-            .is_err()
-    );
+    assert!(EventValidator::validate_event_creation(
+        &env,
+        &admin,
+        &description,
+        &outcomes,
+        &end_time
+    )
+    .is_err());
 }
 
 // ── MarketValidator::validate_outcomes ────────────────────────────────────────
@@ -2792,9 +2801,7 @@ fn test_market_validator_for_resolution_not_ended() {
     let market = ValidationTestingUtils::create_test_market(&env);
     let market_id = Symbol::new(&env, "test_market");
 
-    assert!(
-        MarketValidator::validate_market_for_resolution(&env, &market, &market_id).is_err()
-    );
+    assert!(MarketValidator::validate_market_for_resolution(&env, &market, &market_id).is_err());
 }
 
 #[test]
@@ -2829,9 +2836,7 @@ fn test_market_validator_for_resolution_already_resolved() {
     market.winning_outcomes = Some(vec![&env, String::from_str(&env, "Yes")]);
     let market_id = Symbol::new(&env, "test_market");
 
-    assert!(
-        MarketValidator::validate_market_for_resolution(&env, &market, &market_id).is_err()
-    );
+    assert!(MarketValidator::validate_market_for_resolution(&env, &market, &market_id).is_err());
 }
 
 // ── MarketValidator::validate_market_for_fee_collection ──────────────────────
@@ -2966,12 +2971,10 @@ fn test_vote_validator_validate_outcome() {
         &market_outcomes
     )
     .is_ok());
-    assert!(VoteValidator::validate_outcome(
-        &env,
-        &String::from_str(&env, "no"),
-        &market_outcomes
-    )
-    .is_ok());
+    assert!(
+        VoteValidator::validate_outcome(&env, &String::from_str(&env, "no"), &market_outcomes)
+            .is_ok()
+    );
 
     // Outcome not in list.
     assert!(VoteValidator::validate_outcome(
@@ -3011,8 +3014,9 @@ fn test_vote_validator_validate_vote_valid() {
     let stake = 1_000_000i128;
     let market = ValidationTestingUtils::create_test_market(&env);
 
-    assert!(VoteValidator::validate_vote(&env, &user, &market_id, &outcome, &stake, &market)
-        .is_ok());
+    assert!(
+        VoteValidator::validate_vote(&env, &user, &market_id, &outcome, &stake, &market).is_ok()
+    );
 }
 
 #[test]
@@ -3083,7 +3087,9 @@ fn test_vote_validator_validate_vote_duplicate() {
         crate::types::MarketState::Active,
     );
     // Record a prior vote for this user (votes maps Address → outcome String).
-    market.votes.set(user.clone(), String::from_str(&env, "yes"));
+    market
+        .votes
+        .set(user.clone(), String::from_str(&env, "yes"));
 
     assert!(
         VoteValidator::validate_vote(&env, &user, &market_id, &outcome, &stake, &market).is_err()
@@ -3176,10 +3182,10 @@ fn test_dispute_validator_creation_valid() {
     );
     market.winning_outcomes = Some(vec![&env, String::from_str(&env, "yes")]);
 
-    assert!(DisputeValidator::validate_dispute_creation(
-        &env, &user, &market_id, &stake, &market
-    )
-    .is_ok());
+    assert!(
+        DisputeValidator::validate_dispute_creation(&env, &user, &market_id, &stake, &market)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -3234,10 +3240,10 @@ fn test_dispute_validator_creation_market_not_resolved() {
     let market = ValidationTestingUtils::create_test_market(&env);
 
     // validate_dispute_creation requires winning_outcomes.is_some(); active market has None.
-    assert!(DisputeValidator::validate_dispute_creation(
-        &env, &user, &market_id, &stake, &market
-    )
-    .is_err());
+    assert!(
+        DisputeValidator::validate_dispute_creation(&env, &user, &market_id, &stake, &market)
+            .is_err()
+    );
 }
 
 #[test]
@@ -3275,10 +3281,10 @@ fn test_dispute_validator_creation_already_disputed() {
     // Mark user as already having disputed.
     market.dispute_stakes.set(user.clone(), stake);
 
-    assert!(DisputeValidator::validate_dispute_creation(
-        &env, &user, &market_id, &stake, &market
-    )
-    .is_err());
+    assert!(
+        DisputeValidator::validate_dispute_creation(&env, &user, &market_id, &stake, &market)
+            .is_err()
+    );
 }
 
 // ── FeeValidator::validate_fee_config ─────────────────────────────────────────
@@ -3290,9 +3296,9 @@ fn test_fee_validator_validate_fee_config_valid() {
     // All parameters within acceptable ranges.
     let result = FeeValidator::validate_fee_config(
         &env,
-        &5i128,          // 5% platform fee
-        &1_000_000i128,  // creation fee (MIN_FEE_AMOUNT)
-        &1_000_000i128,  // min fee amount
+        &5i128,           // 5% platform fee
+        &1_000_000i128,   // creation fee (MIN_FEE_AMOUNT)
+        &1_000_000i128,   // min fee amount
         &500_000_000i128, // max fee amount (between MIN and MAX)
         &100_000_000i128, // collection threshold (positive)
     );
@@ -3307,7 +3313,7 @@ fn test_fee_validator_validate_fee_config_invalid_percentage() {
     // Platform fee percentage above 100.
     let result = FeeValidator::validate_fee_config(
         &env,
-        &150i128,         // > 100 — invalid
+        &150i128, // > 100 — invalid
         &1_000_000i128,
         &1_000_000i128,
         &500_000_000i128,
@@ -3326,8 +3332,8 @@ fn test_fee_validator_validate_fee_config_min_greater_than_max() {
         &env,
         &5i128,
         &1_000_000i128,
-        &500_000_000i128,  // min
-        &1_000_000i128,    // max < min — invalid
+        &500_000_000i128, // min
+        &1_000_000i128,   // max < min — invalid
         &100_000_000i128,
     );
     assert!(!result.is_valid);
@@ -3367,21 +3373,17 @@ fn test_oracle_validator_comparison_operator() {
     }
 
     // Invalid operators.
-    assert!(OracleValidator::validate_comparison_operator(
-        &env,
-        &String::from_str(&env, "")
-    )
-    .is_err());
+    assert!(
+        OracleValidator::validate_comparison_operator(&env, &String::from_str(&env, "")).is_err()
+    );
     assert!(OracleValidator::validate_comparison_operator(
         &env,
         &String::from_str(&env, "greater")
     )
     .is_err());
-    assert!(OracleValidator::validate_comparison_operator(
-        &env,
-        &String::from_str(&env, "GT")
-    )
-    .is_err());
+    assert!(
+        OracleValidator::validate_comparison_operator(&env, &String::from_str(&env, "GT")).is_err()
+    );
 }
 
 #[test]
@@ -3679,13 +3681,8 @@ fn test_comprehensive_validator_validate_inputs_bad_duration() {
     ];
     let zero_duration = 0u32; // below MIN_MARKET_DURATION_DAYS
 
-    let result = ComprehensiveValidator::validate_inputs(
-        &env,
-        &admin,
-        &question,
-        &outcomes,
-        &zero_duration,
-    );
+    let result =
+        ComprehensiveValidator::validate_inputs(&env, &admin, &question, &outcomes, &zero_duration);
     assert!(!result.is_valid);
     assert!(result.error_count >= 1);
 }

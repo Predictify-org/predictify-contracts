@@ -138,8 +138,18 @@ impl ClaimIdempotencyTestSetup {
         );
 
         // Vote (user votes "yes" with 100 XLM, user2 votes "no" with 50 XLM)
-        client.vote(user, &market_id, &String::from_str(env, "yes"), &100_000_0000000);
-        client.vote(user2, &market_id, &String::from_str(env, "no"), &50_000_0000000);
+        client.vote(
+            user,
+            &market_id,
+            &String::from_str(env, "yes"),
+            &100_000_0000000,
+        );
+        client.vote(
+            user2,
+            &market_id,
+            &String::from_str(env, "no"),
+            &50_000_0000000,
+        );
 
         // Advance time past market end
         let market = client.get_market(&market_id).unwrap();
@@ -155,11 +165,7 @@ impl ClaimIdempotencyTestSetup {
         });
 
         // Resolve market (winner is "yes")
-        client.resolve_market_manual(
-            admin,
-            &market_id,
-            &String::from_str(env, "yes"),
-        );
+        client.resolve_market_manual(admin, &market_id, &String::from_str(env, "yes"));
 
         market_id
     }
@@ -375,7 +381,9 @@ fn test_multiple_users_claim_independently() {
     assert_eq!(claim_info2.get_payout(), payout2);
 
     // Timestamps should be close (same block)
-    let time_diff = claim_info1.get_timestamp().abs_diff(claim_info2.get_timestamp());
+    let time_diff = claim_info1
+        .get_timestamp()
+        .abs_diff(claim_info2.get_timestamp());
     assert!(time_diff < 10); // Within 10 seconds
 }
 

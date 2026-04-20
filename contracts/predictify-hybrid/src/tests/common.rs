@@ -77,10 +77,8 @@ impl ErrorContextBuilder {
 
     /// Adds a key-value pair to context data.
     pub fn with_data(mut self, env: &Env, key: &str, value: &str) -> Self {
-        self.context_data.set(
-            String::from_str(env, key),
-            String::from_str(env, value),
-        );
+        self.context_data
+            .set(String::from_str(env, key), String::from_str(env, value));
         self
     }
 
@@ -127,7 +125,11 @@ impl ErrorTestScenarios {
         ErrorContextBuilder::new(env, "resolve_market")
             .user_address(Some(Address::generate(env)))
             .market_id(Some(market_id))
-            .with_data(env, "oracle_contract", "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4")
+            .with_data(
+                env,
+                "oracle_contract",
+                "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+            )
             .build()
     }
 
@@ -203,11 +205,7 @@ impl ErrorAssertions {
         let mut codes = std::collections::HashSet::new();
         for error in errors {
             let code = error.code();
-            assert!(
-                codes.insert(code),
-                "Duplicate error code: {}",
-                code
-            );
+            assert!(codes.insert(code), "Duplicate error code: {}", code);
         }
     }
 }

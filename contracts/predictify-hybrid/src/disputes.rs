@@ -863,10 +863,10 @@ impl DisputeManager {
         );
 
         crate::audit_trail::AuditTrailManager::append_record(
-            env, 
-            crate::audit_trail::AuditAction::DisputeCreated, 
-            user.clone(), 
-            Map::new(env)
+            env,
+            crate::audit_trail::AuditAction::DisputeCreated,
+            user.clone(),
+            Map::new(env),
         );
 
         Ok(())
@@ -998,10 +998,10 @@ impl DisputeManager {
         );
 
         crate::audit_trail::AuditTrailManager::append_record(
-            env, 
-            crate::audit_trail::AuditAction::DisputeResolved, 
-            admin.clone(), 
-            Map::new(env)
+            env,
+            crate::audit_trail::AuditAction::DisputeResolved,
+            admin.clone(),
+            Map::new(env),
         );
 
         Ok(resolution)
@@ -2844,7 +2844,10 @@ mod tests {
             end_time,
             crate::types::OracleConfig::new(
                 crate::types::OracleProvider::pyth(),
-                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
                 String::from_str(env, "BTC/USD"),
                 2500000,
                 String::from_str(env, "gt"),

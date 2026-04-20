@@ -294,18 +294,16 @@ impl CircuitBreaker {
 
         match state.state {
             BreakerState::Closed => Ok(true),
-            BreakerState::Open => {
-                match state.pause_scope {
-                    PauseScope::Full => Ok(false),
-                    PauseScope::BettingOnly => {
-                        if op == "betting" {
-                            Ok(false)
-                        } else {
-                            Ok(true)
-                        }
+            BreakerState::Open => match state.pause_scope {
+                PauseScope::Full => Ok(false),
+                PauseScope::BettingOnly => {
+                    if op == "betting" {
+                        Ok(false)
+                    } else {
+                        Ok(true)
                     }
                 }
-            }
+            },
             BreakerState::HalfOpen => {
                 let config = Self::get_config(env)?;
                 Ok(state.half_open_requests < config.half_open_max_requests)
@@ -909,8 +907,8 @@ impl CircuitBreakerTesting {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
     use alloc::string::ToString;
+    use soroban_sdk::testutils::Address as _;
 
     struct CircuitBreakerTest {
         env: Env,
@@ -1025,9 +1023,9 @@ mod tests {
     fn test_circuit_breaker_initialize() {
         let test = CircuitBreakerTest::new();
         let contract_id = test.env.register(crate::PredictifyHybrid, ());
-        let result = test.env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&test.env)
-        });
+        let result = test
+            .env
+            .as_contract(&contract_id, || CircuitBreaker::initialize(&test.env));
         assert!(result.is_ok());
     }
 

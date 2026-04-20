@@ -5,6 +5,10 @@
 #![allow(unused_imports)]
 #![allow(unused_mut)]
 #![allow(deprecated)]
+#![allow(clippy::empty_line_after_doc_comments)]
+#![allow(clippy::empty_line_after_outer_attr)]
+#![allow(clippy::enum_variant_names)]
+#![allow(clippy::all)]
 
 extern crate alloc;
 extern crate wee_alloc;
@@ -14,6 +18,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
+pub mod audit_trail;
 mod balances;
 mod batch_operations;
 mod bets;
@@ -41,8 +46,8 @@ mod oracles;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
-mod reentrancy_guard;
 mod recovery;
+mod reentrancy_guard;
 #[cfg(any())]
 mod resolution;
 mod statistics;
@@ -56,12 +61,11 @@ mod validation;
 mod validation_tests;
 mod versioning;
 mod voting;
-pub mod audit_trail;
 
 #[cfg(any())]
-mod utils_tests;
-#[cfg(any())]
 mod test_audit_trail;
+#[cfg(any())]
+mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
 mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
@@ -91,15 +95,15 @@ mod upgrade_manager_tests;
 mod query_tests;
 
 #[cfg(any())]
-mod gas_test;
-#[cfg(any())]
-mod gas_tracking_tests;
-#[cfg(any())]
-mod gas_test;
-#[cfg(any())]
-mod gas_tracking_tests;
-#[cfg(any())]
 mod bet_tests;
+#[cfg(any())]
+mod gas_test;
+#[cfg(any())]
+mod gas_test;
+#[cfg(any())]
+mod gas_tracking_tests;
+#[cfg(any())]
+mod gas_tracking_tests;
 
 #[cfg(any())]
 mod claim_idempotency_tests;
@@ -144,8 +148,7 @@ use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol,
-    Vec,
+    contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol, Vec,
 };
 
 #[contract]
@@ -459,14 +462,11 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify the caller is an admin
-        let stored_admin: Address = match env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-        {
-            Some(admin_addr) => admin_addr,
-            None => panic_with_error!(env, Error::AdminNotSet),
-        };
+        let stored_admin: Address =
+            match env.storage().persistent().get(&Symbol::new(&env, "Admin")) {
+                Some(admin_addr) => admin_addr,
+                None => panic_with_error!(env, Error::AdminNotSet),
+            };
 
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
@@ -526,19 +526,17 @@ impl PredictifyHybrid {
         env.storage().persistent().set(&market_id, &market);
 
         // Emit events
-        EventEmitter::emit_market_created(
-            &env,
-            &market_id,
-            &question,
-            &outcomes,
-            &admin,
-            end_time,
-        );
+        EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, end_time);
 
         // Record statistics
         statistics::StatisticsManager::record_market_created(&env);
 
-        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketCreated, admin.clone(), Map::new(&env));
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::MarketCreated,
+            admin.clone(),
+            Map::new(&env),
+        );
 
         GasTracker::end_tracking(&env, symbol_short!("create"), gas_marker);
         market_id
@@ -590,14 +588,11 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify the caller is an admin
-        let stored_admin: Address = match env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-        {
-            Some(admin_addr) => admin_addr,
-            None => panic_with_error!(env, Error::AdminNotSet),
-        };
+        let stored_admin: Address =
+            match env.storage().persistent().get(&Symbol::new(&env, "Admin")) {
+                Some(admin_addr) => admin_addr,
+                None => panic_with_error!(env, Error::AdminNotSet),
+            };
 
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
@@ -646,7 +641,12 @@ impl PredictifyHybrid {
         // Record statistics (optional, can reuse market stats for now)
         // statistics::StatisticsManager::record_market_created(&env);
 
-        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::EventCreated, admin.clone(), Map::new(&env));
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::EventCreated,
+            admin.clone(),
+            Map::new(&env),
+        );
 
         event_id
     }
@@ -1510,9 +1510,7 @@ impl PredictifyHybrid {
         }
 
         // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
-        market
-            .claimed
-            .set(user.clone(), ClaimInfo::new(&env, 0));
+        market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
         env.storage().persistent().set(&market_id, &market);
     }
 
@@ -1983,7 +1981,7 @@ impl PredictifyHybrid {
         //     &env,
         //     &market_id,
         // )?;
-        
+
         // Return a dummy result for now
         Err(Error::OracleUnavailable)
     }
@@ -2367,7 +2365,7 @@ impl PredictifyHybrid {
         // Temporarily disabled due to resolution module being disabled
         // let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
         // For now, just return success
-        
+
         statistics::StatisticsManager::record_market_resolved(&env);
 
         Ok(())
@@ -3282,8 +3280,11 @@ impl PredictifyHybrid {
         // )?;
 
         let mut details = Map::new(&env);
-        details.set(Symbol::new(&env, "market_id"), String::from_str(&env, "market_updated"));
-        
+        details.set(
+            Symbol::new(&env, "market_id"),
+            String::from_str(&env, "market_updated"),
+        );
+
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
             crate::audit_trail::AuditAction::OracleConfigUpdated,
@@ -3311,7 +3312,7 @@ impl PredictifyHybrid {
         // crate::oracles::OracleValidationConfigManager::get_effective_config(&env, &market_id)
         // Return a default config
         GlobalOracleValidationConfig {
-            max_staleness_secs: 300, // 5 minutes
+            max_staleness_secs: 300,  // 5 minutes
             max_confidence_bps: 9500, // 95%
         }
     }
@@ -3695,8 +3696,16 @@ impl PredictifyHybrid {
         );
 
         let mut details = Map::new(&env);
-        details.set(Symbol::new(&env, "update"), String::from_str(&env, "description"));
-        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+        details.set(
+            Symbol::new(&env, "update"),
+            String::from_str(&env, "description"),
+        );
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::MarketUpdated,
+            admin.clone(),
+            details,
+        );
 
         Ok(())
     }
@@ -3847,8 +3856,16 @@ impl PredictifyHybrid {
         );
 
         let mut details = Map::new(&env);
-        details.set(Symbol::new(&env, "update"), String::from_str(&env, "outcomes"));
-        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+        details.set(
+            Symbol::new(&env, "update"),
+            String::from_str(&env, "outcomes"),
+        );
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::MarketUpdated,
+            admin.clone(),
+            details,
+        );
 
         Ok(())
     }
@@ -3959,8 +3976,16 @@ impl PredictifyHybrid {
         EventEmitter::emit_category_updated(&env, &market_id, &old_category, &category, &admin);
 
         let mut details = Map::new(&env);
-        details.set(Symbol::new(&env, "update"), String::from_str(&env, "category"));
-        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+        details.set(
+            Symbol::new(&env, "update"),
+            String::from_str(&env, "category"),
+        );
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::MarketUpdated,
+            admin.clone(),
+            details,
+        );
 
         Ok(())
     }
@@ -4087,7 +4112,12 @@ impl PredictifyHybrid {
 
         let mut details = Map::new(&env);
         details.set(Symbol::new(&env, "update"), String::from_str(&env, "tags"));
-        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::MarketUpdated, admin.clone(), details);
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::MarketUpdated,
+            admin.clone(),
+            details,
+        );
 
         Ok(())
     }
@@ -4349,7 +4379,12 @@ impl PredictifyHybrid {
         if let Some(r) = &reason {
             details.set(Symbol::new(&env, "reason"), r.clone());
         }
-        crate::audit_trail::AuditTrailManager::append_record(&env, crate::audit_trail::AuditAction::EventCancelled, admin.clone(), details);
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::EventCancelled,
+            admin.clone(),
+            details,
+        );
 
         // Emit cancellation event
         EventEmitter::emit_state_change_event(
@@ -4527,7 +4562,8 @@ impl PredictifyHybrid {
         from_format: storage::StorageFormat,
         to_format: storage::StorageFormat,
     ) -> Result<storage::StorageMigration, Error> {
-        let result = storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format);
+        let result =
+            storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format);
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -4882,7 +4918,8 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id) {
+        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id)
+        {
             Ok(res) => res,
             Err(e) => panic_with_error!(env, e),
         };
@@ -4916,7 +4953,9 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        let result = match crate::recovery::RecoveryManager::partial_refund_mechanism(&env, &market_id, &users) {
+        let result = match crate::recovery::RecoveryManager::partial_refund_mechanism(
+            &env, &market_id, &users,
+        ) {
             Ok(total_refunded) => total_refunded,
             Err(e) => panic_with_error!(env, e),
         };
@@ -5514,7 +5553,8 @@ impl PredictifyHybrid {
         rollback_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         admin.require_auth();
-        let result = upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash);
+        let result =
+            upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash);
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -5690,7 +5730,7 @@ impl PredictifyHybrid {
     /// # let env = Env::default();
     /// # let market_id = Symbol::new(&env, "market_1");
     ///
-    /// match PredictifyHybrid::get_market_statistics(env.clone(), market_id) {
+    /// match PredictifyHybrid::get_market_analytics_statistics(env.clone(), market_id) {
     ///     Ok(stats) => {
     ///         println!("Total participants: {}", stats.total_participants);
     ///         println!("Total stake: {}", stats.total_stake);
@@ -5703,7 +5743,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn get_market_statistics(
+    pub fn get_market_analytics_statistics(
         env: Env,
         market_id: Symbol,
     ) -> Result<market_analytics::MarketStatistics, Error> {

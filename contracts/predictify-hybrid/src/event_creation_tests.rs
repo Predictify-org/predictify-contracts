@@ -4,7 +4,9 @@ use crate::errors::Error;
 use crate::types::{EventVisibility, MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{symbol_short, token::StellarAssetClient, vec, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{
+    symbol_short, token::StellarAssetClient, vec, Address, Env, String, Symbol, Vec,
+};
 
 // Test helper structure
 struct TestSetup {
@@ -91,12 +93,7 @@ fn test_create_event_success() {
     // Verify that a creation fee was recorded
     setup.env.as_contract(&setup.contract_id, || {
         let key = symbol_short!("creat_fee");
-        let total: i128 = setup
-            .env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(0);
+        let total: i128 = setup.env.storage().persistent().get(&key).unwrap_or(0);
         assert_eq!(total, crate::fees::MARKET_CREATION_FEE);
     });
 }
@@ -316,7 +313,6 @@ fn test_create_event_empty_outcomes() {
 }
 
 #[test]
-
 #[should_panic(expected = "HostError: Error(Contract, #401)")] // Error::InvalidInput = 401
 fn test_create_event_limit_enforced() {
     let setup = TestSetup::new();

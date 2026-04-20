@@ -1145,6 +1145,7 @@ impl MonitoringTestingUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::testutils::{Address as _, Events};
 
     #[test]
@@ -1318,7 +1319,7 @@ mod tests {
             );
         });
 
-        assert_eq!(env.events().all().len(), 1);
+        assert_eq!(env.events().all().events().len(), 1);
     }
 
     #[test]
@@ -1337,7 +1338,7 @@ mod tests {
             );
         });
 
-        assert_eq!(env.events().all().len(), 1);
+        assert_eq!(env.events().all().events().len(), 1);
     }
 
     #[test]
@@ -1354,6 +1355,6 @@ mod tests {
             );
         });
 
-        assert_eq!(env.events().all().len(), 1);
+        assert_eq!(env.events().all().events().len(), 1);
     }
 }

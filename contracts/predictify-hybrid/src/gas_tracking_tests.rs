@@ -1,7 +1,7 @@
 //! # Gas Tracking Tests
 //!
 //! Comprehensive test suite for gas cost tracking and optimization.
-//! 
+//!
 //! ## Requirements
 //! - Minimum 95% test coverage for gas-related functionality
 //! - Baseline gas numbers documented in tests
@@ -174,16 +174,18 @@ fn test_gas_initialize_baseline() {
     // Expected: 1 write (admin storage)
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let admin = Address::generate(&env);
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    
+
     client.initialize(&admin, &None);
-    
+
     // Verify: Admin stored correctly
     let stored_admin = env.as_contract(&contract_id, || {
-        env.storage().persistent().get::<Symbol, Address>(&Symbol::new(&env, "Admin"))
+        env.storage()
+            .persistent()
+            .get::<Symbol, Address>(&Symbol::new(&env, "Admin"))
     });
     assert!(stored_admin.is_some());
     assert_eq!(stored_admin.unwrap(), admin);
@@ -195,13 +197,13 @@ fn test_gas_create_market_minimal() {
     // Expected: 1 read (admin check) + 2 writes (counter + market)
     let ctx = GasTestContext::setup();
     let client = PredictifyHybridClient::new(&ctx.env, &ctx.contract_id);
-    
+
     let outcomes = vec![
         &ctx.env,
         String::from_str(&ctx.env, "yes"),
         String::from_str(&ctx.env, "no"),
     ];
-    
+
     ctx.env.mock_all_auths();
     let market_id = client.create_market(
         &ctx.admin,
@@ -221,10 +223,13 @@ fn test_gas_create_market_minimal() {
         &None,
         &None,
     );
-    
+
     // Verify: Market created with minimal data
     let market = ctx.env.as_contract(&ctx.contract_id, || {
-        ctx.env.storage().persistent().get::<Symbol, Market>(&market_id)
+        ctx.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
     });
     assert!(market.is_some());
 }
@@ -235,18 +240,15 @@ fn test_gas_create_market_maximal() {
     // Expected: Higher write costs due to larger data
     let ctx = GasTestContext::setup();
     let client = PredictifyHybridClient::new(&ctx.env, &ctx.contract_id);
-    
-    let long_question = String::from_str(
-        &ctx.env,
-        "Will Bitcoin exceed $100,000 by Q4 2026?"
-    );
+
+    let long_question = String::from_str(&ctx.env, "Will Bitcoin exceed $100,000 by Q4 2026?");
     let outcomes = vec![
         &ctx.env,
         String::from_str(&ctx.env, "Yes - Above $100k"),
         String::from_str(&ctx.env, "No - Below $100k"),
         String::from_str(&ctx.env, "Exactly $100k"),
     ];
-    
+
     ctx.env.mock_all_auths();
     let market_id = client.create_market(
         &ctx.admin,
@@ -266,9 +268,12 @@ fn test_gas_create_market_maximal() {
         &None,
         &None,
     );
-    
+
     let market = ctx.env.as_contract(&ctx.contract_id, || {
-        ctx.env.storage().persistent().get::<Symbol, Market>(&market_id)
+        ctx.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
     });
     assert!(market.is_some());
 }
@@ -280,7 +285,7 @@ fn test_gas_vote_single_user() {
     let ctx = GasTestContext::setup();
     let market_id = ctx.create_minimal_market();
     let client = PredictifyHybridClient::new(&ctx.env, &ctx.contract_id);
-    
+
     ctx.env.mock_all_auths();
     client.vote(
         &ctx.user,
@@ -288,10 +293,14 @@ fn test_gas_vote_single_user() {
         &String::from_str(&ctx.env, "yes"),
         &100_0000000,
     );
-    
+
     // Verify: Vote recorded correctly
     let market = ctx.env.as_contract(&ctx.contract_id, || {
-        ctx.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        ctx.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     assert_eq!(market.total_staked, 100_0000000);
     assert_eq!(market.votes.len(), 1);
@@ -304,7 +313,7 @@ fn test_gas_vote_multiple_users() {
     let ctx = GasTestContext::setup();
     let market_id = ctx.create_minimal_market();
     let client = PredictifyHybridClient::new(&ctx.env, &ctx.contract_id);
-    
+
     // Create 5 users and have them vote
     for _ in 0..5 {
         let user = ctx.create_funded_user();
@@ -316,9 +325,13 @@ fn test_gas_vote_multiple_users() {
             &50_0000000,
         );
     }
-    
+
     let market = ctx.env.as_contract(&ctx.contract_id, || {
-        ctx.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        ctx.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
     assert_eq!(market.total_staked, 250_0000000);
     assert_eq!(market.votes.len(), 5);
@@ -330,21 +343,34 @@ fn test_gas_tracking_does_not_alter_results() {
     let ctx = GasTestContext::setup();
     let market_id = ctx.create_minimal_market();
     let client = PredictifyHybridClient::new(&ctx.env, &ctx.contract_id);
-    
+
     ctx.env.mock_all_auths();
-    client.vote(&ctx.user, &market_id, &String::from_str(&ctx.env, "yes"), &100_0000000);
-    
+    client.vote(
+        &ctx.user,
+        &market_id,
+        &String::from_str(&ctx.env, "yes"),
+        &100_0000000,
+    );
+
     let market_before = ctx.env.as_contract(&ctx.contract_id, || {
-        ctx.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        ctx.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
-    
+
     // Query market (read-only operation)
     let _ = client.get_market(&market_id);
-    
+
     let market_after = ctx.env.as_contract(&ctx.contract_id, || {
-        ctx.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        ctx.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
-    
+
     // Verify: State unchanged by read operations
     assert_eq!(market_before.total_staked, market_after.total_staked);
     assert_eq!(market_before.state, market_after.state);
@@ -358,12 +384,12 @@ fn test_gas_query_operations_minimal_cost() {
     let ctx = GasTestContext::setup();
     let market_id = ctx.create_minimal_market();
     let client = PredictifyHybridClient::new(&ctx.env, &ctx.contract_id);
-    
+
     // Multiple reads should not accumulate state
     let market1 = client.get_market(&market_id);
     let market2 = client.get_market(&market_id);
     let market3 = client.get_market(&market_id);
-    
+
     assert!(market1.is_some());
     assert!(market2.is_some());
     assert!(market3.is_some());
@@ -374,11 +400,15 @@ fn test_gas_storage_efficiency() {
     // Verify: Empty maps don't consume excessive space
     let ctx = GasTestContext::setup();
     let market_id = ctx.create_minimal_market();
-    
+
     let market = ctx.env.as_contract(&ctx.contract_id, || {
-        ctx.env.storage().persistent().get::<Symbol, Market>(&market_id).unwrap()
+        ctx.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
     });
-    
+
     // New market should have empty collections
     assert_eq!(market.votes.len(), 0);
     assert_eq!(market.stakes.len(), 0);
@@ -392,14 +422,14 @@ fn test_gas_operations_within_expected_ranges() {
     // This documents the expected gas cost ranges for a complete workflow
     let ctx = GasTestContext::setup();
     let client = PredictifyHybridClient::new(&ctx.env, &ctx.contract_id);
-    
+
     // 1. Create market (expected: low-medium cost)
     let outcomes = vec![
         &ctx.env,
         String::from_str(&ctx.env, "yes"),
         String::from_str(&ctx.env, "no"),
     ];
-    
+
     ctx.env.mock_all_auths();
     let market_id = client.create_market(
         &ctx.admin,
@@ -419,15 +449,20 @@ fn test_gas_operations_within_expected_ranges() {
         &None,
         &None,
     );
-    
+
     // 2. Vote (expected: low cost)
     ctx.env.mock_all_auths();
-    client.vote(&ctx.user, &market_id, &String::from_str(&ctx.env, "yes"), &100_0000000);
-    
+    client.vote(
+        &ctx.user,
+        &market_id,
+        &String::from_str(&ctx.env, "yes"),
+        &100_0000000,
+    );
+
     // 3. Query (expected: very low cost)
     let market = client.get_market(&market_id);
     assert!(market.is_some());
-    
+
     // All operations completed within expected ranges
 }
 

@@ -591,9 +591,9 @@ impl MarketAnalyticsManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::vec;
-    use alloc::string::ToString;
 
     struct MarketAnalyticsTest {
         env: Env,

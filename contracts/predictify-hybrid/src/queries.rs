@@ -103,7 +103,7 @@ impl QueryManager {
             created_at: 0, // TODO: Retrieve from storage if available
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
-            oracle_provider: oracle_provider,
+            oracle_provider,
             feed_id: market.oracle_config.feed_id,
             total_staked: market.total_staked,
             winning_outcome,
@@ -738,7 +738,7 @@ impl QueryManager {
     /// ```
     pub fn get_dashboard_statistics(env: &Env) -> Result<DashboardStatisticsV1, Error> {
         use crate::statistics::StatisticsManager;
-        
+
         let all_markets = Self::get_all_markets(env)?;
         let mut total_value_locked = 0i128;
         let mut unique_users: Vec<Address> = vec![env];
@@ -751,7 +751,7 @@ impl QueryManager {
                     // Check if user already in list (simple uniqueness)
                     let mut found = false;
                     for existing_user in unique_users.iter() {
-                        if existing_user == &user {
+                        if existing_user == user {
                             found = true;
                             break;
                         }
@@ -807,7 +807,7 @@ impl QueryManager {
 
         let participant_count = market.votes.len() as u32;
         let total_volume = market.total_staked;
-        
+
         let average_stake = if participant_count > 0 {
             total_volume / (participant_count as i128)
         } else {
@@ -917,7 +917,7 @@ impl QueryManager {
         min_bets: u64,
     ) -> Result<Vec<UserLeaderboardEntryV1>, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
-        
+
         // Note: Similar implementation note as get_top_users_by_winnings
         // This requires user index for efficiency
         Ok(soroban_sdk::vec![env])
@@ -975,7 +975,7 @@ impl QueryManager {
                     for (user, _) in market.votes.iter() {
                         let mut found = false;
                         for existing_user in participants.iter() {
-                            if existing_user == &user {
+                            if existing_user == user {
                                 found = true;
                                 break;
                             }

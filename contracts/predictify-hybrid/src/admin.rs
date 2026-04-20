@@ -10,8 +10,8 @@ use crate::extensions::ExtensionManager;
 use crate::fees::{FeeConfig, FeeManager};
 use crate::markets::MarketStateManager;
 // use crate::resolution::MarketResolutionManager;
-use alloc::string::ToString;
 use crate::audit_trail::{AuditAction, AuditTrailManager};
+use alloc::string::ToString;
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -246,7 +246,12 @@ impl AdminInitializer {
         // Log admin action
         AdminActionLogger::log_action(env, admin, "initialize", None, Map::new(env), true, None)?;
 
-        AuditTrailManager::append_record(env, AuditAction::ContractInitialized, admin.clone(), Map::new(env));
+        AuditTrailManager::append_record(
+            env,
+            AuditAction::ContractInitialized,
+            admin.clone(),
+            Map::new(env),
+        );
 
         Ok(())
     }
@@ -624,7 +629,12 @@ impl ContractPauseManager {
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &true);
         EventEmitter::emit_contract_paused(env, admin);
-        AuditTrailManager::append_record(env, AuditAction::ContractPaused, admin.clone(), Map::new(env));
+        AuditTrailManager::append_record(
+            env,
+            AuditAction::ContractPaused,
+            admin.clone(),
+            Map::new(env),
+        );
         Ok(())
     }
 
@@ -643,7 +653,12 @@ impl ContractPauseManager {
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &false);
         EventEmitter::emit_contract_unpaused(env, admin);
-        AuditTrailManager::append_record(env, AuditAction::ContractUnpaused, admin.clone(), Map::new(env));
+        AuditTrailManager::append_record(
+            env,
+            AuditAction::ContractUnpaused,
+            admin.clone(),
+            Map::new(env),
+        );
         Ok(())
     }
 
@@ -657,7 +672,11 @@ impl ContractPauseManager {
 
     /// Transfer the primary admin role to a new address. Caller must be the current primary admin.
     /// New admin must not be the zero/invalid address.
-    pub fn transfer_admin(env: &Env, current_admin: &Address, new_admin: &Address) -> Result<(), Error> {
+    pub fn transfer_admin(
+        env: &Env,
+        current_admin: &Address,
+        new_admin: &Address,
+    ) -> Result<(), Error> {
         current_admin.require_auth();
         let stored: Address = env
             .storage()
@@ -675,7 +694,12 @@ impl ContractPauseManager {
             .persistent()
             .set(&Symbol::new(env, "Admin"), new_admin);
         EventEmitter::emit_admin_transferred(env, current_admin, new_admin);
-        AuditTrailManager::append_record(env, AuditAction::AdminTransferred, current_admin.clone(), Map::new(env));
+        AuditTrailManager::append_record(
+            env,
+            AuditAction::AdminTransferred,
+            current_admin.clone(),
+            Map::new(env),
+        );
         Ok(())
     }
 }
@@ -963,11 +987,7 @@ impl AdminRoleManager {
             // No admin role assigned yet, allow bootstrapping without permission check
         } else {
             // Validate assigner permissions for subsequent assignments
-            AdminAccessControl::validate_permission(
-                env,
-                assigned_by,
-                &AdminPermission::Emergency,
-            )?;
+            AdminAccessControl::validate_permission(env, assigned_by, &AdminPermission::Emergency)?;
         }
 
         // Create role assignment
@@ -998,7 +1018,12 @@ impl AdminRoleManager {
         } else {
             AuditAction::AdminAdded
         };
-        AuditTrailManager::append_record(env, AuditAction::AdminRoleUpdated, assigned_by.clone(), Map::new(env));
+        AuditTrailManager::append_record(
+            env,
+            AuditAction::AdminRoleUpdated,
+            assigned_by.clone(),
+            Map::new(env),
+        );
 
         Ok(())
     }
@@ -1303,11 +1328,7 @@ impl AdminRoleManager {
         deactivated_by: &Address,
     ) -> Result<(), Error> {
         // Validate deactivator permissions
-        AdminAccessControl::validate_permission(
-            env,
-            deactivated_by,
-            &AdminPermission::Emergency,
-        )?;
+        AdminAccessControl::validate_permission(env, deactivated_by, &AdminPermission::Emergency)?;
 
         // Use a simple fixed key for admin role storage
         let key = Symbol::new(env, "admin_role");
@@ -1342,11 +1363,7 @@ impl AdminManager {
         role: AdminRole,
     ) -> Result<(), Error> {
         // Use existing AdminRoleManager for validation
-        AdminAccessControl::validate_permission(
-            env,
-            current_admin,
-            &AdminPermission::Emergency,
-        )?;
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::Emergency)?;
 
         // Prevent duplicate admin assignments
         if Self::is_admin(env, new_admin) {
@@ -1388,11 +1405,7 @@ impl AdminManager {
         current_admin: &Address,
         admin_to_remove: &Address,
     ) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(
-            env,
-            current_admin,
-            &AdminPermission::Emergency,
-        )?;
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::Emergency)?;
 
         // Prevent self-removal of last super admin
         if current_admin == admin_to_remove {
@@ -1429,11 +1442,7 @@ impl AdminManager {
         target_admin: &Address,
         new_role: AdminRole,
     ) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(
-            env,
-            current_admin,
-            &AdminPermission::Emergency,
-        )?;
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::Emergency)?;
 
         let admin_key = Self::get_admin_key(env, target_admin);
         let mut assignment: AdminRoleAssignment = env
@@ -1612,11 +1621,7 @@ impl AdminManager {
         current_admin: &Address,
         target_admin: &Address,
     ) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(
-            env,
-            current_admin,
-            &AdminPermission::Emergency,
-        )?;
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::Emergency)?;
 
         let admin_key = Self::get_admin_key(env, target_admin);
         let mut assignment: AdminRoleAssignment = env
@@ -1638,11 +1643,7 @@ impl AdminManager {
         current_admin: &Address,
         target_admin: &Address,
     ) -> Result<(), Error> {
-        AdminAccessControl::validate_permission(
-            env,
-            current_admin,
-            &AdminPermission::Emergency,
-        )?;
+        AdminAccessControl::validate_permission(env, current_admin, &AdminPermission::Emergency)?;
 
         let admin_key = Self::get_admin_key(env, target_admin);
         let mut assignment: AdminRoleAssignment = env
@@ -1668,22 +1669,24 @@ impl MultisigManager {
     /// Set the multisig threshold (M-of-N)
     pub fn set_threshold(env: &Env, admin: &Address, threshold: u32) -> Result<(), Error> {
         AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
-        
+
         let total_admins = Self::count_active_admins(env);
         if threshold == 0 || threshold > total_admins {
             return Err(Error::InvalidInput);
         }
-        
+
         let config = MultisigConfig {
             threshold,
             total_admins,
             enabled: threshold > 1,
         };
-        
-        env.storage().persistent().set(&Symbol::new(env, "MultisigConfig"), &config);
+
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, "MultisigConfig"), &config);
         Ok(())
     }
-    
+
     /// Get current multisig configuration
     pub fn get_config(env: &Env) -> MultisigConfig {
         env.storage()
@@ -1695,7 +1698,7 @@ impl MultisigManager {
                 enabled: false,
             })
     }
-    
+
     /// Create a pending action requiring approval
     pub fn create_pending_action(
         env: &Env,
@@ -1705,11 +1708,11 @@ impl MultisigManager {
         data: Map<String, String>,
     ) -> Result<u64, Error> {
         AdminAccessControl::validate_permission(env, initiator, &AdminPermission::Emergency)?;
-        
+
         let action_id = Self::get_next_action_id(env);
         let mut approvals = Vec::new(env);
         approvals.push_back(initiator.clone());
-        
+
         let action = PendingAdminAction {
             action_id,
             action_type,
@@ -1721,84 +1724,92 @@ impl MultisigManager {
             executed: false,
             data,
         };
-        
+
         let key = Self::get_action_key(env, action_id);
         env.storage().persistent().set(&key, &action);
-        
+
         Ok(action_id)
     }
-    
+
     /// Approve a pending action
     pub fn approve_action(env: &Env, admin: &Address, action_id: u64) -> Result<bool, Error> {
         AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
-        
+
         let key = Self::get_action_key(env, action_id);
-        let mut action: PendingAdminAction = env.storage().persistent().get(&key).ok_or(Error::ConfigNotFound)?;
-        
+        let mut action: PendingAdminAction = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::ConfigNotFound)?;
+
         if action.executed {
             return Err(Error::InvalidState);
         }
-        
+
         if env.ledger().timestamp() > action.expires_at {
             return Err(Error::DisputeError);
         }
-        
+
         if action.approvals.contains(admin) {
             return Err(Error::InvalidState);
         }
-        
+
         action.approvals.push_back(admin.clone());
         env.storage().persistent().set(&key, &action);
-        
+
         let config = Self::get_config(env);
         Ok(action.approvals.len() >= config.threshold)
     }
-    
+
     /// Execute a pending action if threshold is met
     pub fn execute_action(env: &Env, action_id: u64) -> Result<(), Error> {
         let key = Self::get_action_key(env, action_id);
-        let mut action: PendingAdminAction = env.storage().persistent().get(&key).ok_or(Error::ConfigNotFound)?;
-        
+        let mut action: PendingAdminAction = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::ConfigNotFound)?;
+
         if action.executed {
             return Err(Error::InvalidState);
         }
-        
+
         let config = Self::get_config(env);
         if action.approvals.len() < config.threshold {
             return Err(Error::Unauthorized);
         }
-        
+
         action.executed = true;
         env.storage().persistent().set(&key, &action);
-        
+
         Ok(())
     }
-    
+
     /// Get pending action details
     pub fn get_pending_action(env: &Env, action_id: u64) -> Option<PendingAdminAction> {
         let key = Self::get_action_key(env, action_id);
         env.storage().persistent().get(&key)
     }
-    
+
     /// Check if action requires multisig approval
     pub fn requires_multisig(env: &Env) -> bool {
         let config = Self::get_config(env);
         config.enabled && config.threshold > 1
     }
-    
+
     // Helper methods
     fn get_action_key(env: &Env, action_id: u64) -> Symbol {
         let key_str = alloc::format!("PendingAction_{}", action_id);
         Symbol::new(env, &key_str)
     }
-    
+
     fn get_next_action_id(env: &Env) -> u64 {
         let key = Symbol::new(env, "NextActionId");
         let current: u64 = env.storage().persistent().get(&key).unwrap_or(1);
         env.storage().persistent().set(&key, &(current + 1));
         current
     }
-    
+
     fn count_active_admins(env: &Env) -> u32 {
         let count_key = Symbol::new(env, "AdminCount");
         env.storage().persistent().get(&count_key).unwrap_or(1)
@@ -2000,10 +2011,10 @@ impl AdminFunctions {
         // Temporarily disabled due to resolution module being disabled
         // let _resolution = MarketResolutionManager::finalize_market(env, admin, market_id, outcome)?;
         // For now, just emit the event and return success
-        
+
         // Emit market finalized event
         EventEmitter::emit_market_finalized(env, market_id, admin, outcome);
-        
+
         // Log admin action
         let mut params = Map::new(env);
         params.set(
@@ -2011,7 +2022,7 @@ impl AdminFunctions {
             String::from_str(env, "market_id"),
         );
         params.set(String::from_str(env, "outcome"), outcome.clone());
-        AdminActionLogger::log_action(
+        let _ = AdminActionLogger::log_action(
             env,
             admin,
             "finalize_market",
@@ -2020,7 +2031,7 @@ impl AdminFunctions {
             true,
             None,
         );
-        
+
         Ok(())
     }
 
@@ -3692,7 +3703,7 @@ mod tests {
 
         let action = AdminTesting::create_test_admin_action(&env, &admin);
         // Check the action structure manually first
-        assert!(action.timestamp > 0); 
+        assert!(action.timestamp > 0);
         assert!(AdminTesting::validate_admin_action_structure(&action).is_ok());
 
         let role_assignment = AdminTesting::create_test_role_assignment(&env, &admin);

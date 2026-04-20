@@ -635,8 +635,8 @@ mod batch_operations_tests {
             let stats = BatchProcessor::get_batch_operation_statistics(&env).unwrap();
             assert_eq!(stats.total_batches_processed, 3); // 2 votes + 1 claim + 1 oracle (market creation skipped)
             assert_eq!(stats.total_operations_processed, 4); // 2 votes + 1 claim + 1 oracle
-            // counts are always >= 0
-            // counts are always >= 0
+                                                             // counts are always >= 0
+                                                             // counts are always >= 0
 
             // 4. Test utilities
             assert!(BatchUtils::is_batch_processing_enabled(&env).unwrap());

@@ -4215,11 +4215,7 @@ pub fn emit_oracle_callback(
 /// * `env` - Soroban environment
 /// * `actor` - Address of the actor involved in the event
 /// * `message` - Security event message
-pub fn emit_security_event(
-    env: &Env,
-    actor: &Address,
-    message: &String,
-) {
+pub fn emit_security_event(env: &Env, actor: &Address, message: &String) {
     env.events().publish(
         (
             Symbol::new(env, "security_event"),
@@ -4240,11 +4236,7 @@ pub fn emit_security_event(
 /// * `env` - Soroban environment
 /// * `oracle` - Oracle provider experiencing degradation
 /// * `reason` - Reason for the degradation
-pub fn emit_oracle_degradation(
-    env: &Env,
-    oracle: &OracleProvider,
-    reason: &String,
-) {
+pub fn emit_oracle_degradation(env: &Env, oracle: &OracleProvider, reason: &String) {
     env.events().publish(
         (
             Symbol::new(env, "oracle_degradation"),
@@ -4265,11 +4257,7 @@ pub fn emit_oracle_degradation(
 /// * `env` - Soroban environment
 /// * `market_id` - Market identifier requiring manual resolution
 /// * `reason` - Reason for manual resolution requirement
-pub fn emit_manual_resolution_required(
-    env: &Env,
-    market_id: &Symbol,
-    reason: &String,
-) {
+pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &String) {
     env.events().publish(
         (
             Symbol::new(env, "manual_resolution_required"),
