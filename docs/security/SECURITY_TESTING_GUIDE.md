@@ -8,6 +8,7 @@
 - A transition updates storage but does not publish a ledger event, leaving indexers blind.
 - A transition emits an event before state changes are committed, creating a false audit trail.
 - A transition emits the wrong status or amount, causing downstream payout or analytics errors.
+- A paused contract still accepts write paths, allowing partial state changes during an incident.
 
 ## Event Invariants
 - Every financially material transition must publish a ledger event and persist the same payload for internal queries.
@@ -16,6 +17,13 @@
 - `bet_upd` must reflect every change from `Active` to `Won`, `Lost`, `Refunded`, or `Cancelled`.
 - `mkt_res` must be published when a market is resolved.
 - Event publication must be atomic with the contract state change.
+
+## Circuit Breaker Semantics
+- Read-only queries remain available while the breaker is open or half-open.
+- Mutating operations must check the breaker before they touch storage or move funds.
+- `PauseScope::Full` blocks all writes.
+- `PauseScope::BettingOnly` blocks betting and other value-locking paths, but leaves reads and non-betting writes explicit in code.
+- The expected failure mode for blocked writes is `Error::CBOpen`.
 
 ## Verification Commands
 - `cargo test -p predictify-hybrid`
@@ -27,6 +35,7 @@
 - Confirm event data decodes to the expected contract type.
 - Confirm the stored state matches the event payload.
 - Confirm unauthorized or invalid transitions emit no success event.
+- Confirm every write path touched by the breaker returns `CBOpen` while reads still succeed.
 
 ## Non-Goals
 - This guide does not cover frontend indexing pipelines.
