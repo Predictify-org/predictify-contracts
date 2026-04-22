@@ -43,7 +43,7 @@ Complete gas optimization and cost analysis:
 
 Operational procedures and incident management:
 
-- **[Incident Response](./operations/INCIDENT_RESPONSE.md)** - Incident response procedures and protocols
+- **[Incident Response & Oracle Monitoring](./operations/INCIDENT_RESPONSE.md)** - Incident response procedures, security protocols and specific runbooks for oracle health degradation.
 
 ### 📋 [Contract Documentation](./contracts/)
 
@@ -64,7 +64,7 @@ Claim idempotency and payout tracking:
 3. **For Contract Contributors**: Review [Contract Documentation](./contracts/)
 4. **For Security Auditors**: Review [Security Documentation](./security/)
 5. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
-6. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
+6. **For Operations**: Read [Incident Response & Oracle Monitoring](./operations/INCIDENT_RESPONSE.md)
 
 ## 📊 Dashboard Statistics Queries
 
@@ -106,5 +106,5 @@ When adding new documentation:
 
 ---
 
-*Last updated: 2026-03-30*
+*Last updated: 2026-04-23*
 *For questions or suggestions about documentation, please open an issue in the repository.*
