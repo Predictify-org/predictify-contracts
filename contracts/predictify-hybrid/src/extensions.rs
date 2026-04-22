@@ -600,7 +600,11 @@ impl ExtensionValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Check total extension days limit
-        if market.total_extension_days + additional_days > market.max_extension_days {
+        let new_total_extension_days = market
+            .total_extension_days
+            .checked_add(additional_days)
+            .ok_or(Error::InvalidInput)?;
+        if new_total_extension_days > market.max_extension_days {
             return Err(Error::InvalidInput);
         }
 

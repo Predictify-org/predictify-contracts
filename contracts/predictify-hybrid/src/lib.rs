@@ -3523,8 +3523,21 @@ impl PredictifyHybrid {
             return Err(Error::MarketResolved);
         }
 
+        if additional_days == 0 {
+            return Err(Error::InvalidDuration);
+        }
+
+        // Validate max total extensions limit
+        let max_total_extensions = crate::config::MAX_TOTAL_EXTENSIONS;
+        if (market.extension_history.len() as usize) >= (max_total_extensions as usize) {
+            return Err(Error::InvalidDuration);
+        }
+
         // Validate extension limit
-        let new_total_extension_days = market.total_extension_days + additional_days;
+        let new_total_extension_days = market
+            .total_extension_days
+            .checked_add(additional_days)
+            .ok_or(Error::InvalidDuration)?;
         if new_total_extension_days > market.max_extension_days {
             return Err(Error::InvalidDuration);
         }
