@@ -31,7 +31,7 @@ Comprehensive security documentation and guidelines:
 
 Complete gas optimization and cost analysis:
 
-- **[Gas Benchmarking](./gas/GAS_BENCHMARKING.md)** - Performance benchmarks and metrics
+- **[Gas Benchmarking](./gas/GAS_BENCHMARKING.md)** - Performance benchmarks, metrics, and threshold constants for critical-path functions (see the [Performance Threshold Constants](./gas/GAS_BENCHMARKING.md#performance-threshold-constants) section)
 - **[Gas Case Studies](./gas/GAS_CASE_STUDIES.md)** - Real-world gas optimization examples
 - **[Gas Cost Analysis](./gas/GAS_COST_ANALYSIS.md)** - Detailed cost breakdown and analysis
 - **[Gas Monitoring](./gas/GAS_MONITORING.md)** - Tools and techniques for monitoring gas usage
