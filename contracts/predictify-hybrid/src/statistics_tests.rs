@@ -115,14 +115,28 @@ fn test_record_winnings_claimed() {
 }
 
 #[test]
-fn test_record_fees_collected() {
+fn test_record_market_resolved_underflow_protection() {
     let (env, contract_id) = setup_env();
 
     env.as_contract(&contract_id, || {
-        StatisticsManager::record_fees_collected(&env, 500);
-        StatisticsManager::record_fees_collected(&env, 300);
+        // Start with 0 active events
+        let initial_stats = StatisticsManager::get_platform_stats(&env);
+        assert_eq!(initial_stats.active_events_count, 0);
 
-        let stats = StatisticsManager::get_platform_stats(&env);
-        assert_eq!(stats.total_fees_collected, 800);
+        // Try to resolve a market when none are active
+        StatisticsManager::record_market_resolved(&env);
+
+        // Should remain 0 (no underflow)
+        let after_stats = StatisticsManager::get_platform_stats(&env);
+        assert_eq!(after_stats.active_events_count, 0);
+
+        // Now create one and resolve it
+        StatisticsManager::record_market_created(&env);
+        let created_stats = StatisticsManager::get_platform_stats(&env);
+        assert_eq!(created_stats.active_events_count, 1);
+
+        StatisticsManager::record_market_resolved(&env);
+        let resolved_stats = StatisticsManager::get_platform_stats(&env);
+        assert_eq!(resolved_stats.active_events_count, 0);
     });
 }

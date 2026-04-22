@@ -1,4 +1,15 @@
-#![allow(dead_code)]
+//! # Statistics Manager
+//!
+//! This module provides safe counter management for platform and user statistics.
+//!
+//! ## Safety Policy
+//!
+//! All counter operations use checked arithmetic to prevent silent overflow/underflow:
+//! - **Increments**: Use `checked_add()` with saturation (unwrap_or(old_value))
+//! - **Decrements**: Use `checked_sub()` with saturation at minimum (unwrap_or(0))
+//! - **No silent wrapping**: Counters saturate at max/min values instead of wrapping
+//!
+//! This ensures statistical integrity and prevents unexpected behavior in high-usage scenarios.
 
 use crate::events::EventEmitter;
 use crate::types::{
@@ -111,6 +122,9 @@ impl StatisticsManager {
     }
 
     /// Record a new market creation
+    ///
+    /// Safely increments platform statistics counters using checked addition
+    /// to prevent overflow. Counters saturate at their maximum values.
     pub fn record_market_created(env: &Env) {
         let mut stats = Self::get_platform_stats(env);
         stats.total_events_created = stats
@@ -127,17 +141,26 @@ impl StatisticsManager {
     }
 
     /// Record a market resolution (decrements active count)
+    ///
+    /// Safely decrements the active events counter using checked subtraction
+    /// to prevent underflow. If the counter would underflow, it saturates at 0.
     pub fn record_market_resolved(env: &Env) {
         let mut stats = Self::get_platform_stats(env);
-        if stats.active_events_count > 0 {
-            stats.active_events_count -= 1;
-        }
+        stats.active_events_count = stats.active_events_count.checked_sub(1).unwrap_or(0);
         Self::set_platform_stats(env, &stats);
 
         Self::emit_update(env, &stats);
     }
 
     /// Record a new bet placement
+    ///
+    /// Safely updates both platform and user statistics using checked arithmetic.
+    /// All counters use saturation policy to prevent overflow.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment
+    /// * `user` - Address of the user placing the bet
+    /// * `amount` - Bet amount in token units
     pub fn record_bet_placed(env: &Env, user: &Address, amount: i128) {
         // Update platform stats
         let mut p_stats = Self::get_platform_stats(env);
@@ -169,6 +192,14 @@ impl StatisticsManager {
     }
 
     /// Record winnings claimed
+    ///
+    /// Safely updates user statistics for claimed winnings using checked arithmetic.
+    /// Win rate is recalculated and clamped to valid range (0-10000 basis points).
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment
+    /// * `user` - Address of the user claiming winnings
+    /// * `amount` - Winnings amount in token units
     pub fn record_winnings_claimed(env: &Env, user: &Address, amount: i128) {
         // Note: fees are already deducted from 'amount' usually?
         // Or do we track total fees collected separately?
@@ -193,16 +224,24 @@ impl StatisticsManager {
         u_stats.last_activity_ts = env.ledger().timestamp();
 
         // Recalculate win rate
-        // Win rate = (bets_won / bets_placed) * 10000
+        // Win rate = (bets_won / bets_placed) * 10000 (basis points)
+        // Clamped to maximum 10000 (100.00%) for safety
         if u_stats.total_bets_placed > 0 {
-            u_stats.win_rate = ((u_stats.total_bets_won as u128 * 10000)
-                / u_stats.total_bets_placed as u128) as u32;
+            let win_rate_bp = (u_stats.total_bets_won as u128 * 10000) / u_stats.total_bets_placed as u128;
+            u_stats.win_rate = (win_rate_bp as u32).min(10000);
         }
 
         Self::set_user_stats(env, user, &u_stats);
     }
 
     /// Record fees collected
+    ///
+    /// Safely increments the total fees collected counter using checked addition
+    /// with saturation policy to prevent overflow.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment
+    /// * `amount` - Fee amount collected in token units
     pub fn record_fees_collected(env: &Env, amount: i128) {
         let mut p_stats = Self::get_platform_stats(env);
         p_stats.total_fees_collected = p_stats
