@@ -477,6 +477,78 @@ mod circuit_breaker_tests {
     }
 
     #[test]
+    fn test_pause_keeps_reads_available_but_blocks_writes() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            crate::admin::AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            let reason = String::from_str(&env, "pause for audit");
+            CircuitBreaker::pause_with_options(
+                &env,
+                &admin,
+                &reason,
+                crate::circuit_breaker::PauseScope::Full,
+                false,
+            )
+            .unwrap();
+
+            assert!(CircuitBreaker::is_read_allowed(&env).unwrap());
+            assert!(!CircuitBreaker::is_write_allowed(&env, "deposit").unwrap());
+            assert!(!CircuitBreaker::is_write_allowed(&env, "betting").unwrap());
+
+            let write_err = CircuitBreaker::require_write_allowed(&env, "deposit").unwrap_err();
+            assert_eq!(write_err, crate::Error::CBOpen);
+        });
+    }
+
+    #[test]
+    fn test_betting_only_pause_allows_non_betting_writes() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            crate::admin::AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            let reason = String::from_str(&env, "betting paused");
+            CircuitBreaker::pause_with_options(
+                &env,
+                &admin,
+                &reason,
+                crate::circuit_breaker::PauseScope::BettingOnly,
+                false,
+            )
+            .unwrap();
+
+            assert!(!CircuitBreaker::is_write_allowed(&env, "betting").unwrap());
+            assert!(CircuitBreaker::is_write_allowed(&env, "create_market").unwrap());
+        });
+    }
+
+    #[test]
     fn test_config_validation() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());

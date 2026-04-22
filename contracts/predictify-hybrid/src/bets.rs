@@ -243,6 +243,7 @@ impl BetManager {
         outcome: String,
         amount: i128,
     ) -> Result<Bet, Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
 
@@ -327,6 +328,7 @@ impl BetManager {
         user: Address,
         bets: soroban_sdk::Vec<(Symbol, String, i128)>,
     ) -> Result<soroban_sdk::Vec<Bet>, Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
 
@@ -710,6 +712,7 @@ impl BetManager {
     /// )?;
     /// ```
     pub fn cancel_bet(env: &Env, user: Address, market_id: Symbol) -> Result<(), Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "cancel_bet")?;
         // Require authentication from the user
         user.require_auth();
 

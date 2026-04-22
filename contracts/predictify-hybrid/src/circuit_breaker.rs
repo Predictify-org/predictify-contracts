@@ -311,6 +311,40 @@ impl CircuitBreaker {
         }
     }
 
+    /// Check whether a read-only operation is allowed.
+    ///
+    /// Read paths remain available while the breaker is paused so integrators can
+    /// inspect state, balances, and status without changing contract storage.
+    pub fn is_read_allowed(_env: &Env) -> Result<bool, Error> {
+        Ok(true)
+    }
+
+    /// Check whether a mutating operation is allowed.
+    ///
+    /// Full pauses block all writes. Betting-only pauses block bet placement and
+    /// other user-facing value-locking writes, while still allowing non-mutating reads.
+    pub fn is_write_allowed(env: &Env, op: &str) -> Result<bool, Error> {
+        Self::is_operation_allowed(env, op)
+    }
+
+    /// Enforce that a read-only operation can proceed.
+    pub fn require_read_allowed(env: &Env) -> Result<(), Error> {
+        if Self::is_read_allowed(env)? {
+            Ok(())
+        } else {
+            Err(Error::CBOpen)
+        }
+    }
+
+    /// Enforce that a mutating operation can proceed.
+    pub fn require_write_allowed(env: &Env, op: &str) -> Result<(), Error> {
+        if Self::is_write_allowed(env, op)? {
+            Ok(())
+        } else {
+            Err(Error::CBOpen)
+        }
+    }
+
     /// Returns whether withdrawals are allowed under the current pause state.
     pub fn are_withdrawals_allowed(env: &Env) -> Result<bool, Error> {
         let state = Self::get_state(env)?;
@@ -759,6 +793,16 @@ impl CircuitBreaker {
         results.set(
             String::from_str(env, "event_history"),
             String::from_str(env, &events.len().to_string()),
+        );
+
+        // Test 6: Read/write semantics
+        results.set(
+            String::from_str(env, "read_allowed"),
+            String::from_str(env, &Self::is_read_allowed(env)?.to_string()),
+        );
+        results.set(
+            String::from_str(env, "write_allowed_betting"),
+            String::from_str(env, &Self::is_write_allowed(env, "betting")?.to_string()),
         );
 
         Ok(results)

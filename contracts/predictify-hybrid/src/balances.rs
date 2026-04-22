@@ -34,6 +34,7 @@ impl BalanceManager {
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
+        CircuitBreaker::require_write_allowed(env, "deposit")?;
         user.require_auth();
 
         // Validate amount
@@ -87,6 +88,7 @@ impl BalanceManager {
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
+        CircuitBreaker::require_write_allowed(env, "withdraw")?;
         user.require_auth();
 
         // Prevent withdrawals when circuit breaker disallows them
