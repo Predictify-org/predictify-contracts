@@ -103,19 +103,13 @@ mod gas_test;
 #[cfg(any())]
 mod gas_tracking_tests;
 #[cfg(any())]
-mod gas_tracking_tests;
-
-#[cfg(any())]
 mod claim_idempotency_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod balance_tests;
 
 #[cfg(test)]
 mod event_management_tests;
-
-#[cfg(any())]
-mod category_tags_tests;
 #[cfg(any())]
 mod statistics_tests;
 
@@ -139,6 +133,7 @@ pub mod errors {
 pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
+use crate::circuit_breaker::CircuitBreaker;
 use crate::config::{
     DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE, MIN_PLATFORM_FEE_PERCENTAGE,
 };
@@ -242,6 +237,12 @@ impl PredictifyHybrid {
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+
+        // Initialize circuit breaker
+        match CircuitBreaker::initialize(&env) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
 
         // Emit contract initialized event
         EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
@@ -6593,3 +6594,4 @@ impl PredictifyHybrid {
 
 #[cfg(any())]
 mod test;
+
