@@ -142,7 +142,18 @@ impl RecoveryManager {
         RecoveryStorage::status(env, market_id).ok_or(Error::InvalidState)
     }
 
-    pub fn recover_market_state(env: &Env, market_id: &Symbol) -> Result<bool, Error> {
+    /// Attempt to recover a market state. Strictly privileged to admin.
+    ///
+    /// This function performs integrity checks and reconstruction heuristics
+    /// where safe. It will assert the provided `admin` is authorized.
+    pub fn recover_market_state(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+    ) -> Result<bool, Error> {
+        // Ensure caller is admin (defense-in-depth)
+        Self::assert_is_admin(env, admin)?;
+
         // Validate integrity first; if valid skip
         if RecoveryValidator::validate_market_state_integrity(env, market_id).is_ok() {
             let rec = MarketRecovery {
@@ -156,9 +167,11 @@ impl RecoveryManager {
             RecoveryStorage::save(env, &rec);
             EventEmitter::emit_recovery_event(
                 env,
+                admin,
                 market_id,
                 &String::from_str(env, "skip"),
                 &String::from_str(env, "integrity_ok"),
+                None,
             );
             return Ok(false);
         }
@@ -195,18 +208,28 @@ impl RecoveryManager {
         RecoveryStorage::save(env, &rec);
         EventEmitter::emit_recovery_event(
             env,
+            admin,
             market_id,
             &String::from_str(env, "recover"),
             &String::from_str(env, "reconstructed"),
+            None,
         );
         Ok(true)
     }
 
+    /// Execute partial refund mechanism for `users`. Strictly privileged to admin.
+    ///
+    /// Returns the total amount refunded. Emits an admin-tagged recovery event
+    /// including the refunded total for full visibility.
     pub fn partial_refund_mechanism(
         env: &Env,
+        admin: &Address,
         market_id: &Symbol,
         users: &Vec<Address>,
     ) -> Result<i128, Error> {
+        // Ensure caller is admin (defense-in-depth)
+        Self::assert_is_admin(env, admin)?;
+
         let mut market = MarketStateManager::get_market(env, market_id)?;
         let mut total_refunded: i128 = 0;
 
@@ -240,9 +263,11 @@ impl RecoveryManager {
         RecoveryStorage::save(env, &rec);
         EventEmitter::emit_recovery_event(
             env,
+            admin,
             market_id,
             &String::from_str(env, "partial_refund"),
             &String::from_str(env, "executed"),
+            Some(total_refunded),
         );
         Ok(total_refunded)
     }
@@ -250,17 +275,22 @@ impl RecoveryManager {
 
 // ===== EVENT INTEGRATION =====
 impl EventEmitter {
-    pub fn emit_recovery_event(env: &Env, market_id: &Symbol, action: &String, status: &String) {
+    /// Emit a recovery event that includes the acting admin and optional amount.
+    pub fn emit_recovery_event(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+        action: &String,
+        status: &String,
+        amount: Option<i128>,
+    ) {
         let topic = Symbol::new(env, "recovery_evt");
-        let mut data = Vec::new(env);
-        data.push_back(String::from_str(env, "market_id"));
-        let mid = symbol_to_string(env, market_id);
-        data.push_back(mid);
-        data.push_back(String::from_str(env, "action"));
-        data.push_back(action.clone());
-        data.push_back(String::from_str(env, "status"));
-        data.push_back(status.clone());
-        env.events().publish((topic,), data);
+        // Publish a tuple: (action, status, amount, timestamp)
+        let amt = amount.unwrap_or(0);
+        env.events().publish(
+            (topic, admin.clone(), market_id.clone()),
+            (action.clone(), status.clone(), amt, env.ledger().timestamp()),
+        );
     }
 }
 
@@ -544,7 +574,7 @@ mod tests {
         let action = String::from_str(&test.env, "recover");
         let status = String::from_str(&test.env, "success");
         // Event emission should not panic
-        EventEmitter::emit_recovery_event(&test.env, &market_id, &action, &status);
+        EventEmitter::emit_recovery_event(&test.env, &test.admin, &market_id, &action, &status, Some(0));
         assert!(true);
     }
 
