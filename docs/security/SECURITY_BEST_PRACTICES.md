@@ -44,3 +44,40 @@ See [Claim Idempotency Guide](../claims/CLAIM_IDEMPOTENCY.md) for detailed imple
 - Implementing Multi-Factor Authentication(MFA)
 - User tokens implemented during login form
 
+
+---
+
+## Idempotent Fee Collection
+
+### Invariant
+
+Platform fees for any given market are collected **at most once**. The
+`fee_collected: bool` field on the `Market` struct is the single source of
+truth.
+
+### Implementation
+
+`FeeManager::collect_fees` checks `market.fee_collected` before any state
+mutation:
+
+- If `true` → returns `Ok(0)` immediately (idempotent no-op).
+- If `false` → validates, collects, sets `fee_collected = true`, persists.
+
+`FeeValidator::validate_market_for_fee_collection` independently returns
+`Error::FeeAlreadyCollected` for callers that use the validator directly.
+
+### Threat model
+
+| Threat | Mitigation |
+|---|---|
+| Retry on network failure double-charges users | `fee_collected` flag checked before any state write |
+| Admin calls `collect_fees` twice maliciously | Second call returns `Ok(0)`, no tokens move |
+| Flag reset attack | Flag is stored in persistent ledger state; only `mark_fees_collected` sets it and no pclears it post-collection |
+| Reentrancy via token callback | Fee vault accumulates internally; transfer to admin only happens via time-locked `withdraw_fees` |
+
+### Auditor checklist
+
+- [ ] `market.fee_collected` is `false` in `Market::new` (see `types.rs`)
+- [ ] `collect_fees` returns `Ok(0)` on retry, never `Err`
+- [ ] `FeeValidator` returns `Error::FeeAlreadyCollected`, not `InvalidFeeConfig`
+- [ ] `mark_fees_collected` is the only write path for the flag
