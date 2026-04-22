@@ -567,11 +567,14 @@ mod tests {
         let action = String::from_str(&test.env, "recover");
         let status = String::from_str(&test.env, "success");
         // Event emission should not panic
-<<<<<<< HEAD
-        EventEmitter::emit_recovery_event(&test.env, &test.admin, &market_id, &action, &status, Some(0));
-=======
-        EventEmitter::emit_recovery_event(&test.env, &market_id, &action, &status, &test.admin);
->>>>>>> 908e62a (feat(contract): review recovery emergency paths)
+        EventEmitter::emit_recovery_event(
+            &test.env,
+            &test.admin,
+            &market_id,
+            &action,
+            &status,
+            Some(0),
+        );
         assert!(true);
     }
 
