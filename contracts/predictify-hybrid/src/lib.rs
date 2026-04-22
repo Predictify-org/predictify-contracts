@@ -171,11 +171,12 @@ impl PredictifyHybrid {
     /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - The address that will be granted administrative privileges
     /// * `platform_fee_percentage` - Optional platform fee percentage (0-10%). If `None`, defaults to 2%
+    /// * `allowed_assets` - Optional list of allowed asset contract addresses. If `None`, defaults are used
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// This function will panic if:
-    /// - The contract has already been initialized (Error code 504: AlreadyInitialized)
+    /// Returns [`Error`] when:
+    /// - The contract has already been initialized
     /// - The admin address is invalid
     /// - The platform fee percentage is negative or exceeds 10%
     /// - Storage operations fail
@@ -183,16 +184,16 @@ impl PredictifyHybrid {
     /// # Example
     ///
     /// ```rust
-    /// # use soroban_sdk::{Env, Address};
+    /// # use soroban_sdk::{Env, Address, Vec};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let admin_address = Address::generate(&env);
     ///
     /// // Initialize with default 2% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address.clone(), None);
+    /// PredictifyHybrid::initialize(env.clone(), admin_address.clone(), None, None)?;
     ///
     /// // Or initialize with custom 5% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address, Some(5));
+    /// PredictifyHybrid::initialize(env.clone(), admin_address, Some(5), None)?;
     /// ```
     ///
     /// # Platform Fee
@@ -211,17 +212,18 @@ impl PredictifyHybrid {
     ///
     /// # Re-initialization Prevention
     ///
-    /// This function can only be called once. Any subsequent calls will panic with
-    /// `Error::AlreadyInitialized` to prevent admin takeover attacks.
-    ///
-    /// # Errors
-    ///
-    /// This entrypoint surfaces contract errors via panic in internal calls.
+    /// This function can only be called once. Any subsequent calls will return
+    /// `Error::InvalidState` to prevent admin takeover attacks.
     ///
     /// # Events
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>) {
+    /// Emits `contract_initialized` and `platform_fee_set` events on successful initialization.
+    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>, allowed_assets: Option<Vec<Address>>) -> Result<(), Error> {
+        // Check for re-initialization attempt (critical security check)
+        if env.storage().persistent().has(&Symbol::new(&env, "platform_fee")) {
+            return Err(Error::InvalidState);
+        }
+
         // Determine platform fee (default 2% if not specified)
         let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
 
@@ -229,25 +231,35 @@ impl PredictifyHybrid {
         if fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
             || fee_percentage > MAX_PLATFORM_FEE_PERCENTAGE
         {
-            panic_with_error!(env, Error::InvalidFeeConfig);
+            return Err(Error::InvalidFeeConfig);
         }
 
         // Initialize admin (includes re-initialization check)
-        match AdminInitializer::initialize(&env, &admin) {
-            Ok(_) => (),
-            Err(e) => panic_with_error!(env, e),
-        }
+        AdminInitializer::initialize(&env, &admin)?;
 
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
 
+        // Initialize allowed assets
+        if let Some(assets) = allowed_assets {
+            // Store custom allowed assets
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "allowed_assets"), &assets);
+        } else {
+            // Initialize with defaults
+            crate::tokens::TokenRegistry::initialize_with_defaults(&env);
+        }
+
         // Emit contract initialized event
         EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
 
         // Emit platform fee set event
         EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
+
+        Ok(())
     }
 
     /// Deposits funds into the user's balance.

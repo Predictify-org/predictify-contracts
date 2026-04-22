@@ -24,7 +24,7 @@ fn test_place_bet_with_custom_token() {
             admin.clone(),
             None,
             Some(vec![&env, asset.clone()]),
-        );
+        ).unwrap();
 
         // Create market with custom asset
         let outcomes = vec![
@@ -131,7 +131,7 @@ fn test_insufficient_balance_for_custom_token() {
             admin.clone(),
             None,
             Some(vec![&env, asset.clone()]),
-        );
+        ).unwrap();
         let outcomes = vec![
             &env,
             String::from_str(&env, "yes"),
