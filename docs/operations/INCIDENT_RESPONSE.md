@@ -61,3 +61,29 @@ This documentation helps in detecting incident response procedures, provides ins
 ## Communication
 - Notification of critical updates to security teams
 
+## Recovery Module: Emergency Procedures (Predictify Hybrid)
+
+- Recovery actions in the `predictify-hybrid` contract are strictly privileged and must be
+	executed only by the configured admin address.
+- Recovery operations include `recover_market_state` and `partial_refund_mechanism` and are
+	instrumented to emit a deterministic event for every action. Event topic: `recovery_evt`.
+
+Event payload (ordered fields as `String` vector):
+
+- `market_id` — market identifier (string)
+- `action` — human-friendly action id (e.g. `recover`, `partial_refund`, `skip`)
+- `status` — action outcome (e.g. `reconstructed`, `executed`, `integrity_ok`)
+- `actor` — the admin address that performed the action
+
+This event schema ensures full visibility for auditors and integrators without reading
+contract storage. The contract enforces the admin requirement both at entrypoints and
+inside the recovery manager as defense-in-depth.
+
+Security notes / non-goals:
+
+- Emergency recovery executes on-chain mutations and may alter historic market totals
+	to restore invariants; integrators should consume `recovery_evt` to reconcile off-chain
+	indices and dashboards.
+- Recovery does not replace an off-chain incident investigation; it is designed to
+	restore contract invariants and return funds when safe.
+

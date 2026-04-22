@@ -141,18 +141,12 @@ impl RecoveryManager {
     pub fn get_recovery_status(env: &Env, market_id: &Symbol) -> Result<String, Error> {
         RecoveryStorage::status(env, market_id).ok_or(Error::InvalidState)
     }
-
-    /// Attempt to recover a market state. Strictly privileged to admin.
-    ///
-    /// This function performs integrity checks and reconstruction heuristics
-    /// where safe. It will assert the provided `admin` is authorized.
-    pub fn recover_market_state(
-        env: &Env,
-        admin: &Address,
-        market_id: &Symbol,
-    ) -> Result<bool, Error> {
-        // Ensure caller is admin (defense-in-depth)
-        Self::assert_is_admin(env, admin)?;
+    /// Perform recovery for a market. This operation is privileged and requires the caller to be
+    /// the configured admin. The `actor` address will be recorded in emitted events for full
+    /// visibility and auditability.
+    pub fn recover_market_state(env: &Env, actor: &Address, market_id: &Symbol) -> Result<bool, Error> {
+        // Ensure caller is admin (defense-in-depth; callers should also enforce auth).
+        Self::assert_is_admin(env, actor)?;
 
         // Validate integrity first; if valid skip
         if RecoveryValidator::validate_market_state_integrity(env, market_id).is_ok() {
@@ -167,7 +161,7 @@ impl RecoveryManager {
             RecoveryStorage::save(env, &rec);
             EventEmitter::emit_recovery_event(
                 env,
-                admin,
+                actor,
                 market_id,
                 &String::from_str(env, "skip"),
                 &String::from_str(env, "integrity_ok"),
@@ -208,7 +202,7 @@ impl RecoveryManager {
         RecoveryStorage::save(env, &rec);
         EventEmitter::emit_recovery_event(
             env,
-            admin,
+            actor,
             market_id,
             &String::from_str(env, "recover"),
             &String::from_str(env, "reconstructed"),
@@ -217,18 +211,16 @@ impl RecoveryManager {
         Ok(true)
     }
 
-    /// Execute partial refund mechanism for `users`. Strictly privileged to admin.
-    ///
-    /// Returns the total amount refunded. Emits an admin-tagged recovery event
-    /// including the refunded total for full visibility.
+    /// Execute partial refunds for selected users. This is privileged and requires the caller
+    /// to be admin. Refund actions are fully recorded via events including the `actor` address.
     pub fn partial_refund_mechanism(
         env: &Env,
-        admin: &Address,
+        actor: &Address,
         market_id: &Symbol,
         users: &Vec<Address>,
     ) -> Result<i128, Error> {
-        // Ensure caller is admin (defense-in-depth)
-        Self::assert_is_admin(env, admin)?;
+        // ensure caller is admin
+        Self::assert_is_admin(env, actor)?;
 
         let mut market = MarketStateManager::get_market(env, market_id)?;
         let mut total_refunded: i128 = 0;
@@ -263,7 +255,7 @@ impl RecoveryManager {
         RecoveryStorage::save(env, &rec);
         EventEmitter::emit_recovery_event(
             env,
-            admin,
+            actor,
             market_id,
             &String::from_str(env, "partial_refund"),
             &String::from_str(env, "executed"),
@@ -271,28 +263,29 @@ impl RecoveryManager {
         );
         Ok(total_refunded)
     }
-}
+
+    }
 
 // ===== EVENT INTEGRATION =====
 impl EventEmitter {
-    /// Emit a recovery event that includes the acting admin and optional amount.
-    pub fn emit_recovery_event(
-        env: &Env,
-        admin: &Address,
-        market_id: &Symbol,
-        action: &String,
-        status: &String,
-        amount: Option<i128>,
-    ) {
-        let topic = Symbol::new(env, "recovery_evt");
-        // Publish a tuple: (action, status, amount, timestamp)
-        let amt = amount.unwrap_or(0);
-        env.events().publish(
-            (topic, admin.clone(), market_id.clone()),
-            (action.clone(), status.clone(), amt, env.ledger().timestamp()),
-        );
+        /// Emit a recovery event that includes the acting admin and optional amount.
+        pub fn emit_recovery_event(
+            env: &Env,
+            admin: &Address,
+            market_id: &Symbol,
+            action: &String,
+            status: &String,
+            amount: Option<i128>,
+        ) {
+            let topic = Symbol::new(env, "recovery_evt");
+            // Publish a tuple: (action, status, amount, timestamp)
+            let amt = amount.unwrap_or(0);
+            env.events().publish(
+                (topic, admin.clone(), market_id.clone()),
+                (action.clone(), status.clone(), amt, env.ledger().timestamp()),
+            );
+        }
     }
-}
 
 // Helper for symbol -> string representation (Soroban lacks direct to_string for Symbol)
 fn symbol_to_string(env: &Env, sym: &Symbol) -> String {
@@ -574,7 +567,11 @@ mod tests {
         let action = String::from_str(&test.env, "recover");
         let status = String::from_str(&test.env, "success");
         // Event emission should not panic
+<<<<<<< HEAD
         EventEmitter::emit_recovery_event(&test.env, &test.admin, &market_id, &action, &status, Some(0));
+=======
+        EventEmitter::emit_recovery_event(&test.env, &market_id, &action, &status, &test.admin);
+>>>>>>> 908e62a (feat(contract): review recovery emergency paths)
         assert!(true);
     }
 
