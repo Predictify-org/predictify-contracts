@@ -5262,11 +5262,17 @@ impl OutcomeDeduplicator {
             return 0;
         }
 
-        let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
+        let mut dp: Vec<Vec<u32>> = (0..=len1)
+            .map(|_| {
+                let mut row = Vec::with_capacity(len2 + 1);
+                row.resize(len2 + 1, 0u32);
+                row
+            })
+            .collect();
 
         // Initialize first row and column
         for i in 0..=len1 {
-            dp[i][0] = i;
+            dp[i][0] = i as u32;
         }
         for j in 0..=len2 {
             dp[0][j] = j;

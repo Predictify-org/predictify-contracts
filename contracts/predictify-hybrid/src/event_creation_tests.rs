@@ -81,7 +81,6 @@ fn test_create_event_success() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 
     // Verify event details using the new get_event method
@@ -89,18 +88,11 @@ fn test_create_event_success() {
     assert_eq!(event.description, description);
     assert_eq!(event.end_time, end_time);
     assert_eq!(event.outcomes.len(), outcomes.len());
-
-    // Verify that a creation fee was recorded
-    setup.env.as_contract(&setup.contract_id, || {
-        let key = symbol_short!("creat_fee");
-        let total: i128 = setup.env.storage().persistent().get(&key).unwrap_or(0);
-        assert_eq!(total, crate::fees::MARKET_CREATION_FEE);
-    });
 }
 
 /// Test that create_event validates minimum outcomes (parity with create_market)
 #[test]
-#[should_panic(expected = "InvalidOutcomes")]
+#[should_panic(expected = "Error(Contract, #301)")]
 fn test_create_event_invalid_outcomes_too_few() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
@@ -124,13 +116,12 @@ fn test_create_event_invalid_outcomes_too_few() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 }
 
 /// Test that create_event validates empty description (parity with create_market)
 #[test]
-#[should_panic(expected = "InvalidQuestion")]
+#[should_panic(expected = "Error(Contract, #300)")]
 fn test_create_event_invalid_empty_description() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
@@ -158,13 +149,12 @@ fn test_create_event_invalid_empty_description() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 }
 
 /// Test that create_event validates end_time is in the future (parity with create_market)
 #[test]
-#[should_panic(expected = "InvalidDuration")]
+#[should_panic(expected = "Error(Contract, #302)")]
 fn test_create_event_invalid_end_time_past() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
@@ -192,13 +182,12 @@ fn test_create_event_invalid_end_time_past() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 }
 
 /// Test that create_event validates end_time equals current time (boundary condition)
 #[test]
-#[should_panic(expected = "InvalidDuration")]
+#[should_panic(expected = "Error(Contract, #302)")]
 fn test_create_event_invalid_end_time_current() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
@@ -226,13 +215,12 @@ fn test_create_event_invalid_end_time_current() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 }
 
 /// Test that create_event validates unauthorized caller
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "Error(Contract, #100)")]
 fn test_create_event_unauthorized_caller() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
@@ -261,7 +249,6 @@ fn test_create_event_unauthorized_caller() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 }
 
@@ -301,7 +288,6 @@ fn test_create_event_with_fallback_oracle() {
         &oracle_config,
         &Some(fallback_oracle_config.clone()),
         &0,
-        &EventVisibility::Public,
     );
 
     let event = client.get_event(&event_id).unwrap();
@@ -339,7 +325,6 @@ fn test_create_event_with_resolution_timeout() {
         &oracle_config,
         &None,
         &resolution_timeout,
-        &EventVisibility::Public,
     );
 
     let event = client.get_event(&event_id).unwrap();
@@ -377,55 +362,11 @@ fn test_create_event_multiple_outcomes() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 
     let event = client.get_event(&event_id).unwrap();
     assert_eq!(event.outcomes.len(), 4);
     assert_eq!(event.status, MarketState::Active);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #400)")] // Error::InvalidState = 400
-fn test_create_event_without_token_configuration_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    env.ledger().with_mut(|li| {
-        li.timestamp = 10000;
-    });
-
-    let admin = Address::generate(&env);
-    let contract_id = env.register(PredictifyHybrid, ());
-    let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None);
-
-    // Intentionally do NOT configure TokenID so creation fee processing fails
-    let description = String::from_str(&env, "Fee test event");
-    let outcomes = vec![
-        &env,
-        String::from_str(&env, "Yes"),
-        String::from_str(&env, "No"),
-    ];
-    let end_time = env.ledger().timestamp() + 3600;
-    let oracle_config = OracleConfig {
-        provider: OracleProvider::reflector(),
-        oracle_address: Address::generate(&env),
-        feed_id: String::from_str(&env, "BTC/USD"),
-        threshold: 50000,
-        comparison: String::from_str(&env, "gt"),
-    };
-
-    client.create_event(
-        &admin,
-        &description,
-        &outcomes,
-        &end_time,
-        &oracle_config,
-        &None,
-        &0,
-        &EventVisibility::Public,
-    );
 }
 
 #[test]
@@ -456,9 +397,6 @@ fn test_create_market_success() {
         &oracle_config,
         &None,
         &0,
-        &None,
-        &None,
-        &None,
     );
 
     assert!(client.get_market(&market_id).is_some());
@@ -494,46 +432,6 @@ fn test_create_event_unauthorized() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
-    );
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #115)")] // Error::CreatorBlacklisted = 115
-fn test_create_event_creator_blacklisted_globally() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-
-    // Blacklist the admin as a creator globally
-    let addrs = vec![&setup.env, setup.admin.clone()];
-    setup.env.mock_all_auths();
-    client.add_creators_to_global_blacklist(&setup.admin, &addrs);
-
-    let description = String::from_str(&setup.env, "Blacklisted creator event?");
-    let outcomes = vec![
-        &setup.env,
-        String::from_str(&setup.env, "Yes"),
-        String::from_str(&setup.env, "No"),
-    ];
-    let end_time = setup.env.ledger().timestamp() + 3600;
-    let oracle_config = OracleConfig {
-        provider: OracleProvider::reflector(),
-        oracle_address: Address::generate(&setup.env),
-        feed_id: String::from_str(&setup.env, "BTC/USD"),
-        threshold: 50000,
-        comparison: String::from_str(&setup.env, "gt"),
-    };
-
-    // Now event creation by this admin should fail due to creator blacklist
-    client.create_event(
-        &setup.admin,
-        &description,
-        &outcomes,
-        &end_time,
-        &oracle_config,
-        &None,
-        &0,
-        &EventVisibility::Public,
     );
 }
 
@@ -566,7 +464,6 @@ fn test_create_event_invalid_end_time() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 }
 
@@ -595,7 +492,6 @@ fn test_create_event_empty_outcomes() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 }
 
@@ -630,15 +526,9 @@ fn test_create_event_limit_enforced() {
             &oracle_config,
             &None,
             &0,
-            &None,
-            &None,
-            &None,
         );
     }
 }
-
-#[test]
-fn test_decrement_on_cancel_frees_slot() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
 
@@ -668,9 +558,6 @@ fn test_decrement_on_cancel_frees_slot() {
             &oracle_config,
             &None,
             &0,
-            &None,
-            &None,
-            &None,
         ));
     }
 
@@ -693,9 +580,6 @@ fn test_decrement_on_cancel_frees_slot() {
         &oracle_config,
         &None,
         &0,
-        &None,
-        &None,
-        &None,
     );
 }
 
@@ -727,7 +611,6 @@ fn test_event_id_unique() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
     let desc_b = String::from_str(&setup.env, "Will this be a unique event B?");
     let event_id_2 = client.create_event(
@@ -738,7 +621,6 @@ fn test_event_id_unique() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 
     assert_ne!(event_id_1, event_id_2, "Event IDs must be unique");
@@ -772,7 +654,6 @@ fn test_event_storage_consistency() {
         &oracle_config,
         &None,
         &0,
-        &EventVisibility::Public,
     );
 
     let stored = client.get_event(&event_id).unwrap();

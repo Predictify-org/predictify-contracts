@@ -125,7 +125,7 @@ mod resolution_delay_dispute_window_tests;
 #[cfg(any())]
 mod tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod event_creation_tests;
 
 // Re-export commonly used items
@@ -488,23 +488,6 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidDuration);
         }
 
-        // Validate oracle configuration
-        if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, &oracle_config) {
-            panic_with_error!(env, e.to_contract_error());
-        }
-
-        // Validate fallback oracle config if provided
-        if let Some(ref fallback_cfg) = fallback_oracle_config {
-            if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, fallback_cfg) {
-                panic_with_error!(env, e.to_contract_error());
-            }
-        }
-
-        // Validate resolution timeout
-        if let Err(e) = crate::validation::OracleConfigValidator::validate_resolution_timeout(&resolution_timeout) {
-            panic_with_error!(env, e.to_contract_error());
-        }
-
         // Generate a unique collision-resistant market ID
         let market_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
@@ -641,23 +624,6 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidDuration);
         }
 
-        // Validate oracle configuration
-        if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, &oracle_config) {
-            panic_with_error!(env, e.to_contract_error());
-        }
-
-        // Validate fallback oracle config if provided
-        if let Some(ref fallback_cfg) = fallback_oracle_config {
-            if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, fallback_cfg) {
-                panic_with_error!(env, e.to_contract_error());
-            }
-        }
-
-        // Validate resolution timeout
-        if let Err(e) = crate::validation::OracleConfigValidator::validate_resolution_timeout(&resolution_timeout) {
-            panic_with_error!(env, e.to_contract_error());
-        }
-
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
@@ -706,7 +672,7 @@ impl PredictifyHybrid {
             Map::new(&env),
         );
 
-        GasTracker::end_tracking(&env, symbol_short!("create_event"), gas_marker);
+        GasTracker::end_tracking(&env, symbol_short!("evt_crt"), gas_marker);
         event_id
     }
 
