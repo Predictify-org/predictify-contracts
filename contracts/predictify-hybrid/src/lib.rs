@@ -472,13 +472,37 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Validate inputs
+        // Apply core validation rules
+        // Validate outcomes count (minimum 2 outcomes required)
         if outcomes.len() < 2 {
             panic_with_error!(env, Error::InvalidOutcomes);
         }
 
+        // Validate question is not empty
         if question.len() == 0 {
             panic_with_error!(env, Error::InvalidQuestion);
+        }
+
+        // Validate duration is positive and within acceptable range
+        if duration_days == 0 {
+            panic_with_error!(env, Error::InvalidDuration);
+        }
+
+        // Validate oracle configuration
+        if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, &oracle_config) {
+            panic_with_error!(env, e.to_contract_error());
+        }
+
+        // Validate fallback oracle config if provided
+        if let Some(ref fallback_cfg) = fallback_oracle_config {
+            if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, fallback_cfg) {
+                panic_with_error!(env, e.to_contract_error());
+            }
+        }
+
+        // Validate resolution timeout
+        if let Err(e) = crate::validation::OracleConfigValidator::validate_resolution_timeout(&resolution_timeout) {
+            panic_with_error!(env, e.to_contract_error());
         }
 
         // Generate a unique collision-resistant market ID
@@ -584,6 +608,8 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
+        let gas_marker = GasTracker::start_tracking(&env);
+        
         // Authenticate that the caller is the admin
         admin.require_auth();
 
@@ -598,8 +624,39 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Skip validation for now since validation module is disabled
-        // TODO: Re-enable when validation module is fixed
+        // Apply core validation rules matching create_market
+        // Validate outcomes count (minimum 2 outcomes required)
+        if outcomes.len() < 2 {
+            panic_with_error!(env, Error::InvalidOutcomes);
+        }
+
+        // Validate description is not empty (matching market question validation)
+        if description.len() == 0 {
+            panic_with_error!(env, Error::InvalidQuestion);
+        }
+
+        // Validate end_time is in the future
+        let current_time = env.ledger().timestamp();
+        if end_time <= current_time {
+            panic_with_error!(env, Error::InvalidDuration);
+        }
+
+        // Validate oracle configuration
+        if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, &oracle_config) {
+            panic_with_error!(env, e.to_contract_error());
+        }
+
+        // Validate fallback oracle config if provided
+        if let Some(ref fallback_cfg) = fallback_oracle_config {
+            if let Err(e) = crate::validation::OracleValidator::validate_oracle_config(&env, fallback_cfg) {
+                panic_with_error!(env, e.to_contract_error());
+            }
+        }
+
+        // Validate resolution timeout
+        if let Err(e) = crate::validation::OracleConfigValidator::validate_resolution_timeout(&resolution_timeout) {
+            panic_with_error!(env, e.to_contract_error());
+        }
 
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
@@ -608,6 +665,7 @@ impl PredictifyHybrid {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
         };
+        
         // Create a new event
         let event = Event {
             id: event_id.clone(),
@@ -638,8 +696,8 @@ impl PredictifyHybrid {
             end_time,
         );
 
-        // Record statistics (optional, can reuse market stats for now)
-        // statistics::StatisticsManager::record_market_created(&env);
+        // Record statistics
+        statistics::StatisticsManager::record_market_created(&env);
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -648,6 +706,7 @@ impl PredictifyHybrid {
             Map::new(&env),
         );
 
+        GasTracker::end_tracking(&env, symbol_short!("create_event"), gas_marker);
         event_id
     }
 

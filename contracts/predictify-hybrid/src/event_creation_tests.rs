@@ -98,6 +98,293 @@ fn test_create_event_success() {
     });
 }
 
+/// Test that create_event validates minimum outcomes (parity with create_market)
+#[test]
+#[should_panic(expected = "InvalidOutcomes")]
+fn test_create_event_invalid_outcomes_too_few() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, "Single outcome event?");
+    let outcomes = vec![&setup.env, String::from_str(&setup.env, "Yes")]; // Only 1 outcome - invalid
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+        &EventVisibility::Public,
+    );
+}
+
+/// Test that create_event validates empty description (parity with create_market)
+#[test]
+#[should_panic(expected = "InvalidQuestion")]
+fn test_create_event_invalid_empty_description() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, ""); // Empty description - invalid
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+        &EventVisibility::Public,
+    );
+}
+
+/// Test that create_event validates end_time is in the future (parity with create_market)
+#[test]
+#[should_panic(expected = "InvalidDuration")]
+fn test_create_event_invalid_end_time_past() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, "Past event?");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let end_time = setup.env.ledger().timestamp() - 3600; // Past time - invalid
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+        &EventVisibility::Public,
+    );
+}
+
+/// Test that create_event validates end_time equals current time (boundary condition)
+#[test]
+#[should_panic(expected = "InvalidDuration")]
+fn test_create_event_invalid_end_time_current() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, "Current time event?");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let end_time = setup.env.ledger().timestamp(); // Current time - invalid (must be > current)
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+        &EventVisibility::Public,
+    );
+}
+
+/// Test that create_event validates unauthorized caller
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_create_event_unauthorized_caller() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let unauthorized_user = Address::generate(&setup.env);
+    let description = String::from_str(&setup.env, "Unauthorized event?");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    client.create_event(
+        &unauthorized_user,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+        &EventVisibility::Public,
+    );
+}
+
+/// Test that create_event with fallback oracle validates both configs
+#[test]
+fn test_create_event_with_fallback_oracle() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, "Event with fallback oracle");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+    let fallback_oracle_config = OracleConfig {
+        provider: OracleProvider::pyth(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    let event_id = client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &Some(fallback_oracle_config.clone()),
+        &0,
+        &EventVisibility::Public,
+    );
+
+    let event = client.get_event(&event_id).unwrap();
+    assert!(event.has_fallback);
+    assert_eq!(event.fallback_oracle_config.provider, fallback_oracle_config.provider);
+}
+
+/// Test that create_event with resolution timeout validates the timeout
+#[test]
+fn test_create_event_with_resolution_timeout() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, "Event with resolution timeout");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+    let resolution_timeout = 86400; // 1 day
+
+    let event_id = client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &resolution_timeout,
+        &EventVisibility::Public,
+    );
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.resolution_timeout, resolution_timeout);
+}
+
+/// Test that create_event with multiple outcomes works correctly
+#[test]
+fn test_create_event_multiple_outcomes() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, "Multi-outcome event");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Option A"),
+        String::from_str(&setup.env, "Option B"),
+        String::from_str(&setup.env, "Option C"),
+        String::from_str(&setup.env, "Option D"),
+    ];
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    let event_id = client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+        &EventVisibility::Public,
+    );
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.outcomes.len(), 4);
+    assert_eq!(event.status, MarketState::Active);
+}
+
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #400)")] // Error::InvalidState = 400
 fn test_create_event_without_token_configuration_fails() {
