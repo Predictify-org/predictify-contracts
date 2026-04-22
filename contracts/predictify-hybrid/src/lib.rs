@@ -457,6 +457,9 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
+        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market") {
+            panic_with_error!(env, e);
+        }
         let gas_marker = GasTracker::start_tracking(&env);
         // Authenticate that the caller is the admin
         admin.require_auth();
@@ -584,6 +587,9 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
+        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event") {
+            panic_with_error!(env, e);
+        }
         // Authenticate that the caller is the admin
         admin.require_auth();
 
