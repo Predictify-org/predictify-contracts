@@ -3789,7 +3789,9 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH"),
-            ReflectorAsset::Other(symbol) => String::from_str(&env, symbol.to_string().as_str()),
+            ReflectorAsset::Other(symbol) => {
+                String::from_str(&env, Self::custom_symbol_to_host_string(symbol).as_str())
+            }
         }
     }
 
@@ -3802,7 +3804,10 @@ impl ReflectorAsset {
             ReflectorAsset::ETH => String::from_str(&env, "Ethereum"),
             ReflectorAsset::Other(symbol) => String::from_str(
                 &env,
-                &alloc::format!("Custom Asset ({})", symbol.to_string()),
+                &alloc::format!(
+                    "Custom Asset ({})",
+                    Self::custom_symbol_to_host_string(symbol)
+                ),
             ),
         }
     }
@@ -3824,9 +3829,10 @@ impl ReflectorAsset {
             ReflectorAsset::Stellar => String::from_str(&env, "XLM/USD"),
             ReflectorAsset::BTC => String::from_str(&env, "BTC/USD"),
             ReflectorAsset::ETH => String::from_str(&env, "ETH/USD"),
-            ReflectorAsset::Other(symbol) => {
-                String::from_str(&env, &alloc::format!("{}/USD", symbol.to_string()))
-            }
+            ReflectorAsset::Other(symbol) => String::from_str(
+                &env,
+                &alloc::format!("{}/USD", Self::custom_symbol_to_host_string(symbol)),
+            )
         }
     }
 
@@ -3853,11 +3859,14 @@ impl ReflectorAsset {
 
     /// Creates a ReflectorAsset from a symbol string
     pub fn from_symbol(env: &Env, symbol: String) -> Self {
-        match symbol.to_string().as_str() {
+        match Self::soroban_string_to_host_string(&symbol).as_str() {
             "XLM" => ReflectorAsset::Stellar,
             "BTC" => ReflectorAsset::BTC,
             "ETH" => ReflectorAsset::ETH,
-            _ => ReflectorAsset::Other(Symbol::new(env, symbol.to_string().as_str())),
+            _ => ReflectorAsset::Other(Symbol::new(
+                env,
+                Self::soroban_string_to_host_string(&symbol).as_str(),
+            )),
         }
     }
 

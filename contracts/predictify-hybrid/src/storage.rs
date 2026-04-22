@@ -441,9 +441,11 @@ impl StorageOptimizer {
 
 // ===== BALANCE STORAGE =====
 
+/// Persistent storage manager for user balances.
 pub struct BalanceStorage;
 
 impl BalanceStorage {
+    /// Generates the storage key for a user's asset balance.
     fn get_key(env: &Env, user: &Address, asset: &ReflectorAsset) -> Vec<Val> {
         let mut key = Vec::new(env);
         key.push_back(Symbol::new(env, "Balance").into_val(env));
@@ -452,6 +454,9 @@ impl BalanceStorage {
         key
     }
 
+    /// Retrieves the current balance for a user and asset from persistent storage.
+    ///
+    /// Returns a default Balance with amount 0 if no record exists.
     pub fn get_balance(env: &Env, user: &Address, asset: &ReflectorAsset) -> Balance {
         let key = Self::get_key(env, user, asset);
         env.storage().persistent().get(&key).unwrap_or(Balance {
@@ -461,13 +466,18 @@ impl BalanceStorage {
         })
     }
 
+    /// Stores the balance record in persistent storage and extends its TTL.
     pub fn set_balance(env: &Env, balance: &Balance) {
         let key = Self::get_key(env, &balance.user, &balance.asset);
         env.storage().persistent().set(&key, balance);
-        // Extend TTL to ensure balance persists
-        env.storage().persistent().extend_ttl(&key, 535680, 535680); // ~30 days
+        // Extend TTL to ensure balance persists (approx 30 days)
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
     }
 
+    /// Increments a user's balance by the specified amount.
+    ///
+    /// # Errors
+    /// - `Error::InvalidInput` if the resulting amount overflows i128.
     pub fn add_balance(
         env: &Env,
         user: &Address,
@@ -483,6 +493,10 @@ impl BalanceStorage {
         Ok(balance)
     }
 
+    /// Decrements a user's balance by the specified amount.
+    ///
+    /// # Errors
+    /// - `Error::InsufficientBalance` if the user has less than the requested amount.
     pub fn sub_balance(
         env: &Env,
         user: &Address,
