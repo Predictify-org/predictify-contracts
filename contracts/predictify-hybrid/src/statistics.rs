@@ -54,7 +54,7 @@ impl StatisticsManager {
     }
 
     /// Set platform statistics
-    fn set_platform_stats(env: &Env, stats: &PlatformStatistics) {
+    pub(crate) fn set_platform_stats(env: &Env, stats: &PlatformStatistics) {
         env.storage().persistent().set(&PLATFORM_STATS_KEY, stats);
     }
 
@@ -78,7 +78,7 @@ impl StatisticsManager {
     }
 
     /// Set user statistics
-    fn set_user_stats(env: &Env, user: &Address, stats: &UserStatistics) {
+    pub(crate) fn set_user_stats(env: &Env, user: &Address, stats: &UserStatistics) {
         env.storage()
             .persistent()
             .set(&(USER_STATS_PREFIX, user.clone()), stats);
