@@ -11,6 +11,7 @@ pub mod integration;
 pub mod mocks;
 pub mod security;
 
+mod fee_idempotency_tests;
 mod metadata_validation_tests;
 mod oracle_provider_compatibility_tests;
 mod reflector_asset_test_utils;
