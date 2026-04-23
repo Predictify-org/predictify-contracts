@@ -2261,6 +2261,14 @@ impl MarketValidator {
             result.add_error();
         }
 
+        // Cross-field invariant: resolution_timeout must be >= dispute_window_seconds
+        // (default 86400 s = 24 h) so the oracle timeout cannot fire while a dispute
+        // window is still open.  Using the default dispute window as the lower bound.
+        let default_dispute_window = crate::config::DISPUTE_EXTENSION_HOURS as u64 * 3600;
+        if *resolution_timeout < default_dispute_window {
+            result.add_error();
+        }
+
         // Add recommendations for optimization
         if result.is_valid {
             if question.len() < 50 {

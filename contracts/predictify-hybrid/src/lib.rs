@@ -41,21 +41,21 @@ mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
 mod monitoring;
-#[cfg(any())]
+#[cfg(any(test, feature = "testutils"))]
 mod oracles;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
-#[cfg(any())]
+#[cfg(any(test, feature = "testutils"))]
 mod resolution;
 mod statistics;
 mod storage;
 mod types;
 mod upgrade_manager;
 mod utils;
-#[cfg(any())]
+#[cfg(any(test, feature = "testutils"))]
 mod validation;
 #[cfg(any())]
 mod validation_tests;
@@ -73,8 +73,6 @@ mod bandprotocol {
 
 #[cfg(any())]
 mod circuit_breaker_tests;
-#[cfg(any())]
-mod oracle_fallback_timeout_tests;
 
 #[cfg(any())]
 mod batch_operations_tests;
@@ -121,6 +119,9 @@ mod statistics_tests;
 
 #[cfg(any())]
 mod resolution_delay_dispute_window_tests;
+
+#[cfg(test)]
+mod oracle_fallback_timeout_tests;
 
 #[cfg(any())]
 mod tests;
