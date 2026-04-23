@@ -87,17 +87,27 @@ pub fn create_market(
     outcomes: Vec<String>,
     duration_days: u32,
     oracle_config: OracleConfig,
-) -> Result<Symbol, Error>
+    fallback_oracle_config: Option<OracleConfig>,
+    resolution_timeout: u64,
+) -> Symbol
 ```
 
 **Parameters:**
 - `admin`: Market administrator address
-- `question`: Market question (max 200 characters)
-- `outcomes`: Possible outcomes (2-10 options)
+- `question`: Market question (10-500 characters after trimming; whitespace-only input is rejected)
+- `outcomes`: Possible outcomes (2-10 options; whitespace-only, duplicate, and ambiguous outcomes are rejected)
 - `duration_days`: Market duration (1-365 days)
 - `oracle_config`: Oracle configuration for resolution
+- `fallback_oracle_config`: Optional fallback oracle configuration
+- `resolution_timeout`: Oracle resolution timeout in seconds
 
 **Returns:** Market ID (Symbol)
+
+**Validation behavior:**
+- Question validation trims leading and trailing whitespace before enforcing the minimum and maximum length.
+- Outcome validation enforces min/max count, rejects blank entries after trimming, and rejects duplicate or ambiguous values after normalization.
+- Duration must remain within the configured market duration bounds.
+- Validation failures surface through contract errors such as `InvalidQuestion`, `InvalidOutcomes`, and `InvalidDuration`.
 
 **Example:**
 ```typescript
@@ -109,6 +119,28 @@ const marketId = await contract.create_market(
     oracleConfig
 );
 ```
+
+#### `create_event()`
+Creates a new prediction event using the same shared text and outcome validation rules as `create_market()`.
+
+**Signature:**
+```rust
+pub fn create_event(
+    env: Env,
+    admin: Address,
+    description: String,
+    outcomes: Vec<String>,
+    end_time: u64,
+    oracle_config: OracleConfig,
+    fallback_oracle_config: Option<OracleConfig>,
+    resolution_timeout: u64,
+) -> Symbol
+```
+
+**Validation behavior:**
+- `description` follows the same trimmed non-empty and length rules as market questions.
+- `outcomes` follow the same count, non-empty, duplicate, and ambiguity rules as market creation.
+- `end_time` must be strictly greater than the current ledger timestamp.
 
 ---
 

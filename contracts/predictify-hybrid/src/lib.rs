@@ -55,7 +55,6 @@ mod storage;
 mod types;
 mod upgrade_manager;
 mod utils;
-#[cfg(any())]
 mod validation;
 #[cfg(any())]
 mod validation_tests;
@@ -114,6 +113,9 @@ mod balance_tests;
 #[cfg(test)]
 mod event_management_tests;
 
+#[cfg(test)]
+mod market_creation_validation_tests;
+
 #[cfg(any())]
 mod category_tags_tests;
 #[cfg(any())]
@@ -140,7 +142,8 @@ pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManage
 pub use types::*;
 
 use crate::config::{
-    DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE, MIN_PLATFORM_FEE_PERCENTAGE,
+    ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
+    MIN_PLATFORM_FEE_PERCENTAGE,
 };
 use crate::events::EventEmitter;
 use crate::gas::GasTracker;
@@ -164,7 +167,9 @@ impl PredictifyHybrid {
     /// This function must be called once after contract deployment to set up the initial
     /// administrative configuration and platform fee structure. It establishes the contract admin who
     /// will have privileges to create markets and perform administrative functions, and configures
-    /// the platform fee percentage for market operations.
+    /// the platform fee percentage for market operations. The call also stores the default
+    /// development-oriented contract configuration so creation validators have deterministic
+    /// bounds immediately after deployment.
     ///
     /// # Parameters
     ///
@@ -209,6 +214,12 @@ impl PredictifyHybrid {
     /// control over the contract's operation, including market creation and resolution.
     /// Consider using a multi-signature wallet or governance contract for production.
     ///
+    /// # Default Configuration
+    ///
+    /// `initialize()` stores the default development contract configuration. Integrators that
+    /// need testnet, mainnet, or custom configuration should update configuration explicitly
+    /// after initialization through the contract's administrative configuration flows.
+    ///
     /// # Re-initialization Prevention
     ///
     /// This function can only be called once. Any subsequent calls will panic with
@@ -242,6 +253,11 @@ impl PredictifyHybrid {
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+
+        let default_config = ConfigManager::get_development_config(&env);
+        if let Err(e) = ConfigManager::store_config(&env, &default_config) {
+            panic_with_error!(env, e);
+        }
 
         // Emit contract initialized event
         EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
@@ -355,9 +371,9 @@ impl PredictifyHybrid {
     ///
     /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - The administrator address creating the market (must be authorized)
-    /// * `question` - The prediction question (must be non-empty)
-    /// * `outcomes` - Vector of possible outcomes (minimum 2 required, all non-empty, no duplicates)
-    /// * `duration_days` - Market duration in days (must be between 1-365 days)
+    /// * `question` - The prediction question (non-empty after trimming and within the supported length bounds)
+    /// * `outcomes` - Vector of possible outcomes (bounded count, non-empty after trimming, and duplicate-safe)
+    /// * `duration_days` - Market duration in days (must remain within the supported bounds)
     /// * `oracle_config` - Configuration for oracle integration (Reflector, Pyth, etc.)
     ///
     /// # Returns
@@ -368,8 +384,9 @@ impl PredictifyHybrid {
     ///
     /// This function will panic with specific errors if:
     /// - `Error::Unauthorized` - Caller is not the contract admin
-    /// - `Error::InvalidQuestion` - Question is empty
-    /// - `Error::InvalidOutcomes` - Less than 2 outcomes or any outcome is empty
+    /// - `Error::InvalidQuestion` - Question is empty, whitespace-only, or outside the supported length bounds
+    /// - `Error::InvalidOutcomes` - Outcomes violate count, emptiness, duplicate, or ambiguity rules
+    /// - `Error::InvalidDuration` - Duration is outside the supported bounds
     /// - Storage operations fail
     ///
     /// # Example
@@ -440,6 +457,13 @@ impl PredictifyHybrid {
     /// New markets are created in `MarketState::Active` state, allowing immediate voting.
     /// The market will automatically transition to `MarketState::Ended` when the duration expires.
     ///
+    /// # Validation Rules
+    ///
+    /// - `question` must remain non-empty after trimming and satisfy the configured length bounds
+    /// - `outcomes` must satisfy the configured min/max count, and each outcome must remain non-empty after trimming
+    /// - Duplicate and ambiguous outcomes are rejected after normalization
+    /// - `duration_days` must remain within the configured market duration bounds
+    ///
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
@@ -457,7 +481,9 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
-        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market") {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market")
+        {
             panic_with_error!(env, e);
         }
         let gas_marker = GasTracker::start_tracking(&env);
@@ -475,13 +501,13 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Validate inputs
-        if outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
-        }
-
-        if question.len() == 0 {
-            panic_with_error!(env, Error::InvalidQuestion);
+        if let Err(e) = crate::validation::CreationValidator::validate_market_creation(
+            &env,
+            &question,
+            &outcomes,
+            &duration_days,
+        ) {
+            panic_with_error!(env, e);
         }
 
         // Generate a unique collision-resistant market ID
@@ -570,6 +596,12 @@ impl PredictifyHybrid {
     /// - Caller is not the contract admin
     /// - validation fails (invalid description, outcomes, or end time)
     ///
+    /// # Validation Rules
+    ///
+    /// - `description` follows the same non-empty and length policy as market questions
+    /// - `outcomes` follow the same count, non-empty, duplicate, and ambiguity rules as market creation
+    /// - `end_time` must be strictly greater than the current ledger timestamp
+    ///
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
@@ -587,7 +619,9 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
-        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event") {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event")
+        {
             panic_with_error!(env, e);
         }
         // Authenticate that the caller is the admin
@@ -604,8 +638,14 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Skip validation for now since validation module is disabled
-        // TODO: Re-enable when validation module is fixed
+        if let Err(e) = crate::validation::CreationValidator::validate_event_creation(
+            &env,
+            &description,
+            &outcomes,
+            &end_time,
+        ) {
+            panic_with_error!(env, e);
+        }
 
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
