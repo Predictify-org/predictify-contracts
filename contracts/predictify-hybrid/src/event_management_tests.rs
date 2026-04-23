@@ -234,6 +234,54 @@ fn test_extend_deadline_exceeds_maximum() {
 }
 
 #[test]
+fn test_extend_deadline_zero_days() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes, 30);
+
+    // Try to extend by 0 days
+    let result = client.try_extend_deadline(
+        &setup.admin,
+        &market_id,
+        &0u32,
+        &String::from_str(&setup.env, "Zero days"),
+    );
+
+    assert_eq!(result, Err(Ok(Error::InvalidDuration)));
+}
+
+#[test]
+fn test_extend_deadline_overflow_bypass() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes, 30);
+
+    // Try to extend by u32::MAX days (should fail due to overflow check instead of bypassing limits)
+    let result = client.try_extend_deadline(
+        &setup.admin,
+        &market_id,
+        &u32::MAX,
+        &String::from_str(&setup.env, "Overflow extension"),
+    );
+
+    assert_eq!(result, Err(Ok(Error::InvalidDuration)));
+}
+
+#[test]
 fn test_extend_deadline_resolved_market() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);

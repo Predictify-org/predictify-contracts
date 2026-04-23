@@ -110,6 +110,30 @@ const marketId = await contract.create_market(
 );
 ```
 
+#### `extend_deadline()`
+Extends the deadline of an active market by a specified number of days. Enforces strict limits on both the duration and the number of extensions to prevent bypasses.
+
+**Signature:**
+```rust
+pub fn extend_deadline(
+    env: Env,
+    admin: Address,
+    market_id: Symbol,
+    additional_days: u32,
+    reason: String,
+) -> Result<(), Error>
+```
+
+**Parameters:**
+- `admin`: Market administrator address
+- `market_id`: The ID of the market to extend
+- `additional_days`: Additional days (must be > 0 and combined with total_extension_days must not exceed max_extension_days)
+- `reason`: Explanation for the extension
+
+**Security Invariants:**
+- **Zero-day Check:** Rejects `additional_days == 0` to prevent spamming extension history.
+- **Strict Limits:** Total combined extensions cannot exceed `max_extension_days` and the number of extensions cannot exceed `MAX_TOTAL_EXTENSIONS` (typically 10). Overflow checks (`checked_add`) are used to prevent limit bypassing.
+
 ---
 
 ## 📊 Data Structures
