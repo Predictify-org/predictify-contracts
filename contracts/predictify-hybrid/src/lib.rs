@@ -116,6 +116,9 @@ mod balance_tests;
 #[cfg(test)]
 mod event_management_tests;
 
+#[cfg(test)]
+mod governance_tests;
+
 #[cfg(any())]
 mod category_tags_tests;
 #[cfg(any())]
@@ -238,6 +241,12 @@ impl PredictifyHybrid {
 
         // Initialize admin (includes re-initialization check)
         AdminInitializer::initialize(&env, &admin)?;
+
+        // Initialize circuit breaker defaults required by write-gated entrypoints.
+        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
 
         // Store platform fee configuration in persistent storage
         env.storage()

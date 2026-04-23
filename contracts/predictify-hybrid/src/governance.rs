@@ -37,10 +37,12 @@ pub enum GovernanceError {
     ProposalNotFound,
     VotingNotStarted,
     VotingEnded,
+    VotingStillActive,
     AlreadyVoted,
     NotPassed,
     AlreadyExecuted,
     NotAdmin,
+    NotInitialized,
     InvalidParams,
 }
 
@@ -48,20 +50,23 @@ pub enum GovernanceError {
 pub struct GovernanceContract;
 
 impl GovernanceContract {
-    // Initialize admin, voting period (seconds) and quorum (minimum FOR votes).
+    /// Initialize governance admin, voting period (seconds), and quorum (minimum FOR votes).
+    ///
+    /// This function is idempotent: if governance is already initialized, it returns early.
+    /// Invalid configuration panics with `Error::InvalidInput`.
     pub fn initialize(env: Env, admin: Address, voting_period_seconds: i64, quorum_votes: u128) {
         // Only allow once (idempotent check)
         if env.storage().persistent().has(&StorageKey::Admin) {
             // Already initialized; nothing to do
             return;
         }
-        if voting_period_seconds == 0 || quorum_votes == 0 {
+        if voting_period_seconds <= 0 || quorum_votes == 0 {
             panic_with_error!(env, crate::errors::Error::InvalidInput);
         }
         env.storage().persistent().set(&StorageKey::Admin, &admin);
         env.storage()
             .persistent()
-            .set(&StorageKey::VotingPeriod, &voting_period_seconds);
+            .set(&StorageKey::VotingPeriod, &(voting_period_seconds as u64));
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumVotes, &quorum_votes);
@@ -83,6 +88,20 @@ impl GovernanceContract {
         target: Option<Address>,
         call_fn: Option<Symbol>,
     ) -> Result<Symbol, GovernanceError> {
+        proposer.require_auth();
+
+        if title.is_empty() || description.is_empty() {
+            return Err(GovernanceError::InvalidParams);
+        }
+
+        if target.is_some() != call_fn.is_some() {
+            return Err(GovernanceError::InvalidParams);
+        }
+
+        if !env.storage().persistent().has(&StorageKey::Admin) {
+            return Err(GovernanceError::NotInitialized);
+        }
+
         // ensure unique
         if env
             .storage()
@@ -93,11 +112,11 @@ impl GovernanceContract {
         }
 
         // fetch voting period
-        let period: i64 = env
+        let period: u64 = env
             .storage()
             .persistent()
             .get(&StorageKey::VotingPeriod)
-            .unwrap();
+            .ok_or(GovernanceError::NotInitialized)?;
         let now = env.ledger().timestamp();
 
         let p = GovernanceProposal {
@@ -108,7 +127,7 @@ impl GovernanceContract {
             target,
             call_fn,
             start_time: now,
-            end_time: now + (period as u64),
+            end_time: now.saturating_add(period),
             for_votes: 0,
             against_votes: 0,
             executed: false,
@@ -123,7 +142,7 @@ impl GovernanceContract {
             .storage()
             .persistent()
             .get(&StorageKey::ProposalList)
-            .unwrap();
+            .unwrap_or(Vec::new(&env));
         list.push_back(id.clone());
         env.storage()
             .persistent()
@@ -142,6 +161,8 @@ impl GovernanceContract {
         proposal_id: Symbol,
         support: bool,
     ) -> Result<(), GovernanceError> {
+        voter.require_auth();
+
         // load proposal
         let p_opt = env
             .storage()
@@ -156,7 +177,7 @@ impl GovernanceContract {
         if now < p.start_time {
             return Err(GovernanceError::VotingNotStarted);
         }
-        if now > p.end_time {
+        if now >= p.end_time {
             return Err(GovernanceError::VotingEnded);
         }
         if p.executed {
@@ -209,8 +230,8 @@ impl GovernanceContract {
         }
         let p = p_opt.unwrap();
         let now = env.ledger().timestamp();
-        if now <= p.end_time {
-            return Ok((false, String::from_str(&env, "voting not finished")));
+        if now < p.end_time {
+            return Err(GovernanceError::VotingStillActive);
         }
 
         // check quorum
@@ -218,9 +239,8 @@ impl GovernanceContract {
             .storage()
             .persistent()
             .get(&StorageKey::QuorumVotes)
-            .unwrap();
-        let total_votes = p.for_votes + p.against_votes;
-        if total_votes < quorum {
+            .ok_or(GovernanceError::NotInitialized)?;
+        if p.for_votes < quorum {
             return Ok((false, String::from_str(&env, "quorum not reached")));
         }
         if p.for_votes <= p.against_votes {
@@ -237,6 +257,8 @@ impl GovernanceContract {
         caller: Address,
         proposal_id: Symbol,
     ) -> Result<(), GovernanceError> {
+        caller.require_auth();
+
         // load proposal
         let p_opt = env
             .storage()
@@ -252,8 +274,7 @@ impl GovernanceContract {
         }
 
         // validate
-        let (passed, _reason) = Self::validate_proposal(env.clone(), proposal_id.clone())
-            .map_err(|_| GovernanceError::ProposalNotFound)?;
+        let (passed, _reason) = Self::validate_proposal(env.clone(), proposal_id.clone())?;
         if !passed {
             return Err(GovernanceError::NotPassed);
         }
@@ -266,6 +287,7 @@ impl GovernanceContract {
             env.storage()
                 .persistent()
                 .set(&StorageKey::Proposal(proposal_id.clone()), &p);
+            EventEmitter::emit_governance_proposal_executed(&env, &proposal_id, &caller);
             return Ok(());
         }
 
@@ -320,13 +342,16 @@ impl GovernanceContract {
         }
         env.storage()
             .persistent()
-            .set(&StorageKey::VotingPeriod, &new_period_seconds);
+            .set(&StorageKey::VotingPeriod, &(new_period_seconds as u64));
         Ok(())
     }
 
     /// Admin-only: set quorum votes (minimum for votes)
     pub fn set_quorum(env: Env, caller: Address, new_quorum: u128) -> Result<(), GovernanceError> {
         Self::ensure_admin(&env, caller)?;
+        if new_quorum == 0 {
+            return Err(GovernanceError::InvalidParams);
+        }
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumVotes, &new_quorum);
@@ -335,377 +360,15 @@ impl GovernanceContract {
 
     /// Simple helper to check admin
     fn ensure_admin(env: &Env, caller: Address) -> Result<(), GovernanceError> {
+        caller.require_auth();
         let admin: Address = env
             .storage()
             .persistent()
             .get(&StorageKey::Admin)
-            .ok_or(GovernanceError::NotAdmin)?;
+            .ok_or(GovernanceError::NotInitialized)?;
         if admin != caller {
             return Err(GovernanceError::NotAdmin);
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::string::ToString;
-    use soroban_sdk::testutils::Address as _;
-
-    struct GovernanceTest {
-        env: Env,
-        admin: Address,
-        voter: Address,
-    }
-
-    impl GovernanceTest {
-        fn new() -> Self {
-            let env = Env::default();
-            let admin = Address::generate(&env);
-            let voter = Address::generate(&env);
-            GovernanceTest { env, admin, voter }
-        }
-    }
-
-    #[test]
-    fn test_initialize_valid() {
-        let test = GovernanceTest::new();
-        // Test initialization with valid parameters
-        let voting_period = 7200i64; // 2 hours
-        let quorum = 100u128;
-        assert!(voting_period > 0);
-        assert!(quorum > 0);
-    }
-
-    #[test]
-    fn test_initialize_idempotent() {
-        let test = GovernanceTest::new();
-        // Test that initialize can be called multiple times (idempotent)
-        let admin = test.admin;
-        assert!(!admin.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_initialize_invalid_voting_period() {
-        let test = GovernanceTest::new();
-        // Test that zero voting period is rejected
-        let invalid_period = 0i64;
-        assert_eq!(invalid_period, 0);
-    }
-
-    #[test]
-    fn test_initialize_invalid_quorum() {
-        let test = GovernanceTest::new();
-        // Test that zero quorum is rejected
-        let invalid_quorum = 0u128;
-        assert_eq!(invalid_quorum, 0);
-    }
-
-    #[test]
-    fn test_create_proposal_valid() {
-        let test = GovernanceTest::new();
-        let proposal_id = Symbol::new(&test.env, "prop_123");
-        let title = String::from_str(&test.env, "New Feature");
-        let description = String::from_str(&test.env, "Add feature X");
-        // Test proposal creation with valid parameters
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_create_proposal_duplicate_id() {
-        let test = GovernanceTest::new();
-        // Test that duplicate proposal ID is rejected
-        let proposal_id = Symbol::new(&test.env, "prop_duplicate");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_create_proposal_without_execution_target() {
-        let test = GovernanceTest::new();
-        // Test proposal creation without execution target
-        let proposal_id = Symbol::new(&test.env, "prop_no_exec");
-        let target: Option<Address> = None;
-        let call_fn: Option<Symbol> = None;
-        assert!(target.is_none());
-        assert!(call_fn.is_none());
-    }
-
-    #[test]
-    fn test_create_proposal_with_execution_target() {
-        let test = GovernanceTest::new();
-        // Test proposal creation with execution target
-        let proposal_id = Symbol::new(&test.env, "prop_with_exec");
-        let target = Some(Address::generate(&test.env));
-        let call_fn = Some(Symbol::new(&test.env, "upgrade"));
-        assert!(target.is_some());
-    }
-
-    #[test]
-    fn test_vote_support() {
-        let test = GovernanceTest::new();
-        // Test voting in favor of a proposal
-        let proposal_id = Symbol::new(&test.env, "prop_vote");
-        let voter = test.voter;
-        let support = true;
-        assert!(support);
-    }
-
-    #[test]
-    fn test_vote_against() {
-        let test = GovernanceTest::new();
-        // Test voting against a proposal
-        let proposal_id = Symbol::new(&test.env, "prop_against");
-        let voter = test.voter;
-        let support = false;
-        assert!(!support);
-    }
-
-    #[test]
-    fn test_vote_nonexistent_proposal() {
-        let test = GovernanceTest::new();
-        // Test that voting on nonexistent proposal fails
-        let proposal_id = Symbol::new(&test.env, "nonexistent");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_vote_before_voting_starts() {
-        let test = GovernanceTest::new();
-        // Test that voting before start_time fails
-        // Would need to test with time manipulation
-        let now = test.env.ledger().timestamp();
-        let _ = now;
-    }
-
-    #[test]
-    fn test_vote_after_voting_ends() {
-        let test = GovernanceTest::new();
-        // Test that voting after end_time fails
-        let now = test.env.ledger().timestamp();
-        let _ = now;
-    }
-
-    #[test]
-    fn test_vote_duplicate() {
-        let test = GovernanceTest::new();
-        // Test that same voter cannot vote twice
-        let proposal_id = Symbol::new(&test.env, "prop_dup_vote");
-        let voter = test.voter;
-        assume(true); // Placeholder for duplicate vote logic
-    }
-
-    #[test]
-    fn test_vote_on_executed_proposal() {
-        let test = GovernanceTest::new();
-        // Test that voting on executed proposal fails
-        let proposal_id = Symbol::new(&test.env, "prop_executed");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_not_found() {
-        let test = GovernanceTest::new();
-        // Test that validating nonexistent proposal fails
-        let proposal_id = Symbol::new(&test.env, "fake_prop");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_voting_ongoing() {
-        let test = GovernanceTest::new();
-        // Test that validation during voting period fails
-        let proposal_id = Symbol::new(&test.env, "prop_ongoing");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_quorum_not_reached() {
-        let test = GovernanceTest::new();
-        // Test validation when quorum is not reached
-        let proposal_id = Symbol::new(&test.env, "prop_no_quorum");
-        // Even with votes, if total < quorum, should fail
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_not_enough_for_votes() {
-        let test = GovernanceTest::new();
-        // Test validation when for_votes <= against_votes
-        let proposal_id = Symbol::new(&test.env, "prop_tied");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_passed() {
-        let test = GovernanceTest::new();
-        // Test validation of passed proposal (quorum reached, more for votes)
-        let proposal_id = Symbol::new(&test.env, "prop_pass");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_not_passed() {
-        let test = GovernanceTest::new();
-        // Test that executing non-passed proposal fails
-        let proposal_id = Symbol::new(&test.env, "prop_fail");
-        let admin = test.admin;
-        assert!(!admin.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_already_executed() {
-        let test = GovernanceTest::new();
-        // Test that proposal cannot be executed twice
-        let proposal_id = Symbol::new(&test.env, "prop_reexec");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_no_target() {
-        let test = GovernanceTest::new();
-        // Test executing proposal with no target (no-op, just mark executed)
-        let proposal_id = Symbol::new(&test.env, "prop_noop");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_with_target() {
-        let test = GovernanceTest::new();
-        // Test executing proposal with target contract invocation
-        let proposal_id = Symbol::new(&test.env, "prop_invoke");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_list_proposals_empty() {
-        let test = GovernanceTest::new();
-        let contract_id = test.env.register(crate::PredictifyHybrid, ());
-        // Test listing proposals on empty list
-        let proposals = test.env.as_contract(&contract_id, || {
-            GovernanceContract::list_proposals(test.env.clone())
-        });
-        assert_eq!(proposals.len(), 0);
-    }
-
-    #[test]
-    fn test_get_proposal_exists() {
-        let test = GovernanceTest::new();
-        // Test retrieving existing proposal
-        let proposal_id = Symbol::new(&test.env, "prop_exist");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_get_proposal_not_found() {
-        let test = GovernanceTest::new();
-        // Test retrieving nonexistent proposal
-        let proposal_id = Symbol::new(&test.env, "prop_missing");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_set_voting_period_admin_only() {
-        let test = GovernanceTest::new();
-        // Test that non-admin cannot set voting period
-        let non_admin = Address::generate(&test.env);
-        let new_period = 3600i64;
-        assert_ne!(non_admin, test.admin);
-    }
-
-    #[test]
-    fn test_set_voting_period_valid() {
-        let test = GovernanceTest::new();
-        // Test setting valid voting period by admin
-        let admin = test.admin;
-        let new_period = 10800i64; // 3 hours
-        assert!(new_period > 0);
-    }
-
-    #[test]
-    fn test_set_voting_period_invalid() {
-        let test = GovernanceTest::new();
-        // Test that zero or negative period is rejected
-        let invalid_period = 0i64;
-        let negative_period = -100i64;
-        assert!(invalid_period <= 0);
-        assert!(negative_period < 0);
-    }
-
-    #[test]
-    fn test_set_quorum_admin_only() {
-        let test = GovernanceTest::new();
-        // Test that non-admin cannot set quorum
-        let non_admin = Address::generate(&test.env);
-        assert_ne!(non_admin, test.admin);
-    }
-
-    #[test]
-    fn test_set_quorum_valid() {
-        let test = GovernanceTest::new();
-        // Test setting valid quorum by admin
-        let admin = test.admin;
-        let new_quorum = 500u128;
-        assert!(new_quorum > 0);
-    }
-
-    #[test]
-    fn test_proposal_state_transitions() {
-        let test = GovernanceTest::new();
-        // Test proposal lifecycle: created -> voting -> validation -> execution
-        let proposal_id = Symbol::new(&test.env, "prop_lifecycle");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_vote_counter_increments() {
-        let test = GovernanceTest::new();
-        // Test that for_votes increments on support vote
-        // and against_votes increments on opposition vote
-        let for_votes = 5u128;
-        let against_votes = 3u128;
-        assert!(for_votes > against_votes);
-    }
-
-    #[test]
-    fn test_governance_error_types() {
-        // Test that all error variants exist
-        let _ = GovernanceError::ProposalExists;
-        let _ = GovernanceError::ProposalNotFound;
-        let _ = GovernanceError::VotingNotStarted;
-        let _ = GovernanceError::VotingEnded;
-        let _ = GovernanceError::AlreadyVoted;
-        let _ = GovernanceError::NotPassed;
-        let _ = GovernanceError::AlreadyExecuted;
-        let _ = GovernanceError::NotAdmin;
-        let _ = GovernanceError::InvalidParams;
-    }
-
-    #[test]
-    fn test_proposal_fields() {
-        let test = GovernanceTest::new();
-        // Test GovernanceProposal field initialization
-        let prop = GovernanceProposal {
-            id: Symbol::new(&test.env, "test"),
-            proposer: test.admin,
-            title: String::from_str(&test.env, "Title"),
-            description: String::from_str(&test.env, "Desc"),
-            target: None,
-            call_fn: None,
-            start_time: test.env.ledger().timestamp(),
-            end_time: test.env.ledger().timestamp() + 7200,
-            for_votes: 0,
-            against_votes: 0,
-            executed: false,
-        };
-        assert!(!prop.id.to_string().is_empty());
-    }
-}
-
-// Helper for assertions in tests
-#[cfg(test)]
-fn assume(condition: bool) {
-    if !condition {
-        panic!("Assumption violated");
     }
 }
