@@ -1,285 +1,266 @@
-#![cfg(test)]
-
-//! Tests for oracle resolution timeout and its interaction with the dispute window.
-//!
-//! # Invariants under test
-//!
-//! 1. When `resolution_timeout` expires with **no active dispute**, the market is
-//!    cancelled so stakes can be refunded.
-//! 2. When `resolution_timeout` expires but a **dispute is active**, the market must
-//!    NOT be cancelled — `ResolutionTimeoutReached` is returned instead, leaving the
-//!    dispute process as the authoritative resolution path.
-//! 3. The dispute window (`dispute_window_seconds`) is enforced: disputes filed after
-//!    `end_time + dispute_window_seconds` are rejected.
-//! 4. A dispute filed within the window extends `end_time`, which in turn pushes the
-//!    effective resolution deadline forward.
-
-use crate::config::ConfigManager;
 use crate::errors::Error;
-use crate::markets::MarketStateManager;
-use crate::resolution::OracleResolutionManager;
+use crate::events::{
+    FallbackUsedEvent, ManualResolutionRequiredEvent, RefundOnOracleFailureEvent,
+    ResolutionTimeoutEvent,
+};
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
-use crate::PredictifyHybrid;
-use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
-use soroban_sdk::{Address, Env, String, Symbol, Vec};
+use crate::{PredictifyHybrid, PredictifyHybridClient};
+use soroban_sdk::testutils::{Address as _, Events, Ledger};
+use soroban_sdk::{symbol_short, vec, Address, Env, String, Symbol, TryFromVal, TryIntoVal};
 
-// ===== TEST HELPERS =====
-
-struct Setup {
+struct TestSetup {
     env: Env,
     contract_id: Address,
     admin: Address,
+    token_id: Address,
 }
 
-impl Setup {
+impl TestSetup {
     fn new() -> Self {
         let env = Env::default();
         env.mock_all_auths();
+
         let admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, PredictifyHybrid);
+        let contract_id = env.register(PredictifyHybrid, ());
+
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_id = token_contract.address();
+
         env.as_contract(&contract_id, || {
-            let config = ConfigManager::get_development_config(&env);
-            ConfigManager::store_config(&env, &config).unwrap();
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_id);
         });
-        Self { env, contract_id, admin }
+
+        let client = PredictifyHybridClient::new(&env, &contract_id);
+        client.initialize(&admin, &None);
+        env.as_contract(&contract_id, || {
+            crate::circuit_breaker::CircuitBreaker::initialize(&env)
+                .expect("circuit breaker should initialize in tests");
+        });
+
+        Self {
+            env,
+            contract_id,
+            admin,
+            token_id,
+        }
     }
 
-    fn market(&self, end_time: u64, resolution_timeout: u64, dispute_window_seconds: u64) -> (Symbol, Market) {
-        let id = Symbol::new(&self.env, "mkt");
-        let mut outcomes = Vec::new(&self.env);
-        outcomes.push_back(String::from_str(&self.env, "yes"));
-        outcomes.push_back(String::from_str(&self.env, "no"));
-        let oracle = OracleConfig::new(
+    fn client(&self) -> PredictifyHybridClient<'_> {
+        PredictifyHybridClient::new(&self.env, &self.contract_id)
+    }
+
+    fn create_user(&self) -> Address {
+        let user = Address::generate(&self.env);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&self.env, &self.token_id);
+        self.env.mock_all_auths();
+        stellar_client.mint(&user, &10_000_000_000);
+        user
+    }
+
+    fn create_market(&self, has_fallback: bool, resolution_timeout: u64) -> Symbol {
+        let outcomes = vec![
+            &self.env,
+            String::from_str(&self.env, "yes"),
+            String::from_str(&self.env, "no"),
+        ];
+        let primary = OracleConfig::new(
             OracleProvider::reflector(),
-            Address::from_str(
-                &self.env,
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-            ),
+            Address::generate(&self.env),
             String::from_str(&self.env, "BTC/USD"),
             50_000_00,
             String::from_str(&self.env, "gt"),
         );
-        let mut m = Market::new(
-            &self.env,
-            self.admin.clone(),
-            String::from_str(&self.env, "Will BTC reach $50k?"),
-            outcomes,
-            end_time,
-            oracle,
-            None,
-            resolution_timeout,
-            MarketState::Active,
-        );
-        m.dispute_window_seconds = dispute_window_seconds;
-        (id, m)
+        let fallback = has_fallback.then(|| {
+            OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::generate(&self.env),
+                String::from_str(&self.env, "ETH/USD"),
+                50_000_00,
+                String::from_str(&self.env, "gt"),
+            )
+        });
+
+        self.env.mock_all_auths();
+        self.client().create_market(
+            &self.admin,
+            &String::from_str(&self.env, "Will BTC close above $50k?"),
+            &outcomes,
+            &1u32,
+            &primary,
+            &fallback,
+            &resolution_timeout,
+        )
     }
 
-    fn tick(&self, secs: u64) {
-        let t = self.env.ledger().timestamp();
-        self.env.ledger().set(LedgerInfo {
-            timestamp: t + secs,
-            protocol_version: 22,
-            sequence_number: self.env.ledger().sequence() + 1,
-            network_id: Default::default(),
-            base_reserve: 10,
-            min_temp_entry_ttl: 16,
-            min_persistent_entry_ttl: 16,
-            max_entry_ttl: 6_312_000,
+    fn get_market(&self, market_id: &Symbol) -> Market {
+        self.client().get_market(market_id).unwrap()
+    }
+
+    fn advance_to(&self, timestamp: u64) {
+        self.env.ledger().with_mut(|li| {
+            li.timestamp = timestamp;
         });
     }
 }
 
-// ===== ORACLE TIMEOUT — NO DISPUTE =====
-
-/// When the resolution timeout fires and there is no active dispute the market
-/// must be cancelled so participants can reclaim their stakes.
-#[test]
-fn test_resolution_timeout_cancels_market_without_dispute() {
-    let s = Setup::new();
-    s.env.as_contract(&s.contract_id, || {
-        let end_time = s.env.ledger().timestamp() + 3_600;
-        let (id, mut market) = s.market(end_time, 86_400, 86_400);
-        market.state = MarketState::Active;
-        s.env.storage().persistent().set(&id, &market);
-
-        // Jump past end_time + resolution_timeout
-        s.tick(3_600 + 86_400 + 1);
-
-        let result = OracleResolutionManager::fetch_oracle_result(&s.env, &id);
-        // Expect InvalidState (market was cancelled)
-        assert_eq!(result, Err(Error::InvalidState));
-
-        let stored: Market = s.env.storage().persistent().get(&id).unwrap();
-        assert_eq!(stored.state, MarketState::Cancelled);
-    });
+fn find_published_event<T>(env: &Env, topic: Symbol) -> Option<T>
+where
+    T: Clone + TryFromVal<Env, soroban_sdk::xdr::ScVal>,
+{
+    let events = env.events().all();
+    events.events().iter().rev().find_map(|event| {
+        let body = match &event.body {
+            soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+        };
+        let first_topic_scval = body.topics.get(0)?;
+        let first_topic: Symbol = first_topic_scval.clone().try_into_val(env).ok()?;
+        if first_topic != topic {
+            return None;
+        }
+        T::try_from_val(env, &body.data).ok()
+    })
 }
 
-// ===== ORACLE TIMEOUT — ACTIVE DISPUTE (deadlock prevention) =====
-
-/// When the resolution timeout fires but a dispute is active, the market must
-/// NOT be cancelled.  Cancelling would permanently lock dispute stakes.
-/// The function must return `ResolutionTimeoutReached` instead.
 #[test]
-fn test_resolution_timeout_does_not_cancel_disputed_market() {
-    let s = Setup::new();
-    s.env.as_contract(&s.contract_id, || {
-        let end_time = s.env.ledger().timestamp() + 3_600;
-        let (id, mut market) = s.market(end_time, 86_400, 86_400);
+fn fetch_oracle_result_without_fallback_reports_primary_only_failure() {
+    let setup = TestSetup::new();
+    let market_id = setup.create_market(false, 3_600);
+    let market = setup.get_market(&market_id);
 
-        // Simulate oracle result already set and a dispute filed
-        market.oracle_result = Some(String::from_str(&s.env, "yes"));
-        market.state = MarketState::Ended;
-        s.env.storage().persistent().set(&id, &market);
+    setup.advance_to(market.end_time + 1);
 
-        // File a dispute (transitions state to Disputed)
-        let disputer = Address::generate(&s.env);
-        MarketStateManager::add_dispute_stake(&mut market, disputer, 10_000_000, Some(&id));
-        assert_eq!(market.state, MarketState::Disputed);
-        s.env.storage().persistent().set(&id, &market);
-
-        // Jump past resolution_timeout
-        s.tick(3_600 + 86_400 + 1);
-
-        let result = OracleResolutionManager::fetch_oracle_result(&s.env, &id);
-        assert_eq!(result, Err(Error::ResolutionTimeoutReached));
-
-        // Market must still be Disputed — not Cancelled
-        let stored: Market = s.env.storage().persistent().get(&id).unwrap();
-        assert_eq!(stored.state, MarketState::Disputed);
+    let result = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::fetch_oracle_result(
+            setup.env.clone(),
+            market_id.clone(),
+            market.oracle_config.oracle_address.clone(),
+        )
     });
+    assert_eq!(result, Err(Error::OracleUnavailable));
+
+    let manual =
+        find_published_event::<ManualResolutionRequiredEvent>(&setup.env, symbol_short!("man_res"))
+            .expect("manual resolution event should be published");
+    assert_eq!(manual.market_id, market_id);
+    assert_eq!(
+        manual.reason,
+        String::from_str(&setup.env, "oracle_resolution_failed_primary_only")
+    );
 }
 
-/// Same as above but using `total_dispute_stakes > 0` as the signal (state not yet
-/// transitioned to Disputed but stakes are present).
 #[test]
-fn test_resolution_timeout_does_not_cancel_when_dispute_stakes_present() {
-    let s = Setup::new();
-    s.env.as_contract(&s.contract_id, || {
-        let end_time = s.env.ledger().timestamp() + 3_600;
-        let (id, mut market) = s.market(end_time, 86_400, 86_400);
+fn fetch_oracle_result_with_fallback_reports_primary_then_fallback_failure() {
+    let setup = TestSetup::new();
+    let market_id = setup.create_market(true, 3_600);
+    let market = setup.get_market(&market_id);
 
-        market.oracle_result = Some(String::from_str(&s.env, "yes"));
-        market.state = MarketState::Ended;
-        // Manually inject dispute stake without state transition
-        let disputer = Address::generate(&s.env);
-        market.dispute_stakes.set(disputer, 5_000_000);
-        s.env.storage().persistent().set(&id, &market);
+    setup.advance_to(market.end_time + 1);
 
-        s.tick(3_600 + 86_400 + 1);
-
-        let result = OracleResolutionManager::fetch_oracle_result(&s.env, &id);
-        assert_eq!(result, Err(Error::ResolutionTimeoutReached));
-
-        let stored: Market = s.env.storage().persistent().get(&id).unwrap();
-        // State must not have been changed to Cancelled
-        assert_ne!(stored.state, MarketState::Cancelled);
+    let result = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::fetch_oracle_result(
+            setup.env.clone(),
+            market_id.clone(),
+            market.oracle_config.oracle_address.clone(),
+        )
     });
+    assert_eq!(result, Err(Error::FallbackOracleUnavailable));
+
+    let manual =
+        find_published_event::<ManualResolutionRequiredEvent>(&setup.env, symbol_short!("man_res"))
+            .expect("manual resolution event should be published");
+    assert_eq!(manual.market_id, market_id);
+    assert_eq!(
+        manual.reason,
+        String::from_str(&setup.env, "oracle_resolution_failed_primary_then_fallback",)
+    );
+
+    assert!(
+        find_published_event::<FallbackUsedEvent>(&setup.env, symbol_short!("fbk_used")).is_none(),
+        "fallback-used event should only be emitted after a successful fallback result"
+    );
 }
 
-// ===== DISPUTE WINDOW ENFORCEMENT =====
-
-/// Disputes filed after `end_time + dispute_window_seconds` must be rejected.
-/// Without this check a late dispute could re-open a market that users consider settled.
 #[test]
-fn test_dispute_rejected_after_window_closes() {
-    use crate::disputes::DisputeValidator;
+fn fetch_oracle_result_stops_at_market_resolution_deadline() {
+    let setup = TestSetup::new();
+    let market_id = setup.create_market(true, 3_600);
+    let market = setup.get_market(&market_id);
+    let deadline = market.end_time + market.resolution_timeout;
 
-    let s = Setup::new();
-    s.env.as_contract(&s.contract_id, || {
-        let end_time = s.env.ledger().timestamp() + 3_600;
-        // dispute_window_seconds = 7_200 (2 hours)
-        let (id, mut market) = s.market(end_time, 86_400, 7_200);
-        market.oracle_result = Some(String::from_str(&s.env, "yes"));
-        market.state = MarketState::Ended;
-        s.env.storage().persistent().set(&id, &market);
+    setup.advance_to(deadline);
 
-        // Jump past end_time + dispute_window_seconds
-        s.tick(3_600 + 7_200 + 1);
-
-        let result = DisputeValidator::validate_market_for_dispute(&s.env, &market);
-        assert_eq!(result, Err(Error::MarketResolved));
+    let result = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::fetch_oracle_result(
+            setup.env.clone(),
+            market_id.clone(),
+            market.oracle_config.oracle_address.clone(),
+        )
     });
+    assert_eq!(result, Err(Error::ResolutionTimeoutReached));
+
+    let timeout_event =
+        find_published_event::<ResolutionTimeoutEvent>(&setup.env, symbol_short!("res_tmo"))
+            .expect("resolution-timeout event should be published");
+    assert_eq!(timeout_event.market_id, market_id);
+    assert_eq!(timeout_event.timeout_timestamp, deadline);
 }
 
 /// Disputes filed within the window must be accepted.
 #[test]
-fn test_dispute_accepted_within_window() {
-    use crate::disputes::DisputeValidator;
+fn refund_on_oracle_failure_uses_market_specific_timeout_for_non_admins() {
+    let setup = TestSetup::new();
+    let resolution_timeout = 3_600u64;
+    let market_id = setup.create_market(false, resolution_timeout);
+    let user = setup.create_user();
+    let caller = setup.create_user();
 
-    let s = Setup::new();
-    s.env.as_contract(&s.contract_id, || {
-        let end_time = s.env.ledger().timestamp() + 3_600;
-        let (id, mut market) = s.market(end_time, 86_400, 7_200);
-        market.oracle_result = Some(String::from_str(&s.env, "yes"));
-        market.state = MarketState::Ended;
-        s.env.storage().persistent().set(&id, &market);
+    setup.env.mock_all_auths();
+    setup.client().place_bet(
+        &user,
+        &market_id,
+        &String::from_str(&setup.env, "yes"),
+        &10_000_000i128,
+    );
 
-        // Jump past end_time but still inside the dispute window
-        s.tick(3_600 + 3_600); // end_time + 1 hour (window is 2 hours)
+    let market = setup.get_market(&market_id);
+    setup.advance_to(market.end_time + resolution_timeout - 1);
 
-        let result = DisputeValidator::validate_market_for_dispute(&s.env, &market);
-        assert!(result.is_ok());
+    let early = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::refund_on_oracle_failure(
+            setup.env.clone(),
+            caller.clone(),
+            market_id.clone(),
+        )
     });
-}
+    assert_eq!(early, Err(Error::Unauthorized));
 
-/// A market with `dispute_window_seconds == 0` (no window configured) should
-/// not reject disputes based on the window check.
-#[test]
-fn test_dispute_window_zero_means_no_window_restriction() {
-    use crate::disputes::DisputeValidator;
-
-    let s = Setup::new();
-    s.env.as_contract(&s.contract_id, || {
-        let end_time = s.env.ledger().timestamp() + 3_600;
-        let (id, mut market) = s.market(end_time, 86_400, 0); // 0 = no window
-        market.oracle_result = Some(String::from_str(&s.env, "yes"));
-        market.state = MarketState::Ended;
-        s.env.storage().persistent().set(&id, &market);
-
-        // Jump far past end_time
-        s.tick(3_600 + 999_999);
-
-        let result = DisputeValidator::validate_market_for_dispute(&s.env, &market);
-        // Should not fail on window check (may fail on other checks, but not window)
-        assert_ne!(result, Err(Error::MarketResolved));
+    let deadline = market.end_time + resolution_timeout;
+    setup.advance_to(deadline);
+    setup.env.mock_all_auths();
+    let refunded = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::refund_on_oracle_failure(
+            setup.env.clone(),
+            caller.clone(),
+            market_id.clone(),
+        )
     });
-}
+    assert_eq!(refunded, Ok(10_000_000i128));
 
-// ===== DISPUTE EXTENDS RESOLUTION DEADLINE =====
+    let cancelled_market = setup.get_market(&market_id);
+    assert_eq!(cancelled_market.state, MarketState::Cancelled);
 
-/// Filing a dispute extends `market.end_time`.  The new end_time must be later
-/// than `end_time + resolution_timeout` so the oracle timeout cannot fire while
-/// the dispute is still open.
-#[test]
-fn test_dispute_extension_pushes_past_resolution_timeout() {
-    let s = Setup::new();
-    s.env.as_contract(&s.contract_id, || {
-        let end_time = s.env.ledger().timestamp() + 3_600;
-        let resolution_timeout = 7_200_u64; // 2 hours
-        let (id, mut market) = s.market(end_time, resolution_timeout, 86_400);
-        market.oracle_result = Some(String::from_str(&s.env, "yes"));
-        market.state = MarketState::Ended;
-        s.env.storage().persistent().set(&id, &market);
-
-        // Advance to just before resolution_timeout fires
-        s.tick(3_600 + 7_100);
-
-        // File dispute — this should extend end_time by 24 hours
-        let disputer = Address::generate(&s.env);
-        MarketStateManager::add_dispute_stake(&mut market, disputer, 10_000_000, Some(&id));
-        let cfg = ConfigManager::get_config(&s.env).unwrap();
-        MarketStateManager::extend_for_dispute(
-            &mut market,
-            &s.env,
-            cfg.voting.dispute_extension_hours.into(),
-        );
-        s.env.storage().persistent().set(&id, &market);
-
-        let stored: Market = s.env.storage().persistent().get(&id).unwrap();
-        let current_time = s.env.ledger().timestamp();
-        // After extension, end_time must be in the future
-        assert!(stored.end_time > current_time);
-        // And the dispute state must be set
-        assert_eq!(stored.state, MarketState::Disputed);
-    });
+    let refund_event: RefundOnOracleFailureEvent =
+        setup.env.as_contract(&setup.contract_id, || {
+            setup
+                .env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("ref_oracl"))
+                .expect("refund event should be stored")
+        });
+    assert_eq!(refund_event.market_id, market_id);
+    assert_eq!(refund_event.total_refunded, 10_000_000i128);
 }

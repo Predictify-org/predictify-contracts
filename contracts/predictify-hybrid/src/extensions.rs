@@ -566,18 +566,25 @@ impl ExtensionValidator {
         additional_days: u32,
     ) -> Result<(), Error> {
         // Validate additional days
-        if additional_days < MIN_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+        if additional_days == 0 {
+            return Err(Error::InvalidDuration);
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+            return Err(Error::InvalidDuration);
         }
 
         // Get market and validate state
         let market = MarketStateManager::get_market(env, market_id)?;
 
-        // Check if market is still active
+        if market.state == MarketState::Resolved {
+            return Err(Error::MarketResolved);
+        }
+
+        if market.state != MarketState::Active {
+            return Err(Error::MarketClosed);
+        }
+
         let current_time = env.ledger().timestamp();
         if current_time >= market.end_time {
             return Err(Error::MarketClosed);
@@ -600,13 +607,17 @@ impl ExtensionValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Check total extension days limit
-        if market.total_extension_days + additional_days > market.max_extension_days {
-            return Err(Error::InvalidInput);
+        let new_total_extension_days = market
+            .total_extension_days
+            .checked_add(additional_days)
+            .ok_or(Error::InvalidDuration)?;
+        if new_total_extension_days > market.max_extension_days {
+            return Err(Error::InvalidDuration);
         }
 
         // Check number of extensions limit
-        if (market.extension_history.len() as usize) >= (MAX_TOTAL_EXTENSIONS as usize) {
-            return Err(Error::InvalidInput);
+        if market.extension_history.len() >= MAX_TOTAL_EXTENSIONS {
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())
@@ -761,14 +772,14 @@ mod tests {
             assert_eq!(
                 ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
                     .unwrap_err(),
-                Error::InvalidInput
+                Error::InvalidDuration
             );
         });
 
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
                 .unwrap_err(),
-            Error::InvalidInput
+            Error::InvalidDuration
         );
     }
 
