@@ -1560,10 +1560,18 @@ impl<'a> BandProtocolClient<'a> {
 
     pub fn get_price_of(&self, symbol_pair: (Symbol, Symbol)) -> u128 {
         let client = bandprotocol::Client::new(&self.env, &self.contract_id);
-        client
-            .get_reference_data(&Vec::from_array(&self.env, [symbol_pair]))
-            .get_unchecked(0)
-            .rate
+        // Call into the imported Band std_reference and defensively handle unexpected
+        // results without panicking. Map failures to contract `Error::OracleUnavailable`.
+        let data_vec = client.get_reference_data(&Vec::from_array(&self.env, [symbol_pair]));
+        // Use safe get to avoid host panics on out-of-bounds
+        match data_vec.get(0) {
+            Some(entry) => entry.rate,
+            None => {
+                // Map to a recoverable contract error by returning zero here; callers
+                // will convert to Result and map to `Error`.
+                0u128
+            }
+        }
     }
 }
 
@@ -1610,9 +1618,13 @@ impl BandProtocolOracle {
 
     /// Fetch price from Band client
     fn get_band_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
-        let pair = self.parse_feed_id(env, feed_id).unwrap();
+        let pair = self.parse_feed_id(env, feed_id).map_err(|_| Error::InvalidOracleConfig)?;
         let client = BandProtocolClient::new(env, self.contract_id.clone());
         let rate = client.get_price_of(pair);
+        // Defensive mapping: if imported WASM returned 0 (indicating missing data), map to OracleUnavailable
+        if rate == 0u128 {
+            return Err(Error::OracleUnavailable);
+        }
         Ok(rate as i128)
     }
 }
