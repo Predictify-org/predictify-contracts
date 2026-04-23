@@ -208,6 +208,7 @@ fn fetch_oracle_result_stops_at_market_resolution_deadline() {
     assert_eq!(timeout_event.timeout_timestamp, deadline);
 }
 
+/// Disputes filed within the window must be accepted.
 #[test]
 fn refund_on_oracle_failure_uses_market_specific_timeout_for_non_admins() {
     let setup = TestSetup::new();

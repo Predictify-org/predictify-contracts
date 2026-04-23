@@ -979,7 +979,13 @@ impl OracleResolutionManager {
         // Get the market from storage
         let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        // 1. Check if resolution timeout has been reached
+        // 1. Check if resolution timeout has been reached.
+        //
+        // Safety invariant: a market with an active dispute must NOT be cancelled by the
+        // oracle resolution timeout.  Cancelling while a dispute is open would permanently
+        // lock the dispute stakes and leave the market in an unresolvable state (deadlock).
+        // Instead we surface `ResolutionTimeoutReached` so the caller knows the oracle path
+        // is closed while the dispute process remains the authoritative resolution path.
         let current_time = env.ledger().timestamp();
         if current_time >= market.end_time.saturating_add(market.resolution_timeout) {
             crate::events::EventEmitter::emit_resolution_timeout(env, market_id, current_time);
