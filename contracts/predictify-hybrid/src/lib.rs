@@ -4876,7 +4876,7 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id)
+        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &admin, &market_id)
         {
             Ok(res) => res,
             Err(e) => panic_with_error!(env, e),
@@ -4912,7 +4912,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         let result = match crate::recovery::RecoveryManager::partial_refund_mechanism(
-            &env, &market_id, &users,
+            &env, &admin, &market_id, &users,
         ) {
             Ok(total_refunded) => total_refunded,
             Err(e) => panic_with_error!(env, e),

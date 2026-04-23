@@ -14,6 +14,19 @@ This documentation helps in detecting incident response procedures, provides ins
 ## 4. Recovery
 - Keep backup for recovery
 
+## Recovery Emergency Procedures (Predictify Hybrid)
+
+- Only authorized admins may perform on-chain recovery actions; calls must be authenticated and auditable.
+- Recovery actions MUST emit on-chain events containing: admin address, market_id, action, status, amount (when applicable), and timestamp.
+- Prefer non-invasive heuristics: reconstruct totals, mark claims, or perform targeted partial refunds.
+- Do not perform forced payouts or unilateral transfers unless approved and logged.
+- After any recovery action: record a post-incident summary, include invariant checks performed, and list affected market IDs.
+
+## Event Visibility and Auditing
+
+- Indexers and auditors should monitor `recovery_evt` events emitted by the contract. Each event includes the acting admin and structured details for integrators to consume.
+- Maintain an off-chain incident log correlated to on-chain event timestamps for forensic analysis.
+
 ## 5. Post-Incident Review
 - Documentation of incident and prevention
 - Notification to regulatory bodies during a security breach
