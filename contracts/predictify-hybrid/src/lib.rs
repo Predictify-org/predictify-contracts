@@ -129,7 +129,10 @@ mod tests;
 mod event_creation_tests;
 
 // Re-export commonly used items
-use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
+use admin::{
+    AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole,
+    AdminSystemIntegration,
+};
 pub use err::Error;
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
@@ -287,6 +290,50 @@ impl PredictifyHybrid {
         EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
 
         Ok(())
+    }
+
+    fn stored_primary_admin(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)
+    }
+
+    fn require_primary_admin(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        if &Self::stored_primary_admin(env)? != admin {
+            return Err(Error::Unauthorized);
+        }
+
+        Ok(())
+    }
+
+    fn require_primary_admin_or_panic(env: &Env, admin: &Address) {
+        if let Err(error) = Self::require_primary_admin(env, admin) {
+            panic_with_error!(env, error);
+        }
+    }
+
+    fn require_initialized_admin_root(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+        let _ = Self::stored_primary_admin(env)?;
+        Ok(())
+    }
+
+    fn require_admin_permission(
+        env: &Env,
+        admin: &Address,
+        permission: AdminPermission,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin = Self::stored_primary_admin(env)?;
+        if &stored_admin == admin {
+            return Ok(());
+        }
+
+        AdminSystemIntegration::validate_admin_unified(env, admin, permission)
     }
 
     /// Deposits funds into the user's balance.
@@ -513,19 +560,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         let gas_marker = GasTracker::start_tracking(&env);
-        // Authenticate that the caller is the admin
-        admin.require_auth();
-
-        // Verify the caller is an admin
-        let stored_admin: Address =
-            match env.storage().persistent().get(&Symbol::new(&env, "Admin")) {
-                Some(admin_addr) => admin_addr,
-                None => panic_with_error!(env, Error::AdminNotSet),
-            };
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        Self::require_primary_admin_or_panic(&env, &admin);
 
         if let Err(e) = crate::validation::CreationValidator::validate_market_creation(
             &env,
@@ -675,19 +710,7 @@ impl PredictifyHybrid {
         {
             panic_with_error!(env, e);
         }
-        // Authenticate that the caller is the admin
-        admin.require_auth();
-
-        // Verify the caller is an admin
-        let stored_admin: Address =
-            match env.storage().persistent().get(&Symbol::new(&env, "Admin")) {
-                Some(admin_addr) => admin_addr,
-                None => panic_with_error!(env, Error::AdminNotSet),
-            };
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        Self::require_primary_admin_or_panic(&env, &admin);
 
         // Validate inputs
         if outcomes.len() < 2 {
@@ -1800,20 +1823,7 @@ impl PredictifyHybrid {
         winning_outcome: String,
     ) {
         let gas_marker = GasTracker::start_tracking(&env);
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        Self::require_primary_admin_or_panic(&env, &admin);
 
         let mut market: Market = env
             .storage()
@@ -1948,20 +1958,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         winning_outcomes: Vec<String>,
     ) {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        Self::require_primary_admin_or_panic(&env, &admin);
 
         // Validate outcomes vector is not empty
         if winning_outcomes.len() == 0 {
@@ -2461,7 +2458,7 @@ impl PredictifyHybrid {
         outcome: String,
         reason: String,
     ) -> Result<(), Error> {
-        admin.require_auth();
+        Self::require_primary_admin(&env, &admin)?;
         // Temporarily disabled due to oracles module being disabled
         // oracles::OracleIntegrationManager::admin_override_result(
         //     &env,
@@ -2803,20 +2800,7 @@ impl PredictifyHybrid {
         admin: Address,
         market_id: Symbol,
     ) -> Result<disputes::DisputeResolution, Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
     }
@@ -2831,20 +2815,7 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         fees::FeeManager::collect_fees(&env, admin, market_id)
     }
@@ -3276,19 +3247,7 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn set_platform_fee(env: Env, admin: Address, fee_percentage: i128) -> Result<(), Error> {
-        // Require authentication
-        admin.require_auth();
-
-        // Verify admin - get from storage with defensive check
-        let admin_key = Symbol::new(&env, "Admin");
-        if !env.storage().persistent().has(&admin_key) {
-            return Err(Error::Unauthorized);
-        }
-
-        let stored_admin: Address = env.storage().persistent().get(&admin_key).unwrap();
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         // Validate fee percentage (0-10%)
         if fee_percentage < 0 || fee_percentage > 1000 {
@@ -3326,15 +3285,7 @@ impl PredictifyHybrid {
         min_bet: i128,
         max_bet: i128,
     ) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
         let limits = crate::types::BetLimits { min_bet, max_bet };
         crate::bets::set_global_bet_limits(&env, &limits)?;
         let scope = Symbol::new(&env, "global");
@@ -3367,15 +3318,7 @@ impl PredictifyHybrid {
         min_bet: i128,
         max_bet: i128,
     ) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
         let limits = BetLimits { min_bet, max_bet };
         crate::bets::set_event_bet_limits(&env, &market_id, &limits)?;
         EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, min_bet, max_bet);
@@ -3414,15 +3357,7 @@ impl PredictifyHybrid {
         max_staleness_secs: u64,
         max_confidence_bps: u32,
     ) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         let config = GlobalOracleValidationConfig {
             max_staleness_secs,
@@ -3459,15 +3394,7 @@ impl PredictifyHybrid {
         max_staleness_secs: u64,
         max_confidence_bps: u32,
     ) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         let config = EventOracleValidationConfig {
             max_staleness_secs,
@@ -3565,20 +3492,7 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         // Get collected fees from storage (using the same key as FeeTracker)
         let fees_key = Symbol::new(&env, "tot_fees");
@@ -3787,18 +3701,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         new_description: String,
     ) -> Result<(), Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
-
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         // Validate new description
         if new_description.is_empty() {
@@ -3940,18 +3843,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         new_outcomes: Vec<String>,
     ) -> Result<(), Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
-
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         // Validate new outcomes
         if new_outcomes.len() < 2 {
@@ -4078,18 +3970,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         category: Option<String>,
     ) -> Result<(), Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
-
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         // Get market
         let mut market: Market = env
@@ -4206,18 +4087,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         tags: Vec<String>,
     ) -> Result<(), Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
-
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         // Validate tags - none should be empty
         for tag in tags.iter() {
@@ -4473,20 +4343,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         reason: Option<String>,
     ) -> Result<i128, Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            return Err(Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         // Get and validate market
         let mut market: Market = env
@@ -4641,20 +4498,7 @@ impl PredictifyHybrid {
         reason: String,
         _fee_amount: i128,
     ) -> Result<(), Error> {
-        admin.require_auth();
-
-        // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::Unauthorized);
-            });
-
-        if admin != stored_admin {
-            panic_with_error!(env, Error::Unauthorized);
-        }
+        Self::require_primary_admin(&env, &admin)?;
 
         extensions::ExtensionManager::extend_market_duration(
             &env,
@@ -5102,10 +4946,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         users: Vec<Address>,
     ) -> i128 {
-        admin.require_auth();
-        if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
-            panic_with_error!(env, e);
-        }
+        Self::require_primary_admin_or_panic(&env, &admin);
         let result = match crate::recovery::RecoveryManager::partial_refund_mechanism(
             &env, &admin, &market_id, &users,
         ) {
@@ -5483,6 +5324,10 @@ impl PredictifyHybrid {
 
     /// Add a new admin with specified role (SuperAdmin only)
     ///
+    /// The caller must satisfy Soroban `require_auth()`. Access is granted to the
+    /// stored primary admin and, after multi-admin migration, any delegated admin
+    /// with `AdminPermission::Emergency`.
+    ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
@@ -5496,11 +5341,15 @@ impl PredictifyHybrid {
         new_admin: Address,
         role: AdminRole,
     ) -> Result<(), Error> {
-        current_admin.require_auth();
+        Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
         AdminManager::add_admin(&env, &current_admin, &new_admin, role)
     }
 
     /// Remove an admin from the system (SuperAdmin only)
+    ///
+    /// The caller must satisfy Soroban `require_auth()`. Access is granted to the
+    /// stored primary admin and, after multi-admin migration, any delegated admin
+    /// with `AdminPermission::Emergency`.
     ///
     /// # Errors
     ///
@@ -5514,11 +5363,15 @@ impl PredictifyHybrid {
         current_admin: Address,
         admin_to_remove: Address,
     ) -> Result<(), Error> {
-        current_admin.require_auth();
+        Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
         AdminManager::remove_admin(&env, &current_admin, &admin_to_remove)
     }
 
     /// Update an admin's role (SuperAdmin only)
+    ///
+    /// The caller must satisfy Soroban `require_auth()`. Access is granted to the
+    /// stored primary admin and, after multi-admin migration, any delegated admin
+    /// with `AdminPermission::Emergency`.
     ///
     /// # Errors
     ///
@@ -5533,11 +5386,14 @@ impl PredictifyHybrid {
         target_admin: Address,
         new_role: AdminRole,
     ) -> Result<(), Error> {
-        current_admin.require_auth();
+        Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
         AdminManager::update_admin_role(&env, &current_admin, &target_admin, new_role)
     }
 
     /// Validate admin permission for specific action
+    ///
+    /// The caller must satisfy Soroban `require_auth()`, and the contract must
+    /// already have an initialized primary admin in persistent storage.
     ///
     /// # Errors
     ///
@@ -5551,6 +5407,7 @@ impl PredictifyHybrid {
         admin: Address,
         permission: AdminPermission,
     ) -> Result<(), Error> {
+        Self::require_initialized_admin_root(&env, &admin)?;
         AdminManager::validate_admin_permission(&env, &admin, permission)
     }
 
@@ -5582,6 +5439,9 @@ impl PredictifyHybrid {
 
     /// Migrate from single-admin to multi-admin system
     ///
+    /// Only the stored primary admin can trigger the one-way migration into the
+    /// delegated multi-admin storage layout.
+    ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
@@ -5590,7 +5450,7 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn migrate_to_multi_admin(env: Env, admin: Address) -> Result<(), Error> {
-        admin.require_auth();
+        Self::require_primary_admin(&env, &admin)?;
         admin::AdminSystemIntegration::migrate_to_multi_admin(&env)
     }
 
@@ -5641,7 +5501,8 @@ impl PredictifyHybrid {
     ///
     /// # Security
     ///
-    /// - Requires admin authentication via `require_auth()`
+    /// - Requires Soroban `require_auth()` from the caller
+    /// - Requires the caller to match the stored primary admin in persistent storage
     /// - Validates version compatibility
     /// - Performs safety checks before upgrade
     /// - Logs all upgrade attempts for audit trail
@@ -5672,7 +5533,7 @@ impl PredictifyHybrid {
         admin: Address,
         new_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
-        admin.require_auth();
+        Self::require_primary_admin(&env, &admin)?;
         let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
 
         crate::audit_trail::AuditTrailManager::append_record(
@@ -5713,7 +5574,7 @@ impl PredictifyHybrid {
         admin: Address,
         rollback_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
-        admin.require_auth();
+        Self::require_primary_admin(&env, &admin)?;
         let result =
             upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash);
 

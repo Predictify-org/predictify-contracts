@@ -190,6 +190,35 @@ Critical operations require multiple admin approvals:
 - **Configuration Updates**: Require 2+ admin approvals
 - **Emergency Pauses**: Require superadmin + 1 other admin
 
+### Primary Admin Storage and Entrypoint Authentication
+
+Predictify Hybrid treats persistent storage key `Admin` as the contract's root of trust for administrative authority.
+
+- `initialize()` stores the primary admin once in persistent storage.
+- Primary-admin-only contract entrypoints now require both Soroban `require_auth()` and an exact match against the stored `Admin` address.
+- If the `Admin` key is missing, admin-gated entrypoints fail with `AdminNotSet` rather than silently falling back to another storage source.
+- Upgrade and rollback flows use the same persistent `Admin` check as the rest of the contract; they do not trust legacy instance-storage admin keys.
+
+### Delegated Multi-Admin Flows
+
+The contract also supports delegated admin roles after migration to the multi-admin storage layout.
+
+- `migrate_to_multi_admin()` may only be triggered by the stored primary admin.
+- Delegated admin entrypoints still require Soroban `require_auth()`.
+- Delegated authorization is only evaluated after confirming the contract has an initialized primary admin root in persistent storage.
+- The stored `Admin` address remains the primary authority record even after migration; delegated admins do not replace it.
+
+### Admin Rotation and Transfer
+
+Primary-admin rotation is implemented by `ContractPauseManager::transfer_admin()`.
+
+- The current primary admin must satisfy Soroban `require_auth()`.
+- The caller must match the stored `Admin` address.
+- On success, the contract atomically rewrites the persistent `Admin` key to the new address.
+- After rotation, the old primary admin immediately loses access to primary-admin-only entrypoints, and the new primary admin gains it.
+
+Current public contract entrypoints do not expose a standalone `transfer_admin()` method. Integrators should treat the stored `Admin` value as the canonical authority source and wire any rotation workflow through an audited governance or admin-management wrapper if they need on-chain rotation at the application level.
+
 ---
 
 ## 🔄 Input Validation and Data Integrity
