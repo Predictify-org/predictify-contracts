@@ -5,7 +5,7 @@
 //! feed ID constraints.
 
 use super::super::*;
-use soroban_sdk::{Env, String, vec};
+use soroban_sdk::{Env, String, Address, vec};
 
 #[test]
 fn test_oracle_provider_validation() {
@@ -22,7 +22,7 @@ fn test_oracle_provider_validation() {
     assert_eq!(pyth_result.unwrap_err(), Error::InvalidOracleConfig);
 
     // Band Protocol is not supported on Stellar
-    let band = OracleProvider::from_str(String::from_str(&env, "band_protocol"));
+    let band = OracleProvider::band_protocol();
     let band_result = band.validate_for_market(&env);
     assert!(band_result.is_err());
     assert_eq!(band_result.unwrap_err(), Error::InvalidOracleConfig);
@@ -59,7 +59,7 @@ fn test_oracle_config_impossible_combinations() {
 
     // 3. Band with long feed ID (impossible)
     let band_invalid = OracleConfig {
-        provider: OracleProvider::from_str(String::from_str(&env, "band_protocol")),
+        provider: OracleProvider::band_protocol(),
         oracle_address: oracle_address.clone(),
         feed_id: String::from_str(&env, "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678"),
         threshold: 100,
@@ -107,7 +107,7 @@ fn test_oracle_factory_stellar_compatibility() {
 
     // Band Protocol (rejected by compatibility check)
     let band_config = OracleConfig {
-        provider: OracleProvider::from_str(String::from_str(&env, "band_protocol")),
+        provider: OracleProvider::band_protocol(),
         oracle_address: oracle_address.clone(),
         feed_id: String::from_str(&env, "BTC/USD"),
         threshold: 100,
@@ -115,3 +115,4 @@ fn test_oracle_factory_stellar_compatibility() {
     };
     assert!(crate::oracles::OracleFactory::validate_stellar_compatibility(&band_config).is_err());
 }
+
