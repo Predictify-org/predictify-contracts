@@ -1024,14 +1024,20 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
-    /// Whether a fallback oracle is configured (avoids Option in contract type for SDK compatibility)
+    /// Whether a fallback oracle is configured.
+    ///
+    /// When `true`, automatic resolution attempts the primary oracle once and then this market's
+    /// fallback oracle once if the primary attempt fails.
     pub has_fallback: bool,
     /// Fallback oracle configuration.
     ///
     /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
     /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
+    /// When `has_fallback` is `true`, this config is consulted only after one failed primary attempt.
     pub fallback_oracle_config: OracleConfig,
-    /// Resolution timeout in seconds after end_time
+    /// Resolution timeout in seconds after `end_time`.
+    ///
+    /// Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`.
     pub resolution_timeout: u64,
     /// Oracle result (set after market ends)
     pub oracle_result: Option<String>,
@@ -3765,14 +3771,20 @@ pub struct Event {
     pub end_time: u64,
     /// Oracle configuration for result verification (primary)
     pub oracle_config: OracleConfig,
-    /// Whether a fallback oracle is configured
+    /// Whether a fallback oracle is configured.
+    ///
+    /// When `true`, automatic resolution attempts the primary oracle once and then this event's
+    /// fallback oracle once if the primary attempt fails.
     pub has_fallback: bool,
     /// Fallback oracle configuration.
     ///
     /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
     /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
+    /// When `has_fallback` is `true`, this config is consulted only after one failed primary attempt.
     pub fallback_oracle_config: OracleConfig,
-    /// Resolution timeout in seconds after end_time
+    /// Resolution timeout in seconds after `end_time`.
+    ///
+    /// Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`.
     pub resolution_timeout: u64,
     /// Administrative address that created/manages the event
     pub admin: Address,
@@ -3858,7 +3870,7 @@ impl ReflectorAsset {
             ReflectorAsset::Other(symbol) => String::from_str(
                 &env,
                 &alloc::format!("{}/USD", Self::custom_symbol_to_host_string(symbol)),
-            )
+            ),
         }
     }
 
