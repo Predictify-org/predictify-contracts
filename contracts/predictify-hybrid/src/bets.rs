@@ -640,37 +640,52 @@ impl BetManager {
         // Get market bet stats
         let stats = BetStorage::get_market_bet_stats(env, market_id);
 
-        // Get total amount bet on all winning outcomes (handles ties - pool split)
-        let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
-        let mut winning_total = 0;
-        for outcome in winning_outcomes.iter() {
-            winning_total += stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
-        }
+        // Get winning outcomes
+let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
 
-        if winning_total == 0 {
-            return Ok(0);
-        }
+// Number of winners (tie support)
+let num_winners = winning_outcomes.len() as i128;
+if num_winners == 0 {
+    return Ok(0);
+}
 
-        // Get platform fee percentage from config (with fallback to legacy storage)
-        let fee_percentage = crate::config::ConfigManager::get_config(env)
-            .map(|cfg| cfg.fees.platform_fee_percentage)
-            .unwrap_or_else(|_| {
-                // Fallback to legacy storage for backward compatibility
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(env, "platform_fee"))
-                    .unwrap_or(200) // Default 2% if not set
-            });
+// Total bets ONLY on this user's outcome
+let total_bets_on_outcome = stats
+    .outcome_totals
+    .get(bet.outcome.clone())
+    .unwrap_or(0);
 
-        // Calculate payout
-        let payout = MarketUtils::calculate_payout(
-            bet.amount,
-            winning_total,
-            stats.total_amount_locked,
-            fee_percentage,
-        )?;
+if total_bets_on_outcome == 0 {
+    return Ok(0);
+}
 
-        Ok(payout)
+// Get platform fee percentage
+let fee_percentage = crate::config::ConfigManager::get_config(env)
+    .map(|cfg| cfg.fees.platform_fee_percentage)
+    .unwrap_or_else(|_| {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, "platform_fee"))
+            .unwrap_or(200)
+    });
+
+// Total pool
+let total_pool = stats.total_amount_locked;
+
+// Apply fee (basis points)
+let fee = (total_pool * fee_percentage as i128) / 10_000;
+let distributable_pool = total_pool - fee;
+
+// Split pool across winners
+let pool_per_winner = distributable_pool / num_winners;
+
+// Final payout (safe math)
+let payout = (bet.amount
+    .checked_mul(pool_per_winner)
+    .ok_or(Error::InvalidInput)?)
+    / total_bets_on_outcome;
+
+Ok(payout)
     }
     /// Cancel a bet before the market deadline and refund the user.
     ///
