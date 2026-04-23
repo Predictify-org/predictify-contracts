@@ -73,7 +73,7 @@ mod bandprotocol {
 
 #[cfg(any())]
 mod circuit_breaker_tests;
-#[cfg(any())]
+#[cfg(test)]
 mod oracle_fallback_timeout_tests;
 
 #[cfg(any())]
@@ -155,6 +155,34 @@ use soroban_sdk::{
 pub struct PredictifyHybrid;
 
 const PERCENTAGE_DENOMINATOR: i128 = 100;
+const MIN_RESOLUTION_TIMEOUT_SECONDS: u64 = 3_600;
+const MAX_RESOLUTION_TIMEOUT_SECONDS: u64 = 31_536_000;
+const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str = "oracle_resolution_failed_primary_only";
+const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str =
+    "oracle_resolution_failed_primary_then_fallback";
+
+fn validate_resolution_timeout(timeout: u64) -> Result<(), Error> {
+    if !(MIN_RESOLUTION_TIMEOUT_SECONDS..=MAX_RESOLUTION_TIMEOUT_SECONDS).contains(&timeout) {
+        return Err(Error::InvalidInput);
+    }
+
+    Ok(())
+}
+
+fn resolution_deadline(market: &Market) -> u64 {
+    market.end_time.saturating_add(market.resolution_timeout)
+}
+
+fn resolution_timeout_reached(env: &Env, market: &Market) -> bool {
+    env.ledger().timestamp() >= resolution_deadline(market)
+}
+
+fn automatic_oracle_result_unavailable(
+    _env: &Env,
+    _config: &OracleConfig,
+) -> Result<String, Error> {
+    Err(Error::OracleUnavailable)
+}
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -440,6 +468,13 @@ impl PredictifyHybrid {
     /// New markets are created in `MarketState::Active` state, allowing immediate voting.
     /// The market will automatically transition to `MarketState::Ended` when the duration expires.
     ///
+    /// # Oracle Resolution Policy
+    ///
+    /// - `oracle_config` is always the first automatic oracle consulted after market end.
+    /// - `fallback_oracle_config`, when present, is consulted only after one failed primary attempt.
+    /// - `resolution_timeout` is enforced per market from `end_time`; automatic oracle resolution stops at
+    ///   `end_time + resolution_timeout`.
+    ///
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
@@ -457,7 +492,9 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
-        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market") {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market")
+        {
             panic_with_error!(env, e);
         }
         let gas_marker = GasTracker::start_tracking(&env);
@@ -482,6 +519,20 @@ impl PredictifyHybrid {
 
         if question.len() == 0 {
             panic_with_error!(env, Error::InvalidQuestion);
+        }
+
+        if let Err(e) = oracle_config.validate(&env) {
+            panic_with_error!(env, e);
+        }
+
+        if let Some(fallback) = &fallback_oracle_config {
+            if let Err(e) = fallback.validate(&env) {
+                panic_with_error!(env, e);
+            }
+        }
+
+        if let Err(e) = validate_resolution_timeout(resolution_timeout) {
+            panic_with_error!(env, e);
         }
 
         // Generate a unique collision-resistant market ID
@@ -558,7 +609,9 @@ impl PredictifyHybrid {
     /// * `description` - The event description or question
     /// * `outcomes` - Vector of possible outcomes
     /// * `end_time` - Absolute Unix timestamp for when the event ends
-    /// * `oracle_config` - Configuration for oracle integration
+    /// * `oracle_config` - Primary oracle configuration for automatic resolution
+    /// * `fallback_oracle_config` - Optional backup oracle attempted only after one failed primary attempt
+    /// * `resolution_timeout` - Per-event oracle deadline in seconds, measured from `end_time`
     ///
     /// # Returns
     ///
@@ -569,6 +622,7 @@ impl PredictifyHybrid {
     /// Panics if:
     /// - Caller is not the contract admin
     /// - validation fails (invalid description, outcomes, or end time)
+    /// - `resolution_timeout` falls outside the supported bounds
     ///
     /// # Errors
     ///
@@ -587,7 +641,9 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
     ) -> Symbol {
-        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event") {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event")
+        {
             panic_with_error!(env, e);
         }
         // Authenticate that the caller is the admin
@@ -604,8 +660,19 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Skip validation for now since validation module is disabled
-        // TODO: Re-enable when validation module is fixed
+        if let Err(e) = oracle_config.validate(&env) {
+            panic_with_error!(env, e);
+        }
+
+        if let Some(fallback) = &fallback_oracle_config {
+            if let Err(e) = fallback.validate(&env) {
+                panic_with_error!(env, e);
+            }
+        }
+
+        if let Err(e) = validate_resolution_timeout(resolution_timeout) {
+            panic_with_error!(env, e);
+        }
 
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
@@ -1953,7 +2020,9 @@ impl PredictifyHybrid {
     ///
     /// - Market must exist and be past its end time
     /// - Market must not already have an oracle result
-    /// - Oracle contract must be accessible and responsive
+    /// - Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`
+    /// - When `has_fallback` is `true`, the contract attempts the primary oracle once and then the fallback once
+    /// - The market-stored oracle configuration controls ordering; the external `oracle_contract` argument is ignored
     ///
     /// # Events
     ///
@@ -1963,8 +2032,10 @@ impl PredictifyHybrid {
         market_id: Symbol,
         oracle_contract: Address,
     ) -> Result<String, Error> {
+        let _ = oracle_contract;
+
         // Get the market from storage
-        let market = env
+        let mut market = env
             .storage()
             .persistent()
             .get::<Symbol, Market>(&market_id)
@@ -1981,15 +2052,49 @@ impl PredictifyHybrid {
             return Err(Error::MarketClosed);
         }
 
-        // Get oracle result using the resolution module (oracle_contract from market config is used internally)
-        // Temporarily disabled due to resolution module being disabled
-        // let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
-        //     &env,
-        //     &market_id,
-        // )?;
+        if resolution_timeout_reached(&env, &market) {
+            EventEmitter::emit_resolution_timeout(&env, &market_id, current_time);
+            return Err(Error::ResolutionTimeoutReached);
+        }
 
-        // Return a dummy result for now
-        Err(Error::OracleUnavailable)
+        match automatic_oracle_result_unavailable(&env, &market.oracle_config) {
+            Ok(outcome) => {
+                market.oracle_result = Some(outcome.clone());
+                env.storage().persistent().set(&market_id, &market);
+                Ok(outcome)
+            }
+            Err(_) if market.has_fallback => {
+                match automatic_oracle_result_unavailable(&env, &market.fallback_oracle_config) {
+                    Ok(outcome) => {
+                        market.oracle_result = Some(outcome.clone());
+                        env.storage().persistent().set(&market_id, &market);
+                        EventEmitter::emit_fallback_used(
+                            &env,
+                            &market_id,
+                            &market.oracle_config.oracle_address,
+                            &market.fallback_oracle_config.oracle_address,
+                        );
+                        Ok(outcome)
+                    }
+                    Err(_) => {
+                        EventEmitter::emit_manual_resolution_required(
+                            &env,
+                            &market_id,
+                            &String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON),
+                        );
+                        Err(Error::FallbackOracleUnavailable)
+                    }
+                }
+            }
+            Err(err) => {
+                EventEmitter::emit_manual_resolution_required(
+                    &env,
+                    &market_id,
+                    &String::from_str(&env, ORACLE_FAILURE_PRIMARY_ONLY_REASON),
+                );
+                Err(err)
+            }
+        }
     }
 
     /// Verifies and fetches event outcome from external oracle sources automatically.
@@ -4414,6 +4519,9 @@ impl PredictifyHybrid {
     /// Refunds full bet amount per user (no fee deduction). Marks market as cancelled and
     /// prevents further resolution. Emits refund events. Idempotent when already cancelled.
     ///
+    /// The timeout gate is evaluated per market from `end_time + resolution_timeout`.
+    /// Non-admin callers cannot trigger this path before that market-specific deadline.
+    ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
@@ -4451,8 +4559,7 @@ impl PredictifyHybrid {
         let stored_admin: Option<Address> =
             env.storage().persistent().get(&Symbol::new(&env, "Admin"));
         let is_admin = stored_admin.as_ref().map_or(false, |a| a == &caller);
-        let timeout_passed = current_time.saturating_sub(market.end_time)
-            >= config::DEFAULT_RESOLUTION_TIMEOUT_SECONDS;
+        let timeout_passed = resolution_timeout_reached(&env, &market);
         if !is_admin && !timeout_passed {
             return Err(Error::Unauthorized);
         }
@@ -5235,7 +5342,11 @@ impl PredictifyHybrid {
 
     // ===== ORACLE FALLBACK FUNCTIONS =====
 
-    /// Get oracle data with backup if primary fails
+    /// Get oracle data with backup if primary fails.
+    ///
+    /// The helper always attempts `primary_oracle` first. It attempts `backup_oracle`
+    /// only after a failed primary call, and it aborts before any oracle call once
+    /// `ledger.timestamp() >= end_time + resolution_timeout`.
     ///
     /// # Errors
     ///
@@ -5262,6 +5373,10 @@ impl PredictifyHybrid {
         let current_time = env.ledger().timestamp();
         if current_time < market.end_time {
             return Err(Error::MarketClosed);
+        }
+        if resolution_timeout_reached(&env, &market) {
+            EventEmitter::emit_resolution_timeout(&env, &market_id, current_time);
+            return Err(Error::ResolutionTimeoutReached);
         }
 
         // Try to get price with backup
@@ -5296,9 +5411,9 @@ impl PredictifyHybrid {
             }
             Err(_) => {
                 // Both oracles failed
-                let reason = String::from_str(&env, "All oracles failed");
+                let reason = String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON);
                 events::EventEmitter::emit_manual_resolution_required(&env, &market_id, &reason);
-                Err(Error::OracleUnavailable)
+                Err(Error::FallbackOracleUnavailable)
             }
         }
     }
