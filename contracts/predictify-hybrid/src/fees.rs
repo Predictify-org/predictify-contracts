@@ -728,6 +728,11 @@ impl FeeManager {
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
+        // Idempotency guard: if fees were already collected on a prior call,
+        // return Ok(0) so retried claims do not revert the transaction.
+        if market.fee_collected {
+            return Ok(0);
+        }
         FeeValidator::validate_market_for_fee_collection(&market)?;
 
         // Calculate fee amount
@@ -1199,7 +1204,7 @@ impl FeeValidator {
 
         // Check if fees already collected
         if market.fee_collected {
-            return Err(Error::InvalidFeeConfig);
+            return Err(Error::FeeAlreadyCollected);
         }
 
         // Check if there are sufficient stakes
