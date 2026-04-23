@@ -52,6 +52,7 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 - **[Types System](./contracts/TYPES_SYSTEM.md)** - Comprehensive type system and data structures
 - **[Voting System](./contracts/VOTING_SYSTEM.md)** - Voting mechanism and dispute resolution
 - **[Balance Management](./contracts/BALANCES.md)** - Security invariants and token safety semantics for deposits and withdrawals
+- **[Governance Lifecycle](./contracts/GOVERNANCE.md)** - Proposal create→vote→validate→execute/fail lifecycle, timing and quorum invariants
 
 
 ### 💰 [Claims Documentation](./claims/)
@@ -108,5 +109,5 @@ When adding new documentation:
 
 ---
 
-*Last updated: 2026-03-30*
+*Last updated: 2026-04-23*
 *For questions or suggestions about documentation, please open an issue in the repository.*
