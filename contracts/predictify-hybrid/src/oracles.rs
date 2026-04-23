@@ -1183,17 +1183,29 @@ impl OracleFactory {
             return Err(Error::InvalidOracleConfig);
         }
 
+        let feed_id_len = oracle_config.feed_id.len();
+
         match oracle_config.provider.as_str() {
             "reflector" => {
                 // Reflector is fully supported
+                // Ensure feed_id isn't an impossible combination (e.g. Pyth hex id)
+                if feed_id_len >= 64 {
+                    return Err(Error::InvalidOracleConfig);
+                }
                 Ok(())
             }
             "pyth" => {
                 // Pyth is not supported on Stellar, but we'll allow it for future compatibility
-                // The implementation will return errors when used
+                // However, reject impossible Pyth configurations
+                if feed_id_len < 64 || feed_id_len > 66 {
+                    return Err(Error::InvalidOracleConfig);
+                }
                 Ok(())
             }
             "band_protocol" | "dia" => {
+                if feed_id_len >= 64 {
+                    return Err(Error::InvalidOracleConfig);
+                }
                 // These providers are not supported on Stellar
                 Err(Error::InvalidOracleConfig)
             }

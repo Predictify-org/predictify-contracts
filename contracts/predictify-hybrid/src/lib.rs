@@ -43,23 +43,19 @@ mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
 mod monitoring;
-#[cfg(any())]
 mod oracles;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
-#[cfg(any())]
 mod resolution;
 mod statistics;
 mod storage;
 mod types;
 mod upgrade_manager;
 mod utils;
-#[cfg(any())]
 mod validation;
-#[cfg(any())]
 mod validation_tests;
 mod versioning;
 mod voting;
@@ -127,7 +123,7 @@ mod statistics_tests;
 #[cfg(any())]
 mod resolution_delay_dispute_window_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod tests;
 
 #[cfg(any())]
@@ -507,6 +503,16 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidQuestion);
         }
 
+        // Validate oracle configuration
+        if let Err(e) = oracle_config.validate(&env) {
+            panic_with_error!(env, e);
+        }
+        if let Some(ref fallback) = fallback_oracle_config {
+            if let Err(e) = fallback.validate(&env) {
+                panic_with_error!(env, e);
+            }
+        }
+
         // Generate a unique collision-resistant market ID
         let market_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
@@ -627,8 +633,24 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Skip validation for now since validation module is disabled
-        // TODO: Re-enable when validation module is fixed
+        // Validate inputs
+        if outcomes.len() < 2 {
+            panic_with_error!(env, Error::InvalidOutcomes);
+        }
+
+        if description.len() == 0 {
+            panic_with_error!(env, Error::InvalidQuestion);
+        }
+
+        // Validate oracle configuration
+        if let Err(e) = oracle_config.validate(&env) {
+            panic_with_error!(env, e);
+        }
+        if let Some(ref fallback) = fallback_oracle_config {
+            if let Err(e) = fallback.validate(&env) {
+                panic_with_error!(env, e);
+            }
+        }
 
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
