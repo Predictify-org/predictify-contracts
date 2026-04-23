@@ -1,35 +1,71 @@
-# Balance Management System
+# Balance Management Invariants and Token Safety
 
-The Balance Management system in Predictify Hybrid handles the internal accounting of user funds. It allows users to deposit assets into the contract, use those funds for betting, and withdraw unused funds back to their wallets.
+This document outlines the security invariants and token transfer semantics for balance management in the Predictify Hybrid smart contracts.
 
-## Core Concepts
+## Overview
 
-### Available vs. Locked Funds
-In the Predictify Hybrid architecture:
-- **Available Balance**: Funds that have been deposited but are not currently committed to any active bets. These are tracked in `BalanceStorage`.
-- **Locked Funds**: Funds that are actively staked in prediction markets. When a bet is placed, funds are either moved directly from the user's wallet to the contract's address or deducted from their internal balance. Once staked, these funds are no longer withdrawable until the market resolves.
+The `BalanceManager` is responsible for handling user deposits and withdrawals. It ensures that internal contract balances are always synchronized with actual token transfers on the Stellar network (Soroban).
 
-## Withdrawal Security
+## Deposit Invariants
 
-To ensure the safety of user funds and the integrity of the contract, the withdrawal process follows these security invariants:
+The `deposit` function follows a strict **Transfer-then-Credit** pattern to ensure safety:
 
-1. **Amount Validation**: All withdrawal requests must specify an amount greater than zero. Requests for zero or negative amounts are rejected with `Error::InvalidInput`.
-2. **Sufficient Balance Check**: The contract verifies that the user has a sufficient internal balance in `BalanceStorage` before proceeding. This balance represents "liquid" funds.
-3. **Checks-Effects-Interactions**: The contract updates the internal state (deducting the balance) *before* performing the external token transfer. This prevents reentrancy attacks and ensures consistency.
-4. **Circuit Breaker Integration**: Withdrawals can be globally paused by administrators in case of emergencies or detected anomalies using the Circuit Breaker system.
+1.  **Validation**: The `amount` must be strictly positive (> 0).
+2.  **Authentication**: The `user` must authorize the transaction via `require_auth()`.
+3.  **Token Transfer**: The contract executes `token_client.transfer(user, contract, amount)`. 
+    - In Soroban, if the transfer fails (e.g., insufficient funds, lack of authorization), the entire transaction panics and reverts.
+4.  **Balance Credit**: Only after a successful transfer is the user's internal balance updated in `BalanceStorage`.
 
-## Withdrawal Flow
+### Safety Assumptions
+- **Atomicity**: We rely on Soroban's transaction atomicity. If any step fails, no state changes (including token transfers and balance updates) are committed.
+- **Positive Amounts Only**: We explicitly reject zero or negative deposit amounts to prevent edge-case logic errors.
+- **Large Amount Handling**: Deposits are restricted to half of the `i128` maximum value to prevent theoretical overflow when aggregating balances, although `BalanceStorage` uses checked arithmetic.
 
-1.  **Authentication**: The user must authenticate the withdrawal request via `require_auth()`.
-2.  **Circuit Breaker Check**: The system verifies that withdrawals are currently enabled.
-3.  **Validation**: The amount is checked for positivity.
-4.  **Balance Check**: The user's current liquid balance is retrieved and checked against the requested amount.
-5.  **State Update**: The balance is deducted from `BalanceStorage` using safe arithmetic (`checked_sub`).
-6.  **Token Transfer**: Tokens are transferred from the contract's address to the user's address.
-7.  **Event Emission**: A `balance_changed` event is emitted with the "Withdraw" operation type.
+## Withdrawal Invariants
 
-## Error Handling
+The `withdraw` function follows the **Checks-Effects-Interactions (CEI)** pattern to prevent reentrancy and ensuring safety:
 
-- `Error::InsufficientBalance`: Returned if the user attempts to withdraw more than their available liquid balance.
-- `Error::InvalidInput`: Returned if the amount is non-positive or if an unsupported asset is specified.
-- `Error::CBOpen`: Returned if withdrawals are currently paused by the circuit breaker.
+1.  **Checks**:
+    - Validate `amount` > 0.
+    - Authenticate user.
+    - Check if the Circuit Breaker allows withdrawals.
+    - Ensure user has sufficient available balance.
+2.  **Effects**:
+    - Subtract the amount from the user's internal balance in `BalanceStorage`.
+3.  **Interactions**:
+    - Transfer tokens from the contract's account back to the user's wallet.
+
+### Safety Assumptions
+- **Balance Separation**: Internal balances track "Available" funds. Funds currently locked in active bets are handled separately by the `bets.rs` module and are not part of the `BalanceStorage` amount unless specifically credited back (e.g., through winnings or refunds).
+- **Circuit Breaker**: High-level platform safety is maintained through the circuit breaker mechanism.
+
+## Fund Locking and Betting Integration
+
+There are two primary ways funds are held in the contract:
+
+1.  **Idle Balances**: Funds deposited via `BalanceManager` and tracked in `BalanceStorage`. These are "idle" and available for withdrawal or for future integration with betting.
+2.  **Locked Stakes**: Funds transferred directly to the contract during the `vote` or `place_bet` process. These funds are **NOT** reflected in `BalanceStorage` while the bet is active. They are effectively "locked" in the contract's total token balance but attributed to specific markets/bets.
+
+### Payouts and Refunds
+- When a market is resolved or cancelled, funds are either:
+    - Transferred directly to the user (e.g., `refund_market_bets`).
+    - Credited to the user's balance for later withdrawal (future optimization).
+- The current implementation typically handles payouts/refunds through direct transfers to the user's wallet.
+
+## Regression Testing
+
+Test coverage for balance invariants includes:
+- `test_deposit_and_withdrawal_flow`: Basic success paths.
+- `test_insufficient_balance_withdrawal`: Error handling for over-withdrawal.
+- `test_invalid_deposit_amount`: Rejection of 0 or negative deposits.
+- `test_invalid_withdraw_amount`: Rejection of 0 or negative withdrawals.
+- `test_large_deposit_amount`: Boundary check for extreme values.
+- `test_deposit_and_withdraw_full_balance`: Ensuring zero-balance state transitions.
+
+## Security Notes
+
+- **Threat Model**: An attacker might try to credit their balance without transferring tokens, or withdraw more tokens than they have.
+- **Proven Invariants**:
+    - `Total Internal Balances <= Total Contract Token Balance`.
+    - `User A cannot withdraw User B's funds`.
+    - `Internal balance change <=> Successful Token Transfer`.

@@ -11,8 +11,10 @@
 #![allow(clippy::all)]
 
 extern crate alloc;
+#[cfg(not(test))]
 extern crate wee_alloc;
 
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
@@ -41,23 +43,19 @@ mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
 mod monitoring;
-#[cfg(any())]
 mod oracles;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
-#[cfg(any())]
 mod resolution;
 mod statistics;
 mod storage;
 mod types;
 mod upgrade_manager;
 mod utils;
-#[cfg(any())]
 mod validation;
-#[cfg(any())]
 mod validation_tests;
 mod versioning;
 mod voting;
@@ -73,7 +71,7 @@ mod bandprotocol {
 
 #[cfg(any())]
 mod circuit_breaker_tests;
-#[cfg(any())]
+#[cfg(test)]
 mod oracle_fallback_timeout_tests;
 
 #[cfg(any())]
@@ -94,6 +92,8 @@ mod upgrade_manager_tests;
 #[cfg(any())]
 mod query_tests;
 
+#[cfg(test)]
+mod bet_cancellation_tests;
 #[cfg(any())]
 mod bet_tests;
 #[cfg(any())]
@@ -110,13 +110,19 @@ mod balance_tests;
 
 #[cfg(test)]
 mod event_management_tests;
+
+#[cfg(test)]
+mod governance_tests;
+
+#[cfg(any())]
+mod category_tags_tests;
 #[cfg(any())]
 mod statistics_tests;
 
 #[cfg(any())]
 mod resolution_delay_dispute_window_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod tests;
 
 #[cfg(any())]
@@ -135,7 +141,8 @@ pub use types::*;
 
 use crate::circuit_breaker::CircuitBreaker;
 use crate::config::{
-    DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE, MIN_PLATFORM_FEE_PERCENTAGE,
+    ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
+    MIN_PLATFORM_FEE_PERCENTAGE,
 };
 use crate::events::EventEmitter;
 use crate::gas::GasTracker;
@@ -149,7 +156,7 @@ use soroban_sdk::{
 #[contract]
 pub struct PredictifyHybrid;
 
-const PERCENTAGE_DENOMINATOR: i128 = 100;
+const PERCENTAGE_DENOMINATOR: i128 = 10000;
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -159,18 +166,21 @@ impl PredictifyHybrid {
     /// This function must be called once after contract deployment to set up the initial
     /// administrative configuration and platform fee structure. It establishes the contract admin who
     /// will have privileges to create markets and perform administrative functions, and configures
-    /// the platform fee percentage for market operations.
+    /// the platform fee percentage for market operations. The call also stores the default
+    /// development-oriented contract configuration so creation validators have deterministic
+    /// bounds immediately after deployment.
     ///
     /// # Parameters
     ///
     /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - The address that will be granted administrative privileges
     /// * `platform_fee_percentage` - Optional platform fee percentage (0-10%). If `None`, defaults to 2%
+    /// * `allowed_assets` - Optional list of allowed asset contract addresses. If `None`, defaults are used
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// This function will panic if:
-    /// - The contract has already been initialized (Error code 504: AlreadyInitialized)
+    /// Returns [`Error`] when:
+    /// - The contract has already been initialized
     /// - The admin address is invalid
     /// - The platform fee percentage is negative or exceeds 10%
     /// - Storage operations fail
@@ -178,16 +188,16 @@ impl PredictifyHybrid {
     /// # Example
     ///
     /// ```rust
-    /// # use soroban_sdk::{Env, Address};
+    /// # use soroban_sdk::{Env, Address, Vec};
     /// # use predictify_hybrid::PredictifyHybrid;
     /// # let env = Env::default();
     /// # let admin_address = Address::generate(&env);
     ///
     /// // Initialize with default 2% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address.clone(), None);
+    /// PredictifyHybrid::initialize(env.clone(), admin_address.clone(), None, None)?;
     ///
     /// // Or initialize with custom 5% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address, Some(5));
+    /// PredictifyHybrid::initialize(env.clone(), admin_address, Some(5), None)?;
     /// ```
     ///
     /// # Platform Fee
@@ -204,19 +214,26 @@ impl PredictifyHybrid {
     /// control over the contract's operation, including market creation and resolution.
     /// Consider using a multi-signature wallet or governance contract for production.
     ///
+    /// # Default Configuration
+    ///
+    /// `initialize()` stores the default development contract configuration. Integrators that
+    /// need testnet, mainnet, or custom configuration should update configuration explicitly
+    /// after initialization through the contract's administrative configuration flows.
+    ///
     /// # Re-initialization Prevention
     ///
-    /// This function can only be called once. Any subsequent calls will panic with
-    /// `Error::AlreadyInitialized` to prevent admin takeover attacks.
-    ///
-    /// # Errors
-    ///
-    /// This entrypoint surfaces contract errors via panic in internal calls.
+    /// This function can only be called once. Any subsequent calls will return
+    /// `Error::InvalidState` to prevent admin takeover attacks.
     ///
     /// # Events
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>) {
+    /// Emits `contract_initialized` and `platform_fee_set` events on successful initialization.
+    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>, allowed_assets: Option<Vec<Address>>) -> Result<(), Error> {
+        // Check for re-initialization attempt (critical security check)
+        if env.storage().persistent().has(&Symbol::new(&env, "platform_fee")) {
+            return Err(Error::InvalidState);
+        }
+
         // Determine platform fee (default 2% if not specified)
         let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
 
@@ -224,13 +241,27 @@ impl PredictifyHybrid {
         if fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
             || fee_percentage > MAX_PLATFORM_FEE_PERCENTAGE
         {
-            panic_with_error!(env, Error::InvalidFeeConfig);
+            return Err(Error::InvalidFeeConfig);
         }
 
         // Initialize admin (includes re-initialization check)
-        match AdminInitializer::initialize(&env, &admin) {
+        AdminInitializer::initialize(&env, &admin)?;
+
+        // Initialize circuit breaker defaults required by write-gated entrypoints.
+        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
             Ok(_) => (),
             Err(e) => panic_with_error!(env, e),
+        }
+
+        // Initialize circuit breaker
+        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
+        // Initialize circuit breaker
+        if let Err(e) = crate::circuit_breaker::CircuitBreaker::initialize(&env) {
+            panic_with_error!(env, e);
         }
 
         // Store platform fee configuration in persistent storage
@@ -238,10 +269,15 @@ impl PredictifyHybrid {
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
 
-        // Initialize circuit breaker
-        match CircuitBreaker::initialize(&env) {
-            Ok(_) => (),
-            Err(e) => panic_with_error!(env, e),
+        // Initialize allowed assets
+        if let Some(assets) = allowed_assets {
+            // Store custom allowed assets
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "allowed_assets"), &assets);
+        } else {
+            // Initialize with defaults
+            crate::tokens::TokenRegistry::initialize_with_defaults(&env);
         }
 
         // Emit contract initialized event
@@ -249,6 +285,8 @@ impl PredictifyHybrid {
 
         // Emit platform fee set event
         EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
+
+        Ok(())
     }
 
     /// Deposits funds into the user's balance.
@@ -356,9 +394,9 @@ impl PredictifyHybrid {
     ///
     /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - The administrator address creating the market (must be authorized)
-    /// * `question` - The prediction question (must be non-empty)
-    /// * `outcomes` - Vector of possible outcomes (minimum 2 required, all non-empty, no duplicates)
-    /// * `duration_days` - Market duration in days (must be between 1-365 days)
+    /// * `question` - The prediction question (non-empty after trimming and within the supported length bounds)
+    /// * `outcomes` - Vector of possible outcomes (bounded count, non-empty after trimming, and duplicate-safe)
+    /// * `duration_days` - Market duration in days (must remain within the supported bounds)
     /// * `oracle_config` - Configuration for oracle integration (Reflector, Pyth, etc.)
     ///
     /// # Returns
@@ -369,8 +407,9 @@ impl PredictifyHybrid {
     ///
     /// This function will panic with specific errors if:
     /// - `Error::Unauthorized` - Caller is not the contract admin
-    /// - `Error::InvalidQuestion` - Question is empty
-    /// - `Error::InvalidOutcomes` - Less than 2 outcomes or any outcome is empty
+    /// - `Error::InvalidQuestion` - Question is empty, whitespace-only, or outside the supported length bounds
+    /// - `Error::InvalidOutcomes` - Outcomes violate count, emptiness, duplicate, or ambiguity rules
+    /// - `Error::InvalidDuration` - Duration is outside the supported bounds
     /// - Storage operations fail
     ///
     /// # Example
@@ -441,6 +480,13 @@ impl PredictifyHybrid {
     /// New markets are created in `MarketState::Active` state, allowing immediate voting.
     /// The market will automatically transition to `MarketState::Ended` when the duration expires.
     ///
+    /// # Oracle Resolution Policy
+    ///
+    /// - `oracle_config` is always the first automatic oracle consulted after market end.
+    /// - `fallback_oracle_config`, when present, is consulted only after one failed primary attempt.
+    /// - `resolution_timeout` is enforced per market from `end_time`; automatic oracle resolution stops at
+    ///   `end_time + resolution_timeout`.
+    ///
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
@@ -457,7 +503,15 @@ impl PredictifyHybrid {
         oracle_config: OracleConfig,
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
+        min_pool_size: Option<i128>,
+        bet_deadline_mins_before_end: Option<u64>,
+        dispute_window_seconds: Option<u64>,
     ) -> Symbol {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market")
+        {
+            panic_with_error!(env, e);
+        }
         let gas_marker = GasTracker::start_tracking(&env);
         // Authenticate that the caller is the admin
         admin.require_auth();
@@ -473,13 +527,23 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Validate inputs
-        if outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
+        if let Err(e) = crate::validation::CreationValidator::validate_market_creation(
+            &env,
+            &question,
+            &outcomes,
+            &duration_days,
+        ) {
+            panic_with_error!(env, e);
         }
 
-        if question.len() == 0 {
-            panic_with_error!(env, Error::InvalidQuestion);
+        // Validate oracle configuration
+        if let Err(e) = oracle_config.validate(&env) {
+            panic_with_error!(env, e);
+        }
+        if let Some(ref fallback) = fallback_oracle_config {
+            if let Err(e) = fallback.validate(&env) {
+                panic_with_error!(env, e);
+            }
         }
 
         // Generate a unique collision-resistant market ID
@@ -489,6 +553,12 @@ impl PredictifyHybrid {
         let seconds_per_day: u64 = 24 * 60 * 60;
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
         let end_time: u64 = env.ledger().timestamp() + duration_seconds;
+
+        // Calculate bet deadline
+        let bet_deadline = match bet_deadline_mins_before_end {
+            Some(mins) => end_time.saturating_sub(mins * 60),
+            None => 0,
+        };
 
         let (has_fallback, fallback_cfg) = match &fallback_oracle_config {
             Some(c) => (true, c.clone()),
@@ -518,9 +588,9 @@ impl PredictifyHybrid {
             extension_history: Vec::new(&env),
             category: None,
             tags: Vec::new(&env),
-            min_pool_size: None,
-            bet_deadline: 0,
-            dispute_window_seconds: 86400,
+            min_pool_size,
+            bet_deadline,
+            dispute_window_seconds: dispute_window_seconds.unwrap_or(86400),
         };
 
         // Store the market
@@ -556,7 +626,9 @@ impl PredictifyHybrid {
     /// * `description` - The event description or question
     /// * `outcomes` - Vector of possible outcomes
     /// * `end_time` - Absolute Unix timestamp for when the event ends
-    /// * `oracle_config` - Configuration for oracle integration
+    /// * `oracle_config` - Primary oracle configuration for automatic resolution
+    /// * `fallback_oracle_config` - Optional backup oracle attempted only after one failed primary attempt
+    /// * `resolution_timeout` - Per-event oracle deadline in seconds, measured from `end_time`
     ///
     /// # Returns
     ///
@@ -567,6 +639,13 @@ impl PredictifyHybrid {
     /// Panics if:
     /// - Caller is not the contract admin
     /// - validation fails (invalid description, outcomes, or end time)
+    /// - `resolution_timeout` falls outside the supported bounds
+    ///
+    /// # Validation Rules
+    ///
+    /// - `description` follows the same non-empty and length policy as market questions
+    /// - `outcomes` follow the same count, non-empty, duplicate, and ambiguity rules as market creation
+    /// - `end_time` must be strictly greater than the current ledger timestamp
     ///
     /// # Errors
     ///
@@ -584,7 +663,13 @@ impl PredictifyHybrid {
         oracle_config: OracleConfig,
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
+        visibility: EventVisibility,
     ) -> Symbol {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event")
+        {
+            panic_with_error!(env, e);
+        }
         // Authenticate that the caller is the admin
         admin.require_auth();
 
@@ -599,8 +684,24 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Skip validation for now since validation module is disabled
-        // TODO: Re-enable when validation module is fixed
+        // Validate inputs
+        if outcomes.len() < 2 {
+            panic_with_error!(env, Error::InvalidOutcomes);
+        }
+
+        if description.len() == 0 {
+            panic_with_error!(env, Error::InvalidQuestion);
+        }
+
+        // Validate oracle configuration
+        if let Err(e) = oracle_config.validate(&env) {
+            panic_with_error!(env, e);
+        }
+        if let Some(ref fallback) = fallback_oracle_config {
+            if let Err(e) = fallback.validate(&env) {
+                panic_with_error!(env, e);
+            }
+        }
 
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
@@ -622,7 +723,7 @@ impl PredictifyHybrid {
             admin: admin.clone(),
             created_at: env.ledger().timestamp(),
             status: MarketState::Active,
-            visibility: EventVisibility::Public,
+            visibility,
             allowlist: Vec::new(&env),
         };
 
@@ -747,7 +848,13 @@ impl PredictifyHybrid {
             });
 
         // Check if the market is still active
-        if env.ledger().timestamp() >= market.end_time {
+        if market.state != MarketState::Active {
+            panic_with_error!(env, Error::InvalidState);
+        }
+
+        // Respect bet_deadline if set, otherwise use end_time
+        let cutoff = if market.bet_deadline > 0 { market.bet_deadline } else { market.end_time };
+        if env.ledger().timestamp() >= cutoff {
             panic_with_error!(env, Error::MarketClosed);
         }
 
@@ -1139,6 +1246,32 @@ impl PredictifyHybrid {
         bets::BetManager::get_market_bet_stats(&env, &market_id)
     }
 
+    /// Cancels an active bet and refunds the user.
+    ///
+    /// This function allows users to cancel their active bets before the market
+    /// deadline, receiving a full refund of their locked funds.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - Address of the user cancelling the bet
+    /// * `market_id` - Symbol identifying the market
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful cancellation and refund,
+    /// or `Err(Error)` if cancellation fails.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::NothingToClaim` - User has no bet on this market
+    /// - `Error::MarketNotFound` - Market does not exist
+    /// - `Error::MarketClosed` - Market deadline has passed
+    /// - `Error::InvalidState` - Bet is not in Active status
+    pub fn cancel_bet(env: Env, user: Address, market_id: Symbol) -> Result<(), Error> {
+        bets::BetManager::cancel_bet(&env, user, market_id)
+    }
+
     /// Calculate the payout amount for a user's bet on a resolved market.
     ///
     /// This function calculates how much a user will receive if they won their bet.
@@ -1418,6 +1551,13 @@ impl PredictifyHybrid {
             Some(outcomes) => outcomes,
             None => panic_with_error!(env, Error::MarketNotResolved),
         };
+
+        // Enforce dispute window: payouts only after end_time + dispute_window_seconds
+        if market.dispute_window_seconds > 0
+            && env.ledger().timestamp() < market.end_time + market.dispute_window_seconds
+        {
+            panic_with_error!(env, Error::InvalidState);
+        }
 
         // Get user's vote
         let user_outcome = market
@@ -1948,7 +2088,9 @@ impl PredictifyHybrid {
     ///
     /// - Market must exist and be past its end time
     /// - Market must not already have an oracle result
-    /// - Oracle contract must be accessible and responsive
+    /// - Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`
+    /// - When `has_fallback` is `true`, the contract attempts the primary oracle once and then the fallback once
+    /// - The market-stored oracle configuration controls ordering; the external `oracle_contract` argument is ignored
     ///
     /// # Events
     ///
@@ -1958,8 +2100,10 @@ impl PredictifyHybrid {
         market_id: Symbol,
         oracle_contract: Address,
     ) -> Result<String, Error> {
+        let _ = oracle_contract;
+
         // Get the market from storage
-        let market = env
+        let mut market = env
             .storage()
             .persistent()
             .get::<Symbol, Market>(&market_id)
@@ -1976,15 +2120,49 @@ impl PredictifyHybrid {
             return Err(Error::MarketClosed);
         }
 
-        // Get oracle result using the resolution module (oracle_contract from market config is used internally)
-        // Temporarily disabled due to resolution module being disabled
-        // let oracle_resolution = resolution::OracleResolutionManager::fetch_oracle_result(
-        //     &env,
-        //     &market_id,
-        // )?;
+        if resolution_timeout_reached(&env, &market) {
+            EventEmitter::emit_resolution_timeout(&env, &market_id, current_time);
+            return Err(Error::ResolutionTimeoutReached);
+        }
 
-        // Return a dummy result for now
-        Err(Error::OracleUnavailable)
+        match automatic_oracle_result_unavailable(&env, &market.oracle_config) {
+            Ok(outcome) => {
+                market.oracle_result = Some(outcome.clone());
+                env.storage().persistent().set(&market_id, &market);
+                Ok(outcome)
+            }
+            Err(_) if market.has_fallback => {
+                match automatic_oracle_result_unavailable(&env, &market.fallback_oracle_config) {
+                    Ok(outcome) => {
+                        market.oracle_result = Some(outcome.clone());
+                        env.storage().persistent().set(&market_id, &market);
+                        EventEmitter::emit_fallback_used(
+                            &env,
+                            &market_id,
+                            &market.oracle_config.oracle_address,
+                            &market.fallback_oracle_config.oracle_address,
+                        );
+                        Ok(outcome)
+                    }
+                    Err(_) => {
+                        EventEmitter::emit_manual_resolution_required(
+                            &env,
+                            &market_id,
+                            &String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON),
+                        );
+                        Err(Error::FallbackOracleUnavailable)
+                    }
+                }
+            }
+            Err(err) => {
+                EventEmitter::emit_manual_resolution_required(
+                    &env,
+                    &market_id,
+                    &String::from_str(&env, ORACLE_FAILURE_PRIMARY_ONLY_REASON),
+                );
+                Err(err)
+            }
+        }
     }
 
     /// Verifies and fetches event outcome from external oracle sources automatically.
@@ -2964,6 +3142,21 @@ impl PredictifyHybrid {
         crate::event_archive::EventArchive::archive_event(&env, &admin, &market_id)
     }
 
+    /// Remove the oldest `count` archived entries to free capacity (admin only).
+    ///
+    /// Returns the number of entries actually removed. `count` is capped at 30.
+    ///
+    /// # Errors
+    /// * `Unauthorized` - Caller is not admin
+    pub fn prune_archive(env: Env, admin: Address, count: u32) -> Result<u32, Error> {
+        crate::event_archive::EventArchive::prune_archive(&env, &admin, count)
+    }
+
+    /// Return the current number of entries in the event archive.
+    pub fn archive_size(env: Env) -> u32 {
+        crate::event_archive::EventArchive::archive_size(&env)
+    }
+
     /// Query events by creation time range. Returns public metadata only (no votes/stakes).
     /// Paginated: cursor is start index, limit capped at 30. Returns (entries, next_cursor).
     ///
@@ -3493,74 +3686,24 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+        let stored_admin: Address =
+            match env.storage().persistent().get(&Symbol::new(&env, "Admin")) {
+                Some(admin_addr) => admin_addr,
+                None => panic_with_error!(env, Error::AdminNotSet),
+            };
 
         if admin != stored_admin {
             return Err(Error::Unauthorized);
         }
 
-        // Get market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Validate market state - cannot extend resolved, closed, or cancelled markets
-        if market.state == MarketState::Resolved
-            || market.state == MarketState::Closed
-            || market.state == MarketState::Cancelled
-        {
-            return Err(Error::MarketResolved);
-        }
-
-        // Validate extension limit
-        let new_total_extension_days = market.total_extension_days + additional_days;
-        if new_total_extension_days > market.max_extension_days {
-            return Err(Error::InvalidDuration);
-        }
-
-        // Calculate new end time
-        let seconds_per_day: u64 = 24 * 60 * 60;
-        let extension_seconds: u64 = (additional_days as u64) * seconds_per_day;
-        let old_end_time = market.end_time;
-        let new_end_time = old_end_time + extension_seconds;
-
-        // Calculate extension fee (could be configured per market or globally)
-        let extension_fee = 0i128; // No fee for now, but can be configured
-
-        // Create extension record
-        let extension = MarketExtension::new(
+        // Delegate to ExtensionManager for core logic, fee handling, and events
+        crate::extensions::ExtensionManager::extend_market_duration(
             &env,
+            admin,
+            market_id,
             additional_days,
-            admin.clone(),
-            reason.clone(),
-            extension_fee,
-        );
-
-        // Update market
-        market.end_time = new_end_time;
-        market.total_extension_days = new_total_extension_days;
-        market.extension_history.push_back(extension);
-
-        // Save market
-        env.storage().persistent().set(&market_id, &market);
-
-        // Emit extension event
-        EventEmitter::emit_market_deadline_extended(
-            &env,
-            &market_id,
-            old_end_time,
-            new_end_time,
-            additional_days,
-            &admin,
-            &reason,
-            extension_fee,
-        );
+            reason,
+        ).unwrap_or_else(|e| panic_with_error!(env, e));
 
         Ok(())
     }
@@ -3652,7 +3795,7 @@ impl PredictifyHybrid {
 
         // Validate new description
         if new_description.is_empty() {
-            return Err(Error::InvalidQuestion);
+            panic_with_error!(env, Error::InvalidQuestion);
         }
 
         // Get market
@@ -3660,22 +3803,22 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketResolved);
+            panic_with_error!(env, Error::MarketResolved);
         }
 
         // Check if any bets have been placed
         let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
         if bet_stats.total_bets > 0 {
-            return Err(Error::BetsAlreadyPlaced);
+            panic_with_error!(env, Error::BetsAlreadyPlaced);
         }
 
         // Check if any votes have been placed
         if market.total_staked > 0 {
-            return Err(Error::AlreadyVoted);
+            panic_with_error!(env, Error::AlreadyVoted);
         }
 
         // Store old description for event
@@ -3805,13 +3948,13 @@ impl PredictifyHybrid {
 
         // Validate new outcomes
         if new_outcomes.len() < 2 {
-            return Err(Error::InvalidOutcomes);
+            panic_with_error!(env, Error::InvalidOutcomes);
         }
 
         // Check all outcomes are non-empty
         for outcome in new_outcomes.iter() {
             if outcome.is_empty() {
-                return Err(Error::InvalidOutcome);
+                panic_with_error!(env, Error::InvalidOutcome);
             }
         }
 
@@ -3820,22 +3963,22 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketResolved);
+            panic_with_error!(env, Error::MarketResolved);
         }
 
         // Check if any bets have been placed
         let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
         if bet_stats.total_bets > 0 {
-            return Err(Error::BetsAlreadyPlaced);
+            panic_with_error!(env, Error::BetsAlreadyPlaced);
         }
 
         // Check if any votes have been placed
         if market.total_staked > 0 {
-            return Err(Error::AlreadyVoted);
+            panic_with_error!(env, Error::AlreadyVoted);
         }
 
         // Store old outcomes for event
@@ -4409,6 +4552,9 @@ impl PredictifyHybrid {
     /// Refunds full bet amount per user (no fee deduction). Marks market as cancelled and
     /// prevents further resolution. Emits refund events. Idempotent when already cancelled.
     ///
+    /// The timeout gate is evaluated per market from `end_time + resolution_timeout`.
+    /// Non-admin callers cannot trigger this path before that market-specific deadline.
+    ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
@@ -4446,8 +4592,7 @@ impl PredictifyHybrid {
         let stored_admin: Option<Address> =
             env.storage().persistent().get(&Symbol::new(&env, "Admin"));
         let is_admin = stored_admin.as_ref().map_or(false, |a| a == &caller);
-        let timeout_passed = current_time.saturating_sub(market.end_time)
-            >= config::DEFAULT_RESOLUTION_TIMEOUT_SECONDS;
+        let timeout_passed = resolution_timeout_reached(&env, &market);
         if !is_admin && !timeout_passed {
             return Err(Error::Unauthorized);
         }
@@ -4919,7 +5064,7 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &market_id)
+        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &admin, &market_id)
         {
             Ok(res) => res,
             Err(e) => panic_with_error!(env, e),
@@ -4955,7 +5100,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         let result = match crate::recovery::RecoveryManager::partial_refund_mechanism(
-            &env, &market_id, &users,
+            &env, &admin, &market_id, &users,
         ) {
             Ok(total_refunded) => total_refunded,
             Err(e) => panic_with_error!(env, e),
@@ -5230,7 +5375,11 @@ impl PredictifyHybrid {
 
     // ===== ORACLE FALLBACK FUNCTIONS =====
 
-    /// Get oracle data with backup if primary fails
+    /// Get oracle data with backup if primary fails.
+    ///
+    /// The helper always attempts `primary_oracle` first. It attempts `backup_oracle`
+    /// only after a failed primary call, and it aborts before any oracle call once
+    /// `ledger.timestamp() >= end_time + resolution_timeout`.
     ///
     /// # Errors
     ///
@@ -5257,6 +5406,10 @@ impl PredictifyHybrid {
         let current_time = env.ledger().timestamp();
         if current_time < market.end_time {
             return Err(Error::MarketClosed);
+        }
+        if resolution_timeout_reached(&env, &market) {
+            EventEmitter::emit_resolution_timeout(&env, &market_id, current_time);
+            return Err(Error::ResolutionTimeoutReached);
         }
 
         // Try to get price with backup
@@ -5291,9 +5444,9 @@ impl PredictifyHybrid {
             }
             Err(_) => {
                 // Both oracles failed
-                let reason = String::from_str(&env, "All oracles failed");
+                let reason = String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON);
                 events::EventEmitter::emit_manual_resolution_required(&env, &market_id, &reason);
-                Err(Error::OracleUnavailable)
+                Err(Error::FallbackOracleUnavailable)
             }
         }
     }

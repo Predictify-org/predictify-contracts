@@ -18,6 +18,15 @@ impl OracleBackup {
     }
 
     // Get price, try backup if primary fails
+    /// Retrieves the price from the primary oracle, falling back to the backup if necessary.
+    ///
+    /// Emits degradation events for both primary and backup failures to ensure
+    /// operators have complete visibility into the oracle health lifecycle.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `oracle_address` - The contract address of the oracle
+    /// * `feed_id` - The asset feed identifier
     pub fn get_price(
         &self,
         env: &Env,
@@ -32,8 +41,14 @@ impl OracleBackup {
         // Primary failed, notify and try backup
         let msg = String::from_str(env, "Primary oracle failed");
         EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
-
-        self.call_oracle(env, &self.backup, oracle_address, feed_id)
+        
+        // capture backup result to ensure we don't fial silently if the fallback drops
+       let backup_result = self.call_oracle(env, &self.backup, oracle_address, feed_id);
+       if backup_result.is_err(){
+        let backup_msg = String::from_str(env, "Backup oracle failed");
+        EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
+       }
+       backup_result
     }
 
     // Call a single oracle
@@ -56,10 +71,25 @@ impl OracleBackup {
     }
 
     // Is oracle working?
-    pub fn is_working(&self, env: &Env, oracle_address: &Address) -> bool {
+    /// Checks if the primary oracle is currently operational.
+    ///
+    /// Rather than failing silently, this queries the oracle and emits an
+    /// `OracleDegradationEvent` if the health check fails, providing operators
+    /// with an immediate on-chain signal.
+    ///
+    /// # Returns
+    /// * `Ok(true)` if the oracle responds successfully
+    /// * `Err(Error)` if the oracle is unreachable or fails, surfacing the exact error
+    pub fn is_working(&self, env: &Env, oracle_address: &Address) -> Result<bool, Error> {
         let test_feed = String::from_str(env, "BTC/USD");
-        self.call_oracle(env, &self.primary, oracle_address, &test_feed)
-            .is_ok()
+        match self.call_oracle(env, &self.primary, oracle_address, &test_feed){
+            Ok(_) => Ok(true),
+            Err(e) => {
+                let msg = String::from_str(env, "Oracle health check failed during is_working query");
+                EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
+                Err(e)
+            }
+        }
     }
 }
 
@@ -108,7 +138,9 @@ pub fn monitor_oracle_health(
     oracle_address: &Address,
 ) -> OracleHealth {
     let backup = OracleBackup::new(oracle.clone(), oracle);
-    if backup.is_working(env, oracle_address) {
+
+    //Check if the result is Ok(true), otherwise default to broken
+    if backup.is_working(env, oracle_address).unwrap_or(false) {
         OracleHealth::Working
     } else {
         OracleHealth::Broken
@@ -154,6 +186,7 @@ pub struct PartialData {
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::Events;
     use soroban_sdk::Env;
 
     #[test]
@@ -166,12 +199,18 @@ mod tests {
     #[test]
     fn can_check_health() {
         let env = Env::default();
+        //1. register the contract so we have a context
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let addr = Address::generate(&env);
+
+        //2. wrap the execution in the contract context
+        env.as_contract(&contract_id, || {
         let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
         assert!(matches!(
             health,
             OracleHealth::Working | OracleHealth::Broken
         ));
+    });
     }
 
     #[test]
@@ -191,5 +230,25 @@ mod tests {
         };
         let result = partial_resolution_mechanism(&env, market, data);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_is_working_propagates_error_and_emits_event() {
+        let env = Env::default();
+        // 1. Register the contract
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        
+        let backup = OracleBackup::new(OracleProvider::pyth(), OracleProvider::dia());
+        let oracle_address = Address::generate(&env);
+        
+        // 2. Wrap the execution in the contract context
+        env.as_contract(&contract_id, || {
+            let result = backup.is_working(&env, &oracle_address);
+            assert!(result.is_err()); // No longer fails silently
+        });
+        
+        // 3. Verify event emission
+        let events = env.events().all();
+        assert!(events.events().len() > 0, "Expected oracle degradation event to be emitted");
     }
 }

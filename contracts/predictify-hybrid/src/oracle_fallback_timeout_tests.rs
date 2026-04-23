@@ -1,169 +1,266 @@
-#![cfg(test)]
+use crate::errors::Error;
+use crate::events::{
+    FallbackUsedEvent, ManualResolutionRequiredEvent, RefundOnOracleFailureEvent,
+    ResolutionTimeoutEvent,
+};
+use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
+use crate::{PredictifyHybrid, PredictifyHybridClient};
+use soroban_sdk::testutils::{Address as _, Events, Ledger};
+use soroban_sdk::{symbol_short, vec, Address, Env, String, Symbol, TryFromVal, TryIntoVal};
 
-extern crate alloc;
-use alloc::string::String;
-use alloc::vec;
+struct TestSetup {
+    env: Env,
+    contract_id: Address,
+    admin: Address,
+    token_id: Address,
+}
 
-// Oracle Fallback and Resolution Timeout Tests
+impl TestSetup {
+    fn new() -> Self {
+        let env = Env::default();
+        env.mock_all_auths();
 
-// ===== BASIC ORACLE TESTS =====
+        let admin = Address::generate(&env);
+        let contract_id = env.register(PredictifyHybrid, ());
 
-#[test]
-fn test_oracle_basic_1() {
-    assert!(true);
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_id = token_contract.address();
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_id);
+        });
+
+        let client = PredictifyHybridClient::new(&env, &contract_id);
+        client.initialize(&admin, &None);
+        env.as_contract(&contract_id, || {
+            crate::circuit_breaker::CircuitBreaker::initialize(&env)
+                .expect("circuit breaker should initialize in tests");
+        });
+
+        Self {
+            env,
+            contract_id,
+            admin,
+            token_id,
+        }
+    }
+
+    fn client(&self) -> PredictifyHybridClient<'_> {
+        PredictifyHybridClient::new(&self.env, &self.contract_id)
+    }
+
+    fn create_user(&self) -> Address {
+        let user = Address::generate(&self.env);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&self.env, &self.token_id);
+        self.env.mock_all_auths();
+        stellar_client.mint(&user, &10_000_000_000);
+        user
+    }
+
+    fn create_market(&self, has_fallback: bool, resolution_timeout: u64) -> Symbol {
+        let outcomes = vec![
+            &self.env,
+            String::from_str(&self.env, "yes"),
+            String::from_str(&self.env, "no"),
+        ];
+        let primary = OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::generate(&self.env),
+            String::from_str(&self.env, "BTC/USD"),
+            50_000_00,
+            String::from_str(&self.env, "gt"),
+        );
+        let fallback = has_fallback.then(|| {
+            OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::generate(&self.env),
+                String::from_str(&self.env, "ETH/USD"),
+                50_000_00,
+                String::from_str(&self.env, "gt"),
+            )
+        });
+
+        self.env.mock_all_auths();
+        self.client().create_market(
+            &self.admin,
+            &String::from_str(&self.env, "Will BTC close above $50k?"),
+            &outcomes,
+            &1u32,
+            &primary,
+            &fallback,
+            &resolution_timeout,
+        )
+    }
+
+    fn get_market(&self, market_id: &Symbol) -> Market {
+        self.client().get_market(market_id).unwrap()
+    }
+
+    fn advance_to(&self, timestamp: u64) {
+        self.env.ledger().with_mut(|li| {
+            li.timestamp = timestamp;
+        });
+    }
+}
+
+fn find_published_event<T>(env: &Env, topic: Symbol) -> Option<T>
+where
+    T: Clone + TryFromVal<Env, soroban_sdk::xdr::ScVal>,
+{
+    let events = env.events().all();
+    events.events().iter().rev().find_map(|event| {
+        let body = match &event.body {
+            soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+        };
+        let first_topic_scval = body.topics.get(0)?;
+        let first_topic: Symbol = first_topic_scval.clone().try_into_val(env).ok()?;
+        if first_topic != topic {
+            return None;
+        }
+        T::try_from_val(env, &body.data).ok()
+    })
 }
 
 #[test]
-fn test_oracle_basic_2() {
-    assert_eq!(1, 1);
+fn fetch_oracle_result_without_fallback_reports_primary_only_failure() {
+    let setup = TestSetup::new();
+    let market_id = setup.create_market(false, 3_600);
+    let market = setup.get_market(&market_id);
+
+    setup.advance_to(market.end_time + 1);
+
+    let result = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::fetch_oracle_result(
+            setup.env.clone(),
+            market_id.clone(),
+            market.oracle_config.oracle_address.clone(),
+        )
+    });
+    assert_eq!(result, Err(Error::OracleUnavailable));
+
+    let manual =
+        find_published_event::<ManualResolutionRequiredEvent>(&setup.env, symbol_short!("man_res"))
+            .expect("manual resolution event should be published");
+    assert_eq!(manual.market_id, market_id);
+    assert_eq!(
+        manual.reason,
+        String::from_str(&setup.env, "oracle_resolution_failed_primary_only")
+    );
 }
 
 #[test]
-fn test_oracle_basic_3() {
-    assert_ne!(1, 2);
+fn fetch_oracle_result_with_fallback_reports_primary_then_fallback_failure() {
+    let setup = TestSetup::new();
+    let market_id = setup.create_market(true, 3_600);
+    let market = setup.get_market(&market_id);
+
+    setup.advance_to(market.end_time + 1);
+
+    let result = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::fetch_oracle_result(
+            setup.env.clone(),
+            market_id.clone(),
+            market.oracle_config.oracle_address.clone(),
+        )
+    });
+    assert_eq!(result, Err(Error::FallbackOracleUnavailable));
+
+    let manual =
+        find_published_event::<ManualResolutionRequiredEvent>(&setup.env, symbol_short!("man_res"))
+            .expect("manual resolution event should be published");
+    assert_eq!(manual.market_id, market_id);
+    assert_eq!(
+        manual.reason,
+        String::from_str(&setup.env, "oracle_resolution_failed_primary_then_fallback",)
+    );
+
+    assert!(
+        find_published_event::<FallbackUsedEvent>(&setup.env, symbol_short!("fbk_used")).is_none(),
+        "fallback-used event should only be emitted after a successful fallback result"
+    );
 }
 
 #[test]
-fn test_oracle_basic_4() {
-    let x = 42;
-    assert_eq!(x, 42);
+fn fetch_oracle_result_stops_at_market_resolution_deadline() {
+    let setup = TestSetup::new();
+    let market_id = setup.create_market(true, 3_600);
+    let market = setup.get_market(&market_id);
+    let deadline = market.end_time + market.resolution_timeout;
+
+    setup.advance_to(deadline);
+
+    let result = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::fetch_oracle_result(
+            setup.env.clone(),
+            market_id.clone(),
+            market.oracle_config.oracle_address.clone(),
+        )
+    });
+    assert_eq!(result, Err(Error::ResolutionTimeoutReached));
+
+    let timeout_event =
+        find_published_event::<ResolutionTimeoutEvent>(&setup.env, symbol_short!("res_tmo"))
+            .expect("resolution-timeout event should be published");
+    assert_eq!(timeout_event.market_id, market_id);
+    assert_eq!(timeout_event.timeout_timestamp, deadline);
 }
 
+/// Disputes filed within the window must be accepted.
 #[test]
-fn test_oracle_basic_5() {
-    let s = "test";
-    assert_eq!(s, "test");
-}
+fn refund_on_oracle_failure_uses_market_specific_timeout_for_non_admins() {
+    let setup = TestSetup::new();
+    let resolution_timeout = 3_600u64;
+    let market_id = setup.create_market(false, resolution_timeout);
+    let user = setup.create_user();
+    let caller = setup.create_user();
 
-#[test]
-fn test_oracle_basic_6() {
-    let v = vec![1, 2, 3];
-    assert_eq!(v.len(), 3);
-}
+    setup.env.mock_all_auths();
+    setup.client().place_bet(
+        &user,
+        &market_id,
+        &String::from_str(&setup.env, "yes"),
+        &10_000_000i128,
+    );
 
-#[test]
-fn test_oracle_basic_7() {
-    let result = 2 + 2;
-    assert_eq!(result, 4);
-}
+    let market = setup.get_market(&market_id);
+    setup.advance_to(market.end_time + resolution_timeout - 1);
 
-#[test]
-fn test_oracle_basic_8() {
-    let flag = true;
-    assert!(flag);
-}
+    let early = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::refund_on_oracle_failure(
+            setup.env.clone(),
+            caller.clone(),
+            market_id.clone(),
+        )
+    });
+    assert_eq!(early, Err(Error::Unauthorized));
 
-#[test]
-fn test_oracle_basic_9() {
-    let option = Some(42);
-    assert!(option.is_some());
-}
+    let deadline = market.end_time + resolution_timeout;
+    setup.advance_to(deadline);
+    setup.env.mock_all_auths();
+    let refunded = setup.env.as_contract(&setup.contract_id, || {
+        PredictifyHybrid::refund_on_oracle_failure(
+            setup.env.clone(),
+            caller.clone(),
+            market_id.clone(),
+        )
+    });
+    assert_eq!(refunded, Ok(10_000_000i128));
 
-#[test]
-fn test_oracle_basic_10() {
-    let result: Result<i32, &str> = Ok(42);
-    assert!(result.is_ok());
-}
+    let cancelled_market = setup.get_market(&market_id);
+    assert_eq!(cancelled_market.state, MarketState::Cancelled);
 
-#[test]
-fn test_oracle_basic_11() {
-    let tuple = (1, 2);
-    assert_eq!(tuple.0, 1);
-}
-
-#[test]
-fn test_oracle_basic_12() {
-    let array = [1, 2, 3];
-    assert_eq!(array[0], 1);
-}
-
-#[test]
-fn test_oracle_basic_13() {
-    let string = String::from("test");
-    assert_eq!(string, "test");
-}
-
-#[test]
-fn test_oracle_basic_14() {
-    let number = 100i128;
-    assert_eq!(number, 100);
-}
-
-#[test]
-fn test_oracle_basic_15() {
-    let boolean = false;
-    assert!(!boolean);
-}
-
-#[test]
-fn test_oracle_basic_16() {
-    let mut counter = 0;
-    counter += 1;
-    assert_eq!(counter, 1);
-}
-
-#[test]
-fn test_oracle_basic_17() {
-    let slice = &[1, 2, 3][..];
-    assert_eq!(slice.len(), 3);
-}
-
-#[test]
-fn test_oracle_basic_18() {
-    let reference = &42;
-    assert_eq!(*reference, 42);
-}
-
-#[test]
-fn test_oracle_basic_19() {
-    let closure = || 42;
-    assert_eq!(closure(), 42);
-}
-
-#[test]
-fn test_oracle_basic_20() {
-    let range = 0..3;
-    assert_eq!(range.len(), 3);
-}
-
-#[test]
-fn test_oracle_basic_21() {
-    let option = None::<i32>;
-    assert!(option.is_none());
-}
-
-#[test]
-fn test_oracle_basic_22() {
-    let result: Result<i32, &str> = Err("error");
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_oracle_basic_23() {
-    let bytes = b"hello";
-    assert_eq!(bytes.len(), 5);
-}
-
-#[test]
-fn test_oracle_basic_24() {
-    let character = 'a';
-    assert_eq!(character, 'a');
-}
-
-#[test]
-fn test_oracle_basic_25() {
-    let float = 3.14f64;
-    assert!(float > 3.0);
-}
-
-#[test]
-fn test_oracle_basic_26() {
-    let hex = 0xFF;
-    assert_eq!(hex, 255);
-}
-
-#[test]
-fn test_oracle_basic_27() {
-    let binary = 0b1010;
-    assert_eq!(binary, 10);
+    let refund_event: RefundOnOracleFailureEvent =
+        setup.env.as_contract(&setup.contract_id, || {
+            setup
+                .env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("ref_oracl"))
+                .expect("refund event should be stored")
+        });
+    assert_eq!(refund_event.market_id, market_id);
+    assert_eq!(refund_event.total_refunded, 10_000_000i128);
 }

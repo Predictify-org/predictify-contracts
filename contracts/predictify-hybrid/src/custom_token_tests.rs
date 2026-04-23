@@ -379,3 +379,44 @@ fn test_fee_collection_custom_token() {
     let admin_balance_after = token_client.balance(&setup.admin);
     assert_eq!(admin_balance_after, fee_amount);
 }
+
+#[test]
+fn test_deposit_and_withdraw_custom_token() {
+    let setup = CustomTokenTestSetup::new();
+    let client = setup.client();
+    let token_admin_client = setup.token_admin_client();
+    let token_client = setup.token_client();
+    
+    let user = Address::generate(&setup.env);
+    let amount = 50_000_000;
+
+    // Mint tokens
+    token_admin_client.mint(&user, &amount);
+
+    // Deposit tokens
+    client.deposit(
+        &user,
+        &crate::types::ReflectorAsset::Stellar, // The setup configures Stellar as the current token
+        &amount,
+    );
+
+    // Verify balances
+    assert_eq!(token_client.balance(&user), 0);
+    assert_eq!(token_client.balance(&setup.contract_id), amount);
+    let internal_balance = client.get_balance(&user, &crate::types::ReflectorAsset::Stellar);
+    assert_eq!(internal_balance.amount, amount);
+
+    // Withdraw tokens
+    client.withdraw(
+        &user,
+        &crate::types::ReflectorAsset::Stellar,
+        &amount,
+    );
+
+    // Verify balances after withdrawal
+    assert_eq!(token_client.balance(&user), amount);
+    assert_eq!(token_client.balance(&setup.contract_id), 0);
+    let internal_balance_after = client.get_balance(&user, &crate::types::ReflectorAsset::Stellar);
+    assert_eq!(internal_balance_after.amount, 0);
+}
+

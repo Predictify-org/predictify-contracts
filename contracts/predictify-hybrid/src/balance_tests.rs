@@ -174,3 +174,43 @@ fn test_withdrawal_exact_balance() {
     let b = client.get_balance(user, &ReflectorAsset::Stellar);
     assert_eq!(b.amount, 0);
 }
+
+#[test]
+fn test_large_deposit_amount() {
+    let test = PredictifyTest::setup();
+    let env = &test.env;
+    let user = &test.user;
+    let contract_address = &test.contract_id;
+    let client = crate::PredictifyHybridClient::new(env, contract_address);
+
+    env.mock_all_auths();
+
+    // Try to deposit more than i128::MAX / 2
+    let large_amount = (i128::MAX / 2) + 1;
+    let result = client.try_deposit(user, &ReflectorAsset::Stellar, &large_amount);
+    
+    // This should fail due to my new check
+    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+}
+
+#[test]
+fn test_deposit_and_withdraw_full_balance() {
+    let test = PredictifyTest::setup();
+    let env = &test.env;
+    let user = &test.user;
+    let contract_address = &test.contract_id;
+    let client = crate::PredictifyHybridClient::new(env, contract_address);
+
+    env.mock_all_auths();
+
+    let amount = 1000_0000000;
+    client.deposit(user, &ReflectorAsset::Stellar, &amount);
+    
+    let b1 = client.get_balance(user, &ReflectorAsset::Stellar);
+    assert_eq!(b1.amount, amount);
+
+    client.withdraw(user, &ReflectorAsset::Stellar, &amount);
+    let b2 = client.get_balance(user, &ReflectorAsset::Stellar);
+    assert_eq!(b2.amount, 0);
+}
+

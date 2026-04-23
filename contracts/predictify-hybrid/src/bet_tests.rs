@@ -974,3 +974,102 @@ fn test_set_global_bet_limits_above_absolute_max_rejects() {
     client.set_global_bet_limits(&setup.admin, &MIN_BET_AMOUNT, &(MAX_BET_AMOUNT + 1));
 }
 */
+
+#[test]
+fn test_try_place_bet_rejected_at_explicit_bet_deadline() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+
+    let market = client.get_market(&setup.market_id).unwrap();
+    setup.env.as_contract(&setup.contract_id, || {
+        let mut updated = setup
+            .env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&setup.market_id)
+            .unwrap();
+        updated.bet_deadline = market.end_time - 10;
+        setup
+            .env
+            .storage()
+            .persistent()
+            .set(&setup.market_id, &updated);
+    });
+
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time - 10,
+        protocol_version: 22,
+        sequence_number: setup.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    let result = client.try_place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &MIN_BET_AMOUNT,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_try_place_bet_rejected_when_market_metadata_deadline_invalid() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+
+    setup.env.as_contract(&setup.contract_id, || {
+        let mut updated = setup
+            .env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&setup.market_id)
+            .unwrap();
+        updated.bet_deadline = updated.end_time + 1;
+        setup
+            .env
+            .storage()
+            .persistent()
+            .set(&setup.market_id, &updated);
+    });
+
+    let result = client.try_place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &MIN_BET_AMOUNT,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_try_place_bet_rejected_when_market_metadata_min_pool_invalid() {
+    let setup = BetTestSetup::new();
+    let client = setup.client();
+
+    setup.env.as_contract(&setup.contract_id, || {
+        let mut updated = setup
+            .env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&setup.market_id)
+            .unwrap();
+        updated.min_pool_size = Some(-1);
+        setup
+            .env
+            .storage()
+            .persistent()
+            .set(&setup.market_id, &updated);
+    });
+
+    let result = client.try_place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &MIN_BET_AMOUNT,
+    );
+    assert!(result.is_err());
+}
