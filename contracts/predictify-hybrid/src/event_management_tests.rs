@@ -1,3 +1,4 @@
+use crate::circuit_breaker::CircuitBreaker;
 use crate::errors::Error;
 use crate::events::{BetStatusUpdatedEvent, MarketResolvedEvent};
 use crate::types::{OracleConfig, OracleProvider};
@@ -28,16 +29,23 @@ impl TestSetup {
         let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
         let token_id = token_contract.address();
 
-        // Store TokenID in contract
+        // Store TokenID in contract and initialize circuit breaker
         env.as_contract(&contract_id, || {
             env.storage()
                 .persistent()
                 .set(&Symbol::new(&env, "TokenID"), &token_id);
+            // Circuit breaker must be initialized before any write operations
+            crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
         });
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
         client.initialize(&admin, &None);
+
+        // Initialize circuit breaker (required for create_market and other write operations)
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+        });
 
         Self {
             env,
@@ -226,6 +234,54 @@ fn test_extend_deadline_exceeds_maximum() {
         &market_id,
         &31u32,
         &String::from_str(&setup.env, "Too long"),
+    );
+
+    assert_eq!(result, Err(Ok(Error::InvalidDuration)));
+}
+
+#[test]
+fn test_extend_deadline_zero_days() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes, 30);
+
+    // Try to extend by 0 days
+    let result = client.try_extend_deadline(
+        &setup.admin,
+        &market_id,
+        &0u32,
+        &String::from_str(&setup.env, "Zero days"),
+    );
+
+    assert_eq!(result, Err(Ok(Error::InvalidDuration)));
+}
+
+#[test]
+fn test_extend_deadline_overflow_bypass() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes, 30);
+
+    // Try to extend by u32::MAX days (should fail due to overflow check instead of bypassing limits)
+    let result = client.try_extend_deadline(
+        &setup.admin,
+        &market_id,
+        &u32::MAX,
+        &String::from_str(&setup.env, "Overflow extension"),
     );
 
     assert_eq!(result, Err(Ok(Error::InvalidDuration)));
@@ -772,4 +828,220 @@ fn test_event_contract_paused_unpaused_published() {
         .find(|e| e.1.get(0).unwrap() == Symbol::new(&setup.env, "ctr_unp"))
         .expect("Unpause event not found");
     assert_eq!(unpause_event.1.get(1).unwrap(), setup.admin);
+}
+
+// ===== EVENT ARCHIVE BOUNDS TESTS =====
+
+#[test]
+fn test_archive_size_starts_at_zero() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    assert_eq!(client.archive_size(), 0);
+}
+
+#[test]
+fn test_archive_event_success() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let market_id = setup.create_market("Will it resolve?", outcomes, 1);
+
+    // Advance past end time and resolve
+    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    client.resolve_market_manual(
+        &setup.admin,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+    );
+
+    let result = client.try_archive_event(&setup.admin, &market_id);
+    assert!(result.is_ok());
+    assert_eq!(client.archive_size(), 1);
+}
+
+#[test]
+fn test_archive_event_already_archived_returns_error() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let market_id = setup.create_market("Double archive?", outcomes, 1);
+
+    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    client.resolve_market_manual(
+        &setup.admin,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+    );
+
+    client.archive_event(&setup.admin, &market_id);
+    // Second archive attempt must fail
+    let result = client.try_archive_event(&setup.admin, &market_id);
+    assert_eq!(result, Err(Ok(crate::errors::Error::AlreadyClaimed)));
+}
+
+#[test]
+fn test_archive_active_market_returns_invalid_state() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let market_id = setup.create_market("Still active?", outcomes, 30);
+
+    // Market is Active — must not be archivable
+    let result = client.try_archive_event(&setup.admin, &market_id);
+    assert_eq!(result, Err(Ok(crate::errors::Error::InvalidState)));
+}
+
+#[test]
+fn test_archive_nonexistent_market_returns_not_found() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let fake_id = Symbol::new(&setup.env, "ghost");
+    let result = client.try_archive_event(&setup.admin, &fake_id);
+    assert_eq!(result, Err(Ok(crate::errors::Error::MarketNotFound)));
+}
+
+#[test]
+fn test_archive_unauthorized_returns_error() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let non_admin = setup.create_user();
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let market_id = setup.create_market("Auth check?", outcomes, 1);
+
+    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    client.resolve_market_manual(
+        &setup.admin,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+    );
+
+    let result = client.try_archive_event(&non_admin, &market_id);
+    assert_eq!(result, Err(Ok(crate::errors::Error::Unauthorized)));
+}
+
+#[test]
+fn test_prune_archive_removes_oldest_entries() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    // Create and archive two markets
+    for question in ["First market?", "Second market?"] {
+        let outcomes = vec![
+            &setup.env,
+            String::from_str(&setup.env, "Yes"),
+            String::from_str(&setup.env, "No"),
+        ];
+        let market_id = setup.create_market(question, outcomes, 1);
+        setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+        client.resolve_market_manual(
+            &setup.admin,
+            &market_id,
+            &String::from_str(&setup.env, "Yes"),
+        );
+        client.archive_event(&setup.admin, &market_id);
+    }
+
+    assert_eq!(client.archive_size(), 2);
+
+    let removed = client.prune_archive(&setup.admin, &1u32);
+    assert_eq!(removed, 1);
+    assert_eq!(client.archive_size(), 1);
+}
+
+#[test]
+fn test_prune_archive_count_zero_removes_nothing() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let market_id = setup.create_market("Prune zero?", outcomes, 1);
+    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    client.resolve_market_manual(
+        &setup.admin,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+    );
+    client.archive_event(&setup.admin, &market_id);
+
+    let removed = client.prune_archive(&setup.admin, &0u32);
+    assert_eq!(removed, 0);
+    assert_eq!(client.archive_size(), 1);
+}
+
+#[test]
+fn test_prune_archive_empty_archive_returns_zero() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let removed = client.prune_archive(&setup.admin, &5u32);
+    assert_eq!(removed, 0);
+    assert_eq!(client.archive_size(), 0);
+}
+
+#[test]
+fn test_prune_archive_unauthorized_returns_error() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+    let non_admin = setup.create_user();
+
+    let result = client.try_prune_archive(&non_admin, &5u32);
+    assert_eq!(result, Err(Ok(crate::errors::Error::Unauthorized)));
+}
+
+#[test]
+fn test_max_query_limit_is_enforced() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    // Requesting more than MAX_QUERY_LIMIT should still return at most MAX_QUERY_LIMIT entries.
+    // With an empty registry the result is empty, but the cursor must not advance past 0.
+    let (entries, next_cursor) =
+        client.query_events_history(&0u64, &u64::MAX, &0u32, &1000u32);
+    assert_eq!(entries.len(), 0);
+    assert_eq!(next_cursor, 0);
+}
+
+#[test]
+fn test_archive_cancelled_market_succeeds() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+    let market_id = setup.create_market("Cancel me?", outcomes, 1);
+
+    // Cancel the market
+    client.cancel_event(&setup.admin, &market_id, &None);
+
+    let result = client.try_archive_event(&setup.admin, &market_id);
+    assert!(result.is_ok());
+    assert_eq!(client.archive_size(), 1);
 }
