@@ -2433,11 +2433,10 @@ impl OracleValidator {
 
     /// Validate oracle provider
     pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), ValidationError> {
-        match provider {
-            OracleProvider::BandProtocol => Ok(()),
-            OracleProvider::DIA => Ok(()),
-            OracleProvider::Reflector => Ok(()),
-            OracleProvider::Pyth => Ok(()),
+        if provider.is_supported() {
+            Ok(())
+        } else {
+            Err(ValidationError::InvalidOracle)
         }
     }
 
@@ -4649,9 +4648,19 @@ impl OracleConfigValidator {
             return Err(ValidationError::InvalidOracle);
         }
 
+        let feed_id_len = feed_id.len();
+
+        // Reject impossible combinations first
+        if provider.is_reflector() && feed_id_len >= 64 {
+            return Err(ValidationError::InvalidOracle);
+        }
+        if provider.is_pyth() && (feed_id_len < 64 || feed_id_len > 66) {
+            return Err(ValidationError::InvalidOracle);
+        }
+
         if provider.is_supported() {
             // Reflector feed ID validation
-            if feed_id.len() < 3 || feed_id.len() > 20 {
+            if feed_id_len < 3 || feed_id_len > 20 {
                 return Err(ValidationError::InvalidOracle);
             }
             Ok(())
@@ -4801,14 +4810,9 @@ impl OracleConfigValidator {
     /// - ❌ No Stellar integration
     /// - ❌ Multi-chain but no Stellar
     pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), ValidationError> {
-        if provider.is_reflector() {
-            // Reflector is fully supported on Stellar
+        if provider.is_supported() {
             Ok(())
-        } else if provider.is_pyth() {
-            // Pyth is placeholder for future Stellar support
-            Err(ValidationError::InvalidOracle)
         } else {
-            // Not supported on Stellar network
             Err(ValidationError::InvalidOracle)
         }
     }

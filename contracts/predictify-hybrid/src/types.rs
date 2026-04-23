@@ -798,6 +798,27 @@ impl OracleConfig {
             return Err(crate::Error::InvalidComparison);
         }
 
+        // Reject impossible combinations per provider
+        let provider_str = self.provider.as_str();
+        let feed_id_len = self.feed_id.len();
+
+        if provider_str == "reflector" {
+            // Reflector uses short asset symbols like "BTC/USD" or "XLM"
+            // Hex strings of 64+ chars are Pyth feeds and impossible for Reflector
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "pyth" {
+            // Pyth uses 64-char hex strings (sometimes 66 with 0x)
+            if feed_id_len < 64 || feed_id_len > 66 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "band_protocol" || provider_str == "dia" {
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        }
+
         // Validate provider is supported using new validation method
         self.provider.validate_for_market(env)?;
 
