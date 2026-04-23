@@ -238,6 +238,12 @@ impl PredictifyHybrid {
             Err(e) => panic_with_error!(env, e),
         }
 
+        // Initialize circuit breaker
+        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
