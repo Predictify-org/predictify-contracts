@@ -1344,11 +1344,23 @@ impl MarketResolutionManager {
         );
 
         // For resolution record, use first outcome (or comma-separated for display)
-        let final_result = if winning_outcomes.len() > 0 {
-            winning_outcomes.get(0).unwrap().clone()
-        } else {
-            oracle_result.clone() // Fallback
-        };
+       let final_result = if winning_outcomes.len() > 0 {
+    if winning_outcomes.len() == 1 {
+        winning_outcomes.get(0).unwrap().clone()
+    } else {
+        // Represent ties clearly for logs/UI
+        let mut combined = String::from_str(env, "");
+        for (i, outcome) in winning_outcomes.iter().enumerate() {
+            if i > 0 {
+                combined = combined + String::from_str(env, ",");
+            }
+            combined = combined + outcome.clone();
+        }
+        combined
+    }
+} else {
+    oracle_result.clone()
+};
 
         // Determine resolution method
         let resolution_method = MarketResolutionAnalytics::determine_resolution_method(

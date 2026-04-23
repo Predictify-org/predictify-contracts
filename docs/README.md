@@ -31,7 +31,7 @@ Comprehensive security documentation and guidelines:
 
 Complete gas optimization and cost analysis:
 
-- **[Gas Benchmarking](./gas/GAS_BENCHMARKING.md)** - Performance benchmarks and metrics
+- **[Gas Benchmarking](./gas/GAS_BENCHMARKING.md)** - Performance benchmarks, metrics, and threshold constants for critical-path functions (see the [Performance Threshold Constants](./gas/GAS_BENCHMARKING.md#performance-threshold-constants) section)
 - **[Gas Case Studies](./gas/GAS_CASE_STUDIES.md)** - Real-world gas optimization examples
 - **[Gas Cost Analysis](./gas/GAS_COST_ANALYSIS.md)** - Detailed cost breakdown and analysis
 - **[Gas Monitoring](./gas/GAS_MONITORING.md)** - Tools and techniques for monitoring gas usage
@@ -43,7 +43,7 @@ Complete gas optimization and cost analysis:
 
 Operational procedures and incident management:
 
-- **[Incident Response](./operations/INCIDENT_RESPONSE.md)** - Incident response procedures and protocols
+- **[Incident Response & Oracle Monitoring](./operations/INCIDENT_RESPONSE.md)** - Incident response procedures, security protocols and specific runbooks for oracle health degradation.
 
 ### 📋 [Contract Documentation](./contracts/)
 
@@ -52,7 +52,7 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 - **[Types System](./contracts/TYPES_SYSTEM.md)** - Comprehensive type system and data structures
 - **[Voting System](./contracts/VOTING_SYSTEM.md)** - Voting mechanism and dispute resolution
 - **[Balance Management](./contracts/BALANCES.md)** - Security invariants and token safety semantics for deposits and withdrawals
-- **[Oracle Resolution](./contracts/ORACLE_RESOLUTION.md)** - Deterministic primary/fallback ordering, timeout rules, and failure semantics for hybrid market resolution
+- **[Initialization](./contracts/INITIALIZATION.md)** - Contract initialization process and security features
 
 
 ### 💰 [Claims Documentation](./claims/)
@@ -67,7 +67,7 @@ Claim idempotency and payout tracking:
 3. **For Contract Contributors**: Review [Contract Documentation](./contracts/)
 4. **For Security Auditors**: Review [Security Documentation](./security/)
 5. **For Gas Optimization**: Check [Gas Optimization](./gas/GAS_OPTIMIZATION.md)
-6. **For Operations**: Read [Incident Response](./operations/INCIDENT_RESPONSE.md)
+6. **For Operations**: Read [Incident Response & Oracle Monitoring](./operations/INCIDENT_RESPONSE.md)
 
 ## 📊 Dashboard Statistics Queries
 
@@ -109,5 +109,5 @@ When adding new documentation:
 
 ---
 
-*Last updated: 2026-03-30*
+*Last updated: 2026-04-23*
 *For questions or suggestions about documentation, please open an issue in the repository.*

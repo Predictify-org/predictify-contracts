@@ -3,6 +3,7 @@
 use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use crate::Error;
 
 // ===== MARKET STATE =====
 
@@ -774,35 +775,54 @@ impl OracleConfig {
 
 impl OracleConfig {
     /// Validate the oracle configuration
-    pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
-        if self.is_none_sentinel() || self.feed_id.is_empty() {
-            return Err(crate::Error::InvalidOracleConfig);
-        }
+pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+    // Reject empty/sentinel config
+    if self.is_none_sentinel() || self.feed_id.is_empty() {
+        return Err(crate::Error::InvalidOracleConfig);
+    }
 
-        // Validate feed ID length
-        crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
+    crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
+    crate::metadata_limits::validate_comparison_length(&self.comparison)?;
 
-        // Validate comparison length
-        crate::metadata_limits::validate_comparison_length(&self.comparison)?;
+    // Threshold must be positive
+    if self.threshold <= 0 {
+        return Err(crate::Error::InvalidThreshold);
+    }
 
-        // Validate threshold
-        if self.threshold <= 0 {
-            return Err(crate::Error::InvalidThreshold);
-        }
+    // Only allow gt / lt / eq
+    if self.comparison != String::from_str(env, "gt")
+        && self.comparison != String::from_str(env, "lt")
+        && self.comparison != String::from_str(env, "eq")
+    {
+        return Err(crate::Error::InvalidComparison);
+    }
 
-        // Validate comparison operator
-        if self.comparison != String::from_str(env, "gt")
-            && self.comparison != String::from_str(env, "lt")
-            && self.comparison != String::from_str(env, "eq")
-        {
-            return Err(crate::Error::InvalidComparison);
+        // Reject impossible combinations per provider
+        let provider_str = self.provider.as_str();
+        let feed_id_len = self.feed_id.len();
+
+        if provider_str == "reflector" {
+            // Reflector uses short asset symbols like "BTC/USD" or "XLM"
+            // Hex strings of 64+ chars are Pyth feeds and impossible for Reflector
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "pyth" {
+            // Pyth uses 64-char hex strings (sometimes 66 with 0x)
+            if feed_id_len < 64 || feed_id_len > 66 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "band_protocol" || provider_str == "dia" {
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
         }
 
         // Validate provider is supported using new validation method
         self.provider.validate_for_market(env)?;
 
-        Ok(())
-    }
+    Ok(())
+}
 }
 
 // ===== MARKET TYPES =====
@@ -1496,17 +1516,23 @@ impl Market {
         // Validate each outcome length
         crate::metadata_limits::validate_outcomes_length(&self.outcomes)?;
 
-        // Validate oracle config
-        self.oracle_config.validate(env)?;
-        if self.has_fallback {
-            self.fallback_oracle_config.validate(env)?;
-        }
+       // Validate primary oracle config
+// Validate primary oracle config
+self.oracle_config.validate(env)?;
 
-        // Validate end time
-        if self.end_time <= env.ledger().timestamp() {
-            return Err(crate::Error::InvalidDuration);
-        }
+// FIX: only validate fallback if it's actually provided (not sentinel)
+if self.has_fallback && !self.fallback_oracle_config.is_none_sentinel() {
+    if self.fallback_oracle_config.feed_id.is_empty() {
+        return Err(crate::Error::InvalidOracleConfig);
+    }
 
+    self.fallback_oracle_config.validate(env)?;
+}
+
+// Validate end time
+if self.end_time <= env.ledger().timestamp() {
+    return Err(crate::Error::InvalidDuration);
+}
         // Validate category if present
         if let Some(ref category) = self.category {
             crate::metadata_limits::validate_category_length(category)?;
@@ -3863,9 +3889,10 @@ impl ReflectorAsset {
 
     /// Validates the asset for use in market creation
     pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
-        if !self.is_supported() {
-            return Err(crate::Error::InvalidOracleConfig);
-        }
+       if !self.is_supported() {
+    // Allow unknown providers ONLY if fallback is disabled
+    return Err(Error::InvalidOracleConfig);
+}
         Ok(())
     }
 
