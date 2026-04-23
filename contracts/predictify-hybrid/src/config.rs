@@ -212,7 +212,13 @@ pub const MIN_CATEGORY_LENGTH: u32 = 2;
 ///   - Development: 2% (relaxed for testing)
 ///   - Testnet: 2% (mirrors production)
 ///   - Mainnet: 3% (higher for sustainability with real value)
-pub const DEFAULT_PLATFORM_FEE_PERCENTAGE: i128 = 2;
+/// 
+/// Basis Points: Fee percentages are stored and calculated in basis points (1/100th of 1%)
+/// where 100 basis points = 1%. This provides precise control over small percentages.
+/// 
+/// Rounding: All fee calculations use integer division which truncates towards zero,
+/// ensuring fees never exceed the calculated amount and never overcharge users.
+pub const DEFAULT_PLATFORM_FEE_PERCENTAGE: i128 = 200; // 2.00%
 
 /// Default market creation fee (1 XLM = 10_000_000 stroops)
 ///
@@ -266,7 +272,7 @@ pub const FEE_COLLECTION_THRESHOLD: i128 = 100_000_000;
 ///
 /// Security note: This is NOT the same as market-specific fee caps.
 /// It's a global upper bound enforced at the contract level.
-pub const MAX_PLATFORM_FEE_PERCENTAGE: i128 = 10;
+pub const MAX_PLATFORM_FEE_PERCENTAGE: i128 = 1000; // 10.00%
 
 /// Minimum platform fee percentage (0%)
 ///
@@ -3154,7 +3160,7 @@ mod tests {
     #[test]
     fn test_configuration_constants() {
         // Test fee constants
-        assert_eq!(DEFAULT_PLATFORM_FEE_PERCENTAGE, 2);
+        assert_eq!(DEFAULT_PLATFORM_FEE_PERCENTAGE, 200);
         assert_eq!(DEFAULT_MARKET_CREATION_FEE, 10_000_000);
         assert_eq!(MIN_FEE_AMOUNT, 1_000_000);
         assert_eq!(MAX_FEE_AMOUNT, 1_000_000_000);

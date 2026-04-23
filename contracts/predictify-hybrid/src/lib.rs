@@ -156,7 +156,7 @@ use soroban_sdk::{
 #[contract]
 pub struct PredictifyHybrid;
 
-const PERCENTAGE_DENOMINATOR: i128 = 100;
+const PERCENTAGE_DENOMINATOR: i128 = 10000;
 
 #[contractimpl]
 impl PredictifyHybrid {
