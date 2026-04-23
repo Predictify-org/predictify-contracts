@@ -110,26 +110,29 @@ const marketId = await contract.create_market(
 );
 ```
 
-### Betting Validation Semantics
+#### `extend_deadline()`
+Extends the deadline of an active market by a specified number of days. Enforces strict limits on both the duration and the number of extensions to prevent bypasses.
 
-Bet acceptance is deterministic and evaluated against immutable market metadata plus current ledger time.
+**Signature:**
+```rust
+pub fn extend_deadline(
+    env: Env,
+    admin: Address,
+    market_id: Symbol,
+    additional_days: u32,
+    reason: String,
+) -> Result<(), Error>
+```
 
-- `bet_deadline` effective rule:
-    - If `bet_deadline == 0`, the effective cutoff is `end_time`.
-    - If `bet_deadline > 0`, the effective cutoff is `bet_deadline`.
-    - If `bet_deadline > end_time`, market metadata is treated as invalid and bet placement is rejected.
-- Time boundary rule:
-    - Bets are accepted only when `ledger_timestamp < effective_bet_deadline`.
-    - Bets are rejected when `ledger_timestamp >= effective_bet_deadline`.
-- `min_pool_size` metadata rule:
-    - `min_pool_size` must be non-negative when present.
-    - Negative values are treated as invalid market metadata and bet placement is rejected.
+**Parameters:**
+- `admin`: Market administrator address
+- `market_id`: The ID of the market to extend
+- `additional_days`: Additional days (must be > 0 and combined with total_extension_days must not exceed max_extension_days)
+- `reason`: Explanation for the extension
 
-**Error mapping (bet placement):**
-- Closed cutoff window: `Error::MarketClosed`.
-- Invalid market metadata (`bet_deadline > end_time`, negative `min_pool_size`): `Error::InvalidState`.
-- Amount below configured minimum: `Error::InsufficientStake`.
-- Amount above configured maximum: `Error::InvalidInput`.
+**Security Invariants:**
+- **Zero-day Check:** Rejects `additional_days == 0` to prevent spamming extension history.
+- **Strict Limits:** Total combined extensions cannot exceed `max_extension_days` and the number of extensions cannot exceed `MAX_TOTAL_EXTENSIONS` (typically 10). Overflow checks (`checked_add`) are used to prevent limit bypassing.
 
 ---
 

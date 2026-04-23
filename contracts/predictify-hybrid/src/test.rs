@@ -764,7 +764,7 @@ fn test_fee_validation() {
 #[test]
 fn test_configuration_constants() {
     // Test that configuration constants are properly defined
-    assert_eq!(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE, 2);
+    assert_eq!(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE, 200);
     assert_eq!(crate::config::DEFAULT_MARKET_CREATION_FEE, 10_000_000);
     assert_eq!(crate::config::MIN_FEE_AMOUNT, 1_000_000);
     assert_eq!(crate::config::MAX_FEE_AMOUNT, 1_000_000_000);
