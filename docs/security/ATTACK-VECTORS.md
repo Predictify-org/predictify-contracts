@@ -677,3 +677,47 @@ pub struct AuditEvent {
 ---
 
 This document serves as the authoritative reference for Predictify Hybrid security architecture and should be updated whenever new threats are identified or mitigations are implemented.
+
+---
+
+## ⏱ Oracle Timeout vs Dispute Window Interaction
+
+### Threat: Resolution Timeout Deadlocking a Disputed Market
+
+**Description**: If `fetch_oracle_result` is called after `end_time + resolution_timeout` and a dispute is active, the naive implementation would cancel the market. This permanently locks dispute stakes and leaves the market unresolvable — a deadlock.
+
+**Invariant**: `resolution_timeout` must never cancel a market that has an active dispute (`state == Disputed` or `total_dispute_stakes() > 0`). When a dispute is active, the dispute process is the authoritative resolution path.
+
+**Mitigation** (`resolution.rs` — `OracleResolutionManager::fetch_oracle_result`):
+```rust
+if current_time > market.end_time + market.resolution_timeout {
+    if market.state == MarketState::Disputed || market.total_dispute_stakes() > 0 {
+        return Err(Error::ResolutionTimeoutReached); // dispute owns resolution
+    }
+    // No dispute: safe to cancel for refunds
+    market.state = MarketState::Cancelled;
+    ...
+}
+```
+
+### Threat: Late Dispute Reopening a Settled Market
+
+**Description**: Without enforcing `dispute_window_seconds`, a dispute could be filed long after the market ended, re-opening a market that participants already consider settled and payouts already expected.
+
+**Invariant**: Disputes must be filed within `[end_time, end_time + dispute_window_seconds)`. After the window closes, payouts are unambiguously allowed.
+
+**Mitigation** (`disputes.rs` — `DisputeValidator::validate_market_for_dispute`):
+```rust
+if market.dispute_window_seconds > 0
+    && current_time >= market.end_time + market.dispute_window_seconds
+{
+    return Err(Error::MarketResolved);
+}
+```
+
+**Note**: `dispute_window_seconds == 0` disables the window check (no restriction), preserving backward compatibility for markets created before this field was introduced.
+
+### Non-Goals
+
+- This does not prevent an oracle from returning stale data within the timeout window; that is handled separately by `OracleStale` / `OracleConfidenceTooWide`.
+- Admin override (`finalize_market`) bypasses both checks by design — it is an emergency escape hatch requiring explicit admin authentication.

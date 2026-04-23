@@ -1913,20 +1913,38 @@ impl DisputeManager {
 pub struct DisputeValidator;
 
 impl DisputeValidator {
-    /// Validate market state for dispute
+    /// Validate market state for dispute.
+    ///
+    /// A dispute is only valid when:
+    /// 1. The market has ended (`current_time >= end_time`).
+    /// 2. The dispute window is still open (`current_time < end_time + dispute_window_seconds`).
+    ///    Allowing disputes after the window closes would create an ambiguous overlap with
+    ///    the payout phase and could re-open markets that users already consider settled.
+    /// 3. The market has not already been resolved.
+    /// 4. An oracle result is available to dispute.
     pub fn validate_market_for_dispute(env: &Env, market: &Market) -> Result<(), Error> {
-        // Check if market has ended
         let current_time = env.ledger().timestamp();
+
+        // Market must have ended before a dispute can be filed.
         if current_time < market.end_time {
             return Err(Error::MarketClosed);
         }
 
-        // Check if market is already resolved
+        // Disputes must be filed within the dispute window.
+        // After `end_time + dispute_window_seconds` the window is closed and payouts
+        // are unambiguously allowed, so late disputes are rejected.
+        if market.dispute_window_seconds > 0
+            && current_time >= market.end_time + market.dispute_window_seconds
+        {
+            return Err(Error::MarketResolved);
+        }
+
+        // Check if market is already resolved.
         if market.winning_outcomes.is_some() {
             return Err(Error::MarketResolved);
         }
 
-        // Check if oracle result is available
+        // Check if oracle result is available to dispute.
         if market.oracle_result.is_none() {
             return Err(Error::OracleUnavailable);
         }
