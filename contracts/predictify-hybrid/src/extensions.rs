@@ -566,12 +566,12 @@ impl ExtensionValidator {
         additional_days: u32,
     ) -> Result<(), Error> {
         // Validate additional days
-        if additional_days < MIN_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+        if additional_days == 0 {
+            return Err(Error::InvalidDuration);
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+            return Err(Error::InvalidDuration);
         }
 
         // Get market and validate state
@@ -603,14 +603,14 @@ impl ExtensionValidator {
         let new_total_extension_days = market
             .total_extension_days
             .checked_add(additional_days)
-            .ok_or(Error::InvalidInput)?;
+            .ok_or(Error::InvalidDuration)?;
         if new_total_extension_days > market.max_extension_days {
-            return Err(Error::InvalidInput);
+            return Err(Error::InvalidDuration);
         }
 
         // Check number of extensions limit
-        if (market.extension_history.len() as usize) >= (MAX_TOTAL_EXTENSIONS as usize) {
-            return Err(Error::InvalidInput);
+        if market.extension_history.len() >= MAX_TOTAL_EXTENSIONS {
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())

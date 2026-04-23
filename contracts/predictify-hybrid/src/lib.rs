@@ -3498,89 +3498,24 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+        let stored_admin: Address =
+            match env.storage().persistent().get(&Symbol::new(&env, "Admin")) {
+                Some(admin_addr) => admin_addr,
+                None => panic_with_error!(env, Error::AdminNotSet),
+            };
 
         if admin != stored_admin {
             return Err(Error::Unauthorized);
         }
 
-        // Get market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Validate market state - cannot extend resolved, closed, or cancelled markets
-        if market.state == MarketState::Resolved
-            || market.state == MarketState::Closed
-            || market.state == MarketState::Cancelled
-        {
-            return Err(Error::MarketResolved);
-        }
-
-        if additional_days == 0 {
-            return Err(Error::InvalidDuration);
-        }
-
-        // Validate max total extensions limit
-        let max_total_extensions = crate::config::MAX_TOTAL_EXTENSIONS;
-        if (market.extension_history.len() as usize) >= (max_total_extensions as usize) {
-            return Err(Error::InvalidDuration);
-        }
-
-        // Validate extension limit
-        let new_total_extension_days = market
-            .total_extension_days
-            .checked_add(additional_days)
-            .ok_or(Error::InvalidDuration)?;
-        if new_total_extension_days > market.max_extension_days {
-            return Err(Error::InvalidDuration);
-        }
-
-        // Calculate new end time
-        let seconds_per_day: u64 = 24 * 60 * 60;
-        let extension_seconds: u64 = (additional_days as u64) * seconds_per_day;
-        let old_end_time = market.end_time;
-        let new_end_time = old_end_time + extension_seconds;
-
-        // Calculate extension fee (could be configured per market or globally)
-        let extension_fee = 0i128; // No fee for now, but can be configured
-
-        // Create extension record
-        let extension = MarketExtension::new(
+        // Delegate to ExtensionManager for core logic, fee handling, and events
+        crate::extensions::ExtensionManager::extend_market_duration(
             &env,
+            admin,
+            market_id,
             additional_days,
-            admin.clone(),
-            reason.clone(),
-            extension_fee,
-        );
-
-        // Update market
-        market.end_time = new_end_time;
-        market.total_extension_days = new_total_extension_days;
-        market.extension_history.push_back(extension);
-
-        // Save market
-        env.storage().persistent().set(&market_id, &market);
-
-        // Emit extension event
-        EventEmitter::emit_market_deadline_extended(
-            &env,
-            &market_id,
-            old_end_time,
-            new_end_time,
-            additional_days,
-            &admin,
-            &reason,
-            extension_fee,
-        );
-
-        Ok(())
+            reason,
+        )
     }
 
     /// Updates the description/question of a market (admin only, before betting starts).
