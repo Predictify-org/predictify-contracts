@@ -11,8 +11,10 @@
 #![allow(clippy::all)]
 
 extern crate alloc;
+#[cfg(not(test))]
 extern crate wee_alloc;
 
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
@@ -3498,74 +3500,24 @@ impl PredictifyHybrid {
         admin.require_auth();
 
         // Verify admin
-        let stored_admin: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "Admin"))
-            .unwrap_or_else(|| panic_with_error!(env, Error::Unauthorized));
+        let stored_admin: Address =
+            match env.storage().persistent().get(&Symbol::new(&env, "Admin")) {
+                Some(admin_addr) => admin_addr,
+                None => panic_with_error!(env, Error::AdminNotSet),
+            };
 
         if admin != stored_admin {
             return Err(Error::Unauthorized);
         }
 
-        // Get market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Validate market state - cannot extend resolved, closed, or cancelled markets
-        if market.state == MarketState::Resolved
-            || market.state == MarketState::Closed
-            || market.state == MarketState::Cancelled
-        {
-            return Err(Error::MarketResolved);
-        }
-
-        // Validate extension limit
-        let new_total_extension_days = market.total_extension_days + additional_days;
-        if new_total_extension_days > market.max_extension_days {
-            return Err(Error::InvalidDuration);
-        }
-
-        // Calculate new end time
-        let seconds_per_day: u64 = 24 * 60 * 60;
-        let extension_seconds: u64 = (additional_days as u64) * seconds_per_day;
-        let old_end_time = market.end_time;
-        let new_end_time = old_end_time + extension_seconds;
-
-        // Calculate extension fee (could be configured per market or globally)
-        let extension_fee = 0i128; // No fee for now, but can be configured
-
-        // Create extension record
-        let extension = MarketExtension::new(
+        // Delegate to ExtensionManager for core logic, fee handling, and events
+        crate::extensions::ExtensionManager::extend_market_duration(
             &env,
+            admin,
+            market_id,
             additional_days,
-            admin.clone(),
-            reason.clone(),
-            extension_fee,
-        );
-
-        // Update market
-        market.end_time = new_end_time;
-        market.total_extension_days = new_total_extension_days;
-        market.extension_history.push_back(extension);
-
-        // Save market
-        env.storage().persistent().set(&market_id, &market);
-
-        // Emit extension event
-        EventEmitter::emit_market_deadline_extended(
-            &env,
-            &market_id,
-            old_end_time,
-            new_end_time,
-            additional_days,
-            &admin,
-            &reason,
-            extension_fee,
-        );
+            reason,
+        ).unwrap_or_else(|e| panic_with_error!(env, e));
 
         Ok(())
     }
@@ -3657,7 +3609,7 @@ impl PredictifyHybrid {
 
         // Validate new description
         if new_description.is_empty() {
-            return Err(Error::InvalidQuestion);
+            panic_with_error!(env, Error::InvalidQuestion);
         }
 
         // Get market
@@ -3665,22 +3617,22 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketResolved);
+            panic_with_error!(env, Error::MarketResolved);
         }
 
         // Check if any bets have been placed
         let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
         if bet_stats.total_bets > 0 {
-            return Err(Error::BetsAlreadyPlaced);
+            panic_with_error!(env, Error::BetsAlreadyPlaced);
         }
 
         // Check if any votes have been placed
         if market.total_staked > 0 {
-            return Err(Error::AlreadyVoted);
+            panic_with_error!(env, Error::AlreadyVoted);
         }
 
         // Store old description for event
@@ -3810,13 +3762,13 @@ impl PredictifyHybrid {
 
         // Validate new outcomes
         if new_outcomes.len() < 2 {
-            return Err(Error::InvalidOutcomes);
+            panic_with_error!(env, Error::InvalidOutcomes);
         }
 
         // Check all outcomes are non-empty
         for outcome in new_outcomes.iter() {
             if outcome.is_empty() {
-                return Err(Error::InvalidOutcome);
+                panic_with_error!(env, Error::InvalidOutcome);
             }
         }
 
@@ -3825,22 +3777,22 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketResolved);
+            panic_with_error!(env, Error::MarketResolved);
         }
 
         // Check if any bets have been placed
         let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
         if bet_stats.total_bets > 0 {
-            return Err(Error::BetsAlreadyPlaced);
+            panic_with_error!(env, Error::BetsAlreadyPlaced);
         }
 
         // Check if any votes have been placed
         if market.total_staked > 0 {
-            return Err(Error::AlreadyVoted);
+            panic_with_error!(env, Error::AlreadyVoted);
         }
 
         // Store old outcomes for event
