@@ -7,7 +7,7 @@ use crate::{
     errors::Error,
     types::{BetLimits, Market, OracleConfig, OracleProvider},
 };
-use alloc::{string::ToString, vec::Vec as AllocVec};
+use alloc::{string::String as StdString, vec::Vec as AllocVec};
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
@@ -5092,12 +5092,18 @@ impl OracleConfigValidator {
 pub struct CreationValidator;
 
 impl CreationValidator {
+    fn soroban_string_to_host_string(value: &String) -> StdString {
+        let mut bytes = alloc::vec![0u8; value.len() as usize];
+        value.copy_into_slice(&mut bytes);
+        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+    }
+
     fn validate_non_empty_text(
         value: &String,
         min_length: u32,
         max_length: u32,
     ) -> Result<(), Error> {
-        let trimmed = value.to_string();
+        let trimmed = Self::soroban_string_to_host_string(value);
         let normalized = trimmed.trim();
         if normalized.is_empty() {
             return Err(Error::InvalidQuestion);
@@ -5146,7 +5152,7 @@ impl CreationValidator {
         }
 
         for outcome in outcomes.iter() {
-            let normalized = outcome.to_string();
+            let normalized = Self::soroban_string_to_host_string(&outcome);
             let trimmed = normalized.trim();
             if trimmed.is_empty() {
                 return Err(Error::InvalidOutcomes);
@@ -5236,6 +5242,12 @@ impl CreationValidator {
 pub struct OutcomeDeduplicator;
 
 impl OutcomeDeduplicator {
+    fn soroban_string_to_host_string(value: &String) -> StdString {
+        let mut bytes = alloc::vec![0u8; value.len() as usize];
+        value.copy_into_slice(&mut bytes);
+        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+    }
+
     /// Normalizes an outcome string for comparison.
     ///
     /// This function applies a series of normalization steps to make outcome strings
@@ -5277,7 +5289,7 @@ impl OutcomeDeduplicator {
     /// - Resistant to Unicode manipulation attacks
     pub fn normalize_outcome(outcome: &String) -> Result<String, ValidationError> {
         // Convert to string slice for manipulation
-        let outcome_str = outcome.to_string();
+        let outcome_str = Self::soroban_string_to_host_string(outcome);
 
         // Step 1: Trim leading and trailing whitespace
         let trimmed = outcome_str.trim();
@@ -5362,8 +5374,8 @@ impl OutcomeDeduplicator {
     /// - Early termination for very different strings
     /// - Gas-efficient for typical outcome lengths (< 50 chars)
     pub fn calculate_similarity(outcome1: &String, outcome2: &String) -> u32 {
-        let s1 = outcome1.to_string();
-        let s2 = outcome2.to_string();
+        let s1 = Self::soroban_string_to_host_string(outcome1);
+        let s2 = Self::soroban_string_to_host_string(outcome2);
 
         if s1.is_empty() && s2.is_empty() {
             return 100;
@@ -5535,8 +5547,8 @@ impl OutcomeDeduplicator {
     ///
     /// * `bool` - True if outcomes are semantic duplicates
     fn is_semantic_duplicate(outcome1: &String, outcome2: &String) -> bool {
-        let s1 = outcome1.to_string();
-        let s2 = outcome2.to_string();
+        let s1 = Self::soroban_string_to_host_string(outcome1);
+        let s2 = Self::soroban_string_to_host_string(outcome2);
 
         // Affirmative outcomes
         let affirmative = ["yes", "yeah", "yep", "true", "correct", "agree", "positive"];
