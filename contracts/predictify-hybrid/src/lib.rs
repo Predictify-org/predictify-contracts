@@ -125,7 +125,7 @@ mod resolution_delay_dispute_window_tests;
 #[cfg(test)]
 mod tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod event_creation_tests;
 
 // Re-export commonly used items
@@ -546,6 +546,11 @@ impl PredictifyHybrid {
             }
         }
 
+        // Validate duration is positive and within acceptable range
+        if duration_days == 0 {
+            panic_with_error!(env, Error::InvalidDuration);
+        }
+
         // Generate a unique collision-resistant market ID
         let market_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
@@ -710,6 +715,7 @@ impl PredictifyHybrid {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
         };
+        
         // Create a new event
         let event = Event {
             id: event_id.clone(),
@@ -740,8 +746,8 @@ impl PredictifyHybrid {
             end_time,
         );
 
-        // Record statistics (optional, can reuse market stats for now)
-        // statistics::StatisticsManager::record_market_created(&env);
+        // Record statistics
+        statistics::StatisticsManager::record_market_created(&env);
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -750,6 +756,7 @@ impl PredictifyHybrid {
             Map::new(&env),
         );
 
+        GasTracker::end_tracking(&env, symbol_short!("evt_crt"), gas_marker);
         event_id
     }
 
