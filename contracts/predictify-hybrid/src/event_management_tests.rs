@@ -1,3 +1,4 @@
+use crate::circuit_breaker::CircuitBreaker;
 use crate::errors::Error;
 use crate::events::{BetStatusUpdatedEvent, MarketResolvedEvent};
 use crate::types::{OracleConfig, OracleProvider};
@@ -40,6 +41,11 @@ impl TestSetup {
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
         client.initialize(&admin, &None);
+
+        // Initialize circuit breaker (required for create_market and other write operations)
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+        });
 
         Self {
             env,
