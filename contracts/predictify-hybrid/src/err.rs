@@ -165,6 +165,8 @@ pub enum Error {
     TooManyOracleResults = 433,
     /// Too many winning outcomes specified.
     TooManyWinningOutcomes = 434,
+    /// The event archive has reached its maximum capacity. Prune old entries before archiving more.
+    ArchiveFull = 435,
 
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -1403,6 +1405,7 @@ impl Error {
             Error::TooManyExtensions => "Too many extension history entries",
             Error::TooManyOracleResults => "Too many oracle results in multi-oracle aggregation",
             Error::TooManyWinningOutcomes => "Too many winning outcomes specified",
+            Error::ArchiveFull => "Event archive is full; maximum archive capacity reached",
 
             // Circuit breaker errors
             Error::CBNotInitialized => "Circuit breaker not initialized",
@@ -1491,6 +1494,7 @@ impl Error {
             Error::TooManyExtensions => "TOO_MANY_EXTENSIONS",
             Error::TooManyOracleResults => "TOO_MANY_ORACLE_RESULTS",
             Error::TooManyWinningOutcomes => "TOO_MANY_WINNING_OUTCOMES",
+            Error::ArchiveFull => "ARCHIVE_FULL",
 
             // Circuit breaker errors
             Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
@@ -1587,6 +1591,7 @@ mod tests {
             Error::TooManyExtensions,
             Error::TooManyOracleResults,
             Error::TooManyWinningOutcomes,
+            Error::ArchiveFull,
             // Circuit breaker errors
             Error::AdminNotSet,
             Error::CBNotInitialized,

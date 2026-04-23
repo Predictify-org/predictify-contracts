@@ -3014,6 +3014,21 @@ impl PredictifyHybrid {
         crate::event_archive::EventArchive::archive_event(&env, &admin, &market_id)
     }
 
+    /// Remove the oldest `count` archived entries to free capacity (admin only).
+    ///
+    /// Returns the number of entries actually removed. `count` is capped at 30.
+    ///
+    /// # Errors
+    /// * `Unauthorized` - Caller is not admin
+    pub fn prune_archive(env: Env, admin: Address, count: u32) -> Result<u32, Error> {
+        crate::event_archive::EventArchive::prune_archive(&env, &admin, count)
+    }
+
+    /// Return the current number of entries in the event archive.
+    pub fn archive_size(env: Env) -> u32 {
+        crate::event_archive::EventArchive::archive_size(&env)
+    }
+
     /// Query events by creation time range. Returns public metadata only (no votes/stakes).
     /// Paginated: cursor is start index, limit capped at 30. Returns (entries, next_cursor).
     ///
