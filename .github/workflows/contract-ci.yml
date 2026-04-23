@@ -2,45 +2,72 @@ name: Soroban Smart Contracts CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["main", "master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["main", "master"]
 
 env:
   CARGO_TERM_COLOR: always
+  # Limit parallel codegen to avoid OOM on heavy deps (ark-std, stellar-xdr)
+  CARGO_BUILD_JOBS: 2
+  # Retry transient network failures fetching crates
+  CARGO_NET_RETRY: 3
+  CARGO_HTTP_TIMEOUT: 60
+  # Point cargo home at a stable path for caching
+  CARGO_HOME: /home/runner/.cargo
 
 jobs:
-  build:
-    runs-on: macos-latest
+  build-and-test:
+    runs-on: ubuntu-latest   # 2x faster + more RAM than macos-latest; saves quota
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source $HOME/.cargo/env
-    - name: Install Rust target for Soroban
-      run: |
-        source $HOME/.cargo/env
-        rustup target add wasm32v1-none
-    - name: Install Stellar CLI with Homebrew
-      run: |
-        brew update
-        brew install stellar-cli
-        stellar --version
-    - name: Build Cargo project
-      run: |
-        source $HOME/.cargo/env
-        cargo build --verbose
+      # ── Rust toolchain ────────────────────────────────────────────────────
+      - name: Install Rust stable + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
-    - name: Build Soroban contract
-      run: |
-        source $HOME/.cargo/env
-        stellar contract build --verbose
+      # ── Dependency cache ──────────────────────────────────────────────────
+      # Cache the registry index, downloaded crates, and compiled artifacts.
+      # Key rotates on Cargo.lock changes; a fallback key reuses the last
+      # warm cache so heavy deps (ark-std, stellar-xdr) are never rebuilt
+      # from scratch on a clean run.
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
-    - name: Run Cargo tests
-      run: |
-        source $HOME/.cargo/env
-        cargo test --verbose
+      # ── Stellar CLI ───────────────────────────────────────────────────────
+      # Install via cargo instead of brew — avoids the slow `brew update` step
+      # and works identically on Linux.
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+        env:
+          # Allow the CLI install to use all cores; it's a one-time cost that
+          # gets absorbed into the cache on subsequent runs.
+          CARGO_BUILD_JOBS: 4
 
+      # ── Tests (native, no wasm) ───────────────────────────────────────────
+      # Run tests first on the native target — much faster than wasm and gives
+      # early feedback on logic errors before the expensive wasm compile.
+      - name: Run tests
+        run: cargo test -p predictify-hybrid --jobs 2
+
+      # ── Wasm contract build ───────────────────────────────────────────────
+      # stellar contract build compiles to wasm32-unknown-unknown with the
+      # release profile.  We override codegen-units for the CI build profile
+      # (see Cargo.toml [profile.ci-release]) to trade binary size for speed.
+      - name: Build Soroban contract (wasm)
+        run: stellar contract build
+        env:
+          # Use the faster CI profile defined in Cargo.toml
+          CARGO_PROFILE: ci-release
