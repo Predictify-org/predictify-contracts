@@ -975,10 +975,23 @@ impl OracleResolutionManager {
         // Get the market from storage
         let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        // 1. Check if resolution timeout has been reached
+        // 1. Check if resolution timeout has been reached.
+        //
+        // Safety invariant: a market with an active dispute must NOT be cancelled by the
+        // oracle resolution timeout.  Cancelling while a dispute is open would permanently
+        // lock the dispute stakes and leave the market in an unresolvable state (deadlock).
+        // Instead we surface `ResolutionTimeoutReached` so the caller knows the oracle path
+        // is closed while the dispute process remains the authoritative resolution path.
         let current_time = env.ledger().timestamp();
         if current_time > market.end_time + market.resolution_timeout {
-            // Reached timeout without resolution, mark for refund
+            // If a dispute is active, refuse to cancel — the dispute window owns resolution.
+            if market.state == crate::types::MarketState::Disputed
+                || market.total_dispute_stakes() > 0
+            {
+                return Err(Error::ResolutionTimeoutReached);
+            }
+
+            // No active dispute: cancel the market so stakes can be refunded.
             let old_state = market.state.clone();
             market.state = crate::types::MarketState::Cancelled;
             MarketStateManager::update_market(env, market_id, &market);
