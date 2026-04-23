@@ -243,6 +243,7 @@ impl BetManager {
         outcome: String,
         amount: i128,
     ) -> Result<Bet, Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
 
@@ -254,8 +255,10 @@ impl BetManager {
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
 
         // Check if user has already bet on this market
-        if Self::has_user_bet(env, &market_id, &user) {
-            return Err(Error::AlreadyBet);
+        if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
+            if existing_bet.status != crate::types::BetStatus::Cancelled {
+                return Err(Error::AlreadyBet);
+            }
         }
 
         // Lock funds (transfer from user to contract)
@@ -327,6 +330,7 @@ impl BetManager {
         user: Address,
         bets: soroban_sdk::Vec<(Symbol, String, i128)>,
     ) -> Result<soroban_sdk::Vec<Bet>, Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
 
@@ -361,8 +365,10 @@ impl BetManager {
             )?;
 
             // Check if user has already bet on this market
-            if Self::has_user_bet(env, &market_id, &user) {
-                return Err(Error::AlreadyBet);
+            if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
+                if existing_bet.status != crate::types::BetStatus::Cancelled {
+                    return Err(Error::AlreadyBet);
+                }
             }
 
             // Accumulate total amount
@@ -577,6 +583,7 @@ impl BetManager {
     ///
     /// Returns `Ok(())` on success or `Err(Error)` if refund fails.
     pub fn refund_market_bets(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+        let mut market = MarketStateManager::get_market(env, market_id)?;
         let bets = BetStorage::get_all_bets_for_market(env, market_id);
 
         for bet_key in bets.iter() {
@@ -588,6 +595,11 @@ impl BetManager {
                     // Mark as refunded
                     bet.mark_as_refunded();
                     BetStorage::store_bet(env, &bet)?;
+
+                    // Update market struct to reverse stakes
+                    market.total_staked = market.total_staked.saturating_sub(bet.amount);
+                    market.votes.remove(bet.user.clone());
+                    market.stakes.remove(bet.user.clone());
 
                     // Emit status update event
                     EventEmitter::emit_bet_status_updated(
@@ -602,6 +614,7 @@ impl BetManager {
             }
         }
 
+        MarketStateManager::update_market(env, market_id, &market);
         Ok(())
     }
 
@@ -638,37 +651,52 @@ impl BetManager {
         // Get market bet stats
         let stats = BetStorage::get_market_bet_stats(env, market_id);
 
-        // Get total amount bet on all winning outcomes (handles ties - pool split)
-        let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
-        let mut winning_total = 0;
-        for outcome in winning_outcomes.iter() {
-            winning_total += stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
-        }
+        // Get winning outcomes
+let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
 
-        if winning_total == 0 {
-            return Ok(0);
-        }
+// Number of winners (tie support)
+let num_winners = winning_outcomes.len() as i128;
+if num_winners == 0 {
+    return Ok(0);
+}
 
-        // Get platform fee percentage from config (with fallback to legacy storage)
-        let fee_percentage = crate::config::ConfigManager::get_config(env)
-            .map(|cfg| cfg.fees.platform_fee_percentage)
-            .unwrap_or_else(|_| {
-                // Fallback to legacy storage for backward compatibility
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(env, "platform_fee"))
-                    .unwrap_or(200) // Default 2% if not set
-            });
+// Total bets ONLY on this user's outcome
+let total_bets_on_outcome = stats
+    .outcome_totals
+    .get(bet.outcome.clone())
+    .unwrap_or(0);
 
-        // Calculate payout
-        let payout = MarketUtils::calculate_payout(
-            bet.amount,
-            winning_total,
-            stats.total_amount_locked,
-            fee_percentage,
-        )?;
+if total_bets_on_outcome == 0 {
+    return Ok(0);
+}
 
-        Ok(payout)
+// Get platform fee percentage
+let fee_percentage = crate::config::ConfigManager::get_config(env)
+    .map(|cfg| cfg.fees.platform_fee_percentage)
+    .unwrap_or_else(|_| {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, "platform_fee"))
+            .unwrap_or(200)
+    });
+
+// Total pool
+let total_pool = stats.total_amount_locked;
+
+// Apply fee (basis points)
+let fee = (total_pool * fee_percentage as i128) / 10_000;
+let distributable_pool = total_pool - fee;
+
+// Split pool across winners
+let pool_per_winner = distributable_pool / num_winners;
+
+// Final payout (safe math)
+let payout = (bet.amount
+    .checked_mul(pool_per_winner)
+    .ok_or(Error::InvalidInput)?)
+    / total_bets_on_outcome;
+
+Ok(payout)
     }
     /// Cancel a bet before the market deadline and refund the user.
     ///
@@ -710,6 +738,7 @@ impl BetManager {
     /// )?;
     /// ```
     pub fn cancel_bet(env: &Env, user: Address, market_id: Symbol) -> Result<(), Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "cancel_bet")?;
         // Require authentication from the user
         user.require_auth();
 
@@ -722,7 +751,7 @@ impl BetManager {
         }
 
         // Get market and validate it hasn't ended
-        let market = MarketStateManager::get_market(env, &market_id)?;
+        let mut market = MarketStateManager::get_market(env, &market_id)?;
         let current_time = env.ledger().timestamp();
 
         if current_time >= market.end_time {
@@ -738,6 +767,12 @@ impl BetManager {
 
         // Update market betting stats
         Self::update_market_bet_stats_on_cancel(env, &market_id, &bet.outcome, bet.amount)?;
+
+        // Update market struct to reverse stakes
+        market.total_staked = market.total_staked.saturating_sub(bet.amount);
+        market.votes.remove(user.clone());
+        market.stakes.remove(user.clone());
+        MarketStateManager::update_market(env, &market_id, &market);
 
         // Emit bet cancelled event
         EventEmitter::emit_bet_status_updated(
@@ -914,7 +949,10 @@ impl BetValidator {
     ///
     /// - Market must exist
     /// - Market must be in Active state
-    /// - Current time must be before market end time
+    /// - Current time must be before the effective betting deadline
+    /// - Effective betting deadline is `market.bet_deadline` when non-zero, otherwise `market.end_time`
+    /// - Effective betting deadline must not exceed `market.end_time`
+    /// - `min_pool_size` (when provided) must be non-negative
     /// - Market must not already be resolved
     ///
     /// # Parameters
@@ -931,9 +969,17 @@ impl BetValidator {
             return Err(Error::MarketClosed);
         }
 
-        // Check if market has not ended
+        if let Some(min_pool_size) = market.min_pool_size {
+            if min_pool_size < 0 {
+                return Err(Error::InvalidState);
+            }
+        }
+
+        let effective_bet_deadline = Self::effective_bet_deadline(market)?;
+
+        // Check if market has not reached betting cutoff
         let current_time = env.ledger().timestamp();
-        if current_time >= market.end_time {
+        if current_time >= effective_bet_deadline {
             return Err(Error::MarketClosed);
         }
 
@@ -943,6 +989,23 @@ impl BetValidator {
         }
 
         Ok(())
+    }
+
+    /// Resolve the effective betting deadline for a market.
+    ///
+    /// A value of `0` in `market.bet_deadline` means "use `market.end_time`".
+    /// Returns `Error::InvalidState` for malformed market metadata where
+    /// `market.bet_deadline` is after `market.end_time`.
+    pub fn effective_bet_deadline(market: &Market) -> Result<u64, Error> {
+        if market.bet_deadline == 0 {
+            return Ok(market.end_time);
+        }
+
+        if market.bet_deadline > market.end_time {
+            return Err(Error::InvalidState);
+        }
+
+        Ok(market.bet_deadline)
     }
 
     /// Validate bet parameters.
@@ -971,7 +1034,10 @@ impl BetValidator {
         // validation::validate_bet_amount_against_limits(amount, &limits)
 
         // Simple validation for now
-        if amount < limits.min_bet || amount > limits.max_bet {
+        if amount < limits.min_bet {
+            return Err(Error::InsufficientStake);
+        }
+        if amount > limits.max_bet {
             return Err(Error::InvalidInput);
         }
         Ok(())
@@ -1156,7 +1222,32 @@ impl BetAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::BetStatus;
+    use crate::types::{BetStatus, Market, MarketState, OracleConfig, OracleProvider};
+    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+
+    fn test_market(env: &Env, end_time: u64) -> Market {
+        Market::new(
+            env,
+            Address::generate(env),
+            String::from_str(env, "Deadline test market"),
+            soroban_sdk::vec![
+                env,
+                String::from_str(env, "yes"),
+                String::from_str(env, "no"),
+            ],
+            end_time,
+            OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                String::from_str(env, "BTC/USD"),
+                1,
+                String::from_str(env, "gt"),
+            ),
+            None,
+            86400,
+            MarketState::Active,
+        )
+    }
 
     #[test]
     fn test_bet_amount_validation() {
@@ -1176,9 +1267,6 @@ mod tests {
 
     #[test]
     fn test_bet_status_transitions() {
-        use soroban_sdk::testutils::Address as _;
-        use soroban_sdk::Env;
-
         let env = Env::default();
         let user = Address::generate(&env);
         let market_id = Symbol::new(&env, "test_market");
@@ -1233,5 +1321,99 @@ mod tests {
         assert!(!bet3.is_resolved()); // Refunded is not considered "resolved"
         assert!(!bet3.is_winner());
         assert_eq!(bet3.status, BetStatus::Refunded);
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_uses_end_time_when_bet_deadline_unset() {
+        let env = Env::default();
+        let end_time = 10_000;
+        let mut market = test_market(&env, end_time);
+        market.bet_deadline = 0;
+
+        env.ledger().set(LedgerInfo {
+            timestamp: end_time - 1,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert!(BetValidator::validate_market_for_betting(&env, &market).is_ok());
+
+        env.ledger().set(LedgerInfo {
+            timestamp: end_time,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::MarketClosed)
+        );
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_honors_explicit_bet_deadline() {
+        let env = Env::default();
+        let end_time = 10_000;
+        let mut market = test_market(&env, end_time);
+        market.bet_deadline = 9_000;
+
+        env.ledger().set(LedgerInfo {
+            timestamp: 8_999,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert!(BetValidator::validate_market_for_betting(&env, &market).is_ok());
+
+        env.ledger().set(LedgerInfo {
+            timestamp: 9_000,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::MarketClosed)
+        );
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_rejects_deadline_after_end_time() {
+        let env = Env::default();
+        let mut market = test_market(&env, 10_000);
+        market.bet_deadline = 10_001;
+
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::InvalidState)
+        );
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_rejects_negative_min_pool_size() {
+        let env = Env::default();
+        let mut market = test_market(&env, 10_000);
+        market.min_pool_size = Some(-1);
+
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::InvalidState)
+        );
     }
 }
