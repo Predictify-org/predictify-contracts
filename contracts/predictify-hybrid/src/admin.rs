@@ -616,15 +616,7 @@ impl ContractPauseManager {
 
     /// Pause contract operations. Caller must be the current primary admin.
     pub fn pause(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .ok_or(Error::AdminNotSet)?;
-        if admin != &stored {
-            return Err(Error::Unauthorized);
-        }
+        AdminAccessControl::require_admin_auth(env, admin)?;
         env.storage()
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &true);
@@ -640,15 +632,7 @@ impl ContractPauseManager {
 
     /// Unpause contract operations. Caller must be the current primary admin.
     pub fn unpause(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .ok_or(Error::AdminNotSet)?;
-        if admin != &stored {
-            return Err(Error::Unauthorized);
-        }
+        AdminAccessControl::require_admin_auth(env, admin)?;
         env.storage()
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &false);
@@ -677,15 +661,7 @@ impl ContractPauseManager {
         current_admin: &Address,
         new_admin: &Address,
     ) -> Result<(), Error> {
-        current_admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .ok_or(Error::AdminNotSet)?;
-        if current_admin != &stored {
-            return Err(Error::Unauthorized);
-        }
+        AdminAccessControl::require_admin_auth(env, current_admin)?;
         if new_admin == current_admin {
             return Err(Error::InvalidInput);
         }
@@ -1566,11 +1542,9 @@ impl AdminManager {
 
     // ===== Helper Methods =====
 
-    /// Generate a proper admin storage key using the correct environment
-    fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
-        // Create a unique key based on admin address
-        let key_str = alloc::format!("MultiAdmin_{:?}", admin.to_string());
-        Symbol::new(env, &key_str)
+    /// Generate a deterministic multi-admin storage key for an address.
+    fn get_admin_key(env: &Env, admin: &Address) -> String {
+        String::from_str(env, &alloc::format!("MultiAdmin_{:?}", admin.to_string()))
     }
 
     /// Check if an address is the original admin from single-admin system

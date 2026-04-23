@@ -38,6 +38,9 @@ impl TestSetup {
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
         client.initialize(&admin, &None);
+        env.as_contract(&contract_id, || {
+            crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
+        });
 
         Self {
             env,
