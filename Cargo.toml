@@ -21,3 +21,13 @@ lto = true
 [profile.release-with-logs]
 inherits = "release"
 debug-assertions = true
+
+# CI build profile: faster compile, lower peak memory.
+# codegen-units > 1 and lto = false avoid the OOM that kills macos/linux
+# runners when compiling ark-std / stellar-xdr with full LTO.
+# The resulting wasm is slightly larger but functionally identical.
+[profile.ci-release]
+inherits = "release"
+codegen-units = 4
+lto = "thin"
+opt-level = 1

@@ -970,12 +970,29 @@ impl OracleResolutionManager {
         Ok((price_data.price, outcome))
     }
 
-    /// Fetch oracle result for a market with fallback support and timeout
+    /// Fetch oracle result for a market with fallback support and timeout.
+    ///
+    /// # Invariants
+    ///
+    /// - A market in `Disputed` state is **never** cancelled by the resolution timeout;
+    ///   the dispute must be resolved first.
+    /// - Oracle resolution is blocked while a dispute is active (`MarketState::Disputed`).
+    /// - The timeout deadline is `end_time + resolution_timeout`.  Because
+    ///   `resolution_timeout` must be ≥ `dispute_window_seconds` (enforced at market
+    ///   creation), the timeout cannot fire before the dispute window closes.
     pub fn fetch_oracle_result(env: &Env, market_id: &Symbol) -> Result<OracleResolution, Error> {
         // Get the market from storage
         let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        // 1. Check if resolution timeout has been reached
+        // Block oracle resolution while a dispute is active.  The dispute must be
+        // resolved (or rejected) before the oracle result can be accepted.
+        if market.state == crate::types::MarketState::Disputed {
+            return Err(Error::AlreadyDisputed);
+        }
+
+        // 1. Check if resolution timeout has been reached.
+        // Safety: we only cancel markets that are NOT disputed.  A disputed market
+        // has its own resolution path and must not be force-cancelled here.
         let current_time = env.ledger().timestamp();
         if current_time > market.end_time + market.resolution_timeout {
             // Reached timeout without resolution, mark for refund
@@ -999,7 +1016,7 @@ impl OracleResolutionManager {
                 &soroban_sdk::String::from_str(env, "timeout_cancelled"),
             );
 
-            return Err(Error::InvalidState);
+            return Err(Error::ResolutionTimeoutReached);
         }
 
         // Validate market for oracle resolution
