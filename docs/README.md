@@ -52,6 +52,7 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 - **[Types System](./contracts/TYPES_SYSTEM.md)** - Comprehensive type system and data structures
 - **[Voting System](./contracts/VOTING_SYSTEM.md)** - Voting mechanism and dispute resolution
 - **[Balance Management](./contracts/BALANCES.md)** - Security invariants and token safety semantics for deposits and withdrawals
+- **[Event Archive](./contracts/EVENT_ARCHIVE.md)** - Bounded archive storage, pagination strategy, and pruning API
 
 
 ### 💰 [Claims Documentation](./claims/)
