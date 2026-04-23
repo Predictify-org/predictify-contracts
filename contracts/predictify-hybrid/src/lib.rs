@@ -11,8 +11,10 @@
 #![allow(clippy::all)]
 
 extern crate alloc;
+#[cfg(not(test))]
 extern crate wee_alloc;
 
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
@@ -3515,7 +3517,9 @@ impl PredictifyHybrid {
             market_id,
             additional_days,
             reason,
-        )
+        ).unwrap_or_else(|e| panic_with_error!(env, e));
+
+        Ok(())
     }
 
     /// Updates the description/question of a market (admin only, before betting starts).
@@ -3605,7 +3609,7 @@ impl PredictifyHybrid {
 
         // Validate new description
         if new_description.is_empty() {
-            return Err(Error::InvalidQuestion);
+            panic_with_error!(env, Error::InvalidQuestion);
         }
 
         // Get market
@@ -3613,22 +3617,22 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketResolved);
+            panic_with_error!(env, Error::MarketResolved);
         }
 
         // Check if any bets have been placed
         let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
         if bet_stats.total_bets > 0 {
-            return Err(Error::BetsAlreadyPlaced);
+            panic_with_error!(env, Error::BetsAlreadyPlaced);
         }
 
         // Check if any votes have been placed
         if market.total_staked > 0 {
-            return Err(Error::AlreadyVoted);
+            panic_with_error!(env, Error::AlreadyVoted);
         }
 
         // Store old description for event
@@ -3758,13 +3762,13 @@ impl PredictifyHybrid {
 
         // Validate new outcomes
         if new_outcomes.len() < 2 {
-            return Err(Error::InvalidOutcomes);
+            panic_with_error!(env, Error::InvalidOutcomes);
         }
 
         // Check all outcomes are non-empty
         for outcome in new_outcomes.iter() {
             if outcome.is_empty() {
-                return Err(Error::InvalidOutcome);
+                panic_with_error!(env, Error::InvalidOutcome);
             }
         }
 
@@ -3773,22 +3777,22 @@ impl PredictifyHybrid {
             .storage()
             .persistent()
             .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+            .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
-            return Err(Error::MarketResolved);
+            panic_with_error!(env, Error::MarketResolved);
         }
 
         // Check if any bets have been placed
         let bet_stats = bets::BetManager::get_market_bet_stats(&env, &market_id);
         if bet_stats.total_bets > 0 {
-            return Err(Error::BetsAlreadyPlaced);
+            panic_with_error!(env, Error::BetsAlreadyPlaced);
         }
 
         // Check if any votes have been placed
         if market.total_staked > 0 {
-            return Err(Error::AlreadyVoted);
+            panic_with_error!(env, Error::AlreadyVoted);
         }
 
         // Store old outcomes for event

@@ -577,7 +577,14 @@ impl ExtensionValidator {
         // Get market and validate state
         let market = MarketStateManager::get_market(env, market_id)?;
 
-        // Check if market is still active
+        if market.state == MarketState::Resolved {
+            return Err(Error::MarketResolved);
+        }
+
+        if market.state != MarketState::Active {
+            return Err(Error::MarketClosed);
+        }
+
         let current_time = env.ledger().timestamp();
         if current_time >= market.end_time {
             return Err(Error::MarketClosed);
@@ -765,14 +772,14 @@ mod tests {
             assert_eq!(
                 ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
                     .unwrap_err(),
-                Error::InvalidInput
+                Error::InvalidDuration
             );
         });
 
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
                 .unwrap_err(),
-            Error::InvalidInput
+            Error::InvalidDuration
         );
     }
 
