@@ -114,6 +114,9 @@ mod balance_tests;
 #[cfg(test)]
 mod event_management_tests;
 
+#[cfg(test)]
+mod voting_tests;
+
 #[cfg(any())]
 mod category_tags_tests;
 #[cfg(any())]
@@ -752,7 +755,13 @@ impl PredictifyHybrid {
             });
 
         // Check if the market is still active
-        if env.ledger().timestamp() >= market.end_time {
+        if market.state != MarketState::Active {
+            panic_with_error!(env, Error::InvalidState);
+        }
+
+        // Respect bet_deadline if set, otherwise use end_time
+        let cutoff = if market.bet_deadline > 0 { market.bet_deadline } else { market.end_time };
+        if env.ledger().timestamp() >= cutoff {
             panic_with_error!(env, Error::MarketClosed);
         }
 
@@ -1423,6 +1432,13 @@ impl PredictifyHybrid {
             Some(outcomes) => outcomes,
             None => panic_with_error!(env, Error::MarketNotResolved),
         };
+
+        // Enforce dispute window: payouts only after end_time + dispute_window_seconds
+        if market.dispute_window_seconds > 0
+            && env.ledger().timestamp() < market.end_time + market.dispute_window_seconds
+        {
+            panic_with_error!(env, Error::InvalidState);
+        }
 
         // Get user's vote
         let user_outcome = market

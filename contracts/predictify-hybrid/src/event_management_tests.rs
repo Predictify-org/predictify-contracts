@@ -28,11 +28,12 @@ impl TestSetup {
         let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
         let token_id = token_contract.address();
 
-        // Store TokenID in contract
+        // Store TokenID in contract and initialize circuit breaker
         env.as_contract(&contract_id, || {
             env.storage()
                 .persistent()
                 .set(&Symbol::new(&env, "TokenID"), &token_id);
+            crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
         });
 
         // Initialize the contract
