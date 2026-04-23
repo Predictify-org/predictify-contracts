@@ -94,6 +94,8 @@ mod upgrade_manager_tests;
 #[cfg(any())]
 mod query_tests;
 
+#[cfg(test)]
+mod bet_cancellation_tests;
 #[cfg(any())]
 mod bet_tests;
 #[cfg(any())]
@@ -236,6 +238,11 @@ impl PredictifyHybrid {
         match AdminInitializer::initialize(&env, &admin) {
             Ok(_) => (),
             Err(e) => panic_with_error!(env, e),
+        }
+
+        // Initialize circuit breaker
+        if let Err(e) = crate::circuit_breaker::CircuitBreaker::initialize(&env) {
+            panic_with_error!(env, e);
         }
 
         // Store platform fee configuration in persistent storage
@@ -456,6 +463,9 @@ impl PredictifyHybrid {
         oracle_config: OracleConfig,
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
+        min_pool_size: Option<i128>,
+        bet_deadline_mins_before_end: Option<u64>,
+        dispute_window_seconds: Option<u64>,
     ) -> Symbol {
         if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market") {
             panic_with_error!(env, e);
@@ -492,6 +502,12 @@ impl PredictifyHybrid {
         let duration_seconds: u64 = (duration_days as u64) * seconds_per_day;
         let end_time: u64 = env.ledger().timestamp() + duration_seconds;
 
+        // Calculate bet deadline
+        let bet_deadline = match bet_deadline_mins_before_end {
+            Some(mins) => end_time.saturating_sub(mins * 60),
+            None => 0,
+        };
+
         let (has_fallback, fallback_cfg) = match &fallback_oracle_config {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
@@ -520,9 +536,9 @@ impl PredictifyHybrid {
             extension_history: Vec::new(&env),
             category: None,
             tags: Vec::new(&env),
-            min_pool_size: None,
-            bet_deadline: 0,
-            dispute_window_seconds: 86400,
+            min_pool_size,
+            bet_deadline,
+            dispute_window_seconds: dispute_window_seconds.unwrap_or(86400),
         };
 
         // Store the market
@@ -586,6 +602,7 @@ impl PredictifyHybrid {
         oracle_config: OracleConfig,
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
+        visibility: EventVisibility,
     ) -> Symbol {
         if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event") {
             panic_with_error!(env, e);
@@ -627,7 +644,7 @@ impl PredictifyHybrid {
             admin: admin.clone(),
             created_at: env.ledger().timestamp(),
             status: MarketState::Active,
-            visibility: EventVisibility::Public,
+            visibility,
             allowlist: Vec::new(&env),
         };
 
@@ -1142,6 +1159,32 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market_bet_stats(env: Env, market_id: Symbol) -> crate::types::BetStats {
         bets::BetManager::get_market_bet_stats(&env, &market_id)
+    }
+
+    /// Cancels an active bet and refunds the user.
+    ///
+    /// This function allows users to cancel their active bets before the market
+    /// deadline, receiving a full refund of their locked funds.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - Address of the user cancelling the bet
+    /// * `market_id` - Symbol identifying the market
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful cancellation and refund,
+    /// or `Err(Error)` if cancellation fails.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::NothingToClaim` - User has no bet on this market
+    /// - `Error::MarketNotFound` - Market does not exist
+    /// - `Error::MarketClosed` - Market deadline has passed
+    /// - `Error::InvalidState` - Bet is not in Active status
+    pub fn cancel_bet(env: Env, user: Address, market_id: Symbol) -> Result<(), Error> {
+        bets::BetManager::cancel_bet(&env, user, market_id)
     }
 
     /// Calculate the payout amount for a user's bet on a resolved market.

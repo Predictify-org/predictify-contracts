@@ -255,8 +255,10 @@ impl BetManager {
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
 
         // Check if user has already bet on this market
-        if Self::has_user_bet(env, &market_id, &user) {
-            return Err(Error::AlreadyBet);
+        if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
+            if existing_bet.status != crate::types::BetStatus::Cancelled {
+                return Err(Error::AlreadyBet);
+            }
         }
 
         // Lock funds (transfer from user to contract)
@@ -363,8 +365,10 @@ impl BetManager {
             )?;
 
             // Check if user has already bet on this market
-            if Self::has_user_bet(env, &market_id, &user) {
-                return Err(Error::AlreadyBet);
+            if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
+                if existing_bet.status != crate::types::BetStatus::Cancelled {
+                    return Err(Error::AlreadyBet);
+                }
             }
 
             // Accumulate total amount
@@ -579,6 +583,7 @@ impl BetManager {
     ///
     /// Returns `Ok(())` on success or `Err(Error)` if refund fails.
     pub fn refund_market_bets(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+        let mut market = MarketStateManager::get_market(env, market_id)?;
         let bets = BetStorage::get_all_bets_for_market(env, market_id);
 
         for bet_key in bets.iter() {
@@ -590,6 +595,11 @@ impl BetManager {
                     // Mark as refunded
                     bet.mark_as_refunded();
                     BetStorage::store_bet(env, &bet)?;
+
+                    // Update market struct to reverse stakes
+                    market.total_staked = market.total_staked.saturating_sub(bet.amount);
+                    market.votes.remove(bet.user.clone());
+                    market.stakes.remove(bet.user.clone());
 
                     // Emit status update event
                     EventEmitter::emit_bet_status_updated(
@@ -604,6 +614,7 @@ impl BetManager {
             }
         }
 
+        MarketStateManager::update_market(env, market_id, &market);
         Ok(())
     }
 
@@ -725,7 +736,7 @@ impl BetManager {
         }
 
         // Get market and validate it hasn't ended
-        let market = MarketStateManager::get_market(env, &market_id)?;
+        let mut market = MarketStateManager::get_market(env, &market_id)?;
         let current_time = env.ledger().timestamp();
 
         if current_time >= market.end_time {
@@ -741,6 +752,12 @@ impl BetManager {
 
         // Update market betting stats
         Self::update_market_bet_stats_on_cancel(env, &market_id, &bet.outcome, bet.amount)?;
+
+        // Update market struct to reverse stakes
+        market.total_staked = market.total_staked.saturating_sub(bet.amount);
+        market.votes.remove(user.clone());
+        market.stakes.remove(user.clone());
+        MarketStateManager::update_market(env, &market_id, &market);
 
         // Emit bet cancelled event
         EventEmitter::emit_bet_status_updated(

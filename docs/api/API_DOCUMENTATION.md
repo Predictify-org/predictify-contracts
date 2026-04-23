@@ -87,15 +87,25 @@ pub fn create_market(
     outcomes: Vec<String>,
     duration_days: u32,
     oracle_config: OracleConfig,
-) -> Result<Symbol, Error>
+    fallback_oracle_config: Option<OracleConfig>,
+    resolution_timeout: u64,
+    min_pool_size: Option<i128>,
+    bet_deadline_mins_before_end: Option<u64>,
+    dispute_window_seconds: Option<u64>,
+) -> Symbol
 ```
 
 **Parameters:**
 - `admin`: Market administrator address
-- `question`: Market question (max 200 characters)
+- `question`: Market question (max 500 characters)
 - `outcomes`: Possible outcomes (2-10 options)
 - `duration_days`: Market duration (1-365 days)
-- `oracle_config`: Oracle configuration for resolution
+- `oracle_config`: Primary oracle configuration for resolution
+- `fallback_oracle_config`: Optional fallback oracle configuration
+- `resolution_timeout`: Timeout in seconds for oracle resolution
+- `min_pool_size`: Optional minimum pool size required for resolution
+- `bet_deadline_mins_before_end`: Optional early cutoff for bets (minutes before end)
+- `dispute_window_seconds`: Optional dispute period duration (defaults to 24h)
 
 **Returns:** Market ID (Symbol)
 
@@ -106,7 +116,62 @@ const marketId = await contract.create_market(
     "Will Bitcoin reach $100,000 by end of 2025?",
     ["Yes", "No"],
     90, // 90 days
-    oracleConfig
+    oracleConfig,
+    null, // no fallback
+    3600, // 1h resolution timeout
+    null, // no min pool size
+    60,   // bet deadline 1h before end
+    86400 // 24h dispute window
+);
+```
+
+### Betting Functions
+
+#### `place_bet()`
+Places a bet on a prediction market outcome by locking user funds.
+
+**Signature:**
+```rust
+pub fn place_bet(
+    env: Env,
+    user: Address,
+    market_id: Symbol,
+    outcome: String,
+    amount: i128,
+) -> Bet
+```
+
+**Parameters:**
+- `user`: Address of the user placing the bet (requires authentication)
+- `market_id`: Unique identifier of the market
+- `outcome`: The outcome the user predicts will occur
+- `amount`: Amount of tokens to lock for this bet
+
+**Returns:** `Bet` structure with placement details
+
+#### `cancel_bet()`
+Cancels an active bet and refunds the user's locked funds. Can only be performed before the market deadline.
+
+**Signature:**
+```rust
+pub fn cancel_bet(
+    env: Env,
+    user: Address,
+    market_id: Symbol,
+) -> Result<(), Error>
+```
+
+**Parameters:**
+- `user`: Address of the user cancelling the bet (requires authentication)
+- `market_id`: Unique identifier of the market
+
+**Returns:** `Ok(())` on success, or an `Error` if cancellation fails.
+
+**Example:**
+```typescript
+await contract.cancel_bet(
+    userAddress,
+    marketId
 );
 ```
 
