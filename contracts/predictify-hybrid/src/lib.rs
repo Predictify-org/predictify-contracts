@@ -103,12 +103,9 @@ mod gas_test;
 #[cfg(any())]
 mod gas_tracking_tests;
 #[cfg(any())]
-mod gas_tracking_tests;
-
-#[cfg(any())]
 mod claim_idempotency_tests;
 
-#[cfg(any())]
+#[cfg(test)]
 mod balance_tests;
 
 #[cfg(test)]
@@ -142,6 +139,7 @@ pub mod errors {
 pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
+use crate::circuit_breaker::CircuitBreaker;
 use crate::config::{
     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
     MIN_PLATFORM_FEE_PERCENTAGE,
@@ -6749,3 +6747,4 @@ impl PredictifyHybrid {
 
 #[cfg(any())]
 mod test;
+
