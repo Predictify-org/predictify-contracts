@@ -449,66 +449,17 @@ impl MarketValidator {
     /// ).is_err());
     /// ```
     pub fn validate_market_params(
-        _env: &Env,
+        env: &Env,
         question: &String,
         outcomes: &Vec<String>,
         duration_days: u32,
     ) -> Result<(), Error> {
-        // Validate question is not empty
-        if question.is_empty() {
-            return Err(Error::InvalidQuestion);
-        }
-
-        // Load dynamic configuration
-        let cfg =
-            crate::config::ConfigManager::get_config(_env).map_err(|_| Error::ConfigNotFound)?;
-
-        // Use the new MarketParameterValidator for comprehensive validation
-        // use crate::validation::MarketParameterValidator;
-
-        // Validate duration limits from dynamic config
-        // Temporarily disabled due to validation module being disabled
-        // if let Err(_) = MarketParameterValidator::validate_duration_limits(
-        //     duration_days,
-        //     cfg.market.min_duration_days,
-        //     cfg.market.max_duration_days,
-        // ) {
-        //     return Err(Error::InvalidDuration);
-        // }
-
-        // Simple validation for now
-        if duration_days < 1 || duration_days > 365 {
-            return Err(Error::InvalidDuration);
-        }
-
-        // Validate outcome count against dynamic config
-        // Temporarily disabled due to validation module being disabled
-        // if let Err(_) = MarketParameterValidator::validate_outcome_count(
-        //     outcomes,
-        //     cfg.market.min_outcomes,
-        //     cfg.market.max_outcomes,
-        // ) {
-        //     return Err(Error::InvalidOutcomes);
-        // }
-
-        // Simple validation for now
-        if outcomes.len() < 2 || outcomes.len() > 10 {
-            return Err(Error::InvalidOutcomes);
-        }
-
-        // Enforce max question length from dynamic config
-        if question.len() as u32 > cfg.market.max_question_length {
-            return Err(Error::InvalidQuestion);
-        }
-
-        // Enforce max outcome length from dynamic config
-        for o in outcomes.iter() {
-            if o.len() as u32 > cfg.market.max_outcome_length {
-                return Err(Error::InvalidOutcomes);
-            }
-        }
-
-        Ok(())
+        crate::validation::CreationValidator::validate_market_creation(
+            env,
+            question,
+            outcomes,
+            &duration_days,
+        )
     }
 
     /// Validates oracle configuration for market creation.

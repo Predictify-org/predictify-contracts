@@ -109,6 +109,12 @@ pub fn create_market(
 
 **Returns:** Market ID (Symbol)
 
+**Validation behavior:**
+- Question validation trims leading and trailing whitespace before enforcing the minimum and maximum length.
+- Outcome validation enforces min/max count, rejects blank entries after trimming, and rejects duplicate or ambiguous values after normalization.
+- Duration must remain within the configured market duration bounds.
+- Validation failures surface through contract errors such as `InvalidQuestion`, `InvalidOutcomes`, and `InvalidDuration`.
+
 **Example:**
 ```typescript
 const marketId = await contract.create_market(

@@ -143,7 +143,8 @@ pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManage
 pub use types::*;
 
 use crate::config::{
-    DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE, MIN_PLATFORM_FEE_PERCENTAGE,
+    ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
+    MIN_PLATFORM_FEE_PERCENTAGE,
 };
 use crate::events::EventEmitter;
 use crate::gas::GasTracker;
@@ -167,7 +168,9 @@ impl PredictifyHybrid {
     /// This function must be called once after contract deployment to set up the initial
     /// administrative configuration and platform fee structure. It establishes the contract admin who
     /// will have privileges to create markets and perform administrative functions, and configures
-    /// the platform fee percentage for market operations.
+    /// the platform fee percentage for market operations. The call also stores the default
+    /// development-oriented contract configuration so creation validators have deterministic
+    /// bounds immediately after deployment.
     ///
     /// # Parameters
     ///
@@ -212,6 +215,12 @@ impl PredictifyHybrid {
     /// The admin address should be carefully chosen as it will have significant
     /// control over the contract's operation, including market creation and resolution.
     /// Consider using a multi-signature wallet or governance contract for production.
+    ///
+    /// # Default Configuration
+    ///
+    /// `initialize()` stores the default development contract configuration. Integrators that
+    /// need testnet, mainnet, or custom configuration should update configuration explicitly
+    /// after initialization through the contract's administrative configuration flows.
     ///
     /// # Re-initialization Prevention
     ///
@@ -387,9 +396,9 @@ impl PredictifyHybrid {
     ///
     /// * `env` - The Soroban environment for blockchain operations
     /// * `admin` - The administrator address creating the market (must be authorized)
-    /// * `question` - The prediction question (must be non-empty)
-    /// * `outcomes` - Vector of possible outcomes (minimum 2 required, all non-empty, no duplicates)
-    /// * `duration_days` - Market duration in days (must be between 1-365 days)
+    /// * `question` - The prediction question (non-empty after trimming and within the supported length bounds)
+    /// * `outcomes` - Vector of possible outcomes (bounded count, non-empty after trimming, and duplicate-safe)
+    /// * `duration_days` - Market duration in days (must remain within the supported bounds)
     /// * `oracle_config` - Configuration for oracle integration (Reflector, Pyth, etc.)
     ///
     /// # Returns
@@ -400,8 +409,9 @@ impl PredictifyHybrid {
     ///
     /// This function will panic with specific errors if:
     /// - `Error::Unauthorized` - Caller is not the contract admin
-    /// - `Error::InvalidQuestion` - Question is empty
-    /// - `Error::InvalidOutcomes` - Less than 2 outcomes or any outcome is empty
+    /// - `Error::InvalidQuestion` - Question is empty, whitespace-only, or outside the supported length bounds
+    /// - `Error::InvalidOutcomes` - Outcomes violate count, emptiness, duplicate, or ambiguity rules
+    /// - `Error::InvalidDuration` - Duration is outside the supported bounds
     /// - Storage operations fail
     ///
     /// # Example
@@ -519,13 +529,13 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        // Validate inputs
-        if outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
-        }
-
-        if question.len() == 0 {
-            panic_with_error!(env, Error::InvalidQuestion);
+        if let Err(e) = crate::validation::CreationValidator::validate_market_creation(
+            &env,
+            &question,
+            &outcomes,
+            &duration_days,
+        ) {
+            panic_with_error!(env, e);
         }
 
         // Validate oracle configuration
@@ -632,6 +642,12 @@ impl PredictifyHybrid {
     /// - Caller is not the contract admin
     /// - validation fails (invalid description, outcomes, or end time)
     /// - `resolution_timeout` falls outside the supported bounds
+    ///
+    /// # Validation Rules
+    ///
+    /// - `description` follows the same non-empty and length policy as market questions
+    /// - `outcomes` follow the same count, non-empty, duplicate, and ambiguity rules as market creation
+    /// - `end_time` must be strictly greater than the current ledger timestamp
     ///
     /// # Errors
     ///
