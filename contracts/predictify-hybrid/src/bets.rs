@@ -917,7 +917,10 @@ impl BetValidator {
     ///
     /// - Market must exist
     /// - Market must be in Active state
-    /// - Current time must be before market end time
+    /// - Current time must be before the effective betting deadline
+    /// - Effective betting deadline is `market.bet_deadline` when non-zero, otherwise `market.end_time`
+    /// - Effective betting deadline must not exceed `market.end_time`
+    /// - `min_pool_size` (when provided) must be non-negative
     /// - Market must not already be resolved
     ///
     /// # Parameters
@@ -934,9 +937,17 @@ impl BetValidator {
             return Err(Error::MarketClosed);
         }
 
-        // Check if market has not ended
+        if let Some(min_pool_size) = market.min_pool_size {
+            if min_pool_size < 0 {
+                return Err(Error::InvalidState);
+            }
+        }
+
+        let effective_bet_deadline = Self::effective_bet_deadline(market)?;
+
+        // Check if market has not reached betting cutoff
         let current_time = env.ledger().timestamp();
-        if current_time >= market.end_time {
+        if current_time >= effective_bet_deadline {
             return Err(Error::MarketClosed);
         }
 
@@ -946,6 +957,23 @@ impl BetValidator {
         }
 
         Ok(())
+    }
+
+    /// Resolve the effective betting deadline for a market.
+    ///
+    /// A value of `0` in `market.bet_deadline` means "use `market.end_time`".
+    /// Returns `Error::InvalidState` for malformed market metadata where
+    /// `market.bet_deadline` is after `market.end_time`.
+    pub fn effective_bet_deadline(market: &Market) -> Result<u64, Error> {
+        if market.bet_deadline == 0 {
+            return Ok(market.end_time);
+        }
+
+        if market.bet_deadline > market.end_time {
+            return Err(Error::InvalidState);
+        }
+
+        Ok(market.bet_deadline)
     }
 
     /// Validate bet parameters.
@@ -974,7 +1002,10 @@ impl BetValidator {
         // validation::validate_bet_amount_against_limits(amount, &limits)
 
         // Simple validation for now
-        if amount < limits.min_bet || amount > limits.max_bet {
+        if amount < limits.min_bet {
+            return Err(Error::InsufficientStake);
+        }
+        if amount > limits.max_bet {
             return Err(Error::InvalidInput);
         }
         Ok(())
@@ -1159,7 +1190,32 @@ impl BetAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::BetStatus;
+    use crate::types::{BetStatus, Market, MarketState, OracleConfig, OracleProvider};
+    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+
+    fn test_market(env: &Env, end_time: u64) -> Market {
+        Market::new(
+            env,
+            Address::generate(env),
+            String::from_str(env, "Deadline test market"),
+            soroban_sdk::vec![
+                env,
+                String::from_str(env, "yes"),
+                String::from_str(env, "no"),
+            ],
+            end_time,
+            OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                String::from_str(env, "BTC/USD"),
+                1,
+                String::from_str(env, "gt"),
+            ),
+            None,
+            86400,
+            MarketState::Active,
+        )
+    }
 
     #[test]
     fn test_bet_amount_validation() {
@@ -1179,9 +1235,6 @@ mod tests {
 
     #[test]
     fn test_bet_status_transitions() {
-        use soroban_sdk::testutils::Address as _;
-        use soroban_sdk::Env;
-
         let env = Env::default();
         let user = Address::generate(&env);
         let market_id = Symbol::new(&env, "test_market");
@@ -1236,5 +1289,99 @@ mod tests {
         assert!(!bet3.is_resolved()); // Refunded is not considered "resolved"
         assert!(!bet3.is_winner());
         assert_eq!(bet3.status, BetStatus::Refunded);
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_uses_end_time_when_bet_deadline_unset() {
+        let env = Env::default();
+        let end_time = 10_000;
+        let mut market = test_market(&env, end_time);
+        market.bet_deadline = 0;
+
+        env.ledger().set(LedgerInfo {
+            timestamp: end_time - 1,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert!(BetValidator::validate_market_for_betting(&env, &market).is_ok());
+
+        env.ledger().set(LedgerInfo {
+            timestamp: end_time,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::MarketClosed)
+        );
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_honors_explicit_bet_deadline() {
+        let env = Env::default();
+        let end_time = 10_000;
+        let mut market = test_market(&env, end_time);
+        market.bet_deadline = 9_000;
+
+        env.ledger().set(LedgerInfo {
+            timestamp: 8_999,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert!(BetValidator::validate_market_for_betting(&env, &market).is_ok());
+
+        env.ledger().set(LedgerInfo {
+            timestamp: 9_000,
+            protocol_version: 25,
+            sequence_number: env.ledger().sequence(),
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 10000,
+        });
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::MarketClosed)
+        );
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_rejects_deadline_after_end_time() {
+        let env = Env::default();
+        let mut market = test_market(&env, 10_000);
+        market.bet_deadline = 10_001;
+
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::InvalidState)
+        );
+    }
+
+    #[test]
+    fn test_validate_market_for_betting_rejects_negative_min_pool_size() {
+        let env = Env::default();
+        let mut market = test_market(&env, 10_000);
+        market.min_pool_size = Some(-1);
+
+        assert_eq!(
+            BetValidator::validate_market_for_betting(&env, &market),
+            Err(Error::InvalidState)
+        );
     }
 }

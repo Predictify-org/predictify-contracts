@@ -110,6 +110,27 @@ const marketId = await contract.create_market(
 );
 ```
 
+### Betting Validation Semantics
+
+Bet acceptance is deterministic and evaluated against immutable market metadata plus current ledger time.
+
+- `bet_deadline` effective rule:
+    - If `bet_deadline == 0`, the effective cutoff is `end_time`.
+    - If `bet_deadline > 0`, the effective cutoff is `bet_deadline`.
+    - If `bet_deadline > end_time`, market metadata is treated as invalid and bet placement is rejected.
+- Time boundary rule:
+    - Bets are accepted only when `ledger_timestamp < effective_bet_deadline`.
+    - Bets are rejected when `ledger_timestamp >= effective_bet_deadline`.
+- `min_pool_size` metadata rule:
+    - `min_pool_size` must be non-negative when present.
+    - Negative values are treated as invalid market metadata and bet placement is rejected.
+
+**Error mapping (bet placement):**
+- Closed cutoff window: `Error::MarketClosed`.
+- Invalid market metadata (`bet_deadline > end_time`, negative `min_pool_size`): `Error::InvalidState`.
+- Amount below configured minimum: `Error::InsufficientStake`.
+- Amount above configured maximum: `Error::InvalidInput`.
+
 ---
 
 ## 📊 Data Structures
