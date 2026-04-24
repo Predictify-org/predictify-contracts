@@ -1685,6 +1685,281 @@ impl PredictifyHybrid {
         env.storage().persistent().set(&market_id, &market);
     }
 
+    /// Set the global claim period for resolved markets (admin only).
+    ///
+    /// Claims are allowed until `market.end_time + claim_period_seconds` unless overridden
+    /// per market. After expiry, claims revert with `Error::ResolutionTimeoutReached`.
+    pub fn set_global_claim_period(env: Env, admin: Address, claim_period_seconds: u64) {
+        admin.require_auth();
+
+        if claim_period_seconds == 0 {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        recovery::UnclaimedWinningsPolicy::set_global_claim_period(&env, claim_period_seconds);
+        EventEmitter::emit_claim_period_updated(&env, &admin, claim_period_seconds);
+    }
+
+    /// Set a market-specific claim period override (admin only).
+    ///
+    /// The market-specific value overrides the global claim period for the given market.
+    pub fn set_market_claim_period(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        claim_period_seconds: u64,
+    ) {
+        admin.require_auth();
+
+        if claim_period_seconds == 0 {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        if markets::MarketStateManager::get_market(&env, &market_id).is_err() {
+            panic_with_error!(env, Error::MarketNotFound);
+        }
+
+        recovery::UnclaimedWinningsPolicy::set_market_claim_period(
+            &env,
+            &market_id,
+            claim_period_seconds,
+        );
+        EventEmitter::emit_market_claim_period_updated(&env, &admin, &market_id, claim_period_seconds);
+    }
+
+    /// Set treasury recipient for unclaimed winnings sweeps (admin only).
+    pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+
+        recovery::UnclaimedWinningsPolicy::set_treasury(&env, &treasury);
+        EventEmitter::emit_treasury_updated(&env, &admin, &treasury);
+    }
+
+    /// Sweep unclaimed winning payouts after claim period expiry (admin only).
+    ///
+    /// If `burn` is true, swept funds are burned (no recipient balance credited).
+    /// If `burn` is false, swept funds are credited to the configured treasury.
+    pub fn sweep_unclaimed_winnings(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        burn: bool,
+    ) -> Result<i128, Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, "Admin"))
+            .ok_or(Error::AdminNotSet)?;
+
+        if admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        let winning_outcomes = market
+            .winning_outcomes
+            .clone()
+            .ok_or(Error::MarketNotResolved)?;
+
+        if !recovery::UnclaimedWinningsPolicy::is_claim_window_expired(
+            &env,
+            &market_id,
+            market.end_time,
+        ) {
+            return Err(Error::InvalidState);
+        }
+
+        let fee_percent = crate::config::ConfigManager::get_config(&env)
+            .map(|cfg| cfg.fees.platform_fee_percentage)
+            .unwrap_or_else(|_| {
+                env.storage()
+                    .persistent()
+                    .get(&Symbol::new(&env, "platform_fee"))
+                    .unwrap_or(2)
+            });
+
+        if fee_percent < 0 || fee_percent > PERCENTAGE_DENOMINATOR {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        let bettors = bets::BetStorage::get_all_bets_for_market(&env, &market_id);
+
+        let mut winning_total = 0i128;
+        for (voter, outcome) in market.votes.iter() {
+            if winning_outcomes.contains(&outcome) {
+                winning_total = winning_total
+                    .checked_add(market.stakes.get(voter.clone()).unwrap_or(0))
+                    .ok_or(Error::InvalidInput)?;
+            }
+        }
+
+        for user in bettors.iter() {
+            if market.votes.contains_key(user.clone()) {
+                continue;
+            }
+
+            if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+                if winning_outcomes.contains(&bet.outcome) {
+                    winning_total = winning_total
+                        .checked_add(bet.amount)
+                        .ok_or(Error::InvalidInput)?;
+                }
+            }
+        }
+
+        if winning_total <= 0 {
+            return Ok(0);
+        }
+
+        let mut swept_total = 0i128;
+        let total_pool = market.total_staked;
+
+        for (user, outcome) in market.votes.iter() {
+            if !winning_outcomes.contains(&outcome) {
+                continue;
+            }
+
+            if market
+                .claimed
+                .get(user.clone())
+                .map(|info| info.is_claimed())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
+            if user_stake <= 0 {
+                continue;
+            }
+
+            let user_share = user_stake
+                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                .ok_or(Error::InvalidInput)?
+                / PERCENTAGE_DENOMINATOR;
+            let payout = user_share
+                .checked_mul(total_pool)
+                .ok_or(Error::InvalidInput)?
+                / winning_total;
+
+            if payout < 0 {
+                return Err(Error::InvalidInput);
+            }
+
+            market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+            swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
+        }
+
+        for user in bettors.iter() {
+            if market.votes.contains_key(user.clone()) {
+                continue;
+            }
+
+            let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) else {
+                continue;
+            };
+
+            if !winning_outcomes.contains(&bet.outcome) {
+                continue;
+            }
+
+            if market
+                .claimed
+                .get(user.clone())
+                .map(|info| info.is_claimed())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            if bet.amount <= 0 {
+                continue;
+            }
+
+            let user_share = bet
+                .amount
+                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                .ok_or(Error::InvalidInput)?
+                / PERCENTAGE_DENOMINATOR;
+            let payout = user_share
+                .checked_mul(total_pool)
+                .ok_or(Error::InvalidInput)?
+                / winning_total;
+
+            if payout < 0 {
+                return Err(Error::InvalidInput);
+            }
+
+            market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+            swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
+        }
+
+        let recipient = if burn {
+            None
+        } else {
+            let treasury = recovery::UnclaimedWinningsPolicy::get_treasury(&env)
+                .ok_or(Error::ConfigNotFound)?;
+            if swept_total > 0 {
+                storage::BalanceStorage::add_balance(
+                    &env,
+                    &treasury,
+                    &types::ReflectorAsset::Stellar,
+                    swept_total,
+                )?;
+            }
+            Some(treasury)
+        };
+
+        env.storage().persistent().set(&market_id, &market);
+        EventEmitter::emit_unclaimed_winnings_swept(
+            &env,
+            &market_id,
+            &admin,
+            &recipient,
+            swept_total,
+            burn,
+        );
+
+        Ok(swept_total)
+    }
+
     /// Retrieves complete market information by market identifier.
     ///
     /// This function provides read-only access to all market data including
@@ -1852,6 +2127,11 @@ impl PredictifyHybrid {
         winning_outcomes_vec.push_back(winning_outcome.clone());
         market.winning_outcomes = Some(winning_outcomes_vec.clone());
         market.state = MarketState::Resolved;
+        recovery::UnclaimedWinningsPolicy::set_claim_window_start_if_missing(
+            &env,
+            &market_id,
+            env.ledger().timestamp(),
+        );
         env.storage().persistent().set(&market_id, &market);
 
         // Resolve bets to mark them as won/lost
@@ -1992,6 +2272,11 @@ impl PredictifyHybrid {
         // Set winning outcome(s) - supports multiple winners for ties
         market.winning_outcomes = Some(winning_outcomes.clone());
         market.state = MarketState::Resolved;
+        recovery::UnclaimedWinningsPolicy::set_claim_window_start_if_missing(
+            &env,
+            &market_id,
+            env.ledger().timestamp(),
+        );
         env.storage().persistent().set(&market_id, &market);
 
         // Resolve bets to mark them as won/lost

@@ -31,6 +31,36 @@ This documentation helps in detecting incident response procedures, provides ins
 - Documentation of incident and prevention
 - Notification to regulatory bodies during a security breach
 
+## 6. Unclaimed Winnings Timeout Policy
+- Claiming window is enforced per resolved market.
+- Default claim window: 90 days from recorded resolution time (legacy fallback uses `market.end_time`).
+- Admin can set:
+	- Global claim window: `set_global_claim_period(admin, claim_period_seconds)`
+	- Market override: `set_market_claim_period(admin, market_id, claim_period_seconds)`
+- Claims attempted after deadline revert with `ResolutionTimeoutReached`.
+
+### Sweep Policy
+- Sweep entrypoint: `sweep_unclaimed_winnings(admin, market_id, burn)`.
+- Authorization: admin only.
+- Preconditions:
+	- Market must be resolved.
+	- Claim window must be expired.
+- Sweep scope:
+	- Only unclaimed winning payouts are swept.
+	- Already claimed payouts are excluded.
+
+### Destination Modes
+- `burn = false`: transfer swept amount to configured treasury address.
+	- Treasury must be configured first via `set_treasury(admin, treasury)`.
+- `burn = true`: burn mode (no treasury credit).
+
+### Operational Runbook
+1. Verify market is resolved and claim window has expired.
+2. Decide destination mode (`burn` or treasury).
+3. If treasury mode, verify treasury address is configured.
+4. Execute sweep.
+5. Verify emitted `UnclaimedWinningsSweptEvent` and resulting balances.
+
 # Guidelines for Security Monitoring
 
 ## Metrices to watch
