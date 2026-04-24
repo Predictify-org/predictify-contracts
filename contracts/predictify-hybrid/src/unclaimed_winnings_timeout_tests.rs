@@ -231,3 +231,66 @@ fn test_market_specific_claim_period_override_used() {
         .amount;
     assert_eq!(treasury_balance, 0);
 }
+
+#[test]
+#[should_panic(expected = "Error(Contract, #400)")]
+fn test_delayed_resolution_has_fresh_claim_window() {
+    let setup = TimeoutSweepSetup::new();
+
+    setup
+        .client()
+        .set_global_claim_period(&setup.admin, &100u64);
+
+    setup.set_time(setup.end_time + 10_000);
+
+    setup.env.as_contract(&setup.contract_id, || {
+        let outcomes = vec![
+            &setup.env,
+            String::from_str(&setup.env, "yes"),
+            String::from_str(&setup.env, "no"),
+        ];
+
+        let mut market = Market::new(
+            &setup.env,
+            setup.admin.clone(),
+            String::from_str(&setup.env, "Will outcome be yes?"),
+            outcomes,
+            setup.end_time,
+            OracleConfig {
+                provider: OracleProvider::reflector(),
+                oracle_address: Address::from_str(
+                    &setup.env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
+                feed_id: String::from_str(&setup.env, "TEST/YES"),
+                threshold: 1,
+                comparison: String::from_str(&setup.env, "gt"),
+            },
+            None,
+            86_400,
+            MarketState::Active,
+        );
+
+        market
+            .votes
+            .set(setup.winner_1.clone(), String::from_str(&setup.env, "yes"));
+        market.stakes.set(setup.winner_1.clone(), 1_000_000);
+        market.total_staked = 1_000_000;
+
+        setup
+            .env
+            .storage()
+            .persistent()
+            .set(&setup.market_id, &market);
+    });
+
+    setup.client().resolve_market_manual(
+        &setup.admin,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+    );
+
+    setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &true);
+}

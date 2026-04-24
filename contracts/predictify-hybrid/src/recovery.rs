@@ -6,6 +6,8 @@ use crate::markets::MarketStateManager;
 use crate::types::{ClaimInfo, MarketState};
 use crate::Error;
 
+const DEFAULT_UNCLAIMED_CLAIM_PERIOD_SECONDS: u64 = 90 * 24 * 60 * 60;
+
 // ===== RECOVERY TYPES =====
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,6 +91,109 @@ impl RecoveryStorage {
             .get(&Self::status_key(env))
             .unwrap_or(Map::new(env));
         status_map.get(market_id.clone())
+    }
+}
+
+pub struct UnclaimedWinningsPolicy;
+impl UnclaimedWinningsPolicy {
+    #[inline(always)]
+    fn global_claim_period_key(env: &Env) -> Symbol {
+        Symbol::new(env, "claim_period_global")
+    }
+
+    #[inline(always)]
+    fn market_claim_periods_key(env: &Env) -> Symbol {
+        Symbol::new(env, "claim_period_market")
+    }
+
+    #[inline(always)]
+    fn treasury_key(env: &Env) -> Symbol {
+        Symbol::new(env, "treasury_addr")
+    }
+
+    #[inline(always)]
+    fn claim_window_start_key(env: &Env) -> Symbol {
+        Symbol::new(env, "claim_window_start")
+    }
+
+    pub fn set_global_claim_period(env: &Env, claim_period_seconds: u64) {
+        env.storage()
+            .persistent()
+            .set(&Self::global_claim_period_key(env), &claim_period_seconds);
+    }
+
+    pub fn get_global_claim_period(env: &Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&Self::global_claim_period_key(env))
+            .unwrap_or(DEFAULT_UNCLAIMED_CLAIM_PERIOD_SECONDS)
+    }
+
+    pub fn set_market_claim_period(env: &Env, market_id: &Symbol, claim_period_seconds: u64) {
+        let mut periods: Map<Symbol, u64> = env
+            .storage()
+            .persistent()
+            .get(&Self::market_claim_periods_key(env))
+            .unwrap_or(Map::new(env));
+        periods.set(market_id.clone(), claim_period_seconds);
+        env.storage()
+            .persistent()
+            .set(&Self::market_claim_periods_key(env), &periods);
+    }
+
+    pub fn get_market_claim_period(env: &Env, market_id: &Symbol) -> Option<u64> {
+        let periods: Map<Symbol, u64> = env
+            .storage()
+            .persistent()
+            .get(&Self::market_claim_periods_key(env))
+            .unwrap_or(Map::new(env));
+        periods.get(market_id.clone())
+    }
+
+    pub fn get_effective_claim_period(env: &Env, market_id: &Symbol) -> u64 {
+        Self::get_market_claim_period(env, market_id).unwrap_or(Self::get_global_claim_period(env))
+    }
+
+    pub fn claim_deadline(env: &Env, market_id: &Symbol, market_end_time: u64) -> u64 {
+        Self::get_claim_window_start(env, market_id, market_end_time)
+            .saturating_add(Self::get_effective_claim_period(env, market_id))
+    }
+
+    pub fn is_claim_window_expired(env: &Env, market_id: &Symbol, market_end_time: u64) -> bool {
+        env.ledger().timestamp() >= Self::claim_deadline(env, market_id, market_end_time)
+    }
+
+    pub fn set_claim_window_start_if_missing(env: &Env, market_id: &Symbol, start_timestamp: u64) {
+        let mut starts: Map<Symbol, u64> = env
+            .storage()
+            .persistent()
+            .get(&Self::claim_window_start_key(env))
+            .unwrap_or(Map::new(env));
+
+        if starts.get(market_id.clone()).is_none() {
+            starts.set(market_id.clone(), start_timestamp);
+            env.storage()
+                .persistent()
+                .set(&Self::claim_window_start_key(env), &starts);
+        }
+    }
+
+    pub fn get_claim_window_start(env: &Env, market_id: &Symbol, market_end_time: u64) -> u64 {
+        let starts: Map<Symbol, u64> = env
+            .storage()
+            .persistent()
+            .get(&Self::claim_window_start_key(env))
+            .unwrap_or(Map::new(env));
+
+        starts.get(market_id.clone()).unwrap_or(market_end_time)
+    }
+
+    pub fn set_treasury(env: &Env, treasury: &Address) {
+        env.storage().persistent().set(&Self::treasury_key(env), treasury);
+    }
+
+    pub fn get_treasury(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&Self::treasury_key(env))
     }
 }
 
