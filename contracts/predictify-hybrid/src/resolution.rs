@@ -970,36 +970,26 @@ impl OracleResolutionManager {
         Ok((price_data.price, outcome))
     }
 
-    /// Fetch oracle result for a market with fallback support and timeout
+    /// Fetch oracle result for a market with deterministic fallback ordering and timeout handling.
+    ///
+    /// The resolver attempts the primary oracle once. When `has_fallback` is `true`, it attempts the
+    /// fallback oracle once only after that primary failure. No oracle calls are made once
+    /// `ledger.timestamp() >= end_time + resolution_timeout`.
     pub fn fetch_oracle_result(env: &Env, market_id: &Symbol) -> Result<OracleResolution, Error> {
         // Get the market from storage
         let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        // 1. Check if resolution timeout has been reached
+        // 1. Check if resolution timeout has been reached.
+        //
+        // Safety invariant: a market with an active dispute must NOT be cancelled by the
+        // oracle resolution timeout.  Cancelling while a dispute is open would permanently
+        // lock the dispute stakes and leave the market in an unresolvable state (deadlock).
+        // Instead we surface `ResolutionTimeoutReached` so the caller knows the oracle path
+        // is closed while the dispute process remains the authoritative resolution path.
         let current_time = env.ledger().timestamp();
-        if current_time > market.end_time + market.resolution_timeout {
-            // Reached timeout without resolution, mark for refund
-            let old_state = market.state.clone();
-            market.state = crate::types::MarketState::Cancelled;
-            MarketStateManager::update_market(env, market_id, &market);
-
+        if current_time >= market.end_time.saturating_add(market.resolution_timeout) {
             crate::events::EventEmitter::emit_resolution_timeout(env, market_id, current_time);
-            crate::events::EventEmitter::emit_state_change_event(
-                env,
-                market_id,
-                &old_state,
-                &crate::types::MarketState::Cancelled,
-                &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
-            );
-            crate::monitoring::ContractMonitor::emit_resolution_transition_hook(
-                env,
-                market_id,
-                &old_state,
-                &crate::types::MarketState::Cancelled,
-                &soroban_sdk::String::from_str(env, "timeout_cancelled"),
-            );
-
-            return Err(Error::InvalidState);
+            return Err(Error::ResolutionTimeoutReached);
         }
 
         // Validate market for oracle resolution
@@ -1026,9 +1016,27 @@ impl OracleResolutionManager {
                             used_config = fallback_config.clone();
                             res
                         }
-                        Err(_) => return Err(Error::OracleUnavailable),
+                        Err(_) => {
+                            crate::events::EventEmitter::emit_manual_resolution_required(
+                                env,
+                                market_id,
+                                &soroban_sdk::String::from_str(
+                                    env,
+                                    "oracle_resolution_failed_primary_then_fallback",
+                                ),
+                            );
+                            return Err(Error::FallbackOracleUnavailable);
+                        }
                     }
                 } else {
+                    crate::events::EventEmitter::emit_manual_resolution_required(
+                        env,
+                        market_id,
+                        &soroban_sdk::String::from_str(
+                            env,
+                            "oracle_resolution_failed_primary_only",
+                        ),
+                    );
                     return Err(Error::OracleUnavailable);
                 }
             }
@@ -1342,11 +1350,23 @@ impl MarketResolutionManager {
         );
 
         // For resolution record, use first outcome (or comma-separated for display)
-        let final_result = if winning_outcomes.len() > 0 {
-            winning_outcomes.get(0).unwrap().clone()
-        } else {
-            oracle_result.clone() // Fallback
-        };
+       let final_result = if winning_outcomes.len() > 0 {
+    if winning_outcomes.len() == 1 {
+        winning_outcomes.get(0).unwrap().clone()
+    } else {
+        // Represent ties clearly for logs/UI
+        let mut combined = String::from_str(env, "");
+        for (i, outcome) in winning_outcomes.iter().enumerate() {
+            if i > 0 {
+                combined = combined + String::from_str(env, ",");
+            }
+            combined = combined + outcome.clone();
+        }
+        combined
+    }
+} else {
+    oracle_result.clone()
+};
 
         // Determine resolution method
         let resolution_method = MarketResolutionAnalytics::determine_resolution_method(

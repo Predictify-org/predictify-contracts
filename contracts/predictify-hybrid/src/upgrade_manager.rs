@@ -3,6 +3,7 @@
 use alloc::format;
 use soroban_sdk::{contracttype, Address, BytesN, Env, String, Symbol, Vec};
 
+use crate::admin::AdminAccessControl;
 use crate::errors::Error;
 use crate::events::EventEmitter;
 use crate::versioning::{Version, VersionManager};
@@ -341,9 +342,6 @@ impl UpgradeManager {
         admin: &Address,
         new_wasm_hash: BytesN<32>,
     ) -> Result<(), Error> {
-        // Verify admin authorization
-        admin.require_auth();
-
         // Validate admin permissions
         Self::validate_admin_permissions(env, admin)?;
 
@@ -505,9 +503,6 @@ impl UpgradeManager {
         admin: &Address,
         rollback_wasm_hash: BytesN<32>,
     ) -> Result<(), Error> {
-        // Verify admin authorization
-        admin.require_auth();
-
         // Validate admin permissions
         Self::validate_admin_permissions(env, admin)?;
 
@@ -673,20 +668,7 @@ impl UpgradeManager {
 
     /// Validate admin has upgrade permissions
     fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        // Check if admin exists in storage
-        let admin_key = Symbol::new(env, "admin");
-        let stored_admin: Address = env
-            .storage()
-            .instance()
-            .get(&admin_key)
-            .ok_or(Error::Unauthorized)?;
-
-        // Verify admin matches
-        if stored_admin != *admin {
-            return Err(Error::Unauthorized);
-        }
-
-        Ok(())
+        AdminAccessControl::require_admin_auth(env, admin)
     }
 
     /// Get current Wasm hash

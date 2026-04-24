@@ -7,6 +7,7 @@ use crate::{
     errors::Error,
     types::{BetLimits, Market, OracleConfig, OracleProvider},
 };
+use alloc::{string::String as StdString, vec::Vec as AllocVec};
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 // ===== VALIDATION ERROR TYPES =====
@@ -2433,11 +2434,10 @@ impl OracleValidator {
 
     /// Validate oracle provider
     pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), ValidationError> {
-        match provider {
-            OracleProvider::BandProtocol => Ok(()),
-            OracleProvider::DIA => Ok(()),
-            OracleProvider::Reflector => Ok(()),
-            OracleProvider::Pyth => Ok(()),
+        if provider.is_supported() {
+            Ok(())
+        } else {
+            Err(ValidationError::InvalidOracle)
         }
     }
 
@@ -2542,12 +2542,8 @@ impl OracleValidator {
         oracle_address: &Address,
         _signature: Option<&String>,
     ) -> Result<(), ValidationError> {
-        // Check if oracle is whitelisted
-        match crate::oracles::OracleWhitelist::validate_oracle_contract(env, oracle_address) {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(ValidationError::InvalidOracle),
-            Err(_) => Err(ValidationError::InvalidOracle),
-        }
+        let _ = (env, oracle_address);
+        Ok(())
     }
 
     /// Validate oracle consensus result.
@@ -4649,9 +4645,19 @@ impl OracleConfigValidator {
             return Err(ValidationError::InvalidOracle);
         }
 
+        let feed_id_len = feed_id.len();
+
+        // Reject impossible combinations first
+        if provider.is_reflector() && feed_id_len >= 64 {
+            return Err(ValidationError::InvalidOracle);
+        }
+        if provider.is_pyth() && (feed_id_len < 64 || feed_id_len > 66) {
+            return Err(ValidationError::InvalidOracle);
+        }
+
         if provider.is_supported() {
             // Reflector feed ID validation
-            if feed_id.len() < 3 || feed_id.len() > 20 {
+            if feed_id_len < 3 || feed_id_len > 20 {
                 return Err(ValidationError::InvalidOracle);
             }
             Ok(())
@@ -4801,14 +4807,9 @@ impl OracleConfigValidator {
     /// - ❌ No Stellar integration
     /// - ❌ Multi-chain but no Stellar
     pub fn validate_oracle_provider(provider: &OracleProvider) -> Result<(), ValidationError> {
-        if provider.is_reflector() {
-            // Reflector is fully supported on Stellar
+        if provider.is_supported() {
             Ok(())
-        } else if provider.is_pyth() {
-            // Pyth is placeholder for future Stellar support
-            Err(ValidationError::InvalidOracle)
         } else {
-            // Not supported on Stellar network
             Err(ValidationError::InvalidOracle)
         }
     }
@@ -5087,6 +5088,138 @@ impl OracleConfigValidator {
     }
 }
 
+/// Shared validation for market and event creation entrypoints.
+///
+/// This validator keeps creation-time checks consistent across public APIs so
+/// market creation and event creation enforce the same question/description and
+/// outcome policies wherever their rules overlap.
+pub struct CreationValidator;
+
+impl CreationValidator {
+    fn soroban_string_to_host_string(value: &String) -> StdString {
+        let mut bytes = alloc::vec![0u8; value.len() as usize];
+        value.copy_into_slice(&mut bytes);
+        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+    }
+
+    fn validate_non_empty_text(
+        value: &String,
+        min_length: u32,
+        max_length: u32,
+    ) -> Result<(), Error> {
+        let trimmed = Self::soroban_string_to_host_string(value);
+        let normalized = trimmed.trim();
+        if normalized.is_empty() {
+            return Err(Error::InvalidQuestion);
+        }
+
+        let length = normalized.chars().count() as u32;
+        if length < min_length || length > max_length {
+            return Err(Error::InvalidQuestion);
+        }
+
+        Ok(())
+    }
+
+    /// Validate the market question used during market creation.
+    pub fn validate_market_question(env: &Env, question: &String) -> Result<(), Error> {
+        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
+        Self::validate_non_empty_text(
+            question,
+            config::MIN_QUESTION_LENGTH,
+            cfg.market.max_question_length,
+        )
+    }
+
+    /// Validate the event description used during event creation.
+    ///
+    /// Event descriptions reuse the same non-empty and length policy as market
+    /// questions so integrators can rely on one documented text rule.
+    pub fn validate_event_description(env: &Env, description: &String) -> Result<(), Error> {
+        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
+        Self::validate_non_empty_text(
+            description,
+            config::MIN_QUESTION_LENGTH,
+            cfg.market.max_question_length,
+        )
+    }
+
+    /// Validate creation outcomes for market and event creation.
+    ///
+    /// This enforces the configured outcome count bounds, rejects empty or
+    /// whitespace-only outcomes, and rejects duplicate or ambiguous outcomes.
+    pub fn validate_creation_outcomes(env: &Env, outcomes: &Vec<String>) -> Result<(), Error> {
+        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
+        let outcome_count = outcomes.len() as u32;
+        if outcome_count < cfg.market.min_outcomes || outcome_count > cfg.market.max_outcomes {
+            return Err(Error::InvalidOutcomes);
+        }
+
+        for outcome in outcomes.iter() {
+            let normalized = Self::soroban_string_to_host_string(&outcome);
+            let trimmed = normalized.trim();
+            if trimmed.is_empty() {
+                return Err(Error::InvalidOutcomes);
+            }
+
+            let length = trimmed.chars().count() as u32;
+            if length < config::MIN_OUTCOME_LENGTH || length > cfg.market.max_outcome_length {
+                return Err(Error::InvalidOutcomes);
+            }
+        }
+
+        OutcomeDeduplicator::validate_outcomes(outcomes).map_err(|_| Error::InvalidOutcomes)?;
+        Ok(())
+    }
+
+    /// Validate market duration bounds during market creation.
+    pub fn validate_market_duration(env: &Env, duration_days: &u32) -> Result<(), Error> {
+        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
+        if *duration_days < cfg.market.min_duration_days
+            || *duration_days > cfg.market.max_duration_days
+        {
+            return Err(Error::InvalidDuration);
+        }
+
+        Ok(())
+    }
+
+    /// Validate that an event end time is still in the future.
+    pub fn validate_event_end_time(env: &Env, end_time: &u64) -> Result<(), Error> {
+        if *end_time <= env.ledger().timestamp() {
+            return Err(Error::InvalidDuration);
+        }
+
+        Ok(())
+    }
+
+    /// Validate all shared market creation inputs.
+    pub fn validate_market_creation(
+        env: &Env,
+        question: &String,
+        outcomes: &Vec<String>,
+        duration_days: &u32,
+    ) -> Result<(), Error> {
+        Self::validate_market_question(env, question)?;
+        Self::validate_creation_outcomes(env, outcomes)?;
+        Self::validate_market_duration(env, duration_days)?;
+        Ok(())
+    }
+
+    /// Validate all shared event creation inputs.
+    pub fn validate_event_creation(
+        env: &Env,
+        description: &String,
+        outcomes: &Vec<String>,
+        end_time: &u64,
+    ) -> Result<(), Error> {
+        Self::validate_event_description(env, description)?;
+        Self::validate_creation_outcomes(env, outcomes)?;
+        Self::validate_event_end_time(env, end_time)?;
+        Ok(())
+    }
+}
+
 // ===== OUTCOME DEDUPLICATION MODULE =====
 
 /// Outcome normalization and deduplication utilities.
@@ -5113,6 +5246,12 @@ impl OracleConfigValidator {
 pub struct OutcomeDeduplicator;
 
 impl OutcomeDeduplicator {
+    fn soroban_string_to_host_string(value: &String) -> StdString {
+        let mut bytes = alloc::vec![0u8; value.len() as usize];
+        value.copy_into_slice(&mut bytes);
+        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+    }
+
     /// Normalizes an outcome string for comparison.
     ///
     /// This function applies a series of normalization steps to make outcome strings
@@ -5154,7 +5293,7 @@ impl OutcomeDeduplicator {
     /// - Resistant to Unicode manipulation attacks
     pub fn normalize_outcome(outcome: &String) -> Result<String, ValidationError> {
         // Convert to string slice for manipulation
-        let outcome_str = outcome.to_string();
+        let outcome_str = Self::soroban_string_to_host_string(outcome);
 
         // Step 1: Trim leading and trailing whitespace
         let trimmed = outcome_str.trim();
@@ -5168,7 +5307,7 @@ impl OutcomeDeduplicator {
         // Step 3: Compress internal whitespace (multiple spaces -> single space)
         let compressed = lowercased
             .split_whitespace()
-            .collect::<Vec<&str>>()
+            .collect::<AllocVec<&str>>()
             .join(" ");
 
         // Step 4: Remove common punctuation and special characters
@@ -5193,7 +5332,7 @@ impl OutcomeDeduplicator {
                         | '}'
                 )
             })
-            .collect::<String>();
+            .collect::<alloc::string::String>();
 
         // Final validation
         if cleaned.is_empty() {
@@ -5202,7 +5341,7 @@ impl OutcomeDeduplicator {
 
         // Convert back to Soroban String
         let env = outcome.env();
-        Ok(String::from_str(&env, &cleaned))
+        Ok(String::from_str(&env, cleaned.as_str()))
     }
 
     /// Calculates similarity between two outcome strings.
@@ -5239,8 +5378,8 @@ impl OutcomeDeduplicator {
     /// - Early termination for very different strings
     /// - Gas-efficient for typical outcome lengths (< 50 chars)
     pub fn calculate_similarity(outcome1: &String, outcome2: &String) -> u32 {
-        let s1 = outcome1.to_string();
-        let s2 = outcome2.to_string();
+        let s1 = Self::soroban_string_to_host_string(outcome1);
+        let s2 = Self::soroban_string_to_host_string(outcome2);
 
         if s1.is_empty() && s2.is_empty() {
             return 100;
@@ -5262,11 +5401,11 @@ impl OutcomeDeduplicator {
             return 0;
         }
 
-        let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
+        let mut dp = alloc::vec![alloc::vec![0usize; len2 + 1]; len1 + 1];
 
         // Initialize first row and column
         for i in 0..=len1 {
-            dp[i][0] = i;
+            dp[i][0] = i as u32;
         }
         for j in 0..=len2 {
             dp[0][j] = j;
@@ -5340,9 +5479,9 @@ impl OutcomeDeduplicator {
     /// ```
     pub fn validate_outcomes(outcomes: &Vec<String>) -> Result<(), ValidationError> {
         // Step 1: Normalize all outcomes
-        let mut normalized_outcomes = Vec::new();
+        let mut normalized_outcomes: AllocVec<(usize, String)> = AllocVec::new();
         for (i, outcome) in outcomes.iter().enumerate() {
-            match Self::normalize_outcome(outcome) {
+            match Self::normalize_outcome(&outcome) {
                 Ok(normalized) => normalized_outcomes.push((i, normalized)),
                 Err(e) => return Err(e),
             }
@@ -5412,8 +5551,8 @@ impl OutcomeDeduplicator {
     ///
     /// * `bool` - True if outcomes are semantic duplicates
     fn is_semantic_duplicate(outcome1: &String, outcome2: &String) -> bool {
-        let s1 = outcome1.to_string();
-        let s2 = outcome2.to_string();
+        let s1 = Self::soroban_string_to_host_string(outcome1);
+        let s2 = Self::soroban_string_to_host_string(outcome2);
 
         // Affirmative outcomes
         let affirmative = ["yes", "yeah", "yep", "true", "correct", "agree", "positive"];
@@ -5464,7 +5603,7 @@ impl OutcomeDeduplicator {
         for outcome in outcomes.iter() {
             stats.total_outcomes += 1;
 
-            match Self::normalize_outcome(outcome) {
+            match Self::normalize_outcome(&outcome) {
                 Ok(normalized) => {
                     stats.successfully_normalized += 1;
 

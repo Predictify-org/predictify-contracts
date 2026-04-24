@@ -527,3 +527,29 @@ fn test_multiple_users_cancel_bets_independently() {
     // Verify user2 refunded
     assert_eq!(setup.get_user_balance(&setup.user2), user2_initial + bet_amount);
 }
+
+#[test]
+fn test_cancel_bet_updates_market_struct() {
+    let setup = BetCancellationTestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let bet_amount = 10_000_000;
+
+    // Place bet
+    setup.place_bet(&setup.user, "yes", bet_amount);
+
+    // Verify market struct updated
+    let market_before = client.get_market(&setup.market_id).unwrap();
+    assert_eq!(market_before.total_staked, bet_amount);
+    assert!(market_before.votes.contains_key(setup.user.clone()));
+    assert!(market_before.stakes.contains_key(setup.user.clone()));
+
+    // Cancel bet
+    client.cancel_bet(&setup.user, &setup.market_id);
+
+    // Verify market struct reversed
+    let market_after = client.get_market(&setup.market_id).unwrap();
+    assert_eq!(market_after.total_staked, 0);
+    assert!(!market_after.votes.contains_key(setup.user.clone()));
+    assert!(!market_after.stakes.contains_key(setup.user.clone()));
+}

@@ -87,17 +87,33 @@ pub fn create_market(
     outcomes: Vec<String>,
     duration_days: u32,
     oracle_config: OracleConfig,
-) -> Result<Symbol, Error>
+    fallback_oracle_config: Option<OracleConfig>,
+    resolution_timeout: u64,
+    min_pool_size: Option<i128>,
+    bet_deadline_mins_before_end: Option<u64>,
+    dispute_window_seconds: Option<u64>,
+) -> Symbol
 ```
 
 **Parameters:**
 - `admin`: Market administrator address
-- `question`: Market question (max 200 characters)
+- `question`: Market question (max 500 characters)
 - `outcomes`: Possible outcomes (2-10 options)
 - `duration_days`: Market duration (1-365 days)
-- `oracle_config`: Oracle configuration for resolution
+- `oracle_config`: Primary oracle configuration for resolution
+- `fallback_oracle_config`: Optional fallback oracle configuration
+- `resolution_timeout`: Timeout in seconds for oracle resolution
+- `min_pool_size`: Optional minimum pool size required for resolution
+- `bet_deadline_mins_before_end`: Optional early cutoff for bets (minutes before end)
+- `dispute_window_seconds`: Optional dispute period duration (defaults to 24h)
 
 **Returns:** Market ID (Symbol)
+
+**Validation behavior:**
+- Question validation trims leading and trailing whitespace before enforcing the minimum and maximum length.
+- Outcome validation enforces min/max count, rejects blank entries after trimming, and rejects duplicate or ambiguous values after normalization.
+- Duration must remain within the configured market duration bounds.
+- Validation failures surface through contract errors such as `InvalidQuestion`, `InvalidOutcomes`, and `InvalidDuration`.
 
 **Example:**
 ```typescript
@@ -106,9 +122,88 @@ const marketId = await contract.create_market(
     "Will Bitcoin reach $100,000 by end of 2025?",
     ["Yes", "No"],
     90, // 90 days
-    oracleConfig
+    oracleConfig,
+    null, // no fallback
+    3600, // 1h resolution timeout
+    null, // no min pool size
+    60,   // bet deadline 1h before end
+    86400 // 24h dispute window
 );
 ```
+
+### Betting Functions
+
+#### `place_bet()`
+Places a bet on a prediction market outcome by locking user funds.
+
+**Signature:**
+```rust
+pub fn place_bet(
+    env: Env,
+    user: Address,
+    market_id: Symbol,
+    outcome: String,
+    amount: i128,
+) -> Bet
+```
+
+**Parameters:**
+- `user`: Address of the user placing the bet (requires authentication)
+- `market_id`: Unique identifier of the market
+- `outcome`: The outcome the user predicts will occur
+- `amount`: Amount of tokens to lock for this bet
+
+**Returns:** `Bet` structure with placement details
+
+#### `cancel_bet()`
+Cancels an active bet and refunds the user's locked funds. Can only be performed before the market deadline.
+
+**Signature:**
+```rust
+pub fn cancel_bet(
+    env: Env,
+    user: Address,
+    market_id: Symbol,
+) -> Result<(), Error>
+```
+
+**Parameters:**
+- `user`: Address of the user cancelling the bet (requires authentication)
+- `market_id`: Unique identifier of the market
+
+**Returns:** `Ok(())` on success, or an `Error` if cancellation fails.
+
+**Example:**
+```typescript
+await contract.cancel_bet(
+    userAddress,
+    marketId
+);
+```
+
+#### `extend_deadline()`
+Extends the deadline of an active market by a specified number of days. Enforces strict limits on both the duration and the number of extensions to prevent bypasses.
+
+**Signature:**
+```rust
+pub fn extend_deadline(
+    env: Env,
+    admin: Address,
+    market_id: Symbol,
+    additional_days: u32,
+    reason: String,
+) -> Result<(), Error>
+```
+
+**Parameters:**
+- `admin`: Market administrator address
+- `market_id`: The ID of the market to extend
+- `additional_days`: Additional days (must be > 0 and combined with total_extension_days must not exceed max_extension_days)
+- `reason`: Explanation for the extension
+
+**Security Invariants:**
+- **Zero-day Check:** Rejects `additional_days == 0` to prevent spamming extension history.
+- **Strict Limits:** Total combined extensions cannot exceed `max_extension_days` and the number of extensions cannot exceed `MAX_TOTAL_EXTENSIONS` (typically 10). Overflow checks (`checked_add`) are used to prevent limit bypassing.
 
 ---
 

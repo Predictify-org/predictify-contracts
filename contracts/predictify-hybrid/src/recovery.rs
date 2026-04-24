@@ -246,8 +246,13 @@ impl RecoveryManager {
     pub fn get_recovery_status(env: &Env, market_id: &Symbol) -> Result<String, Error> {
         RecoveryStorage::status(env, market_id).ok_or(Error::InvalidState)
     }
+    /// Perform recovery for a market. This operation is privileged and requires the caller to be
+    /// the configured admin. The `actor` address will be recorded in emitted events for full
+    /// visibility and auditability.
+    pub fn recover_market_state(env: &Env, actor: &Address, market_id: &Symbol) -> Result<bool, Error> {
+        // Ensure caller is admin (defense-in-depth; callers should also enforce auth).
+        Self::assert_is_admin(env, actor)?;
 
-    pub fn recover_market_state(env: &Env, market_id: &Symbol) -> Result<bool, Error> {
         // Validate integrity first; if valid skip
         if RecoveryValidator::validate_market_state_integrity(env, market_id).is_ok() {
             let rec = MarketRecovery {
@@ -261,9 +266,11 @@ impl RecoveryManager {
             RecoveryStorage::save(env, &rec);
             EventEmitter::emit_recovery_event(
                 env,
+                actor,
                 market_id,
                 &String::from_str(env, "skip"),
                 &String::from_str(env, "integrity_ok"),
+                None,
             );
             return Ok(false);
         }
@@ -300,18 +307,26 @@ impl RecoveryManager {
         RecoveryStorage::save(env, &rec);
         EventEmitter::emit_recovery_event(
             env,
+            actor,
             market_id,
             &String::from_str(env, "recover"),
             &String::from_str(env, "reconstructed"),
+            None,
         );
         Ok(true)
     }
 
+    /// Execute partial refunds for selected users. This is privileged and requires the caller
+    /// to be admin. Refund actions are fully recorded via events including the `actor` address.
     pub fn partial_refund_mechanism(
         env: &Env,
+        actor: &Address,
         market_id: &Symbol,
         users: &Vec<Address>,
     ) -> Result<i128, Error> {
+        // ensure caller is admin
+        Self::assert_is_admin(env, actor)?;
+
         let mut market = MarketStateManager::get_market(env, market_id)?;
         let mut total_refunded: i128 = 0;
 
@@ -345,29 +360,37 @@ impl RecoveryManager {
         RecoveryStorage::save(env, &rec);
         EventEmitter::emit_recovery_event(
             env,
+            actor,
             market_id,
             &String::from_str(env, "partial_refund"),
             &String::from_str(env, "executed"),
+            Some(total_refunded),
         );
         Ok(total_refunded)
     }
-}
+
+    }
 
 // ===== EVENT INTEGRATION =====
 impl EventEmitter {
-    pub fn emit_recovery_event(env: &Env, market_id: &Symbol, action: &String, status: &String) {
-        let topic = Symbol::new(env, "recovery_evt");
-        let mut data = Vec::new(env);
-        data.push_back(String::from_str(env, "market_id"));
-        let mid = symbol_to_string(env, market_id);
-        data.push_back(mid);
-        data.push_back(String::from_str(env, "action"));
-        data.push_back(action.clone());
-        data.push_back(String::from_str(env, "status"));
-        data.push_back(status.clone());
-        env.events().publish((topic,), data);
+        /// Emit a recovery event that includes the acting admin and optional amount.
+        pub fn emit_recovery_event(
+            env: &Env,
+            admin: &Address,
+            market_id: &Symbol,
+            action: &String,
+            status: &String,
+            amount: Option<i128>,
+        ) {
+            let topic = Symbol::new(env, "recovery_evt");
+            // Publish a tuple: (action, status, amount, timestamp)
+            let amt = amount.unwrap_or(0);
+            env.events().publish(
+                (topic, admin.clone(), market_id.clone()),
+                (action.clone(), status.clone(), amt, env.ledger().timestamp()),
+            );
+        }
     }
-}
 
 // Helper for symbol -> string representation (Soroban lacks direct to_string for Symbol)
 fn symbol_to_string(env: &Env, sym: &Symbol) -> String {
@@ -649,7 +672,14 @@ mod tests {
         let action = String::from_str(&test.env, "recover");
         let status = String::from_str(&test.env, "success");
         // Event emission should not panic
-        EventEmitter::emit_recovery_event(&test.env, &market_id, &action, &status);
+        EventEmitter::emit_recovery_event(
+            &test.env,
+            &test.admin,
+            &market_id,
+            &action,
+            &status,
+            Some(0),
+        );
         assert!(true);
     }
 
