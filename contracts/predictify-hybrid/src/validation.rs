@@ -5405,7 +5405,7 @@ impl OutcomeDeduplicator {
 
         // Initialize first row and column
         for i in 0..=len1 {
-            dp[i][0] = i as u32;
+            dp[i][0] = i;
         }
         for j in 0..=len2 {
             dp[0][j] = j;

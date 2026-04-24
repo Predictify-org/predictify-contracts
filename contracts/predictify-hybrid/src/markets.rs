@@ -703,6 +703,11 @@ impl MarketValidator {
 pub struct MarketStateManager;
 
 impl MarketStateManager {
+    /// Create MarketStateManager instance from environment
+    pub fn from_env(_env: &Env) -> Self {
+        Self
+    }
+
     /// Retrieves a market from persistent storage by its unique identifier.
     ///
     /// This function fetches market data from the blockchain's persistent storage.

@@ -821,8 +821,15 @@ pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
         // Validate provider is supported using new validation method
         self.provider.validate_for_market(env)?;
 
-    Ok(())
-}
+        Ok(())
+    }
+
+    /// Returns `true` if this oracle configuration is active and valid.
+    ///
+    /// An oracle is considered active if it's not the none sentinel.
+    pub fn is_active(&self) -> bool {
+        !self.is_none_sentinel() && !self.feed_id.is_empty()
+    }
 }
 
 // ===== MARKET TYPES =====
@@ -1823,6 +1830,7 @@ impl OracleResult {
 ///
 /// This structure captures the minimum data needed for staleness and
 /// confidence interval validation without provider-specific dependencies.
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OraclePriceData {
     /// Price value in oracle base units

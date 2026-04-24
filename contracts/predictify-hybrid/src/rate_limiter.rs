@@ -327,6 +327,12 @@ impl RateLimiterContract {
         limiter.rate_limit_oracle_calls(market_id)
     }
 
+    // Check and enforce admin event creation rate limit
+    pub fn check_admin_event_rate_limit(env: Env, admin: Address) -> Result<(), RateLimiterError> {
+        let limiter = RateLimiter::new(env);
+        limiter.rate_limit_admin_events(admin)
+    }
+
     // Update rate limits (admin only)
     pub fn update_rate_limits(
         env: Env,
