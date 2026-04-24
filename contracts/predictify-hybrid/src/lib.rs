@@ -42,6 +42,10 @@ mod markets;
 mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
+#[cfg(test)]
+mod multi_admin_multisig_tests;
+#[cfg(test)]
+mod admin_auth_audit_tests;
 mod monitoring;
 mod oracles;
 mod performance_benchmarks;

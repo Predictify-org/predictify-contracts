@@ -53,6 +53,7 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 - **[Voting System](./contracts/VOTING_SYSTEM.md)** - Voting mechanism and dispute resolution
 - **[Balance Management](./contracts/BALANCES.md)** - Security invariants and token safety semantics for deposits and withdrawals
 - **[Initialization](./contracts/INITIALIZATION.md)** - Contract initialization process and security features
+- **[Admin Operations](./contracts/ADMIN_OPERATIONS.md)** - Multi-admin roles, admin rotation, and M-of-N multisig semantics
 
 
 ### 💰 [Claims Documentation](./claims/)
