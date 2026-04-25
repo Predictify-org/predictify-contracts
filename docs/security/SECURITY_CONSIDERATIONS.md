@@ -163,6 +163,111 @@ pub fn emit_oracle_callback(
 
 ---
 
+## 🔁 Reentrancy and Cross-Call State Consistency
+
+Implemented in [`contracts/predictify-hybrid/src/reentrancy_guard.rs`](../../contracts/predictify-hybrid/src/reentrancy_guard.rs).
+
+### Why Soroban needs a reentrancy guard at all
+
+Soroban's execution model differs from EVM in ways that make the **classic** EVM reentrancy exploit (the recipient running its fallback during `call.value(...)`) inapplicable in many places:
+
+- There is **no fallback function** that runs implicitly on every value transfer.
+- A **Stellar Asset Contract (SAC) token's `transfer`** cannot execute caller-supplied code on the recipient.
+- Cross-contract calls are **explicit** (`env.invoke_contract(...)`), and the Soroban host accounts for storage modifications atomically per top-level call.
+
+The guard is still required because:
+
+1. **Custom token contracts** — Predictify Hybrid accepts any contract implementing the `token::Client` interface (see [`tokens.rs`](../../contracts/predictify-hybrid/src/tokens.rs)). Any such contract is third-party code and may re-enter the protocol during `transfer`, `mint`, or `burn`.
+2. **Oracle contracts** — every `oracles.rs` call crosses into upgradable third-party code.
+3. **Cross-function reentrancy** — even when the inbound call hits a different public entrypoint, shared persistent state (fee vault, market totals) can be observed at an inconsistent intermediate value.
+4. **Panic safety** — a Soroban host function may panic. A panic between a state mutation and its matching external call leaves on-ledger state inconsistent unless the writes are sequenced after the call.
+
+### Threat model
+
+| Attacker action | Without guard | With guard |
+|---|---|---|
+| Malicious custom token re-enters `claim_winnings` during `transfer` | Could double-claim before the `claimed` flag is written | `before_external_call` rejects the inner invocation with `ReentrancyGuardActive` |
+| Malicious oracle re-enters `resolve_market` during a price callback | Could observe a partially-resolved market and bias subsequent reads | Inner `check_reentrancy_state` returns `ReentrancyGuardActive` |
+| Failed external call leaves the lock set | n/a | `with_external_call` releases the lock on every return path; `after_external_call` is idempotent |
+| Cross-transaction race (two top-level invocations) | n/a | Out of scope — handled by higher-level state machines (`MarketState`, `ClaimInfo`) |
+
+### Invariants
+
+Auditors should verify these invariants hold for every change to a protected entrypoint:
+
+- **I-1 (mutual exclusion)**: while the lock is held, no public entrypoint of this contract may make further state changes.
+- **I-2 (release on every path)**: every `before_external_call` is paired with `after_external_call` on **all** return paths (including error paths). `with_external_call` enforces this by construction.
+- **I-3 (CEI ordering)**: protected sections write internal state **before** the external call (Checks-Effects-Interactions). The guard is an additional defensive layer, **not** a substitute for ordering.
+- **I-4 (idempotent release)**: calling `after_external_call` on an already-released lock is a no-op, never an error. This makes nested cleanup safe.
+- **I-5 (panic safety)**: a panic inside a protected section aborts the host invocation and rolls back the persistent-storage write that acquired the lock; the next top-level invocation sees the lock cleared.
+- **I-6 (single key)**: one global persistent flag (`reent_lk`). No per-market or per-user variants. Finer locks would not prevent cross-function reentrancy and would cost extra ledger writes.
+
+### Public API summary
+
+| Function | Purpose | When to use |
+|---|---|---|
+| `ReentrancyGuard::with_external_call(env, f)` | Acquire lock, run `f`, release on every return path | **Default choice for any new external-call site.** |
+| `ReentrancyGuard::before_external_call(env)` | Acquire the lock | Only when you cannot use `with_external_call` (e.g. batch flows that span helper functions) — caller is responsible for I-2 |
+| `ReentrancyGuard::after_external_call(env)` | Release the lock | Pair with the manual `before_external_call` above |
+| `ReentrancyGuard::check_reentrancy_state(env)` | Assert no external call is in flight | Sensitive read/state-only entrypoints that themselves do not make outbound calls |
+| `ReentrancyGuard::is_locked(env)` | Read the lock without mutating | Diagnostics and tests |
+| `ReentrancyGuard::validate_external_call_success(env, ok)` | Standardise the failure code returned for an external-call boolean | All external-call result checks |
+| `ReentrancyGuard::restore_state_on_failure(env, f)` | Run rollback closure when CEI cannot be followed | Rare cases where provisional state must be written before the call |
+
+### Error taxonomy
+
+| Error | Meaning | Caller mapping |
+|---|---|---|
+| `GuardError::ReentrancyGuardActive` | Reentry attempted while a call is in flight | Map to `Error::ReentrancyDetected` (417) |
+| `GuardError::ExternalCallFailed` | Caller-supplied success flag was `false` | Surface as the matching protocol-level error (e.g. `Error::TransferFailed`) |
+
+### Recommended call pattern
+
+```rust
+use crate::reentrancy_guard::ReentrancyGuard;
+
+ReentrancyGuard::with_external_call(env, || {
+    // Effects: update internal state first (CEI).
+    vault::debit(env, amount)?;
+
+    // Interactions: external call last.
+    token_client.transfer(&env.current_contract_address(), &user, &amount);
+    Ok::<_, crate::Error>(())
+})?;
+```
+
+### Where it is currently applied
+
+| Module | External call | Protection strategy |
+|---|---|---|
+| [`fees.rs`](../../contracts/predictify-hybrid/src/fees.rs) — fee withdrawal | `token_client.transfer` to admin | Vault accounting written first; transfer wrapped by reentrancy guard. Aggregation inside the contract means a malicious token cannot re-enter to double-withdraw. |
+| [`bets.rs`](../../contracts/predictify-hybrid/src/bets.rs) — `BetUtils::lock_funds` / `unlock_funds` | `token_client.transfer` between user and contract | Caller (`cancel_event` etc.) holds the reentrancy lock for the entire batch; helpers do not re-acquire so batch refunds remain atomic under a single guard scope. See the doc comment on `BetUtils::unlock_funds`. |
+| `oracles.rs` resolution callback | `env.invoke_contract` to oracle | Authenticated via [Oracle Callback Authentication](#-oracle-callback-authentication); state writes follow oracle response (CEI). |
+
+### Non-goals
+
+- **Per-market or per-user locking** — intentionally a single global flag.
+- **Cross-transaction protection** — out of scope; higher-level state machines own that.
+- **Replacing CEI** — the guard is defence-in-depth, not a substitute for correct ordering.
+
+### Auditor checklist
+
+- [ ] Every new external call site uses `ReentrancyGuard::with_external_call` *or* documents why it manually pairs `before_external_call` / `after_external_call`.
+- [ ] State writes occur **before** the external call inside the protected section (CEI).
+- [ ] The closure returned to `with_external_call` does not silently swallow errors — failures must propagate so the lock release is observable in logs.
+- [ ] Tests cover both success and error return paths and assert `is_locked == false` afterward.
+- [ ] No protected entrypoint introduces a new persistent storage key matching `reent_lk`.
+
+### Integrator notes
+
+External integrators that call Predictify Hybrid from another contract should:
+
+- Treat `Error::ReentrancyDetected` as a **transient** error in the same transaction; retry in a new top-level transaction.
+- Avoid invoking Predictify Hybrid from inside a callback invoked by Predictify itself (e.g. a custom token's `transfer` hook). Such calls will be rejected.
+- Not rely on observing the lock flag externally; it is an implementation detail and may move to a different storage class in future versions.
+
+---
+
 ## 🛡️ Access Control and Authorization
 
 ### Role-Based Access Control (RBAC)
