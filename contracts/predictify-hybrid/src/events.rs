@@ -4268,3 +4268,38 @@ pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &S
         (),
     );
 }
+
+impl EventEmitter {
+    /// Emit oracle callback event for oracle data updates
+    pub fn emit_oracle_callback(
+        env: &Env,
+        oracle_address: &Address,
+        feed_id: &String,
+        price: i128,
+        timestamp: u64,
+    ) {
+        env.events().publish(
+            (
+                Symbol::new(env, "oracle_callback"),
+                oracle_address,
+                feed_id,
+                price,
+                timestamp,
+            ),
+            (),
+        );
+    }
+
+    /// Emit security event for monitoring and audit
+    pub fn emit_security_event(env: &Env, actor: &Address, message: &String) {
+        env.events().publish(
+            (
+                Symbol::new(env, "security_event"),
+                actor,
+                message,
+                env.ledger().timestamp(),
+            ),
+            (),
+        );
+    }
+}
