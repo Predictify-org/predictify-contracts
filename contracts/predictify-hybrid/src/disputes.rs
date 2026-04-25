@@ -846,6 +846,17 @@ impl DisputeManager {
         // Update market in storage
         MarketStateManager::update_market(env, &market_id, &market);
 
+        // Add vote for the initiator automatically (using market_id as dispute_id for 1:1 mapping)
+        let dispute_vote = DisputeVote {
+            user: user.clone(),
+            dispute_id: market_id.clone(),
+            vote: true, // Initiators always support the dispute by definition
+            stake,
+            timestamp: env.ledger().timestamp(),
+            reason: reason.clone(),
+        };
+        DisputeUtils::add_vote_to_dispute(env, &market_id, dispute_vote)?;
+
         // Emit dispute created event
         crate::events::EventEmitter::emit_dispute_created(
             env,
@@ -1586,6 +1597,72 @@ impl DisputeManager {
         Ok(fee_distribution)
     }
 
+    /// Allows users to claim their proportional share of dispute winnings.
+    /// Invariants enforced:
+    /// - Only winners receive funds.
+    /// - Total distributed <= total staked.
+    /// - No duplicate claims.
+    pub fn claim_dispute_winnings(
+        env: &Env,
+        dispute_id: Symbol,
+        user: Address,
+    ) -> Result<i128, Error> {
+        user.require_auth();
+
+        // Validate distribution is complete
+        let distribution = DisputeUtils::get_dispute_fee_distribution(env, &dispute_id)?;
+        if !distribution.fees_distributed {
+            return Err(Error::InvalidState);
+        }
+
+        // Prevent duplicate claims
+        if DisputeUtils::has_user_claimed_dispute(env, &dispute_id, &user) {
+            return Err(Error::AlreadyClaimed);
+        }
+
+        // Get user's vote
+        let vote_res = DisputeUtils::get_user_vote(env, &dispute_id, &user);
+
+        let payout = match vote_res {
+            Some(vote) => {
+                let voting_data = DisputeUtils::get_dispute_voting(env, &dispute_id)?;
+                let outcome = DisputeUtils::calculate_stake_weighted_outcome(&voting_data);
+
+                if outcome != vote.vote {
+                    // Failing path where users on losing side attempt to extract funds.
+                    return Err(Error::NothingToClaim);
+                }
+
+                let winner_total = distribution.winner_stake;
+                let loser_total = distribution.loser_stake;
+
+                if winner_total == 0 {
+                    return Err(Error::InvalidState);
+                }
+
+                // Total distributed <= total staked calculation
+                let original_stake = vote.stake;
+                let bonus = original_stake
+                    .checked_mul(loser_total)
+                    .ok_or(Error::InvalidInput)?
+                    / winner_total;
+
+                original_stake.checked_add(bonus).ok_or(Error::InvalidInput)?
+            }
+            None => {
+                return Err(Error::NothingToClaim);
+            }
+        };
+
+        // Mark user as claimed explicitly
+        DisputeUtils::set_user_claimed_dispute(env, &dispute_id, &user);
+
+        // Safely transfer winnings using voting utilities
+        VotingUtils::transfer_winnings(env, &user, payout)?;
+
+        Ok(payout)
+    }
+
     /// Escalates a dispute to higher authority when standard resolution fails.
     ///
     /// This function allows users to escalate disputes that cannot be resolved
@@ -2311,10 +2388,17 @@ impl DisputeUtils {
     /// Get dispute voting data
     pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
         let key = (symbol_short!("dispute_v"), dispute_id.clone());
-        env.storage()
-            .persistent()
-            .get(&key)
-            .ok_or(Error::InvalidInput)
+        Ok(env.storage().persistent().get(&key).unwrap_or_else(|| DisputeVoting {
+            dispute_id: dispute_id.clone(),
+            voting_start: env.ledger().timestamp(),
+            voting_end: env.ledger().timestamp() + (DISPUTE_EXTENSION_HOURS as u64 * 3600),
+            total_votes: 0,
+            support_votes: 0,
+            against_votes: 0,
+            total_support_stake: 0,
+            total_against_stake: 0,
+            status: DisputeVotingStatus::Active,
+        }))
     }
 
     /// Store dispute voting data
@@ -2337,6 +2421,26 @@ impl DisputeUtils {
         let key = (symbol_short!("vote"), dispute_id.clone(), vote.user.clone());
         env.storage().persistent().set(&key, vote);
         Ok(())
+    }
+
+    /// Extracted get_user_vote
+    pub fn get_user_vote(
+        env: &Env,
+        dispute_id: &Symbol,
+        user: &Address,
+    ) -> Option<DisputeVote> {
+        let key = (symbol_short!("vote"), dispute_id.clone(), user.clone());
+        env.storage().persistent().get(&key)
+    }
+
+    pub fn has_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) -> bool {
+        let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
+        env.storage().persistent().get(&key).unwrap_or(false)
+    }
+
+    pub fn set_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) {
+        let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
+        env.storage().persistent().set(&key, &true);
     }
 
     /// Get dispute votes
