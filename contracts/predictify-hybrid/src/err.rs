@@ -179,6 +179,8 @@ pub enum Error {
     CBOpen = 503,
     /// Generic circuit breaker subsystem error. Check configuration and state.
     CBError = 504,
+    /// Rate limit exceeded. Too many requests in the time window.
+    RateLimitExceeded = 505,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1413,6 +1415,7 @@ impl Error {
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
+            Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
         }
     }
 
@@ -1502,6 +1505,7 @@ impl Error {
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
+            Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
         }
     }
 }

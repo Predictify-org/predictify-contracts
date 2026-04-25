@@ -2,7 +2,7 @@
 //! Handles multi-asset support for bets and payouts using Soroban token interface.
 //! Allows admin to configure allowed tokens per event or globally.
 
-use alloc::string::ToString;
+use alloc::{format, string::ToString};
 use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
 use crate::err::Error;
 
@@ -14,11 +14,63 @@ pub struct Asset {
     pub contract: Address,
     /// The symbol of the token (e.g., XLM, USDC)
     pub symbol: Symbol,
-    /// The number of decimals for the token (stored as u32 for contracttype compatibility)
+    /// The number of decimals for the token (stored as u32 for contract type compatibility)
     pub decimals: u32,
 }
 
 impl Asset {
+    /// Create an Asset from a ReflectorAsset.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment.
+    /// * `reflector_asset` - The ReflectorAsset variant.
+    /// * `contract_address` - The address of the token contract.
+    pub fn from_reflector_asset(env: &Env, reflector_asset: &crate::types::ReflectorAsset, contract_address: Address) -> Self {
+        let symbol = match reflector_asset {
+            crate::types::ReflectorAsset::Stellar => Symbol::new(env, "XLM"),
+            crate::types::ReflectorAsset::BTC => Symbol::new(env, "BTC"),
+            crate::types::ReflectorAsset::ETH => Symbol::new(env, "ETH"),
+            crate::types::ReflectorAsset::Other(s) => s.clone(),
+        };
+        Self {
+            contract: contract_address,
+            symbol,
+            decimals: reflector_asset.decimals() as u32,
+        }
+    }
+
+    pub fn matches_reflector_asset(&self, env: &Env, reflector_asset: &crate::types::ReflectorAsset) -> bool {
+        let expected_symbol = match reflector_asset {
+            crate::types::ReflectorAsset::Stellar => Symbol::new(env, "XLM"),
+            crate::types::ReflectorAsset::BTC => Symbol::new(env, "BTC"),
+            crate::types::ReflectorAsset::ETH => Symbol::new(env, "ETH"),
+            crate::types::ReflectorAsset::Other(s) => s.clone(),
+        };
+        self.symbol == expected_symbol && self.decimals == reflector_asset.decimals() as u32
+    }
+
+    pub fn name(&self, env: &Env) -> String {
+        if self.symbol == Symbol::new(env, "XLM") {
+            String::from_str(env, "Stellar Lumens")
+        } else if self.symbol == Symbol::new(env, "BTC") {
+            String::from_str(env, "Bitcoin")
+        } else if self.symbol == Symbol::new(env, "ETH") {
+            String::from_str(env, "Ethereum")
+        } else if self.symbol == Symbol::new(env, "USDC") {
+            String::from_str(env, "USD Coin")
+        } else {
+            String::from_str(env, "Token")
+        }
+    }
+
+    /// Check if this is a native XLM asset.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment.
+    pub fn is_native_xlm(&self, env: &Env) -> bool {
+        self.symbol == Symbol::new(env, "XLM")
+    }
+
     /// Create a new Asset instance.
     ///
     /// # Parameters
@@ -43,63 +95,10 @@ impl Asset {
     /// # Returns
     /// * `true` if valid, `false` otherwise.
     pub fn validate(&self, env: &Env) -> bool {
-        // Validate contract address (must be non-empty and valid)
-        if self.contract == Address::from_string(&String::from_str(env, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")) {
-             // In Soroban, Address::default() might not be what we think. 
-             // Usually we check if it's a specific "zero" address or just let the contract call fail.
-             // But for validation purposes, let's check decimals.
-        }
-        
-        // Validate decimals (Soroban tokens typically use 7-18 decimals)
         if self.decimals < 1 || self.decimals > 18 {
             return false;
         }
         true
-    }
-
-    /// Create an Asset from a ReflectorAsset.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
-    /// * `reflector_asset` - The ReflectorAsset variant.
-    /// * `contract_address` - The address of the token contract.
-    pub fn from_reflector_asset(env: &Env, reflector_asset: &crate::types::ReflectorAsset, contract_address: Address) -> Self {
-        Self {
-            contract: contract_address,
-            symbol: Symbol::new(env, &reflector_asset.symbol().to_string()),
-            decimals: reflector_asset.decimals() as u32,
-        }
-    }
-
-    pub fn matches_reflector_asset(&self, env: &Env, reflector_asset: &crate::types::ReflectorAsset) -> bool {
-        self.symbol == Symbol::new(env, &reflector_asset.symbol().to_string())
-            && self.decimals == reflector_asset.decimals() as u32
-    }
-
-    pub fn name(&self, env: &Env) -> String {
-        let symbol_str = self.symbol.to_string();
-        if symbol_str == "XLM" {
-            String::from_str(env, "Stellar Lumens")
-        } else if symbol_str == "BTC" {
-            String::from_str(env, "Bitcoin")
-        } else if symbol_str == "ETH" {
-            String::from_str(env, "Ethereum")
-        } else if symbol_str == "USDC" {
-            String::from_str(env, "USD Coin")
-        } else {
-            String::from_str(env, &alloc::format!("Token ({})", symbol_str))
-        }
-    }
-
-    /// Check if this is a native XLM asset.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
-    pub fn is_native_xlm(&self, env: &Env) -> bool {
-        // Native XLM often has a specific contract ID in Soroban (C...)
-        // or is represented by Address::from_string("CDLZFC3SYJYDZT7K67VZ75YJBMKBAV27F6DLS6ALWHX77AL6XGOSBNOB") on Mainnet
-        // Here we just check the symbol as a heuristic if contract is not provided or is default.
-        self.symbol == Symbol::new(env, "XLM")
     }
 
     /// Validate asset for market creation.
@@ -128,14 +127,16 @@ impl TokenRegistry {
         // Check per-event allowed assets
         if let Some(market) = market_id {
             let event_key = Symbol::new(env, "allowed_assets_evt");
-            let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(soroban_sdk::Map::new(env));
+            let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
+            let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(per_event_empty);
             if let Some(assets) = per_event.get(market.clone()) {
                 return assets.iter().any(|a| a == *asset);
             }
         }
         // Check global allowed assets
         let global_key = Symbol::new(env, "allowed_assets_global");
-        let global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
+        let global_empty: Vec<Asset> = Vec::new(env);
+        let global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(global_empty);
         global_assets.iter().any(|a| a == *asset)
     }
 
@@ -152,8 +153,10 @@ impl TokenRegistry {
     /// Adds an asset to a specific market's allowed registry.
     pub fn add_event(env: &Env, market_id: &Symbol, asset: &Asset) {
         let event_key = Symbol::new(env, "allowed_assets_evt");
-        let mut per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(soroban_sdk::Map::new(env));
-        let mut assets = per_event.get(market_id.clone()).unwrap_or(Vec::new(env));
+        let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
+        let mut per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(per_event_empty);
+        let empty_assets: Vec<Asset> = Vec::new(env);
+        let mut assets: Vec<Asset> = per_event.get(market_id.clone()).unwrap_or(empty_assets);
         if !assets.iter().any(|a| a == *asset) {
             assets.push_back(asset.clone());
             per_event.set(market_id.clone(), assets);
@@ -163,12 +166,21 @@ impl TokenRegistry {
 
     pub fn initialize_with_defaults(env: &Env) {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        // Only initialize if not already set
-        if env.storage().persistent().get::<Symbol, Vec<Asset>>(&global_key).is_some() {
-            return;
+        let mut global_assets: Vec<Asset> = Vec::new(env);
+
+        // Add default supported assets from Reflector
+        let reflector_assets = crate::types::ReflectorAsset::all_supported();
+        for reflector_asset in reflector_assets.iter() {
+            // Placeholder: in production these would be the actual SAC contract addresses
+            // Using a placeholder address since actual addresses would come from deployment
+            let contract_address = Address::from_string(&String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
+
+            let asset = Asset::from_reflector_asset(env, &reflector_asset, contract_address);
+            if !global_assets.iter().any(|a| a == asset) {
+                global_assets.push_back(asset);
+            }
         }
-        // Default registry is empty; assets are added by admin via add_global.
-        let global_assets: Vec<Asset> = Vec::new(env);
+
         env.storage().persistent().set(&global_key, &global_assets);
     }
 
@@ -181,8 +193,10 @@ impl TokenRegistry {
     /// Returns a list of assets allowed for a specific market.
     pub fn get_event_assets(env: &Env, market_id: &Symbol) -> Vec<Asset> {
         let event_key = Symbol::new(env, "allowed_assets_evt");
-        let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(soroban_sdk::Map::new(env));
-        per_event.get(market_id.clone()).unwrap_or(Vec::new(env))
+        let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
+        let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(per_event_empty);
+        let empty_assets: Vec<Asset> = Vec::new(env);
+        per_event.get(market_id.clone()).unwrap_or(empty_assets)
     }
 
     /// Removes an asset from the global registry.
@@ -191,20 +205,18 @@ impl TokenRegistry {
     /// * `Error::NotFound` if the asset was not in the registry.
     pub fn remove_global(env: &Env, asset: &Asset) -> Result<(), Error> {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        let global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
+        let mut global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
 
-        let mut filtered = Vec::new(env);
-        let mut found = false;
+        let initial_len = global_assets.len();
+        let mut new_assets: Vec<Asset> = Vec::new(env);
         for a in global_assets.iter() {
-            if a == *asset {
-                found = true;
-            } else {
-                filtered.push_back(a);
+            if a != *asset {
+                new_assets.push_back(a);
             }
         }
 
-        if found {
-            env.storage().persistent().set(&global_key, &filtered);
+        if new_assets.len() < initial_len {
+            env.storage().persistent().set(&global_key, &new_assets);
             Ok(())
         } else {
             Err(Error::ConfigNotFound)
@@ -310,8 +322,9 @@ pub fn get_token_allowance(env: &Env, asset: &Asset, owner: &Address, spender: &
 /// * `asset` - Asset info.
 /// * `event_name` - Descriptive name of the event.
 pub fn emit_asset_event(env: &Env, asset: &Asset, event_name: &str) {
+    let event_symbol = Symbol::new(env, event_name);
     env.events().publish(
-        (Symbol::new(env, event_name), asset.contract.clone(), asset.symbol.clone()),
+        (event_symbol, asset.contract.clone(), asset.symbol.clone()),
         "asset_event"
     );
 }

@@ -1351,17 +1351,13 @@ impl MarketResolutionManager {
         );
 
         // For resolution record, use first outcome (or comma-separated for display)
-       let final_result = if winning_outcomes.len() > 0 {
+        let final_result = if winning_outcomes.len() > 0 {
     if winning_outcomes.len() == 1 {
         winning_outcomes.get(0).unwrap().clone()
     } else {
-        // Represent ties clearly for logs/UI — soroban_sdk::String doesn't support +
-        // so we build the result from the first element and append via from_str
-        let mut parts = alloc::vec::Vec::<alloc::string::String>::new();
-        for outcome in winning_outcomes.iter() {
-            parts.push(outcome.to_string());
-        }
-        String::from_str(env, &parts.join(","))
+        // For ties, just use the first outcome for the final result field
+        // The full list is stored in winning_outcomes
+        winning_outcomes.get(0).unwrap().clone()
     }
 } else {
     oracle_result.clone()
@@ -2094,7 +2090,7 @@ impl OracleCallbackResolver {
         callback_data: &crate::oracles::OracleCallbackData,
         market_id: &Symbol,
     ) -> Result<(), Error> {
-        // Get market
+        // Get market state manager
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Validate market is ready for resolution
@@ -2103,16 +2099,16 @@ impl OracleCallbackResolver {
         // Determine outcome based on oracle data
         let outcome = Self::determine_outcome_from_oracle_data(callback_data, &market)?;
 
-        // Create oracle resolution
+        // Create oracle resolution with all required fields
         let resolution = OracleResolution {
             market_id: market_id.clone(),
+            feed_id: callback_data.feed_id.clone(),
+            comparison: String::from_str(env, "eq"),
+            provider: market.oracle_config.provider.clone(),
             price: callback_data.price,
             timestamp: callback_data.timestamp,
             oracle_result: outcome.clone(),
-            threshold: 0,
-            comparison: String::from_str(env, "gt"),
-            provider: OracleProvider::reflector(),
-            feed_id: callback_data.feed_id.clone(),
+            threshold: market.oracle_config.threshold,
         };
 
         // Validate resolution
@@ -2130,11 +2126,11 @@ impl OracleCallbackResolver {
             env,
             market_id,
             &outcome,
-            &String::from_str(env, "oracle"),
-            &callback_data.feed_id,
+            &String::from_str(env, "direct"),
+            &String::from_str(env, "callback"),
             callback_data.price,
             0,
-            &String::from_str(env, "gt"),
+            &String::from_str(env, "eq"),
         );
 
         Ok(())
@@ -2154,14 +2150,14 @@ impl OracleCallbackResolver {
     ) -> Result<String, Error> {
         // For binary markets (yes/no), determine outcome based on price comparison
         if market.outcomes.len() == 2 {
-            let (yes_outcome, no_outcome) = if market
-                .outcomes
-                .get(0)
-                .unwrap()
-                .to_string()
-                .to_lowercase()
-                .contains("yes")
-            {
+            let first_outcome = market.outcomes.get(0).unwrap();
+            let yes_bytes = first_outcome.to_bytes();
+            let first_is_yes = yes_bytes.len() == 3 &&
+                yes_bytes.get(0).unwrap_or(0) == 'y' as u8 &&
+                yes_bytes.get(1).unwrap_or(0) == 'e' as u8 &&
+                yes_bytes.get(2).unwrap_or(0) == 's' as u8;
+
+            let (yes_outcome, no_outcome) = if first_is_yes {
                 (
                     market.outcomes.get(0).unwrap(),
                     market.outcomes.get(1).unwrap(),
@@ -2173,8 +2169,6 @@ impl OracleCallbackResolver {
                 )
             };
 
-            // Compare oracle price with threshold (assuming threshold is stored in oracle config)
-            // For now, we'll use a simple comparison: price > 0 means "yes"
             if callback_data.price > 0 {
                 Ok(yes_outcome.clone())
             } else {
@@ -2182,7 +2176,8 @@ impl OracleCallbackResolver {
             }
         } else {
             // For multi-outcome markets, use price modulo number of outcomes
-            let outcome_index = (callback_data.price.abs() as u32) % market.outcomes.len();
+            let num_outcomes = market.outcomes.len() as u32;
+            let outcome_index = (callback_data.price.abs() as u32) % num_outcomes;
             Ok(market.outcomes.get(outcome_index).unwrap().clone())
         }
     }
@@ -2203,6 +2198,7 @@ impl OracleCallbackResolver {
         market_id: &Symbol,
     ) -> Result<(), Error> {
         // Check if caller is authorized oracle
+        let whitelist = crate::oracles::OracleWhitelist::from_env(env);
         if !crate::oracles::OracleWhitelist::is_oracle_authorized(env, caller)? {
             return Err(Error::OracleCallbackUnauthorized);
         }

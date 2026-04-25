@@ -83,8 +83,7 @@ fn test_first_collection_succeeds() {
         MarketStateManager::update_market(&env, &market_id, &make_resolved_market(&env));
 
         let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
-        assert!(result.is_ok(), "first collect_fees should succeed");
-        let stored = MarketStateManager::get_market(&env, &market_id).unwrap();
+        assert!(result.is_ok(), "first collect_fees should succeed: {:?}", result);
         assert!(stored.fee_collected, "fee_collected must be true after collection");
     });
 }
@@ -127,11 +126,11 @@ fn test_repeated_retries_are_stable() {
 
         for _ in 0..5 {
             let r = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
-            assert_eq!(r.unwrap(), 0, "each retry must return 0");
+            assert_eq!(r.unwrap(), 0, "each retry must return 0 ");
         }
 
         let stored = MarketStateManager::get_market(&env, &market_id).unwrap();
-        assert!(stored.fee_collected, "flag must remain true after retries");
+        assert!(stored.fee_collected, "flag must remain true after retries ");
     });
 }
 
@@ -151,7 +150,7 @@ fn test_unresolved_market_rejected() {
         MarketStateManager::update_market(&env, &market_id, &market);
 
         let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
-        assert!(result.is_err(), "unresolved market must be rejected");
+        assert!(result.is_err(), "unresolved market must be rejected ");
     });
 }
 
@@ -171,7 +170,7 @@ fn test_below_threshold_rejected() {
         MarketStateManager::update_market(&env, &market_id, &market);
 
         let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
-        assert!(result.is_err(), "below-threshold market must be rejected");
+        assert!(result.is_err(), "below-threshold market must be rejected ");
     });
 }
 
@@ -198,7 +197,7 @@ fn test_can_collect_fees_false_after_collection() {
     let env = make_env();
     let mut market = make_resolved_market(&env);
 
-    assert!(FeeUtils::can_collect_fees(&market), "should be collectable before");
+    assert!(FeeUtils::can_collect_fees(&market), "should be collectable before ");
     market.fee_collected = true;
-    assert!(!FeeUtils::can_collect_fees(&market), "should not be collectable after");
+    assert!(!FeeUtils::can_collect_fees(&market), "should not be collectable after ");
 }
