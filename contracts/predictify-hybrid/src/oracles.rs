@@ -2,7 +2,9 @@
 
 use crate::bandprotocol;
 use crate::errors::Error;
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, IntoVal, String, Symbol, Vec};
+use alloc::format;
+use alloc::string::ToString;
+use soroban_sdk::{contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec};
 // use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::types::*;
 
@@ -2430,7 +2432,7 @@ impl OracleValidationConfigManager {
             EventEmitter::emit_oracle_validation_failed(
                 env,
                 market_id,
-                &provider.name(env),
+                &provider.name(),
                 feed_id,
                 &String::from_str(env, "stale_data"),
                 observed_age,
@@ -2464,7 +2466,7 @@ impl OracleValidationConfigManager {
                     EventEmitter::emit_oracle_validation_failed(
                         env,
                         market_id,
-                        &provider.name(env),
+                        &provider.name(),
                         feed_id,
                         &String::from_str(env, "confidence_too_wide"),
                         observed_age,
@@ -2622,7 +2624,7 @@ impl OracleIntegrationManager {
             oracle_result.price,
             oracle_result.threshold,
             &oracle_result.comparison,
-            &oracle_result.provider.name(env),
+            &oracle_result.provider.name(),
             &oracle_result.feed_id,
             oracle_result.confidence_score,
             oracle_result.sources_count,
@@ -3656,9 +3658,7 @@ impl OracleCallbackAuth {
     /// This check is performed first as it's the least computationally expensive
     /// and quickly rejects unauthorized callers.
     fn verify_caller_authorization(&self, caller: &Address) -> Result<(), Error> {
-        let whitelist = OracleWhitelist::from_env(&self.env);
-
-        if !whitelist.is_oracle_authorized(caller)? {
+        if !OracleWhitelist::is_oracle_authorized(&self.env, caller)? {
             self.log_authentication_failure(caller, "Caller not authorized");
             return Err(Error::OracleCallbackUnauthorized);
         }
@@ -3768,13 +3768,13 @@ impl OracleCallbackAuth {
         let nonce_key = StorageKey::OracleNonce(caller.clone(), callback_data.nonce);
 
         // Check if nonce has been used before
-        if self.env.storage().get(&nonce_key).unwrap_or(false) {
+        if self.env.storage().persistent().get(&nonce_key).unwrap_or(false) {
             self.log_authentication_failure(caller, "Replay attack detected");
             return Err(Error::OracleCallbackReplayDetected);
         }
 
         // Mark nonce as used
-        self.env.storage().set(&nonce_key, &true);
+        self.env.storage().persistent().set(&nonce_key, &true);
 
         // Clean up old nonces (keep only recent ones)
         self.cleanup_old_nonces(caller);
@@ -3800,7 +3800,7 @@ impl OracleCallbackAuth {
         let current_time = self.env.ledger().timestamp();
 
         // Get last callback time
-        let last_callback_time: u64 = self.env.storage().get(&rate_limit_key).unwrap_or(0);
+        let last_callback_time: u64 = self.env.storage().persistent().get(&rate_limit_key).unwrap_or(0);
 
         // Check if enough time has passed
         if current_time < last_callback_time + MIN_CALLBACK_INTERVAL {
@@ -3809,7 +3809,7 @@ impl OracleCallbackAuth {
         }
 
         // Update last callback time
-        self.env.storage().set(&rate_limit_key, &current_time);
+        self.env.storage().persistent().set(&rate_limit_key, &current_time);
 
         Ok(())
     }
@@ -3832,25 +3832,15 @@ impl OracleCallbackAuth {
         caller: &Address,
         callback_data: &OracleCallbackData,
     ) -> Result<(), Error> {
-        // Store the oracle data for market resolution
+        // Store the oracle price for market resolution
         let data_key = StorageKey::OracleData(callback_data.feed_id.clone());
-        let oracle_data = OraclePriceData {
-            price: callback_data.price,
-            publish_time: callback_data.timestamp,
-            confidence: None,
-            exponent: 0,
-        };
+        // Store just the price (i128) since OraclePriceData lacks contracttype
+        self.env.storage().persistent().set(&data_key, &callback_data.price);
 
-        self.env.storage().set(&data_key, &oracle_data);
-
-        // Emit oracle callback event
-        crate::events::EventEmitter::emit_oracle_callback(
-            &self.env,
-            caller,
-            &callback_data.feed_id,
-            callback_data.price,
-            callback_data.timestamp,
-        );
+        // Log oracle callback via error_logged event (no dedicated callback event exists)
+        let msg = String::from_str(&self.env, "oracle_callback");
+        let ctx = String::from_str(&self.env, "oracle_cb");
+        crate::events::EventEmitter::emit_error_logged(&self.env, 0, &msg, &ctx, Some(caller.clone()), None);
 
         Ok(())
     }
@@ -3862,23 +3852,17 @@ impl OracleCallbackAuth {
     ///
     /// # Returns
     /// The message bytes that should be signed
-    fn create_signature_message(&self, callback_data: &OracleCallbackData) -> Vec<u8> {
-        let mut message = Vec::new(&self.env);
+    fn create_signature_message(&self, callback_data: &OracleCallbackData) -> Bytes {
+        let feed_bytes = callback_data.feed_id.to_bytes();
 
-        // Add feed ID
-        message.extend_from_slice(&callback_data.feed_id.to_bytes());
+        let price_bytes = Bytes::from_array(&self.env, &callback_data.price.to_be_bytes());
+        let timestamp_bytes = Bytes::from_array(&self.env, &callback_data.timestamp.to_be_bytes());
+        let nonce_bytes = Bytes::from_array(&self.env, &callback_data.nonce.to_be_bytes());
 
-        // Add price (big-endian)
-        let price_bytes = callback_data.price.to_be_bytes();
-        message.extend_from_slice(&price_bytes);
-
-        // Add timestamp
-        let timestamp_bytes = callback_data.timestamp.to_be_bytes();
-        message.extend_from_slice(&timestamp_bytes);
-
-        // Add nonce
-        let nonce_bytes = callback_data.nonce.to_be_bytes();
-        message.extend_from_slice(&nonce_bytes);
+        let mut message = feed_bytes;
+        message.append(&price_bytes);
+        message.append(&timestamp_bytes);
+        message.append(&nonce_bytes);
 
         message
     }
@@ -3897,19 +3881,15 @@ impl OracleCallbackAuth {
     fn verify_ed25519_signature(
         &self,
         public_key: &Address,
-        message: &[u8],
-        signature: &Vec<u8>,
+        message: &Bytes,
+        signature: &Bytes,
     ) -> Result<bool, Error> {
-        // In a real implementation, this would use Soroban's signature verification
-        // For now, we'll simulate the verification process
-
         // Check signature length (Ed25519 signatures are 64 bytes)
         if signature.len() != 64 {
             return Err(Error::OracleCallbackInvalidSignature);
         }
 
-        // Simulate signature verification (in production, use actual crypto)
-        // This is a placeholder implementation
+        // Placeholder: in production use actual Ed25519 verification
         Ok(true)
     }
 
@@ -3934,24 +3914,33 @@ impl OracleCallbackAuth {
     fn log_successful_authentication(&self, caller: &Address, callback_data: &OracleCallbackData) {
         let log_message = String::from_str(
             &self.env,
-            &format!("Oracle callback authenticated: {:?}", callback_data.feed_id),
+            &format!("Oracle callback authenticated: {}", callback_data.feed_id.to_string()),
         );
-
-        crate::events::EventEmitter::emit_security_event(&self.env, caller, &log_message);
+        let ctx = String::from_str(&self.env, "oracle_auth");
+        crate::events::EventEmitter::emit_error_logged(
+            &self.env,
+            0,
+            &log_message,
+            &ctx,
+            Some(caller.clone()),
+            None,
+        );
     }
 
-    /// Log authentication failure
-    ///
-    /// # Arguments
-    /// * `caller` - The address of the calling contract
-    /// * `reason` - The reason for authentication failure
     fn log_authentication_failure(&self, caller: &Address, reason: &str) {
         let log_message = String::from_str(
             &self.env,
             &format!("Oracle callback authentication failed: {}", reason),
         );
-
-        crate::events::EventEmitter::emit_security_event(&self.env, caller, &log_message);
+        let ctx = String::from_str(&self.env, "oracle_auth");
+        crate::events::EventEmitter::emit_error_logged(
+            &self.env,
+            1,
+            &log_message,
+            &ctx,
+            Some(caller.clone()),
+            None,
+        );
     }
 }
 
@@ -3971,7 +3960,7 @@ pub struct OracleCallbackData {
     /// Unique nonce to prevent replay attacks
     pub nonce: u64,
     /// Cryptographic signature of the data
-    pub signature: Vec<u8>,
+    pub signature: Bytes,
 }
 
 /// Storage keys for oracle callback authentication
@@ -4004,16 +3993,22 @@ pub const MIN_CALLBACK_INTERVAL: u64 = 10; // 10 seconds
 pub const NONCE_CLEANUP_INTERVAL: u64 = 3600; // 1 hour
 
 #[cfg(test)]
-mod tests {
+mod oracle_callback_tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
+
+    fn make_sig(env: &Env, len: u32) -> Bytes {
+        let mut b = Bytes::new(env);
+        for _ in 0..len {
+            b.push_back(0u8);
+        }
+        b
+    }
 
     #[test]
     fn test_oracle_callback_auth_creation() {
         let env = Env::default();
         let auth = OracleCallbackAuth::new(&env);
-
-        // Test that the authentication system can be created
         assert_eq!(auth.env.contract_id(), env.contract_id());
     }
 
@@ -4022,27 +4017,22 @@ mod tests {
         let env = Env::default();
         let auth = OracleCallbackAuth::new(&env);
 
-        // Test valid data
         let valid_data = OracleCallbackData {
             feed_id: String::from_str(&env, "BTC/USD"),
-            price: 50000000, // $500 with 8 decimals
+            price: 50000000,
             timestamp: env.ledger().timestamp(),
             nonce: 12345,
-            signature: vec![&env; 64], // Valid Ed25519 signature size
+            signature: make_sig(&env, 64),
         };
+        assert!(auth.validate_callback_data(&valid_data).is_ok());
 
-        let result = auth.validate_callback_data(&valid_data);
-        assert!(result.is_ok());
-
-        // Test invalid data (empty feed ID)
         let invalid_data = OracleCallbackData {
             feed_id: String::from_str(&env, ""),
             price: 50000000,
             timestamp: env.ledger().timestamp(),
             nonce: 12345,
-            signature: vec![&env; 64],
+            signature: make_sig(&env, 64),
         };
-
         let result2 = auth.validate_callback_data(&invalid_data);
         assert!(result2.is_err());
         assert_eq!(result2.unwrap_err(), Error::InvalidOracleFeed);
@@ -4058,14 +4048,12 @@ mod tests {
             price: 50000000,
             timestamp: 1234567890,
             nonce: 12345,
-            signature: vec![&env; 64],
+            signature: make_sig(&env, 64),
         };
 
         let message = auth.create_signature_message(&callback_data);
-
-        // Verify message contains expected data
         assert!(!message.is_empty());
-        assert!(message.len() > 32); // Should contain all fields
+        assert!(message.len() > 32);
     }
 
     #[test]
@@ -4074,11 +4062,7 @@ mod tests {
         let auth = OracleCallbackAuth::new(&env);
         let caller = Address::generate(&env);
 
-        // First call should succeed
-        let result1 = auth.enforce_rate_limiting(&caller);
-        assert!(result1.is_ok());
-
-        // Immediate second call should fail
+        assert!(auth.enforce_rate_limiting(&caller).is_ok());
         let result2 = auth.enforce_rate_limiting(&caller);
         assert!(result2.is_err());
         assert_eq!(result2.unwrap_err(), Error::OracleCallbackTimeout);
@@ -4095,14 +4079,10 @@ mod tests {
             price: 50000000,
             timestamp: env.ledger().timestamp(),
             nonce: 12345,
-            signature: vec![&env; 64],
+            signature: make_sig(&env, 64),
         };
 
-        // First call should succeed
-        let result1 = auth.prevent_replay_attack(&caller, &callback_data);
-        assert!(result1.is_ok());
-
-        // Second call with same nonce should fail
+        assert!(auth.prevent_replay_attack(&caller, &callback_data).is_ok());
         let result2 = auth.prevent_replay_attack(&caller, &callback_data);
         assert!(result2.is_err());
         assert_eq!(result2.unwrap_err(), Error::OracleCallbackReplayDetected);
@@ -4113,16 +4093,13 @@ mod tests {
         let env = Env::default();
         let auth = OracleCallbackAuth::new(&env);
         let caller = Address::generate(&env);
-        let message = b"test message";
+        let message = make_sig(&env, 16);
 
-        // Test valid signature length
-        let valid_signature = vec![&env; 64]; // Correct Ed25519 size
-        let result1 = auth.verify_ed25519_signature(&caller, message, &valid_signature);
-        assert!(result1.is_ok());
+        let valid_sig = make_sig(&env, 64);
+        assert!(auth.verify_ed25519_signature(&caller, &message, &valid_sig).is_ok());
 
-        // Test invalid signature length
-        let invalid_signature = vec![&env; 32]; // Wrong size
-        let result2 = auth.verify_ed25519_signature(&caller, message, &invalid_signature);
+        let invalid_sig = make_sig(&env, 32);
+        let result2 = auth.verify_ed25519_signature(&caller, &message, &invalid_sig);
         assert!(result2.is_err());
         assert_eq!(result2.unwrap_err(), Error::OracleCallbackInvalidSignature);
     }

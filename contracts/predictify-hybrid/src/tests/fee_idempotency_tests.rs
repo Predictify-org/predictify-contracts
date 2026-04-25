@@ -83,7 +83,8 @@ fn test_first_collection_succeeds() {
         MarketStateManager::update_market(&env, &market_id, &make_resolved_market(&env));
 
         let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
-        assert!(result.is_ok(), "first collect_fees should succeed: {:?}, &market_id).unwrap();
+        assert!(result.is_ok(), "first collect_fees should succeed");
+        let stored = MarketStateManager::get_market(&env, &market_id).unwrap();
         assert!(stored.fee_collected, "fee_collected must be true after collection");
     });
 }
@@ -111,7 +112,7 @@ fn test_second_collection_is_noop() {
 
 /// Multiple retries all return `Ok(0)` and never alter stored market state.
 #[test]
-ftest_repeated_retries_are_stable() {
+fn test_repeated_retries_are_stable() {
     let env = make_env();
     let contract_id = register_contract(&env);
     let admin = Address::generate(&env);
@@ -138,7 +139,7 @@ ftest_repeated_retries_are_stable() {
 #[test]
 fn test_unresolved_market_rejected() {
     let env = make_env();
-    let contract_id = register_contct(&env);
+    let contract_id = register_contract(&env);
     let admin = Address::generate(&env);
     env.mock_all_auths();
 

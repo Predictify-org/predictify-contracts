@@ -1,68 +1,117 @@
+//! Market ID Generator
+//!
+//! Generates collision-resistant market IDs for the Predictify Hybrid contract.
+//!
+//! # Entropy sources
+//!
+//! Each ID is derived from a SHA-256 digest of two independent inputs:
+//!
+//! | Source | Bytes | Notes |
+//! |--------|-------|-------|
+//! | Ledger sequence | 4 | Monotonically increasing; unique per ledger |
+//! | Global nonce | 4 | Monotonically increasing across all markets |
+//!
+//! The global nonce increments on every call regardless of admin, so two
+//! admins calling `generate_market_id` in the same ledger still produce
+//! different IDs.  The per-admin counter is tracked separately for
+//! auditability (it appears in the ID suffix) but is not the sole source
+//! of uniqueness.
+//!
+//! # Collision risk
+//!
+//! The ID space is the first 8 hex characters of the SHA-256 digest (32 bits).
+//! With two independent monotonic inputs the effective pre-image space is
+//! `2^32 × N_ledgers`, making accidental collisions negligible in practice.
+//! The generator also performs an explicit collision check against persistent
+//! storage and retries up to [`MarketIdGenerator::MAX_RETRIES`] times before
+//! panicking, providing a hard safety net.
+//!
+//! # Format
+//!
+//! ```text
+//! mkt_{8 hex chars}_{admin_counter}
+//! ```
+//!
+//! Example: `mkt_3f9a1b2c_0`
+//!
+//! The counter suffix is the per-admin counter at creation time, making IDs
+//! human-readable and auditable without decoding the hash.
+
 use crate::errors::Error;
 use crate::types::Market;
 use alloc::format;
-/// Market ID Generator Module
-///
-/// Provides collision-resistant market ID generation using per-admin counters.
-///
-/// Each admin gets their own counter sequence, ensuring unique IDs across all admins.
+use alloc::string::ToString;
 use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Symbol, Vec};
 
-/// Market ID components
+// ── Public types ─────────────────────────────────────────────────────────────
+
+/// Parsed components of a market ID.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketIdComponents {
-    /// Counter value
+    /// The per-admin counter embedded in the ID suffix.
     pub counter: u32,
-    /// Whether this is a legacy format ID
+    /// `true` for IDs that pre-date the current format (no `mkt_` prefix).
     pub is_legacy: bool,
 }
 
-/// Market ID registry entry
+/// One entry in the market ID registry.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct MarketIdRegistryEntry {
-    /// Market ID
+    /// The market ID symbol.
     pub market_id: Symbol,
-    /// Admin who created the market
+    /// Admin who created the market.
     pub admin: Address,
-    /// Creation timestamp
+    /// Ledger timestamp at creation time.
     pub timestamp: u64,
 }
 
-/// Market ID Generator
+// ── Generator ────────────────────────────────────────────────────────────────
+
+/// Stateless helper that generates and validates market IDs.
 pub struct MarketIdGenerator;
 
 impl MarketIdGenerator {
-    /// Storage key for admin counters map
     const ADMIN_COUNTERS_KEY: &'static str = "admin_counters";
-    /// Storage key for market ID registry
+    pub(crate) const GLOBAL_NONCE_KEY: &'static str = "mid_nonce";
     const REGISTRY_KEY: &'static str = "mid_registry";
-    /// Maximum counter value
-    const MAX_COUNTER: u32 = 999999;
-    /// Maximum retry attempts
-    const MAX_RETRIES: u32 = 10;
+    /// Hard upper bound on the per-admin counter.
+    pub const MAX_COUNTER: u32 = 999_999;
+    /// Maximum collision-retry attempts before giving up.
+    pub const MAX_RETRIES: u32 = 10;
 
-    /// Generate a unique market ID for an admin
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    /// Generate a unique, collision-resistant market ID for `admin`.
+    ///
+    /// The ID is derived from SHA-256(ledger_sequence ‖ global_nonce) and
+    /// formatted as `mkt_{8 hex chars}_{admin_counter}`.
+    ///
+    /// # Panics
+    ///
+    /// - [`Error::InvalidInput`] if the admin's counter has reached [`MAX_COUNTER`].
+    /// - [`Error::InvalidState`] if [`MAX_RETRIES`] consecutive collision checks
+    ///   all find an existing market (should never happen in normal operation).
     pub fn generate_market_id(env: &Env, admin: &Address) -> Symbol {
         let timestamp = env.ledger().timestamp();
-        let counter = Self::get_admin_counter(env, admin);
+        let admin_counter = Self::get_admin_counter(env, admin);
 
-        if counter > Self::MAX_COUNTER {
+        if admin_counter > Self::MAX_COUNTER {
             panic_with_error!(env, Error::InvalidInput);
         }
 
-        // Generate ID with collision detection
         for attempt in 0..Self::MAX_RETRIES {
-            let current_counter = counter + attempt;
-            if current_counter > Self::MAX_COUNTER {
+            let current_admin_counter = admin_counter + attempt;
+            if current_admin_counter > Self::MAX_COUNTER {
                 panic_with_error!(env, Error::InvalidInput);
             }
 
-            let market_id = Self::build_market_id(env, admin, current_counter);
+            let nonce = Self::get_and_bump_global_nonce(env);
+            let market_id = Self::build_market_id(env, nonce, current_admin_counter);
 
             if !Self::check_market_id_collision(env, &market_id) {
-                Self::set_admin_counter(env, admin, current_counter + 1);
+                Self::set_admin_counter(env, admin, current_admin_counter + 1);
                 Self::register_market_id(env, &market_id, admin, timestamp);
                 return market_id;
             }
@@ -71,59 +120,7 @@ impl MarketIdGenerator {
         panic_with_error!(env, Error::InvalidState);
     }
 
-    /// Build market ID from admin and counter
-    fn build_market_id(env: &Env, _admin: &Address, counter: u32) -> Symbol {
-        // Simple approach: hash counter with admin's Val
-        let counter_bytes = Bytes::from_array(env, &counter.to_be_bytes());
-
-        // Create a deterministic ID from counter
-        // Hash the counter to get unique ID
-        let hash = env.crypto().sha256(&counter_bytes);
-        let hash_bytes = hash.to_bytes();
-
-        // Convert first 3 bytes to hex (6 chars)
-        let mut hex_chars = alloc::vec::Vec::new();
-        for i in 0..3 {
-            let byte = hash_bytes.get(i).unwrap_or(0);
-            hex_chars.push(format!("{:02x}", byte));
-        }
-        let hex_str = hex_chars.join("");
-
-        // Create ID: mkt_{hex}_{admin_specific_part}
-        // To make it unique per admin, we'll use the counter directly
-        let id_string = format!("mkt_{}_{}", hex_str, counter);
-        Symbol::new(env, &id_string)
-    }
-
-    /// Get admin's counter value
-    fn get_admin_counter(env: &Env, admin: &Address) -> u32 {
-        let key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
-        let counters: soroban_sdk::Map<Address, u32> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(soroban_sdk::Map::new(env));
-        counters.get(admin.clone()).unwrap_or(0)
-    }
-
-    /// Set admin's counter value
-    fn set_admin_counter(env: &Env, admin: &Address, counter: u32) {
-        let key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
-        let mut counters: soroban_sdk::Map<Address, u32> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(soroban_sdk::Map::new(env));
-        counters.set(admin.clone(), counter);
-        env.storage().persistent().set(&key, &counters);
-    }
-
-    /// Validate market ID format
-    pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
-        true // Simplified
-    }
-
-    /// Check if market ID exists
+    /// Returns `true` if `market_id` already exists in persistent storage.
     pub fn check_market_id_collision(env: &Env, market_id: &Symbol) -> bool {
         env.storage()
             .persistent()
@@ -131,35 +128,60 @@ impl MarketIdGenerator {
             .is_some()
     }
 
-    /// Parse market ID into components
-    pub fn parse_market_id_components(
-        _env: &Env,
-        _market_id: &Symbol,
-    ) -> Result<MarketIdComponents, Error> {
-        Ok(MarketIdComponents {
-            counter: 0,
-            is_legacy: false,
-        })
-    }
-
-    /// Check if market ID is valid
+    /// Returns `true` if `market_id` passes format validation *and* exists in
+    /// persistent storage (i.e. it is a live market).
     pub fn is_market_id_valid(env: &Env, market_id: &Symbol) -> bool {
         Self::validate_market_id_format(env, market_id)
             && Self::check_market_id_collision(env, market_id)
     }
 
-    /// Get market ID registry with pagination
+    /// Returns `true` if `market_id` starts with the `mkt_` prefix.
+    ///
+    /// Legacy IDs (created before this module existed) do not carry the prefix
+    /// and will return `false` here; callers should treat them as valid but
+    /// unstructured.
+    pub fn validate_market_id_format(_env: &Env, market_id: &Symbol) -> bool {
+        market_id.to_string().starts_with("mkt_")
+    }
+
+    /// Parse the counter and legacy flag out of a market ID symbol.
+    ///
+    /// Returns [`Error::InvalidInput`] if the ID cannot be parsed.
+    pub fn parse_market_id_components(
+        _env: &Env,
+        market_id: &Symbol,
+    ) -> Result<MarketIdComponents, Error> {
+        let s = market_id.to_string();
+        // Expected format: mkt_{hex}_{counter}
+        if !s.starts_with("mkt_") {
+            return Ok(MarketIdComponents {
+                counter: 0,
+                is_legacy: true,
+            });
+        }
+        // Split on '_': ["mkt", "{hex}", "{counter}"]
+        let parts: alloc::vec::Vec<&str> = s.splitn(3, '_').collect();
+        if parts.len() != 3 {
+            return Err(Error::InvalidInput);
+        }
+        let counter = parts[2].parse::<u32>().map_err(|_| Error::InvalidInput)?;
+        Ok(MarketIdComponents {
+            counter,
+            is_legacy: false,
+        })
+    }
+
+    /// Return a paginated slice of the market ID registry.
     pub fn get_market_id_registry(env: &Env, start: u32, limit: u32) -> Vec<MarketIdRegistryEntry> {
-        let registry_key = Symbol::new(env, Self::REGISTRY_KEY);
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
         let registry: Vec<MarketIdRegistryEntry> = env
             .storage()
             .persistent()
-            .get(&registry_key)
+            .get(&key)
             .unwrap_or(Vec::new(env));
 
         let mut result = Vec::new(env);
         let end = core::cmp::min(start + limit, registry.len());
-
         for i in start..end {
             if let Some(entry) = registry.get(i) {
                 result.push_back(entry);
@@ -168,13 +190,13 @@ impl MarketIdGenerator {
         result
     }
 
-    /// Get markets created by specific admin
+    /// Return all market IDs created by `admin`.
     pub fn get_admin_markets(env: &Env, admin: &Address) -> Vec<Symbol> {
-        let registry_key = Symbol::new(env, Self::REGISTRY_KEY);
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
         let registry: Vec<MarketIdRegistryEntry> = env
             .storage()
             .persistent()
-            .get(&registry_key)
+            .get(&key)
             .unwrap_or(Vec::new(env));
 
         let mut result = Vec::new(env);
@@ -188,307 +210,430 @@ impl MarketIdGenerator {
         result
     }
 
-    /// Register a newly created market ID
+    // ── Private helpers ──────────────────────────────────────────────────────
+
+    /// Build a market ID symbol.
+    ///
+    /// Hash input layout (big-endian):
+    /// ```text
+    /// [ ledger_sequence (4 B) | global_nonce (4 B) ]
+    /// ```
+    fn build_market_id(env: &Env, nonce: u32, admin_counter: u32) -> Symbol {
+        let sequence = env.ledger().sequence();
+
+        let seq_bytes = Bytes::from_array(env, &sequence.to_be_bytes());
+        let nonce_bytes = Bytes::from_array(env, &nonce.to_be_bytes());
+
+        let mut input = seq_bytes;
+        input.append(&nonce_bytes);
+
+        let hash = env.crypto().sha256(&input);
+        let hash_bytes = hash.to_bytes();
+
+        // First 4 bytes → 8 hex chars.
+        let hex: alloc::string::String = (0..4)
+            .map(|i| format!("{:02x}", hash_bytes.get(i).unwrap_or(0)))
+            .collect();
+
+        let id_str = format!("mkt_{}_{}", hex, admin_counter);
+        Symbol::new(env, &id_str)
+    }
+
+    /// Read the global nonce and increment it atomically.
+    fn get_and_bump_global_nonce(env: &Env) -> u32 {
+        let key = Symbol::new(env, Self::GLOBAL_NONCE_KEY);
+        let nonce: u32 = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(0u32);
+        env.storage().persistent().set(&key, &(nonce + 1));
+        nonce
+    }
+
+    pub(crate) fn get_admin_counter(env: &Env, admin: &Address) -> u32 {
+        let key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
+        let counters: soroban_sdk::Map<Address, u32> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(soroban_sdk::Map::new(env));
+        counters.get(admin.clone()).unwrap_or(0)
+    }
+
+    fn set_admin_counter(env: &Env, admin: &Address, counter: u32) {
+        let key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
+        let mut counters: soroban_sdk::Map<Address, u32> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(soroban_sdk::Map::new(env));
+        counters.set(admin.clone(), counter);
+        env.storage().persistent().set(&key, &counters);
+    }
+
     fn register_market_id(env: &Env, market_id: &Symbol, admin: &Address, timestamp: u64) {
-        let registry_key = Symbol::new(env, Self::REGISTRY_KEY);
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
         let mut registry: Vec<MarketIdRegistryEntry> = env
             .storage()
             .persistent()
-            .get(&registry_key)
+            .get(&key)
             .unwrap_or(Vec::new(env));
-
         registry.push_back(MarketIdRegistryEntry {
             market_id: market_id.clone(),
             admin: admin.clone(),
             timestamp,
         });
-
-        env.storage().persistent().set(&registry_key, &registry);
+        env.storage().persistent().set(&key, &registry);
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::string::ToString;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 
-    struct MarketIdTest {
-        env: Env,
-        admin: Address,
-        contract_id: Address,
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    fn setup() -> (Env, Address, Address) {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        (env, contract_id, admin)
     }
 
-    impl MarketIdTest {
-        fn new() -> Self {
-            let env = Env::default();
-            let admin = Address::generate(&env);
-            let contract_id = env.register(crate::PredictifyHybrid, ());
-            MarketIdTest {
-                env,
-                admin,
-                contract_id,
-            }
-        }
-
-        fn with_contract<T>(&self, f: impl FnOnce() -> T) -> T {
-            self.env.as_contract(&self.contract_id, f)
-        }
+    fn with_contract<T>(env: &Env, contract_id: &Address, f: impl FnOnce() -> T) -> T {
+        env.as_contract(contract_id, f)
     }
+
+    // ── Format & parsing ─────────────────────────────────────────────────────
 
     #[test]
-    fn test_generate_market_id_basic() {
-        let test = MarketIdTest::new();
-        // Test basic market ID generation
-        // Verifies ID is created and formatted correctly
-        let admin = test.admin;
-        assert!(!admin.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_generate_market_id_format() {
-        let test = MarketIdTest::new();
-        // Test that market ID contains expected prefix (mkt_)
-        // ID format: mkt_{hex}_{counter}
-        let prefix = "mkt_";
-        assert!(prefix.starts_with("mkt"));
-    }
-
-    #[test]
-    fn test_generate_market_id_deterministic() {
-        let test = MarketIdTest::new();
-        // Test that IDs are derived from admin counter
-        // Same admin with same counter should produce same logic
-        let counter1 = 0u32;
-        let counter2 = 1u32;
-        assert_ne!(counter1, counter2);
-    }
-
-    #[test]
-    fn test_generate_market_id_multiple_admins() {
-        let test = MarketIdTest::new();
-        let admin1 = test.admin;
-        let admin2 = Address::generate(&test.env);
-        // Different admins should have separate counter sequences
-        assert_ne!(admin1, admin2);
-    }
-
-    #[test]
-    fn test_market_id_collision_detection() {
-        let test = MarketIdTest::new();
-        // Test that collisions are detected
-        // check_market_id_collision checks persistent storage
-        let has_collision = test.with_contract(|| {
-            let market_id = Symbol::new(&test.env, "test_market");
-            MarketIdGenerator::check_market_id_collision(&test.env, &market_id)
+    fn test_generated_id_has_mkt_prefix() {
+        let (env, contract_id, admin) = setup();
+        let id = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin)
         });
-        // Initially should be false (no collision)
-        assert!(!has_collision);
+        assert!(id.to_string().starts_with("mkt_"), "ID must start with mkt_");
     }
 
     #[test]
-    fn test_validate_market_id_format_valid() {
-        let test = MarketIdTest::new();
-        // Test validation of correctly formatted ID
-        let market_id = Symbol::new(&test.env, "mkt_abc123_0");
-        let is_valid = MarketIdGenerator::validate_market_id_format(&test.env, &market_id);
-        assert!(is_valid);
-    }
-
-    #[test]
-    fn test_parse_market_id_components() {
-        let test = MarketIdTest::new();
-        // Test parsing of market ID components
-        let market_id = Symbol::new(&test.env, "mkt_abc123_42");
-        let result = MarketIdGenerator::parse_market_id_components(&test.env, &market_id);
-        assert!(result.is_ok());
-        if let Ok(components) = result {
-            assert!(!components.is_legacy);
-        }
-    }
-
-    #[test]
-    fn test_is_market_id_valid_nonexistent() {
-        let test = MarketIdTest::new();
-        // Test that nonexistent market ID returns false
-        let is_valid = test.with_contract(|| {
-            let market_id = Symbol::new(&test.env, "nonexistent_market");
-            MarketIdGenerator::is_market_id_valid(&test.env, &market_id)
+    fn test_generated_id_format_three_parts() {
+        let (env, contract_id, admin) = setup();
+        let id = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin)
         });
-        assert!(!is_valid);
+        let s = id.to_string();
+        let parts: alloc::vec::Vec<&str> = s.splitn(3, '_').collect();
+        assert_eq!(parts.len(), 3, "ID must have three '_'-separated parts");
+        assert_eq!(parts[0], "mkt");
+        assert_eq!(parts[1].len(), 8, "hex segment must be 8 chars");
+        assert!(parts[2].parse::<u32>().is_ok(), "counter must be numeric");
     }
 
     #[test]
-    fn test_get_market_id_registry_empty() {
-        let test = MarketIdTest::new();
-        // Test registry query on empty registry
-        let registry =
-            test.with_contract(|| MarketIdGenerator::get_market_id_registry(&test.env, 0, 10));
-        assert_eq!(registry.len(), 0);
+    fn test_validate_format_accepts_well_formed_id() {
+        let (env, _, _) = setup();
+        let id = Symbol::new(&env, "mkt_3f9a1b2c_0");
+        assert!(MarketIdGenerator::validate_market_id_format(&env, &id));
     }
 
     #[test]
-    fn test_get_market_id_registry_pagination() {
-        let test = MarketIdTest::new();
-        // Test pagination with start and limit
-        let start = 0u32;
-        let limit = 30u32;
-        assert!(limit > 0);
-        let _ = start;
+    fn test_validate_format_rejects_legacy_id() {
+        let (env, _, _) = setup();
+        let id = Symbol::new(&env, "legacy_market_id");
+        assert!(!MarketIdGenerator::validate_market_id_format(&env, &id));
     }
 
     #[test]
-    fn test_get_admin_markets_empty() {
-        let test = MarketIdTest::new();
-        // Test getting markets for admin with no markets
-        let markets =
-            test.with_contract(|| MarketIdGenerator::get_admin_markets(&test.env, &test.admin));
-        assert_eq!(markets.len(), 0);
-    }
-
-    #[test]
-    fn test_market_id_counter_increment() {
-        let test = MarketIdTest::new();
-        // Test that admin counter increments after ID generation
-        let admin = test.admin;
-        // First ID generation would use counter 0
-        // Second would use counter 1
-        let counter_diff = 1u32;
-        assert_eq!(counter_diff, 1);
-    }
-
-    #[test]
-    fn test_market_id_uniqueness_across_admins() {
-        let test = MarketIdTest::new();
-        let env = test.env;
-        let admin1 = test.admin;
-        let admin2 = Address::generate(&env);
-        // Different admins should produce different market IDs
-        // (even if counter is same, admin is different)
-        assert_ne!(admin1, admin2);
-    }
-
-    #[test]
-    fn test_market_id_counter_maxima() {
-        let test = MarketIdTest::new();
-        // Test boundary behavior at MAX_COUNTER (999999)
-        let max_counter = 999999u32;
-        assert_eq!(max_counter, 999_999u32);
-    }
-
-    #[test]
-    fn test_market_id_collision_retry_limit() {
-        let test = MarketIdTest::new();
-        // Test that retry limit is MAX_RETRIES (10)
-        let max_retries = 10u32;
-        assert_eq!(max_retries, 10u32);
-    }
-
-    #[test]
-    fn test_registry_entry_structure() {
-        let test = MarketIdTest::new();
-        let market_id = Symbol::new(&test.env, "test_market");
-        let admin = test.admin.clone();
-        let timestamp = test.env.ledger().timestamp();
-
-        // Verify registry entry can be constructed
-        let entry = MarketIdRegistryEntry {
-            market_id,
-            admin,
-            timestamp,
-        };
-        let _ = entry;
-    }
-
-    #[test]
-    fn test_market_id_components_structure() {
-        // Test MarketIdComponents structure
-        let components = MarketIdComponents {
-            counter: 42,
-            is_legacy: false,
-        };
+    fn test_parse_components_extracts_counter() {
+        let (env, _, _) = setup();
+        let id = Symbol::new(&env, "mkt_abcdef12_42");
+        let components = MarketIdGenerator::parse_market_id_components(&env, &id).unwrap();
         assert_eq!(components.counter, 42);
         assert!(!components.is_legacy);
     }
 
     #[test]
-    fn test_legacy_id_format_detection() {
-        let test = MarketIdTest::new();
-        // Test detection of legacy ID format
-        let legacy_id = Symbol::new(&test.env, "legacy_format_id");
-        let components = MarketIdGenerator::parse_market_id_components(&test.env, &legacy_id);
-        assert!(components.is_ok());
+    fn test_parse_components_marks_legacy() {
+        let (env, _, _) = setup();
+        let id = Symbol::new(&env, "old_format_id");
+        let components = MarketIdGenerator::parse_market_id_components(&env, &id).unwrap();
+        assert!(components.is_legacy);
     }
 
     #[test]
-    fn test_market_id_hash_stability() {
-        let test = MarketIdTest::new();
-        // Test that ID generation with same counter produces consistent format
-        let counter = 5u32;
-        assert_eq!(counter, 5u32);
+    fn test_parse_components_counter_zero() {
+        let (env, _, _) = setup();
+        let id = Symbol::new(&env, "mkt_00000000_0");
+        let components = MarketIdGenerator::parse_market_id_components(&env, &id).unwrap();
+        assert_eq!(components.counter, 0);
     }
 
-    #[test]
-    fn test_registry_pagination_boundary() {
-        let test = MarketIdTest::new();
-        // Test pagination at boundary (start >= registry size)
-        let registry =
-            test.with_contract(|| MarketIdGenerator::get_market_id_registry(&test.env, 1000, 10));
-        assert_eq!(registry.len(), 0);
-    }
+    // ── Uniqueness ───────────────────────────────────────────────────────────
 
     #[test]
-    fn test_get_admin_markets_filters_correctly() {
-        let test = MarketIdTest::new();
-        let admin1 = test.admin.clone();
-        let admin2 = Address::generate(&test.env);
-
-        let markets1 =
-            test.with_contract(|| MarketIdGenerator::get_admin_markets(&test.env, &admin1));
-        let markets2 =
-            test.with_contract(|| MarketIdGenerator::get_admin_markets(&test.env, &admin2));
-
-        // Both should be empty initially
-        assert_eq!(markets1.len(), 0);
-        assert_eq!(markets2.len(), 0);
-    }
-
-    #[test]
-    fn test_market_id_symbol_validity() {
-        let test = MarketIdTest::new();
-        // Test that generated IDs are valid Soroban symbols
-        let market_id = Symbol::new(&test.env, "mkt_test_123");
-        let id_string = market_id.to_string();
-        assert!(id_string.len() > 0);
-    }
-
-    #[test]
-    fn test_admin_counter_persistence_semantics() {
-        let test = MarketIdTest::new();
-        // Test that counter persistence is properly handled
-        // get_admin_counter and set_admin_counter interact with storage
-        let admin = test.admin;
-        assert!(!admin.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_collision_detection_with_existing_market() {
-        let test = MarketIdTest::new();
-        // Test collision detection recognizes when market exists
-        let has_collision = test.with_contract(|| {
-            let market_id = Symbol::new(&test.env, "existing_market");
-            MarketIdGenerator::check_market_id_collision(&test.env, &market_id)
+    fn test_sequential_ids_for_same_admin_are_unique() {
+        let (env, contract_id, admin) = setup();
+        let (id1, id2) = with_contract(&env, &contract_id, || {
+            let a = MarketIdGenerator::generate_market_id(&env, &admin);
+            let b = MarketIdGenerator::generate_market_id(&env, &admin);
+            (a, b)
         });
-        // Should be false since no market created yet
-        assert!(!has_collision);
+        assert_ne!(id1.to_string(), id2.to_string());
     }
 
     #[test]
-    fn test_market_id_string_conversion() {
-        let test = MarketIdTest::new();
-        let id_str = "mkt_abcdef_123";
-        let market_id = Symbol::new(&test.env, id_str);
-        let converted = market_id.to_string();
-        assert!(!converted.is_empty());
+    fn test_same_counter_different_admins_produce_different_ids() {
+        let (env, contract_id, _) = setup();
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+
+        // Both admins start at counter 0; the global nonce increments between
+        // calls, so their IDs must differ.
+        let (id1, id2) = with_contract(&env, &contract_id, || {
+            let a = MarketIdGenerator::generate_market_id(&env, &admin1);
+            let b = MarketIdGenerator::generate_market_id(&env, &admin2);
+            (a, b)
+        });
+        assert_ne!(id1.to_string(), id2.to_string());
+    }
+
+    #[test]
+    fn test_same_admin_different_ledger_sequence_produces_different_ids() {
+        let (env, contract_id, admin) = setup();
+
+        let id1 = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin)
+        });
+
+        // Advance the ledger sequence.
+        env.ledger().set(LedgerInfo {
+            sequence_number: env.ledger().sequence() + 1,
+            timestamp: env.ledger().timestamp() + 5,
+            protocol_version: 22,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 100,
+        });
+
+        let id2 = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin)
+        });
+
+        assert_ne!(id1.to_string(), id2.to_string());
+    }
+
+    // ── Counter mechanics ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_admin_counter_increments_after_generation() {
+        let (env, contract_id, admin) = setup();
+        with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin);
+            assert_eq!(MarketIdGenerator::get_admin_counter(&env, &admin), 1);
+        });
+    }
+
+    #[test]
+    fn test_admin_counter_is_independent_per_admin() {
+        let (env, contract_id, _) = setup();
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+
+        with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin1);
+            MarketIdGenerator::generate_market_id(&env, &admin1);
+            MarketIdGenerator::generate_market_id(&env, &admin2);
+
+            assert_eq!(MarketIdGenerator::get_admin_counter(&env, &admin1), 2);
+            assert_eq!(MarketIdGenerator::get_admin_counter(&env, &admin2), 1);
+        });
+    }
+
+    #[test]
+    fn test_global_nonce_increments_across_admins() {
+        let (env, contract_id, _) = setup();
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+
+        with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin1);
+            MarketIdGenerator::generate_market_id(&env, &admin2);
+            // Nonce should be 2 after two generations.
+            let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
+            let nonce: u32 = env
+                .storage()
+                .persistent()
+                .get(&nonce_key)
+                .unwrap_or(0);
+            assert_eq!(nonce, 2);
+        });
+    }
+
+    // ── Collision detection ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_no_collision_for_fresh_id() {
+        let (env, contract_id, _) = setup();
+        with_contract(&env, &contract_id, || {
+            let id = Symbol::new(&env, "mkt_fresh_0");
+            assert!(!MarketIdGenerator::check_market_id_collision(&env, &id));
+        });
+    }
+
+    #[test]
+    fn test_is_market_id_valid_returns_false_for_nonexistent() {
+        let (env, contract_id, _) = setup();
+        let valid = with_contract(&env, &contract_id, || {
+            let id = Symbol::new(&env, "mkt_00000000_0");
+            MarketIdGenerator::is_market_id_valid(&env, &id)
+        });
+        assert!(!valid);
+    }
+
+    // ── Registry ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_registry_empty_initially() {
+        let (env, contract_id, _) = setup();
+        let entries = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::get_market_id_registry(&env, 0, 10)
+        });
+        assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn test_registry_records_generated_ids() {
+        let (env, contract_id, admin) = setup();
+        with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin);
+            MarketIdGenerator::generate_market_id(&env, &admin);
+            let entries = MarketIdGenerator::get_market_id_registry(&env, 0, 10);
+            assert_eq!(entries.len(), 2);
+        });
+    }
+
+    #[test]
+    fn test_registry_pagination_start_beyond_end() {
+        let (env, contract_id, admin) = setup();
+        with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin);
+            let entries = MarketIdGenerator::get_market_id_registry(&env, 100, 10);
+            assert_eq!(entries.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_registry_pagination_limit() {
+        let (env, contract_id, admin) = setup();
+        with_contract(&env, &contract_id, || {
+            for _ in 0..5 {
+                MarketIdGenerator::generate_market_id(&env, &admin);
+            }
+            let page = MarketIdGenerator::get_market_id_registry(&env, 0, 3);
+            assert_eq!(page.len(), 3);
+        });
+    }
+
+    #[test]
+    fn test_get_admin_markets_empty_for_new_admin() {
+        let (env, contract_id, admin) = setup();
+        let markets = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::get_admin_markets(&env, &admin)
+        });
+        assert_eq!(markets.len(), 0);
+    }
+
+    #[test]
+    fn test_get_admin_markets_returns_only_own_markets() {
+        let (env, contract_id, _) = setup();
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+
+        with_contract(&env, &contract_id, || {
+            MarketIdGenerator::generate_market_id(&env, &admin1);
+            MarketIdGenerator::generate_market_id(&env, &admin1);
+            MarketIdGenerator::generate_market_id(&env, &admin2);
+
+            let m1 = MarketIdGenerator::get_admin_markets(&env, &admin1);
+            let m2 = MarketIdGenerator::get_admin_markets(&env, &admin2);
+            assert_eq!(m1.len(), 2);
+            assert_eq!(m2.len(), 1);
+        });
+    }
+
+    // ── Stress: many IDs per ledger context ──────────────────────────────────
+
+    /// Generate 50 IDs for a single admin within the same ledger and verify
+    /// all are unique.  This exercises the global-nonce path and confirms no
+    /// accidental hash collisions at small nonce values.
+    #[test]
+    fn test_stress_50_ids_same_admin_same_ledger() {
+        let (env, contract_id, admin) = setup();
+        with_contract(&env, &contract_id, || {
+            let mut ids = alloc::vec::Vec::new();
+            for _ in 0..50 {
+                let id = MarketIdGenerator::generate_market_id(&env, &admin);
+                let s = id.to_string();
+                assert!(!ids.contains(&s), "duplicate ID: {}", s);
+                ids.push(s);
+            }
+            assert_eq!(ids.len(), 50);
+        });
+    }
+
+    /// Generate IDs for 20 different admins in the same ledger and verify
+    /// all are unique across admins.
+    #[test]
+    fn test_stress_20_admins_same_ledger_all_unique() {
+        let (env, contract_id, _) = setup();
+        let admins: alloc::vec::Vec<Address> =
+            (0..20).map(|_| Address::generate(&env)).collect();
+
+        with_contract(&env, &contract_id, || {
+            let mut ids = alloc::vec::Vec::new();
+            for admin in &admins {
+                let id = MarketIdGenerator::generate_market_id(&env, admin);
+                let s = id.to_string();
+                assert!(!ids.contains(&s), "cross-admin duplicate: {}", s);
+                ids.push(s);
+            }
+            assert_eq!(ids.len(), 20);
+        });
+    }
+
+    /// Generate IDs across 5 different ledger sequences and verify uniqueness.
+    #[test]
+    fn test_stress_ids_across_multiple_ledgers() {
+        let (env, contract_id, admin) = setup();
+        let mut all_ids = alloc::vec::Vec::new();
+
+        for ledger_bump in 0u32..5 {
+            env.ledger().set(LedgerInfo {
+                sequence_number: 100 + ledger_bump,
+                timestamp: 1_000_000 + (ledger_bump as u64) * 5,
+                protocol_version: 22,
+                network_id: Default::default(),
+                base_reserve: 10,
+                min_temp_entry_ttl: 1,
+                min_persistent_entry_ttl: 1,
+                max_entry_ttl: 100,
+            });
+
+            with_contract(&env, &contract_id, || {
+                for _ in 0..5 {
+                    let id = MarketIdGenerator::generate_market_id(&env, &admin);
+                    let s = id.to_string();
+                    assert!(!all_ids.contains(&s), "cross-ledger duplicate: {}", s);
+                    all_ids.push(s);
+                }
+            });
+        }
+        assert_eq!(all_ids.len(), 25);
     }
 }

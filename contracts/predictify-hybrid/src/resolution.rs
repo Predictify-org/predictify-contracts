@@ -1,6 +1,7 @@
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
+use alloc::string::ToString;
 
 use crate::markets::{CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils};
 
@@ -1354,15 +1355,13 @@ impl MarketResolutionManager {
     if winning_outcomes.len() == 1 {
         winning_outcomes.get(0).unwrap().clone()
     } else {
-        // Represent ties clearly for logs/UI
-        let mut combined = String::from_str(env, "");
-        for (i, outcome) in winning_outcomes.iter().enumerate() {
-            if i > 0 {
-                combined = combined + String::from_str(env, ",");
-            }
-            combined = combined + outcome.clone();
+        // Represent ties clearly for logs/UI — soroban_sdk::String doesn't support +
+        // so we build the result from the first element and append via from_str
+        let mut parts = alloc::vec::Vec::<alloc::string::String>::new();
+        for outcome in winning_outcomes.iter() {
+            parts.push(outcome.to_string());
         }
-        combined
+        String::from_str(env, &parts.join(","))
     }
 } else {
     oracle_result.clone()
@@ -2095,11 +2094,8 @@ impl OracleCallbackResolver {
         callback_data: &crate::oracles::OracleCallbackData,
         market_id: &Symbol,
     ) -> Result<(), Error> {
-        // Get market state manager
-        let market_manager = MarketStateManager::from_env(env);
-
         // Get market
-        let market = market_manager.get_market(market_id)?;
+        let market = MarketStateManager::get_market(env, market_id)?;
 
         // Validate market is ready for resolution
         OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
@@ -2109,11 +2105,14 @@ impl OracleCallbackResolver {
 
         // Create oracle resolution
         let resolution = OracleResolution {
+            market_id: market_id.clone(),
             price: callback_data.price,
             timestamp: callback_data.timestamp,
             oracle_result: outcome.clone(),
-            confidence: None,
-            threshold: 0, // Not applicable for direct oracle resolution
+            threshold: 0,
+            comparison: String::from_str(env, "gt"),
+            provider: OracleProvider::reflector(),
+            feed_id: callback_data.feed_id.clone(),
         };
 
         // Validate resolution
@@ -2122,18 +2121,20 @@ impl OracleCallbackResolver {
         // Update market with oracle resolution
         let mut updated_market = market;
         updated_market.oracle_result = Some(outcome.clone());
-        updated_market.oracle_resolution_time = Some(callback_data.timestamp);
 
         // Store updated market
-        market_manager.update_market(market_id, &updated_market)?;
+        MarketStateManager::update_market(env, market_id, &updated_market);
 
         // Emit resolution event
         crate::events::EventEmitter::emit_oracle_result(
             env,
             market_id,
             &outcome,
+            &String::from_str(env, "oracle"),
+            &callback_data.feed_id,
             callback_data.price,
-            callback_data.timestamp,
+            0,
+            &String::from_str(env, "gt"),
         );
 
         Ok(())
@@ -2181,7 +2182,7 @@ impl OracleCallbackResolver {
             }
         } else {
             // For multi-outcome markets, use price modulo number of outcomes
-            let outcome_index = (callback_data.price.abs() as usize) % market.outcomes.len();
+            let outcome_index = (callback_data.price.abs() as u32) % market.outcomes.len();
             Ok(market.outcomes.get(outcome_index).unwrap().clone())
         }
     }
@@ -2202,14 +2203,12 @@ impl OracleCallbackResolver {
         market_id: &Symbol,
     ) -> Result<(), Error> {
         // Check if caller is authorized oracle
-        let whitelist = crate::oracles::OracleWhitelist::from_env(env);
-        if !whitelist.is_oracle_authorized(caller)? {
+        if !crate::oracles::OracleWhitelist::is_oracle_authorized(env, caller)? {
             return Err(Error::OracleCallbackUnauthorized);
         }
 
         // Check if market exists and is ready for oracle resolution
-        let market_manager = MarketStateManager::from_env(env);
-        let market = market_manager.get_market(market_id)?;
+        let market = MarketStateManager::get_market(env, market_id)?;
 
         OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
 

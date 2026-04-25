@@ -40,6 +40,7 @@ mod market_analytics;
 mod market_id_generator;
 mod markets;
 mod metadata_limits;
+mod tokens;
 #[cfg(test)]
 mod metadata_limits_tests;
 #[cfg(test)]
@@ -164,6 +165,43 @@ use soroban_sdk::{
 pub struct PredictifyHybrid;
 
 const PERCENTAGE_DENOMINATOR: i128 = 10000;
+
+const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str =
+    "Both primary and fallback oracles failed to resolve the market.";
+const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str =
+    "Primary oracle failed to resolve the market.";
+
+/// Returns true if the market's resolution timeout has passed.
+fn resolution_timeout_reached(env: &Env, market: &crate::types::Market) -> bool {
+    let current_time = env.ledger().timestamp();
+    current_time >= market.end_time + market.resolution_timeout
+}
+
+/// Attempt to resolve a market via its oracle config.
+/// Returns the outcome string on success.
+fn automatic_oracle_result_unavailable(
+    env: &Env,
+    oracle_config: &crate::types::OracleConfig,
+) -> Result<String, crate::errors::Error> {
+    use crate::oracles::{OracleFactory, OracleUtils};
+
+    if oracle_config.is_none_sentinel() {
+        return Err(crate::errors::Error::OracleUnavailable);
+    }
+
+    oracle_config.validate(env)?;
+
+    let oracle = OracleFactory::create_from_config(oracle_config, oracle_config.oracle_address.clone())
+        .map_err(|_| crate::errors::Error::OracleUnavailable)?;
+
+    let price = oracle
+        .get_price(env, &oracle_config.feed_id)
+        .map_err(|_| crate::errors::Error::OracleUnavailable)?;
+
+    OracleUtils::validate_oracle_response(price)?;
+
+    OracleUtils::determine_outcome(price, oracle_config.threshold, &oracle_config.comparison, env)
+}
 
 #[contractimpl]
 impl PredictifyHybrid {
@@ -714,6 +752,7 @@ impl PredictifyHybrid {
         {
             panic_with_error!(env, e);
         }
+        let gas_marker = GasTracker::start_tracking(&env);
         Self::require_primary_admin_or_panic(&env, &admin);
 
         // Validate inputs

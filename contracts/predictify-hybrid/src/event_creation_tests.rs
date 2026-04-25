@@ -529,6 +529,9 @@ fn test_create_event_limit_enforced() {
         );
     }
 }
+
+#[test]
+fn test_create_event_after_cancel() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
 
