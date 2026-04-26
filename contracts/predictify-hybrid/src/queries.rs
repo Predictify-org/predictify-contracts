@@ -15,12 +15,32 @@
 //! 2. **User Bet Queries** - Get user-specific voting and staking information
 //! 3. **Contract State Queries** - Retrieve global contract state and statistics
 //! 4. **Analytics Queries** - Get aggregated market analytics and performance metrics
+//!
+//! # Gap Analysis (2026-04-23)
+//!
+//! The following gaps were identified between the published API spec and current implementation:
+//!
+//! - **Missing Admin Getters**: `get_admin_role`, `get_admin_roles`, `has_permission`, `get_permissions_for_role`
+//! - **Missing Multisig Getters**: `get_multisig_config`, `requires_multisig`
+//! - **Missing Bet Limit Getters**: `get_effective_bet_limits`, `get_global_bet_limits`
+//! - **Missing Oracle Getters**: `get_oracle_resolution`, `get_approved_oracles`, `get_oracle_metadata`, `get_global_oracle_config`
+//! - **Missing Dispute Getters**: `get_dispute_stats`, `get_market_disputes`, `get_dispute_votes`, `get_dispute_timeout_status`
+//! - **Missing Governance Getters**: `list_proposals`, `get_proposal`
+//! - **Missing Config Getters**: `get_config`, `get_configuration_history`
+//! - **Inconsistencies**: `query_event_details` (missing `created_at`), `query_user_bet` (missing `voted_at`), `query_contract_state` (stubbed metrics)
 
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
     types::{Market, MarketState, PagedMarketIds, PagedUserBets},
     voting::VotingStats,
+    admin::{AdminManager, AdminRole, MultisigConfig},
+    oracles::{OracleMetadata, OracleWhitelist},
+    disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
+    governance::{GovernanceContract, GovernanceProposal},
+    bets::BetManager,
+    statistics::StatisticsManager,
+    storage::EventManager,
 };
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
@@ -51,6 +71,102 @@ pub const MAX_PAGE_SIZE: u32 = 50;
 pub struct QueryManager;
 
 impl QueryManager {
+    // ===== ADMIN & MULTISIG QUERIES =====
+
+    /// Query the role of a specific admin address.
+    pub fn query_admin_role(env: &Env, admin: Address) -> Result<AdminRole, Error> {
+        AdminManager::get_admin_role_for_address(env, &admin).ok_or(Error::Unauthorized)
+    }
+
+    /// Query all active admin roles and their addresses.
+    pub fn query_admin_roles(env: &Env) -> Result<Map<Address, AdminRole>, Error> {
+        Ok(AdminManager::get_admin_roles(env))
+    }
+
+    /// Check if an admin has a specific permission for an action.
+    pub fn query_has_permission(env: &Env, admin: Address, action: String) -> Result<bool, Error> {
+        let action_str = action.to_string();
+        let permission = crate::admin::AdminAccessControl::map_action_to_permission(&action_str)?;
+        Ok(AdminManager::validate_admin_permission(env, &admin, permission).is_ok())
+    }
+
+    /// Query the current multisig configuration.
+    pub fn query_multisig_config(env: &Env) -> Result<MultisigConfig, Error> {
+        let key = Symbol::new(env, "MultisigConfig");
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::ContractStateError)
+    }
+
+    /// Check if an action requires multisig approval.
+    pub fn query_requires_multisig(env: &Env, action: String) -> Result<bool, Error> {
+        let config = Self::query_multisig_config(env)?;
+        if !config.enabled {
+            return Ok(false);
+        }
+        // In the current implementation, most sensitive admin actions require multisig if enabled.
+        // This can be further refined based on specific action mapping.
+        Ok(true)
+    }
+
+    // ===== ORACLE QUERIES =====
+
+    /// Query metadata for a specific oracle.
+    pub fn query_oracle_metadata(env: &Env, oracle: Address) -> Result<OracleMetadata, Error> {
+        let key = crate::oracles::OracleWhitelistKey::OracleMetadata(oracle);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InvalidOracleConfig)
+    }
+
+    /// Query all approved oracle addresses.
+    pub fn query_approved_oracles(env: &Env) -> Result<Vec<Address>, Error> {
+        OracleWhitelist::get_approved_oracles(env)
+    }
+
+    // ===== DISPUTE QUERIES =====
+
+    /// Query statistics about disputes for a specific market.
+    pub fn query_dispute_stats(env: &Env, market_id: Symbol) -> Result<DisputeStats, Error> {
+        let key = Symbol::new(env, &alloc::format!("DisputeStats_{:?}", market_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::MarketNotFound)
+    }
+
+    /// Query all disputes associated with a specific market.
+    pub fn query_market_disputes(env: &Env, market_id: Symbol) -> Result<Vec<Dispute>, Error> {
+        let key = Symbol::new(env, &alloc::format!("MarketDisputes_{:?}", market_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::MarketNotFound)
+    }
+
+    /// Query all votes cast on a specific dispute.
+    pub fn query_dispute_votes(env: &Env, dispute_id: Symbol) -> Result<Vec<DisputeVote>, Error> {
+        let key = Symbol::new(env, &alloc::format!("DisputeVotes_{:?}", dispute_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InvalidInput)
+    }
+
+    // ===== GOVERNANCE QUERIES =====
+
+    /// Query all governance proposal IDs.
+    pub fn query_proposals(env: &Env) -> Result<Vec<Symbol>, Error> {
+        Ok(GovernanceContract::list_proposals(env.clone()))
+    }
+
+    /// Query detailed information about a specific governance proposal.
+    pub fn query_proposal_details(env: &Env, proposal_id: Symbol) -> Result<GovernanceProposal, Error> {
+        GovernanceContract::get_proposal(env.clone(), proposal_id).map_err(|_| Error::InvalidInput)
+    }
+
     // ===== EVENT/MARKET QUERIES =====
 
     /// Query detailed information about a specific market.
@@ -100,7 +216,7 @@ impl QueryManager {
             market_id,
             question: market.question,
             outcomes: market.outcomes,
-            created_at: 0, // TODO: Retrieve from storage if available
+            created_at: EventManager::get_event(env, &market_id).map(|e| e.created_at).unwrap_or(0),
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
             oracle_provider,
@@ -286,12 +402,17 @@ impl QueryManager {
         // Get dispute stake if any
         let dispute_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
 
+        // Try to get bet data from specialized bet storage if available
+        let bet_opt = BetManager::get_bet(env, &market_id, &user);
+        
+        let voted_at = bet_opt.map(|b| b.timestamp).unwrap_or(0);
+
         let response = UserBetQuery {
             user,
             market_id,
             outcome,
             stake_amount,
-            voted_at: 0, // TODO: Retrieve from vote timestamp if available
+            voted_at,
             is_winning,
             has_claimed,
             potential_payout,
@@ -531,13 +652,20 @@ impl QueryManager {
             }
         }
 
+        let platform_stats = StatisticsManager::get_platform_stats(env);
+        
+        // Note: Counting unique users across all markets can be expensive.
+        // We use the active_user_count from DashboardStatistics as a proxy or 
+        // would ideally have a dedicated counter.
+        let dashboard_stats = Self::get_dashboard_statistics(env)?;
+
         let response = ContractStateQuery {
             total_markets,
             active_markets,
             resolved_markets,
             total_value_locked,
-            total_fees_collected: 0i128, // TODO: Retrieve from fees module
-            unique_users: 0u32,          // TODO: Calculate from user index
+            total_fees_collected: platform_stats.total_fees_collected,
+            unique_users: dashboard_stats.active_user_count,
             contract_version: String::from_str(env, "1.0.0"),
             last_update: env.ledger().timestamp(),
         };
