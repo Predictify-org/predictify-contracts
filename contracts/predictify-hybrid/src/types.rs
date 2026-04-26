@@ -1075,10 +1075,13 @@ pub struct Market {
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
 
-    /// Optional category for the event (e.g., "sports", "crypto", "politics")
-    /// Used for filtering and display in client applications
+    /// Optional category for the event (e.g., "sports", "crypto", "politics").
+    ///
+    /// When set, the string must respect configured min/max length (see `config` and `metadata_limits`); `None` means
+    /// unset. `Some` with an empty string is invalid.
     pub category: Option<String>,
-    /// List of searchable tags for filtering events by multiple dimensions
+    /// Searchable tags for filtering: bounded list length, per-tag length, and no duplicates (enforced in
+    /// `metadata_limits::validate_event_tags` and `Market::validate`).
     pub tags: Vec<String>,
     /// Minimum total pool size required for resolution (None = no minimum)
     pub min_pool_size: Option<i128>,
@@ -1540,14 +1543,9 @@ if self.has_fallback && !self.fallback_oracle_config.is_none_sentinel() {
 if self.end_time <= env.ledger().timestamp() {
     return Err(crate::Error::InvalidDuration);
 }
-        // Validate category if present
-        if let Some(ref category) = self.category {
-            crate::metadata_limits::validate_category_length(category)?;
-        }
-
-        // Validate tags
-        crate::metadata_limits::validate_tags_count(&self.tags)?;
-        crate::metadata_limits::validate_tags_length(&self.tags)?;
+        // Optional category and tags: size limits and duplicate-tag rejection (see metadata_limits)
+        crate::metadata_limits::validate_option_category_metadata(&self.category)?;
+        crate::metadata_limits::validate_event_tags(&self.tags)?;
 
         Ok(())
     }

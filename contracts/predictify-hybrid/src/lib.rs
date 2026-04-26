@@ -121,8 +121,8 @@ mod circuit_breaker_tests;
 // #[cfg(test)]
 // mod governance_tests;
 
-// #[cfg(any())]
-// mod category_tags_tests;
+#[cfg(test)]
+mod category_tags_tests;
 // #[cfg(any())]
 // mod statistics_tests;
 
@@ -4297,6 +4297,8 @@ impl PredictifyHybrid {
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
     /// - `Error::MarketResolved` - Cannot update a resolved market
     /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
+    /// - `Error::InvalidInput` - `Some` with an empty category string, or other invalid optional payload
+    /// - `Error::CategoryTooShort` / `Error::CategoryTooLong` - Category length outside configured bounds
     ///
     /// # Example
     ///
@@ -4353,6 +4355,8 @@ impl PredictifyHybrid {
             return Err(Error::AlreadyVoted);
         }
 
+        crate::metadata_limits::validate_option_category_metadata(&category)?;
+
         // Store old category for event
         let old_category = market.category.clone();
 
@@ -4406,7 +4410,9 @@ impl PredictifyHybrid {
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
     /// - `Error::MarketResolved` - Cannot update a resolved market
     /// - `Error::BetsAlreadyPlaced` - Cannot update after bets have been placed
-    /// - `Error::InvalidInput` - One or more tags are empty strings
+    /// - `Error::InvalidInput` - Empty tag entry, duplicate tags, or other invalid list content
+    /// - `Error::TagTooShort` / `Error::TagTooLong` - Tag length outside configured bounds
+    /// - `Error::TooManyTags` - More than the maximum number of tags per market
     ///
     /// # Example
     ///
@@ -4447,12 +4453,7 @@ impl PredictifyHybrid {
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        // Validate tags - none should be empty
-        for tag in tags.iter() {
-            if tag.is_empty() {
-                return Err(Error::InvalidInput);
-            }
-        }
+        crate::metadata_limits::validate_event_tags(&tags)?;
 
         // Get market
         let mut market: Market = env
