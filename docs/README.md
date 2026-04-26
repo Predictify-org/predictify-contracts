@@ -54,6 +54,7 @@ Implementation-specific documentation for the Predictify Hybrid contract:
 - **[Balance Management](./contracts/BALANCES.md)** - Security invariants and token safety semantics for deposits and withdrawals
 - **[Initialization](./contracts/INITIALIZATION.md)** - Contract initialization process and security features
 - **[Admin Operations](./contracts/ADMIN_OPERATIONS.md)** - Multi-admin roles, admin rotation, and M-of-N multisig semantics
+- **[Market IDs](./contracts/MARKET_IDS.md)** - ID format, entropy sources, collision risk, and integrator notes
 
 
 ### 💰 [Claims Documentation](./claims/)

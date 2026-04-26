@@ -138,7 +138,7 @@ fn test_repeated_retries_are_stable() {
 #[test]
 fn test_unresolved_market_rejected() {
     let env = make_env();
-    let contract_id = register_contct(&env);
+    let contract_id = register_contract(&env);
     let admin = Address::generate(&env);
     env.mock_all_auths();
 

@@ -40,6 +40,7 @@ mod market_analytics;
 mod market_id_generator;
 mod markets;
 mod metadata_limits;
+mod tokens;
 #[cfg(test)]
 mod metadata_limits_tests;
 #[cfg(test)]
@@ -749,6 +750,7 @@ impl PredictifyHybrid {
         {
             panic_with_error!(env, e);
         }
+        let gas_marker = GasTracker::start_tracking(&env);
         Self::require_primary_admin_or_panic(&env, &admin);
 
         // Rate limit event creation to prevent abuse

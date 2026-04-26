@@ -39,11 +39,6 @@ impl Asset {
         }
     }
 
-    /// Check if this asset matches a ReflectorAsset.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
-    /// * `reflector_asset` - The ReflectorAsset to compare against.
     pub fn matches_reflector_asset(&self, env: &Env, reflector_asset: &crate::types::ReflectorAsset) -> bool {
         let expected_symbol = match reflector_asset {
             crate::types::ReflectorAsset::Stellar => Symbol::new(env, "XLM"),
@@ -54,10 +49,6 @@ impl Asset {
         self.symbol == expected_symbol && self.decimals == reflector_asset.decimals() as u32
     }
 
-    /// Get human-readable asset name.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
     pub fn name(&self, env: &Env) -> String {
         if self.symbol == Symbol::new(env, "XLM") {
             String::from_str(env, "Stellar Lumens")
@@ -173,7 +164,6 @@ impl TokenRegistry {
         }
     }
 
-    /// Initializes the registry with default supported assets (XLM, BTC, ETH).
     pub fn initialize_with_defaults(env: &Env) {
         let global_key = Symbol::new(env, "allowed_assets_global");
         let mut global_assets: Vec<Asset> = Vec::new(env);

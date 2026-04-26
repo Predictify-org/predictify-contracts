@@ -3833,14 +3833,10 @@ impl OracleCallbackAuth {
         caller: &Address,
         callback_data: &OracleCallbackData,
     ) -> Result<(), Error> {
-        // Store the oracle data for market resolution
+        // Store the oracle price for market resolution
         let data_key = StorageKey::OracleData(callback_data.feed_id.clone());
-        let oracle_data = OraclePriceData {
-            price: callback_data.price,
-            publish_time: callback_data.timestamp,
-            confidence: None,
-            exponent: 0,
-        };
+        // Store just the price (i128) since OraclePriceData lacks contracttype
+        self.env.storage().persistent().set(&data_key, &callback_data.price);
 
         self.env.storage().persistent().set(&data_key, &oracle_data);
 
@@ -3918,16 +3914,12 @@ impl OracleCallbackAuth {
         message: &Bytes,
         signature: &Bytes,
     ) -> Result<bool, Error> {
-        // In a real implementation, this would use Soroban's signature verification
-        // For now, we'll simulate the verification process
-
         // Check signature length (Ed25519 signatures are 64 bytes)
         if signature.len() != 64 {
             return Err(Error::OracleCallbackInvalidSignature);
         }
 
-        // Simulate signature verification (in production, use actual crypto)
-        // This is a placeholder implementation
+        // Placeholder: in production use actual Ed25519 verification
         Ok(true)
     }
 
@@ -3952,24 +3944,33 @@ impl OracleCallbackAuth {
     fn log_successful_authentication(&self, caller: &Address, callback_data: &OracleCallbackData) {
         let log_message = String::from_str(
             &self.env,
-            &format!("Oracle callback authenticated: {:?}", callback_data.feed_id),
+            &format!("Oracle callback authenticated: {}", callback_data.feed_id.to_string()),
         );
-
-        crate::events::EventEmitter::emit_security_event(&self.env, caller, &log_message);
+        let ctx = String::from_str(&self.env, "oracle_auth");
+        crate::events::EventEmitter::emit_error_logged(
+            &self.env,
+            0,
+            &log_message,
+            &ctx,
+            Some(caller.clone()),
+            None,
+        );
     }
 
-    /// Log authentication failure
-    ///
-    /// # Arguments
-    /// * `caller` - The address of the calling contract
-    /// * `reason` - The reason for authentication failure
     fn log_authentication_failure(&self, caller: &Address, reason: &str) {
         let log_message = String::from_str(
             &self.env,
             &format!("Oracle callback authentication failed: {}", reason),
         );
-
-        crate::events::EventEmitter::emit_security_event(&self.env, caller, &log_message);
+        let ctx = String::from_str(&self.env, "oracle_auth");
+        crate::events::EventEmitter::emit_error_logged(
+            &self.env,
+            1,
+            &log_message,
+            &ctx,
+            Some(caller.clone()),
+            None,
+        );
     }
 }
 
