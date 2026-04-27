@@ -13,7 +13,7 @@ use soroban_sdk::{
     testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 
-use crate::admin::{AdminInitializer, AdminRoleManager};
+use crate::admin::AdminInitializer;
 use crate::audit_trail::AuditTrailManager;
 use crate::markets::{MarketCreator, MarketStateManager};
 use crate::storage::{BalanceStorage, CreatorLimitsManager, EventManager, StorageOptimizer};
@@ -42,25 +42,41 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
     ];
     let end_time = env.ledger().timestamp() + 86400;
 
-    let oracle_config = OracleConfig::new(
-        OracleProvider::reflector(),
-        Address::generate(env),
-        String::from_str(env, "BTC"),
-        100_000_00,
-        String::from_str(env, "gt"),
-    );
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(env),
+        feed_id: String::from_str(env, "BTC"),
+        threshold: 100_000_00,
+        comparison: String::from_str(env, "gt"),
+    };
 
-    let market = Market::new(
-        env,
-        admin.clone(),
+    let market = Market {
+        admin: admin.clone(),
         question,
         outcomes,
         end_time,
         oracle_config,
-        None,
-        86400,
-        MarketState::Active,
-    );
+        has_fallback: false,
+        fallback_oracle_config: OracleConfig::none_sentinel(env),
+        resolution_timeout: 86400,
+        oracle_result: None,
+        votes: Map::new(env),
+        stakes: Map::new(env),
+        claimed: Map::new(env),
+        total_staked: 0,
+        dispute_stakes: Map::new(env),
+        winning_outcomes: None,
+        fee_collected: false,
+        state: MarketState::Active,
+        total_extension_days: 0,
+        max_extension_days: 30,
+        extension_history: vec![env],
+        category: None,
+        tags: vec![env],
+        min_pool_size: None,
+        bet_deadline: 0,
+        dispute_window_seconds: 0,
+    };
 
     (market_id, market)
 }
