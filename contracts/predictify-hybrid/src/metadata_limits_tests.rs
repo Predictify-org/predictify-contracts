@@ -129,6 +129,37 @@ mod tests {
     }
 
     #[test]
+    fn test_category_metadata_respects_min_length() {
+        let env = Env::default();
+        let ok_two = String::from_str(&env, "AB");
+        assert!(validate_category_metadata(&ok_two).is_ok());
+        let short = String::from_str(&env, "A");
+        assert_eq!(
+            validate_category_metadata(&short),
+            Err(Error::CategoryTooShort)
+        );
+    }
+
+    #[test]
+    fn test_option_category_metadata() {
+        let env = Env::default();
+        assert!(validate_option_category_metadata(&None).is_ok());
+        let empty = Some(String::from_str(&env, ""));
+        assert_eq!(
+            validate_option_category_metadata(&empty),
+            Err(Error::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn test_event_tags_rejects_duplicates() {
+        let env = Env::default();
+        let t = String::from_str(&env, "ab");
+        let tags = Vec::from_array(&env, [t.clone(), t]);
+        assert_eq!(validate_event_tags(&tags), Err(Error::InvalidInput));
+    }
+
+    #[test]
     fn test_extension_reason_length_valid() {
         let env = Env::default();
         let reason = String::from_str(

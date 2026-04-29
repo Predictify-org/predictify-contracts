@@ -155,6 +155,23 @@ pub struct Market {
 }
 ```
 
+#### Category and tag metadata (optional)
+
+Optional `category` and `tags` on `Market` are bounded so storage and query paths stay predictable. Canonical numeric limits live in the contract’s `config` module and are re-exported from `metadata_limits` for a single review surface.
+
+| Field | Rule |
+|--------|------|
+| `category` | `None` = unset. If `Some(s)`, `s` must be non-empty and `len(s)` in `[MIN_CATEGORY_LENGTH, MAX_CATEGORY_LENGTH]` (defaults: 2–100). |
+| `tags` | At most `MAX_TAGS_PER_MARKET` entries (10). Each tag: non-empty, `len` in `[MIN_TAG_LENGTH, MAX_TAG_LENGTH]` (defaults: 2–50). Duplicate tags in the list are rejected. |
+
+**Validation entrypoints (Rust):**
+
+- `metadata_limits::validate_option_category_metadata` — for `Option<String>`; `Some("")` is invalid (use `None` to clear).
+- `metadata_limits::validate_event_tags` — full list: count, per-tag bounds, duplicate detection.
+- `Market::validate` — includes both of the above for stored markets.
+
+**Contract errors (representative):** `InvalidInput`, `CategoryTooLong`, `CategoryTooShort`, `TagTooLong`, `TagTooShort`, `TooManyTags`.
+
 #### 3. Price Types
 
 **PythPrice Struct**

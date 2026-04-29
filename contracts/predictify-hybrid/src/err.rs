@@ -167,6 +167,10 @@ pub enum Error {
     TooManyWinningOutcomes = 434,
     /// The event archive has reached its maximum capacity. Prune old entries before archiving more.
     ArchiveFull = 435,
+    /// Category string is shorter than the minimum allowed length (when a category is set).
+    CategoryTooShort = 436,
+    /// Tag string is shorter than the minimum allowed length (non-empty tags only).
+    TagTooShort = 437,
 
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -1398,7 +1402,9 @@ impl Error {
             Error::FeedIdTooLong => "Oracle feed ID exceeds maximum allowed length",
             Error::ComparisonTooLong => "Comparison operator exceeds maximum allowed length",
             Error::CategoryTooLong => "Category string exceeds maximum allowed length",
+            Error::CategoryTooShort => "Category string is shorter than the minimum allowed length",
             Error::TagTooLong => "Tag string exceeds maximum allowed length",
+            Error::TagTooShort => "Tag string is shorter than the minimum allowed length",
             Error::TooManyTags => "Too many tags specified for the market",
             Error::ExtensionReasonTooLong => "Extension reason exceeds maximum allowed length",
             Error::SourceTooLong => "Source identifier exceeds maximum allowed length",
@@ -1488,7 +1494,9 @@ impl Error {
             Error::FeedIdTooLong => "FEED_ID_TOO_LONG",
             Error::ComparisonTooLong => "COMPARISON_TOO_LONG",
             Error::CategoryTooLong => "CATEGORY_TOO_LONG",
+            Error::CategoryTooShort => "CATEGORY_TOO_SHORT",
             Error::TagTooLong => "TAG_TOO_LONG",
+            Error::TagTooShort => "TAG_TOO_SHORT",
             Error::TooManyTags => "TOO_MANY_TAGS",
             Error::ExtensionReasonTooLong => "EXTENSION_REASON_TOO_LONG",
             Error::SourceTooLong => "SOURCE_TOO_LONG",
@@ -1586,7 +1594,9 @@ mod tests {
             Error::FeedIdTooLong,
             Error::ComparisonTooLong,
             Error::CategoryTooLong,
+            Error::CategoryTooShort,
             Error::TagTooLong,
+            Error::TagTooShort,
             Error::TooManyTags,
             Error::ExtensionReasonTooLong,
             Error::SourceTooLong,
