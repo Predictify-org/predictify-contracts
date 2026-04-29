@@ -58,6 +58,8 @@ mod reentrancy_guard;
 mod resolution;
 mod statistics;
 mod storage;
+#[cfg(test)]
+mod storage_layout_tests;
 mod types;
 mod upgrade_manager;
 mod utils;
