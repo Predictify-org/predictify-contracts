@@ -808,7 +808,21 @@ soroban contract invoke \
 
 ---
 
-**Last Updated:** 2026-03-27  
+### Event Visibility Rules
+
+- Events can be public or private.
+- Private events enforce an allowlist.
+- Only allowlisted addresses may place bets on private events.
+- Public events are open to all participants.
+
+#### Security Guarantees
+
+- Access control is enforced at the contract level.
+- No off-chain enforcement assumptions.
+- All bet entrypoints validate visibility constraints.
+
+**Last Updated:** 2026-04-27  
 **API Version:** v1.0.0  
 **Documentation Version:** 1.2  
 **ReflectorAsset Coverage:** Production Ready with ≥95% Test Coverage
+
