@@ -292,34 +292,36 @@ fn test_balance_storage_key_uniqueness() {
     let asset1 = ReflectorAsset::BTC;
     let asset2 = ReflectorAsset::ETH;
 
-    // Get balances to trigger key generation
-    let balance1 = BalanceStorage::get_balance(&env, &user1, &asset1);
-    let balance2 = BalanceStorage::get_balance(&env, &user1, &asset2);
-    let balance3 = BalanceStorage::get_balance(&env, &user2, &asset1);
+    run_as_contract(&env, || {
+        // Get balances to trigger key generation
+        let balance1 = BalanceStorage::get_balance(&env, &user1, &asset1);
+        let balance2 = BalanceStorage::get_balance(&env, &user1, &asset2);
+        let balance3 = BalanceStorage::get_balance(&env, &user2, &asset1);
 
-    // Verify balances are independent (different keys)
-    assert_eq!(balance1.amount, 0);
-    assert_eq!(balance2.amount, 0);
-    assert_eq!(balance3.amount, 0);
+        // Verify balances are independent (different keys)
+        assert_eq!(balance1.amount, 0);
+        assert_eq!(balance2.amount, 0);
+        assert_eq!(balance3.amount, 0);
 
-    // Set different amounts
-    BalanceStorage::add_balance(&env, &user1, &asset1, 100).unwrap();
-    BalanceStorage::add_balance(&env, &user1, &asset2, 200).unwrap();
-    BalanceStorage::add_balance(&env, &user2, &asset1, 300).unwrap();
+        // Set different amounts
+        BalanceStorage::add_balance(&env, &user1, &asset1, 100).unwrap();
+        BalanceStorage::add_balance(&env, &user1, &asset2, 200).unwrap();
+        BalanceStorage::add_balance(&env, &user2, &asset1, 300).unwrap();
 
-    // Verify each balance is stored independently
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user1, &asset1).amount,
-        100
-    );
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user1, &asset2).amount,
-        200
-    );
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user2, &asset1).amount,
-        300
-    );
+        // Verify each balance is stored independently
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user1, &asset1).amount,
+            100
+        );
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user1, &asset2).amount,
+            200
+        );
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user2, &asset1).amount,
+            300
+        );
+    });
 }
 
 // ===== EVENT STORAGE KEY TESTS =====
@@ -694,16 +696,18 @@ fn test_no_regression_in_balance_storage() {
     let user = Address::generate(&env);
     let asset = ReflectorAsset::BTC;
 
-    // Add balance using current implementation
-    BalanceStorage::add_balance(&env, &user, &asset, 1_000_000).unwrap();
+    run_as_contract(&env, || {
+        // Add balance using current implementation
+        BalanceStorage::add_balance(&env, &user, &asset, 1_000_000).unwrap();
 
-    // Retrieve using current implementation
-    let balance = BalanceStorage::get_balance(&env, &user, &asset);
+        // Retrieve using current implementation
+        let balance = BalanceStorage::get_balance(&env, &user, &asset);
 
-    // Verify no data loss
-    assert_eq!(balance.amount, 1_000_000);
-    assert_eq!(balance.user, user);
-    assert_eq!(balance.asset, asset);
+        // Verify no data loss
+        assert_eq!(balance.amount, 1_000_000);
+        assert_eq!(balance.user, user);
+        assert_eq!(balance.asset, asset);
+    });
 }
 
 // ===== PERFORMANCE TESTS =====
