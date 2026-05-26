@@ -848,37 +848,49 @@ impl StorageUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig};
 
     #[test]
     fn test_sub_balance_rejects_overdraw_without_mutation() {
-        let env = Env::default();
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let user = soroban_sdk::Address::generate(&env);
         let asset = ReflectorAsset::Stellar;
 
-        BalanceStorage::add_balance(&env, &user, &asset, 250).unwrap();
+        env.as_contract(&contract_id, || {
+            BalanceStorage::add_balance(&env, &user, &asset, 250).unwrap();
 
-        let result = BalanceStorage::sub_balance(&env, &user, &asset, 251);
+            let result = BalanceStorage::sub_balance(&env, &user, &asset, 251);
 
-        assert_eq!(result, Err(Error::InsufficientBalance));
-        assert_eq!(BalanceStorage::get_balance(&env, &user, &asset).amount, 250);
+            assert_eq!(result, Err(Error::InsufficientBalance));
+            assert_eq!(BalanceStorage::get_balance(&env, &user, &asset).amount, 250);
+        });
     }
 
     #[test]
     fn test_balance_mutators_reject_non_positive_amounts() {
-        let env = Env::default();
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let user = soroban_sdk::Address::generate(&env);
         let asset = ReflectorAsset::Stellar;
 
-        assert_eq!(
-            BalanceStorage::add_balance(&env, &user, &asset, 0),
-            Err(Error::InvalidInput)
-        );
-        assert_eq!(
-            BalanceStorage::sub_balance(&env, &user, &asset, -1),
-            Err(Error::InvalidInput)
-        );
-        assert_eq!(BalanceStorage::get_balance(&env, &user, &asset).amount, 0);
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                BalanceStorage::add_balance(&env, &user, &asset, 0),
+                Err(Error::InvalidInput)
+            );
+            assert_eq!(
+                BalanceStorage::sub_balance(&env, &user, &asset, -1),
+                Err(Error::InvalidInput)
+            );
+            assert_eq!(BalanceStorage::get_balance(&env, &user, &asset).amount, 0);
+        });
     }
 
     #[test]

@@ -40,7 +40,6 @@ mod market_analytics;
 mod market_id_generator;
 mod markets;
 mod metadata_limits;
-mod tokens;
 #[cfg(test)]
 mod metadata_limits_tests;
 #[cfg(test)]

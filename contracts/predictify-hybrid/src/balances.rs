@@ -190,7 +190,7 @@ mod tests {
     use super::*;
     use crate::PredictifyHybridClient;
     use soroban_sdk::{
-        testutils::Address as _,
+        testutils::{Address as _, EnvTestConfig},
         token::{Client as TokenClient, StellarAssetClient},
         Address, Env, Symbol,
     };
@@ -206,7 +206,10 @@ mod tests {
 
     impl BalanceTestSetup {
         fn new() -> Self {
-            let env = Env::default();
+            let mut env = Env::default();
+            env.set_config(EnvTestConfig {
+                capture_snapshot_at_drop: false,
+            });
             env.mock_all_auths();
 
             let token_admin = Address::generate(&env);

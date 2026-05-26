@@ -18,7 +18,7 @@ fn setup_test() -> (Env, PredictifyHybridClient<'static>, Address) {
     let admin = Address::generate(&env);
 
     // Initialize contract
-    client.initialize(&admin, &Some(2)); // 2% fee
+    client.initialize(&admin, &Some(2), &None); // 2% fee
 
     (env, client, admin)
 }
@@ -342,7 +342,7 @@ impl TokenTestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &Some(2));
+        client.initialize(&admin, &Some(2), &None);
 
         // Create users and fund them
         let user1 = Address::generate(&env);

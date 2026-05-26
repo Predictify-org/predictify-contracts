@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use alloc::format;
+use alloc::{format, string::ToString};
 use crate::bandprotocol;
 use crate::errors::Error;
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec};
@@ -3837,8 +3837,6 @@ impl OracleCallbackAuth {
         let data_key = StorageKey::OracleData(callback_data.feed_id.clone());
         // Store just the price (i128) since OraclePriceData lacks contracttype
         self.env.storage().persistent().set(&data_key, &callback_data.price);
-
-        self.env.storage().persistent().set(&data_key, &oracle_data);
 
         // Emit oracle callback event
         crate::events::EventEmitter::emit_oracle_callback(

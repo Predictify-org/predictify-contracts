@@ -9,18 +9,27 @@
 //! - Data structures can be safely extended
 //! - Migration patterns work correctly
 
+use alloc::format;
 use soroban_sdk::{
-    testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
+    testutils::{Address as _, EnvTestConfig},
+    vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 
-use crate::storage::{BalanceStorage, CreatorLimitsManager, EventManager, StorageOptimizer};
+use crate::markets::MarketStateManager;
+use crate::storage::{
+    BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,
+};
 use crate::types::*;
 
 // ===== TEST UTILITIES =====
 
 /// Test helper to create a test environment
 fn create_test_env() -> Env {
-    Env::default()
+    let mut env = Env::default();
+    env.set_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env
 }
 
 /// Test helper to create a test admin
@@ -278,39 +287,42 @@ fn test_audit_trail_namespace_prefix() {
 #[test]
 fn test_balance_storage_key_uniqueness() {
     let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
     let asset1 = ReflectorAsset::BTC;
     let asset2 = ReflectorAsset::ETH;
 
-    // Get balances to trigger key generation
-    let balance1 = BalanceStorage::get_balance(&env, &user1, &asset1);
-    let balance2 = BalanceStorage::get_balance(&env, &user1, &asset2);
-    let balance3 = BalanceStorage::get_balance(&env, &user2, &asset1);
+    env.as_contract(&contract_id, || {
+        // Get balances to trigger key generation
+        let balance1 = BalanceStorage::get_balance(&env, &user1, &asset1);
+        let balance2 = BalanceStorage::get_balance(&env, &user1, &asset2);
+        let balance3 = BalanceStorage::get_balance(&env, &user2, &asset1);
 
-    // Verify balances are independent (different keys)
-    assert_eq!(balance1.amount, 0);
-    assert_eq!(balance2.amount, 0);
-    assert_eq!(balance3.amount, 0);
+        // Verify balances are independent (different keys)
+        assert_eq!(balance1.amount, 0);
+        assert_eq!(balance2.amount, 0);
+        assert_eq!(balance3.amount, 0);
 
-    // Set different amounts
-    BalanceStorage::add_balance(&env, &user1, &asset1, 100).unwrap();
-    BalanceStorage::add_balance(&env, &user1, &asset2, 200).unwrap();
-    BalanceStorage::add_balance(&env, &user2, &asset1, 300).unwrap();
+        // Set different amounts
+        BalanceStorage::add_balance(&env, &user1, &asset1, 100).unwrap();
+        BalanceStorage::add_balance(&env, &user1, &asset2, 200).unwrap();
+        BalanceStorage::add_balance(&env, &user2, &asset1, 300).unwrap();
 
-    // Verify each balance is stored independently
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user1, &asset1).amount,
-        100
-    );
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user1, &asset2).amount,
-        200
-    );
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user2, &asset1).amount,
-        300
-    );
+        // Verify each balance is stored independently
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user1, &asset1).amount,
+            100
+        );
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user1, &asset2).amount,
+            200
+        );
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user2, &asset1).amount,
+            300
+        );
+    });
 }
 
 // ===== EVENT STORAGE KEY TESTS =====
@@ -658,19 +670,22 @@ fn test_no_regression_in_market_storage() {
 #[test]
 fn test_no_regression_in_balance_storage() {
     let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
     let user = Address::generate(&env);
     let asset = ReflectorAsset::BTC;
 
-    // Add balance using current implementation
-    BalanceStorage::add_balance(&env, &user, &asset, 1_000_000).unwrap();
+    env.as_contract(&contract_id, || {
+        // Add balance using current implementation
+        BalanceStorage::add_balance(&env, &user, &asset, 1_000_000).unwrap();
 
-    // Retrieve using current implementation
-    let balance = BalanceStorage::get_balance(&env, &user, &asset);
+        // Retrieve using current implementation
+        let balance = BalanceStorage::get_balance(&env, &user, &asset);
 
-    // Verify no data loss
-    assert_eq!(balance.amount, 1_000_000);
-    assert_eq!(balance.user, user);
-    assert_eq!(balance.asset, asset);
+        // Verify no data loss
+        assert_eq!(balance.amount, 1_000_000);
+        assert_eq!(balance.user, user);
+        assert_eq!(balance.asset, asset);
+    });
 }
 
 // ===== PERFORMANCE TESTS =====
