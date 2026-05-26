@@ -433,15 +433,16 @@ mod tests {
         });
 
         // Advance the ledger sequence.
+        let current = env.ledger().get();
         env.ledger().set(LedgerInfo {
             sequence_number: env.ledger().sequence() + 1,
             timestamp: env.ledger().timestamp() + 5,
-            protocol_version: 22,
-            network_id: Default::default(),
-            base_reserve: 10,
-            min_temp_entry_ttl: 1,
-            min_persistent_entry_ttl: 1,
-            max_entry_ttl: 100,
+            protocol_version: current.protocol_version,
+            network_id: current.network_id,
+            base_reserve: current.base_reserve,
+            min_temp_entry_ttl: current.min_temp_entry_ttl,
+            min_persistent_entry_ttl: current.min_persistent_entry_ttl,
+            max_entry_ttl: current.max_entry_ttl,
         });
 
         let id2 = with_contract(&env, &contract_id, || {
@@ -637,15 +638,16 @@ mod tests {
         let mut all_ids = alloc::vec::Vec::new();
 
         for ledger_bump in 0u32..5 {
+            let current = env.ledger().get();
             env.ledger().set(LedgerInfo {
                 sequence_number: 100 + ledger_bump,
                 timestamp: 1_000_000 + (ledger_bump as u64) * 5,
-                protocol_version: 22,
-                network_id: Default::default(),
-                base_reserve: 10,
-                min_temp_entry_ttl: 1,
-                min_persistent_entry_ttl: 1,
-                max_entry_ttl: 100,
+                protocol_version: current.protocol_version,
+                network_id: current.network_id,
+                base_reserve: current.base_reserve,
+                min_temp_entry_ttl: current.min_temp_entry_ttl,
+                min_persistent_entry_ttl: current.min_persistent_entry_ttl,
+                max_entry_ttl: current.max_entry_ttl,
             });
 
             with_contract(&env, &contract_id, || {
