@@ -5,6 +5,21 @@ use crate::markets::{MarketStateLogic, MarketStateManager};
 use crate::types::{Balance, ReflectorAsset};
 use soroban_sdk::{contracttype, Address, Env, IntoVal, Symbol, Val, Vec};
 
+const STORAGE_CONFIG_KEY: &str = "storage_config";
+const LEDGERS_PER_DAY: u32 = 17_280;
+const BALANCE_TTL_LEDGERS: u32 = 31 * LEDGERS_PER_DAY;
+const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+const EVENT_TTL_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
+const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StorageTtlTier {
+    Balance,
+    Market,
+    Event,
+    Archive,
+}
+
 // ===== STORAGE OPTIMIZATION TYPES =====
 
 /// Storage format version for migration tracking
@@ -63,7 +78,7 @@ pub struct StorageUsageStats {
 
 /// Storage optimization configuration
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StorageConfig {
     /// Whether compression is enabled
     pub compression_enabled: bool,
@@ -77,6 +92,14 @@ pub struct StorageConfig {
     pub auto_cleanup_enabled: bool,
     /// Compression algorithm preference
     pub preferred_compression: String,
+    /// TTL tier for balance records in ledgers (~31 days at 5s/ledger).
+    pub balance_ttl_ledgers: u32,
+    /// TTL tier for live market and market-adjacent records in ledgers (~365 days at 5s/ledger).
+    pub market_ttl_ledgers: u32,
+    /// TTL tier for event records in ledgers (~90 days at 5s/ledger).
+    pub event_ttl_ledgers: u32,
+    /// TTL tier for archive and migration records in ledgers (~365 days at 5s/ledger).
+    pub archive_ttl_ledgers: u32,
 }
 
 /// Storage migration record
@@ -127,6 +150,62 @@ pub struct StorageIntegrityResult {
 pub struct StorageOptimizer;
 
 impl StorageOptimizer {
+    fn default_storage_config(env: &Env) -> StorageConfig {
+        StorageConfig {
+            compression_enabled: true,
+            min_compression_age_days: 30,
+            max_storage_per_market: 1024 * 1024, // 1MB
+            cleanup_threshold_days: 365,
+            auto_cleanup_enabled: false,
+            preferred_compression: String::from_str(env, "simple_optimization"),
+            balance_ttl_ledgers: BALANCE_TTL_LEDGERS,
+            market_ttl_ledgers: MARKET_TTL_LEDGERS,
+            event_ttl_ledgers: EVENT_TTL_LEDGERS,
+            archive_ttl_ledgers: ARCHIVE_TTL_LEDGERS,
+        }
+    }
+
+    fn ttl_for_tier(config: &StorageConfig, tier: StorageTtlTier) -> u32 {
+        match tier {
+            StorageTtlTier::Balance => config.balance_ttl_ledgers,
+            StorageTtlTier::Market => config.market_ttl_ledgers,
+            StorageTtlTier::Event => config.event_ttl_ledgers,
+            StorageTtlTier::Archive => config.archive_ttl_ledgers,
+        }
+    }
+
+    fn clamp_persistent_ttl(env: &Env, desired_ttl_ledgers: u32) -> u32 {
+        desired_ttl_ledgers.min(env.storage().max_ttl())
+    }
+
+    fn persistent_ttl_for_tier(env: &Env, tier: StorageTtlTier) -> u32 {
+        let config = Self::get_storage_config(env);
+        Self::clamp_persistent_ttl(env, Self::ttl_for_tier(&config, tier))
+    }
+
+    fn extend_persistent_ttl<K>(env: &Env, key: &K, desired_ttl_ledgers: u32)
+    where
+        K: IntoVal<Env, Val>,
+    {
+        let effective_ttl = Self::clamp_persistent_ttl(env, desired_ttl_ledgers);
+        env.storage()
+            .persistent()
+            .extend_ttl(key, effective_ttl, effective_ttl);
+    }
+
+    fn set_persistent_with_ttl<K, V>(
+        env: &Env,
+        key: &K,
+        value: &V,
+        desired_ttl_ledgers: u32,
+    ) where
+        K: IntoVal<Env, Val>,
+        V: IntoVal<Env, Val>,
+    {
+        env.storage().persistent().set(key, value);
+        Self::extend_persistent_ttl(env, key, desired_ttl_ledgers);
+    }
+
     /// Compress market data for storage optimization
     pub fn compress_market_data(env: &Env, market: &Market) -> Result<CompressedMarket, Error> {
         // Create a simple compression by removing unnecessary fields and optimizing structure
@@ -416,25 +495,17 @@ impl StorageOptimizer {
         match env
             .storage()
             .persistent()
-            .get(&Symbol::new(env, "storage_config"))
+            .get(&Symbol::new(env, STORAGE_CONFIG_KEY))
         {
             Some(config) => config,
-            None => StorageConfig {
-                compression_enabled: true,
-                min_compression_age_days: 30,
-                max_storage_per_market: 1024 * 1024, // 1MB
-                cleanup_threshold_days: 365,
-                auto_cleanup_enabled: false,
-                preferred_compression: String::from_str(env, "simple_optimization"),
-            },
+            None => Self::default_storage_config(env),
         }
     }
 
     /// Update storage configuration
     pub fn update_storage_config(env: &Env, config: &StorageConfig) -> Result<(), Error> {
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(env, "storage_config"), config);
+        let key = Symbol::new(env, STORAGE_CONFIG_KEY);
+        Self::set_persistent_with_ttl(env, &key, config, config.archive_ttl_ledgers);
         Ok(())
     }
 }
@@ -469,9 +540,12 @@ impl BalanceStorage {
     /// Stores the balance record in persistent storage and extends its TTL.
     pub fn set_balance(env: &Env, balance: &Balance) {
         let key = Self::get_key(env, &balance.user, &balance.asset);
-        env.storage().persistent().set(&key, balance);
-        // Extend TTL to ensure balance persists (approx 30 days)
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        StorageOptimizer::set_persistent_with_ttl(
+            env,
+            &key,
+            balance,
+            StorageOptimizer::persistent_ttl_for_tier(env, StorageTtlTier::Balance),
+        );
     }
 
     /// Increments a user's balance by the specified amount.
@@ -577,13 +651,23 @@ impl StorageOptimizer {
             env,
             &format!("archive_{:?}_{}", market_id, env.ledger().timestamp()),
         );
-        env.storage().persistent().set(&archive_key, market);
+        Self::set_persistent_with_ttl(
+            env,
+            &archive_key,
+            market,
+            Self::persistent_ttl_for_tier(env, StorageTtlTier::Archive),
+        );
         Ok(())
     }
 
     /// Store migration record
     fn store_migration_record(env: &Env, migration_id: &Symbol, migration: &StorageMigration) {
-        env.storage().persistent().set(migration_id, migration);
+        Self::set_persistent_with_ttl(
+            env,
+            migration_id,
+            migration,
+            Self::persistent_ttl_for_tier(env, StorageTtlTier::Archive),
+        );
     }
 
     /// Migrate from V1 to V2 format
@@ -633,7 +717,12 @@ impl StorageOptimizer {
             env,
             &format!("compressed_{:?}", compressed_market.market_id),
         );
-        env.storage().persistent().set(&key, compressed_market);
+        Self::set_persistent_with_ttl(
+            env,
+            &key,
+            compressed_market,
+            Self::persistent_ttl_for_tier(env, StorageTtlTier::Market),
+        );
         Ok(())
     }
 
@@ -653,7 +742,12 @@ impl StorageOptimizer {
         compressed_id: &Symbol,
     ) -> Result<(), Error> {
         let key = Symbol::new(env, &format!("compressed_ref_{:?}", market_id));
-        env.storage().persistent().set(&key, compressed_id);
+        Self::set_persistent_with_ttl(
+            env,
+            &key,
+            compressed_id,
+            Self::persistent_ttl_for_tier(env, StorageTtlTier::Market),
+        );
         Ok(())
     }
 }
@@ -671,7 +765,12 @@ impl EventManager {
     /// Store a new event in persistent storage
     pub fn store_event(env: &Env, event: &Event) {
         let key = Self::event_storage_key(env, &event.id);
-        env.storage().persistent().set(&key, event);
+        StorageOptimizer::set_persistent_with_ttl(
+            env,
+            &key,
+            event,
+            StorageOptimizer::persistent_ttl_for_tier(env, StorageTtlTier::Event),
+        );
     }
 
     /// Retrieve an event from persistent storage
@@ -724,7 +823,12 @@ impl CreatorLimitsManager {
     pub fn increment_active_events(env: &Env, creator: &Address) {
         let key = (Symbol::new(env, "ActiveEvents"), creator.clone());
         let current_count: u32 = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().set(&key, &(current_count + 1));
+        StorageOptimizer::set_persistent_with_ttl(
+            env,
+            &key,
+            &(current_count + 1),
+            StorageOptimizer::persistent_ttl_for_tier(env, StorageTtlTier::Market),
+        );
     }
 
     /// Decrement a creator's active events count by 1
@@ -734,7 +838,12 @@ impl CreatorLimitsManager {
 
         // Prevent underflow if count is already 0
         if current_count > 0 {
-            env.storage().persistent().set(&key, &(current_count - 1));
+            StorageOptimizer::set_persistent_with_ttl(
+                env,
+                &key,
+                &(current_count - 1),
+                StorageOptimizer::persistent_ttl_for_tier(env, StorageTtlTier::Market),
+            );
         }
     }
 }
@@ -806,35 +915,64 @@ impl StorageUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address;
+    use soroban_sdk::testutils::{storage::Persistent as _, Address as _, Ledger as _};
 
-    #[test]
-    fn test_storage_optimizer_compression() {
-        let env = Env::default();
-        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
-        let market = Market::new(
-            &env,
+    fn create_test_market(env: &Env) -> Market {
+        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env);
+        Market::new(
+            env,
             admin,
-            String::from_str(&env, "Test market question"),
+            String::from_str(env, "Test market question"),
             Vec::from_array(
-                &env,
-                [String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env,
+                [String::from_str(env, "yes"), String::from_str(env, "no")],
             ),
             env.ledger().timestamp() + 86400,
             OracleConfig::new(
                 OracleProvider::reflector(),
                 soroban_sdk::Address::from_str(
-                    &env,
+                    env,
                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
                 ),
-                String::from_str(&env, "BTC"),
+                String::from_str(env, "BTC"),
                 2500000,
-                String::from_str(&env, "gt"),
+                String::from_str(env, "gt"),
             ),
             None,
             86400,
             MarketState::Active,
-        );
+        )
+    }
+
+    fn create_test_event(env: &Env) -> Event {
+        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env);
+        Event {
+            id: Symbol::new(env, "event_ttl"),
+            description: String::from_str(env, "Event ttl test"),
+            outcomes: soroban_sdk::vec![env, String::from_str(env, "Yes")],
+            end_time: env.ledger().timestamp() + 86400,
+            oracle_config: OracleConfig::none_sentinel(env),
+            has_fallback: false,
+            fallback_oracle_config: OracleConfig::none_sentinel(env),
+            resolution_timeout: 86400,
+            admin,
+            created_at: env.ledger().timestamp(),
+            status: MarketState::Active,
+            visibility: EventVisibility::Public,
+            allowlist: Vec::new(env),
+        }
+    }
+
+    fn create_contract_env() -> (Env, soroban_sdk::Address) {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        (env, contract_id)
+    }
+
+    #[test]
+    fn test_storage_optimizer_compression() {
+        let env = Env::default();
+        let market = create_test_market(&env);
 
         let compressed = StorageOptimizer::compress_market_data(&env, &market).unwrap();
         assert!(compressed.compressed_size < compressed.original_size);
@@ -852,47 +990,96 @@ mod tests {
         assert_eq!(stats.total_storage_bytes, 0);
     }
 
-    // #[test]
-    // fn test_storage_config() {
-    //     let env = Env::default();
-    //     let contract_id = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
-    //     env.as_contract(&contract_id, || {
-    //         // Test that we can get the default config when none exists
-    //         let config = StorageOptimizer::get_storage_config(&env);
-    //         assert!(config.compression_enabled);
-    //         assert_eq!(config.cleanup_threshold_days, 365);
-    //         assert_eq!(config.max_storage_per_market, 1024 * 1024); // 1MB
-    //         assert!(!config.auto_cleanup_enabled);
-    //     });
-    // }
+    #[test]
+    fn test_storage_config_exposes_ttl_tiers() {
+        let (env, contract_id) = create_contract_env();
+        env.as_contract(&contract_id, || {
+            let config = StorageOptimizer::get_storage_config(&env);
+            assert!(config.compression_enabled);
+            assert_eq!(config.cleanup_threshold_days, 365);
+            assert_eq!(config.max_storage_per_market, 1024 * 1024);
+            assert_eq!(config.balance_ttl_ledgers, BALANCE_TTL_LEDGERS);
+            assert_eq!(config.market_ttl_ledgers, MARKET_TTL_LEDGERS);
+            assert_eq!(config.event_ttl_ledgers, EVENT_TTL_LEDGERS);
+            assert_eq!(config.archive_ttl_ledgers, ARCHIVE_TTL_LEDGERS);
+        });
+    }
+
+    #[test]
+    fn test_balance_storage_extends_ttl_on_each_write() {
+        let (env, contract_id) = create_contract_env();
+        let user = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+        let asset = ReflectorAsset::BTC;
+
+        env.as_contract(&contract_id, || {
+            let balance = Balance {
+                user: user.clone(),
+                asset: asset.clone(),
+                amount: 10,
+            };
+            BalanceStorage::set_balance(&env, &balance);
+
+            let key = BalanceStorage::get_key(&env, &user, &asset);
+            let expected_ttl = StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Balance);
+            assert_eq!(env.storage().persistent().get_ttl(&key), expected_ttl);
+
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 500;
+            });
+            assert!(env.storage().persistent().get_ttl(&key) < expected_ttl);
+
+            let updated_balance = Balance {
+                amount: 20,
+                ..balance
+            };
+            BalanceStorage::set_balance(&env, &updated_balance);
+            assert_eq!(env.storage().persistent().get_ttl(&key), expected_ttl);
+        });
+    }
+
+    #[test]
+    fn test_event_storage_uses_event_ttl_tier() {
+        let (env, contract_id) = create_contract_env();
+        let event = create_test_event(&env);
+
+        env.as_contract(&contract_id, || {
+            EventManager::store_event(&env, &event);
+            let key = EventManager::event_storage_key(&env, &event.id);
+            let expected_ttl = StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Event);
+            assert_eq!(env.storage().persistent().get_ttl(&key), expected_ttl);
+        });
+    }
+
+    #[test]
+    fn test_archive_storage_extends_when_rewritten_near_expiry() {
+        let (env, contract_id) = create_contract_env();
+
+        env.as_contract(&contract_id, || {
+            let mut config = StorageOptimizer::get_storage_config(&env);
+            config.archive_ttl_ledgers = ARCHIVE_TTL_LEDGERS;
+            StorageOptimizer::update_storage_config(&env, &config).unwrap();
+
+            let archive_key = Symbol::new(&env, STORAGE_CONFIG_KEY);
+            let initial_ttl = env.storage().persistent().get_ttl(&archive_key);
+
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 500;
+            });
+            let near_expiry_ttl = env.storage().persistent().get_ttl(&archive_key);
+            assert!(near_expiry_ttl < initial_ttl);
+
+            StorageOptimizer::update_storage_config(&env, &config).unwrap();
+            let refreshed_ttl = env.storage().persistent().get_ttl(&archive_key);
+
+            assert!(refreshed_ttl > near_expiry_ttl);
+            assert_eq!(refreshed_ttl, initial_ttl);
+        });
+    }
 
     #[test]
     fn test_storage_utils() {
         let env = Env::default();
-        let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
-        let market = Market::new(
-            &env,
-            admin,
-            String::from_str(&env, "Test market"),
-            Vec::from_array(
-                &env,
-                [String::from_str(&env, "yes"), String::from_str(&env, "no")],
-            ),
-            env.ledger().timestamp() + 86400,
-            OracleConfig::new(
-                OracleProvider::reflector(),
-                soroban_sdk::Address::from_str(
-                    &env,
-                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                ),
-                String::from_str(&env, "BTC"),
-                2500000,
-                String::from_str(&env, "gt"),
-            ),
-            None,
-            86400,
-            MarketState::Active,
-        );
+        let market = create_test_market(&env);
 
         let efficiency = StorageUtils::get_storage_efficiency_score(&market);
         assert!(efficiency > 0);
