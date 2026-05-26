@@ -43,7 +43,7 @@ fn create_test_market(
         ),
         feed_id: String::from_str(env, "BTC/USD"),
         threshold: 100,
-        comparison: String::from_str(env, "gte"),
+        comparison: String::from_str(env, "gt"),
     };
 
     client.create_market(
@@ -376,7 +376,7 @@ impl TokenTestSetup {
                 ),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 100,
-                comparison: String::from_str(&env, "gte"),
+                comparison: String::from_str(&env, "gt"),
             },
             &None,
             &86400u64,
