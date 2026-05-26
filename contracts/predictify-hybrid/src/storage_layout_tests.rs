@@ -73,6 +73,7 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         min_pool_size: None,
         bet_deadline: 0,
         dispute_window_seconds: 0,
+        winnings_swept: false,
     };
 
     (market_id, market)

@@ -1089,6 +1089,9 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
+    /// Whether unclaimed winnings have already been swept for this market.
+    /// Set to true after the first successful sweep to prevent double-crediting the treasury.
+    pub winnings_swept: bool,
 }
 
 // ===== CLAIM INFO =====
@@ -1452,6 +1455,7 @@ impl Market {
             min_pool_size: None,
             bet_deadline: 0,
             dispute_window_seconds: 86400, // 24h default
+            winnings_swept: false,
         }
     }
 
