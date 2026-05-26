@@ -941,7 +941,8 @@ impl FeeCalculator {
         }
 
         let fee_percentage = PLATFORM_FEE_PERCENTAGE;
-        let user_share = (user_stake * (crate::PERCENTAGE_DENOMINATOR - fee_percentage)) / crate::PERCENTAGE_DENOMINATOR;
+        let user_share = (user_stake * (crate::PERCENTAGE_DENOMINATOR - fee_percentage))
+            / crate::PERCENTAGE_DENOMINATOR;
         let payout = (user_share * total_pool) / winning_total;
 
         Ok(payout)

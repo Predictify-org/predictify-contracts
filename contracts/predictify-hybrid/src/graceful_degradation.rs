@@ -41,14 +41,14 @@ impl OracleBackup {
         // Primary failed, notify and try backup
         let msg = String::from_str(env, "Primary oracle failed");
         EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
-        
+
         // capture backup result to ensure we don't fial silently if the fallback drops
-       let backup_result = self.call_oracle(env, &self.backup, oracle_address, feed_id);
-       if backup_result.is_err(){
-        let backup_msg = String::from_str(env, "Backup oracle failed");
-        EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
-       }
-       backup_result
+        let backup_result = self.call_oracle(env, &self.backup, oracle_address, feed_id);
+        if backup_result.is_err() {
+            let backup_msg = String::from_str(env, "Backup oracle failed");
+            EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
+        }
+        backup_result
     }
 
     // Call a single oracle
@@ -82,10 +82,11 @@ impl OracleBackup {
     /// * `Err(Error)` if the oracle is unreachable or fails, surfacing the exact error
     pub fn is_working(&self, env: &Env, oracle_address: &Address) -> Result<bool, Error> {
         let test_feed = String::from_str(env, "BTC/USD");
-        match self.call_oracle(env, &self.primary, oracle_address, &test_feed){
+        match self.call_oracle(env, &self.primary, oracle_address, &test_feed) {
             Ok(_) => Ok(true),
             Err(e) => {
-                let msg = String::from_str(env, "Oracle health check failed during is_working query");
+                let msg =
+                    String::from_str(env, "Oracle health check failed during is_working query");
                 EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
                 Err(e)
             }
@@ -205,12 +206,12 @@ mod tests {
 
         //2. wrap the execution in the contract context
         env.as_contract(&contract_id, || {
-        let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
-        assert!(matches!(
-            health,
-            OracleHealth::Working | OracleHealth::Broken
-        ));
-    });
+            let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
+            assert!(matches!(
+                health,
+                OracleHealth::Working | OracleHealth::Broken
+            ));
+        });
     }
 
     #[test]
@@ -237,18 +238,21 @@ mod tests {
         let env = Env::default();
         // 1. Register the contract
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        
+
         let backup = OracleBackup::new(OracleProvider::pyth(), OracleProvider::dia());
         let oracle_address = Address::generate(&env);
-        
+
         // 2. Wrap the execution in the contract context
         env.as_contract(&contract_id, || {
             let result = backup.is_working(&env, &oracle_address);
             assert!(result.is_err()); // No longer fails silently
         });
-        
+
         // 3. Verify event emission
         let events = env.events().all();
-        assert!(events.events().len() > 0, "Expected oracle degradation event to be emitted");
+        assert!(
+            events.events().len() > 0,
+            "Expected oracle degradation event to be emitted"
+        );
     }
 }
