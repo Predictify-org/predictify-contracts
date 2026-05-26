@@ -29,6 +29,7 @@
 //! - **Missing Config Getters**: `get_config`, `get_configuration_history`
 //! - **Inconsistencies**: `query_event_details` (missing `created_at`), `query_user_bet` (missing `voted_at`), `query_contract_state` (stubbed metrics)
 
+use alloc::string::ToString;
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
@@ -96,7 +97,7 @@ impl QueryManager {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::ContractStateError)
+            .ok_or(Error::ConfigNotFound)
     }
 
     /// Check if an action requires multisig approval.
@@ -211,12 +212,15 @@ impl QueryManager {
         // Get oracle provider name
         let oracle_provider = market.oracle_config.provider.name();
         let winning_outcome = market.get_winning_outcome();
+        let created_at = EventManager::get_event(env, &market_id)
+            .map(|e| e.created_at)
+            .unwrap_or(0);
 
         let response = EventDetailsQuery {
-            market_id,
+            market_id: market_id.clone(),
             question: market.question,
             outcomes: market.outcomes,
-            created_at: EventManager::get_event(env, &market_id).map(|e| e.created_at).unwrap_or(0),
+            created_at,
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
             oracle_provider,

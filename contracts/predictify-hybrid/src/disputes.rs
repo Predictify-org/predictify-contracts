@@ -833,7 +833,7 @@ impl DisputeManager {
             market_id: market_id.clone(),
             stake,
             timestamp: env.ledger().timestamp(),
-            reason,
+            reason: reason.clone(),
             status: DisputeStatus::Active,
         };
 

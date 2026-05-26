@@ -1969,7 +1969,18 @@ mod checked_arithmetic_tests {
 
     use super::*;
     use crate::validation::ValidationTestingUtils;
-    use soroban_sdk::{testutils::Address as _, Address, String, Symbol, Vec};
+    use soroban_sdk::{
+        testutils::{Address as _, EnvTestConfig},
+        Address, String, Symbol, Vec,
+    };
+
+    fn test_env() -> Env {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        env
+    }
 
     fn resolved_market(env: &Env, total_staked: i128) -> Market {
         let mut market = ValidationTestingUtils::create_test_market(env);
@@ -1982,7 +1993,7 @@ mod checked_arithmetic_tests {
 
     #[test]
     fn test_calculate_platform_fee_rejects_zero_pool() {
-        let env = Env::default();
+        let env = test_env();
         let market = resolved_market(&env, 0);
 
         let result = FeeCalculator::calculate_platform_fee(&market);
@@ -1999,7 +2010,7 @@ mod checked_arithmetic_tests {
 
     #[test]
     fn test_calculate_platform_fee_errors_on_overflow_adjacent_pool() {
-        let env = Env::default();
+        let env = test_env();
         let market = resolved_market(&env, i128::MAX);
 
         let result = FeeCalculator::calculate_platform_fee(&market);
@@ -2009,7 +2020,7 @@ mod checked_arithmetic_tests {
 
     #[test]
     fn test_fee_breakdown_reconciles_after_floor_rounding() {
-        let env = Env::default();
+        let env = test_env();
         let market = resolved_market(&env, 50_000_001);
 
         let breakdown = FeeCalculator::calculate_fee_breakdown(&market).unwrap();
@@ -2023,7 +2034,7 @@ mod checked_arithmetic_tests {
 
     #[test]
     fn test_collect_fees_returns_overflow_error_without_mutation() {
-        let env = Env::default();
+        let env = test_env();
         env.mock_all_auths();
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
@@ -2054,7 +2065,7 @@ mod checked_arithmetic_tests {
 
     #[test]
     fn test_record_fee_collection_errors_on_total_overflow() {
-        let env = Env::default();
+        let env = test_env();
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
         let market_id = Symbol::new(&env, "fee_sum");

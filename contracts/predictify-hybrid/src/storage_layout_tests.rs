@@ -9,11 +9,15 @@
 //! - Data structures can be safely extended
 //! - Migration patterns work correctly
 
+use alloc::format;
 use soroban_sdk::{
     testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 
-use crate::storage::{BalanceStorage, CreatorLimitsManager, EventManager, StorageOptimizer};
+use crate::markets::MarketStateManager;
+use crate::storage::{
+    BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,
+};
 use crate::types::*;
 
 // ===== TEST UTILITIES =====
