@@ -140,13 +140,23 @@ impl MarketIdGenerator {
     /// Legacy IDs (created before this module existed) do not carry the prefix
     /// and will return `false` here; callers should treat them as valid but
     /// unstructured.
+    #[cfg(not(target_family = "wasm"))]
     pub fn validate_market_id_format(_env: &Env, market_id: &Symbol) -> bool {
         market_id.to_string().starts_with("mkt_")
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
+        // Symbol-to-host-string conversion is not available in contract wasm.
+        // Runtime callers should treat persisted market IDs as valid if they
+        // otherwise resolve correctly.
+        true
     }
 
     /// Parse the counter and legacy flag out of a market ID symbol.
     ///
     /// Returns [`Error::InvalidInput`] if the ID cannot be parsed.
+    #[cfg(not(target_family = "wasm"))]
     pub fn parse_market_id_components(
         _env: &Env,
         market_id: &Symbol,
@@ -168,6 +178,19 @@ impl MarketIdGenerator {
         Ok(MarketIdComponents {
             counter,
             is_legacy: false,
+        })
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn parse_market_id_components(
+        _env: &Env,
+        _market_id: &Symbol,
+    ) -> Result<MarketIdComponents, Error> {
+        // Contract wasm cannot parse Symbol values into host strings. Treat the
+        // identifier as an unstructured legacy ID in this environment.
+        Ok(MarketIdComponents {
+            counter: 0,
+            is_legacy: true,
         })
     }
 

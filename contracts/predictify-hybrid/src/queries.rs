@@ -29,7 +29,6 @@
 //! - **Missing Config Getters**: `get_config`, `get_configuration_history`
 //! - **Inconsistencies**: `query_event_details` (missing `created_at`), `query_user_bet` (missing `voted_at`), `query_contract_state` (stubbed metrics)
 
-use alloc::string::ToString;
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
@@ -86,8 +85,33 @@ impl QueryManager {
 
     /// Check if an admin has a specific permission for an action.
     pub fn query_has_permission(env: &Env, admin: Address, action: String) -> Result<bool, Error> {
-        let action_str = action.to_string();
-        let permission = crate::admin::AdminAccessControl::map_action_to_permission(&action_str)?;
+        let permission = if action == String::from_str(env, "initialize") {
+            crate::admin::AdminPermission::Initialize
+        } else if action == String::from_str(env, "create_market") {
+            crate::admin::AdminPermission::CreateMarket
+        } else if action == String::from_str(env, "close_market") {
+            crate::admin::AdminPermission::CloseMarket
+        } else if action == String::from_str(env, "finalize_market") {
+            crate::admin::AdminPermission::FinalizeMarket
+        } else if action == String::from_str(env, "extend_market") {
+            crate::admin::AdminPermission::ExtendMarket
+        } else if action == String::from_str(env, "update_fees") {
+            crate::admin::AdminPermission::UpdateFees
+        } else if action == String::from_str(env, "update_config") {
+            crate::admin::AdminPermission::UpdateConfig
+        } else if action == String::from_str(env, "reset_config") {
+            crate::admin::AdminPermission::ResetConfig
+        } else if action == String::from_str(env, "collect_fees") {
+            crate::admin::AdminPermission::CollectFees
+        } else if action == String::from_str(env, "manage_disputes") {
+            crate::admin::AdminPermission::ManageDispute
+        } else if action == String::from_str(env, "view_analytics") {
+            crate::admin::AdminPermission::ViewAnalytic
+        } else if action == String::from_str(env, "emergency_actions") {
+            crate::admin::AdminPermission::Emergency
+        } else {
+            return Err(Error::InvalidInput);
+        };
         Ok(AdminManager::validate_admin_permission(env, &admin, permission).is_ok())
     }
 

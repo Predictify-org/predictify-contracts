@@ -3943,7 +3943,7 @@ impl OracleCallbackAuth {
     fn log_successful_authentication(&self, caller: &Address, callback_data: &OracleCallbackData) {
         let log_message = String::from_str(
             &self.env,
-            &format!("Oracle callback authenticated: {}", callback_data.feed_id.to_string()),
+            "Oracle callback authenticated",
         );
         let ctx = String::from_str(&self.env, "oracle_auth");
         crate::events::EventEmitter::emit_error_logged(
@@ -3954,6 +3954,7 @@ impl OracleCallbackAuth {
             Some(caller.clone()),
             None,
         );
+        let _ = callback_data;
     }
 
     fn log_authentication_failure(&self, caller: &Address, reason: &str) {
