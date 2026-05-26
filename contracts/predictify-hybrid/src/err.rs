@@ -121,6 +121,8 @@ pub enum Error {
     DisputeFeeFailed = 409,
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
+    /// Fee arithmetic overflowed or otherwise failed during checked calculation.
+    FeeArithmeticOverflow = 411,
     /// Platform fee has already been collected from this market.
     FeeAlreadyCollected = 413,
     /// No fees are available to collect from this market.
@@ -1376,6 +1378,7 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
+            Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
             Error::NoFeesToCollect => "No fees available to collect",
             Error::InvalidExtensionDays => "Invalid extension days value",
@@ -1468,6 +1471,7 @@ impl Error {
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
             Error::DisputeError => "DISPUTE_ERROR",
+            Error::FeeArithmeticOverflow => "FEE_ARITHMETIC_OVERFLOW",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
