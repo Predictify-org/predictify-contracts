@@ -4,8 +4,8 @@ use alloc::format;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
-use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 use crate::events::EventEmitter;
+use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 /// Comprehensive monitoring system for Predictify contract health and performance.
 ///
 /// This module provides real-time monitoring capabilities for:
@@ -284,7 +284,7 @@ impl ContractMonitor {
         let status = Self::determine_oracle_status(&confidence_score, &success_rate, &availability);
 
         //NEW : Explicitly signal degradation to operators without waiting for a manual fetch
-        if status == MonitoringStatus::Critical || status == MonitoringStatus::Warning{
+        if status == MonitoringStatus::Critical || status == MonitoringStatus::Warning {
             let msg = String::from_str(env, "Oracle health metrics degraded below threshold");
             EventEmitter::emit_oracle_degradation(env, &oracle, &msg);
         }
@@ -601,6 +601,7 @@ impl ContractMonitor {
             min_pool_size: None,
             bet_deadline: 0,
             dispute_window_seconds: 86400,
+            winnings_swept: false,
         })
     }
 

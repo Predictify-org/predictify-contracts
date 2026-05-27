@@ -1017,7 +1017,12 @@ mod tests {
         }
     }
 
-    fn make_thresholds(max_gas: u64, max_time: u64, max_storage: u64, min_score: u32) -> PerformanceThresholds {
+    fn make_thresholds(
+        max_gas: u64,
+        max_time: u64,
+        max_storage: u64,
+        min_score: u32,
+    ) -> PerformanceThresholds {
         PerformanceThresholds {
             max_gas_usage: max_gas,
             max_execution_time: max_time,
@@ -1151,12 +1156,11 @@ mod tests {
     #[test]
     fn test_benchmark_fetch_oracle_result_thresholds() {
         let test = PerfBenchTest::new();
-        let result =
-            PerformanceBenchmarkManager::benchmark_oracle_call_performance(
-                &test.env,
-                OracleProvider::Reflector,
-            )
-            .expect("benchmark_oracle_call_performance should succeed");
+        let result = PerformanceBenchmarkManager::benchmark_oracle_call_performance(
+            &test.env,
+            OracleProvider::Reflector,
+        )
+        .expect("benchmark_oracle_call_performance should succeed");
         assert!(result.success);
         assert!(
             result.gas_usage <= FETCH_ORACLE_RESULT_GAS_THRESHOLD,

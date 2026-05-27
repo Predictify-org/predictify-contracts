@@ -574,23 +574,42 @@ impl ExtensionValidator {
             return Err(Error::InvalidDuration);
         }
 
-        // Get market and validate state
+        // Get market and validate state.
+        // Extension is only permitted while the market is Active. Any terminal
+        // or post-resolution state (Resolved, Closed, Cancelled, Ended) must be
+        // rejected to prevent lifecycle corruption.
         let market = MarketStateManager::get_market(env, market_id)?;
 
-        if market.state == MarketState::Resolved {
-            return Err(Error::MarketResolved);
-        }
-
-        if market.state != MarketState::Active {
-            return Err(Error::MarketClosed);
+        match market.state {
+            MarketState::Resolved | MarketState::Closed | MarketState::Cancelled => {
+                return Err(Error::ExtensionDenied);
+            }
+            MarketState::Ended => {
+                return Err(Error::ExtensionDenied);
+            }
+            MarketState::Active => {}
+            MarketState::Disputed => {
+                return Err(Error::ExtensionDenied);
+            }
         }
 
         let current_time = env.ledger().timestamp();
+
+        // Reject if the market has already passed its end time.
         if current_time >= market.end_time {
-            return Err(Error::MarketClosed);
+            return Err(Error::ExtensionDenied);
         }
 
-        // Check if market is already resolved
+        // Reject if the resulting deadline would still be in the past or present.
+        // This guards against edge cases where end_time is very close to now.
+        let new_end_time = market
+            .end_time
+            .saturating_add((additional_days as u64) * 24 * 60 * 60);
+        if new_end_time <= current_time {
+            return Err(Error::ExtensionDenied);
+        }
+
+        // Reject if oracle has already produced a result (market is effectively resolved).
         if market.oracle_result.is_some() {
             return Err(Error::MarketResolved);
         }

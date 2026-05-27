@@ -138,3 +138,53 @@ fn test_edge_case_zero_stake() {
     // 100 + (100 * 0) / 100 = 100
     assert_eq!(payout, 100);
 }
+
+// ----- Issue #553: dispute outcome tally (uses real DisputeVoting types) -----
+
+fn completed_voting(env: &Env, dispute_id: Symbol, support: i128, against: i128) -> DisputeVoting {
+    DisputeVoting {
+        dispute_id,
+        voting_start: 0,
+        voting_end: 1,
+        total_votes: u32::from(support > 0) + u32::from(against > 0),
+        support_votes: u32::from(support > 0),
+        against_votes: u32::from(against > 0),
+        total_support_stake: support,
+        total_against_stake: against,
+        status: DisputeVotingStatus::Completed,
+    }
+}
+
+fn with_contract<F: FnOnce(&Env, &Symbol)>(test: F) {
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let dispute_id = Symbol::new(&env, "dispute_id");
+    env.as_contract(&contract_id, || test(&env, &dispute_id));
+}
+
+#[test]
+fn calculate_dispute_outcome_empty_completed_voting() {
+    with_contract(|env, dispute_id| {
+        let voting = completed_voting(env, dispute_id.clone(), 0, 0);
+        DisputeUtils::store_dispute_voting(env, dispute_id, &voting).unwrap();
+        assert!(!DisputeManager::calculate_dispute_outcome(env, dispute_id.clone()).unwrap());
+    });
+}
+
+#[test]
+fn calculate_dispute_outcome_single_supporter() {
+    with_contract(|env, dispute_id| {
+        let voting = completed_voting(env, dispute_id.clone(), 100, 0);
+        DisputeUtils::store_dispute_voting(env, dispute_id, &voting).unwrap();
+        assert!(DisputeManager::calculate_dispute_outcome(env, dispute_id.clone()).unwrap());
+    });
+}
+
+#[test]
+fn calculate_dispute_outcome_equal_stakes_is_tie() {
+    with_contract(|env, dispute_id| {
+        let voting = completed_voting(env, dispute_id.clone(), 50, 50);
+        DisputeUtils::store_dispute_voting(env, dispute_id, &voting).unwrap();
+        assert!(!DisputeManager::calculate_dispute_outcome(env, dispute_id.clone()).unwrap());
+    });
+}

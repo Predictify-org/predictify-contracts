@@ -103,15 +103,18 @@ impl BalanceManager {
     /// Withdraw funds from the user's balance.
     ///
     /// This function transfers tokens from the contract back to the user's wallet.
-    /// It follows the Checks-Effects-Interactions (CEI) pattern to prevent reentrancy and ensuring safety:
+    /// It follows a strict "Check-Transfer-then-Debit" pattern so a failed transfer never leaves
+    /// a phantom debit in storage:
     /// 1. Checks: Validate authorization, circuit breaker, and sufficient balance.
-    /// 2. Effects: Update (subtract) user balance in contract storage.
+    /// 2. Compute: Derive the post-withdraw balance without mutating storage.
     /// 3. Interactions: Execute token transfer (from contract to user).
+    /// 4. Effects: Persist the debited balance only after the transfer succeeds.
     ///
     /// # Invariants
     /// - `amount` must be strictly positive.
     /// - Withdrawal is only permitted if the user has sufficient available balance.
     /// - Circuit breaker must allow withdrawals.
+    /// - Balance storage is only mutated after the outbound transfer succeeds.
     ///
     /// # Parameters
     /// * `env` - The Soroban environment.
@@ -145,20 +148,21 @@ impl BalanceManager {
             return Err(Error::CBOpen);
         }
 
-        // Check sufficient balance and subtract (Effects)
-        // sub_balance will return Error::InsufficientBalance if amount > current_balance.amount
-        let balance = BalanceStorage::sub_balance(env, &user, &asset, amount)?;
-
         // Resolve token client
         let token_client = match asset {
             ReflectorAsset::Stellar => MarketUtils::get_token_client(env)?,
             _ => return Err(Error::InvalidInput),
         };
 
+        // Compute the resulting balance before interacting with the token contract.
+        let balance = BalanceStorage::checked_sub_balance(env, &user, &asset, amount)?;
+
         // Transfer funds from contract to user (Interactions)
-        // Note: Contract-to-user transfers in Soroban do not require user auth,
-        // but the contract address must have sufficient balance.
+        // If this panics, Soroban rolls back the call and the balance write below is skipped.
         token_client.transfer(&env.current_contract_address(), &user, &amount);
+
+        // Persist the debit only after the token transfer succeeds.
+        BalanceStorage::set_balance(env, &balance)?;
 
         // Emit event
         EventEmitter::emit_balance_changed(
@@ -181,49 +185,140 @@ impl BalanceManager {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
     use super::*;
-    use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::Env;
+    use crate::PredictifyHybridClient;
+    use soroban_sdk::{
+        testutils::{Address as _, EnvTestConfig},
+        token::{Client as TokenClient, StellarAssetClient},
+        Address, Env, Symbol,
+    };
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     struct BalanceTestSetup {
         env: Env,
+        contract_id: Address,
+        token_id: Address,
         user: Address,
+        sink: Address,
     }
 
     impl BalanceTestSetup {
         fn new() -> Self {
-            let env = Env::default();
+            let mut env = Env::default();
+            env.set_config(EnvTestConfig {
+                capture_snapshot_at_drop: false,
+            });
+            env.mock_all_auths();
+
+            let token_admin = Address::generate(&env);
+            let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+            let token_id = token_contract.address();
+
+            let admin = Address::generate(&env);
             let user = Address::generate(&env);
-            BalanceTestSetup { env, user }
+            let sink = Address::generate(&env);
+
+            let contract_id = env.register(crate::PredictifyHybrid, ());
+            let client = PredictifyHybridClient::new(&env, &contract_id);
+            client.initialize(&admin, &None, &None);
+
+            env.as_contract(&contract_id, || {
+                env.storage()
+                    .persistent()
+                    .set(&Symbol::new(&env, "TokenID"), &token_id);
+            });
+
+            StellarAssetClient::new(&env, &token_id).mint(&user, &1_000_0000000);
+
+            BalanceTestSetup {
+                env,
+                contract_id,
+                token_id,
+                user,
+                sink,
+            }
+        }
+
+        fn client(&self) -> PredictifyHybridClient<'_> {
+            PredictifyHybridClient::new(&self.env, &self.contract_id)
+        }
+
+        fn token_client(&self) -> TokenClient<'_> {
+            TokenClient::new(&self.env, &self.token_id)
         }
     }
 
     #[test]
-    fn test_deposit_valid_amount() {
-        let _setup = BalanceTestSetup::new();
-        let amount = 1_000_000i128;
-        assert!(amount > 0);
+    fn test_deposit_credits_balance_after_transfer() {
+        let setup = BalanceTestSetup::new();
+        let client = setup.client();
+        let token_client = setup.token_client();
+
+        let balance = client.deposit(&setup.user, &ReflectorAsset::Stellar, &500_0000000);
+
+        assert_eq!(balance.amount, 500_0000000);
+        assert_eq!(
+            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            500_0000000
+        );
+        assert_eq!(token_client.balance(&setup.user), 500_0000000);
+        assert_eq!(token_client.balance(&setup.contract_id), 500_0000000);
     }
 
     #[test]
-    fn test_deposit_zero_amount() {
-        let _setup = BalanceTestSetup::new();
-        let amount = 0i128;
-        assert_eq!(amount, 0);
+    fn test_withdraw_exact_balance_reaches_zero() {
+        let setup = BalanceTestSetup::new();
+        let client = setup.client();
+        let token_client = setup.token_client();
+
+        client.deposit(&setup.user, &ReflectorAsset::Stellar, &500);
+        let balance = client.withdraw(&setup.user, &ReflectorAsset::Stellar, &500);
+
+        assert_eq!(balance.amount, 0);
+        assert_eq!(client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount, 0);
+        assert_eq!(token_client.balance(&setup.user), 1_000_0000000);
+        assert_eq!(token_client.balance(&setup.contract_id), 0);
     }
 
     #[test]
-    fn test_deposit_negative_amount() {
-        let _setup = BalanceTestSetup::new();
-        let amount = -1_000_000i128;
-        assert!(amount < 0);
+    fn test_withdraw_over_balance_returns_typed_error_without_mutation() {
+        let setup = BalanceTestSetup::new();
+        let client = setup.client();
+
+        client.deposit(&setup.user, &ReflectorAsset::Stellar, &100_0000000);
+
+        let result = client.try_withdraw(&setup.user, &ReflectorAsset::Stellar, &150_0000000);
+
+        assert_eq!(result, Err(Ok(Error::InsufficientBalance)));
+        assert_eq!(
+            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            100_0000000
+        );
     }
 
     #[test]
-    fn test_withdraw_insufficient_balance() {
-        let _setup = BalanceTestSetup::new();
-        let requested = 1_000_000i128;
-        let available = 100_000i128;
-        assert!(requested > available);
+    fn test_withdraw_transfer_failure_does_not_leave_phantom_debit() {
+        let setup = BalanceTestSetup::new();
+        let client = setup.client();
+        let token_client = setup.token_client();
+
+        client.deposit(&setup.user, &ReflectorAsset::Stellar, &400_0000000);
+
+        token_client.transfer(&setup.contract_id, &setup.sink, &400_0000000);
+        assert_eq!(token_client.balance(&setup.contract_id), 0);
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            client.withdraw(&setup.user, &ReflectorAsset::Stellar, &100_0000000);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(
+            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            400_0000000
+        );
+        assert_eq!(token_client.balance(&setup.user), 600_0000000);
+        assert_eq!(token_client.balance(&setup.contract_id), 0);
     }
 }
