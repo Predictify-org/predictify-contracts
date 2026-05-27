@@ -5691,6 +5691,7 @@ impl PredictifyHybrid {
         let health = graceful_degradation::monitor_oracle_health(&env, oracle, &oracle_contract);
         match health {
             OracleHealth::Working => String::from_str(&env, "working"),
+            OracleHealth::Degraded => String::from_str(&env, "degraded"),
             OracleHealth::Broken => String::from_str(&env, "broken"),
         }
     }
