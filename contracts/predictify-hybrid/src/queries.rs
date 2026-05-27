@@ -42,6 +42,7 @@ use crate::{
     statistics::StatisticsManager,
     storage::EventManager,
 };
+use alloc::string::ToString;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::types::{
@@ -96,7 +97,7 @@ impl QueryManager {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::ContractStateError)
+            .ok_or(Error::InvalidState)
     }
 
     /// Check if an action requires multisig approval.
@@ -213,7 +214,7 @@ impl QueryManager {
         let winning_outcome = market.get_winning_outcome();
 
         let response = EventDetailsQuery {
-            market_id,
+            market_id: market_id.clone(),
             question: market.question,
             outcomes: market.outcomes,
             created_at: EventManager::get_event(env, &market_id).map(|e| e.created_at).unwrap_or(0),

@@ -40,7 +40,6 @@ mod market_analytics;
 mod market_id_generator;
 mod markets;
 mod metadata_limits;
-mod tokens;
 #[cfg(test)]
 mod metadata_limits_tests;
 #[cfg(test)]
@@ -6978,21 +6977,11 @@ impl PredictifyHybrid {
 mod test;
 
 fn assert_can_participate(env: &Env, user: &Address, event: &Event) {
-    if event.is_private {
-        let is_allowed = event.allowlist.iter().any(|addr| addr == user);
+    if event.visibility == EventVisibility::Private {
+        let is_allowed = event.allowlist.iter().any(|addr| addr == *user);
         if !is_allowed {
             panic!("User not allowlisted for private event");
         }
     }
 }
-let event = get_event(&env, event_id);
-
-assert_can_participate(&env, &user, &event);
-
-/// Places a bet on a given event.
-///
-/// # Panics
-/// - If the event is private and the caller is not in the allowlist.
-///
-/// # Security
-/// Enforces event-level access control before any state mutation.
+// (removed stray doc comments that had no associated item)

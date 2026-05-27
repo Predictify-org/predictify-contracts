@@ -43,7 +43,7 @@ impl PropertyBasedTestSuite {
         let admin = Address::generate(&env);
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         // Setup Token
         let token_admin = Address::generate(&env);

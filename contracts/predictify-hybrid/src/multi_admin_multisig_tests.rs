@@ -31,7 +31,7 @@ fn setup_contract() -> (Env, Address, Address) {
     let admin = Address::generate(&env);
     
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None);
+    client.initialize(&admin, &None, &None);
     
     (env, contract_id, admin)
 }
@@ -472,7 +472,7 @@ fn test_admin_added_event_emission() {
         AdminManager::add_admin(&env, &admin, &new_admin, AdminRole::MarketAdmin).unwrap();
         
         let events = env.events().all();
-        let event_count = events.len();
+        let event_count = events.events().len();
         assert!(event_count > 0);
     });
 }
@@ -487,7 +487,7 @@ fn test_admin_removed_event_emission() {
         AdminManager::remove_admin(&env, &admin, &new_admin).unwrap();
         
         let events = env.events().all();
-        assert!(events.len() > 0);
+        assert!(events.events().len() > 0);
     });
 }
 
@@ -871,7 +871,7 @@ fn test_contract_address_can_act_as_primary_admin() {
     let multisig_contract = env.register(PredictifyHybrid, ());
 
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&multisig_contract, &None);
+    client.initialize(&multisig_contract, &None, &None);
 
     env.as_contract(&contract_id, || {
         let target = Address::generate(&env);
@@ -896,7 +896,7 @@ fn test_contract_admin_rotation_to_new_contract_admin() {
     let new_multisig = env.register(PredictifyHybrid, ());
 
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&old_multisig, &None);
+    client.initialize(&old_multisig, &None, &None);
 
     env.as_contract(&contract_id, || {
         ContractPauseManager::transfer_admin(&env, &old_multisig, &new_multisig).unwrap();

@@ -31,7 +31,7 @@ impl TimeoutSweepSetup {
 
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         env.as_contract(&contract_id, || {
             let cfg = ConfigManager::get_development_config(&env);

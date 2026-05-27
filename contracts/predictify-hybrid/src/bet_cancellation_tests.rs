@@ -47,7 +47,7 @@ impl BetCancellationTestSetup {
 
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         let token_admin = Address::generate(&env);
         let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());

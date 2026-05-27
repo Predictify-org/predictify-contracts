@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use alloc::format;
+use crate::alloc::string::ToString;
 use crate::bandprotocol;
 use crate::errors::Error;
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec};
@@ -3345,7 +3346,7 @@ mod oracle_integration_tests {
         let default_fee_pct: Option<i128> = None;
 
         env.mock_all_auths();
-        client.initialize(&admin, &default_fee_pct);
+        client.initialize(&admin, &default_fee_pct, &None);
 
         let unauthorized = client.try_set_oracle_val_cfg_global(&non_admin, &60, &500);
         assert!(unauthorized.is_err());
@@ -3837,8 +3838,6 @@ impl OracleCallbackAuth {
         let data_key = StorageKey::OracleData(callback_data.feed_id.clone());
         // Store just the price (i128) since OraclePriceData lacks contracttype
         self.env.storage().persistent().set(&data_key, &callback_data.price);
-
-        self.env.storage().persistent().set(&data_key, &oracle_data);
 
         // Emit oracle callback event
         crate::events::EventEmitter::emit_oracle_callback(

@@ -22,6 +22,7 @@
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
+use crate::reentrancy_guard::{ReentrancyGuard, GuardError as ReentrancyError};
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
 use crate::types::{Bet, BetLimits, BetStats, BetStatus, Market, MarketState};
@@ -1081,8 +1082,13 @@ impl BetUtils {
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
     pub fn lock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        token_client.transfer(user, &env.current_contract_address(), &amount);
-        Ok(())
+        // Protect the external transfer with the reentrancy guard. If the
+        // guard cannot be acquired the call fails with `InvalidState`.
+        ReentrancyGuard::with_external_call(env, || {
+            token_client.transfer(user, &env.current_contract_address(), &amount);
+            Ok::<(), ReentrancyError>(())
+        })
+        .map_err(|_| Error::InvalidState)
     }
 
     /// Unlock funds by transferring from contract to user.
@@ -1105,8 +1111,11 @@ impl BetUtils {
     /// before_external_call/after_external_call here to allow batch refunds.
     pub fn unlock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        token_client.transfer(&env.current_contract_address(), user, &amount);
-        Ok(())
+        ReentrancyGuard::with_external_call(env, || {
+            token_client.transfer(&env.current_contract_address(), user, &amount);
+            Ok::<(), ReentrancyError>(())
+        })
+        .map_err(|_| Error::InvalidState)
     }
 
     /// Get the contract's locked funds balance.
