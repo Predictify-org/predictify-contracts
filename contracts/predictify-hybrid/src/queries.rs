@@ -29,6 +29,8 @@
 //! - **Missing Config Getters**: `get_config`, `get_configuration_history`
 //! - **Inconsistencies**: `query_event_details` (missing `created_at`), `query_user_bet` (missing `voted_at`), `query_contract_state` (stubbed metrics)
 
+use alloc::string::ToString;
+
 use crate::{
     errors::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
@@ -37,10 +39,14 @@ use crate::{
     admin::{AdminManager, AdminPermission, AdminRole, MultisigConfig},
     oracles::{OracleMetadata, OracleWhitelist},
     disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
+    errors::Error,
     governance::{GovernanceContract, GovernanceProposal},
-    bets::BetManager,
+    markets::{MarketAnalytics, MarketStateManager, MarketValidator},
+    oracles::{OracleMetadata, OracleWhitelist},
     statistics::StatisticsManager,
     storage::EventManager,
+    types::{Market, MarketState, PagedMarketIds, PagedUserBets},
+    voting::VotingStats,
 };
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
@@ -188,7 +194,10 @@ impl QueryManager {
     }
 
     /// Query detailed information about a specific governance proposal.
-    pub fn query_proposal_details(env: &Env, proposal_id: Symbol) -> Result<GovernanceProposal, Error> {
+    pub fn query_proposal_details(
+        env: &Env,
+        proposal_id: Symbol,
+    ) -> Result<GovernanceProposal, Error> {
         GovernanceContract::get_proposal(env.clone(), proposal_id).map_err(|_| Error::InvalidInput)
     }
 
@@ -435,7 +444,7 @@ impl QueryManager {
 
         // Try to get bet data from specialized bet storage if available
         let bet_opt = BetManager::get_bet(env, &market_id, &user);
-        
+
         let voted_at = bet_opt.map(|b| b.timestamp).unwrap_or(0);
 
         let response = UserBetQuery {
@@ -684,9 +693,9 @@ impl QueryManager {
         }
 
         let platform_stats = StatisticsManager::get_platform_stats(env);
-        
+
         // Note: Counting unique users across all markets can be expensive.
-        // We use the active_user_count from DashboardStatistics as a proxy or 
+        // We use the active_user_count from DashboardStatistics as a proxy or
         // would ideally have a dedicated counter.
         let dashboard_stats = Self::get_dashboard_statistics(env)?;
 

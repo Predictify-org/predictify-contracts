@@ -2,9 +2,9 @@
 //! Handles multi-asset support for bets and payouts using Soroban token interface.
 //! Allows admin to configure allowed tokens per event or globally.
 
+use crate::err::Error;
 use alloc::{format, string::ToString};
 use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
-use crate::err::Error;
 
 /// Represents a Stellar asset/token (contract address + symbol).
 #[soroban_sdk::contracttype]
@@ -25,7 +25,11 @@ impl Asset {
     /// * `env` - Soroban environment.
     /// * `reflector_asset` - The ReflectorAsset variant.
     /// * `contract_address` - The address of the token contract.
-    pub fn from_reflector_asset(env: &Env, reflector_asset: &crate::types::ReflectorAsset, contract_address: Address) -> Self {
+    pub fn from_reflector_asset(
+        env: &Env,
+        reflector_asset: &crate::types::ReflectorAsset,
+        contract_address: Address,
+    ) -> Self {
         let symbol = match reflector_asset {
             crate::types::ReflectorAsset::Stellar => Symbol::new(env, "XLM"),
             crate::types::ReflectorAsset::BTC => Symbol::new(env, "BTC"),
@@ -39,7 +43,11 @@ impl Asset {
         }
     }
 
-    pub fn matches_reflector_asset(&self, env: &Env, reflector_asset: &crate::types::ReflectorAsset) -> bool {
+    pub fn matches_reflector_asset(
+        &self,
+        env: &Env,
+        reflector_asset: &crate::types::ReflectorAsset,
+    ) -> bool {
         let expected_symbol = match reflector_asset {
             crate::types::ReflectorAsset::Stellar => Symbol::new(env, "XLM"),
             crate::types::ReflectorAsset::BTC => Symbol::new(env, "BTC"),
@@ -128,7 +136,11 @@ impl TokenRegistry {
         if let Some(market) = market_id {
             let event_key = Symbol::new(env, "allowed_assets_evt");
             let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
-            let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(per_event_empty);
+            let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env
+                .storage()
+                .persistent()
+                .get(&event_key)
+                .unwrap_or(per_event_empty);
             if let Some(assets) = per_event.get(market.clone()) {
                 return assets.iter().any(|a| a == *asset);
             }
@@ -136,14 +148,22 @@ impl TokenRegistry {
         // Check global allowed assets
         let global_key = Symbol::new(env, "allowed_assets_global");
         let global_empty: Vec<Asset> = Vec::new(env);
-        let global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(global_empty);
+        let global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(global_empty);
         global_assets.iter().any(|a| a == *asset)
     }
 
     /// Adds an asset to the global allowed registry.
     pub fn add_global(env: &Env, asset: &Asset) {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        let mut global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
+        let mut global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env));
         if !global_assets.iter().any(|a| a == *asset) {
             global_assets.push_back(asset.clone());
             env.storage().persistent().set(&global_key, &global_assets);
@@ -154,7 +174,11 @@ impl TokenRegistry {
     pub fn add_event(env: &Env, market_id: &Symbol, asset: &Asset) {
         let event_key = Symbol::new(env, "allowed_assets_evt");
         let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
-        let mut per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(per_event_empty);
+        let mut per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env
+            .storage()
+            .persistent()
+            .get(&event_key)
+            .unwrap_or(per_event_empty);
         let empty_assets: Vec<Asset> = Vec::new(env);
         let mut assets: Vec<Asset> = per_event.get(market_id.clone()).unwrap_or(empty_assets);
         if !assets.iter().any(|a| a == *asset) {
@@ -173,7 +197,10 @@ impl TokenRegistry {
         for reflector_asset in reflector_assets.iter() {
             // Placeholder: in production these would be the actual SAC contract addresses
             // Using a placeholder address since actual addresses would come from deployment
-            let contract_address = Address::from_string(&String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"));
+            let contract_address = Address::from_string(&String::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ));
 
             let asset = Asset::from_reflector_asset(env, &reflector_asset, contract_address);
             if !global_assets.iter().any(|a| a == asset) {
@@ -187,14 +214,21 @@ impl TokenRegistry {
     /// Returns a list of all globally allowed assets.
     pub fn get_global_assets(env: &Env) -> Vec<Asset> {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env))
+        env.storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env))
     }
 
     /// Returns a list of assets allowed for a specific market.
     pub fn get_event_assets(env: &Env, market_id: &Symbol) -> Vec<Asset> {
         let event_key = Symbol::new(env, "allowed_assets_evt");
         let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
-        let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(per_event_empty);
+        let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env
+            .storage()
+            .persistent()
+            .get(&event_key)
+            .unwrap_or(per_event_empty);
         let empty_assets: Vec<Asset> = Vec::new(env);
         per_event.get(market_id.clone()).unwrap_or(empty_assets)
     }
@@ -205,7 +239,11 @@ impl TokenRegistry {
     /// * `Error::NotFound` if the asset was not in the registry.
     pub fn remove_global(env: &Env, asset: &Asset) -> Result<(), Error> {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        let mut global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
+        let mut global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env));
 
         let initial_len = global_assets.len();
         let mut new_assets: Vec<Asset> = Vec::new(env);
@@ -228,15 +266,19 @@ impl TokenRegistry {
     /// # Errors
     /// * `Error::InvalidInput` if asset properties are invalid.
     /// * `Error::Unauthorized` if asset is not in the registry.
-    pub fn validate_asset(env: &Env, asset: &Asset, market_id: Option<&Symbol>) -> Result<(), Error> {
+    pub fn validate_asset(
+        env: &Env,
+        asset: &Asset,
+        market_id: Option<&Symbol>,
+    ) -> Result<(), Error> {
         // First validate basic asset properties
         asset.validate_for_market(env)?;
-        
+
         // Then check if it's allowed in the relevant registry
         if !Self::is_allowed(env, asset, market_id) {
             return Err(Error::Unauthorized);
         }
-        
+
         Ok(())
     }
 }
@@ -266,7 +308,14 @@ pub fn transfer_token(env: &Env, asset: &Asset, from: &Address, to: &Address, am
 /// * `spender` - Spender address.
 /// * `amount` - Allowance amount.
 /// * `expiration_ledger` - Ledger sequence when the allowance expires.
-pub fn approve_token(env: &Env, asset: &Asset, from: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+pub fn approve_token(
+    env: &Env,
+    asset: &Asset,
+    from: &Address,
+    spender: &Address,
+    amount: i128,
+    expiration_ledger: u32,
+) {
     from.require_auth();
     let client = token::Client::new(env, &asset.contract);
     client.approve(from, spender, &amount, &expiration_ledger);
@@ -281,7 +330,14 @@ pub fn approve_token(env: &Env, asset: &Asset, from: &Address, spender: &Address
 /// * `from` - Owner address.
 /// * `to` - Recipient address.
 /// * `amount` - Amount to transfer.
-pub fn transfer_from_token(env: &Env, asset: &Asset, spender: &Address, from: &Address, to: &Address, amount: i128) {
+pub fn transfer_from_token(
+    env: &Env,
+    asset: &Asset,
+    spender: &Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) {
     spender.require_auth();
     let client = token::Client::new(env, &asset.contract);
     client.transfer_from(spender, from, to, &amount);
@@ -302,7 +358,12 @@ pub fn get_token_balance(env: &Env, asset: &Asset, address: &Address) -> i128 {
 ///
 /// # Errors
 /// * `Error::InsufficientBalance` if balance is too low.
-pub fn check_token_balance(env: &Env, asset: &Asset, user: &Address, amount: i128) -> Result<(), Error> {
+pub fn check_token_balance(
+    env: &Env,
+    asset: &Asset,
+    user: &Address,
+    amount: i128,
+) -> Result<(), Error> {
     if get_token_balance(env, asset, user) < amount {
         return Err(Error::InsufficientBalance);
     }
@@ -325,14 +386,19 @@ pub fn emit_asset_event(env: &Env, asset: &Asset, event_name: &str) {
     let event_symbol = Symbol::new(env, event_name);
     env.events().publish(
         (event_symbol, asset.contract.clone(), asset.symbol.clone()),
-        "asset_event"
+        "asset_event",
     );
 }
 
 // ===== ERROR HANDLING HELPERS =====
 
 /// Validates token operations and provides detailed error feedback.
-pub fn validate_token_operation(env: &Env, asset: &Asset, user: &Address, amount: i128) -> Result<(), Error> {
+pub fn validate_token_operation(
+    env: &Env,
+    asset: &Asset,
+    user: &Address,
+    amount: i128,
+) -> Result<(), Error> {
     if amount <= 0 {
         return Err(Error::InvalidInput);
     }
@@ -340,4 +406,3 @@ pub fn validate_token_operation(env: &Env, asset: &Asset, user: &Address, amount
     check_token_balance(env, asset, user, amount)?;
     Ok(())
 }
-

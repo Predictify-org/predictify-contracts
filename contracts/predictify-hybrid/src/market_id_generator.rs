@@ -263,11 +263,7 @@ impl MarketIdGenerator {
     /// Read the global nonce and increment it atomically.
     fn get_and_bump_global_nonce(env: &Env) -> u32 {
         let key = Symbol::new(env, Self::GLOBAL_NONCE_KEY);
-        let nonce: u32 = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(0u32);
+        let nonce: u32 = env.storage().persistent().get(&key).unwrap_or(0u32);
         env.storage().persistent().set(&key, &(nonce + 1));
         nonce
     }
@@ -337,7 +333,10 @@ mod tests {
         let id = with_contract(&env, &contract_id, || {
             MarketIdGenerator::generate_market_id(&env, &admin)
         });
-        assert!(id.to_string().starts_with("mkt_"), "ID must start with mkt_");
+        assert!(
+            id.to_string().starts_with("mkt_"),
+            "ID must start with mkt_"
+        );
     }
 
     #[test]
@@ -488,11 +487,7 @@ mod tests {
             MarketIdGenerator::generate_market_id(&env, &admin2);
             // Nonce should be 2 after two generations.
             let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
-            let nonce: u32 = env
-                .storage()
-                .persistent()
-                .get(&nonce_key)
-                .unwrap_or(0);
+            let nonce: u32 = env.storage().persistent().get(&nonce_key).unwrap_or(0);
             assert_eq!(nonce, 2);
         });
     }
@@ -614,8 +609,7 @@ mod tests {
     #[test]
     fn test_stress_20_admins_same_ledger_all_unique() {
         let (env, contract_id, _) = setup();
-        let admins: alloc::vec::Vec<Address> =
-            (0..20).map(|_| Address::generate(&env)).collect();
+        let admins: alloc::vec::Vec<Address> = (0..20).map(|_| Address::generate(&env)).collect();
 
         with_contract(&env, &contract_id, || {
             let mut ids = alloc::vec::Vec::new();

@@ -853,7 +853,7 @@ impl DisputeManager {
             vote: true, // Initiators always support the dispute by definition
             stake,
             timestamp: env.ledger().timestamp(),
-            reason: reason.clone(),
+            reason,
         };
         DisputeUtils::add_vote_to_dispute(env, &market_id, dispute_vote)?;
 
@@ -1000,6 +1000,7 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market);
         crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
             env,
             &market_id,
@@ -1647,7 +1648,9 @@ impl DisputeManager {
                     .ok_or(Error::InvalidInput)?
                     / winner_total;
 
-                original_stake.checked_add(bonus).ok_or(Error::InvalidInput)?
+                original_stake
+                    .checked_add(bonus)
+                    .ok_or(Error::InvalidInput)?
             }
             None => {
                 return Err(Error::NothingToClaim);
@@ -2388,17 +2391,21 @@ impl DisputeUtils {
     /// Get dispute voting data
     pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
         let key = (symbol_short!("dispute_v"), dispute_id.clone());
-        Ok(env.storage().persistent().get(&key).unwrap_or_else(|| DisputeVoting {
-            dispute_id: dispute_id.clone(),
-            voting_start: env.ledger().timestamp(),
-            voting_end: env.ledger().timestamp() + (DISPUTE_EXTENSION_HOURS as u64 * 3600),
-            total_votes: 0,
-            support_votes: 0,
-            against_votes: 0,
-            total_support_stake: 0,
-            total_against_stake: 0,
-            status: DisputeVotingStatus::Active,
-        }))
+        Ok(env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| DisputeVoting {
+                dispute_id: dispute_id.clone(),
+                voting_start: env.ledger().timestamp(),
+                voting_end: env.ledger().timestamp() + (DISPUTE_EXTENSION_HOURS as u64 * 3600),
+                total_votes: 0,
+                support_votes: 0,
+                against_votes: 0,
+                total_support_stake: 0,
+                total_against_stake: 0,
+                status: DisputeVotingStatus::Active,
+            }))
     }
 
     /// Store dispute voting data
@@ -2424,11 +2431,7 @@ impl DisputeUtils {
     }
 
     /// Extracted get_user_vote
-    pub fn get_user_vote(
-        env: &Env,
-        dispute_id: &Symbol,
-        user: &Address,
-    ) -> Option<DisputeVote> {
+    pub fn get_user_vote(env: &Env, dispute_id: &Symbol, user: &Address) -> Option<DisputeVote> {
         let key = (symbol_short!("vote"), dispute_id.clone(), user.clone());
         env.storage().persistent().get(&key)
     }
@@ -2456,7 +2459,10 @@ impl DisputeUtils {
         Ok(votes)
     }
 
-    /// Calculate stake-weighted outcome
+    /// Calculate stake-weighted outcome.
+    ///
+    /// Policy: `true` (dispute upheld) iff support stake is strictly greater than against.
+    /// Exact ties resolve to `false` (oracle result stands; admin escalation per docs).
     pub fn calculate_stake_weighted_outcome(voting_data: &DisputeVoting) -> bool {
         voting_data.total_support_stake > voting_data.total_against_stake
     }

@@ -212,10 +212,10 @@ pub const MIN_CATEGORY_LENGTH: u32 = 2;
 ///   - Development: 2% (relaxed for testing)
 ///   - Testnet: 2% (mirrors production)
 ///   - Mainnet: 3% (higher for sustainability with real value)
-/// 
+///
 /// Basis Points: Fee percentages are stored and calculated in basis points (1/100th of 1%)
 /// where 100 basis points = 1%. This provides precise control over small percentages.
-/// 
+///
 /// Rounding: All fee calculations use integer division which truncates towards zero,
 /// ensuring fees never exceed the calculated amount and never overcharge users.
 pub const DEFAULT_PLATFORM_FEE_PERCENTAGE: i128 = 200; // 2.00%
