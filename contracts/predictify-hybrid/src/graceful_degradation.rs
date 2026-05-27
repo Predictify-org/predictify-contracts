@@ -96,6 +96,7 @@ impl OracleBackup {
         if backup_result.is_err() {
             let backup_msg = String::from_str(env, "Backup oracle failed");
             EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
+            return Err(Error::FallbackOracleUnavailable);
         }
         backup_result
     }
