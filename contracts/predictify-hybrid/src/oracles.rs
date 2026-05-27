@@ -3941,10 +3941,7 @@ impl OracleCallbackAuth {
     /// * `caller` - The address of the calling oracle contract
     /// * `callback_data` - The successfully authenticated callback data
     fn log_successful_authentication(&self, caller: &Address, callback_data: &OracleCallbackData) {
-        let log_message = String::from_str(
-            &self.env,
-            "Oracle callback authenticated",
-        );
+        let log_message = String::from_str(&self.env, "Oracle callback authenticated");
         let ctx = String::from_str(&self.env, "oracle_auth");
         crate::events::EventEmitter::emit_error_logged(
             &self.env,

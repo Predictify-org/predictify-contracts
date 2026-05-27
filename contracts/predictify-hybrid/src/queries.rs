@@ -34,7 +34,7 @@ use crate::{
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
     types::{Market, MarketState, PagedMarketIds, PagedUserBets},
     voting::VotingStats,
-    admin::{AdminManager, AdminRole, MultisigConfig},
+    admin::{AdminManager, AdminPermission, AdminRole, MultisigConfig},
     oracles::{OracleMetadata, OracleWhitelist},
     disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
     governance::{GovernanceContract, GovernanceProposal},
@@ -86,29 +86,29 @@ impl QueryManager {
     /// Check if an admin has a specific permission for an action.
     pub fn query_has_permission(env: &Env, admin: Address, action: String) -> Result<bool, Error> {
         let permission = if action == String::from_str(env, "initialize") {
-            crate::admin::AdminPermission::Initialize
+            AdminPermission::Initialize
         } else if action == String::from_str(env, "create_market") {
-            crate::admin::AdminPermission::CreateMarket
+            AdminPermission::CreateMarket
         } else if action == String::from_str(env, "close_market") {
-            crate::admin::AdminPermission::CloseMarket
+            AdminPermission::CloseMarket
         } else if action == String::from_str(env, "finalize_market") {
-            crate::admin::AdminPermission::FinalizeMarket
+            AdminPermission::FinalizeMarket
         } else if action == String::from_str(env, "extend_market") {
-            crate::admin::AdminPermission::ExtendMarket
+            AdminPermission::ExtendMarket
         } else if action == String::from_str(env, "update_fees") {
-            crate::admin::AdminPermission::UpdateFees
+            AdminPermission::UpdateFees
         } else if action == String::from_str(env, "update_config") {
-            crate::admin::AdminPermission::UpdateConfig
+            AdminPermission::UpdateConfig
         } else if action == String::from_str(env, "reset_config") {
-            crate::admin::AdminPermission::ResetConfig
+            AdminPermission::ResetConfig
         } else if action == String::from_str(env, "collect_fees") {
-            crate::admin::AdminPermission::CollectFees
+            AdminPermission::CollectFees
         } else if action == String::from_str(env, "manage_disputes") {
-            crate::admin::AdminPermission::ManageDispute
+            AdminPermission::ManageDispute
         } else if action == String::from_str(env, "view_analytics") {
-            crate::admin::AdminPermission::ViewAnalytic
+            AdminPermission::ViewAnalytic
         } else if action == String::from_str(env, "emergency_actions") {
-            crate::admin::AdminPermission::Emergency
+            AdminPermission::Emergency
         } else {
             return Err(Error::InvalidInput);
         };
@@ -226,6 +226,9 @@ impl QueryManager {
     /// ```
     pub fn query_event_details(env: &Env, market_id: Symbol) -> Result<EventDetailsQuery, Error> {
         let market = Self::get_market_from_storage(env, &market_id)?;
+        let created_at = EventManager::get_event(env, &market_id)
+            .map(|e| e.created_at)
+            .unwrap_or(0);
 
         // Calculate participant count
         let participant_count = market.votes.len() as u32;

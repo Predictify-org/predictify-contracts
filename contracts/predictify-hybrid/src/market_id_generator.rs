@@ -40,6 +40,7 @@
 use crate::errors::Error;
 use crate::types::Market;
 use alloc::format;
+#[cfg(not(target_family = "wasm"))]
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Symbol, Vec};
 
@@ -147,9 +148,9 @@ impl MarketIdGenerator {
 
     #[cfg(target_family = "wasm")]
     pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
-        // Symbol-to-host-string conversion is not available in contract wasm.
-        // Runtime callers should treat persisted market IDs as valid if they
-        // otherwise resolve correctly.
+        // Soroban's contract-facing Symbol type does not expose string conversion
+        // on wasm builds. Market IDs are generated internally, so runtime callers
+        // rely on collision/registry checks rather than reparsing the prefix.
         true
     }
 
@@ -186,12 +187,9 @@ impl MarketIdGenerator {
         _env: &Env,
         _market_id: &Symbol,
     ) -> Result<MarketIdComponents, Error> {
-        // Contract wasm cannot parse Symbol values into host strings. Treat the
-        // identifier as an unstructured legacy ID in this environment.
-        Ok(MarketIdComponents {
-            counter: 0,
-            is_legacy: true,
-        })
+        // Symbol string parsing is not available in the wasm contract build.
+        // This helper is only used for diagnostics/tests on host builds.
+        Err(Error::InvalidInput)
     }
 
     /// Return a paginated slice of the market ID registry.
