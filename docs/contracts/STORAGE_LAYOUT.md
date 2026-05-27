@@ -16,6 +16,7 @@ This document provides a comprehensive audit of all persistent storage keys used
 4. [Data Structure Constraints](#data-structure-constraints)
 5. [Migration Safety Guidelines](#migration-safety-guidelines)
 6. [Adding New Storage Keys](#adding-new-storage-keys)
+7. [Persistent TTL Policy](#persistent-ttl-policy)
 
 ---
 
@@ -121,6 +122,23 @@ key.push_back(asset.into_val(env));
 **Storage Pattern**: Simple symbol keys for singleton configuration.
 
 **Collision Prevention**: Descriptive names reduce collision risk.
+
+### 1.7.1 Persistent TTL Policy
+
+`storage.rs` centralizes persistent-entry TTL policy in `StorageConfig` so rent behavior can be tuned without chasing inline literals in write paths. The module refreshes each write through a shared helper and caps requested TTLs to the live Soroban maximum TTL exposed by the current ledger.
+
+| TTL Tier | StorageConfig Field | Default Ledgers | Approx. Wall Clock | Used For |
+|-----|------|--------|---------|----------------|
+| Balance | `balance_ttl_ledgers` | `535,680` | ~31 days | User balance entries |
+| Market | `market_ttl_ledgers` | `6,307,200` | ~365 days | Compressed market state, market references, creator counters |
+| Event | `event_ttl_ledgers` | `1,555,200` | ~90 days | Event records |
+| Archive | `archive_ttl_ledgers` | `6,307,200` | ~365 days | Storage config, archived markets, migration records |
+
+Assumptions:
+
+- time approximations use 5-second ledgers
+- each persistent write in `storage.rs` refreshes TTL through the centralized helper
+- effective TTL requests are bounded by the live ledger maximum TTL
 
 #### 1.8 Recovery Storage
 

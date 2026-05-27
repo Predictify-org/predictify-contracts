@@ -18,7 +18,7 @@ fn setup_test() -> (Env, PredictifyHybridClient<'static>, Address) {
     let admin = Address::generate(&env);
 
     // Initialize contract
-    client.initialize(&admin, &Some(2)); // 2% fee
+    client.initialize(&admin, &Some(2), &None); // 2% fee
 
     (env, client, admin)
 }
@@ -43,7 +43,7 @@ fn create_test_market(
         ),
         feed_id: String::from_str(env, "BTC/USD"),
         threshold: 100,
-        comparison: String::from_str(env, "gte"),
+        comparison: String::from_str(env, "gt"),
     };
 
     client.create_market(
@@ -201,11 +201,7 @@ fn test_query_events_by_tags() {
 fn test_update_event_category_rejects_empty_some() {
     let (env, client, admin) = setup_test();
     let market_id = create_test_market(&env, &client, &admin, "EmptySome");
-    let r = client.try_update_event_category(
-        &admin,
-        &market_id,
-        &Some(String::from_str(&env, "")),
-    );
+    let r = client.try_update_event_category(&admin, &market_id, &Some(String::from_str(&env, "")));
     assert_eq!(r, Err(Ok(Error::InvalidInput)));
 }
 
@@ -213,11 +209,8 @@ fn test_update_event_category_rejects_empty_some() {
 fn test_update_event_category_too_short() {
     let (env, client, admin) = setup_test();
     let market_id = create_test_market(&env, &client, &admin, "ShortCat");
-    let r = client.try_update_event_category(
-        &admin,
-        &market_id,
-        &Some(String::from_str(&env, "A")),
-    );
+    let r =
+        client.try_update_event_category(&admin, &market_id, &Some(String::from_str(&env, "A")));
     assert_eq!(r, Err(Ok(Error::CategoryTooShort)));
 }
 
@@ -238,11 +231,8 @@ fn test_update_event_category_too_long() {
 fn test_update_event_tags_too_short_token() {
     let (env, client, admin) = setup_test();
     let market_id = create_test_market(&env, &client, &admin, "TagShort");
-    let r = client.try_update_event_tags(
-        &admin,
-        &market_id,
-        &vec![&env, String::from_str(&env, "a")],
-    );
+    let r =
+        client.try_update_event_tags(&admin, &market_id, &vec![&env, String::from_str(&env, "a")]);
     assert_eq!(r, Err(Ok(Error::TagTooShort)));
 }
 
@@ -342,7 +332,7 @@ impl TokenTestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &Some(2));
+        client.initialize(&admin, &Some(2), &None);
 
         // Create users and fund them
         let user1 = Address::generate(&env);
@@ -376,7 +366,7 @@ impl TokenTestSetup {
                 ),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 100,
-                comparison: String::from_str(&env, "gte"),
+                comparison: String::from_str(&env, "gt"),
             },
             &None,
             &86400u64,
