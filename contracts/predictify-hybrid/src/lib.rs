@@ -47,9 +47,10 @@ mod metadata_limits_tests;
 mod multi_admin_multisig_tests;
 #[cfg(test)]
 mod admin_auth_audit_tests;
+#[cfg(test)]
+mod require_auth_coverage_tests;
 mod monitoring;
 mod oracles;
-pub mod tokens;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
@@ -6977,22 +6978,4 @@ impl PredictifyHybrid {
 #[cfg(any())]
 mod test;
 
-fn assert_can_participate(env: &Env, user: &Address, event: &Event) {
-    if event.is_private {
-        let is_allowed = event.allowlist.iter().any(|addr| addr == user);
-        if !is_allowed {
-            panic!("User not allowlisted for private event");
-        }
-    }
-}
-let event = get_event(&env, event_id);
-
-assert_can_participate(&env, &user, &event);
-
-/// Places a bet on a given event.
-///
-/// # Panics
-/// - If the event is private and the caller is not in the allowlist.
-///
-/// # Security
-/// Enforces event-level access control before any state mutation.
+// (stray helpers removed – implementations live in their respective modules)
