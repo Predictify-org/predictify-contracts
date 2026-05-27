@@ -14,10 +14,6 @@ use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig},
     vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
-use alloc::format;
-use crate::markets::MarketStateManager;
-use crate::storage::StorageFormat;
-
 use crate::markets::MarketStateManager;
 use crate::storage::{
     BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,

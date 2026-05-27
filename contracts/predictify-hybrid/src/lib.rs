@@ -48,12 +48,7 @@ mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
 #[cfg(test)]
-mod admin_auth_audit_tests;
-#[cfg(any())]
-mod metadata_limits_tests;
-mod monitoring;
-#[cfg(any())]
-mod multi_admin_multisig_tests;
+mod require_auth_coverage_tests;
 mod oracles;
 mod performance_benchmarks;
 mod queries;
@@ -63,7 +58,7 @@ mod reentrancy_guard;
 mod resolution;
 mod statistics;
 mod storage;
-#[cfg(any())]
+#[cfg(test)]
 mod storage_layout_tests;
 pub mod tokens;
 mod types;
