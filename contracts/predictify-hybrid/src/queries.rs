@@ -32,12 +32,8 @@
 use alloc::string::ToString;
 
 use crate::{
-    errors::Error,
-    markets::{MarketAnalytics, MarketStateManager, MarketValidator},
-    types::{Market, MarketState, PagedMarketIds, PagedUserBets},
-    voting::VotingStats,
     admin::{AdminManager, AdminPermission, AdminRole, MultisigConfig},
-    oracles::{OracleMetadata, OracleWhitelist},
+    bets::BetManager,
     disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
     errors::Error,
     governance::{GovernanceContract, GovernanceProposal},
@@ -48,7 +44,6 @@ use crate::{
     types::{Market, MarketState, PagedMarketIds, PagedUserBets},
     voting::VotingStats,
 };
-use alloc::string::ToString;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::types::{
