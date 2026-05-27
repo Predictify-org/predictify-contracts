@@ -36,6 +36,7 @@ use crate::errors::Error;
 use crate::types::Market;
 use alloc::format;
 use alloc::string::ToString;
+use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Symbol, Vec};
 
 // ── Public types ─────────────────────────────────────────────────────────────
