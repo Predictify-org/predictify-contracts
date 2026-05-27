@@ -239,6 +239,9 @@ impl QueryManager {
         // Get oracle provider name
         let oracle_provider = market.oracle_config.provider.name();
         let winning_outcome = market.get_winning_outcome();
+        let created_at = EventManager::get_event(env, &market_id)
+            .map(|e| e.created_at)
+            .unwrap_or(0);
 
         let response = EventDetailsQuery {
             market_id: market_id.clone(),

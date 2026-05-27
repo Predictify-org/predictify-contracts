@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use alloc::format;
+use alloc::string::ToString;
 use crate::bandprotocol;
 use crate::errors::Error;
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec};
@@ -3950,6 +3951,7 @@ impl OracleCallbackAuth {
             Some(caller.clone()),
             None,
         );
+        let _ = callback_data;
     }
 
     fn log_authentication_failure(&self, caller: &Address, reason: &str) {
