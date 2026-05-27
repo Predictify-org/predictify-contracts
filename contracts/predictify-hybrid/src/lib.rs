@@ -40,7 +40,6 @@ mod market_analytics;
 mod market_id_generator;
 mod markets;
 mod metadata_limits;
-mod tokens;
 #[cfg(test)]
 mod metadata_limits_tests;
 #[cfg(test)]
@@ -306,6 +305,25 @@ impl PredictifyHybrid {
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+
+        // Seed default runtime configuration so validators and query paths have
+        // deterministic bounds immediately after deployment.
+        let default_config = ConfigManager::get_development_config(&env);
+        ConfigManager::store_config(&env, &default_config)?;
+
+        // Seed permissive-but-valid rate limits so admin entrypoints do not
+        // fail before a custom policy is configured.
+        crate::rate_limiter::RateLimiter::new(env.clone()).init_rate_limiter(
+            admin.clone(),
+            crate::rate_limiter::RateLimitConfig {
+                voting_limit: 10_000,
+                dispute_limit: 1_000,
+                oracle_call_limit: 1_000,
+                bet_limit: 10_000,
+                events_per_admin_limit: 1_000,
+                time_window_seconds: 3_600,
+            },
+        ).map_err(Error::from)?;
 
         // Initialize allowed assets
         if let Some(assets) = allowed_assets {
@@ -6976,23 +6994,3 @@ impl PredictifyHybrid {
 
 #[cfg(any())]
 mod test;
-
-fn assert_can_participate(env: &Env, user: &Address, event: &Event) {
-    if event.is_private {
-        let is_allowed = event.allowlist.iter().any(|addr| addr == user);
-        if !is_allowed {
-            panic!("User not allowlisted for private event");
-        }
-    }
-}
-let event = get_event(&env, event_id);
-
-assert_can_participate(&env, &user, &event);
-
-/// Places a bet on a given event.
-///
-/// # Panics
-/// - If the event is private and the caller is not in the allowlist.
-///
-/// # Security
-/// Enforces event-level access control before any state mutation.

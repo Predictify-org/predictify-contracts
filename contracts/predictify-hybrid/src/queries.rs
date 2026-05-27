@@ -34,7 +34,7 @@ use crate::{
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
     types::{Market, MarketState, PagedMarketIds, PagedUserBets},
     voting::VotingStats,
-    admin::{AdminManager, AdminRole, MultisigConfig},
+    admin::{AdminManager, AdminPermission, AdminRole, MultisigConfig},
     oracles::{OracleMetadata, OracleWhitelist},
     disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
     governance::{GovernanceContract, GovernanceProposal},
@@ -85,8 +85,33 @@ impl QueryManager {
 
     /// Check if an admin has a specific permission for an action.
     pub fn query_has_permission(env: &Env, admin: Address, action: String) -> Result<bool, Error> {
-        let action_str = action.to_string();
-        let permission = crate::admin::AdminAccessControl::map_action_to_permission(&action_str)?;
+        let permission = if action == String::from_str(env, "initialize") {
+            AdminPermission::Initialize
+        } else if action == String::from_str(env, "create_market") {
+            AdminPermission::CreateMarket
+        } else if action == String::from_str(env, "close_market") {
+            AdminPermission::CloseMarket
+        } else if action == String::from_str(env, "finalize_market") {
+            AdminPermission::FinalizeMarket
+        } else if action == String::from_str(env, "extend_market") {
+            AdminPermission::ExtendMarket
+        } else if action == String::from_str(env, "update_fees") {
+            AdminPermission::UpdateFees
+        } else if action == String::from_str(env, "update_config") {
+            AdminPermission::UpdateConfig
+        } else if action == String::from_str(env, "reset_config") {
+            AdminPermission::ResetConfig
+        } else if action == String::from_str(env, "collect_fees") {
+            AdminPermission::CollectFees
+        } else if action == String::from_str(env, "manage_disputes") {
+            AdminPermission::ManageDispute
+        } else if action == String::from_str(env, "view_analytics") {
+            AdminPermission::ViewAnalytic
+        } else if action == String::from_str(env, "emergency_actions") {
+            AdminPermission::Emergency
+        } else {
+            return Err(Error::InvalidInput);
+        };
         Ok(AdminManager::validate_admin_permission(env, &admin, permission).is_ok())
     }
 
@@ -96,7 +121,7 @@ impl QueryManager {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::ContractStateError)
+            .ok_or(Error::ConfigNotFound)
     }
 
     /// Check if an action requires multisig approval.
@@ -201,6 +226,9 @@ impl QueryManager {
     /// ```
     pub fn query_event_details(env: &Env, market_id: Symbol) -> Result<EventDetailsQuery, Error> {
         let market = Self::get_market_from_storage(env, &market_id)?;
+        let created_at = EventManager::get_event(env, &market_id)
+            .map(|e| e.created_at)
+            .unwrap_or(0);
 
         // Calculate participant count
         let participant_count = market.votes.len() as u32;
@@ -213,10 +241,10 @@ impl QueryManager {
         let winning_outcome = market.get_winning_outcome();
 
         let response = EventDetailsQuery {
-            market_id,
+            market_id: market_id.clone(),
             question: market.question,
             outcomes: market.outcomes,
-            created_at: EventManager::get_event(env, &market_id).map(|e| e.created_at).unwrap_or(0),
+            created_at,
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
             oracle_provider,
