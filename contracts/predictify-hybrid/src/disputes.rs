@@ -615,6 +615,10 @@ pub struct DisputeFeeDistribution {
 }
 
 /// Represents dispute timeout configuration
+///
+/// Stores the timeout window for a dispute, including when it was created,
+/// when it expires, and whether it has been extended. Used by
+/// [`DisputeManager::set_dispute_timeout`] and [`DisputeManager::check_dispute_timeout`].
 #[contracttype]
 pub struct DisputeTimeout {
     pub dispute_id: Symbol,
@@ -627,7 +631,12 @@ pub struct DisputeTimeout {
     pub status: DisputeTimeoutStatus,
 }
 
-/// Represents dispute timeout status
+/// Lifecycle status of a dispute timeout.
+///
+/// - `Active` — timeout is running and has not yet expired
+/// - `Expired` — timeout window elapsed without resolution
+/// - `Extended` — timeout was extended by an admin via [`DisputeManager::extend_dispute_timeout`]
+/// - `AutoResolved` — dispute was automatically resolved when the timeout expired
 #[contracttype]
 #[derive(PartialEq, Debug)]
 pub enum DisputeTimeoutStatus {
@@ -637,7 +646,10 @@ pub enum DisputeTimeoutStatus {
     AutoResolved,
 }
 
-/// Represents dispute timeout outcome
+/// The outcome produced when a dispute is resolved via timeout auto-resolution.
+///
+/// Created by [`DisputeManager::auto_resolve_dispute_on_timeout`] and emitted
+/// as an event so indexers can track auto-resolved disputes.
 #[contracttype]
 pub struct DisputeTimeoutOutcome {
     pub dispute_id: Symbol,
@@ -648,7 +660,10 @@ pub struct DisputeTimeoutOutcome {
     pub reason: String,
 }
 
-/// Represents timeout statistics
+/// Aggregate statistics about dispute timeouts across all markets.
+///
+/// Returned by timeout analytics queries; useful for governance dashboards
+/// and monitoring how often disputes require auto-resolution.
 #[contracttype]
 pub struct TimeoutStats {
     pub total_timeouts: u32,
@@ -658,7 +673,10 @@ pub struct TimeoutStats {
     pub average_timeout_hours: u32,
 }
 
-/// Represents timeout analytics
+/// Per-dispute timeout analytics snapshot.
+///
+/// Provides a point-in-time view of a single dispute's timeout state,
+/// including how much time remains and how many extensions have been applied.
 #[contracttype]
 pub struct TimeoutAnalytics {
     pub dispute_id: Symbol,
@@ -854,7 +872,7 @@ impl DisputeManager {
             vote: true, // Initiators always support the dispute by definition
             stake,
             timestamp: env.ledger().timestamp(),
-            reason: reason.clone(),
+            reason,
         };
         DisputeUtils::add_vote_to_dispute(env, &market_id, dispute_vote)?;
 
@@ -1001,6 +1019,7 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market);
         crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
             env,
             &market_id,
@@ -1598,11 +1617,22 @@ impl DisputeManager {
         Ok(fee_distribution)
     }
 
-    /// Allows users to claim their proportional share of dispute winnings.
-    /// Invariants enforced:
-    /// - Only winners receive funds.
-    /// - Total distributed <= total staked.
-    /// - No duplicate claims.
+    /// Allows a winner to claim their proportional share of dispute winnings.
+    ///
+    /// Computes `original_stake + (original_stake * loser_total / winner_total)` and
+    /// transfers the result to `user`. Requires [`distribute_dispute_fees`] to have
+    /// been called first.
+    ///
+    /// # Authorization
+    ///
+    /// Requires `user.require_auth()`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InvalidState`] — fee distribution not yet completed or `winner_stake == 0`
+    /// - [`Error::AlreadyClaimed`] — user has already claimed for this dispute
+    /// - [`Error::NothingToClaim`] — user did not vote, or voted on the losing side
+    /// - [`Error::InvalidInput`] — arithmetic overflow computing the payout
     pub fn claim_dispute_winnings(
         env: &Env,
         dispute_id: Symbol,
@@ -1648,7 +1678,9 @@ impl DisputeManager {
                     .ok_or(Error::InvalidInput)?
                     / winner_total;
 
-                original_stake.checked_add(bonus).ok_or(Error::InvalidInput)?
+                original_stake
+                    .checked_add(bonus)
+                    .ok_or(Error::InvalidInput)?
             }
             None => {
                 return Err(Error::NothingToClaim);
@@ -1773,12 +1805,26 @@ impl DisputeManager {
         Ok(escalation)
     }
 
-    /// Get dispute votes
+    /// Returns all [`DisputeVote`] records cast on `dispute_id`.
+    ///
+    /// Returns an empty `Vec` when no votes have been cast yet.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::ConfigNotFound`] — voting record not found
     pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
         DisputeUtils::get_dispute_votes(env, dispute_id)
     }
 
-    /// Validate dispute resolution conditions
+    /// Checks whether a dispute is ready for fee distribution.
+    ///
+    /// Returns `Ok(true)` when voting is `Completed` and fees have not yet been
+    /// distributed. Returns an error otherwise.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::DisputeCondNotMet`] — voting not completed
+    /// - [`Error::DisputeFeeFailed`] — fees already distributed
     pub fn validate_dispute_resolution_conditions(
         env: &Env,
         dispute_id: Symbol,
@@ -1786,7 +1832,20 @@ impl DisputeManager {
         DisputeValidator::validate_dispute_resolution_conditions(env, &dispute_id)
     }
 
-    /// Set dispute timeout
+    /// Sets a resolution timeout for a dispute (admin only).
+    ///
+    /// `timeout_hours` must be between 1 and 720 (30 days). Once set, the
+    /// dispute will be auto-resolved via [`auto_resolve_dispute_on_timeout`]
+    /// if it has not been resolved before `expires_at`.
+    ///
+    /// # Authorization
+    ///
+    /// Requires `admin.require_auth()` and stored admin match.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`] — caller is not the contract admin
+    /// - [`Error::InvalidDuration`] — `timeout_hours` is 0 or > 720
     pub fn set_dispute_timeout(
         env: &Env,
         dispute_id: Symbol,
@@ -1832,7 +1891,11 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Check dispute timeout
+    /// Returns `true` if the dispute timeout has expired.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::ConfigNotFound`] — no timeout configured for `dispute_id`
     pub fn check_dispute_timeout(env: &Env, dispute_id: Symbol) -> Result<bool, Error> {
         let timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
         let current_time = env.ledger().timestamp();
@@ -1840,7 +1903,15 @@ impl DisputeManager {
         Ok(current_time >= timeout.expires_at)
     }
 
-    /// Auto resolve dispute on timeout
+    /// Automatically resolves a dispute whose timeout has expired.
+    ///
+    /// Uses stake-weighted voting to determine the outcome and emits both
+    /// `dispute_timeout_expired` and `dispute_auto_resolved` events.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InvalidState`] — timeout has not yet expired
+    /// - [`Error::ConfigNotFound`] — no timeout configured for `dispute_id`
     pub fn auto_resolve_dispute_on_timeout(
         env: &Env,
         dispute_id: Symbol,
@@ -1881,7 +1952,14 @@ impl DisputeManager {
         Ok(outcome)
     }
 
-    /// Determine timeout outcome
+    /// Computes the outcome for a timed-out dispute without persisting it.
+    ///
+    /// Returns `"Support"` when support stake exceeds against stake, otherwise
+    /// `"Against"`. Called internally by [`auto_resolve_dispute_on_timeout`].
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::ConfigNotFound`] — voting record not found
     pub fn determine_timeout_outcome(
         env: &Env,
         dispute_id: Symbol,
@@ -1912,7 +1990,11 @@ impl DisputeManager {
         Ok(timeout_outcome)
     }
 
-    /// Emit timeout event
+    /// Emits a `dispute_timeout_expired` event for the given `dispute_id`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::ConfigNotFound`] — no timeout configured for `dispute_id`
     pub fn emit_timeout_event(env: &Env, dispute_id: Symbol, outcome: String) -> Result<(), Error> {
         let timeout = DisputeUtils::get_dispute_timeout(env, &dispute_id)?;
 
@@ -1927,7 +2009,11 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Get dispute timeout status
+    /// Returns the current [`DisputeTimeoutStatus`] for a dispute.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::ConfigNotFound`] — no timeout configured for `dispute_id`
     pub fn get_dispute_timeout_status(
         env: &Env,
         dispute_id: Symbol,
@@ -1936,7 +2022,21 @@ impl DisputeManager {
         Ok(timeout.status)
     }
 
-    /// Extend dispute timeout
+    /// Extends an active dispute timeout by `additional_hours` (admin only).
+    ///
+    /// `additional_hours` must be between 1 and 168 (7 days). Only timeouts
+    /// in `Active` state can be extended.
+    ///
+    /// # Authorization
+    ///
+    /// Requires `admin.require_auth()` and stored admin match.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`] — caller is not the contract admin
+    /// - [`Error::InvalidDuration`] — `additional_hours` is 0 or > 168
+    /// - [`Error::InvalidState`] — timeout is not in `Active` state
+    /// - [`Error::ConfigNotFound`] — no timeout configured for `dispute_id`
     pub fn extend_dispute_timeout(
         env: &Env,
         dispute_id: Symbol,
@@ -1987,7 +2087,10 @@ impl DisputeManager {
 
 // ===== DISPUTE VALIDATOR =====
 
-/// Validates dispute-related operations
+/// Input validation helpers for dispute operations.
+///
+/// All methods return `Ok(())` on success or a typed [`Error`] on failure.
+/// Called internally by [`DisputeManager`] before any state mutation.
 pub struct DisputeValidator;
 
 impl DisputeValidator {
@@ -2243,12 +2346,15 @@ impl DisputeValidator {
 
 // ===== DISPUTE UTILITIES =====
 
-/// Utility functions for dispute operations
+/// Low-level storage and computation helpers for dispute operations.
+///
+/// These functions are called by [`DisputeManager`] and [`DisputeValidator`].
+/// They do not perform authentication checks.
 pub struct DisputeUtils;
 
 impl DisputeUtils {
     /// Add dispute to market
-    pub fn add_dispute_to_market(market: &mut Market, dispute: Dispute) -> Result<(), Error> {
+    /// Records `dispute.stake` in `market.dispute_stakes` for the disputing user.
         // Add dispute stake to market
         let current_stake = market.dispute_stakes.get(dispute.user.clone()).unwrap_or(0);
         market
@@ -2262,14 +2368,14 @@ impl DisputeUtils {
     }
 
     /// Extend market for dispute period
-    pub fn extend_market_for_dispute(market: &mut Market, _env: &Env) -> Result<(), Error> {
+    /// Extends `market.end_time` by [`DISPUTE_EXTENSION_HOURS`] to allow voting.
         let extension_seconds = (DISPUTE_EXTENSION_HOURS as u64) * 3600;
         market.end_time += extension_seconds;
         Ok(())
     }
 
     /// Determine final outcome considering disputes
-    pub fn determine_final_outcome_with_disputes(
+    /// Picks the final outcome, deferring to community consensus when dispute impact > 30%.
         env: &Env,
         market: &Market,
     ) -> Result<String, Error> {
@@ -2296,7 +2402,7 @@ impl DisputeUtils {
     }
 
     /// Finalize market with resolution
-    pub fn finalize_market_with_resolution(
+    /// Sets `market.winning_outcomes` to `[final_outcome]` after validating it is a known outcome.
         market: &mut Market,
         final_outcome: String,
     ) -> Result<(), Error> {
@@ -2312,7 +2418,7 @@ impl DisputeUtils {
     }
 
     /// Extract disputes from market
-    pub fn extract_disputes_from_market(
+    /// Builds a `Vec<Dispute>` from `market.dispute_stakes` entries with stake > 0.
         env: &Env,
         market: &Market,
         market_id: Symbol,
@@ -2337,17 +2443,17 @@ impl DisputeUtils {
     }
 
     /// Check if user has disputed
-    pub fn has_user_disputed(market: &Market, user: &Address) -> bool {
+    /// Returns `true` if `user` has a non-zero stake in `market.dispute_stakes`.
         market.dispute_stakes.get(user.clone()).unwrap_or(0) > 0
     }
 
     /// Get user's dispute stake
-    pub fn get_user_dispute_stake(market: &Market, user: &Address) -> i128 {
+    /// Returns the dispute stake for `user`, or `0` if they have not disputed.
         market.dispute_stakes.get(user.clone()).unwrap_or(0)
     }
 
     /// Calculate dispute impact on market resolution
-    pub fn calculate_dispute_impact(market: &Market) -> f64 {
+    /// Returns `total_dispute_stakes / total_staked` as a float, or `0.0` when `total_staked == 0`.
         let total_staked = market.total_staked;
         let total_disputes = market.total_dispute_stakes();
 
@@ -2359,7 +2465,7 @@ impl DisputeUtils {
     }
 
     /// Add vote to dispute
-    pub fn add_vote_to_dispute(
+    /// Appends `vote` to the dispute's voting record and updates aggregate stake counters.
         env: &Env,
         dispute_id: &Symbol,
         vote: DisputeVote,
@@ -2387,23 +2493,27 @@ impl DisputeUtils {
     }
 
     /// Get dispute voting data
-    pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
+    /// Loads the [`DisputeVoting`] record for `dispute_id`, creating a default if absent.
         let key = (symbol_short!("dispute_v"), dispute_id.clone());
-        Ok(env.storage().persistent().get(&key).unwrap_or_else(|| DisputeVoting {
-            dispute_id: dispute_id.clone(),
-            voting_start: env.ledger().timestamp(),
-            voting_end: env.ledger().timestamp() + (DISPUTE_EXTENSION_HOURS as u64 * 3600),
-            total_votes: 0,
-            support_votes: 0,
-            against_votes: 0,
-            total_support_stake: 0,
-            total_against_stake: 0,
-            status: DisputeVotingStatus::Active,
-        }))
+        Ok(env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| DisputeVoting {
+                dispute_id: dispute_id.clone(),
+                voting_start: env.ledger().timestamp(),
+                voting_end: env.ledger().timestamp() + (DISPUTE_EXTENSION_HOURS as u64 * 3600),
+                total_votes: 0,
+                support_votes: 0,
+                against_votes: 0,
+                total_support_stake: 0,
+                total_against_stake: 0,
+                status: DisputeVotingStatus::Active,
+            }))
     }
 
     /// Store dispute voting data
-    pub fn store_dispute_voting(
+    /// Persists `voting` under the `dispute_v` storage key for `dispute_id`.
         env: &Env,
         dispute_id: &Symbol,
         voting: &DisputeVoting,
@@ -2414,7 +2524,7 @@ impl DisputeUtils {
     }
 
     /// Store dispute vote
-    pub fn store_dispute_vote(
+    /// Persists an individual `vote` keyed by `(dispute_id, user)`.
         env: &Env,
         dispute_id: &Symbol,
         vote: &DisputeVote,
@@ -2425,20 +2535,18 @@ impl DisputeUtils {
     }
 
     /// Extracted get_user_vote
-    pub fn get_user_vote(
-        env: &Env,
-        dispute_id: &Symbol,
-        user: &Address,
-    ) -> Option<DisputeVote> {
+    pub fn get_user_vote(env: &Env, dispute_id: &Symbol, user: &Address) -> Option<DisputeVote> {
         let key = (symbol_short!("vote"), dispute_id.clone(), user.clone());
         env.storage().persistent().get(&key)
     }
 
+    /// Returns `true` if `user` has already claimed winnings for `dispute_id`.
     pub fn has_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) -> bool {
         let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
         env.storage().persistent().get(&key).unwrap_or(false)
     }
 
+    /// Marks `user` as having claimed winnings for `dispute_id` to prevent double-claims.
     pub fn set_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) {
         let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
         env.storage().persistent().set(&key, &true);
@@ -2457,13 +2565,16 @@ impl DisputeUtils {
         Ok(votes)
     }
 
-    /// Calculate stake-weighted outcome
+    /// Calculate stake-weighted outcome.
+    ///
+    /// Policy: `true` (dispute upheld) iff support stake is strictly greater than against.
+    /// Exact ties resolve to `false` (oracle result stands; admin escalation per docs).
     pub fn calculate_stake_weighted_outcome(voting_data: &DisputeVoting) -> bool {
         voting_data.total_support_stake > voting_data.total_against_stake
     }
 
     /// Distribute fees based on outcome
-    pub fn distribute_fees_based_on_outcome(
+    /// Builds and stores a [`DisputeFeeDistribution`] record based on `outcome`.
         env: &Env,
         dispute_id: &Symbol,
         voting_data: &DisputeVoting,
@@ -2499,7 +2610,7 @@ impl DisputeUtils {
     }
 
     /// Store dispute fee distribution
-    pub fn store_dispute_fee_distribution(
+    /// Persists `distribution` under the `dispute_f` storage key for `dispute_id`.
         env: &Env,
         dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
@@ -2510,7 +2621,7 @@ impl DisputeUtils {
     }
 
     /// Get dispute fee distribution
-    pub fn get_dispute_fee_distribution(
+    /// Loads the [`DisputeFeeDistribution`] for `dispute_id`, returning a zeroed default if absent.
         env: &Env,
         dispute_id: &Symbol,
     ) -> Result<DisputeFeeDistribution, Error> {
@@ -2531,7 +2642,7 @@ impl DisputeUtils {
     }
 
     /// Store dispute escalation
-    pub fn store_dispute_escalation(
+    /// Persists `escalation` under the `dispute_e` storage key for `dispute_id`.
         env: &Env,
         dispute_id: &Symbol,
         escalation: &DisputeEscalation,
@@ -2542,13 +2653,14 @@ impl DisputeUtils {
     }
 
     /// Get dispute escalation
-    pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
+    /// Returns the [`DisputeEscalation`] for `dispute_id`, or `None` if not escalated.
         let key = (symbol_short!("dispute_e"), dispute_id.clone());
         env.storage().persistent().get(&key)
     }
 
     /// Emit dispute vote event
 
+    /// Records a vote event for `dispute_id` in persistent storage.
     pub fn emit_dispute_vote_event(
         env: &Env,
         _dispute_id: &Symbol,
@@ -2565,6 +2677,7 @@ impl DisputeUtils {
 
     /// Emit fee distribution event
 
+    /// Records a fee distribution event for `dispute_id` in persistent storage.
     pub fn emit_fee_distribution_event(
         env: &Env,
         _dispute_id: &Symbol,
@@ -2577,6 +2690,7 @@ impl DisputeUtils {
     }
 
     /// Emit dispute escalation event
+    /// Records an escalation event for `dispute_id` in persistent storage.
     pub fn emit_dispute_escalation_event(
         env: &Env,
         _dispute_id: &Symbol,
@@ -2595,7 +2709,7 @@ impl DisputeUtils {
     }
 
     /// Store dispute timeout
-    pub fn store_dispute_timeout(
+    /// Persists `timeout` under the `timeout` storage key for `dispute_id`.
         env: &Env,
         dispute_id: &Symbol,
         timeout: &DisputeTimeout,
@@ -2606,7 +2720,7 @@ impl DisputeUtils {
     }
 
     /// Get dispute timeout
-    pub fn get_dispute_timeout(env: &Env, dispute_id: &Symbol) -> Result<DisputeTimeout, Error> {
+    /// Loads the [`DisputeTimeout`] for `dispute_id`.
         let key = (symbol_short!("timeout"), dispute_id.clone());
         env.storage()
             .persistent()
@@ -2615,27 +2729,27 @@ impl DisputeUtils {
     }
 
     /// Check if dispute timeout exists
-    pub fn has_dispute_timeout(env: &Env, dispute_id: &Symbol) -> bool {
+    /// Returns `true` if a timeout has been configured for `dispute_id`.
         let key = (symbol_short!("timeout"), dispute_id.clone());
         env.storage().persistent().has(&key)
     }
 
     /// Remove dispute timeout
-    pub fn remove_dispute_timeout(env: &Env, dispute_id: &Symbol) -> Result<(), Error> {
+    /// Removes the timeout record for `dispute_id` from persistent storage.
         let key = (symbol_short!("timeout"), dispute_id.clone());
         env.storage().persistent().remove(&key);
         Ok(())
     }
 
     /// Get all active timeouts
-    pub fn get_active_timeouts(env: &Env) -> Vec<DisputeTimeout> {
+    /// Returns all active [`DisputeTimeout`] records (currently returns empty — index not yet implemented).
         // This is a simplified implementation
         // In a real system, you would maintain an index of active timeouts
         Vec::new(env)
     }
 
     /// Check for expired timeouts
-    pub fn check_expired_timeouts(env: &Env) -> Vec<Symbol> {
+    /// Returns IDs of disputes whose timeout has expired (currently returns empty — index not yet implemented).
         let _expired_disputes = Vec::new(env);
         let _current_time = env.ledger().timestamp();
 
@@ -2648,7 +2762,9 @@ impl DisputeUtils {
 
 // ===== DISPUTE ANALYTICS =====
 
-/// Analytics functions for dispute data
+/// Read-only analytics helpers that derive metrics from market and voting data.
+///
+/// No storage writes are performed by any method in this struct.
 pub struct DisputeAnalytics;
 
 impl DisputeAnalytics {

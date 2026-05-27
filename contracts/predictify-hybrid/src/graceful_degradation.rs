@@ -6,6 +6,53 @@ use crate::events::EventEmitter;
 use crate::types::OracleProvider;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
+const ORACLE_TIMEOUT_THRESHOLD_SECONDS: u32 = 60;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum DegradationStorageKey {
+    OracleHealth(OracleProvider),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OracleDegradationState {
+    health: OracleHealth,
+    consecutive_failures: u32,
+    last_reason: String,
+    updated_at: u64,
+}
+
+fn degradation_key(oracle: &OracleProvider) -> DegradationStorageKey {
+    DegradationStorageKey::OracleHealth(oracle.clone())
+}
+
+fn load_degradation_state(env: &Env, oracle: &OracleProvider) -> Option<OracleDegradationState> {
+    env.storage().persistent().get(&degradation_key(oracle))
+}
+
+fn record_oracle_health(
+    env: &Env,
+    oracle: &OracleProvider,
+    health: OracleHealth,
+    reason: &String,
+) {
+    let consecutive_failures = match health {
+        OracleHealth::Working => 0,
+        OracleHealth::Degraded | OracleHealth::Broken => load_degradation_state(env, oracle)
+            .map(|state| state.consecutive_failures.saturating_add(1))
+            .unwrap_or(1),
+    };
+
+    let state = OracleDegradationState {
+        health,
+        consecutive_failures,
+        last_reason: reason.clone(),
+        updated_at: env.ledger().timestamp(),
+    };
+    env.storage().persistent().set(&degradation_key(oracle), &state);
+}
+
 // Basic oracle backup system
 pub struct OracleBackup {
     primary: OracleProvider,
@@ -35,20 +82,22 @@ impl OracleBackup {
     ) -> Result<i128, Error> {
         // Try primary oracle
         if let Ok(price) = self.call_oracle(env, &self.primary, oracle_address, feed_id) {
+            let ok_msg = String::from_str(env, "Oracle healthy");
+            record_oracle_health(env, &self.primary, OracleHealth::Working, &ok_msg);
             return Ok(price);
         }
 
         // Primary failed, notify and try backup
         let msg = String::from_str(env, "Primary oracle failed");
         EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
-        
+
         // capture backup result to ensure we don't fial silently if the fallback drops
-       let backup_result = self.call_oracle(env, &self.backup, oracle_address, feed_id);
-       if backup_result.is_err(){
-        let backup_msg = String::from_str(env, "Backup oracle failed");
-        EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
-       }
-       backup_result
+        let backup_result = self.call_oracle(env, &self.backup, oracle_address, feed_id);
+        if backup_result.is_err() {
+            let backup_msg = String::from_str(env, "Backup oracle failed");
+            EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
+        }
+        backup_result
     }
 
     // Call a single oracle
@@ -82,10 +131,11 @@ impl OracleBackup {
     /// * `Err(Error)` if the oracle is unreachable or fails, surfacing the exact error
     pub fn is_working(&self, env: &Env, oracle_address: &Address) -> Result<bool, Error> {
         let test_feed = String::from_str(env, "BTC/USD");
-        match self.call_oracle(env, &self.primary, oracle_address, &test_feed){
+        match self.call_oracle(env, &self.primary, oracle_address, &test_feed) {
             Ok(_) => Ok(true),
             Err(e) => {
-                let msg = String::from_str(env, "Oracle health check failed during is_working query");
+                let msg =
+                    String::from_str(env, "Oracle health check failed during is_working query");
                 EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
                 Err(e)
             }
@@ -106,9 +156,10 @@ pub fn fallback_oracle_call(
 }
 
 pub fn handle_oracle_timeout(oracle: OracleProvider, timeout_seconds: u32, env: &Env) {
-    if timeout_seconds > 60 {
+    if timeout_seconds > ORACLE_TIMEOUT_THRESHOLD_SECONDS {
         let msg = String::from_str(env, "Oracle timeout");
-        EventEmitter::emit_oracle_degradation(env, &oracle, &msg);
+        record_oracle_health(env, &oracle, OracleHealth::Degraded, &msg);
+        emit_degradation_event(env, oracle, msg);
     }
 }
 
@@ -138,12 +189,13 @@ pub fn monitor_oracle_health(
     oracle_address: &Address,
 ) -> OracleHealth {
     let backup = OracleBackup::new(oracle.clone(), oracle);
+    let stored_health = load_degradation_state(env, &backup.primary).map(|state| state.health);
 
-    //Check if the result is Ok(true), otherwise default to broken
+    // Probe live first so a recovered oracle clears any prior degraded state.
     if backup.is_working(env, oracle_address).unwrap_or(false) {
         OracleHealth::Working
     } else {
-        OracleHealth::Broken
+        stored_health.unwrap_or(OracleHealth::Broken)
     }
 }
 
@@ -171,6 +223,7 @@ pub enum DegradationStrategy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OracleHealth {
     Working,
+    Degraded,
     Broken,
 }
 
@@ -205,12 +258,12 @@ mod tests {
 
         //2. wrap the execution in the contract context
         env.as_contract(&contract_id, || {
-        let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
-        assert!(matches!(
-            health,
-            OracleHealth::Working | OracleHealth::Broken
-        ));
-    });
+            let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
+            assert!(matches!(
+                health,
+                OracleHealth::Working | OracleHealth::Broken
+            ));
+        });
     }
 
     #[test]
@@ -237,18 +290,61 @@ mod tests {
         let env = Env::default();
         // 1. Register the contract
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        
+
         let backup = OracleBackup::new(OracleProvider::pyth(), OracleProvider::dia());
         let oracle_address = Address::generate(&env);
-        
+
         // 2. Wrap the execution in the contract context
         env.as_contract(&contract_id, || {
             let result = backup.is_working(&env, &oracle_address);
             assert!(result.is_err()); // No longer fails silently
         });
-        
+
         // 3. Verify event emission
         let events = env.events().all();
-        assert!(events.events().len() > 0, "Expected oracle degradation event to be emitted");
+        assert!(
+            events.events().len() > 0,
+            "Expected oracle degradation event to be emitted"
+        );
+    }
+
+    #[test]
+    fn test_oracle_fallback_both_oracles_down_returns_typed_error() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let backup = OracleBackup::new(OracleProvider::reflector(), OracleProvider::pyth());
+        let oracle_address = Address::generate(&env);
+        let feed_id = String::from_str(&env, "BTC/USD");
+
+        env.as_contract(&contract_id, || {
+            let result = backup.get_price(&env, &oracle_address, &feed_id);
+            assert_eq!(result, Err(Error::FallbackOracleUnavailable));
+        });
+
+        let events = env.events().all();
+        assert!(
+            events.events().len() >= 2,
+            "Expected degradation events for primary and backup oracle failures"
+        );
+    }
+
+    #[test]
+    fn test_oracle_fallback_timeout_marks_oracle_degraded() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let oracle = OracleProvider::reflector();
+        let oracle_address = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            handle_oracle_timeout(oracle.clone(), 61, &env);
+            let health = get_degradation_status(oracle.clone(), &env, &oracle_address);
+            assert_eq!(health, OracleHealth::Degraded);
+        });
+
+        let events = env.events().all();
+        assert!(
+            events.events().len() > 0,
+            "Expected timeout handling to emit a degradation event"
+        );
     }
 }

@@ -319,7 +319,7 @@ fn test_extend_deadline_resolved_market() {
         &String::from_str(&setup.env, "Yes"),
     );
 
-    // Try to extend resolved market
+    // Try to extend resolved market — must be rejected
     let result = client.try_extend_deadline(
         &setup.admin,
         &market_id,
@@ -327,7 +327,7 @@ fn test_extend_deadline_resolved_market() {
         &String::from_str(&setup.env, "Extension after resolution"),
     );
 
-    assert_eq!(result, Err(Ok(Error::MarketResolved)));
+    assert_eq!(result, Err(Ok(Error::ExtensionDenied)));
 }
 
 #[test]
@@ -353,6 +353,105 @@ fn test_extend_deadline_unauthorized() {
     );
 
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_extend_deadline_after_end_time_rejected() {
+    // A market whose end_time has already passed must be rejected even if
+    // adding days would produce a future timestamp.
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes, 30);
+
+    // Advance time past the market end without resolving it.
+    setup.env.ledger().with_mut(|li| {
+        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
+    });
+
+    let result = client.try_extend_deadline(
+        &setup.admin,
+        &market_id,
+        &7u32,
+        &String::from_str(&setup.env, "Extend after end"),
+    );
+
+    assert_eq!(result, Err(Ok(Error::ExtensionDenied)));
+}
+
+#[test]
+fn test_extend_deadline_cap_exceeded() {
+    // Cumulative extensions must not exceed max_extension_days (default 30).
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes, 30);
+
+    // First extension: 20 days — should succeed.
+    let first = client.try_extend_deadline(
+        &setup.admin,
+        &market_id,
+        &20u32,
+        &String::from_str(&setup.env, "First extension"),
+    );
+    assert!(first.is_ok());
+
+    // Second extension: 11 days — would push total to 31, exceeding the 30-day cap.
+    let second = client.try_extend_deadline(
+        &setup.admin,
+        &market_id,
+        &11u32,
+        &String::from_str(&setup.env, "Cap exceeded"),
+    );
+    assert_eq!(second, Err(Ok(Error::InvalidDuration)));
+}
+
+#[test]
+fn test_extend_market_closed_state_rejected() {
+    // extend_market must also reject a closed market.
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes, 30);
+
+    // Advance time and resolve, then close.
+    setup.env.ledger().with_mut(|li| {
+        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
+    });
+    let _ = client.try_resolve_market_manual(
+        &setup.admin,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+    );
+    let _ = client.try_close_market(&setup.admin, &market_id);
+
+    let result = client.try_extend_market(
+        &setup.admin,
+        &market_id,
+        &7u32,
+        &String::from_str(&setup.env, "Extend closed market"),
+        &0i128,
+    );
+
+    assert_eq!(result, Err(Ok(Error::ExtensionDenied)));
 }
 
 // ===== UPDATE EVENT DESCRIPTION TESTS =====

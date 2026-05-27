@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
+use crate::Error;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
-use crate::Error;
 
 // ===== MARKET STATE =====
 
@@ -775,27 +775,27 @@ impl OracleConfig {
 
 impl OracleConfig {
     /// Validate the oracle configuration
-pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
-    // Reject empty/sentinel config
-    if self.is_none_sentinel() || self.feed_id.is_empty() {
-        return Err(crate::Error::InvalidOracleConfig);
-    }
+    pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+        // Reject empty/sentinel config
+        if self.is_none_sentinel() || self.feed_id.is_empty() {
+            return Err(crate::Error::InvalidOracleConfig);
+        }
 
-    crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
-    crate::metadata_limits::validate_comparison_length(&self.comparison)?;
+        crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
+        crate::metadata_limits::validate_comparison_length(&self.comparison)?;
 
-    // Threshold must be positive
-    if self.threshold <= 0 {
-        return Err(crate::Error::InvalidThreshold);
-    }
+        // Threshold must be positive
+        if self.threshold <= 0 {
+            return Err(crate::Error::InvalidThreshold);
+        }
 
-    // Only allow gt / lt / eq
-    if self.comparison != String::from_str(env, "gt")
-        && self.comparison != String::from_str(env, "lt")
-        && self.comparison != String::from_str(env, "eq")
-    {
-        return Err(crate::Error::InvalidComparison);
-    }
+        // Only allow gt / lt / eq
+        if self.comparison != String::from_str(env, "gt")
+            && self.comparison != String::from_str(env, "lt")
+            && self.comparison != String::from_str(env, "eq")
+        {
+            return Err(crate::Error::InvalidComparison);
+        }
 
         // Reject impossible combinations per provider
         let provider_str = self.provider.as_str();
@@ -1089,6 +1089,9 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
+    /// Whether unclaimed winnings have already been swept for this market.
+    /// Set to true after the first successful sweep to prevent double-crediting the treasury.
+    pub winnings_swept: bool,
 }
 
 // ===== CLAIM INFO =====
@@ -1452,6 +1455,7 @@ impl Market {
             min_pool_size: None,
             bet_deadline: 0,
             dispute_window_seconds: 86400, // 24h default
+            winnings_swept: false,
         }
     }
 
@@ -1526,23 +1530,23 @@ impl Market {
         // Validate each outcome length
         crate::metadata_limits::validate_outcomes_length(&self.outcomes)?;
 
-       // Validate primary oracle config
-// Validate primary oracle config
-self.oracle_config.validate(env)?;
+        // Validate primary oracle config
+        // Validate primary oracle config
+        self.oracle_config.validate(env)?;
 
-// FIX: only validate fallback if it's actually provided (not sentinel)
-if self.has_fallback && !self.fallback_oracle_config.is_none_sentinel() {
-    if self.fallback_oracle_config.feed_id.is_empty() {
-        return Err(crate::Error::InvalidOracleConfig);
-    }
+        // FIX: only validate fallback if it's actually provided (not sentinel)
+        if self.has_fallback && !self.fallback_oracle_config.is_none_sentinel() {
+            if self.fallback_oracle_config.feed_id.is_empty() {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
 
-    self.fallback_oracle_config.validate(env)?;
-}
+            self.fallback_oracle_config.validate(env)?;
+        }
 
-// Validate end time
-if self.end_time <= env.ledger().timestamp() {
-    return Err(crate::Error::InvalidDuration);
-}
+        // Validate end time
+        if self.end_time <= env.ledger().timestamp() {
+            return Err(crate::Error::InvalidDuration);
+        }
         // Optional category and tags: size limits and duplicate-tag rejection (see metadata_limits)
         crate::metadata_limits::validate_option_category_metadata(&self.category)?;
         crate::metadata_limits::validate_event_tags(&self.tags)?;
@@ -3895,10 +3899,10 @@ impl ReflectorAsset {
 
     /// Validates the asset for use in market creation
     pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
-       if !self.is_supported() {
-    // Allow unknown providers ONLY if fallback is disabled
-    return Err(Error::InvalidOracleConfig);
-}
+        if !self.is_supported() {
+            // Allow unknown providers ONLY if fallback is disabled
+            return Err(Error::InvalidOracleConfig);
+        }
         Ok(())
     }
 
