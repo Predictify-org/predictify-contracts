@@ -40,6 +40,7 @@
 use crate::errors::Error;
 use crate::types::Market;
 use alloc::format;
+#[cfg(not(target_family = "wasm"))]
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Symbol, Vec};
 
@@ -147,9 +148,9 @@ impl MarketIdGenerator {
 
     #[cfg(target_family = "wasm")]
     pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
-        // Symbol-to-host-string conversion is not available in contract wasm.
-        // Runtime callers should treat persisted market IDs as valid if they
-        // otherwise resolve correctly.
+        // Soroban's contract-facing Symbol type does not expose string conversion
+        // on wasm builds. Market IDs are generated internally, so runtime callers
+        // rely on collision/registry checks rather than reparsing the prefix.
         true
     }
 
@@ -186,12 +187,9 @@ impl MarketIdGenerator {
         _env: &Env,
         _market_id: &Symbol,
     ) -> Result<MarketIdComponents, Error> {
-        // Contract wasm cannot parse Symbol values into host strings. Treat the
-        // identifier as an unstructured legacy ID in this environment.
-        Ok(MarketIdComponents {
-            counter: 0,
-            is_legacy: true,
-        })
+        // Symbol string parsing is not available in the wasm contract build.
+        // This helper is only used for diagnostics/tests on host builds.
+        Err(Error::InvalidInput)
     }
 
     /// Return a paginated slice of the market ID registry.
@@ -265,11 +263,7 @@ impl MarketIdGenerator {
     /// Read the global nonce and increment it atomically.
     fn get_and_bump_global_nonce(env: &Env) -> u32 {
         let key = Symbol::new(env, Self::GLOBAL_NONCE_KEY);
-        let nonce: u32 = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(0u32);
+        let nonce: u32 = env.storage().persistent().get(&key).unwrap_or(0u32);
         env.storage().persistent().set(&key, &(nonce + 1));
         nonce
     }
@@ -339,7 +333,10 @@ mod tests {
         let id = with_contract(&env, &contract_id, || {
             MarketIdGenerator::generate_market_id(&env, &admin)
         });
-        assert!(id.to_string().starts_with("mkt_"), "ID must start with mkt_");
+        assert!(
+            id.to_string().starts_with("mkt_"),
+            "ID must start with mkt_"
+        );
     }
 
     #[test]
@@ -490,11 +487,7 @@ mod tests {
             MarketIdGenerator::generate_market_id(&env, &admin2);
             // Nonce should be 2 after two generations.
             let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
-            let nonce: u32 = env
-                .storage()
-                .persistent()
-                .get(&nonce_key)
-                .unwrap_or(0);
+            let nonce: u32 = env.storage().persistent().get(&nonce_key).unwrap_or(0);
             assert_eq!(nonce, 2);
         });
     }
@@ -616,8 +609,7 @@ mod tests {
     #[test]
     fn test_stress_20_admins_same_ledger_all_unique() {
         let (env, contract_id, _) = setup();
-        let admins: alloc::vec::Vec<Address> =
-            (0..20).map(|_| Address::generate(&env)).collect();
+        let admins: alloc::vec::Vec<Address> = (0..20).map(|_| Address::generate(&env)).collect();
 
         with_contract(&env, &contract_id, || {
             let mut ids = alloc::vec::Vec::new();

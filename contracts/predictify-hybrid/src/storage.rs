@@ -516,6 +516,13 @@ impl StorageOptimizer {
 pub struct BalanceStorage;
 
 impl BalanceStorage {
+    fn validate_balance_delta(amount: i128) -> Result<(), Error> {
+        if amount <= 0 {
+            return Err(Error::InvalidInput);
+        }
+        Ok(())
+    }
+
     /// Generates the storage key for a user's asset balance.
     fn get_key(env: &Env, user: &Address, asset: &ReflectorAsset) -> Vec<Val> {
         let mut key = Vec::new(env);
@@ -538,14 +545,54 @@ impl BalanceStorage {
     }
 
     /// Stores the balance record in persistent storage and extends its TTL.
-    pub fn set_balance(env: &Env, balance: &Balance) {
+    pub fn set_balance(env: &Env, balance: &Balance) -> Result<(), Error> {
+        if balance.amount < 0 {
+            return Err(Error::InvalidState);
+        }
+
         let key = Self::get_key(env, &balance.user, &balance.asset);
-        StorageOptimizer::set_persistent_with_ttl(
-            env,
-            &key,
-            balance,
-            StorageOptimizer::persistent_ttl_for_tier(env, StorageTtlTier::Balance),
-        );
+        env.storage().persistent().set(&key, balance);
+        // Extend TTL to ensure balance persists (approx 30 days)
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Computes the resulting balance after a credit without mutating storage.
+    pub fn checked_add_balance(
+        env: &Env,
+        user: &Address,
+        asset: &ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        Self::validate_balance_delta(amount)?;
+
+        let mut balance = Self::get_balance(env, user, asset);
+        balance.amount = balance
+            .amount
+            .checked_add(amount)
+            .ok_or(Error::InvalidInput)?;
+        Ok(balance)
+    }
+
+    /// Computes the resulting balance after a debit without mutating storage.
+    pub fn checked_sub_balance(
+        env: &Env,
+        user: &Address,
+        asset: &ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        Self::validate_balance_delta(amount)?;
+
+        let mut balance = Self::get_balance(env, user, asset);
+        if amount > balance.amount {
+            return Err(Error::InsufficientBalance);
+        }
+
+        balance.amount = balance
+            .amount
+            .checked_sub(amount)
+            .ok_or(Error::InvalidState)?;
+        Ok(balance)
     }
 
     /// Increments a user's balance by the specified amount.
@@ -558,12 +605,8 @@ impl BalanceStorage {
         asset: &ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
-        let mut balance = Self::get_balance(env, user, asset);
-        balance.amount = balance
-            .amount
-            .checked_add(amount)
-            .ok_or(Error::InvalidInput)?;
-        Self::set_balance(env, &balance);
+        let balance = Self::checked_add_balance(env, user, asset, amount)?;
+        Self::set_balance(env, &balance)?;
         Ok(balance)
     }
 
@@ -577,12 +620,8 @@ impl BalanceStorage {
         asset: &ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
-        let mut balance = Self::get_balance(env, user, asset);
-        balance.amount = balance
-            .amount
-            .checked_sub(amount)
-            .ok_or(Error::InsufficientBalance)?;
-        Self::set_balance(env, &balance);
+        let balance = Self::checked_sub_balance(env, user, asset, amount)?;
+        Self::set_balance(env, &balance)?;
         Ok(balance)
     }
 }
@@ -915,7 +954,50 @@ impl StorageUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{storage::Persistent as _, Address as _, Ledger as _};
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig};
+
+    #[test]
+    fn test_sub_balance_rejects_overdraw_without_mutation() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let user = soroban_sdk::Address::generate(&env);
+        let asset = ReflectorAsset::Stellar;
+
+        env.as_contract(&contract_id, || {
+            BalanceStorage::add_balance(&env, &user, &asset, 250).unwrap();
+
+            let result = BalanceStorage::sub_balance(&env, &user, &asset, 251);
+
+            assert_eq!(result, Err(Error::InsufficientBalance));
+            assert_eq!(BalanceStorage::get_balance(&env, &user, &asset).amount, 250);
+        });
+    }
+
+    #[test]
+    fn test_balance_mutators_reject_non_positive_amounts() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let user = soroban_sdk::Address::generate(&env);
+        let asset = ReflectorAsset::Stellar;
+
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                BalanceStorage::add_balance(&env, &user, &asset, 0),
+                Err(Error::InvalidInput)
+            );
+            assert_eq!(
+                BalanceStorage::sub_balance(&env, &user, &asset, -1),
+                Err(Error::InvalidInput)
+            );
+            assert_eq!(BalanceStorage::get_balance(&env, &user, &asset).amount, 0);
+        });
+    }
 
     fn create_test_market(env: &Env) -> Market {
         let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env);
