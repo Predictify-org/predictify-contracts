@@ -31,8 +31,11 @@ fn setup_contract() -> (Env, Address, Address) {
     let admin = Address::generate(&env);
 
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None);
-
+    client.initialize(&admin, &None, &None);
+    env.as_contract(&contract_id, || {
+        AdminSystemIntegration::ensure_migration(&env).unwrap();
+    });
+    
     (env, contract_id, admin)
 }
 
@@ -440,7 +443,7 @@ fn test_admin_added_event_emission() {
         AdminManager::add_admin(&env, &admin, &new_admin, AdminRole::MarketAdmin).unwrap();
 
         let events = env.events().all();
-        let event_count = events.len();
+        let event_count = events.events().len();
         assert!(event_count > 0);
     });
 }
@@ -455,7 +458,7 @@ fn test_admin_removed_event_emission() {
         AdminManager::remove_admin(&env, &admin, &new_admin).unwrap();
 
         let events = env.events().all();
-        assert!(events.len() > 0);
+        assert!(events.events().len() > 0);
     });
 }
 
@@ -727,15 +730,16 @@ fn setup_env_primary_admin(env: &Env) -> Address {
 /// Warp the ledger clock forward by `delta_secs`, preserving other fields.
 fn warp_time(env: &Env, delta_secs: u64) {
     let now = env.ledger().timestamp();
+    let current = env.ledger().get();
     env.ledger().set(LedgerInfo {
         timestamp: now + delta_secs,
-        protocol_version: 22,
+        protocol_version: current.protocol_version,
         sequence_number: env.ledger().sequence(),
-        network_id: Default::default(),
-        base_reserve: 10,
-        min_temp_entry_ttl: 1,
-        min_persistent_entry_ttl: 1,
-        max_entry_ttl: 10_000,
+        network_id: current.network_id,
+        base_reserve: current.base_reserve,
+        min_temp_entry_ttl: current.min_temp_entry_ttl,
+        min_persistent_entry_ttl: current.min_persistent_entry_ttl,
+        max_entry_ttl: current.max_entry_ttl,
     });
 }
 
@@ -841,7 +845,7 @@ fn test_contract_address_can_act_as_primary_admin() {
     let multisig_contract = env.register(PredictifyHybrid, ());
 
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&multisig_contract, &None);
+    client.initialize(&multisig_contract, &None, &None);
 
     env.as_contract(&contract_id, || {
         let target = Address::generate(&env);
@@ -865,7 +869,7 @@ fn test_contract_admin_rotation_to_new_contract_admin() {
     let new_multisig = env.register(PredictifyHybrid, ());
 
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&old_multisig, &None);
+    client.initialize(&old_multisig, &None, &None);
 
     env.as_contract(&contract_id, || {
         ContractPauseManager::transfer_admin(&env, &old_multisig, &new_multisig).unwrap();

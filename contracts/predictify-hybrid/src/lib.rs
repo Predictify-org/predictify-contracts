@@ -40,8 +40,11 @@ mod market_analytics;
 mod market_id_generator;
 mod markets;
 mod metadata_limits;
-// Pre-existing API drift — not part of #553/#547; re-enable after fixing tests.
-#[cfg(any())]
+#[cfg(test)]
+mod metadata_limits_tests;
+#[cfg(test)]
+mod multi_admin_multisig_tests;
+#[cfg(test)]
 mod admin_auth_audit_tests;
 #[cfg(any())]
 mod metadata_limits_tests;
@@ -320,6 +323,25 @@ impl PredictifyHybrid {
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+
+        // Seed default runtime configuration so validators and query paths have
+        // deterministic bounds immediately after deployment.
+        let default_config = ConfigManager::get_development_config(&env);
+        ConfigManager::store_config(&env, &default_config)?;
+
+        // Seed permissive-but-valid rate limits so admin entrypoints do not
+        // fail before a custom policy is configured.
+        crate::rate_limiter::RateLimiter::new(env.clone()).init_rate_limiter(
+            admin.clone(),
+            crate::rate_limiter::RateLimitConfig {
+                voting_limit: 10_000,
+                dispute_limit: 1_000,
+                oracle_call_limit: 1_000,
+                bet_limit: 10_000,
+                events_per_admin_limit: 1_000,
+                time_window_seconds: 3_600,
+            },
+        ).map_err(Error::from)?;
 
         // Initialize allowed assets
         if let Some(assets) = allowed_assets {
@@ -687,6 +709,7 @@ impl PredictifyHybrid {
             min_pool_size,
             bet_deadline,
             dispute_window_seconds: dispute_window_seconds.unwrap_or(86400),
+            winnings_swept: false,
         };
 
         // Store the market
@@ -1884,6 +1907,11 @@ impl PredictifyHybrid {
             return Err(Error::InvalidState);
         }
 
+        // Idempotency guard: reject a repeat sweep so the treasury is never double-credited.
+        if market.winnings_swept {
+            return Err(Error::SweepAlreadyDone);
+        }
+
         let fee_percent = crate::config::ConfigManager::get_config(&env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
@@ -2007,6 +2035,8 @@ impl PredictifyHybrid {
             Some(treasury)
         };
 
+        // Mark this market as swept so a second call returns SweepAlreadyDone.
+        market.winnings_swept = true;
         env.storage().persistent().set(&market_id, &market);
         EventEmitter::emit_unclaimed_winnings_swept(
             &env,
@@ -6960,13 +6990,3 @@ impl PredictifyHybrid {
 
 #[cfg(any())]
 mod test;
-
-#[cfg(any())]
-fn assert_can_participate(env: &Env, user: &Address, event: &Event) {
-    if event.is_private {
-        let is_allowed = event.allowlist.iter().any(|addr| addr == user);
-        if !is_allowed {
-            panic!("User not allowlisted for private event");
-        }
-    }
-}

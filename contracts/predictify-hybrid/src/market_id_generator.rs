@@ -40,6 +40,7 @@
 use crate::errors::Error;
 use crate::types::Market;
 use alloc::format;
+#[cfg(not(target_family = "wasm"))]
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Symbol, Vec};
 
@@ -140,13 +141,23 @@ impl MarketIdGenerator {
     /// Legacy IDs (created before this module existed) do not carry the prefix
     /// and will return `false` here; callers should treat them as valid but
     /// unstructured.
+    #[cfg(not(target_family = "wasm"))]
     pub fn validate_market_id_format(_env: &Env, market_id: &Symbol) -> bool {
         market_id.to_string().starts_with("mkt_")
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
+        // Soroban's contract-facing Symbol type does not expose string conversion
+        // on wasm builds. Market IDs are generated internally, so runtime callers
+        // rely on collision/registry checks rather than reparsing the prefix.
+        true
     }
 
     /// Parse the counter and legacy flag out of a market ID symbol.
     ///
     /// Returns [`Error::InvalidInput`] if the ID cannot be parsed.
+    #[cfg(not(target_family = "wasm"))]
     pub fn parse_market_id_components(
         _env: &Env,
         market_id: &Symbol,
@@ -169,6 +180,16 @@ impl MarketIdGenerator {
             counter,
             is_legacy: false,
         })
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn parse_market_id_components(
+        _env: &Env,
+        _market_id: &Symbol,
+    ) -> Result<MarketIdComponents, Error> {
+        // Symbol string parsing is not available in the wasm contract build.
+        // This helper is only used for diagnostics/tests on host builds.
+        Err(Error::InvalidInput)
     }
 
     /// Return a paginated slice of the market ID registry.
@@ -409,15 +430,16 @@ mod tests {
         });
 
         // Advance the ledger sequence.
+        let current = env.ledger().get();
         env.ledger().set(LedgerInfo {
             sequence_number: env.ledger().sequence() + 1,
             timestamp: env.ledger().timestamp() + 5,
-            protocol_version: 22,
-            network_id: Default::default(),
-            base_reserve: 10,
-            min_temp_entry_ttl: 1,
-            min_persistent_entry_ttl: 1,
-            max_entry_ttl: 100,
+            protocol_version: current.protocol_version,
+            network_id: current.network_id,
+            base_reserve: current.base_reserve,
+            min_temp_entry_ttl: current.min_temp_entry_ttl,
+            min_persistent_entry_ttl: current.min_persistent_entry_ttl,
+            max_entry_ttl: current.max_entry_ttl,
         });
 
         let id2 = with_contract(&env, &contract_id, || {
@@ -608,15 +630,16 @@ mod tests {
         let mut all_ids = alloc::vec::Vec::new();
 
         for ledger_bump in 0u32..5 {
+            let current = env.ledger().get();
             env.ledger().set(LedgerInfo {
                 sequence_number: 100 + ledger_bump,
                 timestamp: 1_000_000 + (ledger_bump as u64) * 5,
-                protocol_version: 22,
-                network_id: Default::default(),
-                base_reserve: 10,
-                min_temp_entry_ttl: 1,
-                min_persistent_entry_ttl: 1,
-                max_entry_ttl: 100,
+                protocol_version: current.protocol_version,
+                network_id: current.network_id,
+                base_reserve: current.base_reserve,
+                min_temp_entry_ttl: current.min_temp_entry_ttl,
+                min_persistent_entry_ttl: current.min_persistent_entry_ttl,
+                max_entry_ttl: current.max_entry_ttl,
             });
 
             with_contract(&env, &contract_id, || {

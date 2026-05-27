@@ -601,6 +601,7 @@ impl ContractMonitor {
             min_pool_size: None,
             bet_deadline: 0,
             dispute_window_seconds: 86400,
+            winnings_swept: false,
         })
     }
 

@@ -27,7 +27,7 @@ impl TestSetup {
 
     fn initialized() -> Self {
         let setup = Self::uninitialized();
-        setup.client().initialize(&setup.admin, &None);
+        setup.client().initialize(&setup.admin, &None, &None);
         setup
     }
 

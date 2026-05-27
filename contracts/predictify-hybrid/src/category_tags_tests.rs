@@ -18,7 +18,7 @@ fn setup_test() -> (Env, PredictifyHybridClient<'static>, Address) {
     let admin = Address::generate(&env);
 
     // Initialize contract
-    client.initialize(&admin, &Some(2)); // 2% fee
+    client.initialize(&admin, &Some(2), &None); // 2% fee
 
     (env, client, admin)
 }
@@ -43,7 +43,7 @@ fn create_test_market(
         ),
         feed_id: String::from_str(env, "BTC/USD"),
         threshold: 100,
-        comparison: String::from_str(env, "gte"),
+        comparison: String::from_str(env, "gt"),
     };
 
     client.create_market(
@@ -332,7 +332,7 @@ impl TokenTestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &Some(2));
+        client.initialize(&admin, &Some(2), &None);
 
         // Create users and fund them
         let user1 = Address::generate(&env);
@@ -366,7 +366,7 @@ impl TokenTestSetup {
                 ),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 100,
-                comparison: String::from_str(&env, "gte"),
+                comparison: String::from_str(&env, "gt"),
             },
             &None,
             &86400u64,

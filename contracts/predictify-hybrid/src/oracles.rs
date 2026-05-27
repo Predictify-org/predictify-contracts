@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use alloc::format;
+use alloc::string::ToString;
 use crate::bandprotocol;
 use crate::errors::Error;
 use alloc::format;
@@ -3855,10 +3857,7 @@ impl OracleCallbackAuth {
         // Store the oracle price for market resolution
         let data_key = StorageKey::OracleData(callback_data.feed_id.clone());
         // Store just the price (i128) since OraclePriceData lacks contracttype
-        self.env
-            .storage()
-            .persistent()
-            .set(&data_key, &callback_data.price);
+        self.env.storage().persistent().set(&data_key, &callback_data.price);
 
         // Emit oracle callback event
         crate::events::EventEmitter::emit_oracle_callback(
@@ -3962,13 +3961,7 @@ impl OracleCallbackAuth {
     /// * `caller` - The address of the calling oracle contract
     /// * `callback_data` - The successfully authenticated callback data
     fn log_successful_authentication(&self, caller: &Address, callback_data: &OracleCallbackData) {
-        let log_message = String::from_str(
-            &self.env,
-            &format!(
-                "Oracle callback authenticated: {}",
-                callback_data.feed_id.to_string()
-            ),
-        );
+        let log_message = String::from_str(&self.env, "Oracle callback authenticated");
         let ctx = String::from_str(&self.env, "oracle_auth");
         crate::events::EventEmitter::emit_error_logged(
             &self.env,
@@ -3978,6 +3971,7 @@ impl OracleCallbackAuth {
             Some(caller.clone()),
             None,
         );
+        let _ = callback_data;
     }
 
     fn log_authentication_failure(&self, caller: &Address, reason: &str) {
