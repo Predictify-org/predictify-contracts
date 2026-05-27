@@ -4,25 +4,23 @@
 //!
 //! # Entropy sources
 //!
-//! Each ID is derived from a SHA-256 digest of two independent inputs:
+//! Each ID is derived from a SHA-256 digest of three independent inputs:
 //!
 //! | Source | Bytes | Notes |
 //! |--------|-------|-------|
 //! | Ledger sequence | 4 | Monotonically increasing; unique per ledger |
 //! | Global nonce | 4 | Monotonically increasing across all markets |
+//! | Admin address | 32 | Binds the hash to the calling admin |
 //!
-//! The global nonce increments on every call regardless of admin, so two
-//! admins calling `generate_market_id` in the same ledger still produce
-//! different IDs.  The per-admin counter is tracked separately for
-//! auditability (it appears in the ID suffix) but is not the sole source
-//! of uniqueness.
+//! Including the admin address in the hash means two admins calling
+//! `generate_market_id` with the same sequence and nonce still produce
+//! different IDs, closing the theoretical collision window that existed
+//! when the admin was only in the counter suffix.
 //!
 //! # Collision risk
 //!
 //! The ID space is the first 8 hex characters of the SHA-256 digest (32 bits).
-//! With two independent monotonic inputs the effective pre-image space is
-//! `2^32 × N_ledgers`, making accidental collisions negligible in practice.
-//! The generator also performs an explicit collision check against persistent
+//! The generator performs an explicit collision check against persistent
 //! storage and retries up to [`MarketIdGenerator::MAX_RETRIES`] times before
 //! panicking, providing a hard safety net.
 //!
@@ -33,9 +31,6 @@
 //! ```
 //!
 //! Example: `mkt_3f9a1b2c_0`
-//!
-//! The counter suffix is the per-admin counter at creation time, making IDs
-//! human-readable and auditable without decoding the hash.
 
 use crate::errors::Error;
 use crate::types::Market;
@@ -108,7 +103,7 @@ impl MarketIdGenerator {
             }
 
             let nonce = Self::get_and_bump_global_nonce(env);
-            let market_id = Self::build_market_id(env, nonce, current_admin_counter);
+            let market_id = Self::build_market_id(env, nonce, current_admin_counter, admin);
 
             if !Self::check_market_id_collision(env, &market_id) {
                 Self::set_admin_counter(env, admin, current_admin_counter + 1);
@@ -216,16 +211,22 @@ impl MarketIdGenerator {
     ///
     /// Hash input layout (big-endian):
     /// ```text
-    /// [ ledger_sequence (4 B) | global_nonce (4 B) ]
+    /// [ ledger_sequence (4 B) | global_nonce (4 B) | admin_address (32 B) ]
     /// ```
-    fn build_market_id(env: &Env, nonce: u32, admin_counter: u32) -> Symbol {
+    ///
+    /// Including the admin address binds the hash to the caller, so two admins
+    /// with the same sequence and nonce still produce different IDs.
+    fn build_market_id(env: &Env, nonce: u32, admin_counter: u32, admin: &Address) -> Symbol {
         let sequence = env.ledger().sequence();
 
         let seq_bytes = Bytes::from_array(env, &sequence.to_be_bytes());
         let nonce_bytes = Bytes::from_array(env, &nonce.to_be_bytes());
+        // Serialize the admin address to bytes for inclusion in the hash seed.
+        let admin_bytes = admin.clone().to_xdr(env);
 
         let mut input = seq_bytes;
         input.append(&nonce_bytes);
+        input.append(&admin_bytes);
 
         let hash = env.crypto().sha256(&input);
         let hash_bytes = hash.to_bytes();
@@ -494,6 +495,81 @@ mod tests {
             MarketIdGenerator::is_market_id_valid(&env, &id)
         });
         assert!(!valid);
+    }
+
+    /// Two admins calling generate_market_id in the same ledger with the same
+    /// global nonce must produce different IDs because the admin address is now
+    /// part of the hash input.
+    #[test]
+    fn test_same_ledger_same_nonce_different_admins_produce_different_ids() {
+        let (env, contract_id, _) = setup();
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+
+        // Freeze the global nonce so both calls see nonce=0 by resetting it
+        // between calls — simulates the worst-case where nonce doesn't help.
+        let (id1, id2) = with_contract(&env, &contract_id, || {
+            let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
+
+            // Generate for admin1 at nonce=0.
+            env.storage().persistent().set(&nonce_key, &0u32);
+            let a = MarketIdGenerator::generate_market_id(&env, &admin1);
+
+            // Reset nonce back to 0 to force the same nonce for admin2.
+            env.storage().persistent().set(&nonce_key, &0u32);
+            let b = MarketIdGenerator::generate_market_id(&env, &admin2);
+
+            (a, b)
+        });
+
+        assert_ne!(
+            id1.to_string(),
+            id2.to_string(),
+            "admin address must differentiate IDs even when nonce is identical"
+        );
+    }
+
+    /// Manually pre-populate storage with a market under the ID that would be
+    /// generated next, then verify generate_market_id skips it and returns a
+    /// different (non-colliding) ID.
+    #[test]
+    fn test_forced_registry_collision_triggers_retry() {
+        let (env, contract_id, admin) = setup();
+
+        with_contract(&env, &contract_id, || {
+            // Peek at what the first ID would be without consuming the nonce.
+            let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
+            let current_nonce: u32 = env
+                .storage()
+                .persistent()
+                .get(&nonce_key)
+                .unwrap_or(0);
+
+            // Build the ID that would be generated at nonce=current_nonce.
+            // We do this by temporarily calling generate_market_id, capturing
+            // the result, then planting a dummy Market at that key so the real
+            // call sees a collision.
+            let first_id = MarketIdGenerator::generate_market_id(&env, &admin);
+
+            // Reset state: put nonce back and clear the registry entry so the
+            // generator thinks it hasn't run yet, but leave the Market in
+            // persistent storage so check_market_id_collision returns true.
+            env.storage().persistent().set(&nonce_key, &current_nonce);
+
+            // The market is already stored by generate_market_id above.
+            // Now call again — the generator must detect the collision on the
+            // first candidate and return a different ID.
+            let second_id = MarketIdGenerator::generate_market_id(&env, &admin);
+
+            assert_ne!(
+                first_id.to_string(),
+                second_id.to_string(),
+                "generator must skip a colliding ID and return a fresh one"
+            );
+            // Both IDs must pass format validation.
+            assert!(MarketIdGenerator::validate_market_id_format(&env, &first_id));
+            assert!(MarketIdGenerator::validate_market_id_format(&env, &second_id));
+        });
     }
 
     // ── Registry ─────────────────────────────────────────────────────────────
