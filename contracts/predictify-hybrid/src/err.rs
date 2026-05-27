@@ -121,6 +121,8 @@ pub enum Error {
     DisputeFeeFailed = 409,
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
+    /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
+    SweepAlreadyDone = 411,
     /// Platform fee has already been collected from this market.
     FeeAlreadyCollected = 413,
     /// No fees are available to collect from this market.

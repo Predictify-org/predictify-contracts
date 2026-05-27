@@ -691,6 +691,7 @@ impl PredictifyHybrid {
             min_pool_size,
             bet_deadline,
             dispute_window_seconds: dispute_window_seconds.unwrap_or(86400),
+            winnings_swept: false,
         };
 
         // Store the market
@@ -1883,6 +1884,11 @@ impl PredictifyHybrid {
             return Err(Error::InvalidState);
         }
 
+        // Idempotency guard: reject a repeat sweep so the treasury is never double-credited.
+        if market.winnings_swept {
+            return Err(Error::SweepAlreadyDone);
+        }
+
         let fee_percent = crate::config::ConfigManager::get_config(&env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
@@ -2024,6 +2030,8 @@ impl PredictifyHybrid {
             Some(treasury)
         };
 
+        // Mark this market as swept so a second call returns SweepAlreadyDone.
+        market.winnings_swept = true;
         env.storage().persistent().set(&market_id, &market);
         EventEmitter::emit_unclaimed_winnings_swept(
             &env,
