@@ -20,6 +20,8 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
+#[cfg(test)]
+mod admin_auth_audit_tests;
 pub mod audit_trail;
 mod balances;
 mod batch_operations;
@@ -40,16 +42,12 @@ mod market_analytics;
 mod market_id_generator;
 mod markets;
 mod metadata_limits;
-mod tokens;
 #[cfg(test)]
 mod metadata_limits_tests;
+mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
-#[cfg(test)]
-mod admin_auth_audit_tests;
-mod monitoring;
 mod oracles;
-pub mod tokens;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
@@ -60,6 +58,7 @@ mod statistics;
 mod storage;
 #[cfg(test)]
 mod storage_layout_tests;
+pub mod tokens;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -181,7 +180,8 @@ pub struct PredictifyHybrid;
 
 const PERCENTAGE_DENOMINATOR: i128 = 10000;
 
-const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str = "Primary oracle failed, fallback also failed";
+const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str =
+    "Primary oracle failed, fallback also failed";
 const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str = "Primary oracle failed and no fallback configured";
 
 fn resolution_timeout_reached(env: &Env, market: &Market) -> bool {
@@ -266,9 +266,18 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Emits `contract_initialized` and `platform_fee_set` events on successful initialization.
-    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>, allowed_assets: Option<Vec<Address>>) -> Result<(), Error> {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        platform_fee_percentage: Option<i128>,
+        allowed_assets: Option<Vec<Address>>,
+    ) -> Result<(), Error> {
         // Check for re-initialization attempt (critical security check)
-        if env.storage().persistent().has(&Symbol::new(&env, "platform_fee")) {
+        if env
+            .storage()
+            .persistent()
+            .has(&Symbol::new(&env, "platform_fee"))
+        {
             return Err(Error::InvalidState);
         }
 
@@ -788,7 +797,7 @@ impl PredictifyHybrid {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
         };
-        
+
         // Create a new event
         let event = Event {
             id: event_id.clone(),
@@ -942,7 +951,11 @@ impl PredictifyHybrid {
         }
 
         // Respect bet_deadline if set, otherwise use end_time
-        let cutoff = if market.bet_deadline > 0 { market.bet_deadline } else { market.end_time };
+        let cutoff = if market.bet_deadline > 0 {
+            market.bet_deadline
+        } else {
+            market.end_time
+        };
         if env.ledger().timestamp() >= cutoff {
             panic_with_error!(env, Error::MarketClosed);
         }
@@ -1803,7 +1816,12 @@ impl PredictifyHybrid {
             &market_id,
             claim_period_seconds,
         );
-        EventEmitter::emit_market_claim_period_updated(&env, &admin, &market_id, claim_period_seconds);
+        EventEmitter::emit_market_claim_period_updated(
+            &env,
+            &admin,
+            &market_id,
+            claim_period_seconds,
+        );
     }
 
     /// Set treasury recipient for unclaimed winnings sweeps (admin only).
@@ -1942,7 +1960,9 @@ impl PredictifyHybrid {
                 return Err(Error::InvalidInput);
             }
 
-            market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+            market
+                .claimed
+                .set(user.clone(), ClaimInfo::new(&env, payout));
             swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
         }
 
@@ -1986,7 +2006,9 @@ impl PredictifyHybrid {
                 return Err(Error::InvalidInput);
             }
 
-            market.claimed.set(user.clone(), ClaimInfo::new(&env, payout));
+            market
+                .claimed
+                .set(user.clone(), ClaimInfo::new(&env, payout));
             swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
         }
 
@@ -3984,7 +4006,8 @@ impl PredictifyHybrid {
             market_id,
             additional_days,
             reason,
-        ).unwrap_or_else(|e| panic_with_error!(env, e));
+        )
+        .unwrap_or_else(|e| panic_with_error!(env, e));
 
         Ok(())
     }
@@ -5276,8 +5299,9 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        let result = match crate::recovery::RecoveryManager::recover_market_state(&env, &admin, &market_id)
-        {
+        let result = match crate::recovery::RecoveryManager::recover_market_state(
+            &env, &admin, &market_id,
+        ) {
             Ok(res) => res,
             Err(e) => panic_with_error!(env, e),
         };
@@ -5354,6 +5378,21 @@ impl PredictifyHybrid {
     pub fn get_recovery_status(env: Env, market_id: Symbol) -> String {
         crate::recovery::RecoveryManager::get_recovery_status(&env, &market_id)
             .unwrap_or_else(|_| String::from_str(&env, "unknown"))
+    }
+
+    /// Remove the oldest `count` completed recovery history entries for a market (admin only).
+    ///
+    /// Active (unresolved) recovery state is never pruned. `count` is capped at 30.
+    ///
+    /// # Errors
+    /// * `Unauthorized` - Caller is not admin
+    pub fn prune_recovery_history(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        count: u32,
+    ) -> Result<u32, Error> {
+        crate::recovery::RecoveryManager::prune_recovery_history(&env, &admin, &market_id, count)
     }
 
     // ===== VERSIONING FUNCTIONS =====
@@ -6976,23 +7015,3 @@ impl PredictifyHybrid {
 
 #[cfg(any())]
 mod test;
-
-fn assert_can_participate(env: &Env, user: &Address, event: &Event) {
-    if event.is_private {
-        let is_allowed = event.allowlist.iter().any(|addr| addr == user);
-        if !is_allowed {
-            panic!("User not allowlisted for private event");
-        }
-    }
-}
-let event = get_event(&env, event_id);
-
-assert_can_participate(&env, &user, &event);
-
-/// Places a bet on a given event.
-///
-/// # Panics
-/// - If the event is private and the caller is not in the allowlist.
-///
-/// # Security
-/// Enforces event-level access control before any state mutation.
