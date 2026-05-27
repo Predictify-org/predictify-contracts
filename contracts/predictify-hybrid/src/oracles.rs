@@ -3838,8 +3838,6 @@ impl OracleCallbackAuth {
         // Store just the price (i128) since OraclePriceData lacks contracttype
         self.env.storage().persistent().set(&data_key, &callback_data.price);
 
-        self.env.storage().persistent().set(&data_key, &oracle_data);
-
         // Emit oracle callback event
         crate::events::EventEmitter::emit_oracle_callback(
             &self.env,
@@ -3944,7 +3942,7 @@ impl OracleCallbackAuth {
     fn log_successful_authentication(&self, caller: &Address, callback_data: &OracleCallbackData) {
         let log_message = String::from_str(
             &self.env,
-            &format!("Oracle callback authenticated: {}", callback_data.feed_id.to_string()),
+            "Oracle callback authenticated",
         );
         let ctx = String::from_str(&self.env, "oracle_auth");
         crate::events::EventEmitter::emit_error_logged(

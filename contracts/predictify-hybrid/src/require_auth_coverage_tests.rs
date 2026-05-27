@@ -49,7 +49,7 @@ use crate::types::{OracleConfig, OracleProvider, ReflectorAsset};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    vec, Address, BytesN, Env, IntoVal, String, Symbol, Vec,
+    vec, Address, BytesN, Env, String, Symbol, Vec,
 };
 
 // ============================================================
@@ -62,12 +62,67 @@ fn setup() -> (Env, Address, Address) {
     env.mock_all_auths();
     let cid = env.register(PredictifyHybrid, ());
     let admin = Address::generate(&env);
-    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128));
+    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128), &None);
     (env, cid, admin)
 }
 
-fn client(env: &Env, cid: &Address) -> PredictifyHybridClient {
+fn client<'a>(env: &'a Env, cid: &'a Address) -> PredictifyHybridClient<'a> {
     PredictifyHybridClient::new(env, cid)
+}
+
+/// For functions that return Result<T, crate::Error>:
+/// try_* gives Result<Result<T, crate::Error>, soroban_sdk::Error>
+/// Err(Ok(e)) where e: crate::Error
+macro_rules! assert_unauthorized_contract {
+    ($result:expr) => {
+        match $result {
+            Err(Ok(e)) => assert_eq!(e, crate::errors::Error::Unauthorized,
+                "expected Unauthorized, got {:?}", e),
+            Ok(_) => panic!("expected Unauthorized error, got Ok"),
+            Err(Err(e)) => panic!("expected Unauthorized error, got host error {:?}", e),
+        }
+    };
+}
+
+/// For functions that panic (no explicit return type / return ()):
+/// try_* gives Result<Result<(), soroban_sdk::Error>, soroban_sdk::Error>
+/// Err(Ok(e)) where e: soroban_sdk::Error encoding our contract error code
+macro_rules! assert_unauthorized_panic {
+    ($result:expr) => {
+        match $result {
+            Err(Ok(e)) => assert_eq!(
+                e,
+                soroban_sdk::Error::from_contract_error(crate::errors::Error::Unauthorized as u32),
+                "expected Unauthorized, got {:?}", e
+            ),
+            Ok(_) => panic!("expected Unauthorized error, got Ok"),
+            Err(Err(e)) => panic!("expected Unauthorized error, got host error {:?}", e),
+        }
+    };
+}
+
+/// For positive tests on Result<T, crate::Error> functions:
+/// assert auth passed (error is not Unauthorized)
+macro_rules! assert_auth_ok_contract {
+    ($result:expr, $msg:expr) => {
+        if let Err(Ok(e)) = $result {
+            assert_ne!(e, crate::errors::Error::Unauthorized, $msg);
+        }
+    };
+}
+
+/// For positive tests on panicking functions:
+/// assert auth passed (error is not Unauthorized)
+macro_rules! assert_auth_ok_panic {
+    ($result:expr, $msg:expr) => {
+        if let Err(Ok(e)) = $result {
+            assert_ne!(
+                e,
+                soroban_sdk::Error::from_contract_error(crate::errors::Error::Unauthorized as u32),
+                $msg
+            );
+        }
+    };
 }
 
 fn oracle(env: &Env) -> OracleConfig {
@@ -79,7 +134,7 @@ fn oracle(env: &Env) -> OracleConfig {
         ),
         feed_id: String::from_str(env, "BTC/USD"),
         threshold: 50_000,
-        comparison: String::from_str(env, "gte"),
+        comparison: String::from_str(env, "gt"),
     }
 }
 
@@ -118,7 +173,7 @@ fn setup_no_auth() -> (Env, Address, Address) {
     env.mock_all_auths();
     let cid = env.register(PredictifyHybrid, ());
     let admin = Address::generate(&env);
-    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128));
+    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128), &None);
     env.set_auths(&[]);
     (env, cid, admin)
 }
@@ -135,9 +190,7 @@ fn test_deposit_authorized_succeeds() {
     let (env, cid, _admin) = setup();
     let user = Address::generate(&env);
     let result = client(&env, &cid).try_deposit(&user, &ReflectorAsset::Stellar, &1_000_000i128);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "deposit rejected authorized user");
-    }
+    assert_auth_ok_contract!(result, "deposit rejected authorized user");
 }
 
 /// Negative: deposit without user auth must panic.
@@ -158,9 +211,7 @@ fn test_withdraw_authorized_succeeds() {
     let user = Address::generate(&env);
     let _ = client(&env, &cid).try_deposit(&user, &ReflectorAsset::Stellar, &1_000_000i128);
     let result = client(&env, &cid).try_withdraw(&user, &ReflectorAsset::Stellar, &500_000i128);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "withdraw rejected authorized user");
-    }
+    assert_auth_ok_contract!(result, "withdraw rejected authorized user");
 }
 
 /// Negative: withdraw without user auth must panic.
@@ -186,9 +237,7 @@ fn test_vote_authorized_succeeds() {
         &String::from_str(&env, "yes"),
         &1_000i128,
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "vote rejected authorized user");
-    }
+    assert_auth_ok_panic!(result, "vote rejected authorized user");
 }
 
 /// Negative: vote without user auth must panic.
@@ -230,7 +279,7 @@ fn test_vote_wrong_subject_rejected() {
     );
     // user_b is a distinct address – must NOT get AlreadyVoted
     if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::AlreadyVoted, "contract confused user_a and user_b");
+        assert_ne!(e, soroban_sdk::Error::from_contract_error(crate::errors::Error::AlreadyVoted as u32), "contract confused user_a and user_b");
     }
 }
 
@@ -248,9 +297,7 @@ fn test_place_bet_authorized_succeeds() {
         &String::from_str(&env, "yes"),
         &1_000_000i128,
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "place_bet rejected authorized user");
-    }
+    assert_auth_ok_panic!(result, "place_bet rejected authorized user");
 }
 
 /// Negative: place_bet without user auth must panic.
@@ -276,9 +323,7 @@ fn test_place_bets_authorized_succeeds() {
         (market_id, String::from_str(&env, "yes"), 1_000_000i128),
     ];
     let result = client(&env, &cid).try_place_bets(&user, &bets);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "place_bets rejected authorized user");
-    }
+    assert_auth_ok_panic!(result, "place_bets rejected authorized user");
 }
 
 /// Negative: place_bets without user auth must panic.
@@ -306,9 +351,7 @@ fn test_cancel_bet_authorized_succeeds() {
         &1_000_000i128,
     );
     let result = client(&env, &cid).try_cancel_bet(&user, &market_id);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "cancel_bet rejected authorized user");
-    }
+    assert_auth_ok_contract!(result, "cancel_bet rejected authorized user");
 }
 
 /// Negative: cancel_bet without user auth must panic.
@@ -343,9 +386,7 @@ fn test_claim_winnings_authorized_succeeds() {
     );
     advance_past_dispute(&env);
     let result = client(&env, &cid).try_claim_winnings(&user, &market_id);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "claim_winnings rejected authorized user");
-    }
+    assert_auth_ok_panic!(result, "claim_winnings rejected authorized user");
 }
 
 /// Negative: claim_winnings without user auth must panic.
@@ -401,9 +442,7 @@ fn test_dispute_market_authorized_succeeds() {
     );
     let user = Address::generate(&env);
     let result = client(&env, &cid).try_dispute_market(&user, &market_id, &1_000i128, &None);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "dispute_market rejected authorized user");
-    }
+    assert_auth_ok_contract!(result, "dispute_market rejected authorized user");
 }
 
 /// Negative: dispute_market without user auth must panic.
@@ -436,9 +475,7 @@ fn test_vote_on_dispute_authorized_succeeds() {
     let result = client(&env, &cid).try_vote_on_dispute(
         &voter, &market_id, &dispute_id, &true, &500i128, &None,
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "vote_on_dispute rejected authorized user");
-    }
+    assert_auth_ok_contract!(result, "vote_on_dispute rejected authorized user");
 }
 
 /// Negative: vote_on_dispute without user auth must panic.
@@ -487,7 +524,7 @@ fn test_create_market_forged_admin_rejected() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_panic!(result);
 }
 
 // ── create_event ─────────────────────────────────────────────
@@ -510,9 +547,7 @@ fn test_create_event_authorized_admin_succeeds() {
         &86400u64,
         &crate::types::EventVisibility::Public,
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "create_event rejected authorized admin");
-    }
+    assert_auth_ok_panic!(result, "create_event rejected authorized admin");
 }
 
 /// Negative: non-admin cannot create an event.
@@ -534,7 +569,7 @@ fn test_create_event_forged_admin_rejected() {
         &86400u64,
         &crate::types::EventVisibility::Public,
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_panic!(result);
 }
 
 // ── resolve_market_manual ────────────────────────────────────
@@ -550,9 +585,7 @@ fn test_resolve_market_manual_authorized_admin_succeeds() {
         &market_id,
         &String::from_str(&env, "yes"),
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "resolve_market_manual rejected authorized admin");
-    }
+    assert_auth_ok_panic!(result, "resolve_market_manual rejected authorized admin");
 }
 
 /// Negative: non-admin cannot manually resolve a market.
@@ -567,7 +600,7 @@ fn test_resolve_market_manual_forged_admin_rejected() {
         &market_id,
         &String::from_str(&env, "yes"),
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_panic!(result);
 }
 
 // ── resolve_market_with_ties ─────────────────────────────────
@@ -581,9 +614,7 @@ fn test_resolve_market_with_ties_authorized_admin_succeeds() {
     let mut winning = Vec::new(&env);
     winning.push_back(String::from_str(&env, "yes"));
     let result = client(&env, &cid).try_resolve_market_with_ties(&admin, &market_id, &winning);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "resolve_market_with_ties rejected authorized admin");
-    }
+    assert_auth_ok_panic!(result, "resolve_market_with_ties rejected authorized admin");
 }
 
 /// Negative: non-admin cannot resolve with ties.
@@ -596,7 +627,7 @@ fn test_resolve_market_with_ties_forged_admin_rejected() {
     let mut winning = Vec::new(&env);
     winning.push_back(String::from_str(&env, "yes"));
     let result = client(&env, &cid).try_resolve_market_with_ties(&attacker, &market_id, &winning);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_panic!(result);
 }
 
 // ── resolve_dispute ──────────────────────────────────────────
@@ -611,9 +642,7 @@ fn test_resolve_dispute_authorized_admin_succeeds() {
         &admin, &market_id, &String::from_str(&env, "yes"),
     );
     let result = client(&env, &cid).try_resolve_dispute(&admin, &market_id);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "resolve_dispute rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "resolve_dispute rejected authorized admin");
 }
 
 /// Negative: non-admin cannot resolve a dispute.
@@ -623,7 +652,7 @@ fn test_resolve_dispute_forged_admin_rejected() {
     let market_id = make_market(&env, &cid, &admin);
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_resolve_dispute(&attacker, &market_id);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── collect_fees ─────────────────────────────────────────────
@@ -638,9 +667,7 @@ fn test_collect_fees_authorized_admin_succeeds() {
         &admin, &market_id, &String::from_str(&env, "yes"),
     );
     let result = client(&env, &cid).try_collect_fees(&admin, &market_id);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "collect_fees rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "collect_fees rejected authorized admin");
 }
 
 /// Negative: non-admin cannot collect fees.
@@ -650,7 +677,7 @@ fn test_collect_fees_forged_admin_rejected() {
     let market_id = make_market(&env, &cid, &admin);
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_collect_fees(&attacker, &market_id);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── withdraw_collected_fees ──────────────────────────────────
@@ -660,9 +687,7 @@ fn test_collect_fees_forged_admin_rejected() {
 fn test_withdraw_collected_fees_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let result = client(&env, &cid).try_withdraw_collected_fees(&admin, &0i128);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "withdraw_collected_fees rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "withdraw_collected_fees rejected authorized admin");
 }
 
 /// Negative: non-admin cannot withdraw collected fees.
@@ -671,7 +696,7 @@ fn test_withdraw_collected_fees_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_withdraw_collected_fees(&attacker, &0i128);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ============================================================
@@ -694,7 +719,7 @@ fn test_set_platform_fee_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_set_platform_fee(&attacker, &300i128);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── set_treasury ─────────────────────────────────────────────
@@ -706,9 +731,7 @@ fn test_set_treasury_authorized_admin_succeeds() {
     let treasury = Address::generate(&env);
     // set_treasury panics on error, so use try_ variant
     let result = client(&env, &cid).try_set_treasury(&admin, &treasury);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "set_treasury rejected authorized admin");
-    }
+    assert_auth_ok_panic!(result, "set_treasury rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set the treasury.
@@ -719,7 +742,7 @@ fn test_set_treasury_forged_admin_rejected() {
     let treasury = Address::generate(&env);
     let result = client(&env, &cid).try_set_treasury(&attacker, &treasury);
     // Must be Unauthorized (not Ok)
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_panic!(result);
 }
 
 // ── set_global_claim_period ──────────────────────────────────
@@ -729,9 +752,7 @@ fn test_set_treasury_forged_admin_rejected() {
 fn test_set_global_claim_period_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let result = client(&env, &cid).try_set_global_claim_period(&admin, &604_800u64);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "set_global_claim_period rejected authorized admin");
-    }
+    assert_auth_ok_panic!(result, "set_global_claim_period rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set the global claim period.
@@ -740,7 +761,7 @@ fn test_set_global_claim_period_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_set_global_claim_period(&attacker, &604_800u64);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_panic!(result);
 }
 
 // ── set_market_claim_period ──────────────────────────────────
@@ -751,9 +772,7 @@ fn test_set_market_claim_period_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let market_id = make_market(&env, &cid, &admin);
     let result = client(&env, &cid).try_set_market_claim_period(&admin, &market_id, &604_800u64);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "set_market_claim_period rejected authorized admin");
-    }
+    assert_auth_ok_panic!(result, "set_market_claim_period rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set a per-market claim period.
@@ -763,7 +782,7 @@ fn test_set_market_claim_period_forged_admin_rejected() {
     let market_id = make_market(&env, &cid, &admin);
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_set_market_claim_period(&attacker, &market_id, &604_800u64);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_panic!(result);
 }
 
 // ── sweep_unclaimed_winnings ─────────────────────────────────
@@ -780,9 +799,7 @@ fn test_sweep_unclaimed_winnings_authorized_admin_succeeds() {
     // Advance well past claim window
     env.ledger().with_mut(|l| l.timestamp += 365 * 24 * 60 * 60);
     let result = client(&env, &cid).try_sweep_unclaimed_winnings(&admin, &market_id, &false);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "sweep_unclaimed_winnings rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "sweep_unclaimed_winnings rejected authorized admin");
 }
 
 /// Negative: non-admin cannot sweep unclaimed winnings.
@@ -792,7 +809,7 @@ fn test_sweep_unclaimed_winnings_forged_admin_rejected() {
     let market_id = make_market(&env, &cid, &admin);
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_sweep_unclaimed_winnings(&attacker, &market_id, &false);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── extend_deadline ──────────────────────────────────────────
@@ -808,9 +825,7 @@ fn test_extend_deadline_authorized_admin_succeeds() {
         &7u32,
         &String::from_str(&env, "More time needed"),
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "extend_deadline rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "extend_deadline rejected authorized admin");
 }
 
 /// Negative: non-admin cannot extend a market deadline.
@@ -825,7 +840,7 @@ fn test_extend_deadline_forged_admin_rejected() {
         &7u32,
         &String::from_str(&env, "Attacker extension"),
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── update_event_description ─────────────────────────────────
@@ -840,9 +855,7 @@ fn test_update_event_description_authorized_admin_succeeds() {
         &market_id,
         &String::from_str(&env, "Updated: Will BTC reach 200k?"),
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "update_event_description rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "update_event_description rejected authorized admin");
 }
 
 /// Negative: non-admin cannot update a market description.
@@ -856,7 +869,7 @@ fn test_update_event_description_forged_admin_rejected() {
         &market_id,
         &String::from_str(&env, "Attacker description"),
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── update_event_outcomes ────────────────────────────────────
@@ -870,9 +883,7 @@ fn test_update_event_outcomes_authorized_admin_succeeds() {
     new_outcomes.push_back(String::from_str(&env, "above"));
     new_outcomes.push_back(String::from_str(&env, "below"));
     let result = client(&env, &cid).try_update_event_outcomes(&admin, &market_id, &new_outcomes);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "update_event_outcomes rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "update_event_outcomes rejected authorized admin");
 }
 
 /// Negative: non-admin cannot update market outcomes.
@@ -885,7 +896,7 @@ fn test_update_event_outcomes_forged_admin_rejected() {
     new_outcomes.push_back(String::from_str(&env, "hack"));
     new_outcomes.push_back(String::from_str(&env, "hack2"));
     let result = client(&env, &cid).try_update_event_outcomes(&attacker, &market_id, &new_outcomes);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── update_event_category ────────────────────────────────────
@@ -900,9 +911,7 @@ fn test_update_event_category_authorized_admin_succeeds() {
         &market_id,
         &Some(String::from_str(&env, "crypto")),
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "update_event_category rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "update_event_category rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set a market category.
@@ -916,7 +925,7 @@ fn test_update_event_category_forged_admin_rejected() {
         &market_id,
         &Some(String::from_str(&env, "hack")),
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── update_event_tags ────────────────────────────────────────
@@ -928,9 +937,7 @@ fn test_update_event_tags_authorized_admin_succeeds() {
     let market_id = make_market(&env, &cid, &admin);
     let tags = vec![&env, String::from_str(&env, "bitcoin")];
     let result = client(&env, &cid).try_update_event_tags(&admin, &market_id, &tags);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "update_event_tags rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "update_event_tags rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set market tags.
@@ -941,7 +948,7 @@ fn test_update_event_tags_forged_admin_rejected() {
     let attacker = Address::generate(&env);
     let tags = vec![&env, String::from_str(&env, "hack")];
     let result = client(&env, &cid).try_update_event_tags(&attacker, &market_id, &tags);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ============================================================
@@ -955,9 +962,7 @@ fn test_update_event_tags_forged_admin_rejected() {
 fn test_set_global_bet_limits_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let result = client(&env, &cid).try_set_global_bet_limits(&admin, &100_000i128, &10_000_000i128);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "set_global_bet_limits rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "set_global_bet_limits rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set global bet limits.
@@ -966,7 +971,7 @@ fn test_set_global_bet_limits_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_set_global_bet_limits(&attacker, &100_000i128, &10_000_000i128);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── set_event_bet_limits ─────────────────────────────────────
@@ -979,9 +984,7 @@ fn test_set_event_bet_limits_authorized_admin_succeeds() {
     let result = client(&env, &cid).try_set_event_bet_limits(
         &admin, &market_id, &100_000i128, &10_000_000i128,
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "set_event_bet_limits rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "set_event_bet_limits rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set per-event bet limits.
@@ -993,7 +996,7 @@ fn test_set_event_bet_limits_forged_admin_rejected() {
     let result = client(&env, &cid).try_set_event_bet_limits(
         &attacker, &market_id, &100_000i128, &10_000_000i128,
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── set_oracle_val_cfg_global ────────────────────────────────
@@ -1003,9 +1006,7 @@ fn test_set_event_bet_limits_forged_admin_rejected() {
 fn test_set_oracle_val_cfg_global_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let result = client(&env, &cid).try_set_oracle_val_cfg_global(&admin, &300u64, &9500u32);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "set_oracle_val_cfg_global rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "set_oracle_val_cfg_global rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set global oracle validation config.
@@ -1014,7 +1015,7 @@ fn test_set_oracle_val_cfg_global_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_set_oracle_val_cfg_global(&attacker, &300u64, &9500u32);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── set_oracle_val_cfg_event ─────────────────────────────────
@@ -1027,9 +1028,7 @@ fn test_set_oracle_val_cfg_event_authorized_admin_succeeds() {
     let result = client(&env, &cid).try_set_oracle_val_cfg_event(
         &admin, &market_id, &300u64, &9500u32,
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "set_oracle_val_cfg_event rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "set_oracle_val_cfg_event rejected authorized admin");
 }
 
 /// Negative: non-admin cannot set per-event oracle validation config.
@@ -1041,7 +1040,7 @@ fn test_set_oracle_val_cfg_event_forged_admin_rejected() {
     let result = client(&env, &cid).try_set_oracle_val_cfg_event(
         &attacker, &market_id, &300u64, &9500u32,
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── admin_override_verification ──────────────────────────────
@@ -1060,9 +1059,7 @@ fn test_admin_override_verification_authorized_admin_auth_passes() {
     );
     // Auth passes; the function returns OracleUnavailable because the oracle
     // module is currently disabled – that is NOT an auth failure.
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "admin_override_verification rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "admin_override_verification rejected authorized admin");
 }
 
 /// Negative: non-admin cannot call admin_override_verification.
@@ -1077,7 +1074,7 @@ fn test_admin_override_verification_forged_admin_rejected() {
         &String::from_str(&env, "yes"),
         &String::from_str(&env, "hack"),
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── archive_event ────────────────────────────────────────────
@@ -1092,9 +1089,7 @@ fn test_archive_event_authorized_admin_succeeds() {
         &admin, &market_id, &String::from_str(&env, "yes"),
     );
     let result = client(&env, &cid).try_archive_event(&admin, &market_id);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "archive_event rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "archive_event rejected authorized admin");
 }
 
 /// Negative: non-admin cannot archive an event.
@@ -1104,7 +1099,7 @@ fn test_archive_event_forged_admin_rejected() {
     let market_id = make_market(&env, &cid, &admin);
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_archive_event(&attacker, &market_id);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── prune_archive ────────────────────────────────────────────
@@ -1114,9 +1109,7 @@ fn test_archive_event_forged_admin_rejected() {
 fn test_prune_archive_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let result = client(&env, &cid).try_prune_archive(&admin, &5u32);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "prune_archive rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "prune_archive rejected authorized admin");
 }
 
 /// Negative: non-admin cannot prune the archive.
@@ -1125,7 +1118,7 @@ fn test_prune_archive_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_prune_archive(&attacker, &5u32);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── add_admin ────────────────────────────────────────────────
@@ -1142,9 +1135,7 @@ fn test_add_admin_authorized_admin_succeeds() {
         &new_admin,
         &crate::admin::AdminRole::MarketAdmin,
     );
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "add_admin rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "add_admin rejected authorized admin");
 }
 
 /// Negative: non-admin cannot add admins.
@@ -1159,7 +1150,7 @@ fn test_add_admin_forged_admin_rejected() {
         &new_admin,
         &crate::admin::AdminRole::MarketAdmin,
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── remove_admin ─────────────────────────────────────────────
@@ -1174,9 +1165,7 @@ fn test_remove_admin_authorized_admin_succeeds() {
         &admin, &target, &crate::admin::AdminRole::MarketAdmin,
     );
     let result = client(&env, &cid).try_remove_admin(&admin, &target);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "remove_admin rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "remove_admin rejected authorized admin");
 }
 
 /// Negative: non-admin cannot remove admins.
@@ -1187,7 +1176,7 @@ fn test_remove_admin_forged_admin_rejected() {
     let attacker = Address::generate(&env);
     let target = Address::generate(&env);
     let result = client(&env, &cid).try_remove_admin(&attacker, &target);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── migrate_to_multi_admin ───────────────────────────────────
@@ -1197,9 +1186,7 @@ fn test_remove_admin_forged_admin_rejected() {
 fn test_migrate_to_multi_admin_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let result = client(&env, &cid).try_migrate_to_multi_admin(&admin);
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "migrate_to_multi_admin rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "migrate_to_multi_admin rejected authorized admin");
 }
 
 /// Negative: non-admin cannot trigger multi-admin migration.
@@ -1208,7 +1195,7 @@ fn test_migrate_to_multi_admin_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_migrate_to_multi_admin(&attacker);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ── upgrade_contract ─────────────────────────────────────────
@@ -1221,9 +1208,7 @@ fn test_upgrade_contract_authorized_admin_auth_passes() {
     let wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
     let result = client(&env, &cid).try_upgrade_contract(&admin, &wasm_hash);
     // Auth passes; may fail for other reasons (invalid wasm hash etc.)
-    if let Err(Ok(e)) = result {
-        assert_ne!(e, Error::Unauthorized, "upgrade_contract rejected authorized admin");
-    }
+    assert_auth_ok_contract!(result, "upgrade_contract rejected authorized admin");
 }
 
 /// Negative: non-admin cannot upgrade the contract.
@@ -1233,7 +1218,7 @@ fn test_upgrade_contract_forged_admin_rejected() {
     let attacker = Address::generate(&env);
     let wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
     let result = client(&env, &cid).try_upgrade_contract(&attacker, &wasm_hash);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 
 // ============================================================
@@ -1247,10 +1232,8 @@ fn test_admin_calls_before_initialize_return_admin_not_set() {
     env.mock_all_auths();
     let cid = env.register(PredictifyHybrid, ());
     let fake_admin = Address::generate(&env);
-
-    // set_platform_fee requires stored admin – must fail with AdminNotSet
     let result = client(&env, &cid).try_set_platform_fee(&fake_admin, &200i128);
-    assert_eq!(result, Err(Ok(Error::AdminNotSet)));
+    assert_eq!(result, Err(Ok(crate::errors::Error::AdminNotSet)));
 }
 
 /// Uninitialized contract: upgrade_contract before initialize returns AdminNotSet.
@@ -1262,43 +1245,28 @@ fn test_upgrade_before_initialize_returns_admin_not_set() {
     let fake_admin = Address::generate(&env);
     let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
     let result = client(&env, &cid).try_upgrade_contract(&fake_admin, &wasm_hash);
-    assert_eq!(result, Err(Ok(Error::AdminNotSet)));
+    assert_eq!(result, Err(Ok(crate::errors::Error::AdminNotSet)));
 }
 
 /// Correct caller but wrong subject: user A's auth token cannot satisfy
-/// user B's require_auth. Soroban rejects the call because the mocked auth
-/// address (user_a) does not match the `user` argument (user_b).
+/// user B's require_auth. Soroban rejects the call because only user_b's
+/// auth is required but only user_a's is provided.
+/// We use mock_auths scoped to user_a only, then call with user_b as subject.
 #[test]
 #[should_panic]
 fn test_vote_correct_caller_wrong_subject_panics() {
     let env = Env::default();
     let cid = env.register(PredictifyHybrid, ());
     let admin = Address::generate(&env);
-    let user_a = Address::generate(&env);
     let user_b = Address::generate(&env);
 
+    // Setup with full auths
     env.mock_all_auths();
-    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128));
+    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128), &None);
     let market_id = make_market(&env, &cid, &admin);
 
-    // Only provide auth for user_a; the call passes user_b as the subject.
-    // user_b.require_auth() inside vote() is not satisfied → panic.
-    env.set_auths(&[soroban_sdk::testutils::MockAuth {
-        address: &user_a,
-        invoke: &soroban_sdk::testutils::MockAuthInvoke {
-            contract: &cid,
-            fn_name: "vote",
-            args: (
-                user_b.clone(),
-                market_id.clone(),
-                String::from_str(&env, "yes"),
-                1_000i128,
-            )
-                .into_val(&env),
-            sub_invokes: &[],
-        },
-    }]);
-
+    // Clear all auths — user_b has no auth → require_auth panics
+    env.set_auths(&[]);
     PredictifyHybridClient::new(&env, &cid).vote(
         &user_b,
         &market_id,
@@ -1307,19 +1275,17 @@ fn test_vote_correct_caller_wrong_subject_panics() {
     );
 }
 
-/// Correct caller but wrong subject: user A's auth cannot satisfy
-/// user B's require_auth inside claim_winnings.
+/// Correct caller but wrong subject: user B cannot claim winnings without auth.
 #[test]
 #[should_panic]
 fn test_claim_winnings_correct_caller_wrong_subject_panics() {
     let env = Env::default();
     let cid = env.register(PredictifyHybrid, ());
     let admin = Address::generate(&env);
-    let user_a = Address::generate(&env);
     let user_b = Address::generate(&env);
 
     env.mock_all_auths();
-    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128));
+    PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128), &None);
     let market_id = make_market(&env, &cid, &admin);
     let _ = PredictifyHybridClient::new(&env, &cid).try_vote(
         &user_b,
@@ -1333,17 +1299,8 @@ fn test_claim_winnings_correct_caller_wrong_subject_panics() {
     );
     advance_past_dispute(&env);
 
-    // Only mock auth for user_a; call passes user_b as subject → panic.
-    env.set_auths(&[soroban_sdk::testutils::MockAuth {
-        address: &user_a,
-        invoke: &soroban_sdk::testutils::MockAuthInvoke {
-            contract: &cid,
-            fn_name: "claim_winnings",
-            args: (user_b.clone(), market_id.clone()).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]);
-
+    // Clear all auths — user_b has no auth → require_auth panics
+    env.set_auths(&[]);
     PredictifyHybridClient::new(&env, &cid).claim_winnings(&user_b, &market_id);
 }
 
@@ -1363,6 +1320,6 @@ fn test_forged_instance_admin_cannot_set_platform_fee() {
     });
 
     let result = client(&env, &cid).try_set_platform_fee(&attacker, &500i128);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_unauthorized_contract!(result);
 }
 

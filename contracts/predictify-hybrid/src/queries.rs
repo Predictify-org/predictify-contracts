@@ -85,7 +85,15 @@ impl QueryManager {
 
     /// Check if an admin has a specific permission for an action.
     pub fn query_has_permission(env: &Env, admin: Address, action: String) -> Result<bool, Error> {
-        let action_str = action.to_string();
+        // soroban_sdk::String does not implement Display/ToString in WASM no_std.
+        // Convert via byte iteration instead.
+        let bytes = action.to_bytes();
+        let mut vec: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+        for b in bytes.iter() {
+            vec.push(b);
+        }
+        let action_str = alloc::string::String::from_utf8(vec)
+            .map_err(|_| Error::InvalidInput)?;
         let permission = crate::admin::AdminAccessControl::map_action_to_permission(&action_str)?;
         Ok(AdminManager::validate_admin_permission(env, &admin, permission).is_ok())
     }
@@ -96,7 +104,7 @@ impl QueryManager {
         env.storage()
             .persistent()
             .get(&key)
-            .ok_or(Error::ContractStateError)
+            .ok_or(Error::ConfigNotFound)
     }
 
     /// Check if an action requires multisig approval.
@@ -213,7 +221,7 @@ impl QueryManager {
         let winning_outcome = market.get_winning_outcome();
 
         let response = EventDetailsQuery {
-            market_id,
+            market_id: market_id.clone(),
             question: market.question,
             outcomes: market.outcomes,
             created_at: EventManager::get_event(env, &market_id).map(|e| e.created_at).unwrap_or(0),

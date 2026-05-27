@@ -244,6 +244,7 @@ pub struct DisputeStats {
 /// - Timestamp for regulatory compliance
 /// - Outcome justification for participants
 #[contracttype]
+#[derive(Debug, PartialEq)]
 pub struct DisputeResolution {
     pub market_id: Symbol,
     pub final_outcome: String,
@@ -833,7 +834,7 @@ impl DisputeManager {
             market_id: market_id.clone(),
             stake,
             timestamp: env.ledger().timestamp(),
-            reason,
+            reason: reason.clone(),
             status: DisputeStatus::Active,
         };
 
