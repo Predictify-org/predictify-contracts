@@ -41,7 +41,9 @@ fn test_upgrade_contract_requires_persistent_primary_admin() {
     let setup = TestSetup::uninitialized();
     let wasm_hash = BytesN::from_array(&setup.env, &[7; 32]);
 
-    let result = setup.client().try_upgrade_contract(&setup.admin, &wasm_hash);
+    let result = setup
+        .client()
+        .try_upgrade_contract(&setup.admin, &wasm_hash);
 
     assert_eq!(result, Err(Ok(Error::AdminNotSet)));
 }
@@ -97,16 +99,20 @@ fn test_delegated_super_admin_can_manage_admins_after_migration() {
         .client()
         .add_admin(&setup.admin, &delegated_admin, &AdminRole::SuperAdmin);
 
-    let result = setup
-        .client()
-        .try_add_admin(&delegated_admin, &target_admin, &AdminRole::MarketAdmin);
+    let result =
+        setup
+            .client()
+            .try_add_admin(&delegated_admin, &target_admin, &AdminRole::MarketAdmin);
 
     assert_eq!(result, Ok(Ok(())));
 
     let assignment = setup.env.as_contract(&setup.contract_id, || {
         AdminManager::get_admin_assignment(&setup.env, &target_admin)
     });
-    assert_eq!(assignment.map(|value| value.role), Some(AdminRole::MarketAdmin));
+    assert_eq!(
+        assignment.map(|value| value.role),
+        Some(AdminRole::MarketAdmin)
+    );
 }
 
 #[test]

@@ -11,18 +11,25 @@
 
 use alloc::format;
 use soroban_sdk::{
-    testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
+    testutils::{Address as _, EnvTestConfig},
+    vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 
-use crate::storage::{BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer};
 use crate::markets::MarketStateManager;
+use crate::storage::{
+    BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,
+};
 use crate::types::*;
 
 // ===== TEST UTILITIES =====
 
 /// Test helper to create a test environment
 fn create_test_env() -> Env {
-    Env::default()
+    let mut env = Env::default();
+    env.set_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env
 }
 
 /// Test helper to create a test admin
@@ -75,9 +82,15 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         min_pool_size: None,
         bet_deadline: 0,
         dispute_window_seconds: 0,
+        winnings_swept: false,
     };
 
     (market_id, market)
+}
+
+fn run_as_contract<T>(env: &Env, f: impl FnOnce() -> T) -> T {
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    env.as_contract(&contract_id, f)
 }
 
 // ===== STORAGE KEY COLLISION TESTS =====
@@ -280,39 +293,42 @@ fn test_audit_trail_namespace_prefix() {
 #[test]
 fn test_balance_storage_key_uniqueness() {
     let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
     let asset1 = ReflectorAsset::BTC;
     let asset2 = ReflectorAsset::ETH;
 
-    // Get balances to trigger key generation
-    let balance1 = BalanceStorage::get_balance(&env, &user1, &asset1);
-    let balance2 = BalanceStorage::get_balance(&env, &user1, &asset2);
-    let balance3 = BalanceStorage::get_balance(&env, &user2, &asset1);
+    env.as_contract(&contract_id, || {
+        // Get balances to trigger key generation
+        let balance1 = BalanceStorage::get_balance(&env, &user1, &asset1);
+        let balance2 = BalanceStorage::get_balance(&env, &user1, &asset2);
+        let balance3 = BalanceStorage::get_balance(&env, &user2, &asset1);
 
-    // Verify balances are independent (different keys)
-    assert_eq!(balance1.amount, 0);
-    assert_eq!(balance2.amount, 0);
-    assert_eq!(balance3.amount, 0);
+        // Verify balances are independent (different keys)
+        assert_eq!(balance1.amount, 0);
+        assert_eq!(balance2.amount, 0);
+        assert_eq!(balance3.amount, 0);
 
-    // Set different amounts
-    BalanceStorage::add_balance(&env, &user1, &asset1, 100).unwrap();
-    BalanceStorage::add_balance(&env, &user1, &asset2, 200).unwrap();
-    BalanceStorage::add_balance(&env, &user2, &asset1, 300).unwrap();
+        // Set different amounts
+        BalanceStorage::add_balance(&env, &user1, &asset1, 100).unwrap();
+        BalanceStorage::add_balance(&env, &user1, &asset2, 200).unwrap();
+        BalanceStorage::add_balance(&env, &user2, &asset1, 300).unwrap();
 
-    // Verify each balance is stored independently
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user1, &asset1).amount,
-        100
-    );
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user1, &asset2).amount,
-        200
-    );
-    assert_eq!(
-        BalanceStorage::get_balance(&env, &user2, &asset1).amount,
-        300
-    );
+        // Verify each balance is stored independently
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user1, &asset1).amount,
+            100
+        );
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user1, &asset2).amount,
+            200
+        );
+        assert_eq!(
+            BalanceStorage::get_balance(&env, &user2, &asset1).amount,
+            300
+        );
+    });
 }
 
 // ===== EVENT STORAGE KEY TESTS =====
@@ -354,17 +370,19 @@ fn test_event_storage_key_uniqueness() {
         allowlist: SorobanVec::new(&env),
     };
 
-    // Store events
-    EventManager::store_event(&env, &event1);
-    EventManager::store_event(&env, &event2);
+    run_as_contract(&env, || {
+        // Store events
+        EventManager::store_event(&env, &event1);
+        EventManager::store_event(&env, &event2);
 
-    // Verify events are stored independently
-    let retrieved1 = EventManager::get_event(&env, &event1.id).unwrap();
-    let retrieved2 = EventManager::get_event(&env, &event2.id).unwrap();
+        // Verify events are stored independently
+        let retrieved1 = EventManager::get_event(&env, &event1.id).unwrap();
+        let retrieved2 = EventManager::get_event(&env, &event2.id).unwrap();
 
-    assert_eq!(retrieved1.id, event1.id);
-    assert_eq!(retrieved2.id, event2.id);
-    assert_ne!(retrieved1.id, retrieved2.id);
+        assert_eq!(retrieved1.id, event1.id);
+        assert_eq!(retrieved2.id, event2.id);
+        assert_ne!(retrieved1.id, retrieved2.id);
+    });
 }
 
 // ===== CREATOR LIMITS STORAGE KEY TESTS =====
@@ -375,19 +393,21 @@ fn test_creator_limits_key_uniqueness() {
     let creator1 = Address::generate(&env);
     let creator2 = Address::generate(&env);
 
-    // Increment active events for different creators
-    CreatorLimitsManager::increment_active_events(&env, &creator1);
-    CreatorLimitsManager::increment_active_events(&env, &creator1);
-    CreatorLimitsManager::increment_active_events(&env, &creator2);
+    run_as_contract(&env, || {
+        // Increment active events for different creators
+        CreatorLimitsManager::increment_active_events(&env, &creator1);
+        CreatorLimitsManager::increment_active_events(&env, &creator1);
+        CreatorLimitsManager::increment_active_events(&env, &creator2);
 
-    // Verify counts are independent
-    assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator1), 2);
-    assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator2), 1);
+        // Verify counts are independent
+        assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator1), 2);
+        assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator2), 1);
 
-    // Decrement and verify independence
-    CreatorLimitsManager::decrement_active_events(&env, &creator1);
-    assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator1), 1);
-    assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator2), 1);
+        // Decrement and verify independence
+        CreatorLimitsManager::decrement_active_events(&env, &creator1);
+        assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator1), 1);
+        assert_eq!(CreatorLimitsManager::get_active_events(&env, &creator2), 1);
+    });
 }
 
 // ===== DATA STRUCTURE EXTENSION TESTS =====
@@ -398,24 +418,27 @@ fn test_market_structure_serialization() {
     let admin = create_test_admin(&env);
     let (market_id, market) = create_test_market(&env, &admin);
 
-    // Store market
-    env.storage().persistent().set(&market_id, &market);
+    run_as_contract(&env, || {
+        // Store market
+        env.storage().persistent().set(&market_id, &market);
 
-    // Retrieve market
-    let retrieved: Market = env.storage().persistent().get(&market_id).unwrap();
+        // Retrieve market
+        let retrieved: Market = env.storage().persistent().get(&market_id).unwrap();
 
-    // Verify all fields are preserved
-    assert_eq!(retrieved.admin, market.admin);
-    assert_eq!(retrieved.question, market.question);
-    assert_eq!(retrieved.outcomes, market.outcomes);
-    assert_eq!(retrieved.end_time, market.end_time);
-    assert_eq!(retrieved.total_staked, market.total_staked);
-    assert_eq!(retrieved.state, market.state);
+        // Verify all fields are preserved
+        assert_eq!(retrieved.admin, market.admin);
+        assert_eq!(retrieved.question, market.question);
+        assert_eq!(retrieved.outcomes, market.outcomes);
+        assert_eq!(retrieved.end_time, market.end_time);
+        assert_eq!(retrieved.total_staked, market.total_staked);
+        assert_eq!(retrieved.state, market.state);
+    });
 }
 
 #[test]
 fn test_claim_info_structure_serialization() {
     let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
 
     let claim_info = ClaimInfo {
         claimed: true,
@@ -423,17 +446,19 @@ fn test_claim_info_structure_serialization() {
         payout_amount: 1_000_000,
     };
 
-    // Store claim info
-    let key = Symbol::new(&env, "test_claim");
-    env.storage().persistent().set(&key, &claim_info);
+    env.as_contract(&contract_id, || {
+        // Store claim info
+        let key = Symbol::new(&env, "test_claim");
+        env.storage().persistent().set(&key, &claim_info);
 
-    // Retrieve claim info
-    let retrieved: ClaimInfo = env.storage().persistent().get(&key).unwrap();
+        // Retrieve claim info
+        let retrieved: ClaimInfo = env.storage().persistent().get(&key).unwrap();
 
-    // Verify all fields are preserved
-    assert_eq!(retrieved.claimed, claim_info.claimed);
-    assert_eq!(retrieved.timestamp, claim_info.timestamp);
-    assert_eq!(retrieved.payout_amount, claim_info.payout_amount);
+        // Verify all fields are preserved
+        assert_eq!(retrieved.claimed, claim_info.claimed);
+        assert_eq!(retrieved.timestamp, claim_info.timestamp);
+        assert_eq!(retrieved.payout_amount, claim_info.payout_amount);
+    });
 }
 
 #[test]
@@ -448,18 +473,20 @@ fn test_oracle_config_structure_serialization() {
         comparison: String::from_str(&env, "gt"),
     };
 
-    // Store oracle config
-    let key = Symbol::new(&env, "test_oracle");
-    env.storage().persistent().set(&key, &oracle_config);
+    run_as_contract(&env, || {
+        // Store oracle config
+        let key = Symbol::new(&env, "test_oracle");
+        env.storage().persistent().set(&key, &oracle_config);
 
-    // Retrieve oracle config
-    let retrieved: OracleConfig = env.storage().persistent().get(&key).unwrap();
+        // Retrieve oracle config
+        let retrieved: OracleConfig = env.storage().persistent().get(&key).unwrap();
 
-    // Verify all fields are preserved
-    assert_eq!(retrieved.provider, oracle_config.provider);
-    assert_eq!(retrieved.feed_id, oracle_config.feed_id);
-    assert_eq!(retrieved.threshold, oracle_config.threshold);
-    assert_eq!(retrieved.comparison, oracle_config.comparison);
+        // Verify all fields are preserved
+        assert_eq!(retrieved.provider, oracle_config.provider);
+        assert_eq!(retrieved.feed_id, oracle_config.feed_id);
+        assert_eq!(retrieved.threshold, oracle_config.threshold);
+        assert_eq!(retrieved.comparison, oracle_config.comparison);
+    });
 }
 
 // ===== STORAGE KEY PATTERN TESTS =====
@@ -468,31 +495,35 @@ fn test_oracle_config_structure_serialization() {
 fn test_simple_symbol_key_pattern() {
     let env = create_test_env();
 
-    // Test simple symbol key storage and retrieval
-    let key = Symbol::new(&env, "TestKey");
-    let value = String::from_str(&env, "TestValue");
+    run_as_contract(&env, || {
+        // Test simple symbol key storage and retrieval
+        let key = Symbol::new(&env, "TestKey");
+        let value = String::from_str(&env, "TestValue");
 
-    env.storage().persistent().set(&key, &value);
-    let retrieved: String = env.storage().persistent().get(&key).unwrap();
+        env.storage().persistent().set(&key, &value);
+        let retrieved: String = env.storage().persistent().get(&key).unwrap();
 
-    assert_eq!(retrieved, value);
+        assert_eq!(retrieved, value);
+    });
 }
 
 #[test]
 fn test_tuple_key_pattern() {
     let env = create_test_env();
 
-    // Test tuple key storage and retrieval
-    let key = (
-        Symbol::new(&env, "Namespace"),
-        Symbol::new(&env, "identifier"),
-    );
-    let value = String::from_str(&env, "TupleValue");
+    run_as_contract(&env, || {
+        // Test tuple key storage and retrieval
+        let key = (
+            Symbol::new(&env, "Namespace"),
+            Symbol::new(&env, "identifier"),
+        );
+        let value = String::from_str(&env, "TupleValue");
 
-    env.storage().persistent().set(&key, &value);
-    let retrieved: String = env.storage().persistent().get(&key).unwrap();
+        env.storage().persistent().set(&key, &value);
+        let retrieved: String = env.storage().persistent().get(&key).unwrap();
 
-    assert_eq!(retrieved, value);
+        assert_eq!(retrieved, value);
+    });
 }
 
 #[test]
@@ -500,14 +531,16 @@ fn test_tuple_with_address_key_pattern() {
     let env = create_test_env();
     let address = Address::generate(&env);
 
-    // Test tuple with address key storage and retrieval
-    let key = (Symbol::new(&env, "UserData"), address.clone());
-    let value = 12345u32;
+    run_as_contract(&env, || {
+        // Test tuple with address key storage and retrieval
+        let key = (Symbol::new(&env, "UserData"), address.clone());
+        let value = 12345u32;
 
-    env.storage().persistent().set(&key, &value);
-    let retrieved: u32 = env.storage().persistent().get(&key).unwrap();
+        env.storage().persistent().set(&key, &value);
+        let retrieved: u32 = env.storage().persistent().get(&key).unwrap();
 
-    assert_eq!(retrieved, value);
+        assert_eq!(retrieved, value);
+    });
 }
 
 // ===== MIGRATION SAFETY TESTS =====
@@ -518,17 +551,19 @@ fn test_market_backward_compatibility() {
     let admin = create_test_admin(&env);
     let (market_id, market) = create_test_market(&env, &admin);
 
-    // Store market
-    MarketStateManager::update_market(&env, &market_id, &market);
+    run_as_contract(&env, || {
+        // Store market
+        MarketStateManager::update_market(&env, &market_id, &market);
 
-    // Retrieve and verify
-    let retrieved = MarketStateManager::get_market(&env, &market_id).unwrap();
+        // Retrieve and verify
+        let retrieved = MarketStateManager::get_market(&env, &market_id).unwrap();
 
-    // Verify critical fields are preserved
-    assert_eq!(retrieved.admin, market.admin);
-    assert_eq!(retrieved.question, market.question);
-    assert_eq!(retrieved.total_staked, market.total_staked);
-    assert_eq!(retrieved.state, market.state);
+        // Verify critical fields are preserved
+        assert_eq!(retrieved.admin, market.admin);
+        assert_eq!(retrieved.question, market.question);
+        assert_eq!(retrieved.total_staked, market.total_staked);
+        assert_eq!(retrieved.state, market.state);
+    });
 }
 
 #[test]
@@ -553,7 +588,8 @@ fn test_compressed_market_key_uniqueness() {
     let env = create_test_env();
     let admin = create_test_admin(&env);
     let (_, market1) = create_test_market(&env, &admin);
-    let (_, market2) = create_test_market(&env, &admin);
+    let (_, mut market2) = create_test_market(&env, &admin);
+    market2.question = String::from_str(&env, "Will ETH surpass 5k this year?");
 
     // Compress markets
     let compressed1 = StorageOptimizer::compress_market_data(&env, &market1).unwrap();
@@ -567,14 +603,16 @@ fn test_compressed_market_key_uniqueness() {
 fn test_storage_config_isolation() {
     let env = create_test_env();
 
-    // Get default storage config
-    let config = StorageOptimizer::get_storage_config(&env);
+    run_as_contract(&env, || {
+        // Get default storage config
+        let config = StorageOptimizer::get_storage_config(&env);
 
-    // Verify config has expected defaults
-    assert!(config.compression_enabled);
-    assert_eq!(config.min_compression_age_days, 30);
-    assert_eq!(config.max_storage_per_market, 1024 * 1024);
-    assert_eq!(config.cleanup_threshold_days, 365);
+        // Verify config has expected defaults
+        assert!(config.compression_enabled);
+        assert_eq!(config.min_compression_age_days, 30);
+        assert_eq!(config.max_storage_per_market, 1024 * 1024);
+        assert_eq!(config.cleanup_threshold_days, 365);
+    });
 }
 
 // ===== COMPREHENSIVE COLLISION TEST =====
@@ -641,38 +679,43 @@ fn test_no_regression_in_market_storage() {
     let admin = create_test_admin(&env);
     let (market_id, market) = create_test_market(&env, &admin);
 
-    // Store market directly in storage
-    env.storage().persistent().set(&market_id, &market);
+    run_as_contract(&env, || {
+        // Store market directly in storage
+        env.storage().persistent().set(&market_id, &market);
 
-    // Retrieve using storage
-    let retrieved: Market = env.storage().persistent().get(&market_id).unwrap();
+        // Retrieve using storage
+        let retrieved: Market = env.storage().persistent().get(&market_id).unwrap();
 
-    // Verify no data loss
-    assert_eq!(retrieved.admin, market.admin);
-    assert_eq!(retrieved.question, market.question);
-    assert_eq!(retrieved.outcomes.len(), market.outcomes.len());
-    assert_eq!(retrieved.end_time, market.end_time);
-    assert_eq!(retrieved.total_staked, market.total_staked);
-    assert_eq!(retrieved.state, market.state);
-    assert_eq!(retrieved.fee_collected, market.fee_collected);
+        // Verify no data loss
+        assert_eq!(retrieved.admin, market.admin);
+        assert_eq!(retrieved.question, market.question);
+        assert_eq!(retrieved.outcomes.len(), market.outcomes.len());
+        assert_eq!(retrieved.end_time, market.end_time);
+        assert_eq!(retrieved.total_staked, market.total_staked);
+        assert_eq!(retrieved.state, market.state);
+        assert_eq!(retrieved.fee_collected, market.fee_collected);
+    });
 }
 
 #[test]
 fn test_no_regression_in_balance_storage() {
     let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
     let user = Address::generate(&env);
     let asset = ReflectorAsset::BTC;
 
-    // Add balance using current implementation
-    BalanceStorage::add_balance(&env, &user, &asset, 1_000_000).unwrap();
+    env.as_contract(&contract_id, || {
+        // Add balance using current implementation
+        BalanceStorage::add_balance(&env, &user, &asset, 1_000_000).unwrap();
 
-    // Retrieve using current implementation
-    let balance = BalanceStorage::get_balance(&env, &user, &asset);
+        // Retrieve using current implementation
+        let balance = BalanceStorage::get_balance(&env, &user, &asset);
 
-    // Verify no data loss
-    assert_eq!(balance.amount, 1_000_000);
-    assert_eq!(balance.user, user);
-    assert_eq!(balance.asset, asset);
+        // Verify no data loss
+        assert_eq!(balance.amount, 1_000_000);
+        assert_eq!(balance.user, user);
+        assert_eq!(balance.asset, asset);
+    });
 }
 
 // ===== PERFORMANCE TESTS =====

@@ -1362,6 +1362,18 @@ impl AdminManager {
         // Store in multi-admin storage
         env.storage().persistent().set(&admin_key, &assignment);
 
+        // Track admins in a list so role enumeration stays in sync.
+        let list_key = Symbol::new(env, "AdminList");
+        let mut admin_list: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&list_key)
+            .unwrap_or_else(|| Vec::new(env));
+        if !admin_list.contains(new_admin) {
+            admin_list.push_back(new_admin.clone());
+            env.storage().persistent().set(&list_key, &admin_list);
+        }
+
         // Update admin count
         let count_key = Symbol::new(env, "AdminCount");
         let current_count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
@@ -1397,6 +1409,14 @@ impl AdminManager {
         }
 
         env.storage().persistent().remove(&admin_key);
+
+        let list_key = Symbol::new(env, "AdminList");
+        if let Some(mut admin_list) = env.storage().persistent().get::<_, Vec<Address>>(&list_key) {
+            if let Some(index) = admin_list.first_index_of(admin_to_remove) {
+                admin_list.remove(index);
+                env.storage().persistent().set(&list_key, &admin_list);
+            }
+        }
 
         // Update count
         let count_key = Symbol::new(env, "AdminCount");
@@ -3409,6 +3429,11 @@ impl AdminSystemIntegration {
 
             let admin_key = AdminManager::get_admin_key(env, &original_admin);
             env.storage().persistent().set(&admin_key, &assignment);
+            let mut admin_list = Vec::new(env);
+            admin_list.push_back(original_admin.clone());
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(env, "AdminList"), &admin_list);
             env.storage()
                 .persistent()
                 .set(&Symbol::new(env, "AdminCount"), &1u32);

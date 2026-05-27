@@ -1,10 +1,14 @@
 #![allow(dead_code)]
 
 use alloc::format;
-use crate::alloc::string::ToString;
+use alloc::string::ToString;
 use crate::bandprotocol;
 use crate::errors::Error;
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec};
+use alloc::format;
+use alloc::string::ToString;
+use soroban_sdk::{
+    contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec,
+};
 // use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::types::*;
 
@@ -1632,7 +1636,9 @@ impl BandProtocolOracle {
 
     /// Fetch price from Band client
     fn get_band_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
-        let pair = self.parse_feed_id(env, feed_id).map_err(|_| Error::InvalidOracleConfig)?;
+        let pair = self
+            .parse_feed_id(env, feed_id)
+            .map_err(|_| Error::InvalidOracleConfig)?;
         let client = BandProtocolClient::new(env, self.contract_id.clone());
         let rate = client.get_price_of(pair);
         // Defensive mapping: if imported WASM returned 0 (indicating missing data), map to OracleUnavailable
@@ -3770,7 +3776,13 @@ impl OracleCallbackAuth {
         let nonce_key = StorageKey::OracleNonce(caller.clone(), callback_data.nonce);
 
         // Check if nonce has been used before
-        if self.env.storage().persistent().get(&nonce_key).unwrap_or(false) {
+        if self
+            .env
+            .storage()
+            .persistent()
+            .get(&nonce_key)
+            .unwrap_or(false)
+        {
             self.log_authentication_failure(caller, "Replay attack detected");
             return Err(Error::OracleCallbackReplayDetected);
         }
@@ -3802,7 +3814,12 @@ impl OracleCallbackAuth {
         let current_time = self.env.ledger().timestamp();
 
         // Get last callback time
-        let last_callback_time: u64 = self.env.storage().persistent().get(&rate_limit_key).unwrap_or(0);
+        let last_callback_time: u64 = self
+            .env
+            .storage()
+            .persistent()
+            .get(&rate_limit_key)
+            .unwrap_or(0);
 
         // Check if enough time has passed
         if current_time < last_callback_time + MIN_CALLBACK_INTERVAL {
@@ -3811,7 +3828,10 @@ impl OracleCallbackAuth {
         }
 
         // Update last callback time
-        self.env.storage().persistent().set(&rate_limit_key, &current_time);
+        self.env
+            .storage()
+            .persistent()
+            .set(&rate_limit_key, &current_time);
 
         Ok(())
     }
@@ -3941,10 +3961,7 @@ impl OracleCallbackAuth {
     /// * `caller` - The address of the calling oracle contract
     /// * `callback_data` - The successfully authenticated callback data
     fn log_successful_authentication(&self, caller: &Address, callback_data: &OracleCallbackData) {
-        let log_message = String::from_str(
-            &self.env,
-            &format!("Oracle callback authenticated: {}", callback_data.feed_id.to_string()),
-        );
+        let log_message = String::from_str(&self.env, "Oracle callback authenticated");
         let ctx = String::from_str(&self.env, "oracle_auth");
         crate::events::EventEmitter::emit_error_logged(
             &self.env,
@@ -3954,6 +3971,7 @@ impl OracleCallbackAuth {
             Some(caller.clone()),
             None,
         );
+        let _ = callback_data;
     }
 
     fn log_authentication_failure(&self, caller: &Address, reason: &str) {
@@ -4131,4 +4149,4 @@ pub const NONCE_CLEANUP_INTERVAL: u64 = 3600; // 1 hour
 //         assert!(result2.is_err());
 //     }
 // }
-// 
+//
