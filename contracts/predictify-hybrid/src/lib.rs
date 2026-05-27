@@ -20,6 +20,8 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 // Module declarations - all modules enabled
 mod admin;
+#[cfg(test)]
+mod admin_auth_audit_tests;
 pub mod audit_trail;
 mod balances;
 mod batch_operations;
@@ -42,6 +44,7 @@ mod markets;
 mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
+mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
 #[cfg(test)]
@@ -5368,6 +5371,21 @@ impl PredictifyHybrid {
     pub fn get_recovery_status(env: Env, market_id: Symbol) -> String {
         crate::recovery::RecoveryManager::get_recovery_status(&env, &market_id)
             .unwrap_or_else(|_| String::from_str(&env, "unknown"))
+    }
+
+    /// Remove the oldest `count` completed recovery history entries for a market (admin only).
+    ///
+    /// Active (unresolved) recovery state is never pruned. `count` is capped at 30.
+    ///
+    /// # Errors
+    /// * `Unauthorized` - Caller is not admin
+    pub fn prune_recovery_history(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        count: u32,
+    ) -> Result<u32, Error> {
+        crate::recovery::RecoveryManager::prune_recovery_history(&env, &admin, &market_id, count)
     }
 
     // ===== VERSIONING FUNCTIONS =====

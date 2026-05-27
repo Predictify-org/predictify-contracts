@@ -1,5 +1,5 @@
 use alloc::format;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, Map, String, Symbol, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;
@@ -7,6 +7,16 @@ use crate::types::{ClaimInfo, MarketState};
 use crate::Error;
 
 const DEFAULT_UNCLAIMED_CLAIM_PERIOD_SECONDS: u64 = 90 * 24 * 60 * 60;
+
+/// Maximum completed recovery records retained per market.
+///
+/// Bounds persistent storage growth under repeated recovery events. Active
+/// (unresolved) recovery state is stored separately and is never counted toward
+/// this cap.
+pub const MAX_RECOVERY_HISTORY_PER_MARKET: u32 = 100;
+
+/// Maximum entries removable in a single admin prune call (gas safety).
+pub const MAX_RECOVERY_PRUNE_BATCH: u32 = 30;
 
 // ===== RECOVERY TYPES =====
 #[contracttype]
@@ -37,36 +47,175 @@ pub struct RecoveryData {
     pub safety_score: i128,
 }
 
+/// One completed recovery event in per-market history.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryHistoryEntry {
+    pub record: MarketRecovery,
+    pub recorded_at: u64,
+}
+
 pub struct RecoveryStorage;
 impl RecoveryStorage {
     #[inline(always)]
-    fn records_key(env: &Env) -> Symbol {
+    fn active_key(env: &Env) -> Symbol {
         Symbol::new(env, "recovery_records")
     }
+
+    #[inline(always)]
+    fn history_key(env: &Env) -> Symbol {
+        Symbol::new(env, "recovery_history")
+    }
+
     #[inline(always)]
     fn status_key(env: &Env) -> Symbol {
         Symbol::new(env, "recovery_status_map")
     }
 
-    pub fn load(env: &Env, market_id: &Symbol) -> Option<MarketRecovery> {
-        let records: Map<Symbol, MarketRecovery> = env
+    #[inline(always)]
+    fn migrated_key(env: &Env) -> Symbol {
+        Symbol::new(env, "recovery_v2_migrated")
+    }
+
+    /// Split legacy `recovery_records` (active + completed mixed) into active + history maps.
+    fn ensure_migrated(env: &Env) {
+        if env
             .storage()
             .persistent()
-            .get(&Self::records_key(env))
+            .get(&Self::migrated_key(env))
+            .unwrap_or(false)
+        {
+            return;
+        }
+
+        let legacy: Map<Symbol, MarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::active_key(env))
             .unwrap_or(Map::new(env));
-        records.get(market_id.clone())
+
+        let mut active = Map::new(env);
+        let mut history_map: Map<Symbol, Vec<RecoveryHistoryEntry>> = env
+            .storage()
+            .persistent()
+            .get(&Self::history_key(env))
+            .unwrap_or(Map::new(env));
+
+        for (market_id, record) in legacy.iter() {
+            if record.recovered {
+                Self::push_history_entry(env, &mut history_map, &market_id, &record);
+            } else {
+                active.set(market_id, record);
+            }
+        }
+
+        env.storage()
+            .persistent()
+            .set(&Self::active_key(env), &active);
+        env.storage()
+            .persistent()
+            .set(&Self::history_key(env), &history_map);
+        env.storage()
+            .persistent()
+            .set(&Self::migrated_key(env), &true);
+    }
+
+    fn load_active_map(env: &Env) -> Map<Symbol, MarketRecovery> {
+        Self::ensure_migrated(env);
+        env.storage()
+            .persistent()
+            .get(&Self::active_key(env))
+            .unwrap_or(Map::new(env))
+    }
+
+    fn load_history_map(env: &Env) -> Map<Symbol, Vec<RecoveryHistoryEntry>> {
+        Self::ensure_migrated(env);
+        env.storage()
+            .persistent()
+            .get(&Self::history_key(env))
+            .unwrap_or(Map::new(env))
+    }
+
+    fn load_history(env: &Env, market_id: &Symbol) -> Vec<RecoveryHistoryEntry> {
+        Self::load_history_map(env)
+            .get(market_id.clone())
+            .unwrap_or(Vec::new(env))
+    }
+
+    fn save_history(env: &Env, market_id: &Symbol, history: &Vec<RecoveryHistoryEntry>) {
+        let mut history_map = Self::load_history_map(env);
+        history_map.set(market_id.clone(), history.clone());
+        env.storage()
+            .persistent()
+            .set(&Self::history_key(env), &history_map);
+    }
+
+    fn trim_history(env: &Env, history: &mut Vec<RecoveryHistoryEntry>) {
+        while history.len() > MAX_RECOVERY_HISTORY_PER_MARKET {
+            history.remove(0);
+        }
+    }
+
+    fn push_history_entry(
+        env: &Env,
+        history_map: &mut Map<Symbol, Vec<RecoveryHistoryEntry>>,
+        market_id: &Symbol,
+        record: &MarketRecovery,
+    ) {
+        let mut history = history_map.get(market_id.clone()).unwrap_or(Vec::new(env));
+        history.push_back(RecoveryHistoryEntry {
+            record: record.clone(),
+            recorded_at: env.ledger().timestamp(),
+        });
+        Self::trim_history(env, &mut history);
+        history_map.set(market_id.clone(), history);
+    }
+
+    /// Active (unresolved) recovery, if any.
+    pub fn load_active(env: &Env, market_id: &Symbol) -> Option<MarketRecovery> {
+        Self::load_active_map(env).get(market_id.clone())
+    }
+
+    /// Latest recovery state: active first, otherwise most recent history entry.
+    pub fn load(env: &Env, market_id: &Symbol) -> Option<MarketRecovery> {
+        if let Some(active) = Self::load_active(env, market_id) {
+            return Some(active);
+        }
+        let history = Self::load_history(env, market_id);
+        let len = history.len();
+        if len == 0 {
+            return None;
+        }
+        history.get(len - 1).map(|entry| entry.record.clone())
+    }
+
+    pub fn history_len(env: &Env, market_id: &Symbol) -> u32 {
+        Self::load_history(env, market_id).len()
     }
 
     pub fn save(env: &Env, record: &MarketRecovery) {
-        let mut records: Map<Symbol, MarketRecovery> = env
-            .storage()
-            .persistent()
-            .get(&Self::records_key(env))
-            .unwrap_or(Map::new(env));
-        records.set(record.market_id.clone(), record.clone());
-        env.storage()
-            .persistent()
-            .set(&Self::records_key(env), &records);
+        Self::ensure_migrated(env);
+        let market_id = record.market_id.clone();
+
+        if record.recovered {
+            let mut history_map = Self::load_history_map(env);
+            Self::push_history_entry(env, &mut history_map, &market_id, record);
+            env.storage()
+                .persistent()
+                .set(&Self::history_key(env), &history_map);
+
+            let mut active = Self::load_active_map(env);
+            active.remove(market_id.clone());
+            env.storage()
+                .persistent()
+                .set(&Self::active_key(env), &active);
+        } else {
+            let mut active = Self::load_active_map(env);
+            active.set(market_id.clone(), record.clone());
+            env.storage()
+                .persistent()
+                .set(&Self::active_key(env), &active);
+        }
 
         let mut status_map: Map<Symbol, String> = env
             .storage()
@@ -78,7 +227,7 @@ impl RecoveryStorage {
         } else {
             String::from_str(env, "pending")
         };
-        status_map.set(record.market_id.clone(), status);
+        status_map.set(market_id, status);
         env.storage()
             .persistent()
             .set(&Self::status_key(env), &status_map);
@@ -91,6 +240,43 @@ impl RecoveryStorage {
             .get(&Self::status_key(env))
             .unwrap_or(Map::new(env));
         status_map.get(market_id.clone())
+    }
+
+    /// Remove the oldest `count` completed recovery records for a market (admin only).
+    ///
+    /// Never removes the active (unresolved) recovery entry for the market.
+    pub fn prune_history(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+        count: u32,
+    ) -> Result<u32, Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+
+        if admin != &stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        let count = core::cmp::min(count, MAX_RECOVERY_PRUNE_BATCH);
+        let mut history = Self::load_history(env, market_id);
+        if history.is_empty() || count == 0 {
+            return Ok(0);
+        }
+
+        let mut removed = 0u32;
+        while removed < count && history.len() > 0 {
+            history.remove(0);
+            removed += 1;
+        }
+
+        Self::save_history(env, market_id, &history);
+        Ok(removed)
     }
 }
 
@@ -247,6 +433,16 @@ impl RecoveryManager {
 
     pub fn get_recovery_status(env: &Env, market_id: &Symbol) -> Result<String, Error> {
         RecoveryStorage::status(env, market_id).ok_or(Error::InvalidState)
+    }
+
+    /// Prune oldest completed recovery history entries for a market (admin only).
+    pub fn prune_recovery_history(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+        count: u32,
+    ) -> Result<u32, Error> {
+        RecoveryStorage::prune_history(env, admin, market_id, count)
     }
     /// Perform recovery for a market. This operation is privileged and requires the caller to be
     /// the configured admin. The `actor` address will be recorded in emitted events for full
@@ -659,10 +855,109 @@ mod tests {
     #[test]
     fn test_recovery_storage_keys() {
         let test = RecoveryTest::new();
-        // Test that storage keys are properly generated
-        let records_key = RecoveryStorage::records_key(&test.env);
+        let active_key = RecoveryStorage::active_key(&test.env);
+        let history_key = RecoveryStorage::history_key(&test.env);
         let status_key = RecoveryStorage::status_key(&test.env);
-        assert_ne!(records_key.to_string(), status_key.to_string());
+        assert_ne!(active_key.to_string(), status_key.to_string());
+        assert_ne!(history_key.to_string(), status_key.to_string());
+    }
+
+    fn setup_admin_env() -> (Env, Address, Address, Symbol) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "market_prune");
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+        });
+        (env, admin, contract_id, market_id)
+    }
+
+    fn completed_record(env: &Env, market_id: &Symbol, tag: &str) -> MarketRecovery {
+        let mut actions = Vec::new(env);
+        actions.push_back(String::from_str(env, tag));
+        MarketRecovery {
+            market_id: market_id.clone(),
+            actions,
+            issues_detected: Vec::new(env),
+            recovered: true,
+            partial_refund_total: 0,
+            last_action: Some(String::from_str(env, tag)),
+        }
+    }
+
+    fn pending_record(env: &Env, market_id: &Symbol) -> MarketRecovery {
+        MarketRecovery {
+            market_id: market_id.clone(),
+            actions: Vec::new(env),
+            issues_detected: Vec::new(env),
+            recovered: false,
+            partial_refund_total: 0,
+            last_action: Some(String::from_str(env, "pending")),
+        }
+    }
+
+    #[test]
+    fn test_recovery_history_capped_per_market() {
+        let (env, _admin, contract_id, market_id) = setup_admin_env();
+        let cap = MAX_RECOVERY_HISTORY_PER_MARKET as usize + 5;
+        env.as_contract(&contract_id, || {
+            for i in 0..cap {
+                let tag = format!("event_{}", i);
+                RecoveryStorage::save(&env, &completed_record(&env, &market_id, &tag));
+            }
+            assert_eq!(
+                RecoveryStorage::history_len(&env, &market_id),
+                MAX_RECOVERY_HISTORY_PER_MARKET
+            );
+            assert!(RecoveryStorage::load_active(&env, &market_id).is_none());
+        });
+    }
+
+    #[test]
+    fn test_prune_preserves_active_recovery() {
+        let (env, admin, contract_id, market_id) = setup_admin_env();
+        env.as_contract(&contract_id, || {
+            for i in 0..5 {
+                RecoveryStorage::save(
+                    &env,
+                    &completed_record(&env, &market_id, &format!("done_{}", i)),
+                );
+            }
+            RecoveryStorage::save(&env, &pending_record(&env, &market_id));
+            assert_eq!(RecoveryStorage::history_len(&env, &market_id), 5);
+
+            let removed = RecoveryStorage::prune_history(&env, &admin, &market_id, 3).unwrap();
+            assert_eq!(removed, 3);
+            assert_eq!(RecoveryStorage::history_len(&env, &market_id), 2);
+            let active = RecoveryStorage::load_active(&env, &market_id).expect("active kept");
+            assert!(!active.recovered);
+        });
+    }
+
+    #[test]
+    fn test_prune_count_greater_than_stored() {
+        let (env, admin, contract_id, market_id) = setup_admin_env();
+        env.as_contract(&contract_id, || {
+            RecoveryStorage::save(&env, &completed_record(&env, &market_id, "only"));
+            let removed = RecoveryStorage::prune_history(&env, &admin, &market_id, 100).unwrap();
+            assert_eq!(removed, 1);
+            assert_eq!(RecoveryStorage::history_len(&env, &market_id), 0);
+        });
+    }
+
+    #[test]
+    fn test_prune_requires_admin() {
+        let (env, _admin, contract_id, market_id) = setup_admin_env();
+        let intruder = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            RecoveryStorage::save(&env, &completed_record(&env, &market_id, "x"));
+            let result = RecoveryStorage::prune_history(&env, &intruder, &market_id, 1);
+            assert_eq!(result, Err(Error::Unauthorized));
+        });
     }
 
     #[test]
