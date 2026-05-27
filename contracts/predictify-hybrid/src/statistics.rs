@@ -227,7 +227,8 @@ impl StatisticsManager {
         // Win rate = (bets_won / bets_placed) * 10000 (basis points)
         // Clamped to maximum 10000 (100.00%) for safety
         if u_stats.total_bets_placed > 0 {
-            let win_rate_bp = (u_stats.total_bets_won as u128 * 10000) / u_stats.total_bets_placed as u128;
+            let win_rate_bp =
+                (u_stats.total_bets_won as u128 * 10000) / u_stats.total_bets_placed as u128;
             u_stats.win_rate = (win_rate_bp as u32).min(10000);
         }
 

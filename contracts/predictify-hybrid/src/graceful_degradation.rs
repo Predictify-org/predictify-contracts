@@ -89,22 +89,15 @@ impl OracleBackup {
 
         // Primary failed, notify and try backup
         let msg = String::from_str(env, "Primary oracle failed");
-        record_oracle_health(env, &self.primary, OracleHealth::Degraded, &msg);
-        emit_degradation_event(env, self.primary.clone(), msg);
+        EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
 
-        match self.call_oracle(env, &self.backup, oracle_address, feed_id) {
-            Ok(price) => {
-                let backup_ok_msg = String::from_str(env, "Oracle healthy");
-                record_oracle_health(env, &self.backup, OracleHealth::Working, &backup_ok_msg);
-                Ok(price)
-            }
-            Err(_) => {
-                let backup_msg = String::from_str(env, "Backup oracle failed");
-                record_oracle_health(env, &self.backup, OracleHealth::Broken, &backup_msg);
-                emit_degradation_event(env, self.backup.clone(), backup_msg);
-                Err(Error::FallbackOracleUnavailable)
-            }
+        // capture backup result to ensure we don't fial silently if the fallback drops
+        let backup_result = self.call_oracle(env, &self.backup, oracle_address, feed_id);
+        if backup_result.is_err() {
+            let backup_msg = String::from_str(env, "Backup oracle failed");
+            EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
         }
+        backup_result
     }
 
     // Call a single oracle
@@ -139,15 +132,11 @@ impl OracleBackup {
     pub fn is_working(&self, env: &Env, oracle_address: &Address) -> Result<bool, Error> {
         let test_feed = String::from_str(env, "BTC/USD");
         match self.call_oracle(env, &self.primary, oracle_address, &test_feed) {
-            Ok(_) => {
-                let ok_msg = String::from_str(env, "Oracle healthy");
-                record_oracle_health(env, &self.primary, OracleHealth::Working, &ok_msg);
-                Ok(true)
-            }
+            Ok(_) => Ok(true),
             Err(e) => {
-                let msg = String::from_str(env, "Oracle health check failed during is_working query");
-                record_oracle_health(env, &self.primary, OracleHealth::Broken, &msg);
-                emit_degradation_event(env, self.primary.clone(), msg);
+                let msg =
+                    String::from_str(env, "Oracle health check failed during is_working query");
+                EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
                 Err(e)
             }
         }
@@ -269,12 +258,12 @@ mod tests {
 
         //2. wrap the execution in the contract context
         env.as_contract(&contract_id, || {
-        let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
-        assert!(matches!(
-            health,
-            OracleHealth::Working | OracleHealth::Degraded | OracleHealth::Broken
-        ));
-    });
+            let health = monitor_oracle_health(&env, OracleProvider::reflector(), &addr);
+            assert!(matches!(
+                health,
+                OracleHealth::Working | OracleHealth::Broken
+            ));
+        });
     }
 
     #[test]
@@ -301,19 +290,22 @@ mod tests {
         let env = Env::default();
         // 1. Register the contract
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        
+
         let backup = OracleBackup::new(OracleProvider::pyth(), OracleProvider::dia());
         let oracle_address = Address::generate(&env);
-        
+
         // 2. Wrap the execution in the contract context
         env.as_contract(&contract_id, || {
             let result = backup.is_working(&env, &oracle_address);
             assert!(result.is_err()); // No longer fails silently
         });
-        
+
         // 3. Verify event emission
         let events = env.events().all();
-        assert!(events.events().len() > 0, "Expected oracle degradation event to be emitted");
+        assert!(
+            events.events().len() > 0,
+            "Expected oracle degradation event to be emitted"
+        );
     }
 
     #[test]

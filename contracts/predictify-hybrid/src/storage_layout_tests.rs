@@ -11,7 +11,8 @@
 
 use alloc::format;
 use soroban_sdk::{
-    testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
+    testutils::{Address as _, EnvTestConfig},
+    vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 
 use crate::markets::MarketStateManager;
@@ -24,7 +25,11 @@ use crate::types::*;
 
 /// Test helper to create a test environment
 fn create_test_env() -> Env {
-    Env::default()
+    let mut env = Env::default();
+    env.set_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env
 }
 
 /// Test helper to create a test admin
@@ -77,6 +82,7 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         min_pool_size: None,
         bet_deadline: 0,
         dispute_window_seconds: 0,
+        winnings_swept: false,
     };
 
     (market_id, market)
@@ -287,12 +293,13 @@ fn test_audit_trail_namespace_prefix() {
 #[test]
 fn test_balance_storage_key_uniqueness() {
     let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
     let asset1 = ReflectorAsset::BTC;
     let asset2 = ReflectorAsset::ETH;
 
-    run_as_contract(&env, || {
+    env.as_contract(&contract_id, || {
         // Get balances to trigger key generation
         let balance1 = BalanceStorage::get_balance(&env, &user1, &asset1);
         let balance2 = BalanceStorage::get_balance(&env, &user1, &asset2);
@@ -693,10 +700,11 @@ fn test_no_regression_in_market_storage() {
 #[test]
 fn test_no_regression_in_balance_storage() {
     let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
     let user = Address::generate(&env);
     let asset = ReflectorAsset::BTC;
 
-    run_as_contract(&env, || {
+    env.as_contract(&contract_id, || {
         // Add balance using current implementation
         BalanceStorage::add_balance(&env, &user, &asset, 1_000_000).unwrap();
 

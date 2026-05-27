@@ -341,8 +341,7 @@ mod tests {
         let env = Env::default();
         with_contract(&env, || {
             assert!(ReentrancyGuard::validate_external_call_success(&env, true).is_ok());
-            let err =
-                ReentrancyGuard::validate_external_call_success(&env, false).unwrap_err();
+            let err = ReentrancyGuard::validate_external_call_success(&env, false).unwrap_err();
             assert_eq!(err, GuardError::ExternalCallFailed);
         });
     }
@@ -366,11 +365,10 @@ mod tests {
         let env = Env::default();
         with_contract(&env, || {
             let mut observed_locked = false;
-            let result: Result<i32, GuardError> =
-                ReentrancyGuard::with_external_call(&env, || {
-                    observed_locked = ReentrancyGuard::is_locked(&env);
-                    Ok(42)
-                });
+            let result: Result<i32, GuardError> = ReentrancyGuard::with_external_call(&env, || {
+                observed_locked = ReentrancyGuard::is_locked(&env);
+                Ok(42)
+            });
             assert_eq!(result, Ok(42));
             assert!(observed_locked, "closure should observe the lock as held");
             assert!(
@@ -388,9 +386,7 @@ mod tests {
         let env = Env::default();
         with_contract(&env, || {
             let result: Result<(), GuardError> =
-                ReentrancyGuard::with_external_call(&env, || {
-                    Err(GuardError::ExternalCallFailed)
-                });
+                ReentrancyGuard::with_external_call(&env, || Err(GuardError::ExternalCallFailed));
             assert_eq!(result, Err(GuardError::ExternalCallFailed));
             assert!(
                 !ReentrancyGuard::is_locked(&env),
@@ -406,15 +402,14 @@ mod tests {
     fn with_external_call_rejects_nested_invocation() {
         let env = Env::default();
         with_contract(&env, || {
-            let outer: Result<(), GuardError> =
-                ReentrancyGuard::with_external_call(&env, || {
-                    let inner: Result<(), GuardError> =
-                        ReentrancyGuard::with_external_call(&env, || Ok(()));
-                    assert_eq!(inner, Err(GuardError::ReentrancyGuardActive));
-                    // Outer lock must still be held while we're inside it.
-                    assert!(ReentrancyGuard::is_locked(&env));
-                    Ok(())
-                });
+            let outer: Result<(), GuardError> = ReentrancyGuard::with_external_call(&env, || {
+                let inner: Result<(), GuardError> =
+                    ReentrancyGuard::with_external_call(&env, || Ok(()));
+                assert_eq!(inner, Err(GuardError::ReentrancyGuardActive));
+                // Outer lock must still be held while we're inside it.
+                assert!(ReentrancyGuard::is_locked(&env));
+                Ok(())
+            });
             assert!(outer.is_ok());
             assert!(!ReentrancyGuard::is_locked(&env));
         });

@@ -189,7 +189,9 @@ impl UnclaimedWinningsPolicy {
     }
 
     pub fn set_treasury(env: &Env, treasury: &Address) {
-        env.storage().persistent().set(&Self::treasury_key(env), treasury);
+        env.storage()
+            .persistent()
+            .set(&Self::treasury_key(env), treasury);
     }
 
     pub fn get_treasury(env: &Env) -> Option<Address> {
@@ -249,7 +251,11 @@ impl RecoveryManager {
     /// Perform recovery for a market. This operation is privileged and requires the caller to be
     /// the configured admin. The `actor` address will be recorded in emitted events for full
     /// visibility and auditability.
-    pub fn recover_market_state(env: &Env, actor: &Address, market_id: &Symbol) -> Result<bool, Error> {
+    pub fn recover_market_state(
+        env: &Env,
+        actor: &Address,
+        market_id: &Symbol,
+    ) -> Result<bool, Error> {
         // Ensure caller is admin (defense-in-depth; callers should also enforce auth).
         Self::assert_is_admin(env, actor)?;
 
@@ -368,29 +374,33 @@ impl RecoveryManager {
         );
         Ok(total_refunded)
     }
-
-    }
+}
 
 // ===== EVENT INTEGRATION =====
 impl EventEmitter {
-        /// Emit a recovery event that includes the acting admin and optional amount.
-        pub fn emit_recovery_event(
-            env: &Env,
-            admin: &Address,
-            market_id: &Symbol,
-            action: &String,
-            status: &String,
-            amount: Option<i128>,
-        ) {
-            let topic = Symbol::new(env, "recovery_evt");
-            // Publish a tuple: (action, status, amount, timestamp)
-            let amt = amount.unwrap_or(0);
-            env.events().publish(
-                (topic, admin.clone(), market_id.clone()),
-                (action.clone(), status.clone(), amt, env.ledger().timestamp()),
-            );
-        }
+    /// Emit a recovery event that includes the acting admin and optional amount.
+    pub fn emit_recovery_event(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+        action: &String,
+        status: &String,
+        amount: Option<i128>,
+    ) {
+        let topic = Symbol::new(env, "recovery_evt");
+        // Publish a tuple: (action, status, amount, timestamp)
+        let amt = amount.unwrap_or(0);
+        env.events().publish(
+            (topic, admin.clone(), market_id.clone()),
+            (
+                action.clone(),
+                status.clone(),
+                amt,
+                env.ledger().timestamp(),
+            ),
+        );
     }
+}
 
 // Helper for symbol -> string representation (Soroban lacks direct to_string for Symbol)
 fn symbol_to_string(env: &Env, sym: &Symbol) -> String {
