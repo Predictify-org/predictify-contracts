@@ -3,7 +3,8 @@
 //!
 //! These tests lock the documented payout specification for equal-stake
 //! multi-winner markets.  Every scenario is self-contained: it creates a
-//! fresh market, places votes, advances the ledger past the market end-time
+//! fresh market, places bets (synced to votes/stakes), advances the ledger past
+//! the market end-time
 //! and dispute window, resolves with ties, then asserts payout correctness.
 //!
 //! # Payout formula (from PAYOUT_SPECIFICATION.md)
@@ -507,6 +508,61 @@ fn test_single_winner_via_ties_endpoint_correct() {
     );
 }
 
+/// Single-winner payout via `resolve_market_with_ties` must match
+/// `resolve_market_manual` for identical stake layout.
+#[test]
+fn test_single_winner_ties_matches_manual_resolve_payout() {
+    let stake_w: i128 = 250_000_000;
+    let stake_l: i128 = 75_000_000;
+    let total_pool = stake_w + stake_l;
+    let winning_total = stake_w;
+    let expected = TieSetup::expected_payout(stake_w, winning_total, total_pool);
+
+    // Market resolved through the ties endpoint (single outcome).
+    let ties = TieSetup::new();
+    let mid_ties = ties.create_market(vec![
+        &ties.env,
+        String::from_str(&ties.env, "Yes"),
+        String::from_str(&ties.env, "No"),
+    ]);
+    let w_ties = ties.user();
+    let l_ties = ties.user();
+    ties.stake_on(&w_ties, &mid_ties, "Yes", stake_w);
+    ties.stake_on(&l_ties, &mid_ties, "No", stake_l);
+    ties.advance_past_end();
+    ties.resolve_with_ties(
+        &mid_ties,
+        vec![&ties.env, String::from_str(&ties.env, "Yes")],
+    );
+    let p_ties = ties.recorded_payout(&mid_ties, &w_ties);
+
+    // Market resolved through manual single-outcome endpoint.
+    let manual = TieSetup::new();
+    let mid_manual = manual.create_market(vec![
+        &manual.env,
+        String::from_str(&manual.env, "Yes"),
+        String::from_str(&manual.env, "No"),
+    ]);
+    let w_manual = manual.user();
+    let l_manual = manual.user();
+    manual.stake_on(&w_manual, &mid_manual, "Yes", stake_w);
+    manual.stake_on(&l_manual, &mid_manual, "No", stake_l);
+    manual.advance_past_end();
+    PredictifyHybridClient::new(&manual.env, &manual.contract_id).resolve_market_manual(
+        &manual.admin,
+        &mid_manual,
+        &String::from_str(&manual.env, "Yes"),
+    );
+    let p_manual = manual.recorded_payout(&mid_manual, &w_manual);
+
+    assert_eq!(p_ties, expected, "ties endpoint payout mismatch");
+    assert_eq!(p_manual, expected, "manual resolve payout mismatch");
+    assert_eq!(
+        p_ties, p_manual,
+        "single-winner ties payout must equal manual resolve payout"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 6. Rounding dust — odd-stroop pool
 // ---------------------------------------------------------------------------
@@ -558,6 +614,52 @@ fn test_rounding_dust_never_exceeds_pool() {
     // Both payouts must be non-negative.
     assert!(p1 >= 0, "negative payout for u1");
     assert!(p2 >= 0, "negative payout for u2");
+}
+
+/// Near-tie: winning sides differ by 1 stroop; payouts stay proportional and
+/// within pool minus fees (integer rounding must not leak dust).
+#[test]
+fn test_near_tie_one_stroop_difference_proportional() {
+    let s = TieSetup::new();
+
+    let outcomes = vec![
+        &s.env,
+        String::from_str(&s.env, "Alpha"),
+        String::from_str(&s.env, "Beta"),
+    ];
+    let mid = s.create_market(outcomes);
+
+    let u1 = s.user();
+    let u2 = s.user();
+    let stake1: i128 = 100_000_001;
+    let stake2: i128 = 100_000_000;
+
+    s.stake_on(&u1, &mid, "Alpha", stake1);
+    s.stake_on(&u2, &mid, "Beta", stake2);
+
+    s.advance_past_end();
+
+    let winning = vec![
+        &s.env,
+        String::from_str(&s.env, "Alpha"),
+        String::from_str(&s.env, "Beta"),
+    ];
+    s.resolve_with_ties(&mid, winning);
+
+    let total_pool = stake1 + stake2;
+    let winning_total = total_pool;
+
+    let p1 = s.recorded_payout(&mid, &u1);
+    let p2 = s.recorded_payout(&mid, &u2);
+
+    TieSetup::assert_payout_data_matches_spec(stake1, winning_total, total_pool, p1);
+    TieSetup::assert_payout_data_matches_spec(stake2, winning_total, total_pool, p2);
+
+    assert!(p1 >= p2, "larger stake must receive >= payout in near-tie");
+    assert!(
+        p1 + p2 <= TieSetup::max_distributable(total_pool),
+        "near-tie payouts must not exceed pool minus fees"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -725,10 +827,8 @@ fn test_calculate_payout_spec_examples() {
 // Pool-minus-fees invariant across three-way tie stake distributions
 // ---------------------------------------------------------------------------
 
-/// Exhaustively check that for a three-way tie with varying stake ratios
-/// the sum of payouts never exceeds `total_pool`.
-///
-/// We test three stake distributions to cover different rounding scenarios.
+/// For three-way ties with varying stake ratios, verify proportional payouts
+/// and that the sum never exceeds pool minus fees.
 #[test]
 fn test_three_way_tie_sum_never_exceeds_pool_minus_fees() {
     // Stake distributions to test: (stake_a, stake_b, stake_c)
@@ -768,20 +868,25 @@ fn test_three_way_tie_sum_never_exceeds_pool_minus_fees() {
         s.resolve_with_ties(&mid, winning);
 
         let total_pool = sa + sb + sc;
+        let winning_total = total_pool;
         let cap = TieSetup::max_distributable(total_pool);
         let pa = s.recorded_payout(&mid, &ua);
         let pb = s.recorded_payout(&mid, &ub);
         let pc = s.recorded_payout(&mid, &uc);
         let sum = pa + pb + pc;
 
+        TieSetup::assert_payout_data_matches_spec(sa, winning_total, total_pool, pa);
+        TieSetup::assert_payout_data_matches_spec(sb, winning_total, total_pool, pb);
+        TieSetup::assert_payout_data_matches_spec(sc, winning_total, total_pool, pc);
+
         assert!(
             sum <= cap,
             "distribution ({sa},{sb},{sc}): payouts {sum} exceed pool minus fees {cap}"
         );
 
-        // Each payout must be non-negative.
-        assert!(pa >= 0, "negative payout for Aa in ({sa},{sb},{sc})");
-        assert!(pb >= 0, "negative payout for Bb in ({sa},{sb},{sc})");
-        assert!(pc >= 0, "negative payout for Cc in ({sa},{sb},{sc})");
+        // Proportionality: payouts track stake ordering.
+        if sa >= sb && sb >= sc {
+            assert!(pa >= pb && pb >= pc, "payouts must follow stake order ({sa},{sb},{sc})");
+        }
     }
 }
