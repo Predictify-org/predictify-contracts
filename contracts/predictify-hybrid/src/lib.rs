@@ -673,6 +673,7 @@ impl PredictifyHybrid {
             min_pool_size,
             bet_deadline,
             dispute_window_seconds: dispute_window_seconds.unwrap_or(86400),
+            winnings_swept: false,
         };
 
         // Store the market
