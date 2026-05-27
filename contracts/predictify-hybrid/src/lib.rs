@@ -47,13 +47,6 @@ mod metadata_limits_tests;
 mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
-#[cfg(test)]
-mod admin_auth_audit_tests;
-#[cfg(any())]
-mod metadata_limits_tests;
-mod monitoring;
-#[cfg(any())]
-mod multi_admin_multisig_tests;
 mod oracles;
 mod performance_benchmarks;
 mod queries;
@@ -130,6 +123,8 @@ mod circuit_breaker_tests;
 
 #[cfg(any())]
 mod category_tags_tests;
+#[cfg(test)]
+mod tie_resolution_tests;
 // #[cfg(any())]
 // mod statistics_tests;
 
