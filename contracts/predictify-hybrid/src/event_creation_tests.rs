@@ -33,7 +33,7 @@ impl TestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         // Configure token used for creation fee collection and fund admin balance.
         env.as_contract(&contract_id, || {

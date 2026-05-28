@@ -82,7 +82,7 @@ impl PredictifyTest {
         // Initialize contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         // Initialize configuration (required for VotingManager::process_claim)
         env.as_contract(&contract_id, || {
@@ -1560,7 +1560,7 @@ fn test_initialize_with_default_fee() {
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
     // Initialize with None (default 2% fee)
-    client.initialize(&admin, &None);
+    client.initialize(&\1, &None, &None);
 
     // Verify admin is set
     let stored_admin: Address = env.as_contract(&contract_id, || {
@@ -1591,7 +1591,7 @@ fn test_initialize_with_custom_fee() {
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
     // Initialize with custom 5% fee
-    client.initialize(&admin, &Some(5));
+    client.initialize(&\1, &Some(\2), &None);
 
     // Verify platform fee is 5%
     let stored_fee: i128 = env.as_contract(&contract_id, || {
@@ -1613,7 +1613,7 @@ fn test_reinitialize_prevention() {
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
     // First initialization - should succeed
-    client.initialize(&admin, &None);
+    client.initialize(&\1, &None, &None);
 
     // Verify admin is set (proves initialization succeeded)
     let stored_admin: Address = env.as_contract(&contract_id, || {
@@ -1658,7 +1658,7 @@ fn test_initialize_valid_fee_bounds() {
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
 
-        client.initialize(&admin, &Some(0));
+        client.initialize(&\1, &Some(\2), &None);
 
         let stored_fee: i128 = env.as_contract(&contract_id, || {
             env.storage()
@@ -1677,7 +1677,7 @@ fn test_initialize_valid_fee_bounds() {
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
 
-        client.initialize(&admin, &Some(10));
+        client.initialize(&\1, &Some(\2), &None);
 
         let stored_fee: i128 = env.as_contract(&contract_id, || {
             env.storage()
@@ -1698,7 +1698,7 @@ fn test_initialize_storage_verification() {
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
-    client.initialize(&admin, &Some(3));
+    client.initialize(&\1, &Some(\2), &None);
 
     // Verify admin address is in persistent storage
     env.as_contract(&contract_id, || {

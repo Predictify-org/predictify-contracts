@@ -123,7 +123,7 @@ pub enum Error {
     DisputeError = 410,
     /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
     SweepAlreadyDone = 411,
-    /// Fee arithmetic overflowed or otherwise failed during checked calculation.
+    /// Fee arithmetic overflowed during calculation. No fee state is updated.
     FeeArithmeticOverflow = 412,
     /// Platform fee has already been collected from this market.
     FeeAlreadyCollected = 413,
@@ -1380,9 +1380,7 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
-            Error::SweepAlreadyDone => {
-                "Unclaimed winnings have already been swept for this market"
-            }
+            Error::SweepAlreadyDone => "Unclaimed winnings already swept for this market",
             Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
             Error::NoFeesToCollect => "No fees available to collect",

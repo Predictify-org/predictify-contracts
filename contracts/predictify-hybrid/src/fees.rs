@@ -4,6 +4,7 @@ use crate::errors::Error;
 use crate::markets::{MarketStateManager, MarketUtils};
 use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;
+use crate::reentrancy_guard::GuardError as ReentrancyError;
 
 /// Fee management system for Predictify Hybrid contract
 ///
@@ -793,8 +794,12 @@ impl FeeManager {
         // Get token client
         let token_client = MarketUtils::get_token_client(env)?;
 
-        // Transfer creation fee from admin to contract
-        token_client.transfer(admin, &env.current_contract_address(), &creation_fee);
+        // Transfer creation fee from admin to contract under the reentrancy guard.
+        ReentrancyGuard::with_external_call(env, || {
+            token_client.transfer(admin, &env.current_contract_address(), &creation_fee);
+            Ok::<(), ReentrancyError>(())
+        })
+        .map_err(|_| Error::InvalidState)?;
 
         // Record creation fee
         FeeTracker::record_creation_fee(env, admin, creation_fee)?;
@@ -1349,8 +1354,11 @@ impl FeeUtils {
     /// Transfer fees to admin
     pub fn transfer_fees_to_admin(env: &Env, admin: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        token_client.transfer(&env.current_contract_address(), admin, &amount);
-        Ok(())
+        ReentrancyGuard::with_external_call(env, || {
+            token_client.transfer(&env.current_contract_address(), admin, &amount);
+            Ok::<(), ReentrancyError>(())
+        })
+        .map_err(|_| Error::InvalidState)
     }
 
     /// Get fee statistics for a market

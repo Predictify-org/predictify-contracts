@@ -3350,7 +3350,7 @@ mod oracle_integration_tests {
         let default_fee_pct: Option<i128> = None;
 
         env.mock_all_auths();
-        client.initialize(&admin, &default_fee_pct);
+        client.initialize(&admin, &default_fee_pct, &None);
 
         let unauthorized = client.try_set_oracle_val_cfg_global(&non_admin, &60, &500);
         assert!(unauthorized.is_err());

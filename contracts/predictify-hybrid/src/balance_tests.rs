@@ -34,7 +34,7 @@ impl BalanceTestSetup {
         // Register and initialize contract
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let client = crate::PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         // Set token for the contract (simulate what PredictifyTest::setup does)
         env.as_contract(&contract_id, || {

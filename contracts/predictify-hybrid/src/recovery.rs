@@ -13,7 +13,7 @@ const DEFAULT_UNCLAIMED_CLAIM_PERIOD_SECONDS: u64 = 90 * 24 * 60 * 60;
 /// Bounds persistent storage growth under repeated recovery events. Active
 /// (unresolved) recovery state is stored separately and is never counted toward
 /// this cap.
-pub const MAX_RECOVERY_HISTORY_PER_MARKET: u32 = 100;
+pub const MAX_RECOVERY_HISTORY_PER_MARKET: u32 = 10;
 
 /// Maximum entries removable in a single admin prune call (gas safety).
 pub const MAX_RECOVERY_PRUNE_BATCH: u32 = 30;
