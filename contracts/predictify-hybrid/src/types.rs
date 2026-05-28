@@ -1853,6 +1853,9 @@ pub struct GlobalOracleValidationConfig {
     pub max_staleness_secs: u64,
     /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
+    /// Maximum allowed price deviation from the last accepted reading, in basis points.
+    /// None means deviation checking is disabled.
+    pub max_deviation_bps: Option<u32>,
 }
 
 /// Per-event oracle validation configuration override.
@@ -1863,6 +1866,9 @@ pub struct EventOracleValidationConfig {
     pub max_staleness_secs: u64,
     /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
+    /// Maximum allowed price deviation from the last accepted reading, in basis points.
+    /// None means deviation checking is disabled.
+    pub max_deviation_bps: Option<u32>,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.

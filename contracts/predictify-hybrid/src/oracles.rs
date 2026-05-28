@@ -2359,6 +2359,7 @@ impl OracleValidationConfigManager {
             .unwrap_or_else(|| GlobalOracleValidationConfig {
                 max_staleness_secs: Self::DEFAULT_MAX_STALENESS_SECS,
                 max_confidence_bps: Self::DEFAULT_MAX_CONFIDENCE_BPS,
+                max_deviation_bps: None,
             })
     }
 
@@ -2367,7 +2368,7 @@ impl OracleValidationConfigManager {
         env: &Env,
         config: &GlobalOracleValidationConfig,
     ) -> Result<(), Error> {
-        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps)?;
+        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps, config.max_deviation_bps)?;
         env.storage()
             .persistent()
             .set(&OracleValidationKey::GlobalConfig, config);
@@ -2390,7 +2391,7 @@ impl OracleValidationConfigManager {
         market_id: &Symbol,
         config: &EventOracleValidationConfig,
     ) -> Result<(), Error> {
-        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps)?;
+        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps, config.max_deviation_bps)?;
         let mut per_event: soroban_sdk::Map<Symbol, EventOracleValidationConfig> = env
             .storage()
             .persistent()
@@ -2409,6 +2410,7 @@ impl OracleValidationConfigManager {
             GlobalOracleValidationConfig {
                 max_staleness_secs: event_cfg.max_staleness_secs,
                 max_confidence_bps: event_cfg.max_confidence_bps,
+                max_deviation_bps: event_cfg.max_deviation_bps,
             }
         } else {
             Self::get_global_config(env)
@@ -2421,6 +2423,10 @@ impl OracleValidationConfigManager {
     /// interval (e.g., Pyth) and the value is present. The confidence ratio is
     /// computed as: `abs(confidence) / abs(price)` and compared against the
     /// configured threshold in basis points (bps).
+    ///
+    /// When `max_deviation_bps` is set, the price is also compared against the last
+    /// accepted reference price stored for this market. If no reference exists yet
+    /// (first reading), the price is accepted and stored as the reference.
     pub fn validate_oracle_data(
         env: &Env,
         market_id: &Symbol,
@@ -2485,18 +2491,63 @@ impl OracleValidationConfigManager {
             }
         }
 
+        // Deviation guard: compare against last accepted reference price.
+        // On the first reading there is no reference yet — accept and store it.
+        if let Some(max_dev_bps) = config.max_deviation_bps {
+            let ref_key = (Symbol::new(env, "ORC_REF"), market_id.clone());
+            if let Some(ref_price) = env.storage().persistent().get::<_, i128>(&ref_key) {
+                let ref_abs = if ref_price < 0 { -ref_price } else { ref_price };
+                if ref_abs > 0 {
+                    let diff = if data.price > ref_price {
+                        data.price - ref_price
+                    } else {
+                        ref_price - data.price
+                    };
+                    let deviation_bps = ((diff * 10_000) / ref_abs) as u32;
+                    if deviation_bps > max_dev_bps {
+                        EventEmitter::emit_oracle_validation_failed(
+                            env,
+                            market_id,
+                            &provider.name(),
+                            feed_id,
+                            &String::from_str(env, "price_deviation_exceeded"),
+                            observed_age,
+                            config.max_staleness_secs,
+                            Some(deviation_bps),
+                            config.max_confidence_bps,
+                        );
+                        return Err(Error::OracleNoConsensus);
+                    }
+                }
+            }
+            // Store this price as the new reference for future readings.
+            env.storage().persistent().set(&ref_key, &data.price);
+        }
+
         Ok(())
+    }
+
+    /// Return the stored reference price for a market, if any.
+    pub fn get_reference_price(env: &Env, market_id: &Symbol) -> Option<i128> {
+        let ref_key = (Symbol::new(env, "ORC_REF"), market_id.clone());
+        env.storage().persistent().get(&ref_key)
     }
 
     fn validate_config_values(
         max_staleness_secs: u64,
         max_confidence_bps: u32,
+        max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
         if max_staleness_secs == 0 || max_confidence_bps == 0 {
             return Err(Error::InvalidInput);
         }
         if max_confidence_bps > Self::MAX_CONFIDENCE_BPS {
             return Err(Error::InvalidInput);
+        }
+        if let Some(dev) = max_deviation_bps {
+            if dev == 0 || dev > 10_000 {
+                return Err(Error::InvalidInput);
+            }
         }
         Ok(())
     }
@@ -3197,6 +3248,7 @@ mod oracle_integration_tests {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 10,
                 max_confidence_bps: 500,
+                max_deviation_bps: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3238,6 +3290,7 @@ mod oracle_integration_tests {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
+                max_deviation_bps: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3279,6 +3332,7 @@ mod oracle_integration_tests {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
+                max_deviation_bps: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3314,12 +3368,14 @@ mod oracle_integration_tests {
             let global = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
+                max_deviation_bps: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
             let event_cfg = EventOracleValidationConfig {
                 max_staleness_secs: 5,
                 max_confidence_bps: 500,
+                max_deviation_bps: None,
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 
@@ -3349,15 +3405,274 @@ mod oracle_integration_tests {
         let client = crate::PredictifyHybridClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let non_admin = Address::generate(&env);
-        let default_fee_pct: Option<i128> = None;
 
         env.mock_all_auths();
-        client.initialize(&admin, &default_fee_pct);
+        client.initialize(&admin, &None, &None);
 
-        let unauthorized = client.try_set_oracle_val_cfg_global(&non_admin, &60, &500);
+        let unauthorized = client.try_set_oracle_val_cfg_global(&non_admin, &60, &500, &None);
         assert!(unauthorized.is_err());
 
-        client.set_oracle_val_cfg_event(&admin, &Symbol::new(&env, "admin_evt"), &60, &500);
+        client.set_oracle_val_cfg_event(&admin, &Symbol::new(&env, "admin_evt"), &60, &500, &None);
+    }
+
+    // ── deviation bound tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_deviation_first_reading_accepted_and_stored() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "dev_first");
+
+        env.as_contract(&contract_id, || {
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+                max_deviation_bps: Some(500), // 5%
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            let data = OraclePriceData {
+                price: 100_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+
+            // First reading — no reference yet, must succeed
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env,
+                &market_id,
+                &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"),
+                &data,
+            );
+            assert!(result.is_ok());
+
+            // Reference price must now be stored
+            let stored = OracleValidationConfigManager::get_reference_price(&env, &market_id);
+            assert_eq!(stored, Some(100_000_00));
+        });
+    }
+
+    #[test]
+    fn test_deviation_within_bound_accepted() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "dev_ok");
+
+        env.as_contract(&contract_id, || {
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+                max_deviation_bps: Some(500), // 5%
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            // Seed the reference price
+            let first = OraclePriceData {
+                price: 100_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &first,
+            ).unwrap();
+
+            // 3% move — within the 5% bound
+            let second = OraclePriceData {
+                price: 103_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &second,
+            );
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_deviation_exactly_at_bound_accepted() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "dev_edge");
+
+        env.as_contract(&contract_id, || {
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+                max_deviation_bps: Some(500), // 5%
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            let first = OraclePriceData {
+                price: 100_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &first,
+            ).unwrap();
+
+            // Exactly 5% move — must be accepted (not strictly greater)
+            let second = OraclePriceData {
+                price: 105_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &second,
+            );
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_deviation_spike_beyond_bound_rejected() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "dev_spike");
+
+        env.as_contract(&contract_id, || {
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+                max_deviation_bps: Some(500), // 5%
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            let first = OraclePriceData {
+                price: 100_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &first,
+            ).unwrap();
+
+            // 20% spike — well beyond the 5% bound
+            let spike = OraclePriceData {
+                price: 120_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &spike,
+            );
+            assert_eq!(result.unwrap_err(), Error::OracleNoConsensus);
+
+            // Event must record the deviation reason
+            let event: OracleValidationFailedEvent = env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("orc_val"))
+                .unwrap();
+            assert_eq!(
+                event.reason,
+                String::from_str(&env, "price_deviation_exceeded")
+            );
+        });
+    }
+
+    #[test]
+    fn test_deviation_disabled_when_none() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "dev_none");
+
+        env.as_contract(&contract_id, || {
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+                max_deviation_bps: None, // disabled
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            let first = OraclePriceData {
+                price: 100_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &first,
+            ).unwrap();
+
+            // 50% move — no bound configured, must pass
+            let big_move = OraclePriceData {
+                price: 150_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &big_move,
+            );
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_deviation_per_event_override() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "dev_event");
+
+        env.as_contract(&contract_id, || {
+            // Global has no deviation bound
+            let global = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+                max_deviation_bps: None,
+            };
+            OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
+
+            // Per-event sets a tight 2% bound
+            let event_cfg = EventOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_confidence_bps: 500,
+                max_deviation_bps: Some(200),
+            };
+            OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
+
+            let first = OraclePriceData {
+                price: 100_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &first,
+            ).unwrap();
+
+            // 3% move — exceeds the per-event 2% bound
+            let second = OraclePriceData {
+                price: 103_000_00,
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            };
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env, &market_id, &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC"), &second,
+            );
+            assert_eq!(result.unwrap_err(), Error::OracleNoConsensus);
+        });
     }
 }
 

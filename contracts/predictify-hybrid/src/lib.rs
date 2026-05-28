@@ -3731,15 +3731,16 @@ impl PredictifyHybrid {
         admin: Address,
         max_staleness_secs: u64,
         max_confidence_bps: u32,
+        max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
         let config = GlobalOracleValidationConfig {
             max_staleness_secs,
             max_confidence_bps,
+            max_deviation_bps,
         };
-        // Temporarily disabled due to oracles module being disabled
-        // crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
+        crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -3768,19 +3769,20 @@ impl PredictifyHybrid {
         market_id: Symbol,
         max_staleness_secs: u64,
         max_confidence_bps: u32,
+        max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
         let config = EventOracleValidationConfig {
             max_staleness_secs,
             max_confidence_bps,
+            max_deviation_bps,
         };
-        // Temporarily disabled due to oracles module being disabled
-        // crate::oracles::OracleValidationConfigManager::set_event_config(
-        //     &env,
-        //     &market_id,
-        //     &config,
-        // )?;
+        crate::oracles::OracleValidationConfigManager::set_event_config(
+            &env,
+            &market_id,
+            &config,
+        )?;
 
         let mut details = Map::new(&env);
         details.set(
@@ -3811,13 +3813,7 @@ impl PredictifyHybrid {
         env: Env,
         market_id: Symbol,
     ) -> GlobalOracleValidationConfig {
-        // Temporarily disabled due to oracles module being disabled
-        // crate::oracles::OracleValidationConfigManager::get_effective_config(&env, &market_id)
-        // Return a default config
-        GlobalOracleValidationConfig {
-            max_staleness_secs: 300,  // 5 minutes
-            max_confidence_bps: 9500, // 95%
-        }
+        crate::oracles::OracleValidationConfigManager::get_effective_config(&env, &market_id)
     }
 
     /// Withdraw collected platform fees (admin only).
