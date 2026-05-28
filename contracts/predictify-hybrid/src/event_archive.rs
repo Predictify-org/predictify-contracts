@@ -427,6 +427,8 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::Map;
+    use crate::types::{Market, MarketState, OracleConfig};
 
     struct EventArchiveTest {
         env: Env,
@@ -748,5 +750,146 @@ mod tests {
             EventArchive::query_events_by_tags(&test.env, &tags, 0, 10)
         });
         assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn test_archive_max_length_market_id_no_panic() {
+        let test = EventArchiveTest::new();
+        let env = &test.env;
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        
+        env.as_contract(&contract_id, || {
+            let max_length_id = Symbol::new(env, "a_very_long_market_id_32_chars__");
+            
+            let market = Market {
+                admin: test.admin.clone(),
+                question: String::from_str(env, "Will BTC reach 100k?"),
+                outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
+                end_time: env.ledger().timestamp() + 3600,
+                oracle_config: OracleConfig::none_sentinel(env),
+                has_fallback: false,
+                fallback_oracle_config: OracleConfig::none_sentinel(env),
+                resolution_timeout: 3600,
+                oracle_result: None,
+                votes: Map::new(env),
+                total_staked: 0,
+                dispute_stakes: Map::new(env),
+                stakes: Map::new(env),
+                claimed: Map::new(env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Resolved,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: soroban_sdk::vec![env],
+                category: None,
+                tags: soroban_sdk::vec![env],
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 3600,
+                winnings_swept: false,
+            };
+
+            let res = crate::storage::StorageOptimizer::archive_market_data(env, &max_length_id, &market);
+            assert!(res.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_archive_repeated_same_ledger_works() {
+        let test = EventArchiveTest::new();
+        let env = &test.env;
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        
+        env.as_contract(&contract_id, || {
+            let market_id = Symbol::new(env, "market_1");
+            
+            let market = Market {
+                admin: test.admin.clone(),
+                question: String::from_str(env, "Will BTC reach 100k?"),
+                outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
+                end_time: env.ledger().timestamp() + 3600,
+                oracle_config: OracleConfig::none_sentinel(env),
+                has_fallback: false,
+                fallback_oracle_config: OracleConfig::none_sentinel(env),
+                resolution_timeout: 3600,
+                oracle_result: None,
+                votes: Map::new(env),
+                total_staked: 0,
+                dispute_stakes: Map::new(env),
+                stakes: Map::new(env),
+                claimed: Map::new(env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Resolved,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: soroban_sdk::vec![env],
+                category: None,
+                tags: soroban_sdk::vec![env],
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 3600,
+                winnings_swept: false,
+            };
+
+            let res1 = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            assert!(res1.is_ok());
+
+            let res2 = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            assert!(res2.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_archive_entries_are_retrievable() {
+        let test = EventArchiveTest::new();
+        let env = &test.env;
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        
+        env.as_contract(&contract_id, || {
+            let market_id = Symbol::new(env, "retrievable_market");
+            let timestamp = env.ledger().timestamp();
+            
+            let market = Market {
+                admin: test.admin.clone(),
+                question: String::from_str(env, "Will BTC reach 100k?"),
+                outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
+                end_time: env.ledger().timestamp() + 3600,
+                oracle_config: OracleConfig::none_sentinel(env),
+                has_fallback: false,
+                fallback_oracle_config: OracleConfig::none_sentinel(env),
+                resolution_timeout: 3600,
+                oracle_result: None,
+                votes: Map::new(env),
+                total_staked: 0,
+                dispute_stakes: Map::new(env),
+                stakes: Map::new(env),
+                claimed: Map::new(env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Resolved,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: soroban_sdk::vec![env],
+                category: None,
+                tags: soroban_sdk::vec![env],
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 3600,
+                winnings_swept: false,
+            };
+
+            let res = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            assert!(res.is_ok());
+
+            let key = crate::storage::DataKey::ArchivedMarket(market_id.clone(), timestamp);
+            let retrieved: Option<Market> = env.storage().persistent().get(&key);
+            assert!(retrieved.is_some());
+            
+            let retrieved_market = retrieved.unwrap();
+            assert_eq!(retrieved_market.question, market.question);
+            assert_eq!(retrieved_market.admin, market.admin);
+        });
     }
 }

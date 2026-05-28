@@ -22,6 +22,15 @@ enum StorageTtlTier {
 
 // ===== STORAGE OPTIMIZATION TYPES =====
 
+/// Storage key variants for contracts/predictify-hybrid
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataKey {
+    Whitelisted(Address),
+    Blacklisted(Address),
+    ArchivedMarket(Symbol, u64),
+}
+
 /// Storage format version for migration tracking
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -684,12 +693,9 @@ impl StorageOptimizer {
     }
 
     /// Archive market data before deletion
-    fn archive_market_data(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
+    pub(crate) fn archive_market_data(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
         // Store archived version with timestamp
-        let archive_key = Symbol::new(
-            env,
-            &format!("archive_{:?}_{}", market_id, env.ledger().timestamp()),
-        );
+        let archive_key = DataKey::ArchivedMarket(market_id.clone(), env.ledger().timestamp());
         Self::set_persistent_with_ttl(
             env,
             &archive_key,
