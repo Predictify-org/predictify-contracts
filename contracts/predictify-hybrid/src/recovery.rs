@@ -903,6 +903,9 @@ mod tests {
     #[test]
     fn test_recovery_history_capped_per_market() {
         let (env, _admin, contract_id, market_id) = setup_admin_env();
+        // Large history vectors exceed default test budgets at MAX=100; unlimited here
+        // only exercises cap logic, not production metering.
+        env.cost_estimate().budget().reset_unlimited();
         let cap = MAX_RECOVERY_HISTORY_PER_MARKET as usize + 5;
         env.as_contract(&contract_id, || {
             for i in 0..cap {

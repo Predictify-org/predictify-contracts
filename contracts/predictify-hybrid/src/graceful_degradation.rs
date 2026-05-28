@@ -91,11 +91,11 @@ impl OracleBackup {
         let msg = String::from_str(env, "Primary oracle failed");
         EventEmitter::emit_oracle_degradation(env, &self.primary, &msg);
 
-        // capture backup result to ensure we don't fial silently if the fallback drops
         let backup_result = self.call_oracle(env, &self.backup, oracle_address, feed_id);
         if backup_result.is_err() {
             let backup_msg = String::from_str(env, "Backup oracle failed");
             EventEmitter::emit_oracle_degradation(env, &self.backup, &backup_msg);
+            return Err(Error::FallbackOracleUnavailable);
         }
         backup_result
     }
