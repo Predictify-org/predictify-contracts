@@ -47,6 +47,8 @@ mod metadata_limits_tests;
 mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
+#[cfg(test)]
+mod require_auth_coverage_tests;
 mod oracles;
 mod performance_benchmarks;
 mod queries;
@@ -56,7 +58,7 @@ mod reentrancy_guard;
 mod resolution;
 mod statistics;
 mod storage;
-#[cfg(any())]
+#[cfg(test)]
 mod storage_layout_tests;
 pub mod tokens;
 mod types;
@@ -306,21 +308,30 @@ impl PredictifyHybrid {
             Err(e) => panic_with_error!(env, e),
         }
 
-        // Initialize circuit breaker
-        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
-            Ok(_) => (),
-            Err(e) => panic_with_error!(env, e),
-        }
-
-        // Initialize circuit breaker
-        if let Err(e) = crate::circuit_breaker::CircuitBreaker::initialize(&env) {
-            panic_with_error!(env, e);
-        }
-
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+
+        // Store default contract configuration so validators have deterministic bounds
+        let mut default_config = crate::config::ConfigManager::get_development_config(&env);
+        default_config.fees.platform_fee_percentage = fee_percentage;
+        if let Err(e) = crate::config::ConfigManager::store_config(&env, &default_config) {
+            panic_with_error!(env, e);
+        }
+
+        // Initialize rate limiter with permissive defaults (0 = no limit)
+        let rate_limit_config = crate::rate_limiter::RateLimitConfig {
+            voting_limit: 0,
+            dispute_limit: 0,
+            oracle_call_limit: 0,
+            bet_limit: 0,
+            events_per_admin_limit: 0,
+            time_window_seconds: 3600,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::rate_limiter::RateLimiterData::Config, &rate_limit_config);
 
         // Seed default runtime configuration so validators and query paths have
         // deterministic bounds immediately after deployment.

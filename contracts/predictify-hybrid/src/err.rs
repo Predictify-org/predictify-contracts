@@ -123,7 +123,7 @@ pub enum Error {
     DisputeError = 410,
     /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
     SweepAlreadyDone = 411,
-    /// Fee arithmetic overflowed during calculation. No fee state is updated.
+    /// Fee arithmetic overflowed during checked platform-fee calculation.
     FeeArithmeticOverflow = 412,
     /// Platform fee has already been collected from this market.
     FeeAlreadyCollected = 413,
@@ -1588,6 +1588,8 @@ mod tests {
             Error::DisputeCondNotMet,
             Error::DisputeFeeFailed,
             Error::DisputeError,
+            Error::SweepAlreadyDone,
+            Error::FeeArithmeticOverflow,
             Error::FeeAlreadyCollected,
             Error::NoFeesToCollect,
             Error::InvalidExtensionDays,

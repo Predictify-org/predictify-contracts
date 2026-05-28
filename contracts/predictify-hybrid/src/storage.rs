@@ -954,8 +954,8 @@ impl StorageUtils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, EnvTestConfig, Ledger as _};
-    use soroban_sdk::testutils::storage::Persistent as _;
+    use soroban_sdk::testutils::storage::Persistent;
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig, Ledger};
 
     #[test]
     fn test_sub_balance_rejects_overdraw_without_mutation() {
