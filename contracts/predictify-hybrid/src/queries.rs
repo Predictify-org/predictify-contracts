@@ -32,12 +32,8 @@
 use alloc::string::ToString;
 
 use crate::{
-    errors::Error,
-    markets::{MarketAnalytics, MarketStateManager, MarketValidator},
-    types::{Market, MarketState, PagedMarketIds, PagedUserBets},
-    voting::VotingStats,
     admin::{AdminManager, AdminPermission, AdminRole, MultisigConfig},
-    oracles::{OracleMetadata, OracleWhitelist},
+    bets::BetManager,
     disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
     errors::Error,
     governance::{GovernanceContract, GovernanceProposal},

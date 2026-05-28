@@ -11,6 +11,7 @@
 //! - **Security**: Implements the checks-effects-interactions pattern to prevent reentrancy and double-spending.
 
 use crate::errors::Error;
+use crate::reentrancy_guard::{ReentrancyGuard, GuardError as ReentrancyError};
 use crate::events::EventEmitter;
 use crate::markets::MarketUtils;
 use crate::storage::BalanceStorage;
@@ -82,7 +83,12 @@ impl BalanceManager {
         // Transfer funds from user to contract
         // In Soroban, if this fails it will panic, rolling back the transaction.
         // This ensures the balance is NOT credited unless the transfer succeeds.
-        token_client.transfer(&user, &env.current_contract_address(), &amount);
+        // Guard the external transfer from user -> contract
+        ReentrancyGuard::with_external_call(env, || {
+            token_client.transfer(&user, &env.current_contract_address(), &amount);
+            Ok::<(), ReentrancyError>(())
+        })
+        .map_err(|_| Error::InvalidState)?;
 
         // Update balance - occurs only if transfer succeeded
         let balance = BalanceStorage::add_balance(env, &user, &asset, amount)?;

@@ -123,6 +123,8 @@ pub enum Error {
     DisputeError = 410,
     /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
     SweepAlreadyDone = 411,
+    /// Fee arithmetic overflowed during checked platform-fee calculation.
+    FeeArithmeticOverflow = 412,
     /// Platform fee has already been collected from this market.
     FeeAlreadyCollected = 413,
     /// No fees are available to collect from this market.
@@ -1378,6 +1380,7 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
+            Error::SweepAlreadyDone => "Unclaimed winnings already swept for this market",
             Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
             Error::NoFeesToCollect => "No fees available to collect",
@@ -1471,6 +1474,7 @@ impl Error {
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
             Error::DisputeError => "DISPUTE_ERROR",
+            Error::SweepAlreadyDone => "SWEEP_ALREADY_DONE",
             Error::FeeArithmeticOverflow => "FEE_ARITHMETIC_OVERFLOW",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
@@ -1584,6 +1588,8 @@ mod tests {
             Error::DisputeCondNotMet,
             Error::DisputeFeeFailed,
             Error::DisputeError,
+            Error::SweepAlreadyDone,
+            Error::FeeArithmeticOverflow,
             Error::FeeAlreadyCollected,
             Error::NoFeesToCollect,
             Error::InvalidExtensionDays,

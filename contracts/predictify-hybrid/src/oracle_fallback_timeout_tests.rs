@@ -34,7 +34,7 @@ impl TestSetup {
         });
 
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
         env.as_contract(&contract_id, || {
             crate::circuit_breaker::CircuitBreaker::initialize(&env)
                 .expect("circuit breaker should initialize in tests");

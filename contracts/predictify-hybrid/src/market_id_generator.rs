@@ -139,7 +139,12 @@ impl MarketIdGenerator {
     /// unstructured.
     #[cfg(not(target_family = "wasm"))]
     pub fn validate_market_id_format(_env: &Env, market_id: &Symbol) -> bool {
-        market_id.to_string().starts_with("mkt_")
+        // Symbol::to_string() requires std/Display unavailable in WASM no_std.
+        // Use cfg guard: full logic in std, safe fallback in WASM.
+        #[cfg(not(target_family = "wasm"))]
+        { use alloc::string::ToString; return market_id.to_string().starts_with("mkt_"); }
+        #[allow(unreachable_code)]
+        { let _ = market_id; true }
     }
 
     #[cfg(target_family = "wasm")]
@@ -158,24 +163,21 @@ impl MarketIdGenerator {
         _env: &Env,
         market_id: &Symbol,
     ) -> Result<MarketIdComponents, Error> {
-        let s = market_id.to_string();
-        // Expected format: mkt_{hex}_{counter}
-        if !s.starts_with("mkt_") {
-            return Ok(MarketIdComponents {
-                counter: 0,
-                is_legacy: true,
-            });
+        // Symbol::to_string() requires std/Display unavailable in WASM no_std.
+        #[cfg(not(target_family = "wasm"))]
+        {
+            use alloc::string::ToString;
+            let s = market_id.to_string();
+            if !s.starts_with("mkt_") {
+                return Ok(MarketIdComponents { counter: 0, is_legacy: true });
+            }
+            let parts: alloc::vec::Vec<&str> = s.splitn(3, '_').collect();
+            if parts.len() != 3 { return Err(Error::InvalidInput); }
+            let counter = parts[2].parse::<u32>().map_err(|_| Error::InvalidInput)?;
+            return Ok(MarketIdComponents { counter, is_legacy: false });
         }
-        // Split on '_': ["mkt", "{hex}", "{counter}"]
-        let parts: alloc::vec::Vec<&str> = s.splitn(3, '_').collect();
-        if parts.len() != 3 {
-            return Err(Error::InvalidInput);
-        }
-        let counter = parts[2].parse::<u32>().map_err(|_| Error::InvalidInput)?;
-        Ok(MarketIdComponents {
-            counter,
-            is_legacy: false,
-        })
+        #[allow(unreachable_code)]
+        { let _ = market_id; Ok(MarketIdComponents { counter: 0, is_legacy: true }) }
     }
 
     #[cfg(target_family = "wasm")]
