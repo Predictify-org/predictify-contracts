@@ -5,6 +5,35 @@ use soroban_sdk::{contracttype, Env, String, Symbol, Vec};
 
 use crate::errors::Error;
 
+/// Explicit opt-in token that a caller must pass to `apply_migration` (or
+/// `UpgradeManager::apply_migration`) when a `VersionMigration` reports
+/// `is_reversible() == false`.
+///
+/// Constructing this type is intentional: the caller has read and understood
+/// that the migration cannot be automatically rolled back.  It prevents
+/// operators from accidentally applying a one-way migration without
+/// acknowledging the risk.
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::versioning::IrreversibleAcknowledgement;
+/// // The operator explicitly acknowledges the migration is one-way:
+/// let ack = IrreversibleAcknowledgement::acknowledge();
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrreversibleAcknowledgement {
+    _private: (),
+}
+
+impl IrreversibleAcknowledgement {
+    /// Create the acknowledgement.  The caller is explicitly opting in to
+    /// applying an irreversible migration step.
+    pub fn acknowledge() -> Self {
+        Self { _private: () }
+    }
+}
+
 /// Version information for contract upgrades and data migration.
 ///
 /// This structure tracks version details for the contract, including version number,
@@ -129,6 +158,26 @@ impl Version {
         self.major > other.major
     }
 
+    /// Returns `true` when upgrading *to* `self` from `other` would be a
+    /// downgrade — i.e. `self` is numerically lower than `other`.
+    ///
+    /// Downgrade attempts must be rejected because Soroban storage layouts
+    /// evolve forward; applying an older Wasm to newer storage is unsafe.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, String};
+    /// # use predictify_hybrid::versioning::Version;
+    /// # let env = Env::default();
+    /// let current = Version::new(&env, 2, 0, 0, String::from_str(&env, ""), false);
+    /// let older   = Version::new(&env, 1, 9, 0, String::from_str(&env, ""), false);
+    /// assert!(older.is_downgrade_from(&current));
+    /// ```
+    pub fn is_downgrade_from(&self, current: &Version) -> bool {
+        self.version_number() < current.version_number()
+    }
+
     /// Get version number as u64 for comparison
     pub fn version_number(&self) -> u64 {
         (self.major as u64) * 1_000_000 + (self.minor as u64) * 1_000 + (self.patch as u64)
@@ -248,19 +297,28 @@ impl VersionMigration {
         }
     }
 
-    /// Validate migration configuration
+    /// Validate migration configuration (structural checks only).
+    ///
+    /// Confirms that:
+    /// - `to_version` is strictly greater than `from_version` (no same-version
+    ///   or downgrade migrations).
+    /// - `migration_script` is non-empty.
+    /// - `validation_script` is non-empty.
+    ///
+    /// This is intentionally lightweight — call `validate_for_apply` for the
+    /// full set of pre-apply invariants.
     pub fn validate(&self, _env: &Env) -> Result<(), Error> {
-        // Check if from_version is different from to_version
+        // Reject same-version or downgrade migrations
         if self.from_version.version_number() >= self.to_version.version_number() {
             return Err(Error::InvalidInput);
         }
 
-        // Check if migration script is provided
+        // Require a non-empty migration script identifier
         if self.migration_script.is_empty() {
             return Err(Error::InvalidInput);
         }
 
-        // Check if validation script is provided
+        // Require a non-empty validation script identifier
         if self.validation_script.is_empty() {
             return Err(Error::InvalidInput);
         }
@@ -268,23 +326,85 @@ impl VersionMigration {
         Ok(())
     }
 
-    /// Check if migration is reversible
+    /// Full pre-apply validation gate.
+    ///
+    /// Calls `validate()` for structural checks, then additionally verifies:
+    ///
+    /// 1. **No downgrade**: `to_version` must be strictly greater than
+    ///    `current_contract_version` (not just `from_version`).
+    /// 2. **Version compatibility**: `to_version.is_compatible_with(current_contract_version)`
+    ///    must hold.
+    /// 3. **Irreversible acknowledgement**: if the migration has no rollback
+    ///    script (`is_reversible() == false`) the caller *must* supply a
+    ///    `Some(IrreversibleAcknowledgement)` — otherwise this returns
+    ///    `Err(Error::InvalidInput)` so that operators cannot accidentally
+    ///    apply a one-way migration without explicitly opting in.
+    /// 4. **Pending status**: only migrations whose `status` is
+    ///    `MigrationStatus::Pending` may be applied (prevents double-apply
+    ///    and re-application of failed migrations without operator reset).
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment (used for delegated `validate()`).
+    /// * `current_version` - The version currently active in the contract.
+    /// * `irreversible_ack` - Must be `Some(_)` when `is_reversible()` is
+    ///   `false`; must be `None` (or `Some(_)`, both accepted) when the
+    ///   migration *is* reversible.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::InvalidInput` – structural validation failure, downgrade
+    ///   attempt, version incompatibility, irreversible step without
+    ///   acknowledgement, or migration not in `Pending` status.
+    pub fn validate_for_apply(
+        &self,
+        env: &Env,
+        current_version: &Version,
+        irreversible_ack: &Option<IrreversibleAcknowledgement>,
+    ) -> Result<(), Error> {
+        // 1. Structural validation (from_version < to_version, non-empty scripts)
+        self.validate(env)?;
+
+        // 2. Reject downgrades against the *live* contract version
+        if self.to_version.is_downgrade_from(current_version) {
+            return Err(Error::InvalidInput);
+        }
+
+        // 3. Reject version-incompatible upgrades
+        if !self.to_version.is_compatible_with(current_version) {
+            return Err(Error::InvalidInput);
+        }
+
+        // 4. Irreversible migrations require an explicit opt-in token
+        if !self.is_reversible() && irreversible_ack.is_none() {
+            return Err(Error::InvalidInput);
+        }
+
+        // 5. Only Pending migrations may be applied
+        if self.status != MigrationStatus::Pending {
+            return Err(Error::InvalidInput);
+        }
+
+        Ok(())
+    }
+
+    /// Check if migration is reversible (has a rollback script).
     pub fn is_reversible(&self) -> bool {
         self.rollback_script.is_some()
     }
 
-    /// Mark migration as completed
+    /// Mark migration as completed and record the completion timestamp.
     pub fn mark_completed(&mut self, env: &Env) {
         self.status = MigrationStatus::Completed;
         self.completed_at = Some(env.ledger().timestamp());
     }
 
-    /// Mark migration as failed
+    /// Mark migration as failed (retains original `created_at` / `from_version`).
     pub fn mark_failed(&mut self) {
         self.status = MigrationStatus::Failed;
     }
 
-    /// Mark migration as rolled back
+    /// Mark migration as rolled back.
     pub fn mark_rolled_back(&mut self) {
         self.status = MigrationStatus::RolledBack;
     }

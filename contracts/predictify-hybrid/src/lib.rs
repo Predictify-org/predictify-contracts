@@ -94,6 +94,8 @@ mod circuit_breaker_tests;
 
 // #[cfg(any())]
 // mod upgrade_manager_tests;
+#[cfg(test)]
+mod upgrade_manager_tests;
 
 // #[cfg(any())]
 // mod query_tests;
