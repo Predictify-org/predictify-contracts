@@ -233,12 +233,18 @@ fn test_formatted_key_uniqueness() {
     let compressed_key_1 = format!("compressed_{:?}", market_id_1);
     let compressed_key_2 = format!("compressed_{:?}", market_id_2);
     let compressed_ref_key_1 = format!("compressed_ref_{:?}", market_id_1);
-    let archive_key_1 = format!("archive_{:?}_1234567890", market_id_1);
 
     // Verify formatted keys are unique
     assert_ne!(compressed_key_1, compressed_key_2);
     assert_ne!(compressed_key_1, compressed_ref_key_1);
-    assert_ne!(compressed_key_1, archive_key_1);
+
+    // Test ArchivedMarket DataKey uniqueness
+    let archive_key_1 = crate::storage::DataKey::ArchivedMarket(market_id_1.clone(), 1234567890);
+    let archive_key_2 = crate::storage::DataKey::ArchivedMarket(market_id_2.clone(), 1234567890);
+    let archive_key_3 = crate::storage::DataKey::ArchivedMarket(market_id_1.clone(), 9876543210);
+
+    assert_ne!(archive_key_1, archive_key_2);
+    assert_ne!(archive_key_1, archive_key_3);
 }
 
 // ===== STORAGE KEY NAMESPACE TESTS =====
