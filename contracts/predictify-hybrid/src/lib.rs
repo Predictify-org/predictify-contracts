@@ -71,6 +71,8 @@ mod voting;
 
 #[cfg(any())]
 mod test_audit_trail;
+#[cfg(test)]
+mod override_audit_tests;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
@@ -2847,15 +2849,49 @@ impl PredictifyHybrid {
         reason: String,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
-        // Temporarily disabled due to oracles module being disabled
-        // oracles::OracleIntegrationManager::admin_override_result(
-        //     &env,
-        //     &admin,
-        //     &market_id,
-        //     &outcome,
-        //     &reason,
-        // )
-        Err(Error::OracleUnavailable)
+
+        // Reject empty reason — every override must be justified
+        if reason.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        // Load the market
+        let mut market = markets::MarketStateManager::get_market(&env, &market_id)?;
+
+        // Capture the previous oracle result for the audit record and event
+        let old_result = market
+            .oracle_result
+            .clone()
+            .unwrap_or_else(|| String::from_str(&env, "none"));
+
+        // Apply the override
+        market.oracle_result = Some(outcome.clone());
+        market.state = crate::types::MarketState::Resolved;
+        markets::MarketStateManager::update_market(&env, &market_id, &market);
+
+        // Append an immutable audit record
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "old_result"), old_result.clone());
+        details.set(Symbol::new(&env, "new_result"), outcome.clone());
+        details.set(Symbol::new(&env, "reason"), reason.clone());
+        AuditTrailManager::append_record(
+            &env,
+            AuditAction::OracleVerificationOverride,
+            admin.clone(),
+            details,
+        );
+
+        // Emit the dedicated override event for off-chain monitors
+        EventEmitter::emit_admin_override(
+            &env,
+            &market_id,
+            &admin,
+            &old_result,
+            &outcome,
+            &reason,
+        );
+
+        Ok(())
     }
 
     /// Resolves a market automatically using oracle data and community consensus.
