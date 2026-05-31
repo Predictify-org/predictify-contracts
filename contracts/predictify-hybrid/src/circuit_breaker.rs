@@ -70,7 +70,11 @@ pub struct CircuitBreakerState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub enum PauseScope {
+    /// Pauses only betting operations: place_bet, place_bets
     BettingOnly,
+    /// Pauses all fund movement operations: deposit, withdraw, place_bet, claim_winnings, distribute_payouts, collect_fees
+    FundsOnly,
+    /// Pauses all operations
     Full,
 }
 
@@ -288,7 +292,7 @@ impl CircuitBreaker {
     }
 
     /// Check whether a specific operation is allowed under current pause scope.
-    /// `op` examples: "betting", "create_event", "withdraw", etc.
+    /// Supported `op` values: "deposit", "withdraw", "place_bet", "claim_winnings", "distribute_payouts", "collect_fees", "betting", "create_event", etc.
     pub fn is_operation_allowed(env: &Env, op: &str) -> Result<bool, Error> {
         let state = Self::get_state(env)?;
 
@@ -297,12 +301,17 @@ impl CircuitBreaker {
             BreakerState::Open => match state.pause_scope {
                 PauseScope::Full => Ok(false),
                 PauseScope::BettingOnly => {
-                    if op == "betting" {
+                    if op == "betting" || op == "place_bet" {
                         Ok(false)
                     } else {
                         Ok(true)
                     }
                 }
+                PauseScope::FundsOnly => match op {
+                    "deposit" | "withdraw" | "place_bet" | "claim_winnings"
+                    | "distribute_payouts" | "collect_fees" | "betting" => Ok(false),
+                    _ => Ok(true),
+                },
             },
             BreakerState::HalfOpen => {
                 let config = Self::get_config(env)?;

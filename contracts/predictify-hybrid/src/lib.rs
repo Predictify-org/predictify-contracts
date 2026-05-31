@@ -47,14 +47,14 @@ mod metadata_limits_tests;
 mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
-#[cfg(test)]
-mod require_auth_coverage_tests;
 mod oracles;
 mod performance_benchmarks;
 mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
+#[cfg(test)]
+mod require_auth_coverage_tests;
 mod resolution;
 mod statistics;
 mod storage;
@@ -69,10 +69,10 @@ mod validation;
 mod versioning;
 mod voting;
 
-#[cfg(any())]
-mod test_audit_trail;
 #[cfg(test)]
 mod override_audit_tests;
+#[cfg(any())]
+mod test_audit_trail;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
@@ -333,9 +333,10 @@ impl PredictifyHybrid {
             events_per_admin_limit: 0,
             time_window_seconds: 3600,
         };
-        env.storage()
-            .persistent()
-            .set(&crate::rate_limiter::RateLimiterData::Config, &rate_limit_config);
+        env.storage().persistent().set(
+            &crate::rate_limiter::RateLimiterData::Config,
+            &rate_limit_config,
+        );
 
         // Seed default runtime configuration so validators and query paths have
         // deterministic bounds immediately after deployment.
@@ -344,17 +345,19 @@ impl PredictifyHybrid {
 
         // Seed permissive-but-valid rate limits so admin entrypoints do not
         // fail before a custom policy is configured.
-        crate::rate_limiter::RateLimiter::new(env.clone()).init_rate_limiter(
-            admin.clone(),
-            crate::rate_limiter::RateLimitConfig {
-                voting_limit: 10_000,
-                dispute_limit: 1_000,
-                oracle_call_limit: 1_000,
-                bet_limit: 10_000,
-                events_per_admin_limit: 1_000,
-                time_window_seconds: 3_600,
-            },
-        ).map_err(Error::from)?;
+        crate::rate_limiter::RateLimiter::new(env.clone())
+            .init_rate_limiter(
+                admin.clone(),
+                crate::rate_limiter::RateLimitConfig {
+                    voting_limit: 10_000,
+                    dispute_limit: 1_000,
+                    oracle_call_limit: 1_000,
+                    bet_limit: 10_000,
+                    events_per_admin_limit: 1_000,
+                    time_window_seconds: 3_600,
+                },
+            )
+            .map_err(Error::from)?;
 
         // Initialize allowed assets
         if let Some(assets) = allowed_assets {
@@ -441,6 +444,11 @@ impl PredictifyHybrid {
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "deposit")
+        {
+            return Err(e);
+        }
         balances::BalanceManager::deposit(&env, user, asset, amount)
     }
 
@@ -465,6 +473,11 @@ impl PredictifyHybrid {
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "withdraw")
+        {
+            return Err(e);
+        }
         balances::BalanceManager::withdraw(&env, user, asset, amount)
     }
 
@@ -1175,6 +1188,11 @@ impl PredictifyHybrid {
         outcome: String,
         amount: i128,
     ) -> crate::types::Bet {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "place_bet")
+        {
+            panic_with_error!(env, e);
+        }
         // Use the BetManager to handle the bet placement
         match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
             Ok(bet) => {
@@ -1253,6 +1271,11 @@ impl PredictifyHybrid {
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
     ) -> Vec<crate::types::Bet> {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "place_bet")
+        {
+            panic_with_error!(env, e);
+        }
         match bets::BetManager::place_bets(&env, user, bets) {
             Ok(placed_bets) => placed_bets,
             Err(e) => panic_with_error!(env, e),
@@ -1669,6 +1692,11 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "claim_winnings")
+        {
+            panic_with_error!(env, e);
+        }
         user.require_auth();
 
         let mut market: Market = env
@@ -2884,14 +2912,7 @@ impl PredictifyHybrid {
         );
 
         // Emit the dedicated override event for off-chain monitors
-        EventEmitter::emit_admin_override(
-            &env,
-            &market_id,
-            &admin,
-            &old_result,
-            &outcome,
-            &reason,
-        );
+        EventEmitter::emit_admin_override(&env, &market_id, &admin, &old_result, &outcome, &reason);
 
         Ok(())
     }
@@ -3257,6 +3278,11 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn collect_fees(env: Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "collect_fees")
+        {
+            return Err(e);
+        }
         Self::require_primary_admin(&env, &admin)?;
 
         fees::FeeManager::collect_fees(&env, admin, market_id)
@@ -3329,6 +3355,12 @@ impl PredictifyHybrid {
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
     pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
+        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(
+            &env,
+            "distribute_payouts",
+        ) {
+            return Err(e);
+        }
         let mut market: Market = env
             .storage()
             .persistent()
@@ -3822,11 +3854,7 @@ impl PredictifyHybrid {
             max_confidence_bps,
             max_deviation_bps,
         };
-        crate::oracles::OracleValidationConfigManager::set_event_config(
-            &env,
-            &market_id,
-            &config,
-        )?;
+        crate::oracles::OracleValidationConfigManager::set_event_config(&env, &market_id, &config)?;
 
         let mut details = Map::new(&env);
         details.set(
