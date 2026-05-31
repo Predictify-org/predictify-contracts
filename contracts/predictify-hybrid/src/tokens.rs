@@ -1,10 +1,66 @@
 //! Token management module for Predictify
 //! Handles multi-asset support for bets and payouts using Soroban token interface.
-//! Allows admin to configure allowed tokens per event or globally.
+//! Allows admin to configure allowed assets per event or globally.
+//!
+//! Canonical internal scale: 7 decimals (1 token = 10^7 units).
+//! All cross-asset comparisons and calculations use this normalized scale.
 
 use crate::err::Error;
 use alloc::{format, string::ToString};
 use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
+
+/// Canonical internal scale (7 decimals)
+pub const CANONICAL_DECIMALS: u32 = 7;
+
+/// Normalizes an amount from a token's decimal scale to the canonical 7-decimal scale.
+///
+/// # Parameters
+/// * `amount` - The amount in the token's native decimals
+/// * `decimals` - The token's number of decimals
+///
+/// # Returns
+/// The normalized amount in 7-decimal scale
+pub fn normalize_amount(amount: i128, decimals: u32) -> i128 {
+    if decimals == CANONICAL_DECIMALS {
+        return amount;
+    }
+
+    let diff = (decimals as i32 - CANONICAL_DECIMALS as i32).abs();
+    let factor = 10i128.pow(diff as u32);
+
+    if decimals > CANONICAL_DECIMALS {
+        // Need to divide (round down)
+        amount / factor
+    } else {
+        // Need to multiply
+        amount * factor
+    }
+}
+
+/// Denormalizes an amount from the canonical 7-decimal scale back to a token's decimal scale.
+///
+/// # Parameters
+/// * `amount` - The normalized amount in 7-decimal scale
+/// * `decimals` - The token's number of decimals
+///
+/// # Returns
+/// The denormalized amount in the token's native decimals
+pub fn denormalize_amount(amount: i128, decimals: u32) -> i128 {
+    if decimals == CANONICAL_DECIMALS {
+        return amount;
+    }
+
+    let diff = (decimals as i32 - CANONICAL_DECIMALS as i32).abs();
+    let factor = 10i128.pow(diff as u32);
+
+    if decimals > CANONICAL_DECIMALS {
+        // Need to multiply
+        amount * factor
+    } else {
+        // Need to divide (round down)
+        amount / factor
+    }
+}
 
 /// Represents a Stellar asset/token (contract address + symbol).
 #[soroban_sdk::contracttype]
@@ -405,4 +461,90 @@ pub fn validate_token_operation(
     asset.validate_for_market(env)?;
     check_token_balance(env, asset, user, amount)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_normalize_6_decimals() {
+        // Test a token with 6 decimals (e.g., USDC)
+        let amount = 1_000_000; // 1 token in 6 decimals
+        let normalized = normalize_amount(amount, 6);
+        assert_eq!(normalized, 10_000_000); // Should be 1 token in 7 decimals
+    }
+
+    #[test]
+    fn test_normalize_7_decimals() {
+        // Test native XLM (7 decimals)
+        let amount = 10_000_000; // 1 XLM
+        let normalized = normalize_amount(amount, 7);
+        assert_eq!(normalized, 10_000_000); // Should stay the same
+    }
+
+    #[test]
+    fn test_normalize_8_decimals() {
+        // Test BTC (8 decimals)
+        let amount = 100_000_000; // 1 BTC
+        let normalized = normalize_amount(amount, 8);
+        assert_eq!(normalized, 10_000_000); // 1 token in 7 decimals
+    }
+
+    #[test]
+    fn test_normalize_18_decimals() {
+        // Test ETH (18 decimals)
+        let amount = 1_000_000_000_000_000_000; // 1 ETH
+        let normalized = normalize_amount(amount, 18);
+        assert_eq!(normalized, 10_000_000); // 1 token in 7 decimals
+    }
+
+    #[test]
+    fn test_denormalize_6_decimals() {
+        let normalized = 10_000_000; // 1 token in 7 decimals
+        let denormalized = denormalize_amount(normalized, 6);
+        assert_eq!(denormalized, 1_000_000); // 1 token in 6 decimals
+    }
+
+    #[test]
+    fn test_denormalize_7_decimals() {
+        let normalized = 10_000_000;
+        let denormalized = denormalize_amount(normalized, 7);
+        assert_eq!(denormalized, 10_000_000);
+    }
+
+    #[test]
+    fn test_denormalize_8_decimals() {
+        let normalized = 10_000_000;
+        let denormalized = denormalize_amount(normalized, 8);
+        assert_eq!(denormalized, 100_000_000);
+    }
+
+    #[test]
+    fn test_denormalize_18_decimals() {
+        let normalized = 10_000_000;
+        let denormalized = denormalize_amount(normalized, 18);
+        assert_eq!(denormalized, 1_000_000_000_000_000_000);
+    }
+
+    #[test]
+    fn test_round_trip_normalize_denormalize() {
+        // Test 6 decimals
+        let original_6 = 123_456;
+        let normalized_6 = normalize_amount(original_6, 6);
+        let denormalized_6 = denormalize_amount(normalized_6, 6);
+        assert_eq!(denormalized_6, original_6 / 1); // Since we divide then multiply
+
+        // Test 7 decimals
+        let original_7 = 12_345_678;
+        let normalized_7 = normalize_amount(original_7, 7);
+        let denormalized_7 = denormalize_amount(normalized_7, 7);
+        assert_eq!(denormalized_7, original_7);
+
+        // Test 8 decimals
+        let original_8 = 123_456_789;
+        let normalized_8 = normalize_amount(original_8, 8);
+        let denormalized_8 = denormalize_amount(normalized_8, 8);
+        assert_eq!(denormalized_8, (original_8 / 10) * 10); // Precision loss when normalizing down
+    }
 }
