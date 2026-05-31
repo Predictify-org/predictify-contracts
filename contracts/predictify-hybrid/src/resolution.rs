@@ -1700,8 +1700,20 @@ impl MarketResolutionValidator {
             .get(&Symbol::new(env, "global_min_pool"))
             .unwrap_or(0);
         let min_pool = market.min_pool_size.unwrap_or(global_min);
-        if min_pool > 0 && market.total_staked < min_pool {
-            return Err(Error::InvalidState);
+        
+        // Only check if min pool is set
+        if min_pool > 0 {
+            // Get token decimals to normalize amounts for comparison
+            let token_client = crate::markets::MarketUtils::get_token_client(env)?;
+            let token_decimals = token_client.decimals() as u32;
+            
+            // Normalize both total staked and min pool to canonical scale for comparison
+            let normalized_total = crate::tokens::normalize_amount(market.total_staked, token_decimals);
+            let normalized_min = crate::tokens::normalize_amount(min_pool, token_decimals);
+            
+            if normalized_total < normalized_min {
+                return Err(Error::InvalidState);
+            }
         }
 
         Ok(())
