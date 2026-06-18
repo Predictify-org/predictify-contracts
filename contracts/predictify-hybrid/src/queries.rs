@@ -16,18 +16,67 @@
 //! 3. **Contract State Queries** - Retrieve global contract state and statistics
 //! 4. **Analytics Queries** - Get aggregated market analytics and performance metrics
 //!
-//! # Gap Analysis (2026-04-23)
+//! # Gap Analysis — Reconciled (2026-06-18, supersedes 2026-04-23)
 //!
-//! The following gaps were identified between the published API spec and current implementation:
+//! Status of every getter originally flagged in the gap analysis.
+//! Verification: `grep -n "pub fn <name>" contracts/predictify-hybrid/src/**/*.rs`
 //!
-//! - **Missing Admin Getters**: `get_admin_role`, `get_admin_roles`, `has_permission`, `get_permissions_for_role`
-//! - **Missing Multisig Getters**: `get_multisig_config`, `requires_multisig`
-//! - **Missing Bet Limit Getters**: `get_effective_bet_limits`, `get_global_bet_limits`
-//! - **Missing Oracle Getters**: `get_oracle_resolution`, `get_approved_oracles`, `get_oracle_metadata`, `get_global_oracle_config`
-//! - **Missing Dispute Getters**: `get_dispute_stats`, `get_market_disputes`, `get_dispute_votes`, `get_dispute_timeout_status`
-//! - **Missing Governance Getters**: `list_proposals`, `get_proposal`
-//! - **Missing Config Getters**: `get_config`, `get_configuration_history`
-//! - **Inconsistencies**: `query_event_details` (missing `created_at`), `query_user_bet` (missing `voted_at`), `query_contract_state` (stubbed metrics)
+//! ## Admin / Multisig Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_admin_role` / `get_admin_roles` | **Implemented** | `QueryManager::query_admin_role` / `query_admin_roles` (this module) → `AdminManager` in `admin.rs` |
+//! | `has_permission` | **Implemented** | `QueryManager::query_has_permission` (this module) → `AdminManager::validate_admin_permission` in `admin.rs` |
+//! | `get_permissions_for_role` | **Implemented** | Not surfaced via `QueryManager`; call `AdminRoleManager::get_permissions_for_role` in `admin.rs` directly |
+//! | `get_multisig_config` | **Implemented** | `QueryManager::query_multisig_config` (this module) |
+//! | `requires_multisig` | **Implemented** | `QueryManager::query_requires_multisig` (this module) → `MultisigManager::requires_multisig` in `admin.rs` |
+//!
+//! ## Bet Limit Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_effective_bet_limits` | **Implemented** | Not surfaced via `QueryManager`; call `get_effective_bet_limits(env, market_id)` in `bets.rs` directly, or via `lib.rs` contract entry-point |
+//! | `get_global_bet_limits` | **Planned** | No standalone getter exists; global limits are read inside `get_effective_bet_limits` in `bets.rs` |
+//!
+//! ## Oracle Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_oracle_resolution` | **Stubbed** | `ResolutionManager::get_oracle_resolution` in `resolution.rs` — always returns `Ok(None)`; full persistence not yet implemented |
+//! | `get_approved_oracles` | **Implemented** | `QueryManager::query_approved_oracles` (this module) → `OracleWhitelist::get_approved_oracles` in `oracles.rs` |
+//! | `get_oracle_metadata` | **Implemented** | `QueryManager::query_oracle_metadata` (this module) → persistent storage via `OracleWhitelistKey` in `oracles.rs` |
+//! | `get_global_oracle_config` | **Planned** | No implementation exists in any module |
+//!
+//! ## Dispute Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_dispute_stats` | **Implemented** | `QueryManager::query_dispute_stats` (this module) → `DisputeManager::get_dispute_stats` in `disputes.rs` |
+//! | `get_market_disputes` | **Implemented** | `QueryManager::query_market_disputes` (this module) → `DisputeManager::get_market_disputes` in `disputes.rs` |
+//! | `get_dispute_votes` | **Implemented** | `QueryManager::query_dispute_votes` (this module) → `DisputeManager::get_dispute_votes` in `disputes.rs` |
+//! | `get_dispute_timeout_status` | **Implemented** | Not surfaced via `QueryManager`; call `DisputeManager::get_dispute_timeout_status` in `disputes.rs` directly |
+//!
+//! ## Governance Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `list_proposals` | **Implemented** | `QueryManager::query_proposals` (this module) → `GovernanceContract::list_proposals` in `governance.rs` |
+//! | `get_proposal` | **Implemented** | `QueryManager::query_proposal_details` (this module) → `GovernanceContract::get_proposal` in `governance.rs` |
+//!
+//! ## Config Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_config` | **Implemented** | Not surfaced via `QueryManager`; call `ConfigManager::get_config` in `config.rs` directly |
+//! | `get_configuration_history` | **Implemented** | Not surfaced via `QueryManager`; call `ConfigManager::get_configuration_history` in `config.rs` directly |
+//!
+//! ## Previously-Noted Inconsistencies
+//!
+//! | Issue | Status |
+//! |-------|--------|
+//! | `query_event_details` missing `created_at` | **Fixed** — field populated from `EventManager::get_event` |
+//! | `query_user_bet` missing `voted_at` | **Fixed** — field populated from `BetManager::get_bet` timestamp |
+//! | `query_contract_state` stubbed metrics (`unique_users`, `total_fees_collected`) | **Stubbed** — `unique_users` proxied via `DashboardStatisticsV1`; `total_fees_collected` sourced from `StatisticsManager`; token-balance fields still TODO (see issue #595) |
 
 use alloc::string::ToString;
 
