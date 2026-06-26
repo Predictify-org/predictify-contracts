@@ -7,6 +7,7 @@
 
 use crate::err::Error;
 use alloc::{format, string::ToString};
+use core::convert::TryInto;
 use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
 
 /// Canonical internal scale (7 decimals)
@@ -242,6 +243,50 @@ impl TokenRegistry {
             per_event.set(market_id.clone(), assets);
             env.storage().persistent().set(&event_key, &per_event);
         }
+    }
+
+    /// Registers an asset in the global registry with decimal validation.
+    ///
+    /// Gets the actual decimals from the live SAC (Stellar Asset Contract) and
+    /// persists them. On re-registration (same contract address), validates that
+    /// the live decimals match the stored decimals to prevent denomination mistakes
+    /// that would silently inflate or deflate stakes via `normalize_amount`.
+    ///
+    /// # Errors
+    /// * `Error::InvalidInput` if the SAC decimals are invalid (e.g., negative).
+    /// * `Error::AssetDecimalsMismatch` if the asset is already registered with
+    ///   different decimals than the live SAC reports.
+    pub fn register_asset(env: &Env, asset: &Asset) -> Result<(), Error> {
+        let token_client = token::Client::new(env, &asset.contract);
+        let live_decimals: u32 = token_client
+            .decimals()
+            .try_into()
+            .map_err(|_| Error::InvalidInput)?;
+
+        let global_key = Symbol::new(env, "allowed_assets_global");
+        let global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env));
+
+        // Check if contract is already registered
+        if let Some(existing) = global_assets.iter().find(|a| a.contract == asset.contract) {
+            if existing.decimals != live_decimals {
+                return Err(Error::AssetDecimalsMismatch);
+            }
+            // Already registered with matching decimals - nothing to do
+            return Ok(());
+        }
+
+        // Register with live SAC decimals
+        let registered = Asset {
+            contract: asset.contract.clone(),
+            symbol: asset.symbol.clone(),
+            decimals: live_decimals,
+        };
+        Self::add_global(env, &registered);
+        Ok(())
     }
 
     pub fn initialize_with_defaults(env: &Env) {

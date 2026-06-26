@@ -61,6 +61,8 @@ mod storage;
 #[cfg(test)]
 mod storage_layout_tests;
 pub mod tokens;
+#[cfg(test)]
+mod custom_token_tests;
 mod types;
 mod upgrade_manager;
 mod utils;
