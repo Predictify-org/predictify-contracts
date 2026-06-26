@@ -725,6 +725,25 @@ pub struct FeeWithdrawnEvent {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigThresholdProposedEvent {
+    pub admin: Address,
+    pub old_threshold: u32,
+    pub new_threshold: u32,
+    pub confirm_after: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigThresholdConfirmedEvent {
+    pub admin: Address,
+    pub old_threshold: u32,
+    pub new_threshold: u32,
+    pub timestamp: u64,
+}
+
 // ===== ORACLE RESULT VERIFICATION EVENTS =====
 
 /// Event emitted when oracle result verification is initiated for a market.
@@ -4282,6 +4301,48 @@ pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &S
 }
 
 impl EventEmitter {
+    pub fn emit_threshold_proposed(
+        env: &Env,
+        admin: &Address,
+        old_threshold: u32,
+        new_threshold: u32,
+        confirm_after: u64,
+    ) {
+        let event = MultisigThresholdProposedEvent {
+            admin: admin.clone(),
+            old_threshold,
+            new_threshold,
+            confirm_after,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("thld_prop"), &event);
+        env.events().publish(
+            (symbol_short!("thld_prop"), admin.clone()),
+            event,
+        );
+    }
+
+    pub fn emit_threshold_confirmed(
+        env: &Env,
+        admin: &Address,
+        old_threshold: u32,
+        new_threshold: u32,
+    ) {
+        let event = MultisigThresholdConfirmedEvent {
+            admin: admin.clone(),
+            old_threshold,
+            new_threshold,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("thld_conf"), &event);
+        env.events().publish(
+            (symbol_short!("thld_conf"), admin.clone()),
+            event,
+        );
+    }
+
     /// Emit oracle callback event for oracle data updates
     pub fn emit_oracle_callback(
         env: &Env,
