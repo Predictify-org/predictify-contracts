@@ -2326,8 +2326,14 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_res"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_res"), market_id.clone()), event);
+        env.events().publish(
+            (
+                symbol_short!("mkt_res"),
+                market_id.clone(),
+                resolution_method.clone(),
+            ),
+            event,
+        );
     }
 
     /// Emit event when minimum pool size is not met at resolution time
