@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::markets::{MarketStateLogic, MarketStateManager};
-use crate::types::{Balance, ReflectorAsset};
-use soroban_sdk::{contracttype, Address, Env, IntoVal, Symbol, Val, Vec};
+use crate::types::{Balance, ReflectorAsset, Market, MarketState, OracleConfig};
+use soroban_sdk::{contracttype, Address, Env, IntoVal, Map, Symbol, Val, Vec};
 
 const STORAGE_CONFIG_KEY: &str = "storage_config";
 const LEDGERS_PER_DAY: u32 = 17_280;

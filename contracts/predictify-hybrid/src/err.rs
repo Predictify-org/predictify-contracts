@@ -178,6 +178,10 @@ pub enum Error {
     /// Tag string is shorter than the minimum allowed length (non-empty tags only).
     TagTooShort = 437,
 
+    // ===== VALIDATION ERRORS (435-437) =====
+    /// Market ID already exists in the registry. Cannot create duplicate market IDs.
+    DuplicateMarketId = 435,
+
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
     CBNotInitialized = 500,
