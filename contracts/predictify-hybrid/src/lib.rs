@@ -5685,6 +5685,34 @@ impl PredictifyHybrid {
         monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
     }
 
+    /// Return all alerts in the bounded monitoring queue (oldest first).
+    ///
+    /// Clients should also check [`is_monitor_overflow`] to detect whether any
+    /// alerts were silently evicted since the last admin reset.
+    pub fn get_monitor_alerts(env: Env) -> Vec<monitoring::MonitoringAlert> {
+        monitoring::ContractMonitor::get_alerts(&env)
+    }
+
+    /// Return `true` if at least one alert has been evicted from the queue due to
+    /// overflow since the last [`clear_monitor_overflow`] call.
+    pub fn is_monitor_overflow(env: Env) -> bool {
+        monitoring::ContractMonitor::is_overflow(&env)
+    }
+
+    /// Reset the monitoring overflow flag.  Only the contract admin may call this.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::AdminNotSet`] – no admin has been initialised.
+    /// - [`Error::Unauthorized`] – `admin` does not match the stored admin address.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn clear_monitor_overflow(env: Env, admin: Address) -> Result<(), Error> {
+        monitoring::ContractMonitor::clear_overflow(&env, &admin)
+    }
+
     // ===== ORACLE FALLBACK FUNCTIONS =====
 
     /// Get oracle data with backup if primary fails.
