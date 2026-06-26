@@ -176,6 +176,12 @@ use soroban_sdk::{
     contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol, Vec,
 };
 
+impl From<crate::reentrancy_guard::GuardError> for Error {
+    fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
+        Error::InvalidState
+    }
+}
+
 impl From<crate::rate_limiter::RateLimiterError> for Error {
     fn from(err: crate::rate_limiter::RateLimiterError) -> Self {
         match err {
