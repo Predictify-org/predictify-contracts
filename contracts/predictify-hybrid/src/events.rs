@@ -1254,6 +1254,24 @@ pub struct DisputeTimeoutExtendedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a vote on a dispute is rejected because the voter
+/// is the same address that opened the dispute.
+///
+/// This prevents the dispute opener from biasing the tally by voting
+/// on their own dispute.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeVoteRejectedEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Voter address (same as the dispute opener)
+    pub voter: Address,
+    /// Reason for rejection
+    pub reason: String,
+    /// Rejection timestamp
+    pub timestamp: u64,
+}
+
 /// Dispute auto-resolved event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2842,6 +2860,25 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("tout_ext"), &event);
         env.events()
             .publish((symbol_short!("tout_ext"), dispute_id.clone()), event);
+    }
+
+    /// Emit dispute vote rejected event
+    pub fn emit_dispute_vote_rejected(
+        env: &Env,
+        dispute_id: &Symbol,
+        voter: &Address,
+        reason: &String,
+    ) {
+        let event = DisputeVoteRejectedEvent {
+            dispute_id: dispute_id.clone(),
+            voter: voter.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("d_v_rej"), &event);
+        env.events()
+            .publish((symbol_short!("d_v_rej"), dispute_id.clone()), event);
     }
 
     /// Emit dispute auto-resolved event

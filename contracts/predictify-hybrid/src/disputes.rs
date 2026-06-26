@@ -1415,6 +1415,21 @@ impl DisputeManager {
         // Require authentication from the user
         user.require_auth();
 
+        // Reject self-vote: the dispute opener cannot vote on their own dispute
+        let market = MarketStateManager::get_market(env, &market_id)?;
+        if market.dispute_stakes.contains_key(user.clone()) {
+            crate::events::EventEmitter::emit_dispute_vote_rejected(
+                env,
+                &dispute_id,
+                &user,
+                &soroban_sdk::String::from_str(
+                    env,
+                    "Dispute opener cannot vote on their own dispute",
+                ),
+            );
+            return Err(Error::DisputerCannotVote);
+        }
+
         // Validate dispute voting conditions
         DisputeValidator::validate_dispute_voting_conditions(env, &market_id, &dispute_id)?;
 
@@ -3244,5 +3259,101 @@ mod tests {
         assert_eq!(analytics.timeout_hours, 24);
         assert_eq!(analytics.is_expired, false);
         assert_eq!(analytics.status, DisputeTimeoutStatus::Active);
+    }
+
+    #[test]
+    fn test_disputer_cannot_vote_on_own_dispute() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        crate::PredictifyHybridClient::new(&env, &contract_id)
+            .initialize(&admin, &Some(200i128), &None);
+
+        let market_id = Symbol::new(&env, "market_self_vote");
+        let disputer = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.dispute_stakes.set(disputer.clone(), 1000);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let voting = DisputeVoting {
+                dispute_id: market_id.clone(),
+                voting_start: 0,
+                voting_end: env.ledger().timestamp() + 86400,
+                total_votes: 0,
+                support_votes: 0,
+                against_votes: 0,
+                total_support_stake: 0,
+                total_against_stake: 0,
+                status: DisputeVotingStatus::Active,
+            };
+            DisputeUtils::store_dispute_voting(&env, &market_id, &voting).unwrap();
+        });
+
+        let result = env.as_contract(&contract_id, || {
+            DisputeManager::vote_on_dispute(
+                &env,
+                disputer.clone(),
+                market_id.clone(),
+                market_id.clone(),
+                false,
+                500,
+                Some(String::from_str(&env, "Voting against own dispute")),
+            )
+        });
+
+        assert_eq!(result, Err(Error::DisputerCannotVote));
+    }
+
+    #[test]
+    fn test_non_disputer_can_pass_self_vote_check() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        crate::PredictifyHybridClient::new(&env, &contract_id)
+            .initialize(&admin, &Some(200i128), &None);
+
+        let market_id = Symbol::new(&env, "market_non_disputer");
+        let disputer = Address::generate(&env);
+        let voter = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.dispute_stakes.set(disputer.clone(), 1000);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let voting = DisputeVoting {
+                dispute_id: market_id.clone(),
+                voting_start: 0,
+                voting_end: env.ledger().timestamp() + 86400,
+                total_votes: 0,
+                support_votes: 0,
+                against_votes: 0,
+                total_support_stake: 0,
+                total_against_stake: 0,
+                status: DisputeVotingStatus::Active,
+            };
+            DisputeUtils::store_dispute_voting(&env, &market_id, &voting).unwrap();
+        });
+
+        let result = env.as_contract(&contract_id, || {
+            DisputeManager::vote_on_dispute(
+                &env,
+                voter.clone(),
+                market_id.clone(),
+                market_id.clone(),
+                false,
+                500,
+                Some(String::from_str(&env, "Voting against")),
+            )
+        });
+
+        // Should NOT be DisputerCannotVote (though it will likely fail on token transfer)
+        assert_ne!(result, Err(Error::DisputerCannotVote));
     }
 }

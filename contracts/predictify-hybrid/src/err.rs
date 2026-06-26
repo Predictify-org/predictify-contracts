@@ -121,6 +121,8 @@ pub enum Error {
     DisputeFeeFailed = 409,
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
+    /// The dispute opener cannot vote on their own dispute.
+    DisputerCannotVote = 419,
     /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
     SweepAlreadyDone = 411,
     /// Fee arithmetic overflowed during checked platform-fee calculation.
@@ -1380,6 +1382,7 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
+            Error::DisputerCannotVote => "Dispute opener cannot vote on their own dispute",
             Error::SweepAlreadyDone => "Unclaimed winnings already swept for this market",
             Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
@@ -1474,6 +1477,7 @@ impl Error {
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
             Error::DisputeError => "DISPUTE_ERROR",
+            Error::DisputerCannotVote => "DISPUTER_CANNOT_VOTE",
             Error::SweepAlreadyDone => "SWEEP_ALREADY_DONE",
             Error::FeeArithmeticOverflow => "FEE_ARITHMETIC_OVERFLOW",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
