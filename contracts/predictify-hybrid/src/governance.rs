@@ -23,11 +23,21 @@ pub struct GovernanceProposal {
 enum StorageKey {
     Proposal(Symbol),
     ProposalList,          // Vec<Symbol>
-    Vote(Symbol, Address), // proposal id + voter -> u8 (0 none, 1 for, 2 against)
+    Vote(Symbol, Address), // proposal id + voter -> i32 (0 none, 1 for, 2 against)
     VotingPeriod,          // u64
     QuorumVotes,           // u128 minimum FOR votes required
     Admin,                 // Address
+    /// Maps delegator -> delegate (Address). At most one per delegator (griefing guard).
+    Delegate(Address),
+    /// Tracks how many delegators are currently delegating to a given address.
+    /// Capped at MAX_INCOMING_DELEGATIONS to bound storage.
+    DelegateCount(Address),
 }
+
+/// Maximum number of delegators that may point to a single delegate address.
+/// Limits griefing: prevents an attacker from forcing the contract to walk an
+/// unbounded list when tallying delegated votes.
+const MAX_INCOMING_DELEGATIONS: u32 = 50;
 
 /// Simple errors for the contract
 #[contracttype]
@@ -44,6 +54,16 @@ pub enum GovernanceError {
     NotAdmin,
     NotInitialized,
     InvalidParams,
+    /// Caller tried to delegate to themselves.
+    SelfDelegation,
+    /// Caller already has an active delegation; must unset first.
+    DelegationAlreadySet,
+    /// The target delegate has reached the incoming-delegation cap (griefing guard).
+    DelegateLimitReached,
+    /// No active delegation found for the caller.
+    NoDelegationSet,
+    /// Delegation would create a cycle (A→B→A).
+    DelegationCycle,
 }
 
 /// ---------- CONTRACT ----------
@@ -154,7 +174,7 @@ impl GovernanceContract {
     }
 
     /// Vote on a proposal. `support = true` means FOR, false means AGAINST.
-    /// One address one vote (no weighting).
+    /// Each address counts as 1 vote plus 1 for each address that has delegated to it.
     pub fn vote(
         env: Env,
         voter: Address,
@@ -193,13 +213,21 @@ impl GovernanceContract {
             return Err(GovernanceError::AlreadyVoted);
         }
 
+        // Voting weight = 1 (own vote) + number of addresses delegating to this voter.
+        let delegated: u128 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(voter.clone()))
+            .unwrap_or(0) as u128;
+        let weight: u128 = 1 + delegated;
+
         if support {
-            p.for_votes += 1;
+            p.for_votes += weight;
             env.storage()
                 .persistent()
                 .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &1i32);
         } else {
-            p.against_votes += 1;
+            p.against_votes += weight;
             env.storage()
                 .persistent()
                 .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &2i32);
@@ -214,6 +242,101 @@ impl GovernanceContract {
         EventEmitter::emit_governance_vote_cast(&env, &proposal_id, &voter, support);
 
         Ok(())
+    }
+
+    /// Delegate the caller's vote to `delegate`.
+    ///
+    /// Storage griefing guard:
+    /// - A delegator may hold at most **one** active delegation at a time.
+    /// - A delegate may receive at most `MAX_INCOMING_DELEGATIONS` incoming delegations.
+    /// - Self-delegation and two-hop cycles (A→B while B→A exists) are rejected.
+    pub fn set_delegate(
+        env: Env,
+        delegator: Address,
+        delegate: Address,
+    ) -> Result<(), GovernanceError> {
+        delegator.require_auth();
+
+        // No self-delegation
+        if delegator == delegate {
+            return Err(GovernanceError::SelfDelegation);
+        }
+
+        // Detect two-hop cycle: reject if delegate has already delegated back to delegator
+        if let Some(delegates_delegate) = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegate.clone()))
+        {
+            if delegates_delegate == delegator {
+                return Err(GovernanceError::DelegationCycle);
+            }
+        }
+
+        // Enforce max-1 active delegation per delegator (griefing guard)
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Delegate(delegator.clone()))
+        {
+            return Err(GovernanceError::DelegationAlreadySet);
+        }
+
+        // Enforce incoming-delegation cap on the delegate (griefing guard)
+        let incoming: u32 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(delegate.clone()))
+            .unwrap_or(0);
+        if incoming >= MAX_INCOMING_DELEGATIONS {
+            return Err(GovernanceError::DelegateLimitReached);
+        }
+
+        // Persist delegation and bump counter
+        env.storage()
+            .persistent()
+            .set(&StorageKey::Delegate(delegator.clone()), &delegate);
+        env.storage()
+            .persistent()
+            .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming + 1));
+
+        Ok(())
+    }
+
+    /// Remove the caller's active delegation.
+    pub fn unset_delegate(env: Env, delegator: Address) -> Result<(), GovernanceError> {
+        delegator.require_auth();
+
+        let delegate: Address = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegator.clone()))
+            .ok_or(GovernanceError::NoDelegationSet)?;
+
+        // Decrement incoming count on the previously-pointed-at delegate
+        let incoming: u32 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(delegate.clone()))
+            .unwrap_or(0);
+        if incoming > 0 {
+            env.storage()
+                .persistent()
+                .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming - 1));
+        }
+
+        env.storage()
+            .persistent()
+            .remove(&StorageKey::Delegate(delegator.clone()));
+
+        Ok(())
+    }
+
+    /// Return the delegate for `delegator`, if any.
+    pub fn get_delegate(env: Env, delegator: Address) -> Option<Address> {
+        env.storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegator))
     }
 
     /// Validate governance votes for a proposal. Returns (passed: bool, reason: String)
