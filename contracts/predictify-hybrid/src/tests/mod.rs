@@ -11,6 +11,9 @@ pub mod integration;
 pub mod mocks;
 pub mod security;
 
+#[cfg(test)]
+pub mod fee_calculator_proptest;
+
 // DISABLED: API drift - re-enable after fixing
 // mod fee_idempotency_tests;
 mod rate_limiter_tests;
