@@ -721,6 +721,7 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use proptest::prelude::*;
+    use alloc::format;
 
     struct PerfBenchTest {
         env: Env,

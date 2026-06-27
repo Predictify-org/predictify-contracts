@@ -150,9 +150,10 @@ mod property_based_tests;
 
 // Re-export commonly used items
 use admin::{
-    AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole,
-    AdminSystemIntegration,
+    AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
+    AdminRole, AdminSystemIntegration,
 };
+pub use admin::Severity;
 pub use err::Error;
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
@@ -3720,6 +3721,17 @@ impl PredictifyHybrid {
         );
 
         Ok(())
+    }
+
+    /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event (admin only).
+    pub fn admin_broadcast(
+        env: Env,
+        admin: Address,
+        severity: Severity,
+        message_hash: soroban_sdk::BytesN<32>,
+        reason: String,
+    ) -> Result<(), Error> {
+        AdminFunctions::admin_broadcast(&env, &admin, severity, message_hash, reason)
     }
 
     /// Set global minimum and maximum bet limits (admin only).

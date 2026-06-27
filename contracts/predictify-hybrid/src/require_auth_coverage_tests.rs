@@ -1005,7 +1005,7 @@ fn test_set_event_bet_limits_forged_admin_rejected() {
 #[test]
 fn test_set_oracle_val_cfg_global_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
-    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&admin, &300u64, &9500u32);
+    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&admin, &300u64, &9500u32, &None);
     assert_auth_ok_contract!(result, "set_oracle_val_cfg_global rejected authorized admin");
 }
 
@@ -1014,7 +1014,7 @@ fn test_set_oracle_val_cfg_global_authorized_admin_succeeds() {
 fn test_set_oracle_val_cfg_global_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
-    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&attacker, &300u64, &9500u32);
+    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&attacker, &300u64, &9500u32, &None);
     assert_unauthorized_contract!(result);
 }
 
@@ -1026,7 +1026,7 @@ fn test_set_oracle_val_cfg_event_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let market_id = make_market(&env, &cid, &admin);
     let result = client(&env, &cid).try_set_oracle_val_cfg_event(
-        &admin, &market_id, &300u64, &9500u32,
+        &admin, &market_id, &300u64, &9500u32, &None,
     );
     assert_auth_ok_contract!(result, "set_oracle_val_cfg_event rejected authorized admin");
 }
@@ -1038,7 +1038,7 @@ fn test_set_oracle_val_cfg_event_forged_admin_rejected() {
     let market_id = make_market(&env, &cid, &admin);
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_set_oracle_val_cfg_event(
-        &attacker, &market_id, &300u64, &9500u32,
+        &attacker, &market_id, &300u64, &9500u32, &None,
     );
     assert_unauthorized_contract!(result);
 }
