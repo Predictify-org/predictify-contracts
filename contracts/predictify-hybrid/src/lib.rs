@@ -18,6 +18,11 @@ extern crate wee_alloc;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+// Short symbol keys (max length 9 for Soroban compatibility)
+const SYM_PLATFORM_FEE: &str = "plat_fee";      // was "platform_fee" (12 chars)
+const SYM_ALLOWED_ASSETS: &str = "allowed";     // was "allowed_assets" (14 chars)
+const SYM_ADMIN: &str = "Admin";                // kept as is (5 chars)
+
 // Module declarations - all modules enabled
 mod admin;
 #[cfg(test)]
@@ -300,7 +305,7 @@ impl PredictifyHybrid {
         if env
             .storage()
             .persistent()
-            .has(&Symbol::new(&env, "platform_fee"))
+            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
         {
             return Err(Error::InvalidState);
         }
@@ -327,7 +332,7 @@ impl PredictifyHybrid {
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
-            .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
 
         // Store default contract configuration so validators have deterministic bounds
         let mut default_config = crate::config::ConfigManager::get_development_config(&env);
@@ -376,7 +381,7 @@ impl PredictifyHybrid {
             // Store custom allowed assets
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "allowed_assets"), &assets);
+                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
         } else {
             // Initialize with defaults
             crate::tokens::TokenRegistry::initialize_with_defaults(&env);
@@ -394,7 +399,7 @@ impl PredictifyHybrid {
     fn stored_primary_admin(env: &Env) -> Result<Address, Error> {
         env.storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"))
+            .get(&Symbol::new(env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)
     }
 
@@ -1851,7 +1856,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1880,7 +1885,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1911,7 +1916,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1937,7 +1942,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)?;
 
         if admin != stored_admin {
@@ -1971,10 +1976,13 @@ impl PredictifyHybrid {
         let fee_percent = crate::config::ConfigManager::get_config(&env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(&env, "platform_fee"))
-                    .unwrap_or(2)
+                // Use the short platform fee key (backwards-compat fallback to legacy long keys
+                // is not possible here because Soroban restricts symbols to <=9 chars).
+                // If you need to read old on-chain keys created with long symbols,
+                // perform a storage migration on-chain (one-time) to move legacy values
+                // under the new short key.
+                let new_key = Symbol::new(&env, SYM_PLATFORM_FEE);
+                env.storage().persistent().get(&new_key).unwrap_or(2)
             });
 
         if fee_percent < 0 || fee_percent > PERCENTAGE_DENOMINATOR {
@@ -6056,9 +6064,17 @@ impl PredictifyHybrid {
     ///
     /// - Requires Soroban `require_auth()` from the caller
     /// - Requires the caller to match the stored primary admin in persistent storage
+    /// - Validates WASM hash chain to prevent out-of-order/forked upgrades
     /// - Validates version compatibility
     /// - Performs safety checks before upgrade
     /// - Logs all upgrade attempts for audit trail
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin performing the upgrade (must be authorized)
+    /// * `new_wasm_hash` - Hash of new Wasm bytecode to deploy
+    /// * `expected_predecessor` - Expected current WASM hash (for chain verification)
     ///
     /// # Example
     ///
@@ -6066,17 +6082,19 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, BytesN};
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
-    /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+    /// # let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let current_hash = BytesN::from_array(&env, &[0u8; 32]);
     ///
-    /// // Perform upgrade with admin authorization
+    /// // Perform upgrade with admin authorization and chain verification
     /// admin.require_auth();
-    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash)?;
+    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash, current_hash)?;
     /// # Ok::<(), predictify_hybrid::errors::Error>(())
     /// ```
     ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Returns [`Error::UpgradeChainMismatch`] if the expected predecessor does not match the current WASM hash.
     ///
     /// # Events
     ///
@@ -6085,9 +6103,15 @@ impl PredictifyHybrid {
         env: Env,
         admin: Address,
         new_wasm_hash: soroban_sdk::BytesN<32>,
+        expected_predecessor: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
-        let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
+        let result = upgrade_manager::UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            new_wasm_hash,
+            expected_predecessor,
+        );
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
