@@ -200,6 +200,19 @@ pub enum Error {
     RateLimitExceeded = 505,
     /// Cumulative extension cap reached; no further extensions allowed for this market.
     CumulativeExtensionCapHit = 506,
+    /// A market state transition was attempted that is not permitted by the state machine.
+    ///
+    /// This error is returned by `MarketStateLogic::validate_state_transition` whenever the
+    /// requested `(from, to)` pair is not in the set of legal edges.  Callers should treat
+    /// this as a terminal error — the transition will never succeed without first moving the
+    /// market through intermediate states that are part of the legal path.
+    ///
+    /// # Examples of illegal transitions
+    ///
+    /// * `Resolved → Active`  (cannot reopen a resolved market)
+    /// * `Closed → Ended`     (terminal state, no transitions allowed)
+    /// * `Active → Active`    (self-loops are not valid transitions)
+    IllegalMarketStateTransition = 507,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

@@ -2632,34 +2632,61 @@ impl MarketTestHelpers {
 pub struct MarketStateLogic;
 
 impl MarketStateLogic {
-    /// Validates that a market state transition is allowed by business rules.
+    /// Validates that a market state transition is allowed by the state machine.
     ///
-    /// This function enforces the market state machine by validating that
-    /// transitions between states follow the defined business logic. It prevents
-    /// invalid state changes that could compromise market integrity.
+    /// This function is the single authoritative gate for all market lifecycle
+    /// transitions.  It must be called before persisting any state change so that
+    /// illegal edges are rejected before touching storage.
     ///
     /// # Parameters
     ///
     /// * `from` - Current market state
-    /// * `to` - Target market state
+    /// * `to`   - Target market state
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - Transition is valid and allowed
-    /// * `Err(Error)` - Transition is not allowed
+    /// * `Ok(())` - Transition is legal and may proceed
+    /// * `Err(Error::IllegalMarketStateTransition)` - Transition is not permitted
     ///
-    /// # Errors
+    /// # Legal Transition Diagram
     ///
-    /// * `Error::InvalidState` - The requested state transition is not allowed
+    /// ```text
+    ///                   ┌─────────────────────────────────────────────────────┐
+    ///                   │              Market State Machine                    │
+    ///                   └─────────────────────────────────────────────────────┘
     ///
-    /// # Valid State Transitions
+    ///   ┌──────────┐  end_time passed   ┌──────────┐  oracle/admin   ┌──────────────┐
+    ///   │  Active  │ ─────────────────► │  Ended   │ ──────────────► │   Resolved   │
+    ///   └──────────┘                    └──────────┘                 └──────────────┘
+    ///        │                               │                               │
+    ///        │ admin cancel/close            │ dispute filed                 │ fees collected
+    ///        ▼                               ▼                               ▼
+    ///   ┌──────────┐               ┌──────────────┐               ┌──────────────────┐
+    ///   │Cancelled │               │   Disputed   │               │     Closed       │
+    ///   └──────────┘               └──────────────┘               └──────────────────┘
+    ///        │                          │     │                     ▲
+    ///        │ (terminal)               │     │ resolved/cancelled  │
+    ///        │                          ▼     └────────────────────►│
+    ///        │                    (Resolved)  (Closed/Cancelled)    │
+    ///        └──────────────────────────────────────────────────────┘
     ///
-    /// * `Active` → `Ended`, `Cancelled`, `Closed`, `Disputed`
-    /// * `Ended` → `Resolved`, `Disputed`, `Closed`, `Cancelled`
-    /// * `Disputed` → `Resolved`, `Closed`, `Cancelled`
-    /// * `Resolved` → `Closed`
-    /// * `Closed` → (no transitions allowed)
-    /// * `Cancelled` → (no transitions allowed)
+    ///   Legal edges (exhaustive):
+    ///     Active    → Ended, Cancelled, Closed, Disputed
+    ///     Ended     → Resolved, Disputed, Closed, Cancelled
+    ///     Disputed  → Resolved, Closed, Cancelled
+    ///     Resolved  → Closed
+    ///     Closed    → (none — terminal state)
+    ///     Cancelled → (none — terminal state)
+    ///
+    ///   Self-loops (e.g. Active → Active) are ILLEGAL.
+    ///   Resolved → Active, Ended, Disputed are ILLEGAL.
+    /// ```
+    ///
+    /// # Adding a New State
+    ///
+    /// When a new `MarketState` variant is introduced the `match` below will fail to
+    /// compile (non-exhaustive match), forcing the author to consciously define the
+    /// legal edges for the new state.  This is intentional.
     ///
     /// # Example
     ///
@@ -2667,17 +2694,20 @@ impl MarketStateLogic {
     /// use crate::markets::MarketStateLogic;
     /// use crate::types::MarketState;
     ///
-    /// // Valid transition
+    /// // Legal transition
     /// assert!(MarketStateLogic::validate_state_transition(
     ///     MarketState::Active,
     ///     MarketState::Ended
     /// ).is_ok());
     ///
-    /// // Invalid transition
-    /// assert!(MarketStateLogic::validate_state_transition(
-    ///     MarketState::Closed,
-    ///     MarketState::Active
-    /// ).is_err());
+    /// // Illegal transition returns the dedicated error variant
+    /// assert_eq!(
+    ///     MarketStateLogic::validate_state_transition(
+    ///         MarketState::Closed,
+    ///         MarketState::Active
+    ///     ),
+    ///     Err(Error::IllegalMarketStateTransition)
+    /// );
     /// ```
     pub fn validate_state_transition(from: MarketState, to: MarketState) -> Result<(), Error> {
         use MarketState::*;
@@ -2692,7 +2722,7 @@ impl MarketStateLogic {
         if allowed {
             Ok(())
         } else {
-            Err(Error::InvalidState)
+            Err(Error::IllegalMarketStateTransition)
         }
     }
 

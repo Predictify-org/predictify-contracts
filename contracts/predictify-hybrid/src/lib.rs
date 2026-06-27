@@ -113,6 +113,8 @@ mod circuit_breaker_tests;
 // mod upgrade_manager_tests;
 #[cfg(test)]
 mod upgrade_manager_tests;
+#[cfg(test)]
+mod market_state_matrix_tests;
 
 // #[cfg(any())]
 // mod query_tests;
