@@ -3676,8 +3676,8 @@ impl PredictifyHybrid {
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
-    pub fn prune_archive(env: Env, admin: Address, count: u32) -> Result<u32, Error> {
-        crate::event_archive::EventArchive::prune_archive(&env, &admin, count)
+    pub fn prune_archive(env: Env, admin: Address, count: u32, cursor: Option<crate::event_archive::PruneCursor>) -> Result<(u32, crate::event_archive::PruneCursor), Error> {
+        crate::event_archive::EventArchive::prune_archive(&env, &admin, count, cursor)
     }
 
     /// Return the current number of entries in the event archive.
