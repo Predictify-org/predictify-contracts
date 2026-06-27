@@ -3038,9 +3038,21 @@ impl PredictifyHybrid {
     /// - Users can claim winnings
     /// - Market statistics are finalized
     ///
-    /// # Events
+    /// # Event Ordering Contract
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// On every successful resolution `resolve_market` emits exactly **three**
+    /// resolution-signalling events in the following deterministic sequence:
+    ///
+    /// | # | Topic symbol    | Emitter                               | Description                      |
+    /// |---|-----------------|---------------------------------------|----------------------------------|
+    /// | 1 | `mkt_res`       | `EventEmitter::emit_market_resolved`  | Final outcome recorded           |
+    /// | 2 | `st_chng`       | `EventEmitter::emit_state_change_event` | State transition to `Resolved` |
+    /// | 3 | `idx_transition`| `ContractMonitor::emit_resolution_transition_hook` | Off-chain indexer hook |
+    ///
+    /// Off-chain consumers **must** handle these three events in the order
+    /// listed above. The sequence is enforced by the order of calls inside
+    /// `MarketResolutionManager::resolve_market` and is covered by a
+    /// deterministic ordering test (see `resolution_event_ordering_tests`).
     pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
         // Use the resolution module to resolve the market
         // Temporarily disabled due to resolution module being disabled
