@@ -869,9 +869,8 @@ impl StorageOptimizer {
 
     /// Check if market is compressed
     fn is_market_compressed(env: &Env, market_id: &Symbol) -> bool {
-        env.storage()
-            .persistent()
-            .has(&Symbol::new(env, &format!("compressed_{:?}", market_id)))
+        let key = crate::event_archive::derive_archive_key(env, market_id, "compressed");
+        env.storage().persistent().has(&key)
     }
 
     /// Store compressed market
@@ -879,10 +878,7 @@ impl StorageOptimizer {
         env: &Env,
         compressed_market: &CompressedMarket,
     ) -> Result<(), Error> {
-        let key = Symbol::new(
-            env,
-            &format!("compressed_{:?}", compressed_market.market_id),
-        );
+        let key = crate::event_archive::derive_archive_key(env, &compressed_market.market_id, "compressed");
         Self::set_persistent_with_ttl(
             env,
             &key,
@@ -894,7 +890,7 @@ impl StorageOptimizer {
 
     /// Get compressed market
     fn get_compressed_market(env: &Env, market_id: &Symbol) -> Result<CompressedMarket, Error> {
-        let key = Symbol::new(env, &format!("compressed_{:?}", market_id));
+        let key = crate::event_archive::derive_archive_key(env, market_id, "compressed");
         env.storage()
             .persistent()
             .get(&key)
@@ -907,7 +903,7 @@ impl StorageOptimizer {
         market_id: &Symbol,
         compressed_id: &Symbol,
     ) -> Result<(), Error> {
-        let key = Symbol::new(env, &format!("compressed_ref_{:?}", market_id));
+        let key = crate::event_archive::derive_archive_key(env, market_id, "compressed_ref");
         Self::set_persistent_with_ttl(
             env,
             &key,
