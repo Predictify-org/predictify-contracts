@@ -125,10 +125,17 @@ impl MarketCreator {
         // Process market creation fee
         // Market creator flow does not have the generated market id yet in this helper path.
         // Use the generated id after creation in higher-level flows when event metadata is required.
-        let _ = MarketUtils::process_creation_fee(env, &admin)?;
+       let _ = MarketUtils::process_creation_fee(env, &admin)?;
+
+        // Pre-flight check: ensure sufficient storage rent budget to prevent under-funded archives
+        let min_rent_budget = env.storage().persistent().max_ttl();
+        if env.ledger().sequence() + min_rent_budget > u32::MAX {
+            return Err(Error::InsufficientStorageRentBudget);
+        }
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
+        env.storage().persistent().extend_ttl(&market_id, min_rent_budget, min_rent_budget);
 
         Ok(market_id)
     }
