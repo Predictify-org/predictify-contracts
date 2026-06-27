@@ -87,6 +87,7 @@ use crate::versioning::{IrreversibleAcknowledgement, Version, VersionManager, Ve
 /// - Upgrade description and rationale
 /// - Validation requirements and safety checks
 /// - Rollback plan and recovery procedures
+/// - WASM hash chain verification for security
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpgradeProposal {
@@ -116,6 +117,10 @@ pub struct UpgradeProposal {
     pub required_validations: Vec<String>,
     /// Validation results
     pub validation_results: Vec<ValidationResult>,
+    /// Expected predecessor WASM hash (for chain verification)
+    /// Must match the current contract's WASM hash for upgrade to proceed.
+    /// For genesis upgrades (first deployment), this should be all zeros.
+    pub expected_predecessor: BytesN<32>,
 }
 
 impl UpgradeProposal {
@@ -148,6 +153,7 @@ impl UpgradeProposal {
             has_rollback_hash: false,
             required_validations: Vec::new(env),
             validation_results: Vec::new(env),
+            expected_predecessor: BytesN::from_array(env, &[0u8; 32]), // Default to genesis
         }
     }
 
@@ -196,6 +202,18 @@ impl UpgradeProposal {
         }
 
         true
+    }
+
+    /// Set the expected predecessor WASM hash for chain verification
+    ///
+    /// This hash must match the current contract's WASM hash for the upgrade
+    /// to be accepted. This prevents out-of-order and forked upgrades.
+    ///
+    /// # Parameters
+    ///
+    /// * `predecessor_hash` - The expected current WASM hash before this upgrade
+    pub fn set_expected_predecessor(&mut self, predecessor_hash: BytesN<32>) {
+        self.expected_predecessor = predecessor_hash;
     }
 }
 
@@ -297,29 +315,43 @@ impl UpgradeManager {
     ///
     /// This is the primary upgrade function that:
     /// 1. Validates admin authorization
-    /// 2. Checks version compatibility
-    /// 3. Performs pre-upgrade safety checks
-    /// 4. Updates contract Wasm bytecode
-    /// 5. Records upgrade in history
-    /// 6. Emits upgrade event
+    /// 2. Verifies WASM hash chain (prevents out-of-order/forked upgrades)
+    /// 3. Checks version compatibility
+    /// 4. Performs pre-upgrade safety checks
+    /// 5. Updates contract Wasm bytecode
+    /// 6. Records upgrade in history
+    /// 7. Emits upgrade event
     ///
     /// # Parameters
     ///
     /// * `env` - Soroban environment
     /// * `admin` - Admin performing the upgrade (must be authorized)
     /// * `new_wasm_hash` - Hash of new Wasm bytecode to deploy
+    /// * `expected_predecessor` - Expected current WASM hash (for chain verification)
     ///
     /// # Returns
     ///
     /// * `Ok(())` if upgrade succeeds
-    /// * `Err(Error)` if authorization fails or upgrade is incompatible
+    /// * `Err(Error)` if authorization fails, hash chain mismatch, or upgrade is incompatible
     ///
     /// # Security
     ///
     /// - Requires admin authentication via `require_auth()`
+    /// - Validates WASM hash chain to prevent out-of-order upgrades
     /// - Validates version compatibility
     /// - Performs safety checks before upgrade
     /// - Logs all upgrade attempts for audit
+    ///
+    /// # Hash Chain Verification
+    ///
+    /// The upgrade verifies that the `expected_predecessor` matches the current
+    /// contract's WASM hash. This ensures:
+    /// - Upgrades are applied in the correct order
+    /// - No forked upgrade chains can be applied
+    /// - Downgrade attacks are prevented
+    ///
+    /// For genesis upgrades (first deployment), both the current hash and
+    /// expected_predecessor should be all zeros.
     ///
     /// # Example
     ///
@@ -328,19 +360,21 @@ impl UpgradeManager {
     /// # use predictify_hybrid::upgrade_manager::UpgradeManager;
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
-    /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+    /// # let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let current_hash = BytesN::from_array(&env, &[0u8; 32]);
     ///
     /// // Admin authorization required
     /// admin.require_auth();
     ///
-    /// // Perform upgrade
-    /// UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash)?;
+    /// // Perform upgrade with chain verification
+    /// UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash, current_hash)?;
     /// # Ok::<(), predictify_hybrid::errors::Error>(())
     /// ```
     pub fn upgrade_contract(
         env: &Env,
         admin: &Address,
         new_wasm_hash: BytesN<32>,
+        expected_predecessor: BytesN<32>,
     ) -> Result<(), Error> {
         // Validate admin permissions
         Self::validate_admin_permissions(env, admin)?;
@@ -348,6 +382,40 @@ impl UpgradeManager {
         // Get current version and Wasm hash
         let current_version = Self::get_contract_version(env)?;
         let current_wasm_hash = Self::get_current_wasm_hash(env);
+
+        // ── WASM HASH CHAIN VERIFICATION ─────────────────────────────────────
+        // Verify that the expected predecessor matches the current contract's WASM hash.
+        // This prevents out-of-order upgrades, forked chains, and downgrade attacks.
+        let zero_hash = BytesN::from_array(env, &[0u8; 32]);
+
+        // Genesis case: if current hash is zero, allow upgrade if predecessor is also zero
+        let is_genesis = current_wasm_hash == zero_hash;
+        let predecessor_is_genesis = expected_predecessor == zero_hash;
+
+        if is_genesis && !predecessor_is_genesis {
+            // Current is genesis but predecessor is not - reject
+            EventEmitter::emit_upgrade_chain_mismatch_event(
+                env,
+                &expected_predecessor,
+                &current_wasm_hash,
+                &new_wasm_hash,
+                admin,
+            );
+            return Err(Error::UpgradeChainMismatch);
+        }
+
+        // Non-genesis case: predecessor must exactly match current hash
+        if !is_genesis && current_wasm_hash != expected_predecessor {
+            // Hash mismatch - reject upgrade
+            EventEmitter::emit_upgrade_chain_mismatch_event(
+                env,
+                &expected_predecessor,
+                &current_wasm_hash,
+                &new_wasm_hash,
+                admin,
+            );
+            return Err(Error::UpgradeChainMismatch);
+        }
 
         // Create upgrade record
         let upgrade_id = Symbol::new(env, &format!("upgrade_{}", env.ledger().timestamp()));
@@ -630,6 +698,45 @@ impl UpgradeManager {
         }
 
         Ok(stats)
+    }
+
+    /// Get WASM hash chain history
+    ///
+    /// Returns the complete chain of WASM hashes from all upgrades, providing
+    /// a verifiable history of contract bytecode evolution. This is critical for
+    /// security audits and verifying upgrade integrity.
+    ///
+    /// The chain includes:
+    /// - Previous WASM hash (before upgrade)
+    /// - New WASM hash (after upgrade)
+    /// - Upgrade timestamp
+    /// - Admin who performed the upgrade
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<UpgradeRecord>)` - Complete upgrade history with hash chain
+    ///
+    /// # Security
+    ///
+    /// This function enables verification that:
+    /// - All upgrades followed the hash chain
+    /// - No forks or out-of-order upgrades occurred
+    /// - The upgrade history is complete and linear
+    pub fn get_wasm_hash_chain(env: &Env) -> Result<Vec<UpgradeRecord>, Error> {
+        Self::get_upgrade_history(env)
+    }
+
+    /// Get the current WASM hash
+    ///
+    /// Returns the currently active contract's WASM bytecode hash.
+    /// This is the hash that should be used as the `expected_predecessor`
+    /// for the next upgrade.
+    ///
+    /// # Returns
+    ///
+    /// * `BytesN<32>` - Current WASM hash (zero if not set)
+    pub fn get_current_wasm_hash_public(env: &Env) -> BytesN<32> {
+        Self::get_current_wasm_hash(env)
     }
 
     /// Test upgrade safety without executing

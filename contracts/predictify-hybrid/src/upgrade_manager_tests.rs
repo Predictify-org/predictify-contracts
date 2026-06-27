@@ -893,6 +893,335 @@ fn test_apply_migration_persists_history() {
     });
 }
 
+// ============================================================
+// ===== WASM HASH CHAIN VERIFICATION TESTS (#661) ============
+// ============================================================
+
+/// Test helper to create a WASM hash from a seed byte
+fn create_wasm_hash(env: &Env, seed: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[seed; 32])
+}
+
+/// Test genesis upgrade (first deployment) with zero hashes
+#[test]
+fn test_upgrade_chain_genesis_case() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Genesis version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // Genesis: current hash is zero, predecessor is zero
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let new_wasm_hash = create_wasm_hash(&env, 1);
+
+        // Should succeed - both are zero (genesis case)
+        let result = UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            new_wasm_hash.clone(),
+            zero_hash.clone(),
+        );
+        assert!(result.is_ok(), "Genesis upgrade should succeed with zero predecessor");
+
+        // Verify the new hash is now current
+        let current_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        assert_eq!(current_hash, new_wasm_hash, "Current hash should be updated");
+    });
+}
+
+/// Test successful upgrade with correct predecessor hash
+#[test]
+fn test_upgrade_chain_success_with_correct_predecessor() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // First upgrade (genesis)
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+
+        // Second upgrade with correct predecessor
+        let hash_v2 = create_wasm_hash(&env, 2);
+        let result = UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            hash_v2.clone(),
+            hash_v1.clone(),
+        );
+        assert!(result.is_ok(), "Upgrade should succeed with correct predecessor");
+
+        // Verify the chain
+        let current_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        assert_eq!(current_hash, hash_v2, "Current hash should be v2");
+    });
+}
+
+/// Test failed upgrade with wrong predecessor (out-of-order)
+#[test]
+fn test_upgrade_chain_rejects_wrong_predecessor() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // First upgrade
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+
+        // Try to upgrade with wrong predecessor (out-of-order)
+        let hash_v3 = create_wasm_hash(&env, 3);
+        let wrong_predecessor = create_wasm_hash(&env, 99); // Wrong hash
+        let result = UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            hash_v3.clone(),
+            wrong_predecessor,
+        );
+
+        assert!(result.is_err(), "Upgrade should fail with wrong predecessor");
+        assert_eq!(
+            result.unwrap_err(),
+            crate::errors::Error::UpgradeChainMismatch,
+            "Should return UpgradeChainMismatch error"
+        );
+
+        // Verify current hash is unchanged
+        let current_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        assert_eq!(current_hash, hash_v1, "Current hash should still be v1");
+    });
+}
+
+/// Test failed upgrade when genesis case is violated
+#[test]
+fn test_upgrade_chain_rejects_genesis_violation() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // Current is genesis (zero), but predecessor is non-zero
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let new_wasm_hash = create_wasm_hash(&env, 1);
+        let non_zero_predecessor = create_wasm_hash(&env, 99);
+
+        let result = UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            new_wasm_hash,
+            non_zero_predecessor,
+        );
+
+        assert!(result.is_err(), "Upgrade should fail when genesis case is violated");
+        assert_eq!(
+            result.unwrap_err(),
+            crate::errors::Error::UpgradeChainMismatch,
+            "Should return UpgradeChainMismatch error"
+        );
+    });
+}
+
+/// Test query WASM hash chain history
+#[test]
+fn test_get_wasm_hash_chain() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // Perform multiple upgrades
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        let hash_v2 = create_wasm_hash(&env, 2);
+        let hash_v3 = create_wasm_hash(&env, 3);
+
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v2.clone(), hash_v1.clone()).unwrap();
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v3.clone(), hash_v2.clone()).unwrap();
+
+        // Query the hash chain
+        let chain = UpgradeManager::get_wasm_hash_chain(&env).unwrap();
+        assert_eq!(chain.len(), 3, "Should have 3 upgrades in chain");
+
+        // Verify chain integrity
+        assert_eq!(chain.get(0).unwrap().previous_wasm_hash, zero_hash);
+        assert_eq!(chain.get(0).unwrap().new_wasm_hash, hash_v1);
+        assert_eq!(chain.get(1).unwrap().previous_wasm_hash, hash_v1);
+        assert_eq!(chain.get(1).unwrap().new_wasm_hash, hash_v2);
+        assert_eq!(chain.get(2).unwrap().previous_wasm_hash, hash_v2);
+        assert_eq!(chain.get(2).unwrap().new_wasm_hash, hash_v3);
+    });
+}
+
+/// Test get current WASM hash
+#[test]
+fn test_get_current_wasm_hash_public() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // Initially should be zero
+        let initial_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        assert_eq!(initial_hash, zero_hash, "Initial hash should be zero");
+
+        // After upgrade, should be new hash
+        let new_wasm_hash = create_wasm_hash(&env, 1);
+        UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash.clone(), zero_hash).unwrap();
+
+        let current_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        assert_eq!(current_hash, new_wasm_hash, "Current hash should be updated");
+    });
+}
+
+/// Test UpgradeProposal with expected_predecessor
+#[test]
+fn test_upgrade_proposal_with_expected_predecessor() {
+    let env = Env::default();
+    let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let target_version = Version::new(
+        &env,
+        1,
+        1,
+        0,
+        String::from_str(&env, "Upgrade to v1.1.0"),
+        false,
+    );
+
+    let mut proposal = UpgradeProposal::new(
+        &env,
+        new_wasm_hash,
+        target_version,
+        String::from_str(&env, "Add new features"),
+    );
+
+    // Set expected predecessor
+    let predecessor_hash = BytesN::from_array(&env, &[0u8; 32]);
+    proposal.set_expected_predecessor(predecessor_hash.clone());
+
+    assert_eq!(proposal.expected_predecessor, predecessor_hash);
+}
+
+/// Test forked upgrade chain detection
+#[test]
+fn test_upgrade_chain_detects_fork() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // First upgrade
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+
+        // Simulate a fork: try to upgrade from a different hash
+        let forked_predecessor = create_wasm_hash(&env, 99); // Not the actual current hash
+        let hash_v2_fork = create_wasm_hash(&env, 2);
+
+        let result = UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            hash_v2_fork,
+            forked_predecessor,
+        );
+
+        assert!(result.is_err(), "Forked upgrade should be rejected");
+        assert_eq!(
+            result.unwrap_err(),
+            crate::errors::Error::UpgradeChainMismatch,
+            "Should return UpgradeChainMismatch error for fork"
+        );
+    });
+}
+
 // ── Failed migration also stored in history ───────────────────────────────────
 
 /// A migration that fails validation is recorded as Failed in the history.

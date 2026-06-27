@@ -36,6 +36,21 @@ pub const MIN_BET_AMOUNT: i128 = 1_000_000;
 /// Maximum bet amount (10,000 XLM = 100,000,000,000 stroops). Absolute ceiling for any configured limit.
 pub const MAX_BET_AMOUNT: i128 = 100_000_000_000;
 
+/// Reentrancy scope for [`BetManager::place_bet`].
+fn guard_scope_place_bet() -> Symbol {
+    symbol_short!("place_bet")
+}
+
+/// Reentrancy scope for SAC transfers in [`BetUtils::lock_funds`].
+fn guard_scope_lock_funds() -> Symbol {
+    symbol_short!("lock_fn")
+}
+
+/// Reentrancy scope for SAC transfers in [`BetUtils::unlock_funds`].
+fn guard_scope_unlock_funds() -> Symbol {
+    symbol_short!("ulck_fn")
+}
+
 /// Storage key for global bet limits.
 const GLOBAL_BET_LIMITS_KEY: &str = "bet_limits_global";
 /// Storage key for per-event bet limits map (Symbol -> BetLimits).
@@ -238,6 +253,19 @@ impl BetManager {
     /// )?;
     /// ```
     pub fn place_bet(
+        env: &Env,
+        user: Address,
+        market_id: Symbol,
+        outcome: String,
+        amount: i128,
+    ) -> Result<Bet, Error> {
+        let scope = guard_scope_place_bet();
+        ReentrancyGuard::with_guard(env, &scope, || {
+            Self::place_bet_inner(env, user, market_id, outcome, amount)
+        })
+    }
+
+    fn place_bet_inner(
         env: &Env,
         user: Address,
         market_id: Symbol,
@@ -1068,9 +1096,10 @@ impl BetUtils {
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
     pub fn lock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        // Protect the external transfer with the reentrancy guard. If the
-        // guard cannot be acquired the call fails with `InvalidState`.
-        ReentrancyGuard::with_external_call(env, || {
+        let scope = guard_scope_lock_funds();
+        // Protect the SAC transfer under its own scope so nested flows under
+        // `place_bet` do not false-positive on the parent scope lock.
+        ReentrancyGuard::with_guard(env, &scope, || {
             token_client.transfer(user, &env.current_contract_address(), &amount);
             Ok::<(), ReentrancyError>(())
         })
@@ -1092,12 +1121,12 @@ impl BetUtils {
     ///
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
     ///
-    /// Reentrancy: caller must hold the reentrancy lock (e.g. cancel_event holds
-    /// the lock for the entire refund_market_bets batch). Do not call
-    /// before_external_call/after_external_call here to allow batch refunds.
+    /// Reentrancy: uses a dedicated `ulck_fn` scope so batch refund callers
+    /// (e.g. `cancel_event`) can hold their own entrypoint scope concurrently.
     pub fn unlock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        ReentrancyGuard::with_external_call(env, || {
+        let scope = guard_scope_unlock_funds();
+        ReentrancyGuard::with_guard(env, &scope, || {
             token_client.transfer(&env.current_contract_address(), user, &amount);
             Ok::<(), ReentrancyError>(())
         })

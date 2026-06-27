@@ -121,6 +121,8 @@ pub enum Error {
     DisputeFeeFailed = 409,
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
+    /// The dispute opener cannot vote on their own dispute.
+    DisputerCannotVote = 419,
     /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
     SweepAlreadyDone = 411,
     /// Fee arithmetic overflowed during checked platform-fee calculation.
@@ -137,6 +139,9 @@ pub enum Error {
     GasBudgetExceeded = 417,
     /// Admin address has not been set. Contract initialization is incomplete.
     AdminNotSet = 418,
+    /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
+    /// This prevents silently inflated or deflated stakes via normalize_amount.
+    AssetDecimalsMismatch = 419,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.
@@ -176,11 +181,9 @@ pub enum Error {
     /// Tag string is shorter than the minimum allowed length (non-empty tags only).
     TagTooShort = 437,
 
-    // ===== TOKEN ERRORS (438-449) =====
-    /// SAC token decimals do not match the declared value during registration.
-    /// The on-chain decimals() call returned a different value than what was declared.
-    /// This prevents denomination mistakes that have caused real on-chain losses.
-    TokenDecimalsMismatch = 438,
+    // ===== VALIDATION ERRORS (435-437) =====
+    /// Market ID already exists in the registry. Cannot create duplicate market IDs.
+    DuplicateMarketId = 435,
 
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -195,6 +198,8 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
+    /// Cumulative extension cap reached; no further extensions allowed for this market.
+    CumulativeExtensionCapHit = 506,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -220,6 +225,26 @@ pub enum ErrorCategory {
     Market,
     Authentication,
     Unknown,
+}
+
+/// Off-chain recoverability annotation for each error variant.
+///
+/// # Client Guidance
+///
+/// | Label | Meaning | Off-chain action |
+/// |-------|---------|-----------------|
+/// | `Retryable` | Transient condition; the call may succeed if retried | Exponential back-off, max 3 attempts |
+/// | `RequiresAdmin` | Needs privileged intervention before retrying | Alert ops team; do not auto-retry |
+/// | `Terminal` | Permanent failure; retrying is futile | Surface to user; no retry |
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Recoverability {
+    /// Transient condition. The operation may succeed on a subsequent attempt.
+    Retryable,
+    /// Requires an administrator action before the operation can proceed.
+    RequiresAdmin,
+    /// Permanent failure. Further attempts will not succeed.
+    Terminal,
 }
 
 #[contracttype]
@@ -1200,6 +1225,11 @@ impl ErrorHandler {
                 ErrorCategory::System,
                 RecoveryStrategy::ManualIntervention,
             ),
+            Error::AssetDecimalsMismatch => (
+                ErrorSeverity::Medium,
+                ErrorCategory::Validation,
+                RecoveryStrategy::Abort,
+            ),
             Error::DisputeFeeFailed => (
                 ErrorSeverity::Critical,
                 ErrorCategory::Financial,
@@ -1386,6 +1416,7 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
+            Error::DisputerCannotVote => "Dispute opener cannot vote on their own dispute",
             Error::SweepAlreadyDone => "Unclaimed winnings already swept for this market",
             Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
@@ -1393,6 +1424,9 @@ impl Error {
             Error::InvalidExtensionDays => "Invalid extension days value",
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
+            Error::AssetDecimalsMismatch => {
+                "Asset decimals mismatch: stored decimals differ from live SAC"
+            }
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1434,6 +1468,7 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+            Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed for this market",
         }
     }
 
@@ -1480,6 +1515,7 @@ impl Error {
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
             Error::DisputeError => "DISPUTE_ERROR",
+            Error::DisputerCannotVote => "DISPUTER_CANNOT_VOTE",
             Error::SweepAlreadyDone => "SWEEP_ALREADY_DONE",
             Error::FeeArithmeticOverflow => "FEE_ARITHMETIC_OVERFLOW",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
@@ -1487,6 +1523,7 @@ impl Error {
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::AssetDecimalsMismatch => "ASSET_DECIMALS_MISMATCH",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
@@ -1528,6 +1565,7 @@ impl Error {
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
         }
     }
 }
@@ -1602,6 +1640,7 @@ mod tests {
             Error::ExtensionDenied,
             Error::GasBudgetExceeded,
             Error::AdminNotSet,
+            Error::AssetDecimalsMismatch,
             Error::InvalidOracleFeed,
             // Metadata length limit errors
             Error::QuestionTooLong,
@@ -1629,6 +1668,8 @@ mod tests {
             Error::CBNotOpen,
             Error::CBOpen,
             Error::CBError,
+            Error::RateLimitExceeded,
+            Error::CumulativeExtensionCapHit,
         ]
     }
 
