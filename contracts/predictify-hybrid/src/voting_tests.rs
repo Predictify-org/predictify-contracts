@@ -390,3 +390,50 @@ fn test_validate_market_for_voting_respects_bet_deadline() {
         );
     });
 }
+
+// ===== DISPUTE STAKE CAP TESTS =====
+
+#[test]
+fn test_dispute_stake_cap_enforcement() {
+    let s = Setup::new();
+    let client = PredictifyHybridClient::new(&s.env, &s.contract_id);
+    let user = s.user();
+    let mid = s.create_market(7);
+
+    // Initial cap should be 0 (disabled)
+    assert_eq!(client.get_dispute_stake_cap(&mid, &user), 0);
+
+    // Set cap as admin to 15_000_000 (above MIN_DISPUTE_STAKE)
+    assert!(client.try_set_dispute_stake_cap(&s.admin, &mid, &user, &15_000_000i128).is_ok());
+    assert_eq!(client.get_dispute_stake_cap(&mid, &user), 15_000_000i128);
+
+    // Non-admin setting cap should fail
+    let non_admin = Address::generate(&s.env);
+    assert!(client.try_set_dispute_stake_cap(&non_admin, &mid, &user, &20_000_000i128).is_err());
+
+    // Resolve the market so we can dispute it
+    s.env.ledger().with_mut(|l| l.timestamp += 8 * 24 * 60 * 60); // Past end time
+    client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
+
+    // Attempting to dispute with stake above the cap (e.g., 20_000_000) should fail
+    let err = client.try_dispute_market(&user, &mid, &20_000_000i128, &None).unwrap_err();
+    assert_eq!(err, Ok(Error::DisputeStakeCapExceeded));
+
+    // Attempting to dispute with stake under/at the cap (e.g., 12_000_000) should succeed
+    assert!(client.try_dispute_market(&user, &mid, &12_000_000i128, &None).is_ok());
+}
+
+#[test]
+fn test_dispute_stake_cap_disabled_by_default() {
+    let s = Setup::new();
+    let client = PredictifyHybridClient::new(&s.env, &s.contract_id);
+    let user = s.user();
+    let mid = s.create_market(7);
+
+    // Resolve market
+    s.env.ledger().with_mut(|l| l.timestamp += 8 * 24 * 60 * 60);
+    client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
+
+    // By default cap = 0, so large stakes should succeed (e.g., 50_000_000)
+    assert!(client.try_dispute_market(&user, &mid, &50_000_000i128, &None).is_ok());
+}

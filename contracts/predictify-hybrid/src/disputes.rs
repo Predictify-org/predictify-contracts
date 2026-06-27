@@ -834,7 +834,7 @@ impl DisputeManager {
         DisputeValidator::validate_market_for_dispute(env, &market)?;
 
         // Validate dispute parameters
-        DisputeValidator::validate_dispute_parameters(env, &user, &market, stake)?;
+        DisputeValidator::validate_dispute_parameters(env, &market_id, &user, &market, stake)?;
 
         // Process stake transfer
         VotingUtils::transfer_stake(env, &user, stake)?;
@@ -2083,6 +2083,20 @@ impl DisputeManager {
 
         Ok(())
     }
+
+    /// Set the dispute stake cap for a user in a market
+    pub fn set_dispute_stake_cap(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        cap: i128,
+    ) -> Result<(), Error> {
+        let cap_key = crate::storage::DataKey::DisputeStakeCap(market_id.clone(), user.clone());
+        env.storage().persistent().set(&cap_key, &cap);
+
+        crate::events::EventEmitter::emit_dispute_stake_cap_set(env, market_id, user, cap);
+        Ok(())
+    }
 }
 
 // ===== DISPUTE VALIDATOR =====
@@ -2166,7 +2180,8 @@ impl DisputeValidator {
 
     /// Validate dispute parameters
     pub fn validate_dispute_parameters(
-        _env: &Env,
+        env: &Env,
+        market_id: &Symbol,
         user: &Address,
         market: &Market,
         stake: i128,
@@ -2179,6 +2194,23 @@ impl DisputeValidator {
         // Check if user has already disputed
         if DisputeUtils::has_user_disputed(market, user) {
             return Err(Error::AlreadyDisputed);
+        }
+
+        // Check dispute stake cap
+        let cap_key = crate::storage::DataKey::DisputeStakeCap(market_id.clone(), user.clone());
+        let cap: i128 = env.storage().persistent().get(&cap_key).unwrap_or(0);
+        if cap > 0 {
+            let user_current_state_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
+            if user_current_state_stake + stake > cap {
+                crate::events::EventEmitter::emit_dispute_stake_cap_exceeded(
+                    env,
+                    market_id,
+                    user,
+                    cap,
+                    stake,
+                );
+                return Err(Error::DisputeStakeCapExceeded);
+            }
         }
 
         // Check if user has voted (optional requirement)
@@ -3117,27 +3149,33 @@ mod tests {
     #[test]
     fn test_dispute_validator_stake_validation() {
         let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let user = Address::generate(&env);
         let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
         market.oracle_result = Some(String::from_str(&env, "yes"));
+        let market_id = Symbol::new(&env, "market_1");
 
-        // Valid stake
-        assert!(DisputeValidator::validate_dispute_parameters(
-            &env,
-            &user,
-            &market,
-            MIN_DISPUTE_STAKE
-        )
-        .is_ok());
+        env.as_contract(&contract_id, || {
+            // Valid stake
+            assert!(DisputeValidator::validate_dispute_parameters(
+                &env,
+                &market_id,
+                &user,
+                &market,
+                MIN_DISPUTE_STAKE
+            )
+            .is_ok());
 
-        // Invalid stake
-        assert!(DisputeValidator::validate_dispute_parameters(
-            &env,
-            &user,
-            &market,
-            MIN_DISPUTE_STAKE - 1
-        )
-        .is_err());
+            // Invalid stake
+            assert!(DisputeValidator::validate_dispute_parameters(
+                &env,
+                &market_id,
+                &user,
+                &market,
+                MIN_DISPUTE_STAKE - 1
+            )
+            .is_err());
+        });
     }
 
     #[test]
