@@ -5968,9 +5968,17 @@ impl PredictifyHybrid {
     ///
     /// - Requires Soroban `require_auth()` from the caller
     /// - Requires the caller to match the stored primary admin in persistent storage
+    /// - Validates WASM hash chain to prevent out-of-order/forked upgrades
     /// - Validates version compatibility
     /// - Performs safety checks before upgrade
     /// - Logs all upgrade attempts for audit trail
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin performing the upgrade (must be authorized)
+    /// * `new_wasm_hash` - Hash of new Wasm bytecode to deploy
+    /// * `expected_predecessor` - Expected current WASM hash (for chain verification)
     ///
     /// # Example
     ///
@@ -5978,17 +5986,19 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, BytesN};
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
-    /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+    /// # let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let current_hash = BytesN::from_array(&env, &[0u8; 32]);
     ///
-    /// // Perform upgrade with admin authorization
+    /// // Perform upgrade with admin authorization and chain verification
     /// admin.require_auth();
-    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash)?;
+    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash, current_hash)?;
     /// # Ok::<(), predictify_hybrid::errors::Error>(())
     /// ```
     ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Returns [`Error::UpgradeChainMismatch`] if the expected predecessor does not match the current WASM hash.
     ///
     /// # Events
     ///
@@ -5997,9 +6007,15 @@ impl PredictifyHybrid {
         env: Env,
         admin: Address,
         new_wasm_hash: soroban_sdk::BytesN<32>,
+        expected_predecessor: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
-        let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
+        let result = upgrade_manager::UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            new_wasm_hash,
+            expected_predecessor,
+        );
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
