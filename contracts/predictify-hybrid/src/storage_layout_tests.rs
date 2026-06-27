@@ -11,13 +11,14 @@
 
 use alloc::format;
 use soroban_sdk::{
-    testutils::{Address as _, EnvTestConfig},
+    testutils::{Address as _, EnvTestConfig, storage::Persistent, Ledger},
     vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 use crate::markets::MarketStateManager;
 use crate::storage::{
     BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,
 };
+use crate::errors::Error;
 use crate::types::*;
 
 // ===== TEST UTILITIES =====

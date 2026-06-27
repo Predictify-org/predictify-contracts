@@ -665,6 +665,18 @@ pub struct DisputeResolvedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a dispute record is evicted from history.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeHistoryEvictedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Address of the user whose dispute was evicted
+    pub user: Address,
+    /// Eviction timestamp
+    pub timestamp: u64,
+}
+
 /// Fee collected event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2404,6 +2416,23 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("dispt_res"), &event);
         env.events()
             .publish((symbol_short!("dispt_res"), market_id.clone()), event);
+    }
+
+    /// Emit dispute history evicted event
+    pub fn emit_dispute_history_evicted(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+    ) {
+        let event = DisputeHistoryEvictedEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("dh_evct"), &event);
+        env.events()
+            .publish((symbol_short!("dh_evct"), market_id.clone()), event);
     }
 
     /// Emit fee collected event

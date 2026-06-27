@@ -215,7 +215,7 @@ impl QueryManager {
 
     /// Query all disputes associated with a specific market.
     pub fn query_market_disputes(env: &Env, market_id: Symbol) -> Result<Vec<Dispute>, Error> {
-        let key = Symbol::new(env, &alloc::format!("MarketDisputes_{:?}", market_id));
+        let key = crate::storage::DataKey::DisputeHistory(market_id);
         env.storage()
             .persistent()
             .get(&key)
