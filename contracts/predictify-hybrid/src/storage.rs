@@ -29,6 +29,8 @@ pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
+    MarketMetadata(Symbol),
+    MarketScratch(Symbol),
 }
 
 /// Storage format version for migration tracking
@@ -131,6 +133,106 @@ pub struct StorageMigration {
     pub status: String,
     /// Error message if failed
     pub error_message: Option<String>,
+}
+
+impl StorageMigration {
+    pub fn promote_market_to_persistent(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+        let temp_key = DataKey::MarketMetadata(market_id.clone());
+        let persistent_key = DataKey::MarketMetadata(market_id.clone());
+
+        let metadata_opt = env.storage().temporary().get::<_, Market>(&temp_key);
+
+        if let Some(metadata) = metadata_opt {
+            metadata.admin.require_auth();
+
+            let config = StorageOptimizer::get_storage_config(env);
+            
+            StorageOptimizer::set_persistent_with_ttl(
+                env,
+                &persistent_key,
+                &metadata,
+                config.market_ttl_ledgers,
+            );
+
+            env.storage().temporary().remove(&temp_key);
+
+            crate::events::EventEmitter::emit_market_archived(
+                env,
+                market_id,
+                &String::from_str(env, "Temporary"),
+                &String::from_str(env, "Persistent"),
+            );
+
+            Ok(())
+        } else {
+            let persistent_opt = env.storage().persistent().get::<_, Market>(&persistent_key);
+            if let Some(metadata) = persistent_opt {
+                metadata.admin.require_auth();
+
+                let config = StorageOptimizer::get_storage_config(env);
+                StorageOptimizer::extend_persistent_ttl(
+                    env,
+                    &persistent_key,
+                    config.market_ttl_ledgers,
+                );
+                Ok(())
+            } else {
+                Err(Error::MarketNotFound)
+            }
+        }
+    }
+
+    pub fn demote_scratch_keys(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+        let temp_key = DataKey::MarketScratch(market_id.clone());
+        let persistent_key = DataKey::MarketScratch(market_id.clone());
+        let metadata_key = DataKey::MarketMetadata(market_id.clone());
+
+        let market = if let Some(m) = env.storage().persistent().get::<_, Market>(&metadata_key) {
+            m
+        } else if let Some(m) = env.storage().temporary().get::<_, Market>(&metadata_key) {
+            m
+        } else {
+            MarketStateManager::get_market(env, market_id)?
+        };
+
+        market.admin.require_auth();
+
+        let scratch_opt = env.storage().persistent().get::<_, Vec<i128>>(&persistent_key);
+
+        if let Some(scratch_data) = scratch_opt {
+            let config = StorageOptimizer::get_storage_config(env);
+
+            env.storage().temporary().set(&temp_key, &scratch_data);
+            env.storage().temporary().extend_ttl(
+                &temp_key,
+                config.balance_ttl_ledgers,
+                config.balance_ttl_ledgers,
+            );
+
+            env.storage().persistent().remove(&persistent_key);
+
+            crate::events::EventEmitter::emit_market_archived(
+                env,
+                market_id,
+                &String::from_str(env, "Persistent"),
+                &String::from_str(env, "Temporary"),
+            );
+
+            Ok(())
+        } else {
+            if env.storage().temporary().has(&temp_key) {
+                let config = StorageOptimizer::get_storage_config(env);
+                env.storage().temporary().extend_ttl(
+                    &temp_key,
+                    config.balance_ttl_ledgers,
+                    config.balance_ttl_ledgers,
+                );
+                Ok(())
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Storage integrity check result

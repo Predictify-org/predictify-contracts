@@ -1376,6 +1376,20 @@ pub struct StorageMigrationEvent {
     pub timestamp: u64,
 }
 
+/// Market archived event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketArchivedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Source tier
+    pub from_tier: String,
+    /// Target tier
+    pub to_tier: String,
+    /// Archival timestamp
+    pub timestamp: u64,
+}
+
 /// Oracle degradation event - emitted when oracle service fails or becomes unavailable
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -2914,6 +2928,25 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("stor_mig"), &event);
         env.events()
             .publish((symbol_short!("stor_mig"), migration_id.clone()), event);
+    }
+
+    /// Emit market archived event
+    pub fn emit_market_archived(
+        env: &Env,
+        market_id: &Symbol,
+        from_tier: &String,
+        to_tier: &String,
+    ) {
+        let event = MarketArchivedEvent {
+            market_id: market_id.clone(),
+            from_tier: from_tier.clone(),
+            to_tier: to_tier.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_arch"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_arch"), market_id.clone()), event);
     }
 
     /// Emit circuit breaker event
