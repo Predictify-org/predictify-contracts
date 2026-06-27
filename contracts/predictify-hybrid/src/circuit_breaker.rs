@@ -164,11 +164,27 @@ impl CircuitBreaker {
         Ok(())
     }
 
-    /// Get circuit breaker configuration
+    /// Get circuit breaker configuration, initializing if necessary
     pub fn get_config(env: &Env) -> Result<CircuitBreakerConfig, Error> {
+        // Ensure circuit breaker is initialized
+        if env.storage().instance().get::<Symbol, CircuitBreakerConfig>(&Symbol::new(env, Self::CONFIG_KEY)).is_none() {
+            Self::initialize(env)?;
+        }
         env.storage()
             .instance()
-            .get(&Symbol::new(env, Self::CONFIG_KEY))
+            .get::<Symbol, CircuitBreakerConfig>(&Symbol::new(env, Self::CONFIG_KEY))
+            .ok_or(Error::CBError)
+    }
+
+    /// Get current circuit breaker state, initializing if necessary
+    pub fn get_state(env: &Env) -> Result<CircuitBreakerState, Error> {
+        // Ensure circuit breaker is initialized
+        if env.storage().instance().get::<Symbol, CircuitBreakerState>(&Symbol::new(env, Self::STATE_KEY)).is_none() {
+            Self::initialize(env)?;
+        }
+        env.storage()
+            .instance()
+            .get::<Symbol, CircuitBreakerState>(&Symbol::new(env, Self::STATE_KEY))
             .ok_or(Error::CBError)
     }
 
@@ -203,13 +219,6 @@ impl CircuitBreaker {
     // ===== STATE MANAGEMENT =====
 
     /// Get current circuit breaker state
-    pub fn get_state(env: &Env) -> Result<CircuitBreakerState, Error> {
-        env.storage()
-            .instance()
-            .get(&Symbol::new(env, Self::STATE_KEY))
-            .ok_or(Error::CBError)
-    }
-
     /// Update circuit breaker state
     fn update_state(env: &Env, state: &CircuitBreakerState) -> Result<(), Error> {
         env.storage()

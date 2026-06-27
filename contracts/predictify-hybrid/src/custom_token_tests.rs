@@ -112,7 +112,7 @@ fn test_bet_placement_with_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
-    );
+     &None,);
 
     // Verify balance decreased
     assert_eq!(token_client.balance(&user), 90_000_000);
@@ -139,7 +139,7 @@ fn test_insufficient_balance() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
-    );
+     &None,);
     
     // Should return an error (likely HostError due to transfer failure)
     assert!(result.is_err());
@@ -166,14 +166,14 @@ fn test_payout_distribution_flow() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
-    );
+     &None,);
 
     client.place_bet(
         &user_loser,
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &bet_amount,
-    );
+     &None,);
 
     // Advance time to end market but NOT past dispute window
     let market = client.get_market(&setup.market_id).unwrap();
@@ -246,7 +246,7 @@ fn test_switch_token_support() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &10_000_000,
-    );
+     &None,);
     assert_eq!(token1_client.balance(&user1), 0);
     
     // 2. Create and switch to Token 2
@@ -273,7 +273,7 @@ fn test_switch_token_support() {
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &20_000_000,
-    );
+     &None,);
     
     // Verify balances for Token 2
     assert_eq!(token2_client.balance(&user2), 0);
@@ -302,7 +302,7 @@ fn test_cancel_refund_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
-    );
+     &None,);
 
     // Verify balance before cancellation
     assert_eq!(token_client.balance(&user), 10_000_000);
@@ -339,7 +339,7 @@ fn test_fee_collection_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
-    );
+     &None,);
 
     // Advance time to end market
     let market = client.get_market(&setup.market_id).unwrap();
