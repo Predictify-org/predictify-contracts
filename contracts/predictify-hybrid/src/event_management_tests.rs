@@ -1070,7 +1070,7 @@ fn test_prune_archive_removes_oldest_entries() {
 
     assert_eq!(client.archive_size(), 2);
 
-    let removed = client.prune_archive(&setup.admin, &1u32);
+    let (removed, _cursor) = client.prune_archive(&setup.admin, &1u32, &None);
     assert_eq!(removed, 1);
     assert_eq!(client.archive_size(), 1);
 }
@@ -1094,7 +1094,7 @@ fn test_prune_archive_count_zero_removes_nothing() {
     );
     client.archive_event(&setup.admin, &market_id);
 
-    let removed = client.prune_archive(&setup.admin, &0u32);
+    let (removed, _cursor) = client.prune_archive(&setup.admin, &0u32, &None);
     assert_eq!(removed, 0);
     assert_eq!(client.archive_size(), 1);
 }
@@ -1104,7 +1104,7 @@ fn test_prune_archive_empty_archive_returns_zero() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
 
-    let removed = client.prune_archive(&setup.admin, &5u32);
+    let (removed, _cursor) = client.prune_archive(&setup.admin, &5u32, &None);
     assert_eq!(removed, 0);
     assert_eq!(client.archive_size(), 0);
 }
@@ -1115,8 +1115,8 @@ fn test_prune_archive_unauthorized_returns_error() {
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
     let non_admin = setup.create_user();
 
-    let result = client.try_prune_archive(&non_admin, &5u32);
-    assert_eq!(result, Err(Ok(crate::err::Error::Unauthorized)));
+    let result = client.try_prune_archive(&non_admin, &5u32, &None);
+    assert_eq!(result, Err(Ok(crate::errors::Error::Unauthorized)));
 }
 
 #[test]

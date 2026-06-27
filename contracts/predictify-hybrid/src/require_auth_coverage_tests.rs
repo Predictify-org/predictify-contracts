@@ -1108,7 +1108,7 @@ fn test_archive_event_forged_admin_rejected() {
 #[test]
 fn test_prune_archive_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
-    let result = client(&env, &cid).try_prune_archive(&admin, &5u32);
+    let result = client(&env, &cid).try_prune_archive(&admin, &5u32, &None);
     assert_auth_ok_contract!(result, "prune_archive rejected authorized admin");
 }
 
@@ -1117,7 +1117,7 @@ fn test_prune_archive_authorized_admin_succeeds() {
 fn test_prune_archive_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
-    let result = client(&env, &cid).try_prune_archive(&attacker, &5u32);
+    let result = client(&env, &cid).try_prune_archive(&attacker, &5u32, &None);
     assert_unauthorized_contract!(result);
 }
 
