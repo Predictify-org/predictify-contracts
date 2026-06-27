@@ -744,6 +744,25 @@ pub struct MultisigThresholdConfirmedEvent {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeStakeCapExceededEvent {
+    pub market_id: Symbol,
+    pub user: Address,
+    pub cap: i128,
+    pub attempted_stake: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeStakeCapSetEvent {
+    pub market_id: Symbol,
+    pub user: Address,
+    pub cap: i128,
+    pub timestamp: u64,
+}
+
 // ===== ORACLE RESULT VERIFICATION EVENTS =====
 
 /// Event emitted when oracle result verification is initiated for a market.
@@ -4382,6 +4401,48 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("thld_conf"), &event);
         env.events().publish(
             (symbol_short!("thld_conf"), admin.clone()),
+            event,
+        );
+    }
+
+    pub fn emit_dispute_stake_cap_exceeded(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        cap: i128,
+        attempted_stake: i128,
+    ) {
+        let event = DisputeStakeCapExceededEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            cap,
+            attempted_stake,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("cap_excd"), &event);
+        env.events().publish(
+            (symbol_short!("cap_excd"), market_id.clone()),
+            event,
+        );
+    }
+
+    pub fn emit_dispute_stake_cap_set(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        cap: i128,
+    ) {
+        let event = DisputeStakeCapSetEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            cap,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("cap_set"), &event);
+        env.events().publish(
+            (symbol_short!("cap_set"), market_id.clone()),
             event,
         );
     }

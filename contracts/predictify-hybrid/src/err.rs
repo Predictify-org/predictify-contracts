@@ -198,6 +198,8 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
+    /// Dispute stake cap exceeded for the user in this market.
+    DisputeStakeCapExceeded = 438,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1446,6 +1448,7 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+            Error::DisputeStakeCapExceeded => "Dispute stake cap exceeded for the user in this market",
         }
     }
 
@@ -1542,6 +1545,7 @@ impl Error {
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Error::DisputeStakeCapExceeded => "DISPUTE_STAKE_CAP_EXCEEDED",
         }
     }
 }

@@ -3253,6 +3253,31 @@ impl PredictifyHybrid {
         disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
     }
 
+    /// Set the dispute stake cap for a user in a market (governance/admin only)
+    pub fn set_dispute_stake_cap(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        user: Address,
+        cap: i128,
+    ) -> Result<(), Error> {
+        Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+        if cap < 0 {
+            return Err(Error::InvalidInput);
+        }
+        disputes::DisputeManager::set_dispute_stake_cap(&env, &market_id, &user, cap)
+    }
+
+    /// Get the dispute stake cap for a user in a market
+    pub fn get_dispute_stake_cap(
+        env: Env,
+        market_id: Symbol,
+        user: Address,
+    ) -> i128 {
+        let cap_key = storage::DataKey::DisputeStakeCap(market_id, user);
+        env.storage().persistent().get(&cap_key).unwrap_or(0)
+    }
+
     /// Vote on a dispute
     ///
     /// # Errors
