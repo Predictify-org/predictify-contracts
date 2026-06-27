@@ -189,6 +189,11 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
+
+    // ===== UPGRADE ERRORS =====
+    /// Upgrade WASM hash does not match the expected predecessor in the chain.
+    /// This prevents out-of-order or forked upgrades.
+    UpgradeChainMismatch = 600,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

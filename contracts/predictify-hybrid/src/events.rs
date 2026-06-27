@@ -1570,6 +1570,33 @@ pub struct ContractUpgradedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when WASM hash chain verification fails during upgrade.
+///
+/// This event is critical for security as it indicates an attempt to apply
+/// an out-of-order or forked upgrade. The upgrade was rejected because the
+/// expected predecessor hash did not match the current contract's WASM hash.
+///
+/// # Security Implications
+///
+/// - Prevents downgrade attacks
+/// - Blocks forked upgrade chains
+/// - Ensures linear upgrade progression
+/// - Detects potential compromise scenarios
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeChainMismatchEvent {
+    /// Expected predecessor hash (from upgrade plan)
+    pub expected_predecessor: soroban_sdk::BytesN<32>,
+    /// Actual current hash (from contract)
+    pub actual_current_hash: soroban_sdk::BytesN<32>,
+    /// Proposed new hash (that was rejected)
+    pub proposed_new_hash: soroban_sdk::BytesN<32>,
+    /// Admin who attempted the upgrade
+    pub admin: Address,
+    /// Timestamp of the failed attempt
+    pub timestamp: u64,
+}
+
 /// Event emitted when market deadline is extended
 ///
 /// This event tracks market deadline extensions, providing transparency
@@ -3494,6 +3521,27 @@ impl EventEmitter {
 
         Self::store_event(env, &symbol_short!("rollback"), &event);
         env.events().publish((symbol_short!("rollback"),), event);
+    }
+
+    /// Emit upgrade chain mismatch event when hash verification fails
+    pub fn emit_upgrade_chain_mismatch_event(
+        env: &Env,
+        expected_predecessor: &soroban_sdk::BytesN<32>,
+        actual_current_hash: &soroban_sdk::BytesN<32>,
+        proposed_new_hash: &soroban_sdk::BytesN<32>,
+        admin: &Address,
+    ) {
+        let event = UpgradeChainMismatchEvent {
+            expected_predecessor: expected_predecessor.clone(),
+            actual_current_hash: actual_current_hash.clone(),
+            proposed_new_hash: proposed_new_hash.clone(),
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("chain_mismatch"), &event);
+        env.events()
+            .publish((symbol_short!("chain_mismatch"), admin.clone()), event);
     }
 
     /// Emit upgrade proposal created event
