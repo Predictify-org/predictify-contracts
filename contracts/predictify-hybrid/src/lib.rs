@@ -60,6 +60,11 @@ mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
+mod reporting;
+#[cfg(test)]
+mod reporting_tests;
+#[cfg(test)]
+mod state_snapshot_reporting_tests;
 #[cfg(test)]
 mod require_auth_coverage_tests;
 #[cfg(test)]
@@ -7411,6 +7416,19 @@ impl PredictifyHybrid {
     pub fn request_resume(env: Env, admin: Address) -> Result<(), Error> {
         admin.require_auth();
         crate::circuit_breaker::CircuitBreaker::request_resume(&env, &admin)
+    }
+
+    /// Return a versioned, XDR-stable snapshot of current platform statistics.
+    ///
+    /// The returned [`reporting::SnapshotEnvelope`] contains the current
+    /// [`reporting::PlatformStats`] serialised with `to_xdr`, tagged with
+    /// [`reporting::SNAPSHOT_SCHEMA_VERSION`] and the current ledger timestamp.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ContractStateError` — market index is missing or corrupted.
+    pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
+        reporting::ReportingManager::get_snapshot_envelope(&env)
     }
 }
 
