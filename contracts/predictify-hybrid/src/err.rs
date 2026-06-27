@@ -137,6 +137,8 @@ pub enum Error {
     GasBudgetExceeded = 417,
     /// Admin address has not been set. Contract initialization is incomplete.
     AdminNotSet = 418,
+    /// Admin override verification failed due to replay attack - nonce <= stored nonce.
+    ReplayedOverride = 419,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.

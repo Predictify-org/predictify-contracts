@@ -29,6 +29,7 @@ pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
+    AdminOverrideNonce(Address),
 }
 
 /// Storage format version for migration tracking

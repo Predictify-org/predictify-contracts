@@ -2888,6 +2888,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         outcome: String,
         reason: String,
+        provided_nonce: u64,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
@@ -2911,6 +2912,27 @@ impl PredictifyHybrid {
         markets::MarketStateManager::update_market(&env, &market_id, &market);
 
         // Append an immutable audit record
+        // Validate and store the admin override nonce for replay protection
+        let key = DataKey::AdminOverrideNonce(admin.clone());
+        let mut stored_nonce: u64 = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(0);
+
+        if provided_nonce <= stored_nonce {
+            return Err(Error::ReplayedOverride);
+        }
+
+        // Update the nonce for this admin
+        env.storage().persistent().set(&key, &provided_nonce);
+        env.storage().persistent().extend_ttl(
+            &key,
+            env.storage().max_ttl(),
+            env.storage().max_ttl(),
+        );
+
+        // Append an immutable audit record with the nonce for replay protection
         let mut details = Map::new(&env);
         details.set(Symbol::new(&env, "old_result"), old_result.clone());
         details.set(Symbol::new(&env, "new_result"), outcome.clone());
@@ -2920,6 +2942,7 @@ impl PredictifyHybrid {
             AuditAction::OracleVerificationOverride,
             admin.clone(),
             details,
+            Some(provided_nonce),
         );
 
         // Emit the dedicated override event for off-chain monitors
