@@ -7235,6 +7235,23 @@ impl PredictifyHybrid {
     ) -> Result<Vec<types::UserLeaderboardEntryV1>, Error> {
         queries::QueryManager::get_top_users_by_win_rate(&env, limit, min_bets)
     }
+
+    /// Admin-initiated circuit-breaker resume: Open → HalfOpen with cooldown.
+    ///
+    /// Moves the circuit breaker from `Open` to `HalfOpen` and records the
+    /// current ledger timestamp as the cooldown start.  Probe requests are not
+    /// counted toward the success threshold until `recovery_timeout` seconds have
+    /// elapsed.  After `half_open_max_requests` consecutive probe successes the
+    /// breaker auto-closes; any failure during the probe window re-opens it.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::Unauthorized` — caller is not an authorised admin.
+    /// - `Error::CBError` — breaker is not currently `Open`.
+    pub fn request_resume(env: Env, admin: Address) -> Result<(), Error> {
+        admin.require_auth();
+        crate::circuit_breaker::CircuitBreaker::request_resume(&env, &admin)
+    }
 }
 
 #[cfg(any())]

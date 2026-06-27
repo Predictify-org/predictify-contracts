@@ -1941,6 +1941,70 @@ pub struct MinPoolSizeNotMetEvent {
     pub timestamp: u64,
 }
 
+// ===== EVENT SCHEMA REGISTRY =====
+
+/// Describes the canonical topic symbol and schema version for a named event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventSchemaEntry {
+    /// Short symbol used as the first element of the event topic tuple.
+    pub topic: Symbol,
+    /// Monotonically-increasing schema version.  Increment whenever the
+    /// payload struct gains, removes, or renames fields.
+    pub schema_version: u32,
+}
+
+/// Centralised registry that maps a human-readable event name to its
+/// canonical topic symbol and schema version.
+///
+/// # Purpose
+///
+/// Emit sites **must not** hard-code topic symbols inline.  Reading from
+/// `EventSchemaRegistry` makes it trivial to grep all consumers when a
+/// topic changes and provides a single place to bump `schema_version`.
+///
+/// # Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # let env = Env::default();
+/// let schema = predictify_hybrid::events::EventSchemaRegistry::get_schema(
+///     &env, "oracle_result",
+/// ).unwrap();
+/// assert_eq!(schema.schema_version, 1);
+/// ```
+pub struct EventSchemaRegistry;
+
+impl EventSchemaRegistry {
+    /// Return the [`EventSchemaEntry`] for a named event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` when `name` is not a registered event.  Callers
+    /// that treat a missing entry as a hard error should `unwrap_or_else`
+    /// with a panic or propagate an appropriate `Error` variant.
+    ///
+    /// # Registered events
+    ///
+    /// | name              | topic symbol  | schema_version |
+    /// |-------------------|---------------|----------------|
+    /// | `"oracle_result"` | `oracle_rs`   | 1              |
+    /// | `"dispute_created"` | `dispt_crt` | 1              |
+    pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
+        match name {
+            "oracle_result" => Some(EventSchemaEntry {
+                topic: symbol_short!("oracle_rs"),
+                schema_version: 1,
+            }),
+            "dispute_created" => Some(EventSchemaEntry {
+                topic: symbol_short!("dispt_crt"),
+                schema_version: 1,
+            }),
+            _ => None,
+        }
+    }
+}
+
 // ===== EVENT EMISSION UTILITIES =====
 
 /// Emitted when an admin manually overrides an oracle-verified market result.
@@ -2168,7 +2232,10 @@ impl EventEmitter {
             .publish((symbol_short!("bet_upd"), market_id.clone()), event);
     }
 
-    /// Emit oracle result event
+    /// Emit oracle result event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`] so
+    /// that all emit sites stay in sync with the registry automatically.
     pub fn emit_oracle_result(
         env: &Env,
         market_id: &Symbol,
@@ -2179,6 +2246,11 @@ impl EventEmitter {
         threshold: i128,
         comparison: &String,
     ) {
+        let schema = EventSchemaRegistry::get_schema(env, "oracle_result")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("oracle_rs"),
+                schema_version: 1,
+            });
         let event = OracleResultEvent {
             market_id: market_id.clone(),
             result: result.clone(),
@@ -2190,9 +2262,9 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("oracle_rs"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("oracle_rs"), market_id.clone()), event);
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
     }
 
     // ===== ORACLE RESULT VERIFICATION EVENT EMISSION METHODS =====
@@ -2474,7 +2546,9 @@ impl EventEmitter {
             .publish((symbol_short!("pool_lo"), market_id.clone()), event);
     }
 
-    /// Emit dispute created event
+    /// Emit dispute created event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`].
     pub fn emit_dispute_created(
         env: &Env,
         market_id: &Symbol,
@@ -2482,6 +2556,11 @@ impl EventEmitter {
         stake: i128,
         reason: Option<String>,
     ) {
+        let schema = EventSchemaRegistry::get_schema(env, "dispute_created")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("dispt_crt"),
+                schema_version: 1,
+            });
         let event = DisputeCreatedEvent {
             market_id: market_id.clone(),
             disputer: disputer.clone(),
@@ -2490,9 +2569,9 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("dispt_crt"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("dispt_crt"), market_id.clone()), event);
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
     }
 
     /// Emit dispute resolved event
@@ -4500,6 +4579,83 @@ pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &S
     );
 }
 
+#[cfg(test)]
+mod event_schema_registry_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Env};
+
+    #[test]
+    fn test_registry_lookup_oracle_result() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "oracle_result").unwrap();
+        assert_eq!(schema.topic, symbol_short!("oracle_rs"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_dispute_created() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "dispute_created").unwrap();
+        assert_eq!(schema.topic, symbol_short!("dispt_crt"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_unknown_event_returns_none() {
+        let env = Env::default();
+        let result = EventSchemaRegistry::get_schema(&env, "nonexistent_event");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_schema_version_matches_expected() {
+        let env = Env::default();
+        // Schema version must equal the pinned baseline; any bump is a breaking change.
+        const EXPECTED_ORACLE_RESULT_VERSION: u32 = 1;
+        const EXPECTED_DISPUTE_CREATED_VERSION: u32 = 1;
+
+        let oracle_schema = EventSchemaRegistry::get_schema(&env, "oracle_result").unwrap();
+        assert_eq!(
+            oracle_schema.schema_version, EXPECTED_ORACLE_RESULT_VERSION,
+            "OracleResultEvent schema_version mismatch: expected {EXPECTED_ORACLE_RESULT_VERSION}"
+        );
+
+        let dispute_schema = EventSchemaRegistry::get_schema(&env, "dispute_created").unwrap();
+        assert_eq!(
+            dispute_schema.schema_version, EXPECTED_DISPUTE_CREATED_VERSION,
+            "DisputeCreatedEvent schema_version mismatch: expected {EXPECTED_DISPUTE_CREATED_VERSION}"
+        );
+    }
+
+    #[test]
+    fn test_emit_oracle_result_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt1");
+            let result = soroban_sdk::String::from_str(&env, "Yes");
+            let provider = soroban_sdk::String::from_str(&env, "Reflector");
+            let feed_id = soroban_sdk::String::from_str(&env, "BTC/USD");
+            let comparison = soroban_sdk::String::from_str(&env, "gte");
+            // Should not panic – registry supplies the topic.
+            EventEmitter::emit_oracle_result(
+                &env, &market_id, &result, &provider, &feed_id, 52_000_00000000,
+                50_000_00000000, &comparison,
+            );
+        });
+    }
+
+    #[test]
+    fn test_emit_dispute_created_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt2");
+            let disputer = soroban_sdk::Address::generate(&env);
+            EventEmitter::emit_dispute_created(
+                &env, &market_id, &disputer, 50_000_000, None,
+            );
+        });
 impl EventEmitter {
     pub fn emit_threshold_proposed(
         env: &Env,

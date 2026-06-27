@@ -65,6 +65,10 @@ pub struct CircuitBreakerState {
     pub error_count: u32,
     pub pause_scope: PauseScope,
     pub allow_withdrawals: bool,
+    /// Ledger timestamp when the breaker entered HalfOpen state.
+    /// Zero when the breaker is Closed or Open.  Used to enforce the
+    /// cooldown window before probe requests are counted.
+    pub half_open_since: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,6 +145,7 @@ impl CircuitBreaker {
             error_count: 0,
             pause_scope: PauseScope::BettingOnly,
             allow_withdrawals: false,
+            half_open_since: 0,
         };
 
         env.storage()
@@ -370,6 +375,7 @@ impl CircuitBreaker {
             if current_time - state.opened_time >= config.recovery_timeout {
                 state.state = BreakerState::HalfOpen;
                 state.half_open_requests = 0;
+                state.half_open_since = current_time;
                 Self::update_state(env, &state)?;
 
                 let _ = Self::emit_circuit_breaker_event(
@@ -468,6 +474,7 @@ impl CircuitBreaker {
         state.state = BreakerState::Closed;
         state.failure_count = 0;
         state.half_open_requests = 0;
+        state.half_open_since = 0;
         state.last_success_time = env.ledger().timestamp();
         // restore safe defaults
         state.pause_scope = PauseScope::BettingOnly;
@@ -492,6 +499,47 @@ impl CircuitBreaker {
         Ok(())
     }
 
+    /// Admin-initiated resume: move the breaker from Open → HalfOpen and start
+    /// the cooldown countdown.
+    ///
+    /// # Behaviour
+    ///
+    /// - Only an authorised admin may call this.
+    /// - The breaker must currently be `Open`; calling from `Closed` or
+    ///   `HalfOpen` returns `Err(Error::CBError)`.
+    /// - Probe requests are not counted until `recovery_timeout` ledger-seconds
+    ///   have elapsed since the `since` timestamp recorded here.  This prevents
+    ///   a flapping service from immediately re-tripping the breaker.
+    /// - After `half_open_max_requests` consecutive successes the breaker
+    ///   auto-closes via [`record_success`].
+    /// - A single failure during the probe window re-opens the breaker via
+    ///   [`record_failure`].
+    pub fn request_resume(env: &Env, admin: &Address) -> Result<(), Error> {
+        AdminAccessControl::validate_admin_for_action(env, admin, "emergency_actions")?;
+
+        let mut state = Self::get_state(env)?;
+
+        if state.state != BreakerState::Open {
+            return Err(Error::CBError);
+        }
+
+        let current_time = env.ledger().timestamp();
+        state.state = BreakerState::HalfOpen;
+        state.half_open_requests = 0;
+        state.half_open_since = current_time;
+        Self::update_state(env, &state)?;
+
+        let _ = Self::emit_circuit_breaker_event(
+            env,
+            BreakerAction::Resume,
+            BreakerCondition::ManualOverride,
+            &String::from_str(env, "Admin requested resume: entering half-open with cooldown"),
+            Some(admin.clone()),
+        );
+
+        Ok(())
+    }
+
     /// Record a successful operation (for half-open state)
     pub fn record_success(env: &Env) -> Result<(), Error> {
         let mut state = Self::get_state(env)?;
@@ -500,15 +548,23 @@ impl CircuitBreaker {
         state.total_requests += 1;
         state.last_success_time = current_time;
 
-        // If in half-open state, check if we can close
+        // If in half-open state, check cooldown then count probe successes
         if state.state == BreakerState::HalfOpen {
+            let config = Self::get_config(env)?;
+            // Enforce cooldown: ignore probe until recovery_timeout has elapsed
+            // since entering HalfOpen.
+            if current_time < state.half_open_since + config.recovery_timeout {
+                Self::update_state(env, &state)?;
+                return Ok(());
+            }
+
             state.half_open_requests += 1;
 
-            let config = Self::get_config(env)?;
             if state.half_open_requests >= config.half_open_max_requests {
                 state.state = BreakerState::Closed;
                 state.failure_count = 0;
                 state.half_open_requests = 0;
+                state.half_open_since = 0;
 
                 let _ = Self::emit_circuit_breaker_event(
                     env,
@@ -544,6 +600,7 @@ impl CircuitBreaker {
             state.state = BreakerState::Open;
             state.opened_time = current_time;
             state.half_open_requests = 0;
+            state.half_open_since = 0;
 
             let _ = Self::emit_circuit_breaker_event(
                 env,
@@ -921,6 +978,7 @@ impl CircuitBreakerTesting {
             error_count: 0,
             pause_scope: PauseScope::BettingOnly,
             allow_withdrawals: false,
+            half_open_since: 0,
         }
     }
 
@@ -1058,6 +1116,7 @@ mod tests {
             error_count: 0,
             pause_scope: PauseScope::BettingOnly,
             allow_withdrawals: false,
+            half_open_since: 0,
         };
         assert_eq!(state.state, BreakerState::Closed);
         assert_eq!(state.failure_count, 0);
