@@ -170,6 +170,7 @@ use admin::{
 };
 pub use admin::Severity;
 pub use err::Error;
+use crate::storage::DataKey;
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
     pub use crate::err::*;
@@ -3982,7 +3983,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4318,7 +4320,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4467,7 +4470,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4580,7 +4584,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4698,7 +4703,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4952,7 +4958,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCancelled,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         // Emit cancellation event
         EventEmitter::emit_state_change_event(

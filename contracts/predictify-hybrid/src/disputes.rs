@@ -964,7 +964,8 @@ impl DisputeManager {
             crate::audit_trail::AuditAction::DisputeCreated,
             user.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -1120,7 +1121,8 @@ impl DisputeManager {
             crate::audit_trail::AuditAction::DisputeResolved,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(resolution)
     }

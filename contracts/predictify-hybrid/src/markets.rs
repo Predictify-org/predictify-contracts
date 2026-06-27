@@ -740,7 +740,7 @@ impl<'a> MarketReadCache<'a> {
         let result: Option<Market> = self.env.storage().instance().get(&key);
         if result.is_some() {
             // HIT: bump TTL to keep the cache entry alive
-            self.env.storage().instance().bump(MARKET_CACHE_TTL_LEDGERS);
+            self.env.storage().instance().extend_ttl(MARKET_CACHE_TTL_LEDGERS, MARKET_CACHE_TTL_LEDGERS);
         }
         result
         // NOTE: no unwrap() - get() returns Option, None on miss or type mismatch
@@ -751,7 +751,7 @@ impl<'a> MarketReadCache<'a> {
     pub fn set(&self, market_id: Symbol, market: &Market) {
         let key = DataKey::MarketCache(market_id);
         self.env.storage().instance().set(&key, market);
-        self.env.storage().instance().bump(MARKET_CACHE_TTL_LEDGERS);
+        self.env.storage().instance().extend_ttl(MARKET_CACHE_TTL_LEDGERS, MARKET_CACHE_TTL_LEDGERS);
         // CACHE: populate after persistent write - never before
     }
 

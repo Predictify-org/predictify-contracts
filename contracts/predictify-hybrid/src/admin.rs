@@ -260,7 +260,8 @@ impl AdminInitializer {
             AuditAction::ContractInitialized,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -635,7 +636,8 @@ impl ContractPauseManager {
             AuditAction::ContractPaused,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
         Ok(())
     }
 
@@ -651,7 +653,8 @@ impl ContractPauseManager {
             AuditAction::ContractUnpaused,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
         Ok(())
     }
 
@@ -684,7 +687,8 @@ impl ContractPauseManager {
             AuditAction::AdminTransferred,
             current_admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
         Ok(())
     }
 }
@@ -1009,7 +1013,8 @@ impl AdminRoleManager {
             AuditAction::AdminRoleUpdated,
             assigned_by.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(())
     }

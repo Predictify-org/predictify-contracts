@@ -3861,9 +3861,9 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("chain_mismatch"), &event);
+        Self::store_event(env, &symbol_short!("chain_mm"), &event);
         env.events()
-            .publish((symbol_short!("chain_mismatch"), admin.clone()), event);
+            .publish((symbol_short!("chain_mm"), admin.clone()), event);
     }
 
     /// Emit upgrade proposal created event
