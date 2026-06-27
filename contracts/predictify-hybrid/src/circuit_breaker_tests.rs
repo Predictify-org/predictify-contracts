@@ -651,4 +651,96 @@ mod circuit_breaker_tests {
             assert!(events.len() >= 2); // At least pause and recovery events
         });
     }
+
+    #[test]
+    fn test_half_open_quota_allows_calls_then_closes() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        // Configure quota (3 calls per 60s)
+        let config = CircuitBreakerConfig {
+            max_error_rate: 10,
+            max_latency_ms: 1000,
+            min_liquidity: 100_000_000,
+            failure_threshold: 3,
+            recovery_timeout: 60,
+            half_open_max_requests: 2,
+            auto_recovery_enabled: true,
+            half_open_quota: HalfOpenQuota { calls_per_minute: 3, evaluation_window_s: 60 },
+        };
+
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(&Symbol::new(&env, "circuit_breaker_config"), &config);
+            let state = CircuitBreakerState {
+                state: BreakerState::HalfOpen,
+                failure_count: 0,
+                last_failure_time: 0,
+                last_success_time: env.ledger().timestamp(),
+                opened_time: 0,
+                half_open_requests: 0,
+                total_requests: 0,
+                error_count: 0,
+                pause_scope: PauseScope::BettingOnly,
+                allow_withdrawals: false,
+            };
+            env.storage().instance().set(&Symbol::new(&env, "circuit_breaker_state"), &state);
+        });
+
+        // Perform 3 successful operations; they should be admitted and after 3 completed the breaker closes
+        for _ in 0..3 {
+            let res = env.as_contract(&contract_id, || {
+                CircuitBreakerUtils::with_circuit_breaker(&env, || Ok(()))
+            });
+            assert!(res.is_ok());
+        }
+
+        // After completing quota, circuit should be Closed
+        let status = env.as_contract(&contract_id, || CircuitBreaker::get_state(&env)).unwrap();
+        assert_eq!(status.state, BreakerState::Closed);
+    }
+
+    #[test]
+    fn test_half_open_quota_failure_reopens_immediately() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let config = CircuitBreakerConfig {
+            max_error_rate: 10,
+            max_latency_ms: 1000,
+            min_liquidity: 100_000_000,
+            failure_threshold: 3,
+            recovery_timeout: 60,
+            half_open_max_requests: 2,
+            auto_recovery_enabled: true,
+            half_open_quota: HalfOpenQuota { calls_per_minute: 3, evaluation_window_s: 60 },
+        };
+
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(&Symbol::new(&env, "circuit_breaker_config"), &config);
+            let state = CircuitBreakerState {
+                state: BreakerState::HalfOpen,
+                failure_count: 0,
+                last_failure_time: 0,
+                last_success_time: env.ledger().timestamp(),
+                opened_time: 0,
+                half_open_requests: 0,
+                total_requests: 0,
+                error_count: 0,
+                pause_scope: PauseScope::BettingOnly,
+                allow_withdrawals: false,
+            };
+            env.storage().instance().set(&Symbol::new(&env, "circuit_breaker_state"), &state);
+        });
+
+        // First admitted call fails => breaker reopens immediately
+        let res = env.as_contract(&contract_id, || {
+            CircuitBreakerUtils::with_circuit_breaker(&env, || Err(crate::errors::Error::CBError))
+        });
+        assert!(res.is_err());
+
+        let status = env.as_contract(&contract_id, || CircuitBreaker::get_state(&env)).unwrap();
+        assert_eq!(status.state, BreakerState::Open);
+    }
 }
