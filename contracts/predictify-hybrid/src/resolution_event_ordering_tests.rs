@@ -148,6 +148,93 @@ mod resolution_event_ordering_tests {
         });
     }
 
+    /// Tie-outcome edge case: when community votes are split evenly between two
+    /// outcomes the event ordering contract still holds — `mkt_res`, `st_chng`,
+    /// and `idx_transition` must be emitted in that exact sequence.
+    #[test]
+    fn test_event_ordering_preserved_on_tie_outcome() {
+        let setup = Setup::new();
+        let market_id = Symbol::new(&setup.env, "mkt_tie");
+
+        setup.env.as_contract(&setup.contract_id, || {
+            let end_time = setup.env.ledger().timestamp().saturating_sub(10);
+            let mut outcomes = Vec::new(&setup.env);
+            outcomes.push_back(String::from_str(&setup.env, "yes"));
+            outcomes.push_back(String::from_str(&setup.env, "no"));
+            let oracle_cfg = OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::from_str(
+                    &setup.env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
+                String::from_str(&setup.env, "BTC/USD"),
+                50_000_00,
+                String::from_str(&setup.env, "gt"),
+            );
+            let voter_a = Address::generate(&setup.env);
+            let voter_b = Address::generate(&setup.env);
+            let mut market = Market::new(
+                &setup.env,
+                setup.admin.clone(),
+                String::from_str(&setup.env, "Tie market"),
+                outcomes,
+                end_time,
+                oracle_cfg,
+                None,
+                86400,
+                MarketState::Ended,
+            );
+            market.oracle_result = Some(String::from_str(&setup.env, "yes"));
+            // Equal votes and equal stakes → exact community tie
+            market.votes.set(voter_a.clone(), String::from_str(&setup.env, "yes"));
+            market.votes.set(voter_b.clone(), String::from_str(&setup.env, "no"));
+            market.stakes.set(voter_a.clone(), 1_000_000_i128);
+            market.stakes.set(voter_b.clone(), 1_000_000_i128);
+            market.total_staked = 2_000_000_i128;
+            setup.env.storage().persistent().set(&market_id, &market);
+
+            let count_before = setup.env.events().all().events().len();
+
+            MarketResolutionManager::resolve_market(&setup.env, &market_id)
+                .expect("resolve_market should succeed even on tie");
+
+            let all = setup.env.events().all();
+            let emitted = &all.events()[count_before..];
+
+            assert!(!emitted.is_empty(), "resolve_market must emit events on tie outcome");
+
+            let mkt_res_sym = symbol_short!("mkt_res");
+            let st_chng_sym = symbol_short!("st_chng");
+            let idx_trans_sym = Symbol::new(&setup.env, "idx_transition");
+
+            let pos_mkt_res = emitted
+                .iter()
+                .position(|e| first_topic_sym(&setup.env, e) == Some(mkt_res_sym.clone()))
+                .expect("mkt_res must be emitted on tie resolution");
+            let pos_st_chng = emitted
+                .iter()
+                .position(|e| first_topic_sym(&setup.env, e) == Some(st_chng_sym.clone()))
+                .expect("st_chng must be emitted on tie resolution");
+            let pos_idx = emitted
+                .iter()
+                .position(|e| first_topic_sym(&setup.env, e) == Some(idx_trans_sym.clone()))
+                .expect("idx_transition must be emitted on tie resolution");
+
+            assert!(
+                pos_mkt_res < pos_st_chng,
+                "tie: mkt_res (pos={}) must precede st_chng (pos={})",
+                pos_mkt_res,
+                pos_st_chng
+            );
+            assert!(
+                pos_st_chng < pos_idx,
+                "tie: st_chng (pos={}) must precede idx_transition (pos={})",
+                pos_st_chng,
+                pos_idx
+            );
+        });
+    }
+
     /// Sanity check: no `mkt_res`, `st_chng`, or `idx_transition` events are
     /// emitted when resolution fails early (no oracle result available).
     #[test]
