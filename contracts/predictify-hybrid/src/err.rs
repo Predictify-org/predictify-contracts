@@ -189,6 +189,12 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
+    /// No pending fee config commit found.
+    NoPendingFeeCommit = 506,
+    /// Fee config reveal attempted too early.
+    FeeRevealTooEarly = 507,
+    /// Preimage does not match the committed hash.
+    FeePreimageMismatch = 508,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1428,6 +1434,9 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+            Error::NoPendingFeeCommit => "No pending fee config commit found",
+            Error::FeeRevealTooEarly => "Fee config reveal attempted too early",
+            Error::FeePreimageMismatch => "Preimage does not match the committed hash",
         }
     }
 
@@ -1522,6 +1531,9 @@ impl Error {
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Error::NoPendingFeeCommit => "NO_PENDING_FEE_COMMIT",
+            Error::FeeRevealTooEarly => "FEE_REVEAL_TOO_EARLY",
+            Error::FeePreimageMismatch => "FEE_PREIMAGE_MISMATCH",
         }
     }
 }

@@ -664,14 +664,7 @@ impl BetManager {
             return Ok(0);
         }
 
-        let fee_percentage = crate::config::ConfigManager::get_config(env)
-            .map(|cfg| cfg.fees.platform_fee_percentage)
-            .unwrap_or_else(|_| {
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(env, "platform_fee"))
-                    .unwrap_or(200)
-            });
+        let fee_percentage = crate::fees::FeeManager::get_fee_percentage_for_timestamp(env, bet.timestamp);
 
         let fee = (summary.total_pool * fee_percentage as i128) / 10_000;
         let distributable_pool = summary.total_pool - fee;
