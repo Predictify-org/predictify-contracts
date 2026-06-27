@@ -23,6 +23,12 @@ enum StorageTtlTier {
 // ===== STORAGE OPTIMIZATION TYPES =====
 
 /// Storage key variants for contracts/predictify-hybrid
+///
+/// These variants are used as persistent storage keys. Each variant must have a unique
+/// XDR encoding to avoid collisions in the storage layer. A collision detection test
+/// exists in `tests/datakey_collision.rs` that verifies all variants produce unique
+/// XDR byte representations. If this test fails, it indicates a critical issue with
+/// storage key uniqueness that must be resolved before deploying to production.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {

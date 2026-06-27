@@ -13,6 +13,10 @@ soroban-sdk = { workspace = true }
 wee_alloc = "0.4.5"
 
 
+[[test]]
+name = "datakey_collision"
+path = "tests/datakey_collision.rs"
+
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 proptest = "1.4"
