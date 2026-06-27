@@ -139,8 +139,9 @@ pub enum Error {
     GasBudgetExceeded = 417,
     /// Admin address has not been set. Contract initialization is incomplete.
     AdminNotSet = 418,
-    /// Admin override verification failed due to replay attack - nonce <= stored nonce.
-    ReplayedOverride = 419,
+    /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
+    /// This prevents silently inflated or deflated stakes via normalize_amount.
+    AssetDecimalsMismatch = 419,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.
@@ -1202,6 +1203,11 @@ impl ErrorHandler {
                 ErrorCategory::System,
                 RecoveryStrategy::ManualIntervention,
             ),
+            Error::AssetDecimalsMismatch => (
+                ErrorSeverity::Medium,
+                ErrorCategory::Validation,
+                RecoveryStrategy::Abort,
+            ),
             Error::DisputeFeeFailed => (
                 ErrorSeverity::Critical,
                 ErrorCategory::Financial,
@@ -1396,6 +1402,9 @@ impl Error {
             Error::InvalidExtensionDays => "Invalid extension days value",
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
+            Error::AssetDecimalsMismatch => {
+                "Asset decimals mismatch: stored decimals differ from live SAC"
+            }
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1491,6 +1500,7 @@ impl Error {
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::AssetDecimalsMismatch => "ASSET_DECIMALS_MISMATCH",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
@@ -1606,6 +1616,7 @@ mod tests {
             Error::ExtensionDenied,
             Error::GasBudgetExceeded,
             Error::AdminNotSet,
+            Error::AssetDecimalsMismatch,
             Error::InvalidOracleFeed,
             // Metadata length limit errors
             Error::QuestionTooLong,
