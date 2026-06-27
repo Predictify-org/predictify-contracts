@@ -5088,6 +5088,30 @@ impl PredictifyHybrid {
         result
     }
 
+    /// Promote resolved market metadata from Temporary to Persistent storage
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    pub fn promote_market_to_persistent(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        storage::StorageMigration::promote_market_to_persistent(&env, &market_id)
+    }
+
+    /// Demote scratch keys from Persistent to Temporary storage
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    pub fn demote_scratch_keys(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        storage::StorageMigration::demote_scratch_keys(&env, &market_id)
+    }
+
     /// Monitor storage usage and return statistics
     ///
     /// # Errors
