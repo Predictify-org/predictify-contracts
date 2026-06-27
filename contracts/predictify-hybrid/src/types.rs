@@ -1856,6 +1856,13 @@ pub struct GlobalOracleValidationConfig {
     /// Maximum allowed price deviation from the last accepted reading, in basis points.
     /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
+    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
+    /// When set, the new price is compared against the rolling median of recent prices.
+    /// None means rolling-median outlier rejection is disabled.
+    pub max_deviation_z_multiple: Option<u32>,
+    /// Number of historical prices to retain in the rolling deviation history ring buffer.
+    /// Defaults to 10 when None.
+    pub history_size: Option<u32>,
 }
 
 /// Per-event oracle validation configuration override.
@@ -1869,6 +1876,13 @@ pub struct EventOracleValidationConfig {
     /// Maximum allowed price deviation from the last accepted reading, in basis points.
     /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
+    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
+    /// When set, the new price is compared against the rolling median of recent prices.
+    /// None means rolling-median outlier rejection is disabled.
+    pub max_deviation_z_multiple: Option<u32>,
+    /// Number of historical prices to retain in the rolling deviation history ring buffer.
+    /// Defaults to 10 when None.
+    pub history_size: Option<u32>,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.

@@ -200,6 +200,9 @@ pub enum Error {
     RateLimitExceeded = 505,
     /// Cumulative extension cap reached; no further extensions allowed for this market.
     CumulativeExtensionCapHit = 506,
+    /// Oracle quote deviates from the rolling median by more than the configured z-multiple.
+    /// The quote was rejected as a potential outlier.
+    OracleQuoteOutlier = 507,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1469,6 +1472,7 @@ impl Error {
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed for this market",
+            Error::OracleQuoteOutlier => "Oracle quote deviates from rolling median beyond configured z-multiple",
         }
     }
 
@@ -1566,6 +1570,7 @@ impl Error {
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
+            Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
         }
     }
 }
