@@ -198,31 +198,12 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
-    /// Cumulative extension cap reached; no further extensions allowed for this market.
-    CumulativeExtensionCapHit = 506,
-    /// A market state transition was attempted that is not permitted by the state machine.
-    ///
-    /// This error is returned by `MarketStateLogic::validate_state_transition` whenever the
-    /// requested `(from, to)` pair is not in the set of legal edges.  Callers should treat
-    /// this as a terminal error — the transition will never succeed without first moving the
-    /// market through intermediate states that are part of the legal path.
-    ///
-    /// # Examples of illegal transitions
-    ///
-    /// * `Resolved → Active`  (cannot reopen a resolved market)
-    /// * `Closed → Ended`     (terminal state, no transitions allowed)
-    /// * `Active → Active`    (self-loops are not valid transitions)
-    IllegalMarketStateTransition = 507,
-
-    // ===== ADDITIONAL ERRORS (442-445) =====
-    /// Insufficient storage rent budget; the ledger does not have enough remaining TTL.
-    InsufficientStorageRentBudget = 442,
-    /// The user has exceeded the per-user dispute stake cap for this market.
-    DisputeStakeCapExceeded = 443,
-    /// The expected predecessor WASM hash does not match the current on-chain hash.
-    UpgradeChainMismatch = 444,
-    /// A nonce override has been replayed; each override nonce may only be used once.
-    ReplayedOverride = 445,
+    /// No pending fee config commit found.
+    NoPendingFeeCommit = 506,
+    /// Fee config reveal attempted too early.
+    FeeRevealTooEarly = 507,
+    /// Preimage does not match the committed hash.
+    FeePreimageMismatch = 508,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1489,13 +1470,9 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
-            Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed for this market",
-            Error::DuplicateMarketId => "Market ID already exists in the registry",
-            Error::IllegalMarketStateTransition => "Market state transition is not permitted by the state machine",
-            Error::InsufficientStorageRentBudget => "Insufficient storage rent budget for operation",
-            Error::DisputeStakeCapExceeded => "Per-user dispute stake cap exceeded",
-            Error::UpgradeChainMismatch => "WASM hash mismatch during contract upgrade",
-            Error::ReplayedOverride => "Override nonce has already been used",
+            Error::NoPendingFeeCommit => "No pending fee config commit found",
+            Error::FeeRevealTooEarly => "Fee config reveal attempted too early",
+            Error::FeePreimageMismatch => "Preimage does not match the committed hash",
         }
     }
 
@@ -1592,13 +1569,9 @@ impl Error {
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
-            Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
-            Error::DuplicateMarketId => "DUPLICATE_MARKET_ID",
-            Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
-            Error::InsufficientStorageRentBudget => "INSUFFICIENT_STORAGE_RENT_BUDGET",
-            Error::DisputeStakeCapExceeded => "DISPUTE_STAKE_CAP_EXCEEDED",
-            Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
-            Error::ReplayedOverride => "REPLAYED_OVERRIDE",
+            Error::NoPendingFeeCommit => "NO_PENDING_FEE_COMMIT",
+            Error::FeeRevealTooEarly => "FEE_REVEAL_TOO_EARLY",
+            Error::FeePreimageMismatch => "FEE_PREIMAGE_MISMATCH",
         }
     }
 }

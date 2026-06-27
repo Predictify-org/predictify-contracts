@@ -160,6 +160,10 @@ mod property_based_tests;
 // #[path = "tests/dispute_stake_tests.rs"]
 // mod dispute_stake_tests;
 
+#[cfg(test)]
+#[path = "tests/fee_config_commit_reveal_tests.rs"]
+mod fee_config_commit_reveal_tests;
+
 // #[cfg(test)]
 // mod event_creation_tests;
 
@@ -190,7 +194,7 @@ use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
 };
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
@@ -3825,15 +3829,14 @@ impl PredictifyHybrid {
         Ok(())
     }
 
-    /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event (admin only).
-    pub fn admin_broadcast(
-        env: Env,
-        admin: Address,
-        severity: Severity,
-        message_hash: soroban_sdk::BytesN<32>,
-        reason: String,
-    ) -> Result<(), Error> {
-        AdminFunctions::admin_broadcast(&env, &admin, severity, message_hash, reason)
+    /// Commit a hash of the new fee configuration (admin only)
+    pub fn commit_fee_config(env: Env, admin: Address, hash: BytesN<32>) -> Result<(), Error> {
+        fees::FeeManager::commit_fee_config(&env, admin, hash)
+    }
+
+    /// Reveal and apply a committed fee configuration (admin only)
+    pub fn reveal_fee_config(env: Env, admin: Address, new_config: fees::FeeConfig) -> Result<fees::FeeConfig, Error> {
+        fees::FeeManager::update_fee_config(&env, admin, new_config)
     }
 
     /// Set global minimum and maximum bet limits (admin only).
