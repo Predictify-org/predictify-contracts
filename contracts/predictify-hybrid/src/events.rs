@@ -1324,6 +1324,18 @@ pub struct GovernanceProposalExecutedEvent {
     pub timestamp: u64,
 }
 
+/// Governance proposal auto-rejected event — emitted when a proposal expires
+/// and fails to meet even the floor quorum after decay.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceProposalAutoRejectedEvent {
+    pub proposal_id: Symbol,
+    pub proposer: Address,
+    pub for_votes: u128,
+    pub floor_quorum: u128,
+    pub timestamp: u64,
+}
+
 /// Config initialized event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3459,6 +3471,28 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("gov_exec"), &event);
         env.events()
             .publish((symbol_short!("gov_exec"), proposal_id.clone()), event);
+    }
+
+    /// Emit governance proposal auto-rejected event
+    pub fn emit_governance_proposal_auto_rejected(
+        env: &Env,
+        proposal_id: &Symbol,
+        proposer: &Address,
+        for_votes: u128,
+        floor_quorum: u128,
+    ) {
+        let timestamp = env.ledger().timestamp();
+        let event = GovernanceProposalAutoRejectedEvent {
+            proposal_id: proposal_id.clone(),
+            proposer: proposer.clone(),
+            for_votes,
+            floor_quorum,
+            timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("gov_rej"), &event);
+        env.events()
+            .publish((symbol_short!("gov_rej"), proposal_id.clone()), event);
     }
 
     /// Emit contract upgraded event when contract Wasm is upgraded
