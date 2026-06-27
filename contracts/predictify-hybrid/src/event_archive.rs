@@ -22,6 +22,49 @@ use crate::market_id_generator::MarketIdGenerator;
 use crate::types::{EventHistoryEntry, Market, MarketState};
 use soroban_sdk::{panic_with_error, Address, Env, String, Symbol, Vec};
 
+// ---------------------------------------------------------------------------
+// Deterministic archive key derivation
+// ---------------------------------------------------------------------------
+
+/// Derive a deterministic archive storage key from a `market_id` and a `suffix`.
+///
+/// This is the single source of truth for all archive-related storage key
+/// derivation. It replaces legacy `format!`-based string concatenation with
+/// a consistent tuple-namespace pattern that is fully deterministic and
+/// avoids dynamic heap allocation.
+///
+/// The returned tuple `(Symbol, Symbol, Symbol)` implements `IntoVal<Env, Val>`
+/// and can be used directly with `env.storage().persistent().get(&key)`,
+/// `.set()`, `.has()`, and `.remove()`.
+///
+/// # Determinism
+///
+/// `derive_archive_key(env, id, s)` always produces the same storage key for
+/// the same `env`, `id`, and `s` — regardless of call count, order, or the
+/// state of any other storage.
+///
+/// # Arguments
+/// * `env` - Soroban environment.
+/// * `market_id` - The market / event identifier.
+/// * `suffix` - A short string label for the key variant (e.g. `"compressed"`,
+///   `"compressed_ref"`).
+///
+/// # Returns
+///
+/// A 3-tuple `(Symbol, Symbol, Symbol)` suitable for use as a Soroban
+/// persistent storage key.
+pub fn derive_archive_key(
+    env: &Env,
+    market_id: &Symbol,
+    suffix: &str,
+) -> (Symbol, Symbol, Symbol) {
+    (
+        Symbol::new(env, "__archive"),
+        market_id.clone(),
+        Symbol::new(env, suffix),
+    )
+}
+
 /// Maximum events returned per query (gas safety).
 pub const MAX_QUERY_LIMIT: u32 = 30;
 
@@ -429,6 +472,127 @@ mod tests {
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::Map;
     use crate::types::{Market, MarketState, OracleConfig};
+
+    // =========================================================================
+    // derive_archive_key tests
+    // =========================================================================
+
+    #[test]
+    fn test_derive_archive_key_deterministic() {
+        // Same inputs must always produce the same key.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "market_42");
+
+        let key_a = derive_archive_key(&env, &market_id, "compressed");
+        let key_b = derive_archive_key(&env, &market_id, "compressed");
+
+        assert_eq!(key_a, key_b);
+    }
+
+    #[test]
+    fn test_derive_archive_key_different_ids_produce_different_keys() {
+        // Different market IDs with the same suffix must produce different keys.
+        let env = Env::default();
+        let id1 = Symbol::new(&env, "market_1");
+        let id2 = Symbol::new(&env, "market_2");
+
+        let key1 = derive_archive_key(&env, &id1, "compressed");
+        let key2 = derive_archive_key(&env, &id2, "compressed");
+
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_derive_archive_key_different_suffixes_produce_different_keys() {
+        // Different suffixes with the same market ID must produce different keys.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "market_99");
+
+        let compressed_key = derive_archive_key(&env, &market_id, "compressed");
+        let ref_key = derive_archive_key(&env, &market_id, "compressed_ref");
+
+        assert_ne!(compressed_key, ref_key);
+    }
+
+    #[test]
+    fn test_derive_archive_key_long_market_id() {
+        // Maximum-length market IDs (32 chars for Soroban Symbol) must work.
+        let env = Env::default();
+        let long_id = Symbol::new(&env, "a_very_long_market_id_32_chars__");
+
+        let key = derive_archive_key(&env, &long_id, "compressed");
+        // The key should not panic and be usable in storage operations.
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&key, &42u32);
+            let val: Option<u32> = env.storage().persistent().get(&key);
+            assert_eq!(val, Some(42));
+        });
+    }
+
+    #[test]
+    fn test_derive_archive_key_special_char_suffix() {
+        // Suffixes with underscores and numbers (valid Symbol chars) must work.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "m1");
+
+        let key = derive_archive_key(&env, &market_id, "compressed_v2");
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&key, &true);
+            let val: Option<bool> = env.storage().persistent().get(&key);
+            assert_eq!(val, Some(true));
+        });
+    }
+
+    #[test]
+    fn test_derive_archive_key_namespace_isolation() {
+        // Keys with different market IDs must not collide in storage.
+        let env = Env::default();
+        let id_a = Symbol::new(&env, "market_a");
+        let id_b = Symbol::new(&env, "market_b");
+
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let key_a = derive_archive_key(&env, &id_a, "compressed");
+            let key_b = derive_archive_key(&env, &id_b, "compressed");
+
+            env.storage().persistent().set(&key_a, &100u32);
+            env.storage().persistent().set(&key_b, &200u32);
+
+            let val_a: Option<u32> = env.storage().persistent().get(&key_a);
+            let val_b: Option<u32> = env.storage().persistent().get(&key_b);
+
+            assert_eq!(val_a, Some(100));
+            assert_eq!(val_b, Some(200));
+        });
+    }
+
+    #[test]
+    fn test_derive_archive_key_storage_roundtrip() {
+        // Full write-read roundtrip to verify the key works with persistent storage.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "roundtrip_test");
+        let suffix = "migration";
+
+        let key = derive_archive_key(&env, &market_id, suffix);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let stored_value: u64 = 123456789;
+
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&key, &stored_value);
+
+            let retrieved: Option<u64> = env.storage().persistent().get(&key);
+            assert_eq!(retrieved, Some(stored_value));
+
+            // Verify the tuple components are as expected
+            let (ns, id, sfx) = key;
+            assert_eq!(ns, Symbol::new(&env, "__archive"));
+            assert_eq!(id, market_id);
+            assert_eq!(sfx, Symbol::new(&env, suffix));
+        });
+    }
 
     struct EventArchiveTest {
         env: Env,
