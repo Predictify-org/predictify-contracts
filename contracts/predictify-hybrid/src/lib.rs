@@ -22,6 +22,8 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 mod admin;
 #[cfg(test)]
 mod admin_auth_audit_tests;
+#[cfg(test)]
+mod error_code_tests;
 pub mod audit_trail;
 mod balances;
 mod batch_operations;

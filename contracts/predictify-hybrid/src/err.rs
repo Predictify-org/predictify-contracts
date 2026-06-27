@@ -216,6 +216,26 @@ pub enum ErrorCategory {
     Unknown,
 }
 
+/// Off-chain recoverability annotation for each error variant.
+///
+/// # Client Guidance
+///
+/// | Label | Meaning | Off-chain action |
+/// |-------|---------|-----------------|
+/// | `Retryable` | Transient condition; the call may succeed if retried | Exponential back-off, max 3 attempts |
+/// | `RequiresAdmin` | Needs privileged intervention before retrying | Alert ops team; do not auto-retry |
+/// | `Terminal` | Permanent failure; retrying is futile | Surface to user; no retry |
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Recoverability {
+    /// Transient condition. The operation may succeed on a subsequent attempt.
+    Retryable,
+    /// Requires an administrator action before the operation can proceed.
+    RequiresAdmin,
+    /// Permanent failure. Further attempts will not succeed.
+    Terminal,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RecoveryStrategy {
@@ -1428,6 +1448,155 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+        }
+    }
+
+    /// Returns the canonical off-chain client code for this error.
+    ///
+    /// Client codes are **disjoint per category** so an off-chain system can
+    /// determine the broad failure domain from the code alone without parsing
+    /// the string representation.
+    ///
+    /// # Code Ranges
+    ///
+    /// | Category | Range |
+    /// |----------|-------|
+    /// | Oracle | 1000–1099 |
+    /// | Market | 1100–1199 |
+    /// | Validation | 1200–1299 |
+    /// | Financial | 1300–1399 |
+    /// | Dispute | 1400–1499 |
+    /// | Authentication | 1500–1599 |
+    /// | CircuitBreaker | 1600–1699 |
+    /// | System | 1700–1799 |
+    /// | UserOperation | 1800–1899 |
+    /// | Metadata | 1900–1999 |
+    ///
+    /// # Returns
+    ///
+    /// A `u32` canonical client code that is **unique** across all variants
+    /// and lies within the range reserved for the variant's category.
+    pub fn client_code(&self) -> u32 {
+        match self {
+            // ── Oracle (1000–1099) ──────────────────────────────────────────
+            Error::OracleUnavailable => 1000,
+            Error::InvalidOracleConfig => 1001,
+            Error::OracleStale => 1002,
+            Error::OracleNoConsensus => 1003,
+            Error::OracleVerified => 1004,
+            Error::FallbackOracleUnavailable => 1005,
+            Error::ResolutionTimeoutReached => 1006,
+            Error::OracleConfidenceTooWide => 1007,
+            Error::InvalidOracleFeed => 1008,
+            Error::OracleCallbackAuthFailed => 1009,
+            Error::OracleCallbackUnauthorized => 1010,
+            Error::OracleCallbackInvalidSignature => 1011,
+            Error::OracleCallbackReplayDetected => 1012,
+            Error::OracleCallbackTimeout => 1013,
+            // ── Market (1100–1199) ─────────────────────────────────────────
+            Error::MarketNotFound => 1100,
+            Error::MarketClosed => 1101,
+            Error::MarketResolved => 1102,
+            Error::MarketNotResolved => 1103,
+            Error::MarketNotReady => 1104,
+            // ── Validation (1200–1299) ─────────────────────────────────────
+            Error::InvalidQuestion => 1200,
+            Error::InvalidOutcomes => 1201,
+            Error::InvalidDuration => 1202,
+            Error::InvalidThreshold => 1203,
+            Error::InvalidComparison => 1204,
+            Error::InvalidInput => 1205,
+            // ── Financial (1300–1399) ──────────────────────────────────────
+            Error::FeeArithmeticOverflow => 1300,
+            Error::FeeAlreadyCollected => 1301,
+            Error::NoFeesToCollect => 1302,
+            Error::InvalidFeeConfig => 1303,
+            Error::SweepAlreadyDone => 1304,
+            Error::DisputeFeeFailed => 1305,
+            // ── Dispute (1400–1499) ────────────────────────────────────────
+            Error::AlreadyDisputed => 1400,
+            Error::DisputeVoteExpired => 1401,
+            Error::DisputeVoteDenied => 1402,
+            Error::DisputeAlreadyVoted => 1403,
+            Error::DisputeCondNotMet => 1404,
+            Error::DisputeError => 1405,
+            // ── Authentication (1500–1599) ─────────────────────────────────
+            Error::Unauthorized => 1500,
+            // ── CircuitBreaker (1600–1699) ─────────────────────────────────
+            Error::CBNotInitialized => 1600,
+            Error::CBAlreadyOpen => 1601,
+            Error::CBNotOpen => 1602,
+            Error::CBOpen => 1603,
+            Error::CBError => 1604,
+            Error::RateLimitExceeded => 1605,
+            // ── System (1700–1799) ─────────────────────────────────────────
+            Error::InvalidState => 1700,
+            Error::ConfigNotFound => 1701,
+            Error::AdminNotSet => 1702,
+            Error::GasBudgetExceeded => 1703,
+            Error::InvalidExtensionDays => 1704,
+            Error::ExtensionDenied => 1705,
+            // ── UserOperation (1800–1899) ──────────────────────────────────
+            Error::AlreadyVoted => 1800,
+            Error::AlreadyBet => 1801,
+            Error::BetsAlreadyPlaced => 1802,
+            Error::InvalidOutcome => 1803,
+            Error::InsufficientStake => 1804,
+            Error::InsufficientBalance => 1805,
+            Error::NothingToClaim => 1806,
+            Error::AlreadyClaimed => 1807,
+            // ── Metadata (1900–1999) ───────────────────────────────────────
+            Error::QuestionTooLong => 1900,
+            Error::OutcomeTooLong => 1901,
+            Error::TooManyOutcomes => 1902,
+            Error::FeedIdTooLong => 1903,
+            Error::ComparisonTooLong => 1904,
+            Error::CategoryTooLong => 1905,
+            Error::TagTooLong => 1906,
+            Error::TooManyTags => 1907,
+            Error::ExtensionReasonTooLong => 1908,
+            Error::SourceTooLong => 1909,
+            Error::ErrorMessageTooLong => 1910,
+            Error::SignatureTooLong => 1911,
+            Error::TooManyExtensions => 1912,
+            Error::TooManyOracleResults => 1913,
+            Error::TooManyWinningOutcomes => 1914,
+            Error::ArchiveFull => 1915,
+            Error::CategoryTooShort => 1916,
+            Error::TagTooShort => 1917,
+        }
+    }
+
+    /// Returns the recoverability label for this error.
+    ///
+    /// Off-chain clients should consult this to decide whether to retry or
+    /// surface the error to the user immediately.
+    ///
+    /// - `Retryable` – transient; exponential back-off is appropriate.
+    /// - `RequiresAdmin` – privileged intervention needed first.
+    /// - `Terminal` – permanent; retry is futile.
+    pub fn recoverability(&self) -> Recoverability {
+        match self {
+            // Retryable ──────────────────────────────────────────────────────
+            Error::OracleUnavailable
+            | Error::OracleStale
+            | Error::FallbackOracleUnavailable
+            | Error::OracleCallbackTimeout
+            | Error::ResolutionTimeoutReached
+            | Error::RateLimitExceeded
+            | Error::InvalidInput
+            | Error::InsufficientStake
+            | Error::InsufficientBalance => Recoverability::Retryable,
+            // RequiresAdmin ──────────────────────────────────────────────────
+            Error::AdminNotSet
+            | Error::DisputeFeeFailed
+            | Error::CBNotInitialized
+            | Error::InvalidOracleConfig
+            | Error::InvalidFeeConfig
+            | Error::ConfigNotFound
+            | Error::CBOpen => Recoverability::RequiresAdmin,
+            // Terminal (everything else) ─────────────────────────────────────
+            _ => Recoverability::Terminal,
         }
     }
 
