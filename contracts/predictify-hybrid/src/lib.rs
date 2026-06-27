@@ -23,10 +23,6 @@ const SYM_PLATFORM_FEE: &str = "plat_fee";      // was "platform_fee" (12 chars)
 const SYM_ALLOWED_ASSETS: &str = "allowed";     // was "allowed_assets" (14 chars)
 const SYM_ADMIN: &str = "Admin";                // kept as is (5 chars)
 
-// Legacy symbol keys for backwards compatibility
-const SYM_PLATFORM_FEE_LEGACY: &str = "platform_fee";
-const SYM_ALLOWED_ASSETS_LEGACY: &str = "allowed_assets";
-
 // Module declarations - all modules enabled
 mod admin;
 #[cfg(test)]
@@ -1968,14 +1964,13 @@ impl PredictifyHybrid {
         let fee_percent = crate::config::ConfigManager::get_config(&env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
-                // Try new short key first, then fall back to legacy key
+                // Use the short platform fee key (backwards-compat fallback to legacy long keys
+                // is not possible here because Soroban restricts symbols to <=9 chars).
+                // If you need to read old on-chain keys created with long symbols,
+                // perform a storage migration on-chain (one-time) to move legacy values
+                // under the new short key.
                 let new_key = Symbol::new(&env, SYM_PLATFORM_FEE);
-                let legacy_key = Symbol::new(&env, SYM_PLATFORM_FEE_LEGACY);
-                env.storage()
-                    .persistent()
-                    .get(&new_key)
-                    .or_else(|| env.storage().persistent().get(&legacy_key))
-                    .unwrap_or(2)
+                env.storage().persistent().get(&new_key).unwrap_or(2)
             });
 
         if fee_percent < 0 || fee_percent > PERCENTAGE_DENOMINATOR {
