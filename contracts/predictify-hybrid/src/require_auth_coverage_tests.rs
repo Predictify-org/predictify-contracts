@@ -296,7 +296,7 @@ fn test_place_bet_authorized_succeeds() {
         &market_id,
         &String::from_str(&env, "yes"),
         &1_000_000i128,
-    );
+     &None,);
     assert_auth_ok_panic!(result, "place_bet rejected authorized user");
 }
 
@@ -307,7 +307,7 @@ fn test_place_bet_no_auth_panics() {
     let (env, cid, _admin) = setup_no_auth();
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "mkt");
-    client(&env, &cid).place_bet(&user, &market_id, &String::from_str(&env, "yes"), &1_000_000i128);
+    client(&env, &cid).place_bet(&user, &market_id, &String::from_str(&env, "yes"), &1_000_000i128, &None);
 }
 
 // ── place_bets ───────────────────────────────────────────────
@@ -322,7 +322,7 @@ fn test_place_bets_authorized_succeeds() {
         &env,
         (market_id, String::from_str(&env, "yes"), 1_000_000i128),
     ];
-    let result = client(&env, &cid).try_place_bets(&user, &bets);
+    let result = client(&env, &cid).try_place_bets(&user, &bets, &None);
     assert_auth_ok_panic!(result, "place_bets rejected authorized user");
 }
 
@@ -333,7 +333,7 @@ fn test_place_bets_no_auth_panics() {
     let (env, cid, _admin) = setup_no_auth();
     let user = Address::generate(&env);
     let bets: Vec<(Symbol, String, i128)> = Vec::new(&env);
-    client(&env, &cid).place_bets(&user, &bets);
+    client(&env, &cid).place_bets(&user, &bets, &None);
 }
 
 // ── cancel_bet ───────────────────────────────────────────────
@@ -349,7 +349,7 @@ fn test_cancel_bet_authorized_succeeds() {
         &market_id,
         &String::from_str(&env, "yes"),
         &1_000_000i128,
-    );
+     &None,);
     let result = client(&env, &cid).try_cancel_bet(&user, &market_id);
     assert_auth_ok_contract!(result, "cancel_bet rejected authorized user");
 }

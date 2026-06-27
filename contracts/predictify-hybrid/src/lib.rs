@@ -121,8 +121,8 @@ mod market_state_matrix_tests;
 
 // #[cfg(test)]
 // mod bet_cancellation_tests;
-// #[cfg(any())]
-// mod bet_tests;
+#[cfg(test)]
+mod bet_tests;
 // #[cfg(any())]
 // mod gas_test;
 // #[cfg(any())]
@@ -306,6 +306,7 @@ impl PredictifyHybrid {
         platform_fee_percentage: Option<i128>,
         allowed_assets: Option<Vec<Address>>,
     ) -> Result<(), Error> {
+        
         // Check for re-initialization attempt (critical security check)
         if env
             .storage()
@@ -1212,6 +1213,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        max_fee_bps: Option<u32>,
     ) -> crate::types::Bet {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
@@ -1219,7 +1221,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         // Use the BetManager to handle the bet placement
-        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
+        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount, max_fee_bps) {
             Ok(bet) => {
                 // Record statistics
                 statistics::StatisticsManager::record_bet_placed(&env, &user, amount);
@@ -1295,13 +1297,14 @@ impl PredictifyHybrid {
         env: Env,
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
+        max_fee_bps: Option<u32>,
     ) -> Vec<crate::types::Bet> {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
         {
             panic_with_error!(env, e);
         }
-        match bets::BetManager::place_bets(&env, user, bets) {
+        match bets::BetManager::place_bets(&env, user, bets, max_fee_bps) {
             Ok(placed_bets) => placed_bets,
             Err(e) => panic_with_error!(env, e),
         }

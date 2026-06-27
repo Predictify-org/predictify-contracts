@@ -139,9 +139,8 @@ pub enum Error {
     GasBudgetExceeded = 417,
     /// Admin address has not been set. Contract initialization is incomplete.
     AdminNotSet = 418,
-    /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
-    /// This prevents silently inflated or deflated stakes via normalize_amount.
-    AssetDecimalsMismatch = 419,
+    /// Fee is above the bettor's acceptable slippage threshold.
+    FeeAboveAcceptable = 419,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.
@@ -1437,9 +1436,7 @@ impl Error {
             Error::InvalidExtensionDays => "Invalid extension days value",
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
-            Error::AssetDecimalsMismatch => {
-                "Asset decimals mismatch: stored decimals differ from live SAC"
-            }
+            Error::FeeAboveAcceptable => "Fee is above the acceptable threshold",
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1537,7 +1534,7 @@ impl Error {
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
-            Error::AssetDecimalsMismatch => "ASSET_DECIMALS_MISMATCH",
+            Error::FeeAboveAcceptable => "FEE_ABOVE_ACCEPTABLE",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
@@ -1657,6 +1654,7 @@ mod tests {
             Error::AdminNotSet,
             Error::AssetDecimalsMismatch,
             Error::InvalidOracleFeed,
+            Error::FeeAboveAcceptable,
             // Metadata length limit errors
             Error::QuestionTooLong,
             Error::OutcomeTooLong,
