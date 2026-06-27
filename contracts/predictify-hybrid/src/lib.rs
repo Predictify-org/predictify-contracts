@@ -18,6 +18,15 @@ extern crate wee_alloc;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+// Short symbol keys (max length 9 for Soroban compatibility)
+const SYM_PLATFORM_FEE: &str = "plat_fee";      // was "platform_fee" (12 chars)
+const SYM_ALLOWED_ASSETS: &str = "allowed";     // was "allowed_assets" (14 chars)
+const SYM_ADMIN: &str = "Admin";                // kept as is (5 chars)
+
+// Legacy symbol keys for backwards compatibility
+const SYM_PLATFORM_FEE_LEGACY: &str = "platform_fee";
+const SYM_ALLOWED_ASSETS_LEGACY: &str = "allowed_assets";
+
 // Module declarations - all modules enabled
 mod admin;
 #[cfg(test)]
@@ -288,7 +297,7 @@ impl PredictifyHybrid {
         if env
             .storage()
             .persistent()
-            .has(&Symbol::new(&env, "platform_fee"))
+            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
         {
             return Err(Error::InvalidState);
         }
@@ -315,7 +324,7 @@ impl PredictifyHybrid {
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
-            .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
 
         // Store default contract configuration so validators have deterministic bounds
         let mut default_config = crate::config::ConfigManager::get_development_config(&env);
@@ -364,7 +373,7 @@ impl PredictifyHybrid {
             // Store custom allowed assets
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "allowed_assets"), &assets);
+                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
         } else {
             // Initialize with defaults
             crate::tokens::TokenRegistry::initialize_with_defaults(&env);
@@ -382,7 +391,7 @@ impl PredictifyHybrid {
     fn stored_primary_admin(env: &Env) -> Result<Address, Error> {
         env.storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"))
+            .get(&Symbol::new(env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)
     }
 
@@ -1839,7 +1848,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1868,7 +1877,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1899,7 +1908,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1925,7 +1934,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)?;
 
         if admin != stored_admin {
@@ -1959,9 +1968,13 @@ impl PredictifyHybrid {
         let fee_percent = crate::config::ConfigManager::get_config(&env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
+                // Try new short key first, then fall back to legacy key
+                let new_key = Symbol::new(&env, SYM_PLATFORM_FEE);
+                let legacy_key = Symbol::new(&env, SYM_PLATFORM_FEE_LEGACY);
                 env.storage()
                     .persistent()
-                    .get(&Symbol::new(&env, "platform_fee"))
+                    .get(&new_key)
+                    .or_else(|| env.storage().persistent().get(&legacy_key))
                     .unwrap_or(2)
             });
 
