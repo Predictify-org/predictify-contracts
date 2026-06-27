@@ -55,6 +55,8 @@ mod recovery;
 mod reentrancy_guard;
 #[cfg(test)]
 mod require_auth_coverage_tests;
+#[cfg(test)]
+mod resolution_event_ordering_tests;
 mod resolution;
 mod statistics;
 mod storage;
