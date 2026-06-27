@@ -11,7 +11,23 @@
 //! [`Error::ArchiveFull`]. Admins can call `prune_archive` to remove the oldest
 //! N entries and make room for new ones.
 //!
-//! # Pagination
+//! # Paginated Pruning
+//!
+//! `prune_archive` supports gas-safe paginated deletion via [`PruneCursor`].
+//! Entries are always removed oldest-first (ascending archive timestamp). A
+//! single call removes at most [`MAX_QUERY_LIMIT`] entries.
+//!
+//! Typical multi-page usage:
+//! ```ignore
+//! let mut cursor = None;
+//! loop {
+//!     let (removed, next) = contract.prune_archive(admin, count, cursor);
+//!     cursor = Some(next.clone());
+//!     if next.done { break; }
+//! }
+//! ```
+//!
+//! # Pagination (queries)
 //!
 //! All query functions accept a `cursor` (start index) and `limit` (capped at
 //! [`MAX_QUERY_LIMIT`]) and return `(entries, next_cursor)`. Callers should
@@ -1142,6 +1158,218 @@ mod tests {
             let res2 =
                 crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
             assert!(res2.is_ok());
+        });
+    }
+
+    // =========================================================================
+    // prune_archive paginated cursor tests
+    // =========================================================================
+
+    /// Helper: seed the archive sorted index and timestamp map directly so
+    /// prune tests don't need a full market lifecycle.
+    fn seed_archive(env: &Env, entries: &[(&str, u64)]) {
+        let archived_key = Symbol::new(env, ARCHIVED_TS_KEY);
+        let mut map: soroban_sdk::Map<Symbol, u64> = soroban_sdk::Map::new(env);
+        for (id, ts) in entries {
+            let sym = Symbol::new(env, id);
+            map.set(sym.clone(), *ts);
+            insert_into_sorted_index(env, *ts, &sym);
+        }
+        env.storage().persistent().set(&archived_key, &map);
+    }
+
+    #[test]
+    fn test_prune_archive_none_cursor_starts_from_beginning() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("mkt_a", 100), ("mkt_b", 200), ("mkt_c", 300)]);
+
+            let (removed, cursor) =
+                EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
+
+            assert_eq!(removed, 2);
+            assert_eq!(cursor.done, false);
+            // last pruned should be the 2nd oldest (ts=200)
+            assert_eq!(cursor.last_timestamp, 200);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_cursor_resume_continues_from_last_position() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(
+                &env,
+                &[("mkt_a", 100), ("mkt_b", 200), ("mkt_c", 300), ("mkt_d", 400)],
+            );
+
+            // First page: prune 2
+            let (removed1, cursor1) =
+                EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
+            assert_eq!(removed1, 2);
+            assert_eq!(cursor1.done, false);
+
+            // Resume with cursor — should prune the next 2
+            let (removed2, cursor2) =
+                EventArchive::prune_archive(&env, &admin, 2, Some(cursor1)).unwrap();
+            assert_eq!(removed2, 2);
+            assert_eq!(cursor2.done, true);
+            assert_eq!(EventArchive::archive_size(&env), 0);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_done_flag_set_when_exhausted() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("mkt_x", 500), ("mkt_y", 600)]);
+
+            // Prune more than available
+            let (removed, cursor) =
+                EventArchive::prune_archive(&env, &admin, 10, None).unwrap();
+
+            assert_eq!(removed, 2);
+            assert_eq!(cursor.done, true);
+            assert_eq!(EventArchive::archive_size(&env), 0);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_done_cursor_is_idempotent() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("mkt_p", 100)]);
+
+            let (_, done_cursor) =
+                EventArchive::prune_archive(&env, &admin, 5, None).unwrap();
+            assert!(done_cursor.done);
+
+            // Calling again with a done cursor must remove nothing
+            let (removed2, cursor2) =
+                EventArchive::prune_archive(&env, &admin, 5, Some(done_cursor)).unwrap();
+            assert_eq!(removed2, 0);
+            assert!(cursor2.done);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_preserves_oldest_first_order() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            // Insert out-of-order timestamps; oldest must be pruned first
+            seed_archive(
+                &env,
+                &[("newest", 9000), ("oldest", 1000), ("middle", 5000)],
+            );
+
+            let (removed, cursor) =
+                EventArchive::prune_archive(&env, &admin, 1, None).unwrap();
+            assert_eq!(removed, 1);
+            // The entry with ts=1000 ("oldest") must be gone, others remain
+            assert!(!EventArchive::is_archived(&env, &Symbol::new(&env, "oldest")));
+            assert!(EventArchive::is_archived(&env, &Symbol::new(&env, "middle")));
+            assert!(EventArchive::is_archived(&env, &Symbol::new(&env, "newest")));
+            assert_eq!(cursor.last_timestamp, 1000);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_count_capped_at_max_query_limit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            // Seed with MAX_QUERY_LIMIT + 5 entries
+            let total = (MAX_QUERY_LIMIT + 5) as usize;
+            // Build entries as (id_str, timestamp) — we do this via repeated seeding
+            // Use insert_into_sorted_index + manual map update for each
+            let archived_key = Symbol::new(&env, ARCHIVED_TS_KEY);
+            let mut archived: soroban_sdk::Map<Symbol, u64> = soroban_sdk::Map::new(&env);
+            for i in 0..total {
+                // Symbol names must be ≤ 32 chars, prefix "m" + zero-padded index
+                let name = alloc::format!("market_{:04}", i);
+                let sym = Symbol::new(&env, &name);
+                archived.set(sym.clone(), i as u64 + 1);
+                insert_into_sorted_index(&env, i as u64 + 1, &sym);
+            }
+            env.storage().persistent().set(&archived_key, &archived);
+
+            // Requesting more than MAX_QUERY_LIMIT should only remove MAX_QUERY_LIMIT
+            let (removed, _) =
+                EventArchive::prune_archive(&env, &admin, MAX_QUERY_LIMIT + 100, None).unwrap();
+            assert_eq!(removed, MAX_QUERY_LIMIT);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_partial_page_then_done() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("a", 10), ("b", 20), ("c", 30)]);
+
+            // Prune 2, then prune 2 more (only 1 remains → partial page → done)
+            let (r1, cur1) = EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
+            assert_eq!(r1, 2);
+            assert!(!cur1.done);
+
+            let (r2, cur2) =
+                EventArchive::prune_archive(&env, &admin, 2, Some(cur1)).unwrap();
+            assert_eq!(r2, 1); // only 1 entry left
+            assert!(cur2.done);
         });
     }
 
