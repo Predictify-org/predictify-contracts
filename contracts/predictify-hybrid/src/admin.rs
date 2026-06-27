@@ -1657,28 +1657,101 @@ impl AdminManager {
 // ===== MULTISIG MANAGER =====
 
 /// Manages multisig/threshold approval for sensitive admin operations
+pub const THRESHOLD_ROTATION_DELAY: u64 = 86400; // 24 hours
+
+/// Pending threshold update for two-phase commit
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct PendingThresholdUpdate {
+    pub new_threshold: u32,
+    pub proposed_at: u64,
+    pub proposed_by: Address,
+}
+
 pub struct MultisigManager;
 
 impl MultisigManager {
-    /// Set the multisig threshold (M-of-N)
-    pub fn set_threshold(env: &Env, admin: &Address, threshold: u32) -> Result<(), Error> {
+    /// Propose a new multisig threshold (M-of-N)
+    pub fn propose_threshold(env: &Env, admin: &Address, new_threshold: u32) -> Result<(), Error> {
         AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
 
         let total_admins = Self::count_active_admins(env);
-        if threshold == 0 || threshold > total_admins {
+        if new_threshold == 0 || new_threshold > total_admins {
             return Err(Error::InvalidInput);
         }
 
-        let config = MultisigConfig {
-            threshold,
-            total_admins,
-            enabled: threshold > 1,
+        let pending = PendingThresholdUpdate {
+            new_threshold,
+            proposed_at: env.ledger().timestamp(),
+            proposed_by: admin.clone(),
         };
 
         env.storage()
             .persistent()
-            .set(&Symbol::new(env, "MultisigConfig"), &config);
+            .set(&Symbol::new(env, "PendingThreshold"), &pending);
+
+        let config = Self::get_config(env);
+        EventEmitter::emit_threshold_proposed(
+            env,
+            admin,
+            config.threshold,
+            new_threshold,
+            env.ledger().timestamp() + THRESHOLD_ROTATION_DELAY,
+        );
+
         Ok(())
+    }
+
+    /// Confirm a pending threshold update after the delay
+    pub fn confirm_threshold(env: &Env) -> Result<(), Error> {
+        let pending: PendingThresholdUpdate = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "PendingThreshold"))
+            .ok_or(Error::InvalidState)?;
+
+        if env.ledger().timestamp() < pending.proposed_at + THRESHOLD_ROTATION_DELAY {
+            return Err(Error::InvalidState);
+        }
+
+        let total_admins = Self::count_active_admins(env);
+        if pending.new_threshold == 0 || pending.new_threshold > total_admins {
+            env.storage().persistent().remove(&Symbol::new(env, "PendingThreshold"));
+            return Err(Error::InvalidInput);
+        }
+
+        let mut config = Self::get_config(env);
+        let old_threshold = config.threshold;
+        config.threshold = pending.new_threshold;
+        config.enabled = pending.new_threshold > 1;
+        config.total_admins = total_admins;
+
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, "MultisigConfig"), &config);
+
+        env.storage().persistent().remove(&Symbol::new(env, "PendingThreshold"));
+
+        EventEmitter::emit_threshold_confirmed(
+            env,
+            &pending.proposed_by,
+            old_threshold,
+            pending.new_threshold,
+        );
+
+        Ok(())
+    }
+
+    /// Cancel a pending threshold proposal
+    pub fn cancel_threshold_proposal(env: &Env, admin: &Address) -> Result<(), Error> {
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
+
+        if env.storage().persistent().has(&Symbol::new(env, "PendingThreshold")) {
+            env.storage().persistent().remove(&Symbol::new(env, "PendingThreshold"));
+            Ok(())
+        } else {
+            Err(Error::InvalidState)
+        }
     }
 
     /// Get current multisig configuration
