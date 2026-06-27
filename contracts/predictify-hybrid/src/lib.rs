@@ -3340,6 +3340,17 @@ impl PredictifyHybrid {
         disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
     }
 
+    /// Sets the maximum capacity of resolved/expired disputes to retain in history (admin only).
+    pub fn set_history_cap(
+        env: Env,
+        admin: Address,
+        cap: u32,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+
+        disputes::DisputeManager::set_history_cap(&env, admin, cap)
+    }
+
     /// Collect fees from a market (admin only)
     ///
     /// # Errors

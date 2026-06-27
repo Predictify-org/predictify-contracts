@@ -37,6 +37,8 @@ pub enum DataKey {
     ArchivedMarket(Symbol, u64),
     MarketMetadata(Symbol),
     MarketScratch(Symbol),
+    DisputeHistoryCap,
+    DisputeHistory(Symbol),
 }
 
 /// Storage format version for migration tracking
@@ -300,7 +302,7 @@ impl StorageOptimizer {
         Self::clamp_persistent_ttl(env, Self::ttl_for_tier(&config, tier))
     }
 
-    fn extend_persistent_ttl<K>(env: &Env, key: &K, desired_ttl_ledgers: u32)
+    pub fn extend_persistent_ttl<K>(env: &Env, key: &K, desired_ttl_ledgers: u32)
     where
         K: IntoVal<Env, Val>,
     {

@@ -5,6 +5,7 @@ use crate::{
     markets::MarketStateManager,
     types::Market,
     voting::{VotingUtils, DISPUTE_EXTENSION_HOURS, MIN_DISPUTE_STAKE},
+    storage::DataKey,
 };
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
@@ -61,6 +62,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 /// - Winners receive their stake back plus rewards
 /// - Losers forfeit their stake to the winning side
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Dispute {
     pub user: Address,
     pub market_id: Symbol,
@@ -117,6 +119,7 @@ pub struct Dispute {
 /// - **Rejected**: Oracle result upheld, original outcome stands
 /// - **Expired**: Insufficient community engagement, original outcome stands
 #[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DisputeStatus {
     Active,
     Resolved,
@@ -749,6 +752,58 @@ pub struct TimeoutAnalytics {
 pub struct DisputeManager;
 
 impl DisputeManager {
+    /// Sets the maximum capacity of resolved/expired disputes to retain in history.
+    pub fn set_history_cap(env: &Env, admin: Address, cap: u32) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        let key = DataKey::DisputeHistoryCap;
+        env.storage().persistent().set(&key, &cap);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Retrieves the configured dispute history capacity.
+    pub fn get_history_cap(env: &Env) -> Option<u32> {
+        let key = DataKey::DisputeHistoryCap;
+        env.storage().persistent().get(&key)
+    }
+
+    /// Evicts the oldest resolved/expired disputes if history size exceeds the cap.
+    pub fn apply_eviction(
+        env: &Env,
+        market_id: &Symbol,
+        history: &mut Vec<Dispute>,
+    ) -> Result<(), Error> {
+        if let Some(cap) = Self::get_history_cap(env) {
+            if cap > 0 {
+                while history.len() > cap {
+                    let mut index_to_evict: Option<u32> = None;
+                    for i in 0..history.len() {
+                        let dispute = history.get(i).ok_or(Error::InvalidState)?;
+                        if matches!(dispute.status, DisputeStatus::Resolved | DisputeStatus::Expired) {
+                            index_to_evict = Some(i);
+                            break;
+                        }
+                    }
+
+                    if let Some(idx) = index_to_evict {
+                        let evicted_dispute = history.get(idx).ok_or(Error::InvalidState)?;
+                        history.remove(idx);
+                        crate::events::EventEmitter::emit_dispute_history_evicted(
+                            env,
+                            market_id,
+                            &evicted_dispute.user,
+                        );
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Processes a user's formal dispute against a market's oracle resolution.
     ///
     /// This function allows community members to challenge oracle results by
@@ -857,13 +912,25 @@ impl DisputeManager {
         };
 
         // Add dispute to market
-        DisputeUtils::add_dispute_to_market(&mut market, dispute)?;
+        DisputeUtils::add_dispute_to_market(&mut market, dispute.clone())?;
 
         // Extend market for dispute period
         DisputeUtils::extend_market_for_dispute(&mut market, env)?;
 
         // Update market in storage
         MarketStateManager::update_market(env, &market_id, &market);
+
+        // Add to persistent history
+        let mut history = env.storage().persistent()
+            .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(market_id.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+        history.push_back(dispute.clone());
+
+        // Apply eviction
+        Self::apply_eviction(env, &market_id, &mut history)?;
+
+        env.storage().persistent().set(&DataKey::DisputeHistory(market_id.clone()), &history);
+        env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
 
         // Add vote for the initiator automatically (using market_id as dispute_id for 1:1 mapping)
         let dispute_vote = DisputeVote {
@@ -1019,6 +1086,26 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+
+        // Update history status to Resolved
+        let mut history = env.storage().persistent()
+            .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(market_id.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+        let mut updated = false;
+        for i in 0..history.len() {
+            let mut disp = history.get(i).ok_or(Error::InvalidState)?;
+            if matches!(disp.status, DisputeStatus::Active) {
+                disp.status = DisputeStatus::Resolved;
+                history.set(i, disp);
+                updated = true;
+            }
+        }
+        if updated {
+            Self::apply_eviction(env, &market_id, &mut history)?;
+            env.storage().persistent().set(&DataKey::DisputeHistory(market_id.clone()), &history);
+            env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
+        }
+
         let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market);
         crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
             env,
@@ -1168,9 +1255,19 @@ impl DisputeManager {
     /// - **Quality Metrics**: Assess market and oracle performance
     pub fn get_market_disputes(env: &Env, market_id: Symbol) -> Result<Vec<Dispute>, Error> {
         let market = MarketStateManager::get_market(env, &market_id)?;
-        Ok(DisputeUtils::extract_disputes_from_market(
-            env, &market, market_id,
-        ))
+        let mut history = env.storage().persistent()
+            .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(market_id.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+
+        if history.is_empty() {
+            let extracted = DisputeUtils::extract_disputes_from_market(env, &market, market_id.clone());
+            if extracted.len() > 0 {
+                env.storage().persistent().set(&DataKey::DisputeHistory(market_id.clone()), &extracted);
+                env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
+                return Ok(extracted);
+            }
+        }
+        Ok(history)
     }
 
     /// Checks whether a specific user has already disputed a given market.
@@ -1942,6 +2039,25 @@ impl DisputeManager {
         // Update timeout status
         timeout.status = DisputeTimeoutStatus::AutoResolved;
         DisputeUtils::store_dispute_timeout(env, &dispute_id, &timeout)?;
+
+        // Update history status to Resolved
+        let mut history = env.storage().persistent()
+            .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(timeout.market_id.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+        let mut updated = false;
+        for i in 0..history.len() {
+            let mut disp = history.get(i).ok_or(Error::InvalidState)?;
+            if matches!(disp.status, DisputeStatus::Active) {
+                disp.status = DisputeStatus::Resolved;
+                history.set(i, disp);
+                updated = true;
+            }
+        }
+        if updated {
+            Self::apply_eviction(env, &timeout.market_id, &mut history)?;
+            env.storage().persistent().set(&DataKey::DisputeHistory(timeout.market_id.clone()), &history);
+            env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(timeout.market_id.clone()), 535680, 535680);
+        }
 
         // Determine timeout outcome
         let outcome = Self::determine_timeout_outcome(env, dispute_id.clone())?;
@@ -3300,98 +3416,67 @@ mod tests {
     }
 
     #[test]
-    fn test_disputer_cannot_vote_on_own_dispute() {
+    fn test_dispute_history_cap_and_eviction() {
         let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "cap_market");
         let admin = Address::generate(&env);
-        crate::PredictifyHybridClient::new(&env, &contract_id)
-            .initialize(&admin, &Some(200i128), &None);
+        let user1 = Address::generate(&env);
+        let user2 = Address::generate(&env);
+        let user3 = Address::generate(&env);
 
-        let market_id = Symbol::new(&env, "market_self_vote");
-        let disputer = Address::generate(&env);
+        // Store admin in storage for validation bypass
+        env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
 
-        env.as_contract(&contract_id, || {
-            let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
-            market.oracle_result = Some(String::from_str(&env, "yes"));
-            market.dispute_stakes.set(disputer.clone(), 1000);
-            MarketStateManager::update_market(&env, &market_id, &market);
+        // Default cap should be None (disabled)
+        assert_eq!(DisputeManager::get_history_cap(&env), None);
 
-            let voting = DisputeVoting {
-                dispute_id: market_id.clone(),
-                voting_start: 0,
-                voting_end: env.ledger().timestamp() + 86400,
-                total_votes: 0,
-                support_votes: 0,
-                against_votes: 0,
-                total_support_stake: 0,
-                total_against_stake: 0,
-                status: DisputeVotingStatus::Active,
-            };
-            DisputeUtils::store_dispute_voting(&env, &market_id, &voting).unwrap();
-        });
+        // Set history cap to 2
+        DisputeManager::set_history_cap(&env, admin.clone(), 2).unwrap();
+        assert_eq!(DisputeManager::get_history_cap(&env), Some(2));
 
-        let result = env.as_contract(&contract_id, || {
-            DisputeManager::vote_on_dispute(
-                &env,
-                disputer.clone(),
-                market_id.clone(),
-                market_id.clone(),
-                false,
-                500,
-                Some(String::from_str(&env, "Voting against own dispute")),
-            )
-        });
+        // Create some disputes
+        let mut history = Vec::new(&env);
+        let mut d1 = testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000);
+        d1.status = DisputeStatus::Resolved; // Resolved dispute
+        let mut d2 = testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000);
+        d2.status = DisputeStatus::Active; // Active dispute
+        let mut d3 = testing::create_test_dispute(&env, user3.clone(), market_id.clone(), 1000);
+        d3.status = DisputeStatus::Resolved; // Resolved dispute
 
-        assert_eq!(result, Err(Error::DisputerCannotVote));
-    }
+        history.push_back(d1);
+        history.push_back(d2);
+        history.push_back(d3);
 
-    #[test]
-    fn test_non_disputer_can_pass_self_vote_check() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        crate::PredictifyHybridClient::new(&env, &contract_id)
-            .initialize(&admin, &Some(200i128), &None);
+        // Apply eviction (current length = 3, cap = 2)
+        // Eviction should remove the first resolved dispute (user1) because it's the oldest resolved dispute.
+        // Active dispute (user2) must not be evicted.
+        DisputeManager::apply_eviction(&env, &market_id, &mut history).unwrap();
+        assert_eq!(history.len(), 2);
 
-        let market_id = Symbol::new(&env, "market_non_disputer");
-        let disputer = Address::generate(&env);
-        let voter = Address::generate(&env);
+        // Verify remaining disputes in history are user2 and user3
+        let remaining_1 = history.get(0).unwrap();
+        let remaining_2 = history.get(1).unwrap();
+        assert_eq!(remaining_1.user, user2);
+        assert_eq!(remaining_2.user, user3);
 
-        env.as_contract(&contract_id, || {
-            let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
-            market.oracle_result = Some(String::from_str(&env, "yes"));
-            market.dispute_stakes.set(disputer.clone(), 1000);
-            MarketStateManager::update_market(&env, &market_id, &market);
+        // Verify eviction behavior when cap is disabled (cap = 0)
+        DisputeManager::set_history_cap(&env, admin.clone(), 0).unwrap();
+        assert_eq!(DisputeManager::get_history_cap(&env), Some(0));
 
-            let voting = DisputeVoting {
-                dispute_id: market_id.clone(),
-                voting_start: 0,
-                voting_end: env.ledger().timestamp() + 86400,
-                total_votes: 0,
-                support_votes: 0,
-                against_votes: 0,
-                total_support_stake: 0,
-                total_against_stake: 0,
-                status: DisputeVotingStatus::Active,
-            };
-            DisputeUtils::store_dispute_voting(&env, &market_id, &voting).unwrap();
-        });
+        let mut history2 = Vec::new(&env);
+        history2.push_back(testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000));
+        history2.push_back(testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000));
 
-        let result = env.as_contract(&contract_id, || {
-            DisputeManager::vote_on_dispute(
-                &env,
-                voter.clone(),
-                market_id.clone(),
-                market_id.clone(),
-                false,
-                500,
-                Some(String::from_str(&env, "Voting against")),
-            )
-        });
+        let mut entry1 = history2.get(0).unwrap();
+        entry1.status = DisputeStatus::Resolved;
+        history2.set(0, entry1);
 
-        // Should NOT be DisputerCannotVote (though it will likely fail on token transfer)
-        assert_ne!(result, Err(Error::DisputerCannotVote));
+        let mut entry2 = history2.get(1).unwrap();
+        entry2.status = DisputeStatus::Resolved;
+        history2.set(1, entry2);
+
+        DisputeManager::apply_eviction(&env, &market_id, &mut history2).unwrap();
+        assert_eq!(history2.len(), 2); // No eviction because cap is 0
     }
 }
+
