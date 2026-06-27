@@ -10,7 +10,7 @@
 //! - **Consistency**: Ensures that internal balances never underflow and remain consistent.
 //! - **Security**: Implements the checks-effects-interactions pattern to prevent reentrancy and double-spending.
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::reentrancy_guard::{ReentrancyGuard, GuardError as ReentrancyError};
 use crate::events::EventEmitter;
 use crate::markets::MarketUtils;

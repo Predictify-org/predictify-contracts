@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::markets::{MarketStateManager, MarketUtils};
 use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;

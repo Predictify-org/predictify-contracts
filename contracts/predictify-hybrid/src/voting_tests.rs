@@ -4,7 +4,7 @@
 //! dispute eligibility, claim dispute-window enforcement, and duplicate-vote
 //! prevention — all aligned with VOTING_SYSTEM.md.
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::{MarketState, OracleConfig, OracleProvider};
 use crate::voting::{VotingAnalytics, VotingUtils, VotingValidator};
 use crate::{PredictifyHybrid, PredictifyHybridClient};

@@ -122,7 +122,7 @@ pub enum Error {
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
     /// The dispute opener cannot vote on their own dispute.
-    DisputerCannotVote = 419,
+    DisputerCannotVote = 438,
     /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
     SweepAlreadyDone = 411,
     /// Fee arithmetic overflowed during checked platform-fee calculation.
@@ -141,7 +141,7 @@ pub enum Error {
     AdminNotSet = 418,
     /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
     /// This prevents silently inflated or deflated stakes via normalize_amount.
-    AssetDecimalsMismatch = 419,
+    AssetDecimalsMismatch = 439,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.
@@ -175,7 +175,7 @@ pub enum Error {
     /// Too many winning outcomes specified.
     TooManyWinningOutcomes = 434,
     /// The event archive has reached its maximum capacity. Prune old entries before archiving more.
-    ArchiveFull = 435,
+    ArchiveFull = 440,
     /// Category string is shorter than the minimum allowed length (when a category is set).
     CategoryTooShort = 436,
     /// Tag string is shorter than the minimum allowed length (non-empty tags only).
@@ -183,7 +183,7 @@ pub enum Error {
 
     // ===== VALIDATION ERRORS (435-437) =====
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
-    DuplicateMarketId = 435,
+    DuplicateMarketId = 441,
 
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -213,6 +213,16 @@ pub enum Error {
     /// * `Closed → Ended`     (terminal state, no transitions allowed)
     /// * `Active → Active`    (self-loops are not valid transitions)
     IllegalMarketStateTransition = 507,
+
+    // ===== ADDITIONAL ERRORS (442-445) =====
+    /// Insufficient storage rent budget; the ledger does not have enough remaining TTL.
+    InsufficientStorageRentBudget = 442,
+    /// The user has exceeded the per-user dispute stake cap for this market.
+    DisputeStakeCapExceeded = 443,
+    /// The expected predecessor WASM hash does not match the current on-chain hash.
+    UpgradeChainMismatch = 444,
+    /// A nonce override has been replayed; each override nonce may only be used once.
+    ReplayedOverride = 445,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1482,6 +1492,12 @@ impl Error {
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed for this market",
+            Error::DuplicateMarketId => "Market ID already exists in the registry",
+            Error::IllegalMarketStateTransition => "Market state transition is not permitted by the state machine",
+            Error::InsufficientStorageRentBudget => "Insufficient storage rent budget for operation",
+            Error::DisputeStakeCapExceeded => "Per-user dispute stake cap exceeded",
+            Error::UpgradeChainMismatch => "WASM hash mismatch during contract upgrade",
+            Error::ReplayedOverride => "Override nonce has already been used",
         }
     }
 
@@ -1579,6 +1595,12 @@ impl Error {
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
+            Error::DuplicateMarketId => "DUPLICATE_MARKET_ID",
+            Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
+            Error::InsufficientStorageRentBudget => "INSUFFICIENT_STORAGE_RENT_BUDGET",
+            Error::DisputeStakeCapExceeded => "DISPUTE_STAKE_CAP_EXCEEDED",
+            Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
+            Error::ReplayedOverride => "REPLAYED_OVERRIDE",
         }
     }
 }
@@ -1683,6 +1705,12 @@ mod tests {
             Error::CBError,
             Error::RateLimitExceeded,
             Error::CumulativeExtensionCapHit,
+            Error::DuplicateMarketId,
+            Error::IllegalMarketStateTransition,
+            Error::InsufficientStorageRentBudget,
+            Error::DisputeStakeCapExceeded,
+            Error::UpgradeChainMismatch,
+            Error::ReplayedOverride,
         ]
     }
 

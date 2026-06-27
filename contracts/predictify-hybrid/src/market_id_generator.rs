@@ -81,32 +81,6 @@ pub struct MarketIdGenerator;
 
         // ── Seed sealing methods ───────────────────────────────────────────────────
 
-        /// Seal the seed at contract initialization.
-        ///
-        /// This prevents any further seed regeneration after initialization,
-        /// ensuring deterministic ID generation throughout the contract's lifetime.
-        ///
-        /// # Notes
-        ///
-        /// - Should be called exactly once during contract deployment
-        /// - Sets a storage flag indicating the seed is sealed
-        /// - Using instance().set follows the existing pattern in the codebase
-        ///
-        /// # Panics
-        ///
-        /// - [`Error::InvalidState`] if attempting to re-seal an already sealed seed
-        pub fn seal_seed(env: &Env) {
-            let is_sealed = Self::is_seed_sealed(env);
-            if is_sealed {
-                panic_with_error!(env, Error::InvalidState);
-            }
-
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(env, Self::SEED_SEALED_KEY), &true);
-            Self::bump_seed_storage_ttl(env);
-        }
-
         /// Check if the seed has been sealed.
         ///
         /// Returns `true` if the seed is sealed, preventing further regeneration.
@@ -606,20 +580,6 @@ pub struct MarketIdGenerator;
         env.storage().persistent().set(&key, &counters);
     }
 
-    fn register_market_id(env: &Env, market_id: &Symbol, admin: &Address, timestamp: u64) {
-        let key = Symbol::new(env, Self::REGISTRY_KEY);
-        let mut registry: Vec<MarketIdRegistryEntry> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(Vec::new(env));
-        registry.push_back(MarketIdRegistryEntry {
-            market_id: market_id.clone(),
-            admin: admin.clone(),
-            timestamp,
-        });
-        env.storage().persistent().set(&key, &registry);
-    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

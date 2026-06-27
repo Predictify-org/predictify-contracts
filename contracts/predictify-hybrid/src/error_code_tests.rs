@@ -12,15 +12,15 @@
 use alloc::vec;
 use alloc::vec::Vec as StdVec;
 
-use crate::errors::{
+use crate::err::{
     Error, ErrorCategory, ErrorHandler, ErrorSeverity, Recoverability, RecoveryStrategy,
 };
 use soroban_sdk::{Env, Map, String};
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-fn make_ctx(env: &Env) -> crate::errors::ErrorContext {
-    crate::errors::ErrorContext {
+fn make_ctx(env: &Env) -> crate::err::ErrorContext {
+    crate::err::ErrorContext {
         operation: String::from_str(env, "test_op"),
         user_address: None,
         market_id: None,

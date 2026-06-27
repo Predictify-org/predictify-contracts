@@ -501,7 +501,7 @@ impl PredictifyHybrid {
             return Err(e);
         }
         if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
-            return Err(crate::errors::Error::CBOpen);
+            return Err(crate::err::Error::CBOpen);
         }
         balances::BalanceManager::withdraw(&env, user, asset, amount)
     }
@@ -777,6 +777,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         GasTracker::end_tracking(&env, symbol_short!("create"), gas_marker);
@@ -915,6 +916,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         let gas_marker = GasTracker::start_tracking(&env);
@@ -3813,6 +3815,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::FeeConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3857,6 +3860,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::BetLimitsUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3933,6 +3937,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -5158,6 +5163,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::StorageMigrated,
             env.current_contract_address(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5542,6 +5548,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::ErrorRecovered,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5575,6 +5582,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::PartialRefundExecuted,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -6217,6 +6225,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::ContractUpgraded,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -6259,6 +6268,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::UpgradeRolledBack,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -7207,6 +7217,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::TokenVerified,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())

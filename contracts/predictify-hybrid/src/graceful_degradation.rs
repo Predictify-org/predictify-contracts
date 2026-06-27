@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::EventEmitter;
 // use crate::oracles::{OracleInterface, ReflectorOracle};
 use crate::types::OracleProvider;

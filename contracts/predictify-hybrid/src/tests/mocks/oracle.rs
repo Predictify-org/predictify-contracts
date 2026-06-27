@@ -4,7 +4,7 @@
 //! including valid responses, invalid responses, timeouts, and malicious behavior.
 
 extern crate alloc;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::oracles::OracleInterface;
 use crate::types::*;
 use alloc::boxed::Box;

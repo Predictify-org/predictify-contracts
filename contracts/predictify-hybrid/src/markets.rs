@@ -3,7 +3,7 @@
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
 // use crate::config; // Unused import
-use crate::errors::Error;
+use crate::err::Error;
 use crate::storage::{DataKey, MARKET_CACHE_TTL_LEDGERS};
 use crate::types::*;
 // Oracle imports removed - not currently used
@@ -129,7 +129,7 @@ impl MarketCreator {
        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
         // Pre-flight check: ensure sufficient storage rent budget to prevent under-funded archives
-        let min_rent_budget = env.storage().persistent().max_ttl();
+        let min_rent_budget = env.storage().max_ttl();
         if env.ledger().sequence() + min_rent_budget > u32::MAX {
             return Err(Error::InsufficientStorageRentBudget);
         }
