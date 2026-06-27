@@ -616,15 +616,7 @@ impl ContractPauseManager {
 
     /// Pause contract operations. Caller must be the current primary admin.
     pub fn pause(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .ok_or(Error::AdminNotSet)?;
-        if admin != &stored {
-            return Err(Error::Unauthorized);
-        }
+        AdminAccessControl::require_admin_auth(env, admin)?;
         env.storage()
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &true);
@@ -640,15 +632,7 @@ impl ContractPauseManager {
 
     /// Unpause contract operations. Caller must be the current primary admin.
     pub fn unpause(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .ok_or(Error::AdminNotSet)?;
-        if admin != &stored {
-            return Err(Error::Unauthorized);
-        }
+        AdminAccessControl::require_admin_auth(env, admin)?;
         env.storage()
             .persistent()
             .set(&Symbol::new(env, CONTRACT_PAUSED_KEY), &false);
@@ -677,15 +661,7 @@ impl ContractPauseManager {
         current_admin: &Address,
         new_admin: &Address,
     ) -> Result<(), Error> {
-        current_admin.require_auth();
-        let stored: Address = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "Admin"))
-            .ok_or(Error::AdminNotSet)?;
-        if current_admin != &stored {
-            return Err(Error::Unauthorized);
-        }
+        AdminAccessControl::require_admin_auth(env, current_admin)?;
         if new_admin == current_admin {
             return Err(Error::InvalidInput);
         }
@@ -1386,6 +1362,18 @@ impl AdminManager {
         // Store in multi-admin storage
         env.storage().persistent().set(&admin_key, &assignment);
 
+        // Track admins in a list so role enumeration stays in sync.
+        let list_key = Symbol::new(env, "AdminList");
+        let mut admin_list: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&list_key)
+            .unwrap_or_else(|| Vec::new(env));
+        if !admin_list.contains(new_admin) {
+            admin_list.push_back(new_admin.clone());
+            env.storage().persistent().set(&list_key, &admin_list);
+        }
+
         // Update admin count
         let count_key = Symbol::new(env, "AdminCount");
         let current_count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
@@ -1421,6 +1409,14 @@ impl AdminManager {
         }
 
         env.storage().persistent().remove(&admin_key);
+
+        let list_key = Symbol::new(env, "AdminList");
+        if let Some(mut admin_list) = env.storage().persistent().get::<_, Vec<Address>>(&list_key) {
+            if let Some(index) = admin_list.first_index_of(admin_to_remove) {
+                admin_list.remove(index);
+                env.storage().persistent().set(&list_key, &admin_list);
+            }
+        }
 
         // Update count
         let count_key = Symbol::new(env, "AdminCount");
@@ -1566,11 +1562,9 @@ impl AdminManager {
 
     // ===== Helper Methods =====
 
-    /// Generate a proper admin storage key using the correct environment
-    fn get_admin_key(env: &Env, admin: &Address) -> Symbol {
-        // Create a unique key based on admin address
-        let key_str = alloc::format!("MultiAdmin_{:?}", admin.to_string());
-        Symbol::new(env, &key_str)
+    /// Generate a deterministic multi-admin storage key for an address.
+    fn get_admin_key(env: &Env, admin: &Address) -> String {
+        String::from_str(env, &alloc::format!("MultiAdmin_{:?}", admin.to_string()))
     }
 
     /// Check if an address is the original admin from single-admin system
@@ -3435,6 +3429,11 @@ impl AdminSystemIntegration {
 
             let admin_key = AdminManager::get_admin_key(env, &original_admin);
             env.storage().persistent().set(&admin_key, &assignment);
+            let mut admin_list = Vec::new(env);
+            admin_list.push_back(original_admin.clone());
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(env, "AdminList"), &admin_list);
             env.storage()
                 .persistent()
                 .set(&Symbol::new(env, "AdminCount"), &1u32);

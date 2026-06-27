@@ -31,7 +31,7 @@ impl TimeoutSweepSetup {
 
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         env.as_contract(&contract_id, || {
             let cfg = ConfigManager::get_development_config(&env);
@@ -230,4 +230,180 @@ fn test_market_specific_claim_period_override_used() {
         .get_balance(&setup.treasury, &ReflectorAsset::Stellar)
         .amount;
     assert_eq!(treasury_balance, 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #400)")]
+fn test_delayed_resolution_has_fresh_claim_window() {
+    let setup = TimeoutSweepSetup::new();
+
+    setup
+        .client()
+        .set_global_claim_period(&setup.admin, &100u64);
+
+    setup.set_time(setup.end_time + 10_000);
+
+    setup.env.as_contract(&setup.contract_id, || {
+        let outcomes = vec![
+            &setup.env,
+            String::from_str(&setup.env, "yes"),
+            String::from_str(&setup.env, "no"),
+        ];
+
+        let mut market = Market::new(
+            &setup.env,
+            setup.admin.clone(),
+            String::from_str(&setup.env, "Will outcome be yes?"),
+            outcomes,
+            setup.end_time,
+            OracleConfig {
+                provider: OracleProvider::reflector(),
+                oracle_address: Address::from_str(
+                    &setup.env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
+                feed_id: String::from_str(&setup.env, "TEST/YES"),
+                threshold: 1,
+                comparison: String::from_str(&setup.env, "gt"),
+            },
+            None,
+            86_400,
+            MarketState::Active,
+        );
+
+        market
+            .votes
+            .set(setup.winner_1.clone(), String::from_str(&setup.env, "yes"));
+        market.stakes.set(setup.winner_1.clone(), 1_000_000);
+        market.total_staked = 1_000_000;
+
+        setup
+            .env
+            .storage()
+            .persistent()
+            .set(&setup.market_id, &market);
+    });
+
+    setup.client().resolve_market_manual(
+        &setup.admin,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+    );
+
+    setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &true);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #411)")]
+fn test_double_sweep_rejected() {
+    // A second sweep on the same market must return SweepAlreadyDone (411).
+    let setup = TimeoutSweepSetup::new();
+
+    setup
+        .client()
+        .set_global_claim_period(&setup.admin, &100u64);
+    setup.client().set_treasury(&setup.admin, &setup.treasury);
+
+    setup.set_time(setup.end_time + 100);
+
+    // First sweep succeeds.
+    let first = setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &false);
+    assert!(first > 0);
+
+    // Second sweep must panic with #411.
+    setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &false);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #411)")]
+fn test_double_sweep_burn_rejected() {
+    // Same guard applies when burn=true.
+    let setup = TimeoutSweepSetup::new();
+
+    setup
+        .client()
+        .set_global_claim_period(&setup.admin, &100u64);
+
+    setup.set_time(setup.end_time + 100);
+
+    setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &true);
+
+    // Second call must panic.
+    setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &true);
+}
+
+#[test]
+fn test_claim_then_sweep_excludes_claimed_user() {
+    // winner_1 claims before the sweep; the swept amount must not include their payout,
+    // and the treasury must only receive the unclaimed portion.
+    let setup = TimeoutSweepSetup::new();
+
+    setup
+        .client()
+        .set_global_claim_period(&setup.admin, &100u64);
+    setup.client().set_treasury(&setup.admin, &setup.treasury);
+
+    // winner_1 claims while the window is still open.
+    setup.set_time(setup.end_time + 50);
+    setup
+        .client()
+        .claim_winnings(&setup.winner_1, &setup.market_id);
+
+    // Advance past the claim period.
+    setup.set_time(setup.end_time + 100);
+    let swept = setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &false);
+
+    // Only winner_2's share should be swept (winner_1 already claimed).
+    let treasury_balance = setup
+        .client()
+        .get_balance(&setup.treasury, &ReflectorAsset::Stellar)
+        .amount;
+    assert_eq!(treasury_balance, swept);
+
+    // Verify winner_1 is still marked claimed (their own claim, not the sweep).
+    let market = setup.client().get_market(&setup.market_id).unwrap();
+    assert!(market
+        .claimed
+        .get(setup.winner_1.clone())
+        .map(|i| i.is_claimed())
+        .unwrap_or(false));
+    assert!(market
+        .claimed
+        .get(setup.winner_2.clone())
+        .map(|i| i.is_claimed())
+        .unwrap_or(false));
+
+    // The swept flag must be set.
+    assert!(market.winnings_swept);
+}
+
+#[test]
+fn test_sweep_sets_winnings_swept_flag() {
+    // After a successful sweep the market's winnings_swept field must be true.
+    let setup = TimeoutSweepSetup::new();
+
+    setup
+        .client()
+        .set_global_claim_period(&setup.admin, &100u64);
+    setup.client().set_treasury(&setup.admin, &setup.treasury);
+    setup.set_time(setup.end_time + 100);
+
+    setup
+        .client()
+        .sweep_unclaimed_winnings(&setup.admin, &setup.market_id, &false);
+
+    let market = setup.client().get_market(&setup.market_id).unwrap();
+    assert!(market.winnings_swept);
 }

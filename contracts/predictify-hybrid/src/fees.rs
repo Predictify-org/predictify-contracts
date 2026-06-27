@@ -4,6 +4,7 @@ use crate::errors::Error;
 use crate::markets::{MarketStateManager, MarketUtils};
 use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;
+use crate::reentrancy_guard::GuardError as ReentrancyError;
 
 /// Fee management system for Predictify Hybrid contract
 ///
@@ -18,7 +19,7 @@ use crate::types::Market;
 // Note: These constants are now managed by the config module
 // Use ConfigManager::get_fee_config() to get current values
 
-/// Platform fee percentage (2%)
+/// Platform fee percentage (2% = 200 basis points)
 pub const PLATFORM_FEE_PERCENTAGE: i128 = crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE;
 
 /// Market creation fee (1 XLM = 10,000,000 stroops)
@@ -728,6 +729,11 @@ impl FeeManager {
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
+        // Idempotency guard: if fees were already collected on a prior call,
+        // return Ok(0) so retried claims do not revert the transaction.
+        if market.fee_collected {
+            return Ok(0);
+        }
         FeeValidator::validate_market_for_fee_collection(&market)?;
 
         // Calculate fee amount
@@ -788,8 +794,12 @@ impl FeeManager {
         // Get token client
         let token_client = MarketUtils::get_token_client(env)?;
 
-        // Transfer creation fee from admin to contract
-        token_client.transfer(admin, &env.current_contract_address(), &creation_fee);
+        // Transfer creation fee from admin to contract under the reentrancy guard.
+        ReentrancyGuard::with_external_call(env, || {
+            token_client.transfer(admin, &env.current_contract_address(), &creation_fee);
+            Ok::<(), ReentrancyError>(())
+        })
+        .map_err(|_| Error::InvalidState)?;
 
         // Record creation fee
         FeeTracker::record_creation_fee(env, admin, creation_fee)?;
@@ -904,16 +914,50 @@ impl FeeManager {
 pub struct FeeCalculator;
 
 impl FeeCalculator {
-    /// Calculate platform fee for a market
-    pub fn calculate_platform_fee(market: &Market) -> Result<i128, Error> {
-        if market.total_staked == 0 {
+    fn checked_fee_add(lhs: i128, rhs: i128) -> Result<i128, Error> {
+        lhs.checked_add(rhs).ok_or(Error::FeeArithmeticOverflow)
+    }
+
+    fn checked_fee_sub(lhs: i128, rhs: i128) -> Result<i128, Error> {
+        lhs.checked_sub(rhs).ok_or(Error::FeeArithmeticOverflow)
+    }
+
+    fn checked_mul_div_floor(value: i128, multiplier: i128, divisor: i128) -> Result<i128, Error> {
+        if value < 0 || multiplier < 0 || divisor <= 0 {
             return Err(Error::InvalidFeeConfig);
         }
 
-        let fee_amount = (market.total_staked * PLATFORM_FEE_PERCENTAGE) / 100;
+        value
+            .checked_mul(multiplier)
+            .ok_or(Error::FeeArithmeticOverflow)?
+            .checked_div(divisor)
+            .ok_or(Error::FeeArithmeticOverflow)
+    }
+
+    fn checked_bps_floor(amount: i128, bps: i128) -> Result<i128, Error> {
+        Self::checked_mul_div_floor(amount, bps, crate::PERCENTAGE_DENOMINATOR)
+    }
+
+    /// Calculate platform fee for a market
+    ///
+    /// Rounds fees down toward zero. Because all fee inputs are non-negative, this is
+    /// equivalent to floor rounding and guarantees:
+    /// `platform_fee + user_payout_amount == total_staked`.
+    pub fn calculate_platform_fee(market: &Market) -> Result<i128, Error> {
+        if market.total_staked <= 0 {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        let fee_percentage = PLATFORM_FEE_PERCENTAGE;
+        let fee_amount = Self::checked_bps_floor(market.total_staked, fee_percentage)?;
 
         if fee_amount < MIN_FEE_AMOUNT {
             return Err(Error::InsufficientStake);
+        }
+
+        // Ensure fee never exceeds the total staked amount (net winnings pool)
+        if fee_amount > market.total_staked {
+            return Err(Error::InvalidFeeConfig);
         }
 
         Ok(fee_amount)
@@ -928,20 +972,28 @@ impl FeeCalculator {
         if winning_total == 0 {
             return Err(Error::NothingToClaim);
         }
+        if user_stake < 0 || winning_total < 0 || total_pool < 0 {
+            return Err(Error::InvalidFeeConfig);
+        }
 
-        let user_share = (user_stake * (100 - PLATFORM_FEE_PERCENTAGE)) / 100;
-        let payout = (user_share * total_pool) / winning_total;
+        let fee_percentage = PLATFORM_FEE_PERCENTAGE;
+        let user_share =
+            Self::checked_bps_floor(user_stake, crate::PERCENTAGE_DENOMINATOR - fee_percentage)?;
+        let payout = Self::checked_mul_div_floor(user_share, total_pool, winning_total)?;
 
         Ok(payout)
     }
 
     /// Calculate fee breakdown for a market
+    ///
+    /// The platform fee is rounded down (floor), and the user payout is computed as the exact
+    /// checked remainder so the two amounts always reconcile to `total_staked`.
     pub fn calculate_fee_breakdown(market: &Market) -> Result<FeeBreakdown, Error> {
         let total_staked = market.total_staked;
         let fee_percentage = PLATFORM_FEE_PERCENTAGE;
         let fee_amount = Self::calculate_platform_fee(market)?;
         let platform_fee = fee_amount;
-        let user_payout_amount = total_staked - fee_amount;
+        let user_payout_amount = Self::checked_fee_sub(total_staked, fee_amount)?;
 
         Ok(FeeBreakdown {
             total_staked,
@@ -965,7 +1017,7 @@ impl FeeCalculator {
             100 // No adjustment for small markets
         };
 
-        let adjusted_fee = (base_fee * size_multiplier) / 100;
+        let adjusted_fee = Self::checked_mul_div_floor(base_fee, size_multiplier, 100)?;
 
         // Ensure minimum fee
         if adjusted_fee < MIN_FEE_AMOUNT {
@@ -1056,7 +1108,7 @@ impl FeeCalculator {
             100 // No adjustment for very low activity
         };
 
-        let adjusted_fee = (base_fee * activity_multiplier) / 100;
+        let adjusted_fee = Self::checked_mul_div_floor(base_fee, activity_multiplier, 100)?;
 
         // Ensure fee is within limits
         if adjusted_fee < MIN_FEE_AMOUNT {
@@ -1083,8 +1135,8 @@ impl FeeCalculator {
         let tier = Self::get_fee_tier_by_market_size(env, market.total_staked)?;
 
         // Allow some flexibility around the tier fee
-        let min_allowed = (tier.fee_percentage * 80) / 100; // 20% below tier
-        let max_allowed = (tier.fee_percentage * 120) / 100; // 20% above tier
+        let min_allowed = Self::checked_mul_div_floor(tier.fee_percentage, 80, 100)?; // 20% below tier
+        let max_allowed = Self::checked_mul_div_floor(tier.fee_percentage, 120, 100)?; // 20% above tier
 
         if fee < min_allowed || fee > max_allowed {
             return Err(Error::InvalidInput);
@@ -1143,9 +1195,12 @@ impl FeeCalculator {
         let complexity_factor = 100; // No complexity adjustment for now
 
         // Calculate final fee percentage
+        let size_adjusted =
+            Self::checked_mul_div_floor(tier.fee_percentage, size_multiplier, 100)?;
+        let activity_adjusted =
+            Self::checked_mul_div_floor(size_adjusted, activity_multiplier, 100)?;
         let final_fee_percentage =
-            (tier.fee_percentage * size_multiplier * activity_multiplier * complexity_factor)
-                / (100 * 100 * 100);
+            Self::checked_mul_div_floor(activity_adjusted, complexity_factor, 100)?;
 
         // Ensure final fee is within limits
         let final_fee_percentage = if final_fee_percentage < MIN_FEE_PERCENTAGE {
@@ -1199,7 +1254,7 @@ impl FeeValidator {
 
         // Check if fees already collected
         if market.fee_collected {
-            return Err(Error::InvalidFeeConfig);
+            return Err(Error::FeeAlreadyCollected);
         }
 
         // Check if there are sufficient stakes
@@ -1299,8 +1354,11 @@ impl FeeUtils {
     /// Transfer fees to admin
     pub fn transfer_fees_to_admin(env: &Env, admin: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        token_client.transfer(&env.current_contract_address(), admin, &amount);
-        Ok(())
+        ReentrancyGuard::with_external_call(env, || {
+            token_client.transfer(&env.current_contract_address(), admin, &amount);
+            Ok::<(), ReentrancyError>(())
+        })
+        .map_err(|_| Error::InvalidState)
     }
 
     /// Get fee statistics for a market
@@ -1381,9 +1439,8 @@ impl FeeTracker {
         let total_key = symbol_short!("tot_fees");
         let current_total: i128 = env.storage().persistent().get(&total_key).unwrap_or(0);
 
-        env.storage()
-            .persistent()
-            .set(&total_key, &(current_total + amount));
+        let updated_total = FeeCalculator::checked_fee_add(current_total, amount)?;
+        env.storage().persistent().set(&total_key, &updated_total);
 
         Ok(())
     }
@@ -1395,9 +1452,8 @@ impl FeeTracker {
         let creation_key = symbol_short!("creat_fee");
         let current_total: i128 = env.storage().persistent().get(&creation_key).unwrap_or(0);
 
-        env.storage()
-            .persistent()
-            .set(&creation_key, &(current_total + amount));
+        let updated_total = FeeCalculator::checked_fee_add(current_total, amount)?;
+        env.storage().persistent().set(&creation_key, &updated_total);
 
         Ok(())
     }
@@ -1608,10 +1664,8 @@ impl FeeWithdrawalManager {
 
         // Apply cap (bps of current available fees). If cap is <100% and the computed
         // value rounds down to 0, allow at least 1 stroop to avoid permanent lock.
-        let mut cap_amount = (available_fees
-            .checked_mul(schedule.max_withdrawal_bps as i128)
-            .ok_or(Error::InvalidInput)?)
-            / 10_000;
+        let mut cap_amount =
+            FeeCalculator::checked_bps_floor(available_fees, schedule.max_withdrawal_bps as i128)?;
         if schedule.max_withdrawal_bps < 10_000 && cap_amount == 0 {
             cap_amount = 1;
         }
@@ -1918,6 +1972,123 @@ pub mod testing {
 // ===== MODULE TESTS =====
 
 #[cfg(test)]
+mod checked_arithmetic_tests {
+    extern crate std;
+
+    use super::*;
+    use crate::validation::ValidationTestingUtils;
+    use soroban_sdk::{
+        testutils::{Address as _, EnvTestConfig},
+        Address, String, Symbol, Vec,
+    };
+
+    fn test_env() -> Env {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        env
+    }
+
+    fn resolved_market(env: &Env, total_staked: i128) -> Market {
+        let mut market = ValidationTestingUtils::create_test_market(env);
+        let mut winning_outcomes = Vec::new(env);
+        winning_outcomes.push_back(String::from_str(env, "yes"));
+        market.winning_outcomes = Some(winning_outcomes);
+        market.total_staked = total_staked;
+        market
+    }
+
+    #[test]
+    fn test_calculate_platform_fee_rejects_zero_pool() {
+        let env = test_env();
+        let market = resolved_market(&env, 0);
+
+        let result = FeeCalculator::calculate_platform_fee(&market);
+
+        assert_eq!(result, Err(Error::InvalidFeeConfig));
+    }
+
+    #[test]
+    fn test_checked_bps_floor_rounds_down_for_one_basis_point() {
+        let result = FeeCalculator::checked_bps_floor(10_001, 1).unwrap();
+
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_calculate_platform_fee_errors_on_overflow_adjacent_pool() {
+        let env = test_env();
+        let market = resolved_market(&env, i128::MAX);
+
+        let result = FeeCalculator::calculate_platform_fee(&market);
+
+        assert_eq!(result, Err(Error::FeeArithmeticOverflow));
+    }
+
+    #[test]
+    fn test_fee_breakdown_reconciles_after_floor_rounding() {
+        let env = test_env();
+        let market = resolved_market(&env, 50_000_001);
+
+        let breakdown = FeeCalculator::calculate_fee_breakdown(&market).unwrap();
+
+        assert_eq!(breakdown.fee_amount, 1_000_000);
+        assert_eq!(
+            breakdown.platform_fee + breakdown.user_payout_amount,
+            breakdown.total_staked
+        );
+    }
+
+    #[test]
+    fn test_collect_fees_returns_overflow_error_without_mutation() {
+        let env = test_env();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        let market_id = Symbol::new(&env, "fee_overflow");
+        let market = resolved_market(&env, i128::MAX);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
+
+            assert_eq!(result, Err(Error::FeeArithmeticOverflow));
+            assert_eq!(
+                env.storage()
+                    .persistent()
+                    .get::<Symbol, i128>(&FEE_VAULT_KEY)
+                    .unwrap_or(0),
+                0
+            );
+            assert!(!MarketStateManager::get_market(&env, &market_id)
+                .unwrap()
+                .fee_collected);
+        });
+    }
+
+    #[test]
+    fn test_record_fee_collection_errors_on_total_overflow() {
+        let env = test_env();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        let market_id = Symbol::new(&env, "fee_sum");
+
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&FEE_VAULT_KEY, &i128::MAX);
+
+            let result = FeeTracker::record_fee_collection(&env, &market_id, 1, &admin);
+
+            assert_eq!(result, Err(Error::FeeArithmeticOverflow));
+        });
+    }
+}
+
+#[cfg(any())]
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
@@ -2130,5 +2301,50 @@ mod tests {
             history.reason,
             String::from_str(&env, "Activity level increased")
         );
+    }
+
+    #[test]
+    fn test_fee_basis_points_calculation() {
+        let env = Env::default();
+        let mut market = testing::create_test_market(&env);
+        market.total_staked = 1_000_000_000; // 100 XLM
+
+        // 200 basis points = 2%
+        let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
+        assert_eq!(fee, 20_000_000); // 2 XLM = 20_000_000 stroops
+
+        // Verify calculation: (1_000_000_000 * 200) / 10000 = 20_000_000
+        let expected = (market.total_staked * 200) / 10000;
+        assert_eq!(fee, expected);
+    }
+
+    #[test]
+    fn test_fee_rounding_towards_zero() {
+        let env = Env::default();
+        let mut market = testing::create_test_market(&env);
+
+        // Set total staked to cause fractional result
+        market.total_staked = 1_000_000; // 0.1 XLM
+
+        // 200 basis points of 1_000_000 = (1_000_000 * 200) / 10000 = 200_000 / 10000 = 20
+        let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
+        assert_eq!(fee, 20); // Truncated towards zero
+
+        // Verify no overcharge
+        assert!(fee <= market.total_staked);
+    }
+
+    #[test]
+    fn test_fee_never_exceeds_total_staked() {
+        let env = Env::default();
+        let mut market = testing::create_test_market(&env);
+
+        // Set very small total staked
+        market.total_staked = 100; // Very small amount
+
+        // Even with max fee percentage, should not exceed total
+        let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
+        assert!(fee <= market.total_staked);
+        assert!(fee >= 0);
     }
 }

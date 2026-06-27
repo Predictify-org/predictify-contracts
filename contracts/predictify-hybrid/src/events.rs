@@ -1887,6 +1887,18 @@ impl EventSchemaRegistry {
 
 // ===== EVENT EMISSION UTILITIES =====
 
+/// Emitted when an admin manually overrides an oracle-verified market result.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOverrideEvent {
+    pub market_id: Symbol,
+    pub admin: Address,
+    pub old_result: String,
+    pub new_result: String,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
 /// Event emission utilities
 pub struct EventEmitter;
 
@@ -4425,5 +4437,60 @@ mod event_schema_registry_tests {
                 &env, &market_id, &disputer, 50_000_000, None,
             );
         });
+impl EventEmitter {
+    /// Emit oracle callback event for oracle data updates
+    pub fn emit_oracle_callback(
+        env: &Env,
+        oracle_address: &Address,
+        feed_id: &String,
+        price: i128,
+        timestamp: u64,
+    ) {
+        env.events().publish(
+            (
+                Symbol::new(env, "oracle_callback"),
+                oracle_address,
+                feed_id,
+                price,
+                timestamp,
+            ),
+            (),
+        );
+    }
+
+    /// Emit security event for monitoring and audit
+    pub fn emit_security_event(env: &Env, actor: &Address, message: &String) {
+        env.events().publish(
+            (
+                Symbol::new(env, "security_event"),
+                actor,
+                message,
+                env.ledger().timestamp(),
+            ),
+            (),
+        );
+    }
+
+    /// Emit admin override event when an admin manually overrides an oracle-verified result.
+    pub fn emit_admin_override(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        old_result: &String,
+        new_result: &String,
+        reason: &String,
+    ) {
+        let event = AdminOverrideEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            old_result: old_result.clone(),
+            new_result: new_result.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("adm_ovrd"), &event);
+        env.events()
+            .publish((symbol_short!("adm_ovrd"), market_id.clone()), event);
     }
 }

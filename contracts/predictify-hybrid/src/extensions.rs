@@ -566,24 +566,50 @@ impl ExtensionValidator {
         additional_days: u32,
     ) -> Result<(), Error> {
         // Validate additional days
-        if additional_days < MIN_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+        if additional_days == 0 {
+            return Err(Error::InvalidDuration);
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+            return Err(Error::InvalidDuration);
         }
 
-        // Get market and validate state
+        // Get market and validate state.
+        // Extension is only permitted while the market is Active. Any terminal
+        // or post-resolution state (Resolved, Closed, Cancelled, Ended) must be
+        // rejected to prevent lifecycle corruption.
         let market = MarketStateManager::get_market(env, market_id)?;
 
-        // Check if market is still active
-        let current_time = env.ledger().timestamp();
-        if current_time >= market.end_time {
-            return Err(Error::MarketClosed);
+        match market.state {
+            MarketState::Resolved | MarketState::Closed | MarketState::Cancelled => {
+                return Err(Error::ExtensionDenied);
+            }
+            MarketState::Ended => {
+                return Err(Error::ExtensionDenied);
+            }
+            MarketState::Active => {}
+            MarketState::Disputed => {
+                return Err(Error::ExtensionDenied);
+            }
         }
 
-        // Check if market is already resolved
+        let current_time = env.ledger().timestamp();
+
+        // Reject if the market has already passed its end time.
+        if current_time >= market.end_time {
+            return Err(Error::ExtensionDenied);
+        }
+
+        // Reject if the resulting deadline would still be in the past or present.
+        // This guards against edge cases where end_time is very close to now.
+        let new_end_time = market
+            .end_time
+            .saturating_add((additional_days as u64) * 24 * 60 * 60);
+        if new_end_time <= current_time {
+            return Err(Error::ExtensionDenied);
+        }
+
+        // Reject if oracle has already produced a result (market is effectively resolved).
         if market.oracle_result.is_some() {
             return Err(Error::MarketResolved);
         }
@@ -600,13 +626,17 @@ impl ExtensionValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Check total extension days limit
-        if market.total_extension_days + additional_days > market.max_extension_days {
-            return Err(Error::InvalidInput);
+        let new_total_extension_days = market
+            .total_extension_days
+            .checked_add(additional_days)
+            .ok_or(Error::InvalidDuration)?;
+        if new_total_extension_days > market.max_extension_days {
+            return Err(Error::InvalidDuration);
         }
 
         // Check number of extensions limit
-        if (market.extension_history.len() as usize) >= (MAX_TOTAL_EXTENSIONS as usize) {
-            return Err(Error::InvalidInput);
+        if market.extension_history.len() >= MAX_TOTAL_EXTENSIONS {
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())
@@ -761,14 +791,14 @@ mod tests {
             assert_eq!(
                 ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
                     .unwrap_err(),
-                Error::InvalidInput
+                Error::InvalidDuration
             );
         });
 
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
                 .unwrap_err(),
-            Error::InvalidInput
+            Error::InvalidDuration
         );
     }
 

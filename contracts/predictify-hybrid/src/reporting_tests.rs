@@ -12,7 +12,7 @@ fn test_get_active_events_pagination() {
     let admin = Address::generate(&env);
     
     // Initialize contract
-    PredictifyHybrid::initialize(env.clone(), admin.clone(), None);
+    PredictifyHybrid::initialize(env.clone(), admin.clone(), None, None).unwrap();
     
     // Create some markets
     let q1 = String::from_str(&env, "Question 1");
@@ -78,7 +78,7 @@ fn test_get_platform_stats() {
     let admin = Address::generate(&env);
     
     // Initialize contract
-    PredictifyHybrid::initialize(env.clone(), admin.clone(), None);
+    PredictifyHybrid::initialize(env.clone(), admin.clone(), None, None).unwrap();
     
     // Create a market
     let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
@@ -114,7 +114,7 @@ fn test_get_event_snapshot() {
     let admin = Address::generate(&env);
     
     // Initialize contract
-    PredictifyHybrid::initialize(env.clone(), admin.clone(), None);
+    PredictifyHybrid::initialize(env.clone(), admin.clone(), None, None).unwrap();
     
     let question = String::from_str(&env, "Snapshot Question");
     let outcomes = vec![&env, String::from_str(&env, "A"), String::from_str(&env, "B")];

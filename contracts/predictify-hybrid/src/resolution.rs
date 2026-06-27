@@ -1,6 +1,8 @@
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
+use crate::bets::BetStorage;
 use crate::errors::Error;
+use alloc::string::ToString;
 
 use crate::markets::{CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils};
 
@@ -503,6 +505,121 @@ pub enum ResolutionMethod {
     DisputeResolution,
 }
 
+/// Precomputed payout totals persisted at resolution time (O(1) reads on claim/distribute).
+///
+/// Built once when winning outcomes are set; invalidated when outcomes or pool change.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedOutcomeSummary {
+    /// Sum of winning-side stakes (votes + bets, deduplicated).
+    pub winning_total: i128,
+    /// Total market pool at resolution (`market.total_staked`).
+    pub total_pool: i128,
+    /// Number of winning outcomes (tie split divisor).
+    pub num_winning_outcomes: u32,
+}
+
+/// Storage-backed cache for resolved market payout math.
+///
+/// Time: O(V + B) once at `refresh`; O(1) on payout paths.
+/// Space: O(1) per market (single summary struct).
+pub struct ResolutionOutcomeCache;
+
+impl ResolutionOutcomeCache {
+    fn storage_key(market_id: &Symbol) -> (Symbol, Symbol) {
+        (symbol_short!("res_out"), market_id.clone())
+    }
+
+    /// Remove cached summary (e.g. before outcome override).
+    pub fn invalidate(env: &Env, market_id: &Symbol) {
+        env.storage()
+            .persistent()
+            .remove(&Self::storage_key(market_id));
+    }
+
+    /// Compute winning total with explicit `market_id` (bet registry key).
+    pub fn compute_winning_total_for_market(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+        winning_outcomes: &Vec<String>,
+    ) -> Result<i128, Error> {
+        let mut winning_total: i128 = 0;
+
+        for (voter, outcome) in market.votes.iter() {
+            if winning_outcomes.contains(&outcome) {
+                winning_total = winning_total
+                    .checked_add(market.stakes.get(voter.clone()).unwrap_or(0))
+                    .ok_or(Error::InvalidInput)?;
+            }
+        }
+
+        let bettors = BetStorage::get_all_bets_for_market(env, market_id);
+        for user in bettors.iter() {
+            if market.votes.contains_key(user.clone()) {
+                continue;
+            }
+            if let Some(bet) = BetStorage::get_bet(env, market_id, &user) {
+                if winning_outcomes.contains(&bet.outcome) {
+                    winning_total = winning_total
+                        .checked_add(bet.amount)
+                        .ok_or(Error::InvalidInput)?;
+                }
+            }
+        }
+
+        Ok(winning_total)
+    }
+
+    /// Recompute and persist summary after resolution or outcome change.
+    pub fn refresh(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
+        let winning_outcomes = market
+            .winning_outcomes
+            .as_ref()
+            .ok_or(Error::MarketNotResolved)?;
+
+        let winning_total =
+            Self::compute_winning_total_for_market(env, market_id, market, winning_outcomes)?;
+
+        let summary = ResolvedOutcomeSummary {
+            winning_total,
+            total_pool: market.total_staked,
+            num_winning_outcomes: winning_outcomes.len(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&Self::storage_key(market_id), &summary);
+
+        Ok(())
+    }
+
+    pub fn get(env: &Env, market_id: &Symbol) -> Option<ResolvedOutcomeSummary> {
+        env.storage()
+            .persistent()
+            .get(&Self::storage_key(market_id))
+    }
+
+    /// Return cached summary or refresh if missing/stale.
+    pub fn require(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<ResolvedOutcomeSummary, Error> {
+        if let (Some(summary), Some(ref outcomes)) =
+            (Self::get(env, market_id), &market.winning_outcomes)
+        {
+            if summary.total_pool == market.total_staked
+                && summary.num_winning_outcomes == outcomes.len()
+            {
+                return Ok(summary);
+            }
+        }
+        Self::refresh(env, market_id, market)?;
+        Self::get(env, market_id).ok_or(Error::MarketNotResolved)
+    }
+}
+
 /// Comprehensive analytics and metrics for resolution system performance.
 ///
 /// This structure tracks detailed statistics about the resolution system's
@@ -970,36 +1087,26 @@ impl OracleResolutionManager {
         Ok((price_data.price, outcome))
     }
 
-    /// Fetch oracle result for a market with fallback support and timeout
+    /// Fetch oracle result for a market with deterministic fallback ordering and timeout handling.
+    ///
+    /// The resolver attempts the primary oracle once. When `has_fallback` is `true`, it attempts the
+    /// fallback oracle once only after that primary failure. No oracle calls are made once
+    /// `ledger.timestamp() >= end_time + resolution_timeout`.
     pub fn fetch_oracle_result(env: &Env, market_id: &Symbol) -> Result<OracleResolution, Error> {
         // Get the market from storage
         let mut market = MarketStateManager::get_market(env, market_id)?;
 
-        // 1. Check if resolution timeout has been reached
+        // 1. Check if resolution timeout has been reached.
+        //
+        // Safety invariant: a market with an active dispute must NOT be cancelled by the
+        // oracle resolution timeout.  Cancelling while a dispute is open would permanently
+        // lock the dispute stakes and leave the market in an unresolvable state (deadlock).
+        // Instead we surface `ResolutionTimeoutReached` so the caller knows the oracle path
+        // is closed while the dispute process remains the authoritative resolution path.
         let current_time = env.ledger().timestamp();
-        if current_time > market.end_time + market.resolution_timeout {
-            // Reached timeout without resolution, mark for refund
-            let old_state = market.state.clone();
-            market.state = crate::types::MarketState::Cancelled;
-            MarketStateManager::update_market(env, market_id, &market);
-
+        if current_time >= market.end_time.saturating_add(market.resolution_timeout) {
             crate::events::EventEmitter::emit_resolution_timeout(env, market_id, current_time);
-            crate::events::EventEmitter::emit_state_change_event(
-                env,
-                market_id,
-                &old_state,
-                &crate::types::MarketState::Cancelled,
-                &soroban_sdk::String::from_str(env, "Resolution timeout reached, market cancelled"),
-            );
-            crate::monitoring::ContractMonitor::emit_resolution_transition_hook(
-                env,
-                market_id,
-                &old_state,
-                &crate::types::MarketState::Cancelled,
-                &soroban_sdk::String::from_str(env, "timeout_cancelled"),
-            );
-
-            return Err(Error::InvalidState);
+            return Err(Error::ResolutionTimeoutReached);
         }
 
         // Validate market for oracle resolution
@@ -1026,9 +1133,27 @@ impl OracleResolutionManager {
                             used_config = fallback_config.clone();
                             res
                         }
-                        Err(_) => return Err(Error::OracleUnavailable),
+                        Err(_) => {
+                            crate::events::EventEmitter::emit_manual_resolution_required(
+                                env,
+                                market_id,
+                                &soroban_sdk::String::from_str(
+                                    env,
+                                    "oracle_resolution_failed_primary_then_fallback",
+                                ),
+                            );
+                            return Err(Error::FallbackOracleUnavailable);
+                        }
                     }
                 } else {
+                    crate::events::EventEmitter::emit_manual_resolution_required(
+                        env,
+                        market_id,
+                        &soroban_sdk::String::from_str(
+                            env,
+                            "oracle_resolution_failed_primary_only",
+                        ),
+                    );
                     return Err(Error::OracleUnavailable);
                 }
             }
@@ -1343,9 +1468,15 @@ impl MarketResolutionManager {
 
         // For resolution record, use first outcome (or comma-separated for display)
         let final_result = if winning_outcomes.len() > 0 {
-            winning_outcomes.get(0).unwrap().clone()
+            if winning_outcomes.len() == 1 {
+                winning_outcomes.get(0).unwrap().clone()
+            } else {
+                // For ties, just use the first outcome for the final result field
+                // The full list is stored in winning_outcomes
+                winning_outcomes.get(0).unwrap().clone()
+            }
         } else {
-            oracle_result.clone() // Fallback
+            oracle_result.clone()
         };
 
         // Determine resolution method
@@ -1382,6 +1513,7 @@ impl MarketResolutionManager {
             Some(market_id),
         );
         MarketStateManager::update_market(env, market_id, &market);
+        ResolutionOutcomeCache::refresh(env, market_id, &market)?;
 
         // Decrement active event count since the event is resolved
         crate::storage::CreatorLimitsManager::decrement_active_events(env, &market.admin);
@@ -1465,6 +1597,7 @@ impl MarketResolutionManager {
         winning_outcomes.push_back(outcome.clone());
         MarketStateManager::set_winning_outcomes(&mut market, winning_outcomes, Some(market_id));
         MarketStateManager::update_market(env, market_id, &market);
+        ResolutionOutcomeCache::refresh(env, market_id, &market)?;
 
         // Decrement active event count since the event is manually finalized
         crate::storage::CreatorLimitsManager::decrement_active_events(env, &market.admin);
@@ -1567,8 +1700,20 @@ impl MarketResolutionValidator {
             .get(&Symbol::new(env, "global_min_pool"))
             .unwrap_or(0);
         let min_pool = market.min_pool_size.unwrap_or(global_min);
-        if min_pool > 0 && market.total_staked < min_pool {
-            return Err(Error::InvalidState);
+        
+        // Only check if min pool is set
+        if min_pool > 0 {
+            // Get token decimals to normalize amounts for comparison
+            let token_client = crate::markets::MarketUtils::get_token_client(env)?;
+            let token_decimals = token_client.decimals() as u32;
+            
+            // Normalize both total staked and min pool to canonical scale for comparison
+            let normalized_total = crate::tokens::normalize_amount(market.total_staked, token_decimals);
+            let normalized_min = crate::tokens::normalize_amount(min_pool, token_decimals);
+            
+            if normalized_total < normalized_min {
+                return Err(Error::InvalidState);
+            }
         }
 
         Ok(())
@@ -2076,10 +2221,7 @@ impl OracleCallbackResolver {
         market_id: &Symbol,
     ) -> Result<(), Error> {
         // Get market state manager
-        let market_manager = MarketStateManager::from_env(env);
-
-        // Get market
-        let market = market_manager.get_market(market_id)?;
+        let market = MarketStateManager::get_market(env, market_id)?;
 
         // Validate market is ready for resolution
         OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
@@ -2087,13 +2229,16 @@ impl OracleCallbackResolver {
         // Determine outcome based on oracle data
         let outcome = Self::determine_outcome_from_oracle_data(callback_data, &market)?;
 
-        // Create oracle resolution
+        // Create oracle resolution with all required fields
         let resolution = OracleResolution {
+            market_id: market_id.clone(),
+            feed_id: callback_data.feed_id.clone(),
+            comparison: String::from_str(env, "eq"),
+            provider: market.oracle_config.provider.clone(),
             price: callback_data.price,
             timestamp: callback_data.timestamp,
             oracle_result: outcome.clone(),
-            confidence: None,
-            threshold: 0, // Not applicable for direct oracle resolution
+            threshold: market.oracle_config.threshold,
         };
 
         // Validate resolution
@@ -2102,18 +2247,20 @@ impl OracleCallbackResolver {
         // Update market with oracle resolution
         let mut updated_market = market;
         updated_market.oracle_result = Some(outcome.clone());
-        updated_market.oracle_resolution_time = Some(callback_data.timestamp);
 
         // Store updated market
-        market_manager.update_market(market_id, &updated_market)?;
+        MarketStateManager::update_market(env, market_id, &updated_market);
 
         // Emit resolution event
         crate::events::EventEmitter::emit_oracle_result(
             env,
             market_id,
             &outcome,
+            &String::from_str(env, "direct"),
+            &String::from_str(env, "callback"),
             callback_data.price,
-            callback_data.timestamp,
+            0,
+            &String::from_str(env, "eq"),
         );
 
         Ok(())
@@ -2133,14 +2280,14 @@ impl OracleCallbackResolver {
     ) -> Result<String, Error> {
         // For binary markets (yes/no), determine outcome based on price comparison
         if market.outcomes.len() == 2 {
-            let (yes_outcome, no_outcome) = if market
-                .outcomes
-                .get(0)
-                .unwrap()
-                .to_string()
-                .to_lowercase()
-                .contains("yes")
-            {
+            let first_outcome = market.outcomes.get(0).unwrap();
+            let yes_bytes = first_outcome.to_bytes();
+            let first_is_yes = yes_bytes.len() == 3
+                && yes_bytes.get(0).unwrap_or(0) == 'y' as u8
+                && yes_bytes.get(1).unwrap_or(0) == 'e' as u8
+                && yes_bytes.get(2).unwrap_or(0) == 's' as u8;
+
+            let (yes_outcome, no_outcome) = if first_is_yes {
                 (
                     market.outcomes.get(0).unwrap(),
                     market.outcomes.get(1).unwrap(),
@@ -2152,8 +2299,6 @@ impl OracleCallbackResolver {
                 )
             };
 
-            // Compare oracle price with threshold (assuming threshold is stored in oracle config)
-            // For now, we'll use a simple comparison: price > 0 means "yes"
             if callback_data.price > 0 {
                 Ok(yes_outcome.clone())
             } else {
@@ -2161,7 +2306,8 @@ impl OracleCallbackResolver {
             }
         } else {
             // For multi-outcome markets, use price modulo number of outcomes
-            let outcome_index = (callback_data.price.abs() as usize) % market.outcomes.len();
+            let num_outcomes = market.outcomes.len() as u32;
+            let outcome_index = (callback_data.price.abs() as u32) % num_outcomes;
             Ok(market.outcomes.get(outcome_index).unwrap().clone())
         }
     }
@@ -2183,16 +2329,126 @@ impl OracleCallbackResolver {
     ) -> Result<(), Error> {
         // Check if caller is authorized oracle
         let whitelist = crate::oracles::OracleWhitelist::from_env(env);
-        if !whitelist.is_oracle_authorized(caller)? {
+        if !crate::oracles::OracleWhitelist::is_oracle_authorized(env, caller)? {
             return Err(Error::OracleCallbackUnauthorized);
         }
 
         // Check if market exists and is ready for oracle resolution
-        let market_manager = MarketStateManager::from_env(env);
-        let market = market_manager.get_market(market_id)?;
+        let market = MarketStateManager::get_market(env, market_id)?;
 
         OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod resolution_outcome_cache_tests {
+    use super::*;
+    use crate::markets::MarketStateManager;
+    use crate::PredictifyHybrid;
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Address, Env, String};
+
+    fn sample_market(env: &Env, contract_id: &Address, admin: &Address) -> (Symbol, Market) {
+        let market_id = Symbol::new(env, "cache_mkt");
+        let mut market = Market::new(
+            env,
+            admin.clone(),
+            String::from_str(env, "Test?"),
+            soroban_sdk::vec![
+                env,
+                String::from_str(env, "yes"),
+                String::from_str(env, "no"),
+            ],
+            env.ledger().timestamp() + 3600,
+            OracleConfig {
+                provider: OracleProvider::pyth(),
+                oracle_address: Address::generate(env),
+                feed_id: String::from_str(env, "BTC/USD"),
+                threshold: 1,
+                comparison: String::from_str(env, "gt"),
+            },
+            None,
+            3600,
+            MarketState::Active,
+        );
+        let user = Address::generate(env);
+        let yes = String::from_str(env, "yes");
+        market.votes.set(user.clone(), yes.clone());
+        market.stakes.set(user, 100);
+        market.total_staked = 100;
+        let mut winning = Vec::new(env);
+        winning.push_back(yes);
+        market.winning_outcomes = Some(winning);
+        env.as_contract(contract_id, || {
+            MarketStateManager::update_market(env, &market_id, &market);
+        });
+        (market_id, market)
+    }
+
+    #[test]
+    fn cache_persists_and_is_read_by_require() {
+        let env = Env::default();
+        let contract_id = env.register(PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let (market_id, market) = sample_market(&env, &contract_id, &admin);
+            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
+            let summary = ResolutionOutcomeCache::require(&env, &market_id, &market).unwrap();
+            assert_eq!(summary.winning_total, 100);
+            assert_eq!(summary.total_pool, 100);
+            assert_eq!(summary.num_winning_outcomes, 1);
+        });
+    }
+
+    #[test]
+    fn cache_recomputes_after_outcome_override() {
+        let env = Env::default();
+        let contract_id = env.register(PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let (market_id, mut market) = sample_market(&env, &contract_id, &admin);
+            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
+
+            let user2 = Address::generate(&env);
+            let no = String::from_str(&env, "no");
+            market.votes.set(user2.clone(), no.clone());
+            market.stakes.set(user2, 200);
+            market.total_staked = 300;
+            let mut winning = Vec::new(&env);
+            winning.push_back(no);
+            market.winning_outcomes = Some(winning);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            ResolutionOutcomeCache::invalidate(&env, &market_id);
+            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
+
+            let summary = ResolutionOutcomeCache::get(&env, &market_id).unwrap();
+            assert_eq!(summary.winning_total, 200);
+            assert_eq!(summary.total_pool, 300);
+        });
+    }
+
+    /// Issue #547: cached `winning_total` must match a fresh O(V+B) scan (payout path invariant).
+    #[test]
+    fn cached_winning_total_matches_recompute() {
+        let env = Env::default();
+        let contract_id = env.register(PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            let (market_id, market) = sample_market(&env, &contract_id, &admin);
+            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
+            let summary = ResolutionOutcomeCache::require(&env, &market_id, &market).unwrap();
+            let winning_outcomes = market.winning_outcomes.as_ref().unwrap();
+            let recomputed = ResolutionOutcomeCache::compute_winning_total_for_market(
+                &env,
+                &market_id,
+                &market,
+                winning_outcomes,
+            )
+            .unwrap();
+            assert_eq!(summary.winning_total, recomputed);
+        });
     }
 }

@@ -316,6 +316,11 @@ impl VotingManager {
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         VotingValidator::validate_market_for_voting(env, &market)?;
 
+        // Reject duplicate votes
+        if market.votes.contains_key(user.clone()) {
+            return Err(Error::AlreadyVoted);
+        }
+
         // Validate vote parameters
         VotingValidator::validate_vote_parameters(env, &outcome, &market.outcomes, stake)?;
 
@@ -917,15 +922,22 @@ impl VotingValidator {
 
     /// Validate market state for voting
     pub fn validate_market_for_voting(env: &Env, market: &Market) -> Result<(), Error> {
-        // Check if market is active
-        let current_time = env.ledger().timestamp();
-        if current_time >= market.end_time {
-            return Err(Error::MarketClosed);
+        use crate::types::MarketState;
+
+        // Market must be in Active state
+        if market.state != MarketState::Active {
+            return Err(Error::InvalidState);
         }
 
-        // Check if market is already resolved
-        if market.winning_outcomes.is_some() {
-            return Err(Error::MarketResolved);
+        // Respect bet_deadline: if set (non-zero), no votes after that time
+        let current_time = env.ledger().timestamp();
+        let cutoff = if market.bet_deadline > 0 {
+            market.bet_deadline
+        } else {
+            market.end_time
+        };
+        if current_time >= cutoff {
+            return Err(Error::MarketClosed);
         }
 
         Ok(())
@@ -933,14 +945,21 @@ impl VotingValidator {
 
     /// Validate market state for dispute
     pub fn validate_market_for_dispute(env: &Env, market: &Market) -> Result<(), Error> {
-        // Check if market has ended
+        use crate::types::MarketState;
+
+        // Market must have ended (Active or Ended state, past end_time)
         let current_time = env.ledger().timestamp();
         if current_time < market.end_time {
-            return Err(Error::MarketClosed);
+            return Err(Error::InvalidState);
         }
 
-        // Check if market is already resolved
-        if market.winning_outcomes.is_some() {
+        // Cancelled markets cannot be disputed
+        if market.state == MarketState::Cancelled {
+            return Err(Error::InvalidState);
+        }
+
+        // Already resolved markets cannot be disputed
+        if market.state == MarketState::Resolved || market.winning_outcomes.is_some() {
             return Err(Error::MarketResolved);
         }
 
@@ -948,9 +967,8 @@ impl VotingValidator {
     }
 
     /// Validate market state for claim
-
     pub fn validate_market_for_claim(
-        _env: &Env,
+        env: &Env,
         market: &Market,
         user: &Address,
     ) -> Result<(), Error> {
@@ -967,6 +985,14 @@ impl VotingValidator {
         // Check if market is resolved
         if market.winning_outcomes.is_none() {
             return Err(Error::MarketNotResolved);
+        }
+
+        // Enforce dispute window: payouts only after end_time + dispute_window_seconds
+        let current_time = env.ledger().timestamp();
+        if market.dispute_window_seconds > 0
+            && current_time < market.end_time + market.dispute_window_seconds
+        {
+            return Err(Error::InvalidState);
         }
 
         // Check if user has voted
@@ -1191,14 +1217,19 @@ impl VotingUtils {
     }
 
     /// Get voting statistics for a market
-    pub fn get_voting_stats(_market: &Market) -> VotingStats {
-        // TODO: Implement proper voting stats calculation
-        // This requires access to the environment for Map creation
+    pub fn get_voting_stats(env: &Env, market: &Market) -> VotingStats {
+        let mut outcome_distribution: Map<String, i128> = Map::new(env);
+        for (voter, outcome) in market.votes.iter() {
+            let stake = market.stakes.get(voter).unwrap_or(0);
+            let current = outcome_distribution.get(outcome.clone()).unwrap_or(0);
+            outcome_distribution.set(outcome, current + stake);
+        }
+        let total_votes = market.votes.len();
         VotingStats {
-            total_votes: 0,
-            total_staked: 0,
-            outcome_distribution: Map::new(&Env::default()),
-            unique_voters: 0,
+            total_votes,
+            total_staked: market.total_staked,
+            outcome_distribution,
+            unique_voters: total_votes, // one vote per address enforced
         }
     }
 
@@ -1333,10 +1364,8 @@ impl VotingAnalytics {
     }
 
     /// Calculate stake distribution by outcome
-    pub fn calculate_stake_distribution(_market: &Market) -> Map<String, i128> {
-        // TODO: Implement proper stake distribution calculation
-        // This requires access to the environment for Map creation
-        Map::new(&Env::default())
+    pub fn calculate_stake_distribution(env: &Env, market: &Market) -> Map<String, i128> {
+        VotingUtils::get_voting_stats(env, market).outcome_distribution
     }
 
     /// Calculate voting power concentration
@@ -1356,10 +1385,39 @@ impl VotingAnalytics {
     }
 
     /// Get top voters by stake amount
-    pub fn get_top_voters(_market: &Market, _limit: usize) -> Vec<(Address, i128)> {
-        // TODO: Implement proper top voters calculation
-        // This requires Vec operations that are not available in no_std
-        Vec::new(&Env::default())
+    pub fn get_top_voters(env: &Env, market: &Market, limit: u32) -> Vec<(Address, i128)> {
+        // Collect all (address, stake) pairs, then return up to `limit` entries.
+        // Full sort is not available in no_std; we do a simple linear selection.
+        let mut result: Vec<(Address, i128)> = Vec::new(env);
+        for (voter, stake) in market.stakes.iter() {
+            // Insert in descending stake order (insertion sort, bounded by limit)
+            let mut inserted = false;
+            let len = result.len();
+            for i in 0..len {
+                if let Some((_, s)) = result.get(i) {
+                    if stake > s {
+                        // Soroban Vec doesn't have insert; rebuild up to limit
+                        let mut new_result: Vec<(Address, i128)> = Vec::new(env);
+                        for j in 0..i {
+                            new_result.push_back(result.get(j).unwrap());
+                        }
+                        new_result.push_back((voter.clone(), stake));
+                        for j in i..len {
+                            if new_result.len() < limit {
+                                new_result.push_back(result.get(j).unwrap());
+                            }
+                        }
+                        result = new_result;
+                        inserted = true;
+                        break;
+                    }
+                }
+            }
+            if !inserted && result.len() < limit {
+                result.push_back((voter, stake));
+            }
+        }
+        result
     }
 }
 
@@ -1679,10 +1737,10 @@ mod tests {
         let user = Address::generate(&env);
         market.add_vote(user.clone(), String::from_str(&env, "yes"), 1000);
 
-        let stats = VotingUtils::get_voting_stats(&market);
-        assert_eq!(stats.total_votes, 0); // Simplified implementation returns 0
-        assert_eq!(stats.total_staked, 0); // Simplified implementation returns 0
-        assert_eq!(stats.unique_voters, 0); // Simplified implementation returns 0
+        let stats = VotingUtils::get_voting_stats(&env, &market);
+        assert_eq!(stats.total_votes, 1);
+        assert_eq!(stats.total_staked, 1000);
+        assert_eq!(stats.unique_voters, 1);
         assert!(VotingUtils::has_user_voted(&market, &user));
     }
 

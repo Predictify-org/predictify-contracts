@@ -1,4 +1,5 @@
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
+use crate::Error;
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use alloc::format;
 use soroban_sdk::{
@@ -17,7 +18,7 @@ fn setup_test() -> (Env, PredictifyHybridClient<'static>, Address) {
     let admin = Address::generate(&env);
 
     // Initialize contract
-    client.initialize(&admin, &Some(2)); // 2% fee
+    client.initialize(&admin, &Some(2), &None); // 2% fee
 
     (env, client, admin)
 }
@@ -42,7 +43,7 @@ fn create_test_market(
         ),
         feed_id: String::from_str(env, "BTC/USD"),
         threshold: 100,
-        comparison: String::from_str(env, "gte"),
+        comparison: String::from_str(env, "gt"),
     };
 
     client.create_market(
@@ -197,6 +198,79 @@ fn test_query_events_by_tags() {
 }
 
 #[test]
+fn test_update_event_category_rejects_empty_some() {
+    let (env, client, admin) = setup_test();
+    let market_id = create_test_market(&env, &client, &admin, "EmptySome");
+    let r = client.try_update_event_category(&admin, &market_id, &Some(String::from_str(&env, "")));
+    assert_eq!(r, Err(Ok(Error::InvalidInput)));
+}
+
+#[test]
+fn test_update_event_category_too_short() {
+    let (env, client, admin) = setup_test();
+    let market_id = create_test_market(&env, &client, &admin, "ShortCat");
+    let r =
+        client.try_update_event_category(&admin, &market_id, &Some(String::from_str(&env, "A")));
+    assert_eq!(r, Err(Ok(Error::CategoryTooShort)));
+}
+
+#[test]
+fn test_update_event_category_too_long() {
+    let (env, client, admin) = setup_test();
+    let market_id = create_test_market(&env, &client, &admin, "LongCat");
+    let s = "a".repeat(101);
+    let r = client.try_update_event_category(
+        &admin,
+        &market_id,
+        &Some(String::from_str(&env, s.as_str())),
+    );
+    assert_eq!(r, Err(Ok(Error::CategoryTooLong)));
+}
+
+#[test]
+fn test_update_event_tags_too_short_token() {
+    let (env, client, admin) = setup_test();
+    let market_id = create_test_market(&env, &client, &admin, "TagShort");
+    let r =
+        client.try_update_event_tags(&admin, &market_id, &vec![&env, String::from_str(&env, "a")]);
+    assert_eq!(r, Err(Ok(Error::TagTooShort)));
+}
+
+#[test]
+fn test_update_event_tags_too_long_token() {
+    let (env, client, admin) = setup_test();
+    let market_id = create_test_market(&env, &client, &admin, "TagLong");
+    let s = "b".repeat(51);
+    let r = client.try_update_event_tags(
+        &admin,
+        &market_id,
+        &vec![&env, String::from_str(&env, s.as_str())],
+    );
+    assert_eq!(r, Err(Ok(Error::TagTooLong)));
+}
+
+#[test]
+fn test_update_event_tags_too_many() {
+    let (env, client, admin) = setup_test();
+    let market_id = create_test_market(&env, &client, &admin, "ManyTags");
+    let mut v = Vec::new(&env);
+    for i in 0..11u32 {
+        v.push_back(String::from_str(&env, &format!("t{}", i)));
+    }
+    let r = client.try_update_event_tags(&admin, &market_id, &v);
+    assert_eq!(r, Err(Ok(Error::TooManyTags)));
+}
+
+#[test]
+fn test_update_event_tags_duplicate_rejected() {
+    let (env, client, admin) = setup_test();
+    let market_id = create_test_market(&env, &client, &admin, "DupTags");
+    let t = String::from_str(&env, "ab");
+    let r = client.try_update_event_tags(&admin, &market_id, &vec![&env, t.clone(), t]);
+    assert_eq!(r, Err(Ok(Error::InvalidInput)));
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #100)")]
 fn test_security_update_category_unauthorized() {
     let (env, client, admin) = setup_test();
@@ -258,7 +332,7 @@ impl TokenTestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &Some(2));
+        client.initialize(&admin, &Some(2), &None);
 
         // Create users and fund them
         let user1 = Address::generate(&env);
@@ -292,7 +366,7 @@ impl TokenTestSetup {
                 ),
                 feed_id: String::from_str(&env, "BTC/USD"),
                 threshold: 100,
-                comparison: String::from_str(&env, "gte"),
+                comparison: String::from_str(&env, "gt"),
             },
             &None,
             &86400u64,

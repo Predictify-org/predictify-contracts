@@ -1,9 +1,66 @@
 //! Token management module for Predictify
 //! Handles multi-asset support for bets and payouts using Soroban token interface.
-//! Allows admin to configure allowed tokens per event or globally.
+//! Allows admin to configure allowed assets per event or globally.
+//!
+//! Canonical internal scale: 7 decimals (1 token = 10^7 units).
+//! All cross-asset comparisons and calculations use this normalized scale.
 
-use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
 use crate::err::Error;
+use alloc::{format, string::ToString};
+use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
+
+/// Canonical internal scale (7 decimals)
+pub const CANONICAL_DECIMALS: u32 = 7;
+
+/// Normalizes an amount from a token's decimal scale to the canonical 7-decimal scale.
+///
+/// # Parameters
+/// * `amount` - The amount in the token's native decimals
+/// * `decimals` - The token's number of decimals
+///
+/// # Returns
+/// The normalized amount in 7-decimal scale
+pub fn normalize_amount(amount: i128, decimals: u32) -> i128 {
+    if decimals == CANONICAL_DECIMALS {
+        return amount;
+    }
+
+    let diff = (decimals as i32 - CANONICAL_DECIMALS as i32).abs();
+    let factor = 10i128.pow(diff as u32);
+
+    if decimals > CANONICAL_DECIMALS {
+        // Need to divide (round down)
+        amount / factor
+    } else {
+        // Need to multiply
+        amount * factor
+    }
+}
+
+/// Denormalizes an amount from the canonical 7-decimal scale back to a token's decimal scale.
+///
+/// # Parameters
+/// * `amount` - The normalized amount in 7-decimal scale
+/// * `decimals` - The token's number of decimals
+///
+/// # Returns
+/// The denormalized amount in the token's native decimals
+pub fn denormalize_amount(amount: i128, decimals: u32) -> i128 {
+    if decimals == CANONICAL_DECIMALS {
+        return amount;
+    }
+
+    let diff = (decimals as i32 - CANONICAL_DECIMALS as i32).abs();
+    let factor = 10i128.pow(diff as u32);
+
+    if decimals > CANONICAL_DECIMALS {
+        // Need to multiply
+        amount * factor
+    } else {
+        // Need to divide (round down)
+        amount / factor
+    }
+}
 
 /// Represents a Stellar asset/token (contract address + symbol).
 #[soroban_sdk::contracttype]
@@ -13,18 +70,78 @@ pub struct Asset {
     pub contract: Address,
     /// The symbol of the token (e.g., XLM, USDC)
     pub symbol: Symbol,
-    /// The number of decimals for the token
-    pub decimals: u8,
+    /// The number of decimals for the token (stored as u32 for contract type compatibility)
+    pub decimals: u32,
 }
 
 impl Asset {
+    /// Create an Asset from a ReflectorAsset.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment.
+    /// * `reflector_asset` - The ReflectorAsset variant.
+    /// * `contract_address` - The address of the token contract.
+    pub fn from_reflector_asset(
+        env: &Env,
+        reflector_asset: &crate::types::ReflectorAsset,
+        contract_address: Address,
+    ) -> Self {
+        let symbol = match reflector_asset {
+            crate::types::ReflectorAsset::Stellar => Symbol::new(env, "XLM"),
+            crate::types::ReflectorAsset::BTC => Symbol::new(env, "BTC"),
+            crate::types::ReflectorAsset::ETH => Symbol::new(env, "ETH"),
+            crate::types::ReflectorAsset::Other(s) => s.clone(),
+        };
+        Self {
+            contract: contract_address,
+            symbol,
+            decimals: reflector_asset.decimals() as u32,
+        }
+    }
+
+    pub fn matches_reflector_asset(
+        &self,
+        env: &Env,
+        reflector_asset: &crate::types::ReflectorAsset,
+    ) -> bool {
+        let expected_symbol = match reflector_asset {
+            crate::types::ReflectorAsset::Stellar => Symbol::new(env, "XLM"),
+            crate::types::ReflectorAsset::BTC => Symbol::new(env, "BTC"),
+            crate::types::ReflectorAsset::ETH => Symbol::new(env, "ETH"),
+            crate::types::ReflectorAsset::Other(s) => s.clone(),
+        };
+        self.symbol == expected_symbol && self.decimals == reflector_asset.decimals() as u32
+    }
+
+    pub fn name(&self, env: &Env) -> String {
+        if self.symbol == Symbol::new(env, "XLM") {
+            String::from_str(env, "Stellar Lumens")
+        } else if self.symbol == Symbol::new(env, "BTC") {
+            String::from_str(env, "Bitcoin")
+        } else if self.symbol == Symbol::new(env, "ETH") {
+            String::from_str(env, "Ethereum")
+        } else if self.symbol == Symbol::new(env, "USDC") {
+            String::from_str(env, "USD Coin")
+        } else {
+            String::from_str(env, "Token")
+        }
+    }
+
+    /// Check if this is a native XLM asset.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment.
+    pub fn is_native_xlm(&self, env: &Env) -> bool {
+        self.symbol == Symbol::new(env, "XLM")
+    }
+
     /// Create a new Asset instance.
     ///
     /// # Parameters
     /// * `contract` - The address of the token contract.
     /// * `symbol` - The token's symbol.
     /// * `decimals` - The number of decimals for the token.
-    pub fn new(contract: Address, symbol: Symbol, decimals: u8) -> Self {
+    pub fn new(contract: Address, symbol: Symbol, decimals: u32) -> Self {
         Self {
             contract,
             symbol,
@@ -42,75 +159,10 @@ impl Asset {
     /// # Returns
     /// * `true` if valid, `false` otherwise.
     pub fn validate(&self, env: &Env) -> bool {
-        // Validate contract address (must be non-empty and valid)
-        if self.contract == Address::from_string(&String::from_str(env, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")) {
-             // In Soroban, Address::default() might not be what we think. 
-             // Usually we check if it's a specific "zero" address or just let the contract call fail.
-             // But for validation purposes, let's check decimals.
-        }
-        
-        // Validate decimals (Soroban tokens typically use 7-18 decimals)
         if self.decimals < 1 || self.decimals > 18 {
             return false;
         }
         true
-    }
-
-    /// Create an Asset from a ReflectorAsset.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
-    /// * `reflector_asset` - The ReflectorAsset variant.
-    /// * `contract_address` - The address of the token contract.
-    pub fn from_reflector_asset(env: &Env, reflector_asset: &crate::types::ReflectorAsset, contract_address: Address) -> Self {
-        Self {
-            contract: contract_address,
-            symbol: Symbol::new(env, &reflector_asset.symbol().to_string()),
-            decimals: reflector_asset.decimals(),
-        }
-    }
-
-    /// Check if this asset matches a ReflectorAsset.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
-    /// * `reflector_asset` - The ReflectorAsset to compare against.
-    pub fn matches_reflector_asset(&self, env: &Env, reflector_asset: &crate::types::ReflectorAsset) -> bool {
-        self.symbol == Symbol::new(env, &reflector_asset.symbol().to_string()) 
-            && self.decimals == reflector_asset.decimals()
-    }
-
-    /// Get human-readable asset name.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
-    pub fn name(&self, env: &Env) -> String {
-        let symbol_str = self.symbol.to_string();
-        if symbol_str == String::from_str(env, "XLM") {
-            String::from_str(env, "Stellar Lumens")
-        } else if symbol_str == String::from_str(env, "BTC") {
-            String::from_str(env, "Bitcoin")
-        } else if symbol_str == String::from_str(env, "ETH") {
-            String::from_str(env, "Ethereum")
-        } else if symbol_str == String::from_str(env, "USDC") {
-            String::from_str(env, "USD Coin")
-        } else {
-            let mut name = String::from_str(env, "Token (");
-            name.append(&symbol_str);
-            name.append(&String::from_str(env, ")"));
-            name
-        }
-    }
-
-    /// Check if this is a native XLM asset.
-    ///
-    /// # Parameters
-    /// * `env` - Soroban environment.
-    pub fn is_native_xlm(&self, env: &Env) -> bool {
-        // Native XLM often has a specific contract ID in Soroban (C...)
-        // or is represented by Address::from_string("CDLZFC3SYJYDZT7K67VZ75YJBMKBAV27F6DLS6ALWHX77AL6XGOSBNOB") on Mainnet
-        // Here we just check the symbol as a heuristic if contract is not provided or is default.
-        self.symbol == Symbol::new(env, "XLM")
     }
 
     /// Validate asset for market creation.
@@ -139,21 +191,35 @@ impl TokenRegistry {
         // Check per-event allowed assets
         if let Some(market) = market_id {
             let event_key = Symbol::new(env, "allowed_assets_evt");
-            let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(soroban_sdk::Map::new(env));
+            let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
+            let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env
+                .storage()
+                .persistent()
+                .get(&event_key)
+                .unwrap_or(per_event_empty);
             if let Some(assets) = per_event.get(market.clone()) {
                 return assets.iter().any(|a| a == *asset);
             }
         }
         // Check global allowed assets
         let global_key = Symbol::new(env, "allowed_assets_global");
-        let global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
+        let global_empty: Vec<Asset> = Vec::new(env);
+        let global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(global_empty);
         global_assets.iter().any(|a| a == *asset)
     }
 
     /// Adds an asset to the global allowed registry.
     pub fn add_global(env: &Env, asset: &Asset) {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        let mut global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
+        let mut global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env));
         if !global_assets.iter().any(|a| a == *asset) {
             global_assets.push_back(asset.clone());
             env.storage().persistent().set(&global_key, &global_assets);
@@ -163,8 +229,14 @@ impl TokenRegistry {
     /// Adds an asset to a specific market's allowed registry.
     pub fn add_event(env: &Env, market_id: &Symbol, asset: &Asset) {
         let event_key = Symbol::new(env, "allowed_assets_evt");
-        let mut per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(soroban_sdk::Map::new(env));
-        let mut assets = per_event.get(market_id.clone()).unwrap_or(Vec::new(env));
+        let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
+        let mut per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env
+            .storage()
+            .persistent()
+            .get(&event_key)
+            .unwrap_or(per_event_empty);
+        let empty_assets: Vec<Asset> = Vec::new(env);
+        let mut assets: Vec<Asset> = per_event.get(market_id.clone()).unwrap_or(empty_assets);
         if !assets.iter().any(|a| a == *asset) {
             assets.push_back(asset.clone());
             per_event.set(market_id.clone(), assets);
@@ -172,37 +244,49 @@ impl TokenRegistry {
         }
     }
 
-    /// Initializes the registry with default supported assets (XLM, BTC, ETH).
     pub fn initialize_with_defaults(env: &Env) {
         let global_key = Symbol::new(env, "allowed_assets_global");
         let mut global_assets: Vec<Asset> = Vec::new(env);
-        
+
         // Add default supported assets from Reflector
         let reflector_assets = crate::types::ReflectorAsset::all_supported();
         for reflector_asset in reflector_assets.iter() {
             // Placeholder: in production these would be the actual SAC contract addresses
-            let contract_address = Address::generate(env);
-            
-            let asset = Asset::from_reflector_asset(env, reflector_asset, contract_address);
+            // Using a placeholder address since actual addresses would come from deployment
+            let contract_address = Address::from_string(&String::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ));
+
+            let asset = Asset::from_reflector_asset(env, &reflector_asset, contract_address);
             if !global_assets.iter().any(|a| a == asset) {
                 global_assets.push_back(asset);
             }
         }
-        
+
         env.storage().persistent().set(&global_key, &global_assets);
     }
 
     /// Returns a list of all globally allowed assets.
     pub fn get_global_assets(env: &Env) -> Vec<Asset> {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env))
+        env.storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env))
     }
 
     /// Returns a list of assets allowed for a specific market.
     pub fn get_event_assets(env: &Env, market_id: &Symbol) -> Vec<Asset> {
         let event_key = Symbol::new(env, "allowed_assets_evt");
-        let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env.storage().persistent().get(&event_key).unwrap_or(soroban_sdk::Map::new(env));
-        per_event.get(market_id.clone()).unwrap_or(Vec::new(env))
+        let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
+        let per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env
+            .storage()
+            .persistent()
+            .get(&event_key)
+            .unwrap_or(per_event_empty);
+        let empty_assets: Vec<Asset> = Vec::new(env);
+        per_event.get(market_id.clone()).unwrap_or(empty_assets)
     }
 
     /// Removes an asset from the global registry.
@@ -211,13 +295,22 @@ impl TokenRegistry {
     /// * `Error::NotFound` if the asset was not in the registry.
     pub fn remove_global(env: &Env, asset: &Asset) -> Result<(), Error> {
         let global_key = Symbol::new(env, "allowed_assets_global");
-        let mut global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
-        
+        let mut global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env));
+
         let initial_len = global_assets.len();
-        global_assets.retain(|a| a != *asset);
-        
-        if global_assets.len() < initial_len {
-            env.storage().persistent().set(&global_key, &global_assets);
+        let mut new_assets: Vec<Asset> = Vec::new(env);
+        for a in global_assets.iter() {
+            if a != *asset {
+                new_assets.push_back(a);
+            }
+        }
+
+        if new_assets.len() < initial_len {
+            env.storage().persistent().set(&global_key, &new_assets);
             Ok(())
         } else {
             Err(Error::ConfigNotFound)
@@ -229,15 +322,19 @@ impl TokenRegistry {
     /// # Errors
     /// * `Error::InvalidInput` if asset properties are invalid.
     /// * `Error::Unauthorized` if asset is not in the registry.
-    pub fn validate_asset(env: &Env, asset: &Asset, market_id: Option<&Symbol>) -> Result<(), Error> {
+    pub fn validate_asset(
+        env: &Env,
+        asset: &Asset,
+        market_id: Option<&Symbol>,
+    ) -> Result<(), Error> {
         // First validate basic asset properties
         asset.validate_for_market(env)?;
-        
+
         // Then check if it's allowed in the relevant registry
         if !Self::is_allowed(env, asset, market_id) {
             return Err(Error::Unauthorized);
         }
-        
+
         Ok(())
     }
 }
@@ -267,7 +364,14 @@ pub fn transfer_token(env: &Env, asset: &Asset, from: &Address, to: &Address, am
 /// * `spender` - Spender address.
 /// * `amount` - Allowance amount.
 /// * `expiration_ledger` - Ledger sequence when the allowance expires.
-pub fn approve_token(env: &Env, asset: &Asset, from: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+pub fn approve_token(
+    env: &Env,
+    asset: &Asset,
+    from: &Address,
+    spender: &Address,
+    amount: i128,
+    expiration_ledger: u32,
+) {
     from.require_auth();
     let client = token::Client::new(env, &asset.contract);
     client.approve(from, spender, &amount, &expiration_ledger);
@@ -282,7 +386,14 @@ pub fn approve_token(env: &Env, asset: &Asset, from: &Address, spender: &Address
 /// * `from` - Owner address.
 /// * `to` - Recipient address.
 /// * `amount` - Amount to transfer.
-pub fn transfer_from_token(env: &Env, asset: &Asset, spender: &Address, from: &Address, to: &Address, amount: i128) {
+pub fn transfer_from_token(
+    env: &Env,
+    asset: &Asset,
+    spender: &Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) {
     spender.require_auth();
     let client = token::Client::new(env, &asset.contract);
     client.transfer_from(spender, from, to, &amount);
@@ -303,7 +414,12 @@ pub fn get_token_balance(env: &Env, asset: &Asset, address: &Address) -> i128 {
 ///
 /// # Errors
 /// * `Error::InsufficientBalance` if balance is too low.
-pub fn check_token_balance(env: &Env, asset: &Asset, user: &Address, amount: i128) -> Result<(), Error> {
+pub fn check_token_balance(
+    env: &Env,
+    asset: &Asset,
+    user: &Address,
+    amount: i128,
+) -> Result<(), Error> {
     if get_token_balance(env, asset, user) < amount {
         return Err(Error::InsufficientBalance);
     }
@@ -323,16 +439,22 @@ pub fn get_token_allowance(env: &Env, asset: &Asset, owner: &Address, spender: &
 /// * `asset` - Asset info.
 /// * `event_name` - Descriptive name of the event.
 pub fn emit_asset_event(env: &Env, asset: &Asset, event_name: &str) {
+    let event_symbol = Symbol::new(env, event_name);
     env.events().publish(
-        (Symbol::new(env, event_name), asset.contract.clone(), asset.symbol.clone(), asset.decimals),
-        "asset_event"
+        (event_symbol, asset.contract.clone(), asset.symbol.clone()),
+        "asset_event",
     );
 }
 
 // ===== ERROR HANDLING HELPERS =====
 
 /// Validates token operations and provides detailed error feedback.
-pub fn validate_token_operation(env: &Env, asset: &Asset, user: &Address, amount: i128) -> Result<(), Error> {
+pub fn validate_token_operation(
+    env: &Env,
+    asset: &Asset,
+    user: &Address,
+    amount: i128,
+) -> Result<(), Error> {
     if amount <= 0 {
         return Err(Error::InvalidInput);
     }
@@ -341,3 +463,88 @@ pub fn validate_token_operation(env: &Env, asset: &Asset, user: &Address, amount
     Ok(())
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_normalize_6_decimals() {
+        // Test a token with 6 decimals (e.g., USDC)
+        let amount = 1_000_000; // 1 token in 6 decimals
+        let normalized = normalize_amount(amount, 6);
+        assert_eq!(normalized, 10_000_000); // Should be 1 token in 7 decimals
+    }
+
+    #[test]
+    fn test_normalize_7_decimals() {
+        // Test native XLM (7 decimals)
+        let amount = 10_000_000; // 1 XLM
+        let normalized = normalize_amount(amount, 7);
+        assert_eq!(normalized, 10_000_000); // Should stay the same
+    }
+
+    #[test]
+    fn test_normalize_8_decimals() {
+        // Test BTC (8 decimals)
+        let amount = 100_000_000; // 1 BTC
+        let normalized = normalize_amount(amount, 8);
+        assert_eq!(normalized, 10_000_000); // 1 token in 7 decimals
+    }
+
+    #[test]
+    fn test_normalize_18_decimals() {
+        // Test ETH (18 decimals)
+        let amount = 1_000_000_000_000_000_000; // 1 ETH
+        let normalized = normalize_amount(amount, 18);
+        assert_eq!(normalized, 10_000_000); // 1 token in 7 decimals
+    }
+
+    #[test]
+    fn test_denormalize_6_decimals() {
+        let normalized = 10_000_000; // 1 token in 7 decimals
+        let denormalized = denormalize_amount(normalized, 6);
+        assert_eq!(denormalized, 1_000_000); // 1 token in 6 decimals
+    }
+
+    #[test]
+    fn test_denormalize_7_decimals() {
+        let normalized = 10_000_000;
+        let denormalized = denormalize_amount(normalized, 7);
+        assert_eq!(denormalized, 10_000_000);
+    }
+
+    #[test]
+    fn test_denormalize_8_decimals() {
+        let normalized = 10_000_000;
+        let denormalized = denormalize_amount(normalized, 8);
+        assert_eq!(denormalized, 100_000_000);
+    }
+
+    #[test]
+    fn test_denormalize_18_decimals() {
+        let normalized = 10_000_000;
+        let denormalized = denormalize_amount(normalized, 18);
+        assert_eq!(denormalized, 1_000_000_000_000_000_000);
+    }
+
+    #[test]
+    fn test_round_trip_normalize_denormalize() {
+        // Test 6 decimals
+        let original_6 = 123_456;
+        let normalized_6 = normalize_amount(original_6, 6);
+        let denormalized_6 = denormalize_amount(normalized_6, 6);
+        assert_eq!(denormalized_6, original_6 / 1); // Since we divide then multiply
+
+        // Test 7 decimals
+        let original_7 = 12_345_678;
+        let normalized_7 = normalize_amount(original_7, 7);
+        let denormalized_7 = denormalize_amount(normalized_7, 7);
+        assert_eq!(denormalized_7, original_7);
+
+        // Test 8 decimals
+        let original_8 = 123_456_789;
+        let normalized_8 = normalize_amount(original_8, 8);
+        let denormalized_8 = denormalize_amount(normalized_8, 8);
+        assert_eq!(denormalized_8, (original_8 / 10) * 10); // Precision loss when normalizing down
+    }
+}

@@ -41,7 +41,7 @@ impl MetadataTest {
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
         
-        client.initialize(&admin, &None);
+        client.initialize(&\1, &None, &None);
 
         Self {
             env,

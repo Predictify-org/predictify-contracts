@@ -121,6 +121,10 @@ pub enum Error {
     DisputeFeeFailed = 409,
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
+    /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
+    SweepAlreadyDone = 411,
+    /// Fee arithmetic overflowed during checked platform-fee calculation.
+    FeeArithmeticOverflow = 412,
     /// Platform fee has already been collected from this market.
     FeeAlreadyCollected = 413,
     /// No fees are available to collect from this market.
@@ -165,6 +169,12 @@ pub enum Error {
     TooManyOracleResults = 433,
     /// Too many winning outcomes specified.
     TooManyWinningOutcomes = 434,
+    /// The event archive has reached its maximum capacity. Prune old entries before archiving more.
+    ArchiveFull = 435,
+    /// Category string is shorter than the minimum allowed length (when a category is set).
+    CategoryTooShort = 436,
+    /// Tag string is shorter than the minimum allowed length (non-empty tags only).
+    TagTooShort = 437,
 
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -177,6 +187,8 @@ pub enum Error {
     CBOpen = 503,
     /// Generic circuit breaker subsystem error. Check configuration and state.
     CBError = 504,
+    /// Rate limit exceeded. Too many requests in the time window.
+    RateLimitExceeded = 505,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1368,6 +1380,8 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
+            Error::SweepAlreadyDone => "Unclaimed winnings already swept for this market",
+            Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
             Error::NoFeesToCollect => "No fees available to collect",
             Error::InvalidExtensionDays => "Invalid extension days value",
@@ -1394,7 +1408,9 @@ impl Error {
             Error::FeedIdTooLong => "Oracle feed ID exceeds maximum allowed length",
             Error::ComparisonTooLong => "Comparison operator exceeds maximum allowed length",
             Error::CategoryTooLong => "Category string exceeds maximum allowed length",
+            Error::CategoryTooShort => "Category string is shorter than the minimum allowed length",
             Error::TagTooLong => "Tag string exceeds maximum allowed length",
+            Error::TagTooShort => "Tag string is shorter than the minimum allowed length",
             Error::TooManyTags => "Too many tags specified for the market",
             Error::ExtensionReasonTooLong => "Extension reason exceeds maximum allowed length",
             Error::SourceTooLong => "Source identifier exceeds maximum allowed length",
@@ -1403,6 +1419,7 @@ impl Error {
             Error::TooManyExtensions => "Too many extension history entries",
             Error::TooManyOracleResults => "Too many oracle results in multi-oracle aggregation",
             Error::TooManyWinningOutcomes => "Too many winning outcomes specified",
+            Error::ArchiveFull => "Event archive is full; maximum archive capacity reached",
 
             // Circuit breaker errors
             Error::CBNotInitialized => "Circuit breaker not initialized",
@@ -1410,6 +1427,7 @@ impl Error {
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
+            Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
         }
     }
 
@@ -1456,6 +1474,8 @@ impl Error {
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
             Error::DisputeError => "DISPUTE_ERROR",
+            Error::SweepAlreadyDone => "SWEEP_ALREADY_DONE",
+            Error::FeeArithmeticOverflow => "FEE_ARITHMETIC_OVERFLOW",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
@@ -1482,7 +1502,9 @@ impl Error {
             Error::FeedIdTooLong => "FEED_ID_TOO_LONG",
             Error::ComparisonTooLong => "COMPARISON_TOO_LONG",
             Error::CategoryTooLong => "CATEGORY_TOO_LONG",
+            Error::CategoryTooShort => "CATEGORY_TOO_SHORT",
             Error::TagTooLong => "TAG_TOO_LONG",
+            Error::TagTooShort => "TAG_TOO_SHORT",
             Error::TooManyTags => "TOO_MANY_TAGS",
             Error::ExtensionReasonTooLong => "EXTENSION_REASON_TOO_LONG",
             Error::SourceTooLong => "SOURCE_TOO_LONG",
@@ -1491,6 +1513,7 @@ impl Error {
             Error::TooManyExtensions => "TOO_MANY_EXTENSIONS",
             Error::TooManyOracleResults => "TOO_MANY_ORACLE_RESULTS",
             Error::TooManyWinningOutcomes => "TOO_MANY_WINNING_OUTCOMES",
+            Error::ArchiveFull => "ARCHIVE_FULL",
 
             // Circuit breaker errors
             Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
@@ -1498,6 +1521,7 @@ impl Error {
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
+            Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
         }
     }
 }
@@ -1564,6 +1588,8 @@ mod tests {
             Error::DisputeCondNotMet,
             Error::DisputeFeeFailed,
             Error::DisputeError,
+            Error::SweepAlreadyDone,
+            Error::FeeArithmeticOverflow,
             Error::FeeAlreadyCollected,
             Error::NoFeesToCollect,
             Error::InvalidExtensionDays,
@@ -1578,7 +1604,9 @@ mod tests {
             Error::FeedIdTooLong,
             Error::ComparisonTooLong,
             Error::CategoryTooLong,
+            Error::CategoryTooShort,
             Error::TagTooLong,
+            Error::TagTooShort,
             Error::TooManyTags,
             Error::ExtensionReasonTooLong,
             Error::SourceTooLong,
@@ -1587,6 +1615,7 @@ mod tests {
             Error::TooManyExtensions,
             Error::TooManyOracleResults,
             Error::TooManyWinningOutcomes,
+            Error::ArchiveFull,
             // Circuit breaker errors
             Error::AdminNotSet,
             Error::CBNotInitialized,

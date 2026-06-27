@@ -27,6 +27,22 @@
 /// ```
 use soroban_sdk::{String, Vec};
 
+// ===== CATEGORY / TAG LIMITS (canonical: `config`) =====
+//
+// These re-exports keep a single source of truth in `config` while preserving the
+// `metadata_limits` API for integrators and audit review.
+
+/// Maximum length of a market category name (from [`crate::config::MAX_CATEGORY_LENGTH`]).
+pub const MAX_CATEGORY_LENGTH: u32 = crate::config::MAX_CATEGORY_LENGTH;
+/// Minimum length of a market category when set (from [`crate::config::MIN_CATEGORY_LENGTH`]).
+pub const MIN_CATEGORY_LENGTH: u32 = crate::config::MIN_CATEGORY_LENGTH;
+/// Maximum length of a single tag (from [`crate::config::MAX_TAG_LENGTH`]).
+pub const MAX_TAG_LENGTH: u32 = crate::config::MAX_TAG_LENGTH;
+/// Minimum length of a single non-empty tag (from [`crate::config::MIN_TAG_LENGTH`]).
+pub const MIN_TAG_LENGTH: u32 = crate::config::MIN_TAG_LENGTH;
+/// Maximum number of tags per market (from [`crate::config::MAX_TAGS_PER_MARKET`]).
+pub const MAX_TAGS_COUNT: u32 = crate::config::MAX_TAGS_PER_MARKET;
+
 // ===== STRING LENGTH LIMITS =====
 
 /// Maximum length for market question text (500 characters)
@@ -52,18 +68,6 @@ pub const MAX_FEED_ID_LENGTH: u32 = 200;
 /// Rationale: Valid operators are "gt", "lt", "eq" (2-3 chars). 10 chars allows
 /// for future operators like "gte", "lte", "between" while preventing abuse.
 pub const MAX_COMPARISON_LENGTH: u32 = 10;
-
-/// Maximum length for category strings (50 characters)
-///
-/// Rationale: Categories like "sports", "crypto", "politics" are typically short.
-/// 50 chars allows for descriptive categories like "cryptocurrency-price-predictions".
-pub const MAX_CATEGORY_LENGTH: u32 = 50;
-
-/// Maximum length for individual tag strings (30 characters)
-///
-/// Rationale: Tags should be concise keywords. 30 chars accommodates tags like
-/// "bitcoin", "price-prediction", "short-term" while preventing abuse.
-pub const MAX_TAG_LENGTH: u32 = 30;
 
 /// Maximum length for extension reason text (300 characters)
 ///
@@ -97,12 +101,6 @@ pub const MAX_SIGNATURE_LENGTH: u32 = 500;
 /// Rationale: Most markets are binary (2 outcomes). Multiple choice markets rarely
 /// need more than 5-10 options. 20 provides flexibility while preventing abuse.
 pub const MAX_OUTCOMES_COUNT: u32 = 20;
-
-/// Maximum number of tags per market (10 tags)
-///
-/// Rationale: Tags are for categorization and filtering. 10 tags is generous for
-/// most use cases (e.g., "bitcoin", "crypto", "price", "short-term", "volatile").
-pub const MAX_TAGS_COUNT: u32 = 10;
 
 /// Maximum number of extension history entries (50 extensions)
 ///
@@ -233,16 +231,13 @@ pub fn validate_comparison_length(comparison: &String) -> Result<(), crate::Erro
     Ok(())
 }
 
-/// Validates that a category string is within the maximum allowed length.
+/// Validates that a category string is within the maximum allowed length (upper bound only).
 ///
-/// # Arguments
-///
-/// * `category` - The category string to validate
+/// For min/max validation when a category is set, use [`validate_category_metadata`].
 ///
 /// # Returns
 ///
-/// * `Ok(())` if the category length is valid
-/// * `Err(Error::CategoryTooLong)` if the category exceeds MAX_CATEGORY_LENGTH
+/// * `Err(Error::CategoryTooLong)` if the category exceeds [`MAX_CATEGORY_LENGTH`].
 pub fn validate_category_length(category: &String) -> Result<(), crate::Error> {
     if category.len() > MAX_CATEGORY_LENGTH {
         return Err(crate::Error::CategoryTooLong);
@@ -250,18 +245,55 @@ pub fn validate_category_length(category: &String) -> Result<(), crate::Error> {
     Ok(())
 }
 
-/// Validates that a tag string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `tag` - The tag string to validate
+/// Validates a **non-empty** category string: length must be in
+/// [`MIN_CATEGORY_LENGTH`]..=[`MAX_CATEGORY_LENGTH`] (from `config`).
 ///
 /// # Returns
 ///
-/// * `Ok(())` if the tag length is valid
-/// * `Err(Error::TagTooLong)` if the tag exceeds MAX_TAG_LENGTH
+/// * `Err(Error::CategoryTooShort)` / `Err(Error::CategoryTooLong)` when out of range.
+pub fn validate_category_metadata(category: &String) -> Result<(), crate::Error> {
+    let len = category.len();
+    if len < MIN_CATEGORY_LENGTH {
+        return Err(crate::Error::CategoryTooShort);
+    }
+    if len > MAX_CATEGORY_LENGTH {
+        return Err(crate::Error::CategoryTooLong);
+    }
+    Ok(())
+}
+
+/// Validates optional event category metadata: `None` is allowed; `Some` must be
+/// non-empty and pass [`validate_category_metadata`].
+///
+/// * `Err(Error::InvalidInput)` for `Some` with an empty string (use `None` to clear).
+pub fn validate_option_category_metadata(opt: &Option<String>) -> Result<(), crate::Error> {
+    match opt {
+        None => Ok(()),
+        Some(s) if s.is_empty() => Err(crate::Error::InvalidInput),
+        Some(s) => validate_category_metadata(s),
+    }
+}
+
+/// Validates a tag's maximum length (upper bound only). For full per-tag rules on markets,
+/// use [`validate_tag_metadata`].
 pub fn validate_tag_length(tag: &String) -> Result<(), crate::Error> {
     if tag.len() > MAX_TAG_LENGTH {
+        return Err(crate::Error::TagTooLong);
+    }
+    Ok(())
+}
+
+/// Validates one non-empty tag: [`MIN_TAG_LENGTH`]..=[`MAX_TAG_LENGTH`]. Empty `String` is rejected
+/// with [`Error::InvalidInput`].
+pub fn validate_tag_metadata(tag: &String) -> Result<(), crate::Error> {
+    if tag.is_empty() {
+        return Err(crate::Error::InvalidInput);
+    }
+    let len = tag.len();
+    if len < MIN_TAG_LENGTH {
+        return Err(crate::Error::TagTooShort);
+    }
+    if len > MAX_TAG_LENGTH {
         return Err(crate::Error::TagTooLong);
     }
     Ok(())
@@ -297,6 +329,25 @@ pub fn validate_tags_length(tags: &Vec<String>) -> Result<(), crate::Error> {
 pub fn validate_tags_count(tags: &Vec<String>) -> Result<(), crate::Error> {
     if tags.len() > MAX_TAGS_COUNT {
         return Err(crate::Error::TooManyTags);
+    }
+    Ok(())
+}
+
+/// Validates a full market tag list: count cap, per-tag length bounds, no duplicates
+/// (case- and string-sensitive, matching stored form), empty tags rejected.
+///
+/// * `Err(Error::InvalidInput)` for duplicate tags or an empty tag entry.
+pub fn validate_event_tags(tags: &Vec<String>) -> Result<(), crate::Error> {
+    validate_tags_count(tags)?;
+    for i in 0..tags.len() {
+        validate_tag_metadata(&tags.get(i).unwrap())?;
+    }
+    for i in 0..tags.len() {
+        for j in (i + 1)..tags.len() {
+            if tags.get(i).unwrap() == tags.get(j).unwrap() {
+                return Err(crate::Error::InvalidInput);
+            }
+        }
     }
     Ok(())
 }

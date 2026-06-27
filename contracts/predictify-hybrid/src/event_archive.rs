@@ -3,14 +3,38 @@
 //! Provides archiving of resolved/cancelled events (markets) and gas-efficient,
 //! paginated historical query functions for analytics and UI. Exposes only
 //! public metadata and outcome; no sensitive data (votes, stakes, addresses).
+//!
+//! # Archive Bounds
+//!
+//! The archive is capped at [`MAX_ARCHIVE_SIZE`] entries to prevent unbounded
+//! on-chain storage growth. Once the cap is reached, `archive_event` returns
+//! [`Error::ArchiveFull`]. Admins can call `prune_archive` to remove the oldest
+//! N entries and make room for new ones.
+//!
+//! # Pagination
+//!
+//! All query functions accept a `cursor` (start index) and `limit` (capped at
+//! [`MAX_QUERY_LIMIT`]) and return `(entries, next_cursor)`. Callers should
+//! advance the cursor until `next_cursor == previous_cursor` (no more pages).
 
 use crate::errors::Error;
 use crate::market_id_generator::MarketIdGenerator;
 use crate::types::{EventHistoryEntry, Market, MarketState};
 use soroban_sdk::{panic_with_error, Address, Env, String, Symbol, Vec};
 
-/// Maximum number of events returned per query (gas safety).
+/// Maximum events returned per query (gas safety).
 pub const MAX_QUERY_LIMIT: u32 = 30;
+
+/// Hard cap on the number of archived entries stored on-chain.
+///
+/// Prevents unbounded storage growth. When the archive reaches this limit,
+/// `archive_event` returns `Error::ArchiveFull`. Use `prune_archive` to
+/// remove old entries and free capacity.
+///
+/// Rationale: At ~1 KB per entry (Symbol + u64), 1 000 entries ≈ 1 MB of
+/// persistent storage — well within Soroban's practical limits while still
+/// bounding worst-case growth.
+pub const MAX_ARCHIVE_SIZE: u32 = 1_000;
 
 /// Storage key for archived event timestamps (market_id -> archived_at).
 const ARCHIVED_TS_KEY: &str = "evt_archived";
@@ -29,8 +53,9 @@ impl EventArchive {
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
     /// * `MarketNotFound` - Market does not exist
-    /// * `MarketNotEligibleForArchive` - Market must be Resolved or Cancelled
-    /// * `AlreadyArchived` - Event is already archived
+    /// * `InvalidState` - Market must be Resolved or Cancelled
+    /// * `AlreadyClaimed` - Event is already archived
+    /// * `ArchiveFull` - Archive has reached [`MAX_ARCHIVE_SIZE`]; call `prune_archive` first
     pub fn archive_event(env: &Env, admin: &Address, market_id: &Symbol) -> Result<(), Error> {
         admin.require_auth();
 
@@ -65,11 +90,84 @@ impl EventArchive {
             return Err(Error::AlreadyClaimed);
         }
 
+        // Enforce archive size cap to prevent unbounded storage growth.
+        if archived.len() >= MAX_ARCHIVE_SIZE {
+            return Err(Error::ArchiveFull);
+        }
+
         let now = env.ledger().timestamp();
         archived.set(market_id.clone(), now);
         env.storage().persistent().set(&key, &archived);
 
         Ok(())
+    }
+
+    /// Remove the oldest `count` entries from the archive (admin only).
+    ///
+    /// Frees capacity so that new events can be archived after the cap is reached.
+    /// Entries are removed in insertion order (oldest first). The underlying
+    /// `Map` does not preserve insertion order, so we iterate the market registry
+    /// to find the oldest archived IDs.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `admin` - Caller must be contract admin
+    /// * `count` - Number of oldest entries to remove (capped at [`MAX_QUERY_LIMIT`])
+    ///
+    /// # Errors
+    /// * `Unauthorized` - Caller is not admin
+    pub fn prune_archive(env: &Env, admin: &Address, count: u32) -> Result<u32, Error> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+
+        if admin != &stored_admin {
+            return Err(Error::Unauthorized);
+        }
+
+        let count = core::cmp::min(count, MAX_QUERY_LIMIT);
+        let key = Symbol::new(env, ARCHIVED_TS_KEY);
+        let mut archived: soroban_sdk::Map<Symbol, u64> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(soroban_sdk::Map::new(env));
+
+        if archived.is_empty() || count == 0 {
+            return Ok(0);
+        }
+
+        // Walk the registry (chronological order) to find the oldest archived IDs.
+        let registry_len = MarketIdGenerator::get_market_id_registry(env, 0, u32::MAX).len();
+        let mut removed = 0u32;
+        let mut cursor = 0u32;
+
+        while removed < count && cursor < registry_len {
+            let page = MarketIdGenerator::get_market_id_registry(env, cursor, MAX_QUERY_LIMIT);
+            let page_len = page.len();
+            for i in 0..page_len {
+                if removed >= count {
+                    break;
+                }
+                if let Some(entry) = page.get(i) {
+                    if archived.get(entry.market_id.clone()).is_some() {
+                        archived.remove(entry.market_id);
+                        removed += 1;
+                    }
+                }
+            }
+            cursor += page_len;
+            if page_len == 0 {
+                break;
+            }
+        }
+
+        env.storage().persistent().set(&key, &archived);
+        Ok(removed)
     }
 
     /// Check if an event is archived.
@@ -92,6 +190,17 @@ impl EventArchive {
             .get(&key)
             .unwrap_or(soroban_sdk::Map::new(env));
         archived.get(market_id.clone())
+    }
+
+    /// Return the current number of archived events.
+    pub fn archive_size(env: &Env) -> u32 {
+        let key = Symbol::new(env, ARCHIVED_TS_KEY);
+        let archived: soroban_sdk::Map<Symbol, u64> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(soroban_sdk::Map::new(env));
+        archived.len()
     }
 
     /// Build EventHistoryEntry from market and registry entry (public metadata only).
@@ -318,6 +427,8 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::Map;
+    use crate::types::{Market, MarketState, OracleConfig};
 
     struct EventArchiveTest {
         env: Env,
@@ -639,5 +750,146 @@ mod tests {
             EventArchive::query_events_by_tags(&test.env, &tags, 0, 10)
         });
         assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn test_archive_max_length_market_id_no_panic() {
+        let test = EventArchiveTest::new();
+        let env = &test.env;
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        
+        env.as_contract(&contract_id, || {
+            let max_length_id = Symbol::new(env, "a_very_long_market_id_32_chars__");
+            
+            let market = Market {
+                admin: test.admin.clone(),
+                question: String::from_str(env, "Will BTC reach 100k?"),
+                outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
+                end_time: env.ledger().timestamp() + 3600,
+                oracle_config: OracleConfig::none_sentinel(env),
+                has_fallback: false,
+                fallback_oracle_config: OracleConfig::none_sentinel(env),
+                resolution_timeout: 3600,
+                oracle_result: None,
+                votes: Map::new(env),
+                total_staked: 0,
+                dispute_stakes: Map::new(env),
+                stakes: Map::new(env),
+                claimed: Map::new(env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Resolved,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: soroban_sdk::vec![env],
+                category: None,
+                tags: soroban_sdk::vec![env],
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 3600,
+                winnings_swept: false,
+            };
+
+            let res = crate::storage::StorageOptimizer::archive_market_data(env, &max_length_id, &market);
+            assert!(res.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_archive_repeated_same_ledger_works() {
+        let test = EventArchiveTest::new();
+        let env = &test.env;
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        
+        env.as_contract(&contract_id, || {
+            let market_id = Symbol::new(env, "market_1");
+            
+            let market = Market {
+                admin: test.admin.clone(),
+                question: String::from_str(env, "Will BTC reach 100k?"),
+                outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
+                end_time: env.ledger().timestamp() + 3600,
+                oracle_config: OracleConfig::none_sentinel(env),
+                has_fallback: false,
+                fallback_oracle_config: OracleConfig::none_sentinel(env),
+                resolution_timeout: 3600,
+                oracle_result: None,
+                votes: Map::new(env),
+                total_staked: 0,
+                dispute_stakes: Map::new(env),
+                stakes: Map::new(env),
+                claimed: Map::new(env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Resolved,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: soroban_sdk::vec![env],
+                category: None,
+                tags: soroban_sdk::vec![env],
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 3600,
+                winnings_swept: false,
+            };
+
+            let res1 = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            assert!(res1.is_ok());
+
+            let res2 = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            assert!(res2.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_archive_entries_are_retrievable() {
+        let test = EventArchiveTest::new();
+        let env = &test.env;
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        
+        env.as_contract(&contract_id, || {
+            let market_id = Symbol::new(env, "retrievable_market");
+            let timestamp = env.ledger().timestamp();
+            
+            let market = Market {
+                admin: test.admin.clone(),
+                question: String::from_str(env, "Will BTC reach 100k?"),
+                outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
+                end_time: env.ledger().timestamp() + 3600,
+                oracle_config: OracleConfig::none_sentinel(env),
+                has_fallback: false,
+                fallback_oracle_config: OracleConfig::none_sentinel(env),
+                resolution_timeout: 3600,
+                oracle_result: None,
+                votes: Map::new(env),
+                total_staked: 0,
+                dispute_stakes: Map::new(env),
+                stakes: Map::new(env),
+                claimed: Map::new(env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Resolved,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: soroban_sdk::vec![env],
+                category: None,
+                tags: soroban_sdk::vec![env],
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 3600,
+                winnings_swept: false,
+            };
+
+            let res = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            assert!(res.is_ok());
+
+            let key = crate::storage::DataKey::ArchivedMarket(market_id.clone(), timestamp);
+            let retrieved: Option<Market> = env.storage().persistent().get(&key);
+            assert!(retrieved.is_some());
+            
+            let retrieved_market = retrieved.unwrap();
+            assert_eq!(retrieved_market.question, market.question);
+            assert_eq!(retrieved_market.admin, market.admin);
+        });
     }
 }

@@ -313,7 +313,7 @@ impl IntegrationTestUtils {
         let admin = Address::generate(&self.env);
 
         self.env.as_contract(contract_id, || {
-            PredictifyHybrid::initialize(self.env.clone(), admin.clone(), None, None);
+            PredictifyHybrid::initialize(self.env.clone(), admin.clone(), None, None).unwrap();
 
             let assets = ReflectorAsset::all_supported();
             for asset in assets.iter() {

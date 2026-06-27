@@ -1409,3 +1409,106 @@ fn test_market_statistics_volatility_range() {
         assert_eq!(stats.consensus_strength + stats.volatility, 10000);
     });
 }
+
+#[test]
+fn test_query_admin_role() {
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        // Initialize admin
+        crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+        
+        // Query admin role
+        let role = QueryManager::query_admin_role(&env, admin.clone()).unwrap();
+        assert_eq!(role, crate::admin::AdminRole::SuperAdmin);
+        
+        let role_none = QueryManager::query_admin_role(&env, user).unwrap();
+        assert_eq!(role_none, crate::admin::AdminRole::None);
+    });
+}
+
+#[test]
+fn test_query_multisig_config() {
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    
+    env.as_contract(&contract_id, || {
+        let config = QueryManager::query_multisig_config(&env).unwrap();
+        // Default config should be disabled
+        assert!(!config.enabled);
+        assert_eq!(config.threshold, 0);
+    });
+}
+
+#[test]
+fn test_query_event_details_with_storage() {
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    
+    let market_id = Symbol::new(&env, "market_1");
+    let mut market = make_market(&env);
+    market.question = String::from_str(&env, "Question 1");
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+        
+        // Also store as Event to have created_at
+        let event = Event {
+            id: market_id.clone(),
+            description: market.question.clone(),
+            outcomes: market.outcomes.clone(),
+            end_time: market.end_time,
+            oracle_config: market.oracle_config.clone(),
+            has_fallback: market.has_fallback,
+            fallback_oracle_config: market.fallback_oracle_config.clone(),
+            resolution_timeout: market.resolution_timeout,
+            admin: market.admin.clone(),
+            created_at: 123456789,
+            status: MarketState::Active,
+            visibility: EventVisibility::Public,
+            allowlist: soroban_sdk::Vec::new(&env),
+        };
+        crate::storage::EventManager::store_event(&env, &event);
+        
+        let details = QueryManager::query_event_details(&env, market_id).unwrap();
+        assert_eq!(details.question, String::from_str(&env, "Question 1"));
+        assert_eq!(details.created_at, 123456789);
+    });
+}
+
+#[test]
+fn test_query_user_bet_with_timestamp() {
+    let env = Env::default();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let user = Address::generate(&env);
+    let market_id = Symbol::new(&env, "market_1");
+    let mut market = make_market(&env);
+    
+    let outcome = String::from_str(&env, "yes");
+    let amount = 1000i128;
+    
+    env.as_contract(&contract_id, || {
+        // Setup market
+        market.votes.set(user.clone(), outcome.clone());
+        market.stakes.set(user.clone(), amount);
+        env.storage().persistent().set(&market_id, &market);
+        
+        // Setup specialized bet storage
+        let bet = Bet {
+            user: user.clone(),
+            market_id: market_id.clone(),
+            outcome: outcome.clone(),
+            amount,
+            timestamp: 987654321,
+            status: BetStatus::Active,
+        };
+        crate::bets::BetStorage::store_bet(&env, &bet).unwrap();
+        
+        let user_bet = QueryManager::query_user_bet(&env, user, market_id).unwrap();
+        assert_eq!(user_bet.stake_amount, amount);
+        assert_eq!(user_bet.voted_at, 987654321);
+    });
+}

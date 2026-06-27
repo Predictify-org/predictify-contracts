@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::Error;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
@@ -775,22 +776,20 @@ impl OracleConfig {
 impl OracleConfig {
     /// Validate the oracle configuration
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+        // Reject empty/sentinel config
         if self.is_none_sentinel() || self.feed_id.is_empty() {
             return Err(crate::Error::InvalidOracleConfig);
         }
 
-        // Validate feed ID length
         crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
-
-        // Validate comparison length
         crate::metadata_limits::validate_comparison_length(&self.comparison)?;
 
-        // Validate threshold
+        // Threshold must be positive
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
         }
 
-        // Validate comparison operator
+        // Only allow gt / lt / eq
         if self.comparison != String::from_str(env, "gt")
             && self.comparison != String::from_str(env, "lt")
             && self.comparison != String::from_str(env, "eq")
@@ -798,10 +797,38 @@ impl OracleConfig {
             return Err(crate::Error::InvalidComparison);
         }
 
+        // Reject impossible combinations per provider
+        let provider_str = self.provider.as_str();
+        let feed_id_len = self.feed_id.len();
+
+        if provider_str == "reflector" {
+            // Reflector uses short asset symbols like "BTC/USD" or "XLM"
+            // Hex strings of 64+ chars are Pyth feeds and impossible for Reflector
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "pyth" {
+            // Pyth uses 64-char hex strings (sometimes 66 with 0x)
+            if feed_id_len < 64 || feed_id_len > 66 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "band_protocol" || provider_str == "dia" {
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        }
+
         // Validate provider is supported using new validation method
         self.provider.validate_for_market(env)?;
 
         Ok(())
+    }
+
+    /// Returns `true` if this oracle configuration is active and valid.
+    ///
+    /// An oracle is considered active if it's not the none sentinel.
+    pub fn is_active(&self) -> bool {
+        !self.is_none_sentinel() && !self.feed_id.is_empty()
     }
 }
 
@@ -1004,14 +1031,20 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
-    /// Whether a fallback oracle is configured (avoids Option in contract type for SDK compatibility)
+    /// Whether a fallback oracle is configured.
+    ///
+    /// When `true`, automatic resolution attempts the primary oracle once and then this market's
+    /// fallback oracle once if the primary attempt fails.
     pub has_fallback: bool,
     /// Fallback oracle configuration.
     ///
     /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
     /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
+    /// When `has_fallback` is `true`, this config is consulted only after one failed primary attempt.
     pub fallback_oracle_config: OracleConfig,
-    /// Resolution timeout in seconds after end_time
+    /// Resolution timeout in seconds after `end_time`.
+    ///
+    /// Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`.
     pub resolution_timeout: u64,
     /// Oracle result (set after market ends)
     pub oracle_result: Option<String>,
@@ -1042,10 +1075,13 @@ pub struct Market {
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
 
-    /// Optional category for the event (e.g., "sports", "crypto", "politics")
-    /// Used for filtering and display in client applications
+    /// Optional category for the event (e.g., "sports", "crypto", "politics").
+    ///
+    /// When set, the string must respect configured min/max length (see `config` and `metadata_limits`); `None` means
+    /// unset. `Some` with an empty string is invalid.
     pub category: Option<String>,
-    /// List of searchable tags for filtering events by multiple dimensions
+    /// Searchable tags for filtering: bounded list length, per-tag length, and no duplicates (enforced in
+    /// `metadata_limits::validate_event_tags` and `Market::validate`).
     pub tags: Vec<String>,
     /// Minimum total pool size required for resolution (None = no minimum)
     pub min_pool_size: Option<i128>,
@@ -1053,6 +1089,9 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
+    /// Whether unclaimed winnings have already been swept for this market.
+    /// Set to true after the first successful sweep to prevent double-crediting the treasury.
+    pub winnings_swept: bool,
 }
 
 // ===== CLAIM INFO =====
@@ -1416,6 +1455,7 @@ impl Market {
             min_pool_size: None,
             bet_deadline: 0,
             dispute_window_seconds: 86400, // 24h default
+            winnings_swept: false,
         }
     }
 
@@ -1490,9 +1530,16 @@ impl Market {
         // Validate each outcome length
         crate::metadata_limits::validate_outcomes_length(&self.outcomes)?;
 
-        // Validate oracle config
+        // Validate primary oracle config
+        // Validate primary oracle config
         self.oracle_config.validate(env)?;
-        if self.has_fallback {
+
+        // FIX: only validate fallback if it's actually provided (not sentinel)
+        if self.has_fallback && !self.fallback_oracle_config.is_none_sentinel() {
+            if self.fallback_oracle_config.feed_id.is_empty() {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+
             self.fallback_oracle_config.validate(env)?;
         }
 
@@ -1500,15 +1547,9 @@ impl Market {
         if self.end_time <= env.ledger().timestamp() {
             return Err(crate::Error::InvalidDuration);
         }
-
-        // Validate category if present
-        if let Some(ref category) = self.category {
-            crate::metadata_limits::validate_category_length(category)?;
-        }
-
-        // Validate tags
-        crate::metadata_limits::validate_tags_count(&self.tags)?;
-        crate::metadata_limits::validate_tags_length(&self.tags)?;
+        // Optional category and tags: size limits and duplicate-tag rejection (see metadata_limits)
+        crate::metadata_limits::validate_option_category_metadata(&self.category)?;
+        crate::metadata_limits::validate_event_tags(&self.tags)?;
 
         Ok(())
     }
@@ -1791,6 +1832,7 @@ impl OracleResult {
 ///
 /// This structure captures the minimum data needed for staleness and
 /// confidence interval validation without provider-specific dependencies.
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OraclePriceData {
     /// Price value in oracle base units
@@ -1811,6 +1853,9 @@ pub struct GlobalOracleValidationConfig {
     pub max_staleness_secs: u64,
     /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
+    /// Maximum allowed price deviation from the last accepted reading, in basis points.
+    /// None means deviation checking is disabled.
+    pub max_deviation_bps: Option<u32>,
 }
 
 /// Per-event oracle validation configuration override.
@@ -1821,6 +1866,9 @@ pub struct EventOracleValidationConfig {
     pub max_staleness_secs: u64,
     /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
+    /// Maximum allowed price deviation from the last accepted reading, in basis points.
+    /// None means deviation checking is disabled.
+    pub max_deviation_bps: Option<u32>,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.
@@ -3739,14 +3787,20 @@ pub struct Event {
     pub end_time: u64,
     /// Oracle configuration for result verification (primary)
     pub oracle_config: OracleConfig,
-    /// Whether a fallback oracle is configured
+    /// Whether a fallback oracle is configured.
+    ///
+    /// When `true`, automatic resolution attempts the primary oracle once and then this event's
+    /// fallback oracle once if the primary attempt fails.
     pub has_fallback: bool,
     /// Fallback oracle configuration.
     ///
     /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
     /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
+    /// When `has_fallback` is `true`, this config is consulted only after one failed primary attempt.
     pub fallback_oracle_config: OracleConfig,
-    /// Resolution timeout in seconds after end_time
+    /// Resolution timeout in seconds after `end_time`.
+    ///
+    /// Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`.
     pub resolution_timeout: u64,
     /// Administrative address that created/manages the event
     pub admin: Address,
@@ -3832,7 +3886,7 @@ impl ReflectorAsset {
             ReflectorAsset::Other(symbol) => String::from_str(
                 &env,
                 &alloc::format!("{}/USD", Self::custom_symbol_to_host_string(symbol)),
-            )
+            ),
         }
     }
 
@@ -3852,7 +3906,8 @@ impl ReflectorAsset {
     /// Validates the asset for use in market creation
     pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
         if !self.is_supported() {
-            return Err(crate::Error::InvalidOracleConfig);
+            // Allow unknown providers ONLY if fallback is disabled
+            return Err(Error::InvalidOracleConfig);
         }
         Ok(())
     }

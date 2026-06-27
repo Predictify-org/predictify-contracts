@@ -6,21 +6,27 @@ use soroban_sdk::{
 };
 
 use crate::upgrade_manager::{UpgradeManager, UpgradeProposal, ValidationResult};
-use crate::versioning::{Version, VersionManager};
+use crate::versioning::{IrreversibleAcknowledgement, Version, VersionManager, VersionMigration};
 
 /// Test helper to create a test environment with initialized contract
 fn setup_test_env() -> (Env, Address, Address) {
     let env = Env::default();
+    // CRITICAL: mock_all_auths must be called BEFORE any contract operations
+    // to enable proper authorization context for require_auth() calls
+    env.mock_all_auths();
+    
     let admin = Address::generate(&env);
 
     // Register the contract properly
     let contract_id = env.register_contract(None, crate::PredictifyHybrid);
 
-    // Initialize contract with admin in contract context
+    // Initialize contract with admin in persistent storage
     env.as_contract(&contract_id, || {
+        // Store admin in persistent storage with correct key "Admin" 
+        // (AdminAccessControl::require_admin_auth looks for this key)
         env.storage()
-            .instance()
-            .set(&soroban_sdk::Symbol::new(&env, "admin"), &admin);
+            .persistent()
+            .set(&soroban_sdk::Symbol::new(&env, "Admin"), &admin);
     });
 
     (env, admin, contract_id)
@@ -579,4 +585,376 @@ fn test_multiple_upgrade_proposals() {
     // Verify they're all distinct
     assert!(proposal1.proposal_id != proposal2.proposal_id);
     assert!(proposal2.proposal_id != proposal3.proposal_id);
+}
+
+// ============================================================
+// ===== APPLY MIGRATION GUARD TESTS  (#558) =================
+// ============================================================
+
+/// Build a reversible VersionMigration from `from_v` to `to_v`.
+fn make_migration(
+    env: &Env,
+    from_v: Version,
+    to_v: Version,
+    reversible: bool,
+) -> VersionMigration {
+    let rollback = if reversible {
+        Some(String::from_str(env, "rollback_script"))
+    } else {
+        None
+    };
+    VersionMigration::new(
+        env,
+        from_v,
+        to_v,
+        String::from_str(env, "Migrate market schema"),
+        String::from_str(env, "migrate_script"),
+        String::from_str(env, "validate_script"),
+        rollback,
+    )
+}
+
+// ── Happy path ────────────────────────────────────────────────────────────────
+
+/// AC: Migration apply requires admin auth AND succeeds when all invariants hold.
+#[test]
+fn test_apply_migration_happy_path_reversible() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Seed contract version 1.0.0
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false),
+        )
+        .unwrap();
+
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+        let migration = make_migration(&env, from_v, to_v, /*reversible=*/ true);
+
+        // Use internal function for tests (bypasses require_auth context issue)
+        let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
+        assert!(result.is_ok(), "Expected Ok but got {:?}", result.err());
+
+        let applied = result.unwrap();
+        assert_eq!(
+            applied.status,
+            crate::versioning::MigrationStatus::Completed
+        );
+    });
+}
+
+// ── Unauthorized caller ───────────────────────────────────────────────────────
+
+/// AC: Migration apply requires admin auth — a non-admin address is rejected.
+#[test]
+fn test_apply_migration_unauthorized_caller() {
+    let (env, _admin, contract_id) = setup_test_env();
+    let attacker = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false),
+        )
+        .unwrap();
+
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+        let migration = make_migration(&env, from_v, to_v, true);
+
+        // Use internal function - attacker should still be rejected
+        let result = UpgradeManager::apply_migration_internal(&env, &attacker, migration, None);
+        assert!(result.is_err(), "Expected Err for non-admin caller");
+        assert_eq!(result.unwrap_err(), crate::errors::Error::Unauthorized);
+    });
+}
+
+// ── Invalid migration step (empty script) ─────────────────────────────────────
+
+/// AC: Each step is validated — a migration with an empty script is rejected.
+#[test]
+fn test_apply_migration_rejects_invalid_step_empty_script() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false),
+        )
+        .unwrap();
+
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+
+        // Build migration with an empty migration_script — structurally invalid
+        let bad_migration = VersionMigration::new(
+            &env,
+            from_v,
+            to_v,
+            String::from_str(&env, "desc"),
+            String::from_str(&env, ""),   // ← empty: should be rejected
+            String::from_str(&env, "validate"),
+            Some(String::from_str(&env, "rollback")),
+        );
+
+        let result = UpgradeManager::apply_migration_internal(&env, &admin, bad_migration, None);
+        assert!(result.is_err(), "Expected Err for empty migration script");
+        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+    });
+}
+
+// ── Downgrade attempt ─────────────────────────────────────────────────────────
+
+/// AC: Downgrade migrations are rejected.
+#[test]
+fn test_apply_migration_rejects_downgrade() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Current live version: 2.0.0
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 2, 0, 0, String::from_str(&env, "v2"), false),
+        )
+        .unwrap();
+
+        // Attempt to migrate to 1.9.0 — a downgrade
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 9, 0, String::from_str(&env, ""), false);
+        let migration = make_migration(&env, from_v, to_v, true);
+
+        let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
+        assert!(result.is_err(), "Expected Err for downgrade migration");
+        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+    });
+}
+
+// ── Version-incompatible migration ────────────────────────────────────────────
+
+/// AC: Version-incompatible migrations are rejected.
+/// Upgrading from major 1 to major 2 is a breaking change and incompatible
+/// unless listed in `compatible_versions`.
+#[test]
+fn test_apply_migration_rejects_incompatible_major_version() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Current version: 1.5.0
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 5, 0, String::from_str(&env, "v1.5"), false),
+        )
+        .unwrap();
+
+        // Attempt cross-major jump: 1.x → 2.0.0 (incompatible per is_compatible_with)
+        let from_v = Version::new(&env, 1, 5, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 2, 0, 0, String::from_str(&env, ""), false);
+        let migration = make_migration(&env, from_v, to_v, true);
+
+        let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
+        assert!(result.is_err(), "Expected Err for cross-major incompatible migration");
+        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+    });
+}
+
+// ── Irreversible step without acknowledgement ─────────────────────────────────
+
+/// AC: Irreversible steps are flagged — applying without ack is rejected.
+#[test]
+fn test_apply_migration_rejects_irreversible_without_ack() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false),
+        )
+        .unwrap();
+
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+        // irreversible = false → no rollback script
+        let migration = make_migration(&env, from_v, to_v, /*reversible=*/ false);
+
+        // Pass None → must be rejected
+        let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
+        assert!(
+            result.is_err(),
+            "Expected Err: irreversible migration without ack"
+        );
+        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+    });
+}
+
+// ── Irreversible step WITH explicit acknowledgement ───────────────────────────
+
+/// AC: Irreversible steps succeed when the operator explicitly acknowledges.
+#[test]
+fn test_apply_migration_accepts_irreversible_with_ack() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false),
+        )
+        .unwrap();
+
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+        let migration = make_migration(&env, from_v, to_v, /*reversible=*/ false);
+
+        let ack = Some(IrreversibleAcknowledgement::acknowledge());
+        let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, ack);
+        assert!(result.is_ok(), "Expected Ok with explicit ack, got {:?}", result.err());
+
+        let applied = result.unwrap();
+        assert_eq!(
+            applied.status,
+            crate::versioning::MigrationStatus::Completed
+        );
+        // The migration must not be reversible (no rollback script)
+        assert!(!applied.is_reversible());
+    });
+}
+
+// ── Double-apply prevention ───────────────────────────────────────────────────
+
+/// AC: An already-completed migration cannot be applied again.
+#[test]
+fn test_apply_migration_rejects_double_apply() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        let vm = VersionManager::new(&env);
+        let current_version = Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false);
+        vm.track_contract_version(&env, current_version.clone())
+            .unwrap();
+
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+        let migration = make_migration(&env, from_v, to_v, true);
+
+        // First apply — should succeed
+        let applied = UpgradeManager::apply_migration_internal(&env, &admin, migration, None).unwrap();
+        
+        // Verify migration is now Completed
+        assert_eq!(
+            applied.status,
+            crate::versioning::MigrationStatus::Completed,
+            "Migration should be completed after first apply"
+        );
+
+        // Second apply with the returned (now Completed) record — must be rejected
+        // We check by validating the status directly rather than calling apply again,
+        // since calling require_auth twice in same frame causes Soroban auth errors
+        let result = applied.validate_for_apply(&env, &current_version, &None);
+        assert!(result.is_err(), "Expected Err for double-apply validation");
+        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+    });
+}
+
+// ── Migration history persistence ─────────────────────────────────────────────
+
+/// Completed migrations are stored and retrievable via get_applied_migrations.
+#[test]
+fn test_apply_migration_persists_history() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false),
+        )
+        .unwrap();
+
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+        let migration = make_migration(&env, from_v, to_v, true);
+
+        UpgradeManager::apply_migration_internal(&env, &admin, migration, None).unwrap();
+
+        let history = UpgradeManager::get_applied_migrations(&env).unwrap();
+        assert_eq!(history.len(), 1, "Expected exactly one migration in history");
+        assert_eq!(
+            history.get(0).unwrap().status,
+            crate::versioning::MigrationStatus::Completed
+        );
+    });
+}
+
+// ── Failed migration also stored in history ───────────────────────────────────
+
+/// A migration that fails validation is recorded as Failed in the history.
+#[test]
+fn test_apply_migration_stores_failed_record_on_invalid_step() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        let vm = VersionManager::new(&env);
+        vm.track_contract_version(
+            &env,
+            Version::new(&env, 1, 0, 0, String::from_str(&env, "v1"), false),
+        )
+        .unwrap();
+
+        // Empty migration_script → structural validation fails
+        let from_v = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+        let to_v = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+        let bad = VersionMigration::new(
+            &env,
+            from_v,
+            to_v,
+            String::from_str(&env, "desc"),
+            String::from_str(&env, ""),   // empty → invalid
+            String::from_str(&env, "validate"),
+            Some(String::from_str(&env, "rollback")),
+        );
+
+        let _ = UpgradeManager::apply_migration_internal(&env, &admin, bad, None);
+
+        let history = UpgradeManager::get_applied_migrations(&env).unwrap();
+        assert_eq!(history.len(), 1, "Failed migration should be stored");
+        assert_eq!(
+            history.get(0).unwrap().status,
+            crate::versioning::MigrationStatus::Failed
+        );
+    });
+}
+
+// ── Version::is_downgrade_from unit tests ─────────────────────────────────────
+
+/// Version::is_downgrade_from correctly identifies downgrades.
+#[test]
+fn test_version_is_downgrade_from() {
+    let env = Env::default();
+
+    let v1_0 = Version::new(&env, 1, 0, 0, String::from_str(&env, ""), false);
+    let v1_1 = Version::new(&env, 1, 1, 0, String::from_str(&env, ""), false);
+    let v2_0 = Version::new(&env, 2, 0, 0, String::from_str(&env, ""), false);
+
+    // 1.0.0 is a downgrade from 1.1.0
+    assert!(v1_0.is_downgrade_from(&v1_1), "1.0.0 should be a downgrade from 1.1.0");
+
+    // 1.1.0 is NOT a downgrade from 1.0.0
+    assert!(!v1_1.is_downgrade_from(&v1_0), "1.1.0 should not be a downgrade from 1.0.0");
+
+    // 1.0.0 is NOT a downgrade from itself
+    assert!(!v1_0.is_downgrade_from(&v1_0), "Same version should not be a downgrade");
+
+    // 2.0.0 is NOT a downgrade from 1.0.0
+    assert!(!v2_0.is_downgrade_from(&v1_0), "2.0.0 should not be a downgrade from 1.0.0");
+
+    // 1.0.0 IS a downgrade from 2.0.0
+    assert!(v1_0.is_downgrade_from(&v2_0), "1.0.0 should be a downgrade from 2.0.0");
 }
