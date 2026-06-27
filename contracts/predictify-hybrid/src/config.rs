@@ -358,6 +358,19 @@ pub const ORACLE_RETRY_ATTEMPTS: u32 = 3;
 /// Oracle timeout seconds
 pub const ORACLE_TIMEOUT_SECONDS: u64 = 30;
 
+// ===== MONITORING CONSTANTS =====
+
+/// Maximum number of alerts retained in the monitoring queue (FIFO, oldest dropped first).
+///
+/// When the queue is full and a new alert arrives, the oldest entry is evicted and
+/// `monitor_overflowed` is set to `true`.  Operators can detect this via
+/// [`ContractMonitor::is_overflow`] and reset the flag with
+/// [`ContractMonitor::clear_overflow`] (admin-gated).
+///
+/// Safe range: 10–1000.  Values below 10 risk dropping legitimate alerts under
+/// normal load; values above 1000 increase per-call storage I/O noticeably.
+pub const MONITOR_QUEUE_CAP: u32 = 100;
+
 // ===== STORAGE CONSTANTS =====
 
 /// Storage key for admin address
