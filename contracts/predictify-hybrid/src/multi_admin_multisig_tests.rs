@@ -39,6 +39,73 @@ fn setup_contract() -> (Env, Address, Address) {
     (env, contract_id, admin)
 }
 
+fn set_threshold_helper(env: &Env, admin: &Address, threshold: u32) -> Result<(), Error> {
+    MultisigManager::propose_threshold(env, admin, threshold)?;
+    // Needs warp_time which is defined later. Let's just define it here or move it.
+    // Actually, warp_time is defined at line 731. We can just duplicate the logic or use it if it's visible. 
+    // Wait, let's just duplicate the warp_time logic here since Rust allows out of order function declarations.
+    warp_time(env, 86400);
+    MultisigManager::confirm_threshold(env)
+}
+
+// ===== THRESHOLD ROTATION TWO-PHASE COMMIT TESTS =====
+#[test]
+fn test_threshold_confirm_before_delay() {
+    let (env, contract_id, admin) = setup_contract();
+    env.as_contract(&contract_id, || {
+        let admin2 = Address::generate(&env);
+        AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
+
+        MultisigManager::propose_threshold(&env, &admin, 2).unwrap();
+        let res = MultisigManager::confirm_threshold(&env);
+        assert_eq!(res, Err(Error::InvalidState));
+        
+        warp_time(&env, 40000);
+        let res = MultisigManager::confirm_threshold(&env);
+        assert_eq!(res, Err(Error::InvalidState));
+        
+        warp_time(&env, 50000);
+        let res = MultisigManager::confirm_threshold(&env);
+        assert!(res.is_ok());
+    });
+}
+
+#[test]
+fn test_threshold_double_propose() {
+    let (env, contract_id, admin) = setup_contract();
+    env.as_contract(&contract_id, || {
+        let admin2 = Address::generate(&env);
+        let admin3 = Address::generate(&env);
+        AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
+        AdminManager::add_admin(&env, &admin, &admin3, AdminRole::SuperAdmin).unwrap();
+
+        MultisigManager::propose_threshold(&env, &admin, 2).unwrap();
+        MultisigManager::propose_threshold(&env, &admin, 3).unwrap();
+        
+        warp_time(&env, 86400);
+        MultisigManager::confirm_threshold(&env).unwrap();
+        let config = MultisigManager::get_config(&env);
+        assert_eq!(config.threshold, 3);
+    });
+}
+
+#[test]
+fn test_threshold_cancel_propose() {
+    let (env, contract_id, admin) = setup_contract();
+    env.as_contract(&contract_id, || {
+        let admin2 = Address::generate(&env);
+        AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
+
+        MultisigManager::propose_threshold(&env, &admin, 2).unwrap();
+        let res = MultisigManager::cancel_threshold_proposal(&env, &admin);
+        assert!(res.is_ok());
+        
+        warp_time(&env, 86400);
+        let res = MultisigManager::confirm_threshold(&env);
+        assert_eq!(res, Err(Error::InvalidState));
+    });
+}
+
 // ===== SINGLE ADMIN TESTS (THRESHOLD 1) =====
 
 #[test]
@@ -121,7 +188,7 @@ fn test_set_threshold_2_of_3() {
         AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
         AdminManager::add_admin(&env, &admin, &admin3, AdminRole::SuperAdmin).unwrap();
 
-        let result = MultisigManager::set_threshold(&env, &admin, 2);
+        let result = set_threshold_helper(&env, &admin, 2);
         assert!(result.is_ok());
 
         let config = MultisigManager::get_config(&env);
@@ -135,7 +202,7 @@ fn test_set_threshold_invalid_zero() {
     let (env, contract_id, admin) = setup_contract();
 
     env.as_contract(&contract_id, || {
-        let result = MultisigManager::set_threshold(&env, &admin, 0);
+        let result = set_threshold_helper(&env, &admin, 0);
         assert_eq!(result, Err(Error::InvalidInput));
     });
 }
@@ -145,7 +212,7 @@ fn test_set_threshold_exceeds_admin_count() {
     let (env, contract_id, admin) = setup_contract();
 
     env.as_contract(&contract_id, || {
-        let result = MultisigManager::set_threshold(&env, &admin, 5);
+        let result = set_threshold_helper(&env, &admin, 5);
         assert_eq!(result, Err(Error::InvalidInput));
     });
 }
@@ -155,7 +222,7 @@ fn test_threshold_1_disables_multisig() {
     let (env, contract_id, admin) = setup_contract();
 
     env.as_contract(&contract_id, || {
-        MultisigManager::set_threshold(&env, &admin, 1).unwrap();
+        set_threshold_helper(&env, &admin, 1).unwrap();
 
         let config = MultisigManager::get_config(&env);
         assert_eq!(config.threshold, 1);
@@ -200,7 +267,7 @@ fn test_approve_pending_action() {
 
     env.as_contract(&contract_id, || {
         AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin, 2).unwrap();
+        set_threshold_helper(&env, &admin, 2).unwrap();
 
         let data = Map::new(&env);
         let action_type = String::from_str(&env, "add_admin");
@@ -252,7 +319,7 @@ fn test_execute_action_threshold_met() {
 
     env.as_contract(&contract_id, || {
         AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin, 2).unwrap();
+        set_threshold_helper(&env, &admin, 2).unwrap();
 
         let data = Map::new(&env);
         let action_type = String::from_str(&env, "add_admin");
@@ -278,7 +345,7 @@ fn test_execute_action_threshold_not_met() {
 
     env.as_contract(&contract_id, || {
         AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin, 2).unwrap();
+        set_threshold_helper(&env, &admin, 2).unwrap();
 
         let data = Map::new(&env);
         let action_type = String::from_str(&env, "add_admin");
@@ -325,7 +392,7 @@ fn test_2_of_3_multisig_workflow() {
         AdminManager::add_admin(&env, &admin1, &admin3, AdminRole::SuperAdmin).unwrap();
 
         // Set threshold to 2
-        MultisigManager::set_threshold(&env, &admin1, 2).unwrap();
+        set_threshold_helper(&env, &admin1, 2).unwrap();
 
         // Create pending action
         let data = Map::new(&env);
@@ -370,7 +437,7 @@ fn test_3_of_5_multisig_workflow() {
         AdminManager::add_admin(&env, &admin1, &admin5, AdminRole::SuperAdmin).unwrap();
 
         // Set threshold to 3
-        MultisigManager::set_threshold(&env, &admin1, 3).unwrap();
+        set_threshold_helper(&env, &admin1, 3).unwrap();
 
         let config = MultisigManager::get_config(&env);
         assert_eq!(config.threshold, 3);
@@ -409,7 +476,7 @@ fn test_sensitive_operation_requires_threshold() {
 
     env.as_contract(&contract_id, || {
         AdminManager::add_admin(&env, &admin1, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin1, 2).unwrap();
+        set_threshold_helper(&env, &admin1, 2).unwrap();
 
         assert!(MultisigManager::requires_multisig(&env));
     });
@@ -423,7 +490,7 @@ fn test_add_admin_with_multisig_enabled() {
 
     env.as_contract(&contract_id, || {
         AdminManager::add_admin(&env, &admin1, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin1, 2).unwrap();
+        set_threshold_helper(&env, &admin1, 2).unwrap();
 
         // When multisig is enabled, direct admin operations should still work
         // but in production, you'd want to enforce multisig workflow
@@ -497,7 +564,7 @@ fn test_unauthorized_set_threshold() {
     let unauthorized = Address::generate(&env);
 
     env.as_contract(&contract_id, || {
-        let result = MultisigManager::set_threshold(&env, &unauthorized, 2);
+        let result = set_threshold_helper(&env, &unauthorized, 2);
         assert_eq!(result, Err(Error::Unauthorized));
     });
 }
@@ -583,7 +650,7 @@ fn test_multisig_config_persistence() {
 
     env.as_contract(&contract_id, || {
         AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin, 2).unwrap();
+        set_threshold_helper(&env, &admin, 2).unwrap();
 
         let config1 = MultisigManager::get_config(&env);
         assert_eq!(config1.threshold, 2);
@@ -604,7 +671,7 @@ fn test_requires_multisig_check() {
 
         let admin2 = Address::generate(&env);
         AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin, 2).unwrap();
+        set_threshold_helper(&env, &admin, 2).unwrap();
 
         assert_eq!(MultisigManager::requires_multisig(&env), true);
     });
@@ -656,7 +723,7 @@ fn test_complete_multisig_lifecycle() {
         // Setup
         AdminManager::add_admin(&env, &admin1, &admin2, AdminRole::SuperAdmin).unwrap();
         AdminManager::add_admin(&env, &admin1, &admin3, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin1, 2).unwrap();
+        set_threshold_helper(&env, &admin1, 2).unwrap();
 
         // Create action
         let mut data = Map::new(&env);
@@ -715,7 +782,7 @@ fn setup_multisig_2_of_3(env: &Env) -> (Address, Address, Address) {
     let admin3 = Address::generate(env);
     AdminManager::add_admin(env, &admin1, &admin2, AdminRole::SuperAdmin).unwrap();
     AdminManager::add_admin(env, &admin1, &admin3, AdminRole::SuperAdmin).unwrap();
-    MultisigManager::set_threshold(env, &admin1, 2).unwrap();
+    set_threshold_helper(env, &admin1, 2).unwrap();
     (admin1, admin2, admin3)
 }
 
@@ -908,7 +975,7 @@ fn test_remove_admin_can_leave_threshold_above_count() {
                                          // A fresh set_threshold > count is rejected, confirming guard exists
                                          // on write path but not on admin-count shrink.
         assert_eq!(
-            MultisigManager::set_threshold(&env, &admin1, 5),
+            set_threshold_helper(&env, &admin1, 5),
             Err(Error::InvalidInput)
         );
     });
@@ -924,7 +991,7 @@ fn test_add_admin_does_not_retroactively_approve_pending_action() {
     env.as_contract(&contract_id, || {
         let admin2 = Address::generate(&env);
         AdminManager::add_admin(&env, &admin1, &admin2, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin1, 2).unwrap();
+        set_threshold_helper(&env, &admin1, 2).unwrap();
 
         let action_id = MultisigManager::create_pending_action(
             &env,
@@ -956,7 +1023,7 @@ fn test_lower_threshold_after_approvals_permits_execution() {
         let admin3 = Address::generate(&env);
         AdminManager::add_admin(&env, &admin1, &admin2, AdminRole::SuperAdmin).unwrap();
         AdminManager::add_admin(&env, &admin1, &admin3, AdminRole::SuperAdmin).unwrap();
-        MultisigManager::set_threshold(&env, &admin1, 3).unwrap();
+        set_threshold_helper(&env, &admin1, 3).unwrap();
 
         let action_id = MultisigManager::create_pending_action(
             &env,
@@ -975,7 +1042,7 @@ fn test_lower_threshold_after_approvals_permits_execution() {
         );
 
         // Lower threshold to 2, now execution succeeds.
-        MultisigManager::set_threshold(&env, &admin1, 2).unwrap();
+        set_threshold_helper(&env, &admin1, 2).unwrap();
         MultisigManager::execute_action(&env, action_id).unwrap();
     });
 }

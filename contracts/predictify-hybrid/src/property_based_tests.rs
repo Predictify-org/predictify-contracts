@@ -33,6 +33,7 @@ mod dispute_outcome_tally_properties {
     use crate::PredictifyHybrid;
     use proptest::prelude::*;
     use soroban_sdk::{Env, Symbol};
+    use alloc::format;
 
     fn completed_voting(
         env: &Env,

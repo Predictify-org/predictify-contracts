@@ -1,11 +1,14 @@
 #![cfg(test)]
 
+use crate::err::Error;
+use crate::tokens::{Asset, TokenRegistry};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use crate::types::{OracleConfig, OracleProvider};
+use core::convert::TryInto;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::StellarAssetClient,
-    vec, Address, Env, String, Symbol,
+    vec, Address, Env, String, Symbol, Vec,
 };
 
 // Test setup with flexible token configuration
@@ -29,7 +32,7 @@ impl CustomTokenTestSetup {
         // Register contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
+        client.initialize(&admin, &None, &None);
 
         // Setup custom token
         let token_admin = Address::generate(&env);
@@ -372,7 +375,7 @@ fn test_fee_collection_custom_token() {
     assert_eq!(admin_balance_before, 0);
 
     // Withdraw fees from vault
-    let withdrawn_amount = client.withdraw_fees(&setup.admin, &fee_amount);
+    let withdrawn_amount = client.withdraw_collected_fees(&setup.admin, &fee_amount);
     assert_eq!(withdrawn_amount, fee_amount);
 
     // Verify admin balance increased by withdrawn amount
@@ -420,315 +423,144 @@ fn test_deposit_and_withdraw_custom_token() {
     assert_eq!(internal_balance_after.amount, 0);
 }
 
-// ===== TOKEN DECIMALS VERIFICATION TESTS =====
+#[test]
+fn test_register_asset_persists_live_decimals() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-/// Mock token implementation for testing decimals with different values.
-/// This allows us to test mismatches without requiring actual mismatched SAC tokens.
-#[cfg(test)]
-mod token_decimals_tests {
-    use super::*;
+    let contract_id = env.register(PredictifyHybrid, ());
+    let admin = Address::generate(&env);
 
-    /// Test: verify_token_decimals with matching declared decimals
-    #[test]
-    fn test_token_decimals_self_test_matching() {
-        let setup = CustomTokenTestSetup::new();
-        
-        // Create asset with correct declared decimals (7 for Stellar)
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "USDC"),
-            decimals: 7, // Stellar tokens have 7 decimals
-        };
-        
-        // Verification should succeed when decimals match
-        let result = crate::tokens::verify_token_decimals(&setup.env, &asset);
-        assert!(result.is_ok(), "Expected successful verification with matching decimals");
-    }
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
 
-    /// Test: add_global_verified succeeds with matching decimals
-    #[test]
-    fn test_token_decimals_add_global_verified_matching() {
-        let setup = CustomTokenTestSetup::new();
-        
-        // Create asset with correct decimals
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "VERIFIED"),
-            decimals: 7,
-        };
-        
-        // Should register successfully when decimals match
-        let result = crate::tokens::TokenRegistry::add_global_verified(&setup.env, &asset);
-        assert!(result.is_ok(), "Expected successful registration with verified decimals");
-        
-        // Verify it was actually added to registry
-        let registered = crate::tokens::TokenRegistry::is_allowed(&setup.env, &asset, None);
-        assert!(registered, "Asset should be in global registry after verification");
-    }
+    let live_decimals: u32 = token_client.decimals().try_into().unwrap();
 
-    /// Test: add_event_verified succeeds with matching decimals
-    #[test]
-    fn test_token_decimals_add_event_verified_matching() {
-        let setup = CustomTokenTestSetup::new();
-        
-        // Create asset with correct decimals
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "EVENT_TOKEN"),
-            decimals: 7,
-        };
-        
-        // Register for specific event
-        let result = crate::tokens::TokenRegistry::add_event_verified(&setup.env, &setup.market_id, &asset);
-        assert!(result.is_ok(), "Expected successful event-level registration");
-        
-        // Verify it was registered for that event
-        let registered = crate::tokens::TokenRegistry::is_allowed(&setup.env, &asset, Some(&setup.market_id));
-        assert!(registered, "Asset should be registered for the event");
-    }
+    let asset = Asset::new(token_id.clone(), Symbol::new(&env, "TEST"), 99);
 
-    /// Test: verify_token_decimals succeeds with matching declared decimals
-    #[test]
-    fn test_token_decimals_verification_with_correct_value() {
-        let setup = CustomTokenTestSetup::new();
-        
-        // Test with the actual decimals value from the token
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "TEST"),
-            decimals: 7, // Stellar asset has 7 decimals
-        };
-        
-        let result = crate::tokens::verify_token_decimals(&setup.env, &asset);
-        assert!(result.is_ok(), "Verification should pass with correct decimals");
-    }
+    env.as_contract(&contract_id, || {
+        // Register should persist live SAC decimals instead of the passed-in value
+        TokenRegistry::register_asset(&env, &asset).unwrap();
+    });
 
-    /// Test: verify_token_decimals rejects mismatched decimals
-    #[test]
-    fn test_token_decimals_verification_rejects_mismatch() {
-        let setup = CustomTokenTestSetup::new();
-        
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "TEST"),
-            decimals: 6, // Incorrect decimals intentionally
-        };
-        
-        let result = crate::tokens::verify_token_decimals(&setup.env, &asset);
-        assert!(result.is_err(), "Verification should fail with mismatched decimals");
-        if let Err(err) = result {
-            assert_eq!(err, crate::Error::TokenDecimalsMismatch, "Expected TokenDecimalsMismatch error");
-        }
-    }
-
-    /// Test: add_global_verified rejects mismatched declared decimals
-    #[test]
-    fn test_token_decimals_add_global_verified_rejects_mismatch() {
-        let setup = CustomTokenTestSetup::new();
-        
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "MISMATCH"),
-            decimals: 6,
-        };
-        
-        let result = crate::tokens::TokenRegistry::add_global_verified(&setup.env, &asset);
-        assert!(result.is_err(), "add_global_verified should reject mismatched decimals");
-        if let Err(err) = result {
-            assert_eq!(err, crate::Error::TokenDecimalsMismatch, "Expected TokenDecimalsMismatch error");
-        }
-    }
-
-    /// Test: re_verify_token rejects mismatched declared decimals
-    #[test]
-    fn test_re_verify_token_admin_function_rejects_mismatch() {
-        let setup = CustomTokenTestSetup::new();
-        let client = setup.client();
-        
-        let result = client.re_verify_token(
-            &setup.admin,
-            &setup.token_id,
-            &6u32, // Incorrect decimals intentionally
-        );
-        
-        assert!(result.is_err(), "re_verify_token should reject mismatched decimals");
-        if let Err(err) = result {
-            assert_eq!(err, crate::Error::TokenDecimalsMismatch, "Expected TokenDecimalsMismatch error");
-        }
-    }
-
-    /// Test: Batch verification of multiple assets
-    #[test]
-    fn test_token_decimals_batch_verification() {
-        let setup = CustomTokenTestSetup::new();
-        
-        let asset1 = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "TOKEN1"),
-            decimals: 7,
-        };
-        
-        let asset2 = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "TOKEN2"),
-            decimals: 7,
-        };
-        
-        let assets = vec![&setup.env, asset1, asset2];
-        
-        let result = crate::tokens::verify_token_decimals_batch(&setup.env, &assets);
-        assert!(result.is_ok(), "Batch verification should succeed for all matching assets");
-    }
-
-    /// Test: re_verify_token admin entrypoint succeeds with matching decimals
-    #[test]
-    fn test_re_verify_token_admin_function_matching() {
-        let setup = CustomTokenTestSetup::new();
-        let client = setup.client();
-        
-        // Call re_verify_token as admin with correct decimals
-        let result = client.re_verify_token(
-            &setup.admin,
-            &setup.token_id,
-            &7u32, // Correct decimals for Stellar token
-        );
-        
-        assert!(result.is_ok(), "re_verify_token should succeed with correct decimals");
-    }
-
-    /// Test: re_verify_token rejects non-admin caller
-    #[test]
-    fn test_re_verify_token_non_admin_rejected() {
-        let setup = CustomTokenTestSetup::new();
-        let client = setup.client();
-        
-        let non_admin = Address::generate(&setup.env);
-        
-        // Call re_verify_token as non-admin should fail
-        let result = client.re_verify_token(
-            &non_admin,
-            &setup.token_id,
-            &7u32,
-        );
-        
-        assert!(result.is_err(), "re_verify_token should reject non-admin caller");
-        // Verify it's an Unauthorized error
-        if let Err(err) = result {
-            assert_eq!(err, crate::Error::Unauthorized, "Expected Unauthorized error");
-        }
-    }
-
-    /// Test: Asset validation with decimals bounds
-    #[test]
-    fn test_token_decimals_validation_bounds() {
-        let setup = CustomTokenTestSetup::new();
-        
-        // Valid decimals (1-18)
-        let valid_asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "VALID"),
-            decimals: 7,
-        };
-        assert!(valid_asset.validate(&setup.env), "Asset with 7 decimals should be valid");
-        
-        let min_decimals = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "MIN"),
-            decimals: 1,
-        };
-        assert!(min_decimals.validate(&setup.env), "Asset with 1 decimal should be valid (minimum)");
-        
-        let max_decimals = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "MAX"),
-            decimals: 18,
-        };
-        assert!(max_decimals.validate(&setup.env), "Asset with 18 decimals should be valid (maximum)");
-    }
-
-    /// Test: Normalization and denormalization with verified decimals
-    #[test]
-    fn test_token_decimals_normalization() {
-        // Test amounts are correctly normalized to canonical 7-decimal scale
-        
-        // USDC with 6 decimals: 1 USDC = 1_000_000 units
-        let usdc_amount = 1_000_000;
-        let normalized = crate::tokens::normalize_amount(usdc_amount, 6);
-        assert_eq!(normalized, 10_000_000, "USDC should normalize to 7-decimal scale");
-        
-        // Denormalize back
-        let denormalized = crate::tokens::denormalize_amount(normalized, 6);
-        assert_eq!(denormalized, usdc_amount, "Should denormalize back to original USDC amount");
-        
-        // XLM with 7 decimals (canonical): no change
-        let xlm_amount = 10_000_000;
-        let normalized_xlm = crate::tokens::normalize_amount(xlm_amount, 7);
-        assert_eq!(normalized_xlm, xlm_amount, "XLM (canonical) should not change");
-    }
-
-    /// Test: Error message for TokenDecimalsMismatch
-    #[test]
-    fn test_token_decimals_mismatch_error_exists() {
-        // Verify that TokenDecimalsMismatch error is properly defined
-        let mismatch_error = crate::Error::TokenDecimalsMismatch;
-        
-        // The error should be representable
-        #[allow(unreachable_patterns)]
-        match mismatch_error {
-            crate::Error::TokenDecimalsMismatch => {
-                // Success - error is properly defined
-            }
-            _ => panic!("TokenDecimalsMismatch error not properly defined"),
-        }
-    }
-
-    /// Test: Security - verification is required for registration
-    #[test]
-    fn test_token_decimals_verified_variant_required() {
-        let setup = CustomTokenTestSetup::new();
-        
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "SECURE"),
-            decimals: 7,
-        };
-        
-        // Unverified add should succeed (backward compatibility)
-        crate::tokens::TokenRegistry::add_global(&setup.env, &asset);
-        let is_registered = crate::tokens::TokenRegistry::is_allowed(&setup.env, &asset, None);
-        assert!(is_registered, "Unverified add_global should work for backward compatibility");
-        
-        // Verified variant should also work when decimals match
-        let asset2 = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "SECURE2"),
-            decimals: 7,
-        };
-        let verified_result = crate::tokens::TokenRegistry::add_global_verified(&setup.env, &asset2);
-        assert!(verified_result.is_ok(), "Verified registration should succeed with matching decimals");
-    }
-
-    /// Test: Cross-contract call safety during verification
-    #[test]
-    fn test_token_decimals_cross_contract_safety() {
-        let setup = CustomTokenTestSetup::new();
-        
-        // Multiple verification calls should be idempotent
-        let asset = crate::tokens::Asset {
-            contract: setup.token_id.clone(),
-            symbol: Symbol::new(&setup.env, "SAFETY"),
-            decimals: 7,
-        };
-        
-        let result1 = crate::tokens::verify_token_decimals(&setup.env, &asset);
-        let result2 = crate::tokens::verify_token_decimals(&setup.env, &asset);
-        let result3 = crate::tokens::verify_token_decimals(&setup.env, &asset);
-        
-        assert!(result1.is_ok(), "First verification should succeed");
-        assert!(result2.is_ok(), "Second verification should succeed");
-        assert!(result3.is_ok(), "Third verification should succeed");
-        // All should be idempotent
-    }
+    env.as_contract(&contract_id, || {
+        let global_assets = TokenRegistry::get_global_assets(&env);
+        let stored = global_assets
+            .iter()
+            .find(|a| a.contract == token_id)
+            .unwrap();
+        assert_eq!(stored.decimals, live_decimals);
+        assert_eq!(stored.symbol, Symbol::new(&env, "TEST"));
+    });
 }
 
+#[test]
+fn test_register_asset_re_registration_same_contract() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+    let asset = Asset::new(token_id.clone(), Symbol::new(&env, "TEST"), 7);
+
+    env.as_contract(&contract_id, || {
+        // First registration
+        TokenRegistry::register_asset(&env, &asset).unwrap();
+
+        // Re-registration with same contract should succeed (stored decimals match live SAC)
+        let result = TokenRegistry::register_asset(&env, &asset);
+        assert!(result.is_ok());
+
+        // Verify only one entry exists for this contract
+        let global_assets = TokenRegistry::get_global_assets(&env);
+        let count = global_assets
+            .iter()
+            .filter(|a| a.contract == token_id)
+            .count();
+        assert_eq!(count, 1);
+    });
+}
+
+#[test]
+fn test_register_asset_mismatched_decimals() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+    let asset = Asset::new(token_id.clone(), Symbol::new(&env, "TEST"), 7);
+
+    env.as_contract(&contract_id, || {
+        // First registration succeeds
+        TokenRegistry::register_asset(&env, &asset).unwrap();
+
+        // Manually modify stored decimals to create mismatch with live SAC
+        let global_key = Symbol::new(&env, "allowed_assets_global");
+        let global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap();
+        let mut modified_assets: Vec<Asset> = Vec::new(&env);
+        for a in global_assets.iter() {
+            if a.contract == token_id {
+                modified_assets.push_back(Asset::new(
+                    a.contract.clone(),
+                    a.symbol.clone(),
+                    18,
+                ));
+            } else {
+                modified_assets.push_back(a);
+            }
+        }
+        env.storage()
+            .persistent()
+            .set(&global_key, &modified_assets);
+
+        // Re-register should fail with AssetDecimalsMismatch
+        let result = TokenRegistry::register_asset(&env, &asset);
+        assert_eq!(result, Err(Error::AssetDecimalsMismatch));
+    });
+}
+
+#[test]
+fn test_asset_validate_edge_decimals() {
+    let env = Env::default();
+
+    // 0 decimals - invalid (below minimum)
+    let asset_0 = Asset::new(Address::generate(&env), Symbol::new(&env, "ZERO"), 0);
+    assert!(!asset_0.validate(&env));
+    assert_eq!(
+        asset_0.validate_for_market(&env),
+        Err(Error::InvalidInput)
+    );
+
+    // 1 decimal - valid (minimum)
+    let asset_1 = Asset::new(Address::generate(&env), Symbol::new(&env, "ONE"), 1);
+    assert!(asset_1.validate(&env));
+    assert!(asset_1.validate_for_market(&env).is_ok());
+
+    // 18 decimals - valid (maximum)
+    let asset_18 = Asset::new(Address::generate(&env), Symbol::new(&env, "MAX"), 18);
+    assert!(asset_18.validate(&env));
+    assert!(asset_18.validate_for_market(&env).is_ok());
+
+    // 19 decimals - invalid (above maximum)
+    let asset_19 = Asset::new(Address::generate(&env), Symbol::new(&env, "OVER"), 19);
+    assert!(!asset_19.validate(&env));
+    assert_eq!(
+        asset_19.validate_for_market(&env),
+        Err(Error::InvalidInput)
+    );
+}
 

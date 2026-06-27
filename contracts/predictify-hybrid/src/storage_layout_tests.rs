@@ -11,13 +11,14 @@
 
 use alloc::format;
 use soroban_sdk::{
-    testutils::{Address as _, EnvTestConfig},
+    testutils::{Address as _, EnvTestConfig, storage::Persistent, Ledger},
     vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 use crate::markets::MarketStateManager;
 use crate::storage::{
     BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,
 };
+use crate::errors::Error;
 use crate::types::*;
 
 // ===== TEST UTILITIES =====
@@ -762,4 +763,118 @@ fn test_tuple_key_generation_performance() {
 
     // Tuple key generation should be fast
     assert!(duration < 1000, "Tuple key generation took too long");
+}
+
+#[test]
+fn test_promote_market_to_persistent_and_demote_scratch() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let (market_id, market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        // Setup config with known TTL constants
+        let mut config = StorageOptimizer::get_storage_config(&env);
+        config.market_ttl_ledgers = 5000;
+        config.balance_ttl_ledgers = 100;
+        StorageOptimizer::update_storage_config(&env, &config).unwrap();
+
+        // 1. Missing market metadata (error case)
+        let err_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+        assert_eq!(err_result, Err(Error::MarketNotFound));
+
+        // 2. Put market metadata in temporary storage
+        let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        env.storage().temporary().set(&temp_key, &market);
+        env.storage().temporary().extend_ttl(&temp_key, 100, 100);
+
+        // 3. Test require_auth gating - if we invoke as contract, auth must succeed.
+        // We mock auths to verify the happy path.
+        env.mock_all_auths();
+
+        let success_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+        assert!(success_result.is_ok());
+
+        // Check it has been promoted to persistent
+        let persistent_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        assert!(env.storage().persistent().has(&persistent_key));
+        assert!(!env.storage().temporary().has(&temp_key));
+
+        // Verify the persistent entry's TTL matches what's configured
+        let persistent_ttl = env.storage().persistent().get_ttl(&persistent_key);
+        assert_eq!(persistent_ttl, 5000.min(env.storage().max_ttl()));
+
+        // 4. Idempotency test: calling it again succeeds and extends/refreshes TTL
+        env.ledger().with_mut(|li| {
+            li.sequence_number += 100;
+        });
+        assert!(env.storage().persistent().get_ttl(&persistent_key) < 5000.min(env.storage().max_ttl()));
+
+        let idempotent_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+        assert!(idempotent_result.is_ok());
+        assert_eq!(env.storage().persistent().get_ttl(&persistent_key), 5000.min(env.storage().max_ttl()));
+
+        // 5. Test demote_scratch_keys
+        let scratch_persistent_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+        let scratch_temp_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+        
+        let scratch_data: SorobanVec<i128> = vec![&env, 12, 34, 56];
+        env.storage().persistent().set(&scratch_persistent_key, &scratch_data);
+        StorageOptimizer::extend_persistent_ttl(&env, &scratch_persistent_key, 5000);
+
+        let demote_result = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
+        assert!(demote_result.is_ok());
+
+        // Check scratch keys are moved to temporary
+        assert!(!env.storage().persistent().has(&scratch_persistent_key));
+        assert!(env.storage().temporary().has(&scratch_temp_key));
+
+        let retrieved_scratch: SorobanVec<i128> = env.storage().temporary().get(&scratch_temp_key).unwrap();
+        assert_eq!(retrieved_scratch.get(0).unwrap(), 12);
+        assert_eq!(retrieved_scratch.get(1).unwrap(), 34);
+        assert_eq!(retrieved_scratch.get(2).unwrap(), 56);
+
+        // Idempotency: call again
+        let demote_idempotent = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
+        assert!(demote_idempotent.is_ok());
+        assert!(env.storage().temporary().has(&scratch_temp_key));
+    });
+}
+
+#[test]
+#[should_panic]
+fn test_promote_market_to_persistent_auth_failure() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let (market_id, market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        env.storage().temporary().set(&temp_key, &market);
+        
+        // This should panic due to missing authentication from market.admin (since mock_all_auths is not called)
+        let _ = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+    });
+}
+
+#[test]
+#[should_panic]
+fn test_demote_scratch_keys_auth_failure() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let (market_id, market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        env.storage().temporary().set(&temp_key, &market);
+        
+        let scratch_persistent_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+        let scratch_data: SorobanVec<i128> = vec![&env, 12, 34, 56];
+        env.storage().persistent().set(&scratch_persistent_key, &scratch_data);
+
+        // This should panic due to missing authentication from market.admin
+        let _ = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
+    });
 }

@@ -2,6 +2,22 @@ use crate::events::EventEmitter;
 use soroban_sdk::{contracttype, panic_with_error, Address, Env, String, Symbol, Vec};
 
 /// ---------- CONTRACT TYPES ----------
+
+/// Configuration for quorum decay over a proposal's lifetime.
+/// The required quorum drops linearly from the initial value toward a floor,
+/// preventing stale proposals from lingering indefinitely.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuorumDecay {
+    /// Floor quorum expressed in basis points (1/100th of a percent) of the base quorum.
+    /// E.g., 2000 means the floor is 20% of the initial quorum.
+    pub floor_bps: u32,
+    /// Time in seconds for the effective quorum to reach the midpoint
+    /// between the initial quorum and the floor. The full decay to floor
+    /// completes in 2× `halving_seconds`.
+    pub halving_seconds: u64,
+}
+
 #[contracttype]
 pub struct GovernanceProposal {
     pub id: Symbol,
@@ -23,11 +39,22 @@ pub struct GovernanceProposal {
 enum StorageKey {
     Proposal(Symbol),
     ProposalList,          // Vec<Symbol>
-    Vote(Symbol, Address), // proposal id + voter -> u8 (0 none, 1 for, 2 against)
+    Vote(Symbol, Address), // proposal id + voter -> i32 (0 none, 1 for, 2 against)
     VotingPeriod,          // u64
     QuorumVotes,           // u128 minimum FOR votes required
+    QuorumDecay,           // QuorumDecay config (optional)
     Admin,                 // Address
+    /// Maps delegator -> delegate (Address). At most one per delegator (griefing guard).
+    Delegate(Address),
+    /// Tracks how many delegators are currently delegating to a given address.
+    /// Capped at MAX_INCOMING_DELEGATIONS to bound storage.
+    DelegateCount(Address),
 }
+
+/// Maximum number of delegators that may point to a single delegate address.
+/// Limits griefing: prevents an attacker from forcing the contract to walk an
+/// unbounded list when tallying delegated votes.
+const MAX_INCOMING_DELEGATIONS: u32 = 50;
 
 /// Simple errors for the contract
 #[contracttype]
@@ -44,17 +71,63 @@ pub enum GovernanceError {
     NotAdmin,
     NotInitialized,
     InvalidParams,
+    /// Caller tried to delegate to themselves.
+    SelfDelegation,
+    /// Caller already has an active delegation; must unset first.
+    DelegationAlreadySet,
+    /// The target delegate has reached the incoming-delegation cap (griefing guard).
+    DelegateLimitReached,
+    /// No active delegation found for the caller.
+    NoDelegationSet,
+    /// Delegation would create a cycle (A→B→A).
+    DelegationCycle,
 }
 
 /// ---------- CONTRACT ----------
 pub struct GovernanceContract;
 
 impl GovernanceContract {
+    /// Compute the effective quorum for a proposal at a given elapsed time.
+    ///
+    /// If `decay` is `None` the full base quorum applies.  Otherwise the quorum
+    /// decays linearly from `base_quorum` toward `base_quorum * floor_bps / 10000`
+    /// over `2 × halving_seconds`.  After that period the floor is the minimum.
+    /// The result is guaranteed monotone non-increasing with respect to `elapsed`.
+    pub fn compute_effective_quorum(
+        base_quorum: u128,
+        decay: &Option<QuorumDecay>,
+        elapsed: u64,
+    ) -> u128 {
+        let cfg = match decay {
+            Some(d) => d,
+            None => return base_quorum,
+        };
+        let floor = base_quorum * (cfg.floor_bps as u128) / 10000;
+        let full_decay_period = cfg.halving_seconds.saturating_mul(2);
+        if elapsed >= full_decay_period {
+            return floor;
+        }
+        let decay_amount = (base_quorum - floor) * (elapsed as u128) / (full_decay_period as u128);
+        let effective = base_quorum - decay_amount;
+        if effective < floor {
+            floor
+        } else {
+            effective
+        }
+    }
+
     /// Initialize governance admin, voting period (seconds), and quorum (minimum FOR votes).
     ///
     /// This function is idempotent: if governance is already initialized, it returns early.
     /// Invalid configuration panics with `Error::InvalidInput`.
-    pub fn initialize(env: Env, admin: Address, voting_period_seconds: i64, quorum_votes: u128) {
+    /// An optional `quorum_decay` enables automatic quorum reduction over time.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        voting_period_seconds: i64,
+        quorum_votes: u128,
+        quorum_decay: Option<QuorumDecay>,
+    ) {
         // Only allow once (idempotent check)
         if env.storage().persistent().has(&StorageKey::Admin) {
             // Already initialized; nothing to do
@@ -63,6 +136,11 @@ impl GovernanceContract {
         if voting_period_seconds <= 0 || quorum_votes == 0 {
             panic_with_error!(env, crate::errors::Error::InvalidInput);
         }
+        if let Some(ref d) = quorum_decay {
+            if d.floor_bps > 10000 || d.halving_seconds == 0 {
+                panic_with_error!(env, crate::errors::Error::InvalidInput);
+            }
+        }
         env.storage().persistent().set(&StorageKey::Admin, &admin);
         env.storage()
             .persistent()
@@ -70,6 +148,9 @@ impl GovernanceContract {
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumVotes, &quorum_votes);
+        env.storage()
+            .persistent()
+            .set(&StorageKey::QuorumDecay, &quorum_decay);
         // initialize empty proposal list
         let empty: Vec<Symbol> = Vec::new(&env);
         env.storage()
@@ -154,7 +235,7 @@ impl GovernanceContract {
     }
 
     /// Vote on a proposal. `support = true` means FOR, false means AGAINST.
-    /// One address one vote (no weighting).
+    /// Each address counts as 1 vote plus 1 for each address that has delegated to it.
     pub fn vote(
         env: Env,
         voter: Address,
@@ -193,13 +274,21 @@ impl GovernanceContract {
             return Err(GovernanceError::AlreadyVoted);
         }
 
+        // Voting weight = 1 (own vote) + number of addresses delegating to this voter.
+        let delegated: u128 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(voter.clone()))
+            .unwrap_or(0) as u128;
+        let weight: u128 = 1 + delegated;
+
         if support {
-            p.for_votes += 1;
+            p.for_votes += weight;
             env.storage()
                 .persistent()
                 .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &1i32);
         } else {
-            p.against_votes += 1;
+            p.against_votes += weight;
             env.storage()
                 .persistent()
                 .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &2i32);
@@ -216,7 +305,106 @@ impl GovernanceContract {
         Ok(())
     }
 
+    /// Delegate the caller's vote to `delegate`.
+    ///
+    /// Storage griefing guard:
+    /// - A delegator may hold at most **one** active delegation at a time.
+    /// - A delegate may receive at most `MAX_INCOMING_DELEGATIONS` incoming delegations.
+    /// - Self-delegation and two-hop cycles (A→B while B→A exists) are rejected.
+    pub fn set_delegate(
+        env: Env,
+        delegator: Address,
+        delegate: Address,
+    ) -> Result<(), GovernanceError> {
+        delegator.require_auth();
+
+        // No self-delegation
+        if delegator == delegate {
+            return Err(GovernanceError::SelfDelegation);
+        }
+
+        // Detect two-hop cycle: reject if delegate has already delegated back to delegator
+        if let Some(delegates_delegate) = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegate.clone()))
+        {
+            if delegates_delegate == delegator {
+                return Err(GovernanceError::DelegationCycle);
+            }
+        }
+
+        // Enforce max-1 active delegation per delegator (griefing guard)
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Delegate(delegator.clone()))
+        {
+            return Err(GovernanceError::DelegationAlreadySet);
+        }
+
+        // Enforce incoming-delegation cap on the delegate (griefing guard)
+        let incoming: u32 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(delegate.clone()))
+            .unwrap_or(0);
+        if incoming >= MAX_INCOMING_DELEGATIONS {
+            return Err(GovernanceError::DelegateLimitReached);
+        }
+
+        // Persist delegation and bump counter
+        env.storage()
+            .persistent()
+            .set(&StorageKey::Delegate(delegator.clone()), &delegate);
+        env.storage()
+            .persistent()
+            .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming + 1));
+
+        Ok(())
+    }
+
+    /// Remove the caller's active delegation.
+    pub fn unset_delegate(env: Env, delegator: Address) -> Result<(), GovernanceError> {
+        delegator.require_auth();
+
+        let delegate: Address = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegator.clone()))
+            .ok_or(GovernanceError::NoDelegationSet)?;
+
+        // Decrement incoming count on the previously-pointed-at delegate
+        let incoming: u32 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(delegate.clone()))
+            .unwrap_or(0);
+        if incoming > 0 {
+            env.storage()
+                .persistent()
+                .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming - 1));
+        }
+
+        env.storage()
+            .persistent()
+            .remove(&StorageKey::Delegate(delegator.clone()));
+
+        Ok(())
+    }
+
+    /// Return the delegate for `delegator`, if any.
+    pub fn get_delegate(env: Env, delegator: Address) -> Option<Address> {
+        env.storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegator))
+    }
+
     /// Validate governance votes for a proposal. Returns (passed: bool, reason: String)
+    ///
+    /// When quorum decay is configured the effective quorum is computed based on
+    /// time elapsed since the proposal opened.  If the proposal has expired and
+    /// not even the floor quorum was reached an auto-rejection event is emitted.
     pub fn validate_proposal(
         env: Env,
         proposal_id: Symbol,
@@ -234,13 +422,38 @@ impl GovernanceContract {
             return Err(GovernanceError::VotingStillActive);
         }
 
-        // check quorum
-        let quorum: u128 = env
+        // load base quorum and optional decay config
+        let base_quorum: u128 = env
             .storage()
             .persistent()
             .get(&StorageKey::QuorumVotes)
             .ok_or(GovernanceError::NotInitialized)?;
-        if p.for_votes < quorum {
+
+        let decay: Option<QuorumDecay> = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Option<QuorumDecay>>(&StorageKey::QuorumDecay)
+            .unwrap_or(None);
+
+        let elapsed = now.saturating_sub(p.start_time);
+        let effective_quorum =
+            Self::compute_effective_quorum(base_quorum, &decay, elapsed);
+
+        if p.for_votes < effective_quorum {
+            // check whether even the floor was missed
+            let floor = match &decay {
+                Some(d) => base_quorum * (d.floor_bps as u128) / 10000,
+                None => effective_quorum,
+            };
+            if p.for_votes < floor {
+                EventEmitter::emit_governance_proposal_auto_rejected(
+                    &env,
+                    &proposal_id,
+                    &p.proposer,
+                    p.for_votes,
+                    floor,
+                );
+            }
             return Ok((false, String::from_str(&env, "quorum not reached")));
         }
         if p.for_votes <= p.against_votes {
@@ -356,6 +569,33 @@ impl GovernanceContract {
             .persistent()
             .set(&StorageKey::QuorumVotes, &new_quorum);
         Ok(())
+    }
+
+    /// Admin-only: configure or disable quorum decay.
+    /// Pass `None` to disable decay (static quorum).
+    pub fn set_quorum_decay(
+        env: Env,
+        caller: Address,
+        decay: Option<QuorumDecay>,
+    ) -> Result<(), GovernanceError> {
+        Self::ensure_admin(&env, caller)?;
+        if let Some(ref d) = decay {
+            if d.floor_bps > 10000 || d.halving_seconds == 0 {
+                return Err(GovernanceError::InvalidParams);
+            }
+        }
+        env.storage()
+            .persistent()
+            .set(&StorageKey::QuorumDecay, &decay);
+        Ok(())
+    }
+
+    /// View the current quorum decay configuration (if any).
+    pub fn get_quorum_decay(env: Env) -> Option<QuorumDecay> {
+        env.storage()
+            .persistent()
+            .get::<StorageKey, Option<QuorumDecay>>(&StorageKey::QuorumDecay)
+            .unwrap_or(None)
     }
 
     /// Simple helper to check admin
