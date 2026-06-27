@@ -29,6 +29,8 @@ pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
+    /// Cumulative days extended for a given market (u32).
+    MarketExtensionTotal(Symbol),
 }
 
 /// Storage format version for migration tracking

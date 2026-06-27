@@ -127,6 +127,9 @@ mod upgrade_manager_tests;
 // #[cfg(test)]
 // mod governance_tests;
 
+#[cfg(test)]
+mod extensions_cumulative_cap_tests;
+
 #[cfg(any())]
 mod category_tags_tests;
 #[cfg(test)]
@@ -4955,6 +4958,42 @@ impl PredictifyHybrid {
             additional_days,
             reason,
         )
+    }
+
+    /// Sets the admin-configurable cumulative extension cap (in days) that applies
+    /// globally to all markets. A value of `0` disables the cap.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Unauthorized`] when the caller is not the primary admin.
+    ///
+    /// # Events
+    ///
+    /// Emits no events; purely a configuration write.
+    pub fn set_cumulative_extension_cap(
+        env: Env,
+        admin: Address,
+        cap_days: u32,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let key = Symbol::new(&env, "cum_ext_cap");
+        env.storage().persistent().set(&key, &cap_days);
+        Ok(())
+    }
+
+    /// Returns the running cumulative extension total (in days) for a given market.
+    /// Returns `0` when no extensions have been recorded yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn get_cumulative_extension_total(env: Env, market_id: Symbol) -> Result<u32, Error> {
+        let key = crate::storage::DataKey::MarketExtensionTotal(market_id);
+        Ok(env.storage().persistent().get(&key).unwrap_or(0u32))
     }
 
     // ===== STORAGE OPTIMIZATION FUNCTIONS =====

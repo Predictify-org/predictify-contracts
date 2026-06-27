@@ -189,6 +189,8 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
+    /// Cumulative extension cap reached; no further extensions allowed for this market.
+    CumulativeExtensionCapHit = 506,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1428,6 +1430,7 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+            Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed for this market",
         }
     }
 
@@ -1522,6 +1525,7 @@ impl Error {
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
         }
     }
 }
@@ -1623,6 +1627,8 @@ mod tests {
             Error::CBNotOpen,
             Error::CBOpen,
             Error::CBError,
+            Error::RateLimitExceeded,
+            Error::CumulativeExtensionCapHit,
         ]
     }
 
