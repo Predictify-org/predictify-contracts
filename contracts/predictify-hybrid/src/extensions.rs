@@ -11,6 +11,7 @@ use crate::types::*;
 /// - Extension events and logging
 /// - Extension history tracking
 /// - Extension analytics and reporting
+/// - Per-market cumulative extension cap with audit event on cap hit
 
 // ===== EXTENSION CONSTANTS =====
 // Note: These constants are now managed by the config module
@@ -20,6 +21,11 @@ const MAX_EXTENSION_DAYS: u32 = crate::config::MAX_EXTENSION_DAYS;
 const MIN_EXTENSION_DAYS: u32 = crate::config::MIN_EXTENSION_DAYS;
 const EXTENSION_FEE_PER_DAY: i128 = crate::config::EXTENSION_FEE_PER_DAY; // 1 XLM per day in stroops
 const MAX_TOTAL_EXTENSIONS: u32 = crate::config::MAX_TOTAL_EXTENSIONS;
+
+/// Storage key for the admin-configurable cumulative extension cap (in days).
+/// Stored under `Symbol::new(env, "cum_ext_cap")` in persistent storage.
+/// Defaults to 0 (no cap) when absent.
+const CUMULATIVE_CAP_KEY: &str = "cum_ext_cap";
 
 // ===== EXTENSION MANAGEMENT =====
 
@@ -192,8 +198,11 @@ impl ExtensionManager {
         // Validate extension conditions
         ExtensionValidator::validate_extension_conditions(env, &market_id, additional_days)?;
 
-        // Check extension limits
+        // Check per-call extension limits
         ExtensionValidator::check_extension_limits(env, &market_id, additional_days)?;
+
+        // Check cumulative extension cap for this market
+        ExtensionValidator::check_cumulative_cap(env, &market_id, additional_days)?;
 
         // Verify admin permissions
         ExtensionValidator::can_extend_market(env, &market_id, &admin)?;
@@ -215,6 +224,9 @@ impl ExtensionManager {
 
         // Store updated market
         MarketStateManager::update_market(env, &market_id, &market);
+
+        // Update the cumulative extension total for this market
+        ExtensionUtils::increment_extension_total(env, &market_id, additional_days);
 
         // Emit extension event
         ExtensionUtils::emit_extension_event(env, &market_id, additional_days, &admin);
@@ -653,6 +665,53 @@ impl ExtensionValidator {
 
         Ok(())
     }
+
+    /// Check cumulative extension cap.
+    ///
+    /// Reads the admin-configured cap (days) stored under `CUMULATIVE_CAP_KEY`.
+    /// A cap value of `0` means no cumulative cap is enforced.
+    /// When the cap is set, the proposed extension is checked against the
+    /// running total stored under `DataKey::MarketExtensionTotal(market_id)`.
+    /// On rejection an audit event is emitted before returning the error.
+    pub fn check_cumulative_cap(
+        env: &Env,
+        market_id: &Symbol,
+        additional_days: u32,
+    ) -> Result<(), Error> {
+        let cap_key = Symbol::new(env, CUMULATIVE_CAP_KEY);
+        let cap: u32 = env
+            .storage()
+            .persistent()
+            .get(&cap_key)
+            .unwrap_or(0u32);
+
+        // 0 means no cap configured — skip check
+        if cap == 0 {
+            return Ok(());
+        }
+
+        let total_key = crate::storage::DataKey::MarketExtensionTotal(market_id.clone());
+        let current_total: u32 = env
+            .storage()
+            .persistent()
+            .get(&total_key)
+            .unwrap_or(0u32);
+
+        let new_total = current_total
+            .checked_add(additional_days)
+            .ok_or(Error::CumulativeExtensionCapHit)?;
+
+        if new_total > cap {
+            // Emit audit event before returning the error
+            env.events().publish(
+                (symbol_short!("cum_cap"), market_id.clone()),
+                (current_total, cap),
+            );
+            return Err(Error::CumulativeExtensionCapHit);
+        }
+
+        Ok(())
+    }
 }
 
 // ===== EXTENSION UTILITIES =====
@@ -661,6 +720,15 @@ impl ExtensionValidator {
 pub struct ExtensionUtils;
 
 impl ExtensionUtils {
+    /// Increment the persistent cumulative extension total for a market.
+    /// Called after a successful extension so the counter is monotone-increasing.
+    pub fn increment_extension_total(env: &Env, market_id: &Symbol, additional_days: u32) {
+        let key = crate::storage::DataKey::MarketExtensionTotal(market_id.clone());
+        let current: u32 = env.storage().persistent().get(&key).unwrap_or(0u32);
+        let new_total = current.saturating_add(additional_days);
+        env.storage().persistent().set(&key, &new_total);
+    }
+
     /// Handle extension fees
     pub fn handle_extension_fees(
         env: &Env,

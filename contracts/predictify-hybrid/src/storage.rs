@@ -35,10 +35,8 @@ pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
-    MarketMetadata(Symbol),
-    MarketScratch(Symbol),
-    DisputeHistoryCap,
-    DisputeHistory(Symbol),
+    /// Cumulative days extended for a given market (u32).
+    MarketExtensionTotal(Symbol),
 }
 
 /// Storage format version for migration tracking
