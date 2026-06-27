@@ -68,6 +68,8 @@ mod validation;
 // mod validation_tests; // disabled - API drift
 mod versioning;
 mod voting;
+#[cfg(test)]
+mod voting_invariants;
 
 #[cfg(test)]
 mod override_audit_tests;
