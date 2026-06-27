@@ -41,6 +41,15 @@ pub enum AdminRole {
     ReadOnlyAdmin,
 }
 
+/// Severity level for admin broadcasts
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum Severity {
+    Info,
+    Warning,
+    Critical,
+}
+
 /// Admin permission enumeration
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -864,6 +873,7 @@ impl AdminAccessControl {
             "manage_disputes" => Ok(AdminPermission::ManageDispute),
             "view_analytics" => Ok(AdminPermission::ViewAnalytic),
             "emergency_actions" => Ok(AdminPermission::Emergency),
+            "admin_broadcast" => Ok(AdminPermission::Emergency),
             _ => Err(Error::InvalidInput),
         }
     }
@@ -2564,6 +2574,36 @@ impl AdminFunctions {
 
         Ok(default_config)
     }
+
+    /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event (admin only).
+    pub fn admin_broadcast(
+        env: &Env,
+        admin: &Address,
+        severity: Severity,
+        message_hash: soroban_sdk::BytesN<32>,
+        reason: String,
+    ) -> Result<(), Error> {
+        // Validate admin permissions
+        AdminAccessControl::validate_admin_for_action(env, admin, "admin_broadcast")?;
+
+        // Emit broadcast event
+        EventEmitter::emit_admin_broadcast(env, severity, message_hash, reason.clone());
+
+        // Log admin action
+        let mut params = Map::new(env);
+        params.set(
+            String::from_str(env, "severity"),
+            String::from_str(env, match severity {
+                Severity::Info => "Info",
+                Severity::Warning => "Warning",
+                Severity::Critical => "Critical",
+            }),
+        );
+        params.set(String::from_str(env, "reason"), reason);
+        AdminActionLogger::log_action(env, admin, "admin_broadcast", None, params, true, None)?;
+
+        Ok(())
+    }
 }
 
 // ===== ADMIN VALIDATION =====
@@ -3663,6 +3703,7 @@ impl Default for AdminAnalytics {
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::Events;
 
     #[test]
     fn test_admin_initializer_initialize() {
@@ -4062,5 +4103,239 @@ mod admin_manager_tests {
 
             let total = summary.get(String::from_str(&env, "Total")).unwrap();
         });
+    }
+
+    #[test]
+    fn test_admin_broadcast_info() {
+        use soroban_sdk::testutils::Events;
+        use soroban_sdk::{TryFromVal, TryIntoVal, Val};
+        let env = Env::default();
+        env.mock_all_auths();
+        
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let attacker = Address::generate(&env);
+
+        client.initialize(&admin, &None, &None);
+
+        // Attacker trying to broadcast should fail (Unauthorized)
+        let hash = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
+        let reason = String::from_str(&env, "Attacker broadcast");
+        let result = client.try_admin_broadcast(
+            &attacker,
+            &Severity::Info,
+            &hash,
+            &reason,
+        );
+        assert!(result.is_err());
+
+        // Admin broadcasting Info should succeed
+        let hash_info = soroban_sdk::BytesN::from_array(&env, &[10; 32]);
+        let reason_info = String::from_str(&env, "Info notice");
+        let result_info = client.try_admin_broadcast(
+            &admin,
+            &Severity::Info,
+            &hash_info,
+            &reason_info,
+        );
+        assert_eq!(result_info.unwrap(), Ok(()));
+
+        // Verify that the event was emitted.
+        let mut info_found = false;
+        for event in env.events().all().events().iter() {
+            let body = match &event.body {
+                soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+            };
+            if let Some(first_topic_scval) = body.topics.get(0) {
+                let topic: Result<Symbol, _> = first_topic_scval.clone().try_into_val(&env);
+                if let Ok(topic) = topic {
+                    if topic == Symbol::new(&env, "admin_broadcast") {
+                        if let soroban_sdk::xdr::ScVal::Map(Some(sc_map)) = &body.data {
+                            let mut severity_opt = None;
+                            let mut hash_opt = None;
+                            let mut reason_opt = None;
+
+                            for entry in sc_map.iter() {
+                                let key_res: Result<Symbol, _> = entry.key.clone().try_into_val(&env);
+                                if let Ok(key) = key_res {
+                                    if key == Symbol::new(&env, "severity") {
+                                        let sev: Result<Severity, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(sev) = sev {
+                                            severity_opt = Some(sev);
+                                        }
+                                    } else if key == Symbol::new(&env, "message_hash") {
+                                        let h: Result<soroban_sdk::BytesN<32>, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(h) = h {
+                                            hash_opt = Some(h);
+                                        }
+                                    } else if key == Symbol::new(&env, "reason") {
+                                        let r: Result<String, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(r) = r {
+                                            reason_opt = Some(r);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) = (severity_opt, hash_opt, reason_opt) {
+                                if severity == Severity::Info && hash_bytes == hash_info && reason_str == reason_info {
+                                    info_found = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(info_found, "Info event not found");
+    }
+
+    #[test]
+    fn test_admin_broadcast_warning() {
+        use soroban_sdk::testutils::Events;
+        use soroban_sdk::{TryFromVal, TryIntoVal, Val};
+        let env = Env::default();
+        env.mock_all_auths();
+        
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+
+        client.initialize(&admin, &None, &None);
+
+        // Admin broadcasting Warning should succeed
+        let hash_warn = soroban_sdk::BytesN::from_array(&env, &[20; 32]);
+        let reason_warn = String::from_str(&env, "Warning notice");
+        let result_warn = client.try_admin_broadcast(
+            &admin,
+            &Severity::Warning,
+            &hash_warn,
+            &reason_warn,
+        );
+        assert_eq!(result_warn.unwrap(), Ok(()));
+
+        // Verify that the event was emitted.
+        let mut warn_found = false;
+        for event in env.events().all().events().iter() {
+            let body = match &event.body {
+                soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+            };
+            if let Some(first_topic_scval) = body.topics.get(0) {
+                let topic: Result<Symbol, _> = first_topic_scval.clone().try_into_val(&env);
+                if let Ok(topic) = topic {
+                    if topic == Symbol::new(&env, "admin_broadcast") {
+                        if let soroban_sdk::xdr::ScVal::Map(Some(sc_map)) = &body.data {
+                            let mut severity_opt = None;
+                            let mut hash_opt = None;
+                            let mut reason_opt = None;
+
+                            for entry in sc_map.iter() {
+                                let key_res: Result<Symbol, _> = entry.key.clone().try_into_val(&env);
+                                if let Ok(key) = key_res {
+                                    if key == Symbol::new(&env, "severity") {
+                                        let sev: Result<Severity, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(sev) = sev {
+                                            severity_opt = Some(sev);
+                                        }
+                                    } else if key == Symbol::new(&env, "message_hash") {
+                                        let h: Result<soroban_sdk::BytesN<32>, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(h) = h {
+                                            hash_opt = Some(h);
+                                        }
+                                    } else if key == Symbol::new(&env, "reason") {
+                                        let r: Result<String, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(r) = r {
+                                            reason_opt = Some(r);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) = (severity_opt, hash_opt, reason_opt) {
+                                if severity == Severity::Warning && hash_bytes == hash_warn && reason_str == reason_warn {
+                                    warn_found = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(warn_found, "Warning event not found");
+    }
+
+    #[test]
+    fn test_admin_broadcast_critical() {
+        use soroban_sdk::testutils::Events;
+        use soroban_sdk::{TryFromVal, TryIntoVal, Val};
+        let env = Env::default();
+        env.mock_all_auths();
+        
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+
+        client.initialize(&admin, &None, &None);
+
+        // Admin broadcasting Critical should succeed
+        let hash_crit = soroban_sdk::BytesN::from_array(&env, &[30; 32]);
+        let reason_crit = String::from_str(&env, "Critical notice");
+        let result_crit = client.try_admin_broadcast(
+            &admin,
+            &Severity::Critical,
+            &hash_crit,
+            &reason_crit,
+        );
+        assert_eq!(result_crit.unwrap(), Ok(()));
+
+        // Verify that the event was emitted.
+        let mut crit_found = false;
+        for event in env.events().all().events().iter() {
+            let body = match &event.body {
+                soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+            };
+            if let Some(first_topic_scval) = body.topics.get(0) {
+                let topic: Result<Symbol, _> = first_topic_scval.clone().try_into_val(&env);
+                if let Ok(topic) = topic {
+                    if topic == Symbol::new(&env, "admin_broadcast") {
+                        if let soroban_sdk::xdr::ScVal::Map(Some(sc_map)) = &body.data {
+                            let mut severity_opt = None;
+                            let mut hash_opt = None;
+                            let mut reason_opt = None;
+
+                            for entry in sc_map.iter() {
+                                let key_res: Result<Symbol, _> = entry.key.clone().try_into_val(&env);
+                                if let Ok(key) = key_res {
+                                    if key == Symbol::new(&env, "severity") {
+                                        let sev: Result<Severity, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(sev) = sev {
+                                            severity_opt = Some(sev);
+                                        }
+                                    } else if key == Symbol::new(&env, "message_hash") {
+                                        let h: Result<soroban_sdk::BytesN<32>, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(h) = h {
+                                            hash_opt = Some(h);
+                                        }
+                                    } else if key == Symbol::new(&env, "reason") {
+                                        let r: Result<String, _> = entry.val.clone().try_into_val(&env);
+                                        if let Ok(r) = r {
+                                            reason_opt = Some(r);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) = (severity_opt, hash_opt, reason_opt) {
+                                if severity == Severity::Critical && hash_bytes == hash_crit && reason_str == reason_crit {
+                                    crit_found = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(crit_found, "Critical event not found");
     }
 }

@@ -1,8 +1,9 @@
 extern crate alloc;
 
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, vec, Address, BytesN, Env, Map, String, Symbol, Vec};
 
+use crate::admin::Severity;
 use crate::config::Environment;
 use crate::errors::Error;
 use crate::types::OracleProvider;
@@ -1219,6 +1220,16 @@ pub struct ContractPausedEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractUnpausedEvent {
     pub admin: Address,
+    pub timestamp: u64,
+}
+
+/// Admin emergency-broadcast event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminBroadcastEvent {
+    pub severity: Severity,
+    pub message_hash: BytesN<32>,
+    pub reason: String,
     pub timestamp: u64,
 }
 
@@ -2782,6 +2793,23 @@ impl EventEmitter {
         };
         env.events()
             .publish((Symbol::new(env, "platform_fee_set"),), event);
+    }
+
+    /// Emit admin emergency broadcast event
+    pub fn emit_admin_broadcast(
+        env: &Env,
+        severity: Severity,
+        message_hash: BytesN<32>,
+        reason: String,
+    ) {
+        let event = AdminBroadcastEvent {
+            severity,
+            message_hash,
+            reason,
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((Symbol::new(env, "admin_broadcast"),), event);
     }
 
     /// Emit config initialized event
