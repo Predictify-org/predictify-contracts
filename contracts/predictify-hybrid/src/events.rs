@@ -4008,9 +4008,10 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("chain_mismatch"), &event);
+        let topic = Symbol::new(env, "chain_mismatch");
+        Self::store_event(env, &topic, &event);
         env.events()
-            .publish((symbol_short!("chain_mismatch"), admin.clone()), event);
+            .publish((topic, admin.clone()), event);
     }
 
     /// Emit upgrade proposal created event
