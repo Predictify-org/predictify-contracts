@@ -1,8 +1,6 @@
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
-use soroban_sdk::Storage;
-
 use crate::admin::AdminAccessControl;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::{CircuitBreakerEvent, EventEmitter};
 use alloc::format;
 use alloc::string::ToString;
@@ -675,33 +673,19 @@ impl CircuitBreaker {
                 state.half_open_requests = 0;
                 state.half_open_since = 0;
 
-                // Persist updated window
-                env.storage().temporary().set(&key, &window);
-                env.storage().temporary().extend_ttl(&key, config.half_open_quota.evaluation_window_s as u32 + 86400, config.half_open_quota.evaluation_window_s as u32 + 86400);
-            } else {
-                // Backwards compatible path
-                state.half_open_requests += 1;
-
-                let config = Self::get_config(env)?;
-                if state.half_open_requests >= config.half_open_max_requests {
-                    state.state = BreakerState::Closed;
-                    state.failure_count = 0;
-                    state.half_open_requests = 0;
-
-                    let _ = Self::emit_circuit_breaker_event(
-                        env,
-                        BreakerAction::Resume,
-                        BreakerCondition::ManualOverride,
-                        &String::from_str(env, "Auto-recovery: circuit breaker closed"),
-                        None,
-                    );
-                    crate::monitoring::ContractMonitor::emit_pause_transition_hook(
-                        env,
-                        &String::from_str(env, "unpaused"),
-                        None,
-                        &String::from_str(env, "auto_recovery"),
-                    );
-                }
+                let _ = Self::emit_circuit_breaker_event(
+                    env,
+                    BreakerAction::Resume,
+                    BreakerCondition::ManualOverride,
+                    &String::from_str(env, "Auto-recovery: circuit breaker closed"),
+                    None,
+                );
+                crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+                    env,
+                    &String::from_str(env, "unpaused"),
+                    None,
+                    &String::from_str(env, "auto_recovery"),
+                );
             }
         }
 
@@ -1106,6 +1090,7 @@ impl CircuitBreakerTesting {
             recovery_timeout: 60,        // 1 minute recovery timeout
             half_open_max_requests: 2,   // 2 requests in half-open state
             auto_recovery_enabled: true, // Enable auto-recovery
+            half_open_quota: HalfOpenQuota { calls_per_minute: 3, evaluation_window_s: 60 },
         }
     }
 

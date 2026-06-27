@@ -1,7 +1,7 @@
 extern crate alloc;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Configuration management system for Predictify Hybrid contract
 ///

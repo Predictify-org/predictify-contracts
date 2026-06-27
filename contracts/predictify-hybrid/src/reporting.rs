@@ -1,6 +1,6 @@
 use soroban_sdk::{Env, Map, String, Symbol, Vec};
 use crate::types::{Market, MarketState, ActiveEvent, PlatformStats, EventSnapshot};
-use crate::errors::Error;
+use crate::err::Error;
 use crate::queries::QueryManager;
 
 /// Reporting and Analytics Manager for Predictify Hybrid.

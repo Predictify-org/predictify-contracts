@@ -1,5 +1,5 @@
 use crate::admin::{AdminManager, AdminPermission, AdminRole, ContractPauseManager};
-use crate::errors::Error;
+use crate::err::Error;
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN, Env, Symbol};

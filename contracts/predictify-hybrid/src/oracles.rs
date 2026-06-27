@@ -3,7 +3,7 @@
 use alloc::format;
 use alloc::string::ToString;
 use crate::bandprotocol;
-use crate::errors::Error;
+use crate::err::Error;
 use soroban_sdk::{
     contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec,
 };

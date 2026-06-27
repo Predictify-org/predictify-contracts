@@ -18,7 +18,7 @@ use crate::markets::MarketStateManager;
 use crate::storage::{
     BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,
 };
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::*;
 
 // ===== TEST UTILITIES =====

@@ -669,7 +669,7 @@ fn test_apply_migration_unauthorized_caller() {
         // Use internal function - attacker should still be rejected
         let result = UpgradeManager::apply_migration_internal(&env, &attacker, migration, None);
         assert!(result.is_err(), "Expected Err for non-admin caller");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::Unauthorized);
+        assert_eq!(result.unwrap_err(), crate::err::Error::Unauthorized);
     });
 }
 
@@ -704,7 +704,7 @@ fn test_apply_migration_rejects_invalid_step_empty_script() {
 
         let result = UpgradeManager::apply_migration_internal(&env, &admin, bad_migration, None);
         assert!(result.is_err(), "Expected Err for empty migration script");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -731,7 +731,7 @@ fn test_apply_migration_rejects_downgrade() {
 
         let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
         assert!(result.is_err(), "Expected Err for downgrade migration");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -760,7 +760,7 @@ fn test_apply_migration_rejects_incompatible_major_version() {
 
         let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
         assert!(result.is_err(), "Expected Err for cross-major incompatible migration");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -790,7 +790,7 @@ fn test_apply_migration_rejects_irreversible_without_ack() {
             result.is_err(),
             "Expected Err: irreversible migration without ack"
         );
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -859,7 +859,7 @@ fn test_apply_migration_rejects_double_apply() {
         // since calling require_auth twice in same frame causes Soroban auth errors
         let result = applied.validate_for_apply(&env, &current_version, &None);
         assert!(result.is_err(), "Expected Err for double-apply validation");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -1020,7 +1020,7 @@ fn test_upgrade_chain_rejects_wrong_predecessor() {
         assert!(result.is_err(), "Upgrade should fail with wrong predecessor");
         assert_eq!(
             result.unwrap_err(),
-            crate::errors::Error::UpgradeChainMismatch,
+            crate::err::Error::UpgradeChainMismatch,
             "Should return UpgradeChainMismatch error"
         );
 
@@ -1065,7 +1065,7 @@ fn test_upgrade_chain_rejects_genesis_violation() {
         assert!(result.is_err(), "Upgrade should fail when genesis case is violated");
         assert_eq!(
             result.unwrap_err(),
-            crate::errors::Error::UpgradeChainMismatch,
+            crate::err::Error::UpgradeChainMismatch,
             "Should return UpgradeChainMismatch error"
         );
     });
@@ -1216,7 +1216,7 @@ fn test_upgrade_chain_detects_fork() {
         assert!(result.is_err(), "Forked upgrade should be rejected");
         assert_eq!(
             result.unwrap_err(),
-            crate::errors::Error::UpgradeChainMismatch,
+            crate::err::Error::UpgradeChainMismatch,
             "Should return UpgradeChainMismatch error for fork"
         );
     });

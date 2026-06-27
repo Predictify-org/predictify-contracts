@@ -3,7 +3,7 @@
 use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, Vec};
 
 // use crate::config; // Unused import
-use crate::errors::Error;
+use crate::err::Error;
 use crate::storage::{DataKey, MARKET_CACHE_TTL_LEDGERS};
 use crate::types::*;
 // Oracle imports removed - not currently used
@@ -129,7 +129,7 @@ impl MarketCreator {
        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
         // Pre-flight check: ensure sufficient storage rent budget to prevent under-funded archives
-        let min_rent_budget = env.storage().persistent().max_ttl();
+        let min_rent_budget = env.storage().max_ttl();
         if env.ledger().sequence() + min_rent_budget > u32::MAX {
             return Err(Error::InsufficientStorageRentBudget);
         }
@@ -740,7 +740,7 @@ impl<'a> MarketReadCache<'a> {
         let result: Option<Market> = self.env.storage().instance().get(&key);
         if result.is_some() {
             // HIT: bump TTL to keep the cache entry alive
-            self.env.storage().instance().bump(MARKET_CACHE_TTL_LEDGERS);
+            self.env.storage().instance().extend_ttl(MARKET_CACHE_TTL_LEDGERS, MARKET_CACHE_TTL_LEDGERS);
         }
         result
         // NOTE: no unwrap() - get() returns Option, None on miss or type mismatch
@@ -751,7 +751,7 @@ impl<'a> MarketReadCache<'a> {
     pub fn set(&self, market_id: Symbol, market: &Market) {
         let key = DataKey::MarketCache(market_id);
         self.env.storage().instance().set(&key, market);
-        self.env.storage().instance().bump(MARKET_CACHE_TTL_LEDGERS);
+        self.env.storage().instance().extend_ttl(MARKET_CACHE_TTL_LEDGERS, MARKET_CACHE_TTL_LEDGERS);
         // CACHE: populate after persistent write - never before
     }
 

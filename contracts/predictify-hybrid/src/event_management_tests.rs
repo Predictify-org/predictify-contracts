@@ -1,5 +1,5 @@
 use crate::circuit_breaker::CircuitBreaker;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::{BetStatusUpdatedEvent, MarketResolvedEvent};
 use crate::types::{OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
@@ -992,7 +992,7 @@ fn test_archive_event_already_archived_returns_error() {
     client.archive_event(&setup.admin, &market_id);
     // Second archive attempt must fail
     let result = client.try_archive_event(&setup.admin, &market_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::AlreadyClaimed)));
+    assert_eq!(result, Err(Ok(crate::err::Error::AlreadyClaimed)));
 }
 
 #[test]
@@ -1009,7 +1009,7 @@ fn test_archive_active_market_returns_invalid_state() {
 
     // Market is Active — must not be archivable
     let result = client.try_archive_event(&setup.admin, &market_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::InvalidState)));
+    assert_eq!(result, Err(Ok(crate::err::Error::InvalidState)));
 }
 
 #[test]
@@ -1019,7 +1019,7 @@ fn test_archive_nonexistent_market_returns_not_found() {
 
     let fake_id = Symbol::new(&setup.env, "ghost");
     let result = client.try_archive_event(&setup.admin, &fake_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::MarketNotFound)));
+    assert_eq!(result, Err(Ok(crate::err::Error::MarketNotFound)));
 }
 
 #[test]
@@ -1043,7 +1043,7 @@ fn test_archive_unauthorized_returns_error() {
     );
 
     let result = client.try_archive_event(&non_admin, &market_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(crate::err::Error::Unauthorized)));
 }
 
 #[test]
@@ -1116,7 +1116,7 @@ fn test_prune_archive_unauthorized_returns_error() {
     let non_admin = setup.create_user();
 
     let result = client.try_prune_archive(&non_admin, &5u32);
-    assert_eq!(result, Err(Ok(crate::errors::Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(crate::err::Error::Unauthorized)));
 }
 
 #[test]

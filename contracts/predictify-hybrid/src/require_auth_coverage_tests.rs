@@ -44,7 +44,7 @@
 //! | remove_admin                 | admin        | yes      | yes      |
 //! | migrate_to_multi_admin       | admin        | yes      | yes      |
 //! | upgrade_contract             | admin        | yes      | yes      |
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::{OracleConfig, OracleProvider, ReflectorAsset};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
@@ -76,7 +76,7 @@ fn client<'a>(env: &'a Env, cid: &'a Address) -> PredictifyHybridClient<'a> {
 macro_rules! assert_unauthorized_contract {
     ($result:expr) => {
         match $result {
-            Err(Ok(e)) => assert_eq!(e, crate::errors::Error::Unauthorized,
+            Err(Ok(e)) => assert_eq!(e, crate::err::Error::Unauthorized,
                 "expected Unauthorized, got {:?}", e),
             Ok(_) => panic!("expected Unauthorized error, got Ok"),
             Err(Err(e)) => panic!("expected Unauthorized error, got host error {:?}", e),
@@ -92,7 +92,7 @@ macro_rules! assert_unauthorized_panic {
         match $result {
             Err(Ok(e)) => assert_eq!(
                 e,
-                soroban_sdk::Error::from_contract_error(crate::errors::Error::Unauthorized as u32),
+                soroban_sdk::Error::from_contract_error(crate::err::Error::Unauthorized as u32),
                 "expected Unauthorized, got {:?}", e
             ),
             Ok(_) => panic!("expected Unauthorized error, got Ok"),
@@ -106,7 +106,7 @@ macro_rules! assert_unauthorized_panic {
 macro_rules! assert_auth_ok_contract {
     ($result:expr, $msg:expr) => {
         if let Err(Ok(e)) = $result {
-            assert_ne!(e, crate::errors::Error::Unauthorized, $msg);
+            assert_ne!(e, crate::err::Error::Unauthorized, $msg);
         }
     };
 }
@@ -118,7 +118,7 @@ macro_rules! assert_auth_ok_panic {
         if let Err(Ok(e)) = $result {
             assert_ne!(
                 e,
-                soroban_sdk::Error::from_contract_error(crate::errors::Error::Unauthorized as u32),
+                soroban_sdk::Error::from_contract_error(crate::err::Error::Unauthorized as u32),
                 $msg
             );
         }
@@ -279,7 +279,7 @@ fn test_vote_wrong_subject_rejected() {
     );
     // user_b is a distinct address – must NOT get AlreadyVoted
     if let Err(Ok(e)) = result {
-        assert_ne!(e, soroban_sdk::Error::from_contract_error(crate::errors::Error::AlreadyVoted as u32), "contract confused user_a and user_b");
+        assert_ne!(e, soroban_sdk::Error::from_contract_error(crate::err::Error::AlreadyVoted as u32), "contract confused user_a and user_b");
     }
 }
 
@@ -1233,7 +1233,7 @@ fn test_admin_calls_before_initialize_return_admin_not_set() {
     let cid = env.register(PredictifyHybrid, ());
     let fake_admin = Address::generate(&env);
     let result = client(&env, &cid).try_set_platform_fee(&fake_admin, &200i128);
-    assert_eq!(result, Err(Ok(crate::errors::Error::AdminNotSet)));
+    assert_eq!(result, Err(Ok(crate::err::Error::AdminNotSet)));
 }
 
 /// Uninitialized contract: upgrade_contract before initialize returns AdminNotSet.
@@ -1245,7 +1245,7 @@ fn test_upgrade_before_initialize_returns_admin_not_set() {
     let fake_admin = Address::generate(&env);
     let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
     let result = client(&env, &cid).try_upgrade_contract(&fake_admin, &wasm_hash);
-    assert_eq!(result, Err(Ok(crate::errors::Error::AdminNotSet)));
+    assert_eq!(result, Err(Ok(crate::err::Error::AdminNotSet)));
 }
 
 /// Correct caller but wrong subject: user A's auth token cannot satisfy

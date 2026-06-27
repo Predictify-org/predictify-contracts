@@ -3,7 +3,7 @@
 use alloc::format;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::EventEmitter;
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 /// Comprehensive monitoring system for Predictify contract health and performance.

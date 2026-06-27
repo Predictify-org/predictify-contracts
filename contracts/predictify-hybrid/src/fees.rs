@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::markets::{MarketStateManager, MarketUtils};
 use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;
@@ -768,7 +768,8 @@ impl FeeManager {
             crate::audit_trail::AuditAction::FeesCollected,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(fee_amount)
     }
@@ -886,7 +887,8 @@ impl FeeManager {
             crate::audit_trail::AuditAction::FeeConfigUpdated,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -1739,7 +1741,8 @@ impl FeeWithdrawalManager {
             crate::audit_trail::AuditAction::FeesWithdrawn,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(withdrawal_amount)
     }
