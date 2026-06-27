@@ -129,7 +129,7 @@ mod upgrade_manager_tests;
 // mod event_management_tests;
 
 // #[cfg(test)]
-// mod governance_tests;
+mod governance_tests;
 
 #[cfg(any())]
 mod category_tags_tests;

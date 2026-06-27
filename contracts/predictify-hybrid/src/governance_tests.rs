@@ -109,6 +109,24 @@ impl GovernanceFixture {
             .ledger()
             .with_mut(|li| li.timestamp = li.timestamp.saturating_add(seconds));
     }
+
+    fn set_delegate(&self, delegator: Address, delegate: Address) -> Result<(), GovernanceError> {
+        self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::set_delegate(self.env.clone(), delegator, delegate)
+        })
+    }
+
+    fn unset_delegate(&self, delegator: Address) -> Result<(), GovernanceError> {
+        self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::unset_delegate(self.env.clone(), delegator)
+        })
+    }
+
+    fn get_delegate(&self, delegator: Address) -> Option<Address> {
+        self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::get_delegate(self.env.clone(), delegator)
+        })
+    }
 }
 
 #[test]
@@ -327,4 +345,181 @@ fn governance_set_voting_period_is_applied_to_new_proposals() {
     let proposal = fixture.get(proposal_id).unwrap();
 
     assert_eq!(proposal.end_time - proposal.start_time, 250);
+}
+
+// ===== DELEGATION TESTS =====
+
+#[test]
+fn delegation_set_and_get_round_trip() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegator = Address::generate(&fixture.env);
+    let delegate = Address::generate(&fixture.env);
+
+    assert_eq!(fixture.get_delegate(delegator.clone()), None);
+
+    fixture.set_delegate(delegator.clone(), delegate.clone()).unwrap();
+    assert_eq!(fixture.get_delegate(delegator.clone()), Some(delegate));
+}
+
+#[test]
+fn delegation_unset_removes_entry() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegator = Address::generate(&fixture.env);
+    let delegate = Address::generate(&fixture.env);
+
+    fixture.set_delegate(delegator.clone(), delegate.clone()).unwrap();
+    fixture.unset_delegate(delegator.clone()).unwrap();
+
+    assert_eq!(fixture.get_delegate(delegator), None);
+}
+
+#[test]
+fn delegation_rejects_self_delegation() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let addr = Address::generate(&fixture.env);
+
+    let result = fixture.set_delegate(addr.clone(), addr.clone());
+    assert_eq!(result, Err(GovernanceError::SelfDelegation));
+}
+
+#[test]
+fn delegation_rejects_cycle() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let a = Address::generate(&fixture.env);
+    let b = Address::generate(&fixture.env);
+
+    // A delegates to B; then B tries to delegate back to A
+    fixture.set_delegate(a.clone(), b.clone()).unwrap();
+    let result = fixture.set_delegate(b.clone(), a.clone());
+    assert_eq!(result, Err(GovernanceError::DelegationCycle));
+}
+
+#[test]
+fn delegation_rejects_double_set_without_unset() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegator = Address::generate(&fixture.env);
+    let d1 = Address::generate(&fixture.env);
+    let d2 = Address::generate(&fixture.env);
+
+    fixture.set_delegate(delegator.clone(), d1.clone()).unwrap();
+    let result = fixture.set_delegate(delegator.clone(), d2.clone());
+    assert_eq!(result, Err(GovernanceError::DelegationAlreadySet));
+}
+
+#[test]
+fn delegation_allows_reset_after_unset() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegator = Address::generate(&fixture.env);
+    let d1 = Address::generate(&fixture.env);
+    let d2 = Address::generate(&fixture.env);
+
+    fixture.set_delegate(delegator.clone(), d1.clone()).unwrap();
+    fixture.unset_delegate(delegator.clone()).unwrap();
+    fixture.set_delegate(delegator.clone(), d2.clone()).unwrap();
+
+    assert_eq!(fixture.get_delegate(delegator), Some(d2));
+}
+
+#[test]
+fn delegation_unset_without_active_delegation_errors() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegator = Address::generate(&fixture.env);
+
+    let result = fixture.unset_delegate(delegator);
+    assert_eq!(result, Err(GovernanceError::NoDelegationSet));
+}
+
+#[test]
+fn delegation_griefing_guard_rejects_beyond_cap() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegate = Address::generate(&fixture.env);
+
+    // Fill delegate up to the cap (MAX_INCOMING_DELEGATIONS = 50)
+    for _ in 0..50 {
+        let d = Address::generate(&fixture.env);
+        fixture.set_delegate(d, delegate.clone()).unwrap();
+    }
+
+    // The 51st should be rejected
+    let overflow = Address::generate(&fixture.env);
+    let result = fixture.set_delegate(overflow, delegate.clone());
+    assert_eq!(result, Err(GovernanceError::DelegateLimitReached));
+}
+
+#[test]
+fn delegation_weight_counted_in_vote() {
+    // voter_one has two delegators; their single vote should count as 3
+    let fixture = GovernanceFixture::new(100, 3);
+    let proposal_id = fixture.create_noop_proposal("gov_deleg_1");
+
+    let delegator_a = Address::generate(&fixture.env);
+    let delegator_b = Address::generate(&fixture.env);
+
+    fixture
+        .set_delegate(delegator_a.clone(), fixture.voter_one.clone())
+        .unwrap();
+    fixture
+        .set_delegate(delegator_b.clone(), fixture.voter_one.clone())
+        .unwrap();
+
+    // voter_one votes FOR (weight = 1 own + 2 delegated = 3 → meets quorum of 3)
+    fixture
+        .vote(fixture.voter_one.clone(), proposal_id.clone(), true)
+        .unwrap();
+
+    fixture.advance_time(100);
+    let (passed, _) = fixture.validate(proposal_id).unwrap();
+    assert!(passed, "proposal should pass with delegated weight");
+}
+
+#[test]
+fn delegation_against_weight_counted_in_vote() {
+    // voter_one has 1 delegator; their against vote counts as 2
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("gov_deleg_2");
+
+    let delegator = Address::generate(&fixture.env);
+    fixture
+        .set_delegate(delegator.clone(), fixture.voter_one.clone())
+        .unwrap();
+
+    // voter_two: 1 FOR; voter_one: 2 AGAINST → proposal should not pass
+    fixture
+        .vote(fixture.voter_two.clone(), proposal_id.clone(), true)
+        .unwrap();
+    fixture
+        .vote(fixture.voter_one.clone(), proposal_id.clone(), false)
+        .unwrap();
+
+    fixture.advance_time(100);
+    let (passed, _) = fixture.validate(proposal_id).unwrap();
+    assert!(!passed, "proposal should fail when against weight exceeds for");
+}
+
+#[test]
+fn unset_delegation_restores_delegate_capacity() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegate = Address::generate(&fixture.env);
+
+    // Fill to cap
+    let mut delegators = soroban_sdk::Vec::new(&fixture.env);
+    for _ in 0..50 {
+        let d = Address::generate(&fixture.env);
+        fixture.set_delegate(d.clone(), delegate.clone()).unwrap();
+        delegators.push_back(d);
+    }
+
+    // Overflow still rejected
+    let overflow = Address::generate(&fixture.env);
+    assert_eq!(
+        fixture.set_delegate(overflow.clone(), delegate.clone()),
+        Err(GovernanceError::DelegateLimitReached)
+    );
+
+    // Remove one delegation
+    let first = delegators.get(0).unwrap();
+    fixture.unset_delegate(first).unwrap();
+
+    // Now the overflow address can delegate
+    fixture.set_delegate(overflow, delegate).unwrap();
 }
