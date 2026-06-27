@@ -2334,12 +2334,13 @@ impl AdminFunctions {
         env: &Env,
         admin: &Address,
         new_config: &FeeConfig,
-    ) -> Result<FeeConfig, Error> {
+        eta: u64,
+    ) -> Result<(), Error> {
         // Validate admin permissions
         AdminAccessControl::validate_admin_for_action(env, admin, "update_fees")?;
 
-        // Update fee configuration
-        let updated_config = FeeManager::update_fee_config(env, admin.clone(), new_config.clone())?;
+        // Queue fee configuration with governance time-lock
+        FeeManager::update_fee_config(env, admin.clone(), new_config.clone(), eta)?;
 
         // Log admin action
         let mut params = Map::new(env);
@@ -2353,7 +2354,24 @@ impl AdminFunctions {
         );
         AdminActionLogger::log_action(env, admin, "update_fees", None, params, true, None)?;
 
-        Ok(updated_config)
+        Ok(())
+    }
+
+    /// Apply a previously queued fee configuration update.
+    ///
+    /// Succeeds only when the ETA has been reached. Can be called by anyone
+    /// once the timelock expires.
+    pub fn apply_fee_update(env: &Env, admin: &Address) -> Result<(), Error> {
+        FeeManager::apply_fee_update(env, admin.clone())?;
+        Ok(())
+    }
+
+    /// Cancel a pending fee configuration update before its ETA.
+    ///
+    /// Only the contract admin may cancel a queued update.
+    pub fn cancel_fee_update(env: &Env, admin: &Address) -> Result<(), Error> {
+        FeeManager::cancel_fee_update(env, admin.clone())?;
+        Ok(())
     }
 
     /// Updates the core contract configuration (admin only).

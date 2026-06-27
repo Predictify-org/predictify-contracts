@@ -4,6 +4,7 @@ use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, V
 
 // use crate::config; // Unused import
 use crate::errors::Error;
+use crate::storage::{DataKey, MARKET_CACHE_TTL_LEDGERS};
 use crate::types::*;
 // Oracle imports removed - not currently used
 
@@ -136,6 +137,9 @@ impl MarketCreator {
         // Store market
         env.storage().persistent().set(&market_id, &market);
         env.storage().persistent().extend_ttl(&market_id, min_rent_budget, min_rent_budget);
+
+        // CACHE INVALIDATION: ensure cache is empty for new market
+        MarketReadCache::new(env).invalidate(&market_id);
 
         Ok(market_id)
     }
@@ -699,6 +703,69 @@ impl MarketValidator {
     }
 }
 
+// ===== MARKET READ CACHE =====
+
+/// In-instance read cache for Market structs, keyed by market_id.
+///
+/// Backed by env.storage().instance() which provides fast access
+/// without the XDR deserialization cost of persistent storage reads.
+///
+/// # TTL Behaviour
+/// Instance storage TTL is shared across all keys in the instance.
+/// Every cache write (population or invalidation) bumps the instance TTL
+/// by MARKET_CACHE_TTL_LEDGERS. Cache misses do not bump TTL.
+///
+/// # Invalidation
+/// Cache entries are removed (not overwritten) on every write path
+/// through MarketStateManager.
+///
+/// # Security
+/// The cache never serves as the source of truth for writes - all mutations
+/// read from and write to persistent storage directly. The cache is
+/// exclusively a read optimization.
+pub struct MarketReadCache<'a> {
+    env: &'a Env,
+}
+
+impl<'a> MarketReadCache<'a> {
+    pub fn new(env: &'a Env) -> Self {
+        Self { env }
+    }
+
+    /// Returns the cached Market for market_id if present, or None on miss.
+    /// Bumps instance TTL on cache hit.
+    /// Never panics - returns None on any storage error.
+    pub fn get(&self, market_id: &Symbol) -> Option<Market> {
+        let key = DataKey::MarketCache(market_id.clone());
+        let result: Option<Market> = self.env.storage().instance().get(&key);
+        if result.is_some() {
+            // HIT: bump TTL to keep the cache entry alive
+            self.env.storage().instance().bump(MARKET_CACHE_TTL_LEDGERS);
+        }
+        result
+        // NOTE: no unwrap() - get() returns Option, None on miss or type mismatch
+    }
+
+    /// Populates the cache for market_id with the given Market.
+    /// Always bumps instance TTL after writing.
+    pub fn set(&self, market_id: Symbol, market: &Market) {
+        let key = DataKey::MarketCache(market_id);
+        self.env.storage().instance().set(&key, market);
+        self.env.storage().instance().bump(MARKET_CACHE_TTL_LEDGERS);
+        // CACHE: populate after persistent write - never before
+    }
+
+    /// Removes the cache entry for market_id.
+    /// Called on every write path through MarketStateManager.
+    /// Does not bump TTL - invalidation should not extend cache lifetime.
+    pub fn invalidate(&self, market_id: &Symbol) {
+        let key = DataKey::MarketCache(market_id.clone());
+        self.env.storage().instance().remove(&key);
+        // CACHE INVALIDATION: remove entirely - do not overwrite with sentinel
+        // A subsequent get() will miss and fall through to persistent storage
+    }
+}
+
 // ===== MARKET STATE MANAGEMENT =====
 
 /// Market state management utilities for persistent storage operations.
@@ -752,11 +819,38 @@ impl MarketStateManager {
     ///     Err(e) => println!("Market not found: {:?}", e),
     /// }
     /// ```
+    /// Retrieves a market by market_id.
+    ///
+    /// Read path (in order):
+    /// 1. Check MarketReadCache (instance storage) - O(1) if hot
+    /// 2. On miss: read from persistent storage and populate cache
+    /// 3. Return Error::MarketNotFound if not in persistent storage
+    ///
+    /// # Performance
+    /// Cache hits avoid full XDR deserialization of the Market struct.
+    /// Cache misses have the same cost as the original implementation plus
+    /// one instance storage write to populate the cache.
     pub fn get_market(_env: &Env, market_id: &Symbol) -> Result<Market, Error> {
-        _env.storage()
-            .persistent()
-            .get(market_id)
-            .ok_or(Error::MarketNotFound)
+        let cache = MarketReadCache::new(_env);
+
+        // CACHE: check instance cache first
+        if let Some(cached) = cache.get(market_id) {
+            // HIT: return without touching persistent storage
+            return Ok(cached);
+        }
+
+        // MISS: read from persistent storage
+        let market: Option<Market> = _env.storage().persistent().get(market_id);
+
+        match market {
+            Some(m) => {
+                // Populate cache for subsequent reads
+                cache.set(market_id.clone(), &m);
+                Ok(m)
+            }
+            None => Err(Error::MarketNotFound),
+            // NOTE: no unwrap() - explicit match on Option
+        }
     }
 
     /// Updates market data in persistent storage.
@@ -789,6 +883,8 @@ impl MarketStateManager {
     /// ```
     pub fn update_market(_env: &Env, market_id: &Symbol, market: &Market) {
         _env.storage().persistent().set(market_id, market);
+        // CACHE INVALIDATION: remove cache entry after persistent write
+        MarketReadCache::new(_env).invalidate(market_id);
     }
 
     /// Updates the market question/description.
@@ -862,6 +958,8 @@ impl MarketStateManager {
             Self::update_market(env, market_id, &market);
         }
         env.storage().persistent().remove(market_id);
+        // CACHE INVALIDATION: remove cache entry after persistent removal
+        MarketReadCache::new(env).invalidate(market_id);
     }
 
     /// Adds a user's vote to a market with the specified stake amount.
@@ -2632,34 +2730,61 @@ impl MarketTestHelpers {
 pub struct MarketStateLogic;
 
 impl MarketStateLogic {
-    /// Validates that a market state transition is allowed by business rules.
+    /// Validates that a market state transition is allowed by the state machine.
     ///
-    /// This function enforces the market state machine by validating that
-    /// transitions between states follow the defined business logic. It prevents
-    /// invalid state changes that could compromise market integrity.
+    /// This function is the single authoritative gate for all market lifecycle
+    /// transitions.  It must be called before persisting any state change so that
+    /// illegal edges are rejected before touching storage.
     ///
     /// # Parameters
     ///
     /// * `from` - Current market state
-    /// * `to` - Target market state
+    /// * `to`   - Target market state
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - Transition is valid and allowed
-    /// * `Err(Error)` - Transition is not allowed
+    /// * `Ok(())` - Transition is legal and may proceed
+    /// * `Err(Error::IllegalMarketStateTransition)` - Transition is not permitted
     ///
-    /// # Errors
+    /// # Legal Transition Diagram
     ///
-    /// * `Error::InvalidState` - The requested state transition is not allowed
+    /// ```text
+    ///                   ┌─────────────────────────────────────────────────────┐
+    ///                   │              Market State Machine                    │
+    ///                   └─────────────────────────────────────────────────────┘
     ///
-    /// # Valid State Transitions
+    ///   ┌──────────┐  end_time passed   ┌──────────┐  oracle/admin   ┌──────────────┐
+    ///   │  Active  │ ─────────────────► │  Ended   │ ──────────────► │   Resolved   │
+    ///   └──────────┘                    └──────────┘                 └──────────────┘
+    ///        │                               │                               │
+    ///        │ admin cancel/close            │ dispute filed                 │ fees collected
+    ///        ▼                               ▼                               ▼
+    ///   ┌──────────┐               ┌──────────────┐               ┌──────────────────┐
+    ///   │Cancelled │               │   Disputed   │               │     Closed       │
+    ///   └──────────┘               └──────────────┘               └──────────────────┘
+    ///        │                          │     │                     ▲
+    ///        │ (terminal)               │     │ resolved/cancelled  │
+    ///        │                          ▼     └────────────────────►│
+    ///        │                    (Resolved)  (Closed/Cancelled)    │
+    ///        └──────────────────────────────────────────────────────┘
     ///
-    /// * `Active` → `Ended`, `Cancelled`, `Closed`, `Disputed`
-    /// * `Ended` → `Resolved`, `Disputed`, `Closed`, `Cancelled`
-    /// * `Disputed` → `Resolved`, `Closed`, `Cancelled`
-    /// * `Resolved` → `Closed`
-    /// * `Closed` → (no transitions allowed)
-    /// * `Cancelled` → (no transitions allowed)
+    ///   Legal edges (exhaustive):
+    ///     Active    → Ended, Cancelled, Closed, Disputed
+    ///     Ended     → Resolved, Disputed, Closed, Cancelled
+    ///     Disputed  → Resolved, Closed, Cancelled
+    ///     Resolved  → Closed
+    ///     Closed    → (none — terminal state)
+    ///     Cancelled → (none — terminal state)
+    ///
+    ///   Self-loops (e.g. Active → Active) are ILLEGAL.
+    ///   Resolved → Active, Ended, Disputed are ILLEGAL.
+    /// ```
+    ///
+    /// # Adding a New State
+    ///
+    /// When a new `MarketState` variant is introduced the `match` below will fail to
+    /// compile (non-exhaustive match), forcing the author to consciously define the
+    /// legal edges for the new state.  This is intentional.
     ///
     /// # Example
     ///
@@ -2667,17 +2792,20 @@ impl MarketStateLogic {
     /// use crate::markets::MarketStateLogic;
     /// use crate::types::MarketState;
     ///
-    /// // Valid transition
+    /// // Legal transition
     /// assert!(MarketStateLogic::validate_state_transition(
     ///     MarketState::Active,
     ///     MarketState::Ended
     /// ).is_ok());
     ///
-    /// // Invalid transition
-    /// assert!(MarketStateLogic::validate_state_transition(
-    ///     MarketState::Closed,
-    ///     MarketState::Active
-    /// ).is_err());
+    /// // Illegal transition returns the dedicated error variant
+    /// assert_eq!(
+    ///     MarketStateLogic::validate_state_transition(
+    ///         MarketState::Closed,
+    ///         MarketState::Active
+    ///     ),
+    ///     Err(Error::IllegalMarketStateTransition)
+    /// );
     /// ```
     pub fn validate_state_transition(from: MarketState, to: MarketState) -> Result<(), Error> {
         use MarketState::*;
@@ -2692,7 +2820,7 @@ impl MarketStateLogic {
         if allowed {
             Ok(())
         } else {
-            Err(Error::InvalidState)
+            Err(Error::IllegalMarketStateTransition)
         }
     }
 
