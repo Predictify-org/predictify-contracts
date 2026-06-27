@@ -213,6 +213,9 @@ pub enum Error {
     /// * `Closed → Ended`     (terminal state, no transitions allowed)
     /// * `Active → Active`    (self-loops are not valid transitions)
     IllegalMarketStateTransition = 507,
+    /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
+    /// The bet is rejected to protect the caller from unexpected fee changes.
+    FeeExceedsMax = 508,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -736,6 +739,7 @@ impl ErrorHandler {
             }
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
+            Error::FeeExceedsMax => RecoveryStrategy::Retry,
             _ => RecoveryStrategy::Abort,
         }
     }
@@ -1303,6 +1307,11 @@ impl ErrorHandler {
                 ErrorSeverity::Low,
                 ErrorCategory::Financial,
                 RecoveryStrategy::Skip,
+            ),
+            Error::FeeExceedsMax => (
+                ErrorSeverity::Low,
+                ErrorCategory::Financial,
+                RecoveryStrategy::Retry,
             ),
             _ => (
                 ErrorSeverity::Medium,

@@ -190,6 +190,7 @@ fn test_market_resolution_publishes_status_events() {
         &market_id,
         &String::from_str(&setup.env, "Yes"),
         &1_000_000i128,
+        &250,
     );
 
     setup.env.ledger().with_mut(|li| {

@@ -131,9 +131,11 @@ This document provides a complete API reference for the Predictify Hybrid smart 
 - `set_global_bet_limits(env, limits)` - Set platform-wide bet limits
 - `set_event_bet_limits(env, market_id, limits)` - Set market-specific limits
 
-**BetManager**
-- `place_bet(env, user, market_id, outcome, amount)` - Place single bet on outcome
-- `place_bets(env, user, market_id, bets)` - Place multiple bets in batch
+**BetManager (Fee Slippage)**
+- `place_bet(env, user, market_id, outcome, amount, max_fee_bps)` - Place single bet with fee slippage guard
+- `place_bets(env, user, market_id, bets, max_fee_bps)` - Place multiple bets in batch with fee slippage guard
+  - The `max_fee_bps` parameter is the maximum fee in basis points the caller is willing to accept.
+  - Bet is rejected with `Error::FeeExceedsMax` if the effective platform fee exceeds `max_fee_bps`.
 - `has_user_bet(env, market_id, user)` - Check if user has active bet
 - `get_bet(env, market_id, user)` - Retrieve user's bet details
 - `get_market_bet_stats(env, market_id)` - Get market betting statistics
@@ -153,6 +155,7 @@ This document provides a complete API reference for the Predictify Hybrid smart 
 - `validate_bet_parameters(env, user, amount, outcome)` - Validate bet inputs
 - `validate_bet_amount_against_limits(env, market_id, amount)` - Check amount limits
 - `validate_bet_amount(amount)` - Check absolute amount constraints
+- `validate_fee_slippage(env, max_fee_bps)` - Reject if platform fee exceeds caller's max bps
 
 **BetUtils**
 - `lock_funds(env, user, amount)` - Lock user funds for bet

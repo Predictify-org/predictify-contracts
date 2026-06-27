@@ -457,6 +457,7 @@ mod circuit_breaker_tests {
                 market_id.clone(),
                 String::from_str(&env, "yes"),
                 10_0000000,
+                250,
             );
             assert!(bet_result.is_err());
             assert_eq!(bet_result.unwrap_err(), crate::Error::CBOpen);
@@ -471,6 +472,7 @@ mod circuit_breaker_tests {
                 market_id.clone(),
                 String::from_str(&env, "yes"),
                 10_0000000,
+                250,
             );
             assert!(bet_result2.is_ok());
         });

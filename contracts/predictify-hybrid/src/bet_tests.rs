@@ -261,6 +261,7 @@ fn test_place_bet_exactly_minimum() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MIN_BET_AMOUNT);
@@ -283,6 +284,7 @@ fn test_place_bet_exactly_maximum() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MAX_BET_AMOUNT);
@@ -457,6 +459,7 @@ fn test_place_bet_minimum_with_sufficient_balance() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MIN_BET_AMOUNT);
@@ -482,6 +485,7 @@ fn test_place_bet_maximum_with_sufficient_balance() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MAX_BET_AMOUNT);
@@ -528,6 +532,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet1.amount, MIN_BET_AMOUNT);
     assert_eq!(bet1.status, BetStatus::Active);
@@ -540,6 +545,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market2,
         &String::from_str(&setup.env, "yes"),
         &(MIN_BET_AMOUNT + 1_000_000),
+        &250,
     );
     assert_eq!(bet2.amount, MIN_BET_AMOUNT + 1_000_000);
     assert_eq!(bet2.status, BetStatus::Active);
@@ -572,6 +578,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market3,
         &String::from_str(&setup.env, "yes"),
         &10_000_000,
+        &250,
     );
     assert_eq!(bet3.amount, 10_000_000);
 
@@ -583,6 +590,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market4,
         &String::from_str(&setup.env, "yes"),
         &50_000_000,
+        &250,
     );
     assert_eq!(bet4.amount, 50_000_000);
 
@@ -594,6 +602,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market5,
         &String::from_str(&setup.env, "yes"),
         &100_000_000,
+        &250,
     );
     assert_eq!(bet5.amount, 100_000_000);
 
@@ -605,6 +614,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market6,
         &String::from_str(&setup.env, "yes"),
         &(MAX_BET_AMOUNT - 1_000_000),
+        &250,
     );
     assert_eq!(bet6.amount, MAX_BET_AMOUNT - 1_000_000);
 
@@ -616,6 +626,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market7,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet7.amount, MAX_BET_AMOUNT);
     assert_eq!(bet7.status, BetStatus::Active);
@@ -689,6 +700,7 @@ fn test_multiple_bets_at_different_limits() {
         &market1,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet1.amount, MIN_BET_AMOUNT);
 
@@ -698,6 +710,7 @@ fn test_multiple_bets_at_different_limits() {
         &market2,
         &String::from_str(&setup.env, "yes"),
         &50_000_000,
+        &250,
     );
     assert_eq!(bet2.amount, 50_000_000);
 
@@ -707,6 +720,7 @@ fn test_multiple_bets_at_different_limits() {
         &market3,
         &String::from_str(&setup.env, "yes"),
         &500_000_000,
+        &250,
     );
     assert_eq!(bet3.amount, 500_000_000);
 
@@ -716,6 +730,7 @@ fn test_multiple_bets_at_different_limits() {
         &market4,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet4.amount, MAX_BET_AMOUNT);
 }
@@ -755,6 +770,7 @@ fn test_bet_limit_validation_in_place_bet_flow() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet_min.amount, MIN_BET_AMOUNT);
 
@@ -772,6 +788,7 @@ fn test_bet_limit_validation_in_place_bet_flow() {
         &market2,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet_max.amount, MAX_BET_AMOUNT);
 }
@@ -837,6 +854,7 @@ fn test_set_global_bet_limits_and_place_bet_exactly_min_max() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &min,
+        &250,
     );
     assert_eq!(bet_min.amount, min);
 
@@ -849,6 +867,7 @@ fn test_set_global_bet_limits_and_place_bet_exactly_min_max() {
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &max,
+        &250,
     );
     assert_eq!(bet_max.amount, max);
 }
@@ -870,6 +889,7 @@ fn test_place_bet_below_configured_min_rejects() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &(min - 1),
+        &250,
     );
 }
 
@@ -890,6 +910,7 @@ fn test_place_bet_above_configured_max_rejects() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &(max + 1),
+        &250,
     );
 }
 
@@ -914,6 +935,7 @@ fn test_set_event_bet_limits_overrides_global() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &event_min,
+        &250,
     );
     assert_eq!(bet.amount, event_min);
 }
@@ -935,6 +957,7 @@ fn test_place_bet_below_event_min_rejects() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &(event_min - 1),
+        &250,
     );
 }
 
@@ -1012,6 +1035,7 @@ fn test_try_place_bet_rejected_at_explicit_bet_deadline() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert!(result.is_err());
 }
@@ -1041,6 +1065,7 @@ fn test_try_place_bet_rejected_when_market_metadata_deadline_invalid() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert!(result.is_err());
 }
@@ -1070,6 +1095,7 @@ fn test_try_place_bet_rejected_when_market_metadata_min_pool_invalid() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert!(result.is_err());
 }

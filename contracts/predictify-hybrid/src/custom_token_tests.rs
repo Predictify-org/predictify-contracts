@@ -115,6 +115,7 @@ fn test_bet_placement_with_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     // Verify balance decreased
@@ -142,6 +143,7 @@ fn test_insufficient_balance() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
     
     // Should return an error (likely HostError due to transfer failure)
@@ -169,6 +171,7 @@ fn test_payout_distribution_flow() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     client.place_bet(
@@ -176,6 +179,7 @@ fn test_payout_distribution_flow() {
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &bet_amount,
+        &250,
     );
 
     // Advance time to end market but NOT past dispute window
@@ -249,6 +253,7 @@ fn test_switch_token_support() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &10_000_000,
+        &250,
     );
     assert_eq!(token1_client.balance(&user1), 0);
     
@@ -276,6 +281,7 @@ fn test_switch_token_support() {
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &20_000_000,
+        &250,
     );
     
     // Verify balances for Token 2
@@ -305,6 +311,7 @@ fn test_cancel_refund_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     // Verify balance before cancellation
@@ -342,6 +349,7 @@ fn test_fee_collection_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     // Advance time to end market

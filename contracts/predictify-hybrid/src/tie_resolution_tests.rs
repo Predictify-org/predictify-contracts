@@ -136,6 +136,7 @@ impl TieSetup {
             market_id,
             &String::from_str(&self.env, outcome),
             &amount,
+            &250,
         );
     }
 

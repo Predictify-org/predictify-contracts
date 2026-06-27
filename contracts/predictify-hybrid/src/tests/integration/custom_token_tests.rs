@@ -57,6 +57,7 @@ fn test_place_bet_with_custom_token() {
             market_id.clone(),
             String::from_str(&env, "yes"),
             1000000,
+            250,
             Some(asset.clone()),
         );
         assert_eq!(bet.amount, 1000000);
@@ -106,6 +107,7 @@ fn test_place_bet_with_xlm_native() {
             market_id.clone(),
             String::from_str(&env, "yes"),
             1000000,
+            250,
             None,
         );
         assert_eq!(bet.amount, 1000000);
@@ -162,6 +164,7 @@ fn test_insufficient_balance_for_custom_token() {
                 market_id.clone(),
                 String::from_str(&env, "yes"),
                 999999999999,
+                250,
                 Some(asset.clone()),
             );
         });
