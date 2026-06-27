@@ -14,6 +14,7 @@ pub mod security;
 // DISABLED: API drift - re-enable after fixing
 // mod fee_idempotency_tests;
 mod rate_limiter_tests;
+mod rate_limiter_invariants;
 // mod metadata_validation_tests;
 // mod oracle_provider_compatibility_tests;
 // mod oracle_validation_tests;
