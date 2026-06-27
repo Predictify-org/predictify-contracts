@@ -1433,6 +1433,9 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+
+            // Upgrade errors
+            Error::UpgradeChainMismatch => "Upgrade WASM hash does not match the expected predecessor",
         }
     }
 
@@ -1527,6 +1530,9 @@ impl Error {
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+
+            // Upgrade errors
+            Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
         }
     }
 }
