@@ -2019,6 +2019,44 @@ pub struct AdminOverrideEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when a fee config update is queued with a governance time-lock.
+/// The config is not applied until `now >= eta`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigQueuedEvent {
+    pub admin: Address,
+    pub eta: u64,
+    pub platform_fee_percentage: i128,
+    pub creation_fee: i128,
+    pub min_fee_amount: i128,
+    pub max_fee_amount: i128,
+    pub collection_threshold: i128,
+    pub fees_enabled: bool,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued fee config update is successfully applied.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigAppliedEvent {
+    pub admin: Address,
+    pub platform_fee_percentage: i128,
+    pub creation_fee: i128,
+    pub min_fee_amount: i128,
+    pub max_fee_amount: i128,
+    pub collection_threshold: i128,
+    pub fees_enabled: bool,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued fee config update is cancelled by admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigCancelledEvent {
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
 /// Event emission utilities
 pub struct EventEmitter;
 
@@ -4656,6 +4694,9 @@ mod event_schema_registry_tests {
                 &env, &market_id, &disputer, 50_000_000, None,
             );
         });
+    }
+}
+
 impl EventEmitter {
     pub fn emit_threshold_proposed(
         env: &Env,
@@ -4795,5 +4836,53 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("adm_ovrd"), &event);
         env.events()
             .publish((symbol_short!("adm_ovrd"), market_id.clone()), event);
+    }
+
+    /// Emit fee config queued event when a time-locked config update is proposed.
+    pub fn emit_fee_config_queued(
+        env: &Env,
+        admin: &Address,
+        eta: u64,
+        config: &crate::fees::FeeConfig,
+    ) {
+        let event = FeeConfigQueuedEvent {
+            admin: admin.clone(),
+            eta,
+            platform_fee_percentage: config.platform_fee_percentage,
+            creation_fee: config.creation_fee,
+            min_fee_amount: config.min_fee_amount,
+            max_fee_amount: config.max_fee_amount,
+            collection_threshold: config.collection_threshold,
+            fees_enabled: config.fees_enabled,
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("fee_qd"), admin.clone()), event);
+    }
+
+    /// Emit fee config applied event when a queued update becomes effective.
+    pub fn emit_fee_config_applied(env: &Env, admin: &Address, config: &crate::fees::FeeConfig) {
+        let event = FeeConfigAppliedEvent {
+            admin: admin.clone(),
+            platform_fee_percentage: config.platform_fee_percentage,
+            creation_fee: config.creation_fee,
+            min_fee_amount: config.min_fee_amount,
+            max_fee_amount: config.max_fee_amount,
+            collection_threshold: config.collection_threshold,
+            fees_enabled: config.fees_enabled,
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("fee_apd"), admin.clone()), event);
+    }
+
+    /// Emit fee config cancelled event when a queued update is cancelled.
+    pub fn emit_fee_config_cancelled(env: &Env, admin: &Address) {
+        let event = FeeConfigCancelledEvent {
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("fee_ccl"), admin.clone()), event);
     }
 }

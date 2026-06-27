@@ -812,35 +812,33 @@ impl FeeManager {
         FeeAnalytics::calculate_analytics(env)
     }
 
-    /// Update fee configuration (admin only)
+    /// Queue a fee configuration update with a governance time-lock.
+    ///
+    /// The config is not applied immediately — use `apply_fee_update` after
+    /// the ETA to activate the update. This prevents surprise fee changes.
     pub fn update_fee_config(
         env: &Env,
         admin: Address,
         new_config: FeeConfig,
-    ) -> Result<FeeConfig, Error> {
-        // Require authentication from the admin
-        admin.require_auth();
+        eta: u64,
+    ) -> Result<(), Error> {
+        FeeConfigManager::queue_update(env, &admin, &new_config, eta)?;
+        Ok(())
+    }
 
-        // Validate admin permissions
-        FeeValidator::validate_admin_permissions(env, &admin)?;
+    /// Apply a previously queued fee configuration update.
+    ///
+    /// Succeeds only when the ETA has been reached. Can be called by anyone
+    /// once the timelock expires.
+    pub fn apply_fee_update(env: &Env, admin: Address) -> Result<(), Error> {
+        FeeConfigManager::apply_update(env, &admin)?;
+        Ok(())
+    }
 
-        // Validate new configuration
-        FeeValidator::validate_fee_config(&new_config)?;
-
-        // Store new configuration
-        FeeConfigManager::store_fee_config(env, &new_config)?;
-
-        // Record configuration change
-        FeeTracker::record_config_change(env, &admin, &new_config)?;
-
-        crate::audit_trail::AuditTrailManager::append_record(
-            env,
-            crate::audit_trail::AuditAction::FeeConfigUpdated,
-            admin.clone(),
-            Map::new(env),
-        );
-
-        Ok(new_config)
+    /// Cancel a pending fee configuration update.
+    pub fn cancel_fee_update(env: &Env, admin: Address) -> Result<(), Error> {
+        FeeConfigManager::cancel_queued_update(env, &admin)?;
+        Ok(())
     }
 
     /// Get current fee configuration
@@ -1749,18 +1747,30 @@ impl FeeWithdrawalManager {
 
 // ===== FEE CONFIG MANAGER =====
 
-/// Fee configuration management
+/// Storage key for the queued (pending) fee configuration.
+const PENDING_FEE_CONFIG_KEY: Symbol = symbol_short!("pfee_cfg");
+/// Storage key for the ETA (Effective Time of Activation) of the queued config.
+const PENDING_FEE_CONFIG_ETA_KEY: Symbol = symbol_short!("pfee_eta");
+
+/// Fee configuration management with governance time-lock.
+///
+/// Fee config updates follow a proposal → queue → apply cycle:
+/// 1. `queue_update(env, admin, new_config, eta)` — stage the update with an ETA
+/// 2. `apply_update(env, admin)` — apply only when `env.ledger().timestamp() >= eta`
+/// 3. `cancel_queued_update(env, admin)` — cancel the pending update before ETA
+///
+/// This prevents surprise fee changes and gives users advance notice.
 pub struct FeeConfigManager;
 
 impl FeeConfigManager {
-    /// Store fee configuration
+    /// Store fee configuration (used for internal resets — bypasses time-lock).
     pub fn store_fee_config(env: &Env, config: &FeeConfig) -> Result<(), Error> {
         let config_key = symbol_short!("fee_cfg");
         env.storage().persistent().set(&config_key, config);
         Ok(())
     }
 
-    /// Get fee configuration
+    /// Get the active fee configuration.
     pub fn get_fee_config(env: &Env) -> Result<FeeConfig, Error> {
         let config_key = symbol_short!("fee_cfg");
         Ok(env
@@ -1777,7 +1787,7 @@ impl FeeConfigManager {
             }))
     }
 
-    /// Reset fee configuration to defaults
+    /// Reset fee configuration to defaults.
     pub fn reset_to_defaults(env: &Env) -> Result<FeeConfig, Error> {
         let default_config = FeeConfig {
             platform_fee_percentage: PLATFORM_FEE_PERCENTAGE,
@@ -1790,6 +1800,111 @@ impl FeeConfigManager {
 
         Self::store_fee_config(env, &default_config)?;
         Ok(default_config)
+    }
+
+    // -----------------------------------------------------------------------
+    // Governance time-lock: proposal → queue → apply after delay
+    // -----------------------------------------------------------------------
+
+    /// Queue a fee configuration update for future activation.
+    ///
+    /// The new config is stored in a pending slot alongside the ETA. It does NOT
+    /// take effect until `apply_update` is called and `env.ledger().timestamp() >= eta`.
+    ///
+    /// Only the contract admin may queue updates.
+    pub fn queue_update(
+        env: &Env,
+        admin: &Address,
+        new_config: &FeeConfig,
+        eta: u64,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        FeeValidator::validate_admin_permissions(env, admin)?;
+        FeeValidator::validate_fee_config(new_config)?;
+
+        let now = env.ledger().timestamp();
+        if eta <= now {
+            return Err(Error::InvalidInput);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&PENDING_FEE_CONFIG_KEY, new_config);
+        env.storage()
+            .persistent()
+            .set(&PENDING_FEE_CONFIG_ETA_KEY, &eta);
+
+        crate::events::EventEmitter::emit_fee_config_queued(env, admin, eta, new_config);
+
+        Ok(())
+    }
+
+    /// Apply the queued fee configuration if the ETA has been reached.
+    ///
+    /// Can be called by anyone once the ETA arrives. The pending config is
+    /// cleared after successful application.
+    pub fn apply_update(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        let eta: u64 = env
+            .storage()
+            .persistent()
+            .get(&PENDING_FEE_CONFIG_ETA_KEY)
+            .ok_or(Error::ConfigNotFound)?;
+
+        let now = env.ledger().timestamp();
+        if now < eta {
+            return Err(Error::InvalidInput);
+        }
+
+        let pending: FeeConfig = env
+            .storage()
+            .persistent()
+            .get(&PENDING_FEE_CONFIG_KEY)
+            .ok_or(Error::ConfigNotFound)?;
+
+        // Apply: overwrite the active config
+        Self::store_fee_config(env, &pending)?;
+
+        // Clear pending storage
+        env.storage().persistent().remove(&PENDING_FEE_CONFIG_KEY);
+        env.storage().persistent().remove(&PENDING_FEE_CONFIG_ETA_KEY);
+
+        crate::events::EventEmitter::emit_fee_config_applied(env, admin, &pending);
+
+        Ok(())
+    }
+
+    /// Cancel a queued fee configuration update before its ETA.
+    ///
+    /// Only the contract admin may cancel. Has no effect if no update is pending.
+    pub fn cancel_queued_update(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        FeeValidator::validate_admin_permissions(env, admin)?;
+
+        env.storage().persistent().remove(&PENDING_FEE_CONFIG_KEY);
+        env.storage().persistent().remove(&PENDING_FEE_CONFIG_ETA_KEY);
+
+        crate::events::EventEmitter::emit_fee_config_cancelled(env, admin);
+
+        Ok(())
+    }
+
+    /// Read the currently queued fee config and its ETA (if any).
+    ///
+    /// Returns `None` when no update is pending.
+    pub fn get_queued_fee_config(env: &Env) -> Option<(FeeConfig, u64)> {
+        let eta: u64 = env
+            .storage()
+            .persistent()
+            .get(&PENDING_FEE_CONFIG_ETA_KEY)?;
+        let config: FeeConfig = env
+            .storage()
+            .persistent()
+            .get(&PENDING_FEE_CONFIG_KEY)?;
+        Some((config, eta))
     }
 }
 
@@ -2346,5 +2461,126 @@ mod tests {
         let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
         assert!(fee <= market.total_staked);
         assert!(fee >= 0);
+    }
+
+    // -------------------------------------------------------------------
+    // Governance time-lock tests
+    // -------------------------------------------------------------------
+
+    fn setup_with_contract() -> (Env, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            FeeConfigManager::reset_to_defaults(&env).unwrap();
+        });
+        (env, admin)
+    }
+
+    #[test]
+    fn test_queue_update_stores_pending_config() {
+        let (env, admin) = setup_with_contract();
+        let new_config = FeeConfig {
+            platform_fee_percentage: 250,
+            creation_fee: 5_000_000,
+            min_fee_amount: 500_000,
+            max_fee_amount: 2_000_000_000,
+            collection_threshold: 200_000_000,
+            fees_enabled: true,
+        };
+        let now = env.ledger().timestamp();
+        let eta = now + 86_400;
+
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let result = FeeConfigManager::queue_update(&env, &admin, &new_config, eta);
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_apply_update_before_eta_fails() {
+        let (env, admin) = setup_with_contract();
+        let new_config = testing::create_test_fee_config();
+        let now = env.ledger().timestamp();
+        let eta = now + 86_400;
+
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            FeeConfigManager::queue_update(&env, &admin, &new_config, eta).unwrap();
+            let result = FeeConfigManager::apply_update(&env, &admin);
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), Error::InvalidInput);
+        });
+    }
+
+    #[test]
+    fn test_apply_update_at_eta_succeeds() {
+        let (env, admin) = setup_with_contract();
+        let new_config = FeeConfig {
+            platform_fee_percentage: 250,
+            creation_fee: 5_000_000,
+            min_fee_amount: 500_000,
+            max_fee_amount: 2_000_000_000,
+            collection_threshold: 200_000_000,
+            fees_enabled: true,
+        };
+        let now = env.ledger().timestamp();
+        let eta = now + 1;
+
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            FeeConfigManager::queue_update(&env, &admin, &new_config, eta).unwrap();
+            env.ledger().set_timestamp(eta);
+
+            let result = FeeConfigManager::apply_update(&env, &admin);
+            assert!(result.is_ok());
+
+            let active = FeeConfigManager::get_fee_config(&env).unwrap();
+            assert_eq!(active.platform_fee_percentage, 250);
+            assert_eq!(active.creation_fee, 5_000_000);
+
+            let stale = FeeConfigManager::get_queued_fee_config(&env);
+            assert!(stale.is_none());
+        });
+    }
+
+    #[test]
+    fn test_cancel_queued_update_removes_pending() {
+        let (env, admin) = setup_with_contract();
+        let new_config = testing::create_test_fee_config();
+        let now = env.ledger().timestamp();
+        let eta = now + 86_400;
+
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            FeeConfigManager::queue_update(&env, &admin, &new_config, eta).unwrap();
+            let before = FeeConfigManager::get_queued_fee_config(&env);
+            assert!(before.is_some());
+
+            FeeConfigManager::cancel_queued_update(&env, &admin).unwrap();
+
+            let after = FeeConfigManager::get_queued_fee_config(&env);
+            assert!(after.is_none());
+        });
+    }
+
+    #[test]
+    fn test_queue_update_with_past_eta_fails() {
+        let (env, admin) = setup_with_contract();
+        let new_config = testing::create_test_fee_config();
+        let now = env.ledger().timestamp();
+        let past_eta = now.saturating_sub(1);
+
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let result = FeeConfigManager::queue_update(&env, &admin, &new_config, past_eta);
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), Error::InvalidInput);
+        });
     }
 }
