@@ -12,6 +12,12 @@ const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 const EVENT_TTL_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 
+/// TTL for instance storage cache entries, in ledgers.
+/// At ~5 seconds per ledger on Soroban mainnet, 100 ledgers ≈ 8 minutes.
+/// Instance TTL is shared - bumping extends all instance storage keys.
+/// Increase for longer-lived deployments; decrease to reduce ledger rent costs.
+pub const MARKET_CACHE_TTL_LEDGERS: u32 = 100;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StorageTtlTier {
     Balance,
@@ -37,6 +43,13 @@ pub enum DataKey {
     ArchivedMarket(Symbol, u64),
     /// Cumulative days extended for a given market (u32).
     MarketExtensionTotal(Symbol),
+    MarketMetadata(Symbol),
+    MarketScratch(Symbol),
+    DisputeHistoryCap,
+    DisputeHistory(Symbol),
+    /// Instance storage cache key for Market structs, keyed by market_id.
+    /// Used by MarketReadCache in markets.rs.
+    MarketCache(Symbol),
 }
 
 /// Storage format version for migration tracking
