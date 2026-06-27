@@ -547,7 +547,8 @@ impl UpgradeManager {
     /// Rollback to previous contract version
     ///
     /// Reverts the contract to a previous Wasm version using stored rollback hash.
-    /// This is a critical recovery mechanism for failed upgrades.
+    /// This critical recovery mechanism ensures the rollback target is part of the
+    /// verified WASM hash chain to prevent fraudulent rollbacks.
     ///
     /// # Parameters
     ///
@@ -558,14 +559,25 @@ impl UpgradeManager {
     /// # Returns
     ///
     /// * `Ok(())` if rollback succeeds
-    /// * `Err(Error)` if authorization fails or rollback is invalid
+    /// * `Err(Error)` if authorization fails or rollback breaks chain integrity
     ///
     /// # Security
     ///
     /// - Requires admin authentication
-    /// - Validates rollback target exists
+    /// - Validates rollback target is in hash chain
     /// - Records rollback in audit trail
     /// - Emits rollback event
+    ///
+    /// # Hash Chain Verification
+    ///
+    /// The rollback verifies that `rollback_wasm_hash` is a valid previous hash
+    /// in the upgrade chain:
+    /// 1. Check if rollback_wasm_hash exists in upgrade history
+    /// 2. Verify it's either a `previous_wasm_hash` or `new_wasm_hash` of a record
+    /// 3. Reject rollbacks that would break the chain
+    ///
+    /// This prevents fraudulent rollbacks that could insert unrelated binaries
+    /// or create invalid upgrade histories.
     pub fn rollback_upgrade(
         env: &Env,
         admin: &Address,
@@ -573,6 +585,11 @@ impl UpgradeManager {
     ) -> Result<(), Error> {
         // Validate admin permissions
         Self::validate_admin_permissions(env, admin)?;
+
+        // Verify rollback target is part of the hash chain
+        if let Err(e) = Self::verify_rollback_chain(env, &rollback_wasm_hash) {
+            return Err(e);
+        }
 
         // Get current Wasm hash
         let current_wasm_hash = Self::get_current_wasm_hash(env);
@@ -595,6 +612,91 @@ impl UpgradeManager {
         EventEmitter::emit_contract_rollback_event(env, &current_wasm_hash, &rollback_wasm_hash);
 
         Ok(())
+    }
+
+    /// Verify the integrity of the upgrade chain up to specified depth
+    ///
+    /// This function checks that each UpgradeRecord in the upgrade history
+    /// maintains proper WASM hash chain consistency:
+    /// - previous_wasm_hash of each record matches new_wasm_hash of previous record
+    /// - All non-genesis upgrades have valid predecessors
+    /// - No gaps or inconsistencies in the chain
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `depth` - Number of records to verify (0 means all records)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(bool)` - True if chain is valid, False if invalid
+    pub fn verify_upgrade_chain(
+        env: &Env,
+        depth: u64,
+    ) -> Result<bool, Error> {
+        let chain = Self::get_wasm_hash_chain(env)?;
+        
+        if chain.len() == 0 {
+            return Ok(true);
+        }
+
+        let verify_count = if depth == 0 || depth > chain.len() {
+            chain.len()
+        } else {
+            depth
+        };
+
+        let zero_hash = BytesN::from_array(env, &[0u8; 32]);
+
+        for i in 0..verify_count {
+            let record = chain.get(i).ok_or(Error::InvalidInput)?;
+
+            if i == 0 {
+                // First record: previous_wasm_hash must be zero for genesis
+                if record.previous_wasm_hash != zero_hash {
+                    return Ok(false);
+                }
+            } else {
+                // Subsequent records: previous_wasm_hash must match previous record's new_wasm_hash
+                let prev_record = chain.get(i - 1).ok_or(Error::InvalidInput)?;
+                if record.previous_wasm_hash != prev_record.new_wasm_hash {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Verify that a rollback target is valid within the upgrade chain
+    ///
+    /// This is a internal helper function that ensures rollback_wasm_hash
+    /// is a valid previous hash in the upgrade chain, preventing fraudulent
+    /// rollbacks that could insert unrelated binaries.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `rollback_wasm_hash` - The proposed rollback target
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if rollback target is valid
+    /// * `Err(Error)` if rollback target is invalid or not in chain
+    fn verify_rollback_chain(
+        env: &Env,
+        rollback_wasm_hash: &BytesN<32>,
+    ) -> Result<(), Error> {
+        let chain = Self::get_wasm_hash_chain(env)?;
+        
+        for record in chain.iter() {
+            if record.previous_wasm_hash == *rollback_wasm_hash 
+                || record.new_wasm_hash == *rollback_wasm_hash {
+                return Ok(());
+            }
+        }
+
+        Err(Error::InvalidInput)
     }
 
     /// Get current contract version
