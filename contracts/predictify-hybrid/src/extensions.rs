@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::*;
 
 /// Market extension management system for Predictify Hybrid contract

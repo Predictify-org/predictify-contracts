@@ -12,7 +12,7 @@
 
 #![cfg(test)]
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
     testutils::{Address as _, Events},

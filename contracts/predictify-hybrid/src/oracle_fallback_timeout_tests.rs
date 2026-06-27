@@ -1,4 +1,4 @@
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::{
     FallbackUsedEvent, ManualResolutionRequiredEvent, RefundOnOracleFailureEvent,
     ResolutionTimeoutEvent,

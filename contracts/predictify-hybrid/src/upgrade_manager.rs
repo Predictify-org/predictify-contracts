@@ -4,7 +4,7 @@ use alloc::format;
 use soroban_sdk::{contracttype, Address, BytesN, Env, String, Symbol, Vec};
 
 use crate::admin::AdminAccessControl;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::EventEmitter;
 use crate::versioning::{IrreversibleAcknowledgement, Version, VersionManager, VersionMigration};
 

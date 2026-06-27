@@ -17,7 +17,7 @@
 //! [`MAX_QUERY_LIMIT`]) and return `(entries, next_cursor)`. Callers should
 //! advance the cursor until `next_cursor == previous_cursor` (no more pages).
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::market_id_generator::MarketIdGenerator;
 use crate::types::{EventHistoryEntry, Market, MarketState};
 use soroban_sdk::{panic_with_error, Address, Env, String, Symbol, Vec};

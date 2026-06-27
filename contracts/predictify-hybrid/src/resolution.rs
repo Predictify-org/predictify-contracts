@@ -1,7 +1,7 @@
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
 use crate::bets::BetStorage;
-use crate::errors::Error;
+use crate::err::Error;
 use alloc::string::ToString;
 
 use crate::markets::{CommunityConsensus, MarketAnalytics, MarketStateManager, MarketUtils};

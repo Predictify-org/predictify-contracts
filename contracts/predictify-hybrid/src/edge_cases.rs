@@ -2,7 +2,7 @@
 
 use soroban_sdk::{contracttype, vec, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::markets::MarketStateManager;
 use crate::types::*;
 

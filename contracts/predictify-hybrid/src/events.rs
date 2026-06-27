@@ -5,7 +5,7 @@ use soroban_sdk::{contracttype, symbol_short, vec, Address, BytesN, Env, Map, St
 
 use crate::admin::Severity;
 use crate::config::Environment;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::OracleProvider;
 
 // Define AdminRole locally since it's not available in the crate root
@@ -3703,7 +3703,7 @@ impl EventEmitter {
     ///
     /// EventEmitter::emit_error_event(&env, Error::NothingToClaim, &context);
     /// ```
-    pub fn emit_diagnostic_event(env: &Env, error: Error, context: &crate::errors::ErrorContext) {
+    pub fn emit_diagnostic_event(env: &Env, error: Error, context: &crate::err::ErrorContext) {
         let error_code = error as u32;
 
         // Convert error enum to message string
