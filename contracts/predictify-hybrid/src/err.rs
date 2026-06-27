@@ -176,6 +176,12 @@ pub enum Error {
     /// Tag string is shorter than the minimum allowed length (non-empty tags only).
     TagTooShort = 437,
 
+    // ===== TOKEN ERRORS (438-449) =====
+    /// SAC token decimals do not match the declared value during registration.
+    /// The on-chain decimals() call returned a different value than what was declared.
+    /// This prevents denomination mistakes that have caused real on-chain losses.
+    TokenDecimalsMismatch = 438,
+
     // ===== CIRCUIT BREAKER ERRORS ====="
     /// Circuit breaker has not been initialized. Initialize before use.
     CBNotInitialized = 500,

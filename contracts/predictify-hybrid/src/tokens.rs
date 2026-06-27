@@ -212,6 +212,66 @@ impl TokenRegistry {
         global_assets.iter().any(|a| a == *asset)
     }
 
+    /// Adds an asset to the global allowed registry with decimals verification.
+    ///
+    /// This function performs a critical security check by verifying that the
+    /// declared decimals match the on-chain SAC decimals() value. This prevents
+    /// denomination mistakes that have caused real losses on other Stellar protocols.
+    ///
+    /// # Errors
+    /// * `Error::TokenDecimalsMismatch` if declared decimals don't match on-chain value.
+    ///
+    /// # Security Notes
+    /// - Performs cross-contract call to token's decimals() function
+    /// - Rejects registration if mismatch detected
+    /// - Should only be called by admin
+    pub fn add_global_verified(env: &Env, asset: &Asset) -> Result<(), Error> {
+        // Verify decimals before registration
+        verify_token_decimals(env, asset)?;
+        
+        let global_key = Symbol::new(env, "allowed_assets_global");
+        let mut global_assets: Vec<Asset> = env
+            .storage()
+            .persistent()
+            .get(&global_key)
+            .unwrap_or(Vec::new(env));
+        if !global_assets.iter().any(|a| a == *asset) {
+            global_assets.push_back(asset.clone());
+            env.storage().persistent().set(&global_key, &global_assets);
+        }
+        Ok(())
+    }
+
+    /// Adds an asset to a specific market's allowed registry with decimals verification.
+    ///
+    /// # Parameters
+    /// * `env` - Soroban environment.
+    /// * `market_id` - Market identifier.
+    /// * `asset` - The asset to register.
+    ///
+    /// # Errors
+    /// * `Error::TokenDecimalsMismatch` if declared decimals don't match on-chain value.
+    pub fn add_event_verified(env: &Env, market_id: &Symbol, asset: &Asset) -> Result<(), Error> {
+        // Verify decimals before registration
+        verify_token_decimals(env, asset)?;
+        
+        let event_key = Symbol::new(env, "allowed_assets_evt");
+        let per_event_empty: soroban_sdk::Map<Symbol, Vec<Asset>> = soroban_sdk::Map::new(env);
+        let mut per_event: soroban_sdk::Map<Symbol, Vec<Asset>> = env
+            .storage()
+            .persistent()
+            .get(&event_key)
+            .unwrap_or(per_event_empty);
+        let empty_assets: Vec<Asset> = Vec::new(env);
+        let mut assets: Vec<Asset> = per_event.get(market_id.clone()).unwrap_or(empty_assets);
+        if !assets.iter().any(|a| a == *asset) {
+            assets.push_back(asset.clone());
+            per_event.set(market_id.clone(), assets);
+            env.storage().persistent().set(&event_key, &per_event);
+        }
+        Ok(())
+    }
+
     /// Adds an asset to the global allowed registry.
     pub fn add_global(env: &Env, asset: &Asset) {
         let global_key = Symbol::new(env, "allowed_assets_global");
@@ -460,6 +520,65 @@ pub fn validate_token_operation(
     }
     asset.validate_for_market(env)?;
     check_token_balance(env, asset, user, amount)?;
+    Ok(())
+}
+
+// ===== SAC DECIMALS VERIFICATION =====
+
+/// Verifies that a token's declared decimals match the on-chain value.
+///
+/// This is a critical security check that prevents denomination mistakes.
+/// Real-world on-chain losses have occurred on other Stellar protocols when
+/// tokens with mismatched decimals were trusted without verification.
+///
+/// # Parameters
+/// * `env` - Soroban environment.
+/// * `asset` - The asset to verify. Uses the declared decimals value.
+///
+/// # Returns
+/// * `Ok(())` if the declared decimals match the SAC's decimals() output.
+/// * `Err(Error::TokenDecimalsMismatch)` if they don't match.
+///
+/// # Cross-Contract Call
+/// This function performs a cross-contract call to the token contract's
+/// `decimals()` function using the Soroban token interface.
+///
+/// # Example
+/// ```rust,ignore
+/// let asset = Asset::new(token_contract, "USDC".into(), 7);
+/// verify_token_decimals(&env, &asset)?;  // Verifies on-chain
+/// ```
+pub fn verify_token_decimals(env: &Env, asset: &Asset) -> Result<(), Error> {
+    // Create a token client for cross-contract call
+    let client = token::Client::new(env, &asset.contract);
+    
+    // Call the on-chain decimals() function
+    let on_chain_decimals: u32 = client.decimals();
+    
+    // Compare with declared decimals
+    if on_chain_decimals != asset.decimals {
+        return Err(Error::TokenDecimalsMismatch);
+    }
+    
+    Ok(())
+}
+
+/// Batch verification of multiple assets' decimals.
+///
+/// Useful for verifying all globally allowed assets or market-specific assets
+/// during initialization or periodic audits.
+///
+/// # Parameters
+/// * `env` - Soroban environment.
+/// * `assets` - Vector of assets to verify.
+///
+/// # Returns
+/// * `Ok(())` if all assets pass verification.
+/// * `Err(Error::TokenDecimalsMismatch)` if any asset fails (first failure only).
+pub fn verify_token_decimals_batch(env: &Env, assets: &Vec<Asset>) -> Result<(), Error> {
+    for asset in assets.iter() {
+        verify_token_decimals(env, &asset)?;
+    }
     Ok(())
 }
 
