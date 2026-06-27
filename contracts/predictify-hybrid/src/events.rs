@@ -1953,6 +1953,96 @@ pub struct MinPoolSizeNotMetEvent {
     pub timestamp: u64,
 }
 
+// ===== STRUCTURED LOG ENTRY EVENT =====
+
+/// Log severity levels for structured log entries.
+///
+/// Provides three canonical severities that off-chain indexers can filter on.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LogSeverity {
+    /// Informational — normal operation, no action required.
+    Info,
+    /// Warning — something unexpected but the contract continues operating.
+    Warn,
+    /// Error — a recoverable or unrecoverable error occurred.
+    Error,
+}
+
+/// Typed value that can appear in a structured log entry `fields` map.
+///
+/// Soroban `Map<K, V>` requires a single `V` type, so this enum acts as
+/// the union of the common value types that callers will want to attach.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StructuredFieldValue {
+    /// UTF-8 string value.
+    String(String),
+    /// Signed 128-bit integer.
+    Int128(i128),
+    /// Unsigned 64-bit integer.
+    Uint64(u64),
+    /// Boolean value.
+    Bool(bool),
+    /// Short symbol key.
+    Symbol(Symbol),
+    /// On-chain address.
+    Address(Address),
+}
+
+/// Low-level structured log entry that indexers can parse deterministically.
+///
+/// # Design
+///
+/// `StructuredLogEntry` is the canonical "bag of typed fields" event.
+/// Higher-level emitters in this module (e.g. `emit_market_created`,
+/// `emit_error_logged`) are **not** required to delegate to it — they
+/// continue to fire their own typed events for backwards compatibility.
+/// Callers that need a machine-parseable entry with a stable schema
+/// call [`EventEmitter::emit_structured`] directly.
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, Map};
+/// # use predictify_hybrid::events::{
+/// #     EventEmitter, LogSeverity, StructuredFieldValue,
+/// #     structured_log_schema_id,
+/// # };
+/// # let env = Env::default();
+/// let mut fields = Map::new(&env);
+/// fields.set(
+///     Symbol::new(&env, "reason"),
+///     StructuredFieldValue::String(String::from_str(&env, "oracle timeout")),
+/// );
+/// EventEmitter::emit_structured(
+///     &env,
+///     Symbol::new(&env, "oracle.timeout"),
+///     LogSeverity::Warn,
+///     fields,
+/// );
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StructuredLogEntry {
+    /// Identifies the logical event within the indexed schema.
+    pub schema_id: Symbol,
+    /// Severity of this log entry.
+    pub severity: LogSeverity,
+    /// Typed key-value fields describing the event.
+    pub fields: Map<Symbol, StructuredFieldValue>,
+    /// Ledger timestamp when the event was emitted.
+    pub timestamp: u64,
+}
+
+/// Canonical topic symbol for all [`StructuredLogEntry`] events.
+///
+/// Off-chain indexers listen on this topic and decode the payload
+/// against the `schema_id` to obtain a deterministic field layout.
+pub fn structured_log_schema_id() -> Symbol {
+    symbol_short!("strct_log")
+}
+
 // ===== EVENT SCHEMA REGISTRY =====
 
 /// Describes the canonical topic symbol and schema version for a named event.
@@ -2010,6 +2100,10 @@ impl EventSchemaRegistry {
             }),
             "dispute_created" => Some(EventSchemaEntry {
                 topic: symbol_short!("dispt_crt"),
+                schema_version: 1,
+            }),
+            "structured_log" => Some(EventSchemaEntry {
+                topic: symbol_short!("strct_log"),
                 schema_version: 1,
             }),
             _ => None,
@@ -3131,6 +3225,59 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("tout_ext"), &event);
         env.events()
             .publish((symbol_short!("tout_ext"), dispute_id.clone()), event);
+    }
+
+    /// Emit a structured log entry with a typed fields map.
+    ///
+    /// This is the **low-level primitive** for machine-parseable logging.
+    /// It publishes a [`StructuredLogEntry`] under the canonical
+    /// [`structured_log_schema_id`] topic, keyed by `schema_id`.
+    ///
+    /// # When to use
+    ///
+    /// Use this when you need off-chain tooling to decode an event
+    /// deterministically without relying on a bespoke struct type.
+    /// Higher-level `emit_*` helpers continue to fire their own strongly-
+    /// typed events for backwards compatibility.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol, Map, String};
+    /// # use predictify_hybrid::events::{
+    /// #     EventEmitter, LogSeverity, StructuredFieldValue,
+    /// #     structured_log_schema_id,
+    /// # };
+    /// # let env = Env::default();
+    /// let mut fields = Map::new(&env);
+    /// fields.set(
+    ///     Symbol::new(&env, "market_id"),
+    ///     StructuredFieldValue::Symbol(Symbol::new(&env, "btc_50k")),
+    /// );
+    /// EventEmitter::emit_structured(
+    ///     &env,
+    ///     Symbol::new(&env, "market.created"),
+    ///     LogSeverity::Info,
+    ///     fields,
+    /// );
+    /// ```
+    pub fn emit_structured(
+        env: &Env,
+        schema_id: Symbol,
+        severity: LogSeverity,
+        fields: Map<Symbol, StructuredFieldValue>,
+    ) {
+        let event = StructuredLogEntry {
+            schema_id: schema_id.clone(),
+            severity,
+            fields,
+            timestamp: env.ledger().timestamp(),
+        };
+        let topic = structured_log_schema_id();
+
+        Self::store_event(env, &topic, &event);
+        env.events()
+            .publish((topic, schema_id), event);
     }
 
     /// Emit dispute vote rejected event
@@ -4918,5 +5065,261 @@ impl EventEmitter {
         };
         env.events()
             .publish((symbol_short!("fee_ccl"), admin.clone()), event);
+    }
+}
+
+#[cfg(test)]
+mod structured_log_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Env};
+
+    // -----------------------------------------------------------------
+    // structured_log_schema_id
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_structured_log_schema_id_returns_correct_topic() {
+        let topic = structured_log_schema_id();
+        assert_eq!(topic, symbol_short!("strct_log"));
+    }
+
+    #[test]
+    fn test_structured_log_schema_id_is_stable() {
+        // The schema_id symbol must never change accidentally – it is the
+        // canonical topic that off-chain indexers subscribe to.
+        let expected = symbol_short!("strct_log");
+        assert_eq!(
+            structured_log_schema_id(),
+            expected,
+            "structured_log_schema_id changed; this breaks all off-chain indexers"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // EventSchemaRegistry – structured_log entry
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_registry_includes_structured_log_entry() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "structured_log").unwrap();
+        assert_eq!(schema.topic, symbol_short!("strct_log"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    // -----------------------------------------------------------------
+    // LogSeverity enum
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_log_severity_variants_are_distinct() {
+        // Verify the three severity levels are not equal to each other.
+        assert_ne!(LogSeverity::Info, LogSeverity::Warn);
+        assert_ne!(LogSeverity::Info, LogSeverity::Error);
+        assert_ne!(LogSeverity::Warn, LogSeverity::Error);
+    }
+
+    #[test]
+    fn test_log_severity_clone_eq() {
+        let s = LogSeverity::Error;
+        assert_eq!(s.clone(), s);
+        assert_eq!(s, LogSeverity::Error);
+    }
+
+    // -----------------------------------------------------------------
+    // StructuredFieldValue enum
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_structured_field_value_variants() {
+        let env = Env::default();
+
+        let s = StructuredFieldValue::String(String::from_str(&env, "hello"));
+        let i = StructuredFieldValue::Int128(42);
+        let u = StructuredFieldValue::Uint64(7);
+        let b = StructuredFieldValue::Bool(true);
+        let sym = StructuredFieldValue::Symbol(Symbol::new(&env, "key"));
+        let addr = StructuredFieldValue::Address(Address::generate(&env));
+
+        // Just verify construction works and clones are equal.
+        assert_eq!(s.clone(), s);
+        assert_eq!(i.clone(), i);
+        assert_eq!(u.clone(), u);
+        assert_eq!(b, StructuredFieldValue::Bool(true));
+        assert_ne!(b, StructuredFieldValue::Bool(false));
+        assert_eq!(sym.clone(), sym);
+        assert_eq!(addr.clone(), addr);
+    }
+
+    #[test]
+    fn test_structured_field_value_variants_are_distinct() {
+        let env = Env::default();
+        let s = StructuredFieldValue::String(String::from_str(&env, "x"));
+        let i = StructuredFieldValue::Int128(1);
+        assert_ne!(s, i);
+    }
+
+    // -----------------------------------------------------------------
+    // StructuredLogEntry construction
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_structured_log_entry_construction() {
+        let env = Env::default();
+
+        let mut fields = Map::<Symbol, StructuredFieldValue>::new(&env);
+        fields.set(
+            Symbol::new(&env, "reason"),
+            StructuredFieldValue::String(String::from_str(&env, "oracle timeout")),
+        );
+        fields.set(
+            Symbol::new(&env, "retries"),
+            StructuredFieldValue::Uint64(3),
+        );
+        fields.set(
+            Symbol::new(&env, "critical"),
+            StructuredFieldValue::Bool(true),
+        );
+
+        let ts = env.ledger().timestamp();
+        let entry = StructuredLogEntry {
+            schema_id: Symbol::new(&env, "oracle.timeout"),
+            severity: LogSeverity::Warn,
+            fields: fields.clone(),
+            timestamp: ts,
+        };
+
+        assert_eq!(entry.schema_id, Symbol::new(&env, "oracle.timeout"));
+        assert_eq!(entry.severity, LogSeverity::Warn);
+        assert_eq!(entry.fields.len(), 3);
+        assert_eq!(entry.timestamp, ts);
+    }
+
+    #[test]
+    fn test_structured_log_entry_with_empty_fields() {
+        let env = Env::default();
+        let entry = StructuredLogEntry {
+            schema_id: Symbol::new(&env, "event.empty"),
+            severity: LogSeverity::Info,
+            fields: Map::new(&env),
+            timestamp: env.ledger().timestamp(),
+        };
+        assert_eq!(entry.fields.len(), 0);
+    }
+
+    // -----------------------------------------------------------------
+    // EventEmitter::emit_structured
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_emit_structured_stores_event() {
+        let env = Env::default();
+
+        let mut fields = Map::<Symbol, StructuredFieldValue>::new(&env);
+        fields.set(
+            Symbol::new(&env, "market_id"),
+            StructuredFieldValue::Symbol(Symbol::new(&env, "btc_50k")),
+        );
+
+        let schema_id = Symbol::new(&env, "market.created");
+        let ts_before = env.ledger().timestamp();
+
+        EventEmitter::emit_structured(&env, schema_id.clone(), LogSeverity::Info, fields.clone());
+
+        let ts_after = env.ledger().timestamp();
+
+        // Verify the event was stored under the canonical topic.
+        let stored: StructuredLogEntry = env
+            .storage()
+            .persistent()
+            .get(&structured_log_schema_id())
+            .expect("event should be stored under structured_log topic");
+
+        assert_eq!(stored.schema_id, schema_id);
+        assert_eq!(stored.severity, LogSeverity::Info);
+        assert_eq!(stored.fields.len(), 1);
+        assert!(stored.timestamp >= ts_before);
+        assert!(stored.timestamp <= ts_after);
+    }
+
+    #[test]
+    fn test_emit_structured_all_severity_levels() {
+        let env = Env::default();
+        let empty_fields = Map::<Symbol, StructuredFieldValue>::new(&env);
+
+        // None of these should panic.
+        EventEmitter::emit_structured(
+            &env,
+            Symbol::new(&env, "test.info"),
+            LogSeverity::Info,
+            empty_fields.clone(),
+        );
+        EventEmitter::emit_structured(
+            &env,
+            Symbol::new(&env, "test.warn"),
+            LogSeverity::Warn,
+            empty_fields.clone(),
+        );
+        EventEmitter::emit_structured(
+            &env,
+            Symbol::new(&env, "test.error"),
+            LogSeverity::Error,
+            empty_fields,
+        );
+
+        // The last stored event should be the Error-level one.
+        let stored: StructuredLogEntry = env
+            .storage()
+            .persistent()
+            .get(&structured_log_schema_id())
+            .expect("event should be stored");
+        assert_eq!(stored.schema_id, Symbol::new(&env, "test.error"));
+        assert_eq!(stored.severity, LogSeverity::Error);
+    }
+
+    #[test]
+    fn test_emit_structured_multiple_field_types() {
+        let env = Env::default();
+
+        let mut fields = Map::<Symbol, StructuredFieldValue>::new(&env);
+        fields.set(
+            Symbol::new(&env, "message"),
+            StructuredFieldValue::String(String::from_str(&env, "something happened")),
+        );
+        fields.set(
+            Symbol::new(&env, "code"),
+            StructuredFieldValue::Int128(500),
+        );
+        fields.set(
+            Symbol::new(&env, "count"),
+            StructuredFieldValue::Uint64(42),
+        );
+        fields.set(
+            Symbol::new(&env, "flag"),
+            StructuredFieldValue::Bool(false),
+        );
+        fields.set(
+            Symbol::new(&env, "ctx"),
+            StructuredFieldValue::Symbol(Symbol::new(&env, "resolver")),
+        );
+        fields.set(
+            Symbol::new(&env, "actor"),
+            StructuredFieldValue::Address(Address::generate(&env)),
+        );
+
+        EventEmitter::emit_structured(
+            &env,
+            Symbol::new(&env, "test.all_types"),
+            LogSeverity::Warn,
+            fields,
+        );
+
+        let stored: StructuredLogEntry = env
+            .storage()
+            .persistent()
+            .get(&structured_log_schema_id())
+            .expect("event should be stored");
+
+        assert_eq!(stored.fields.len(), 6, "all six field types should be present");
     }
 }
