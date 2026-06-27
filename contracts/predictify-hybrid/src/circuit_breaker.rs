@@ -1,4 +1,5 @@
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::Storage;
 
 use crate::admin::AdminAccessControl;
 use crate::errors::Error;
@@ -50,6 +51,14 @@ pub struct CircuitBreakerConfig {
     pub recovery_timeout: u64,       // Time to wait before attempting recovery
     pub half_open_max_requests: u32, // Max requests in half-open state
     pub auto_recovery_enabled: bool, // Whether to auto-recover
+    pub half_open_quota: HalfOpenQuota, // Quota-based scheduler for half-open
+}
+
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct HalfOpenQuota {
+    pub calls_per_minute: u32,
+    pub evaluation_window_s: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -69,6 +78,22 @@ pub struct CircuitBreakerState {
     /// Zero when the breaker is Closed or Open.  Used to enforce the
     /// cooldown window before probe requests are counted.
     pub half_open_since: u64,
+}
+
+// Temporary tracking for half-open admission window
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct HalfOpenWindow {
+    pub admitted: u32,
+    pub completed: u32,
+    pub failures: u32,
+    pub window_start: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub enum CircuitBreakerTempData {
+    HalfOpenWindow,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,6 +157,7 @@ impl CircuitBreaker {
             recovery_timeout: 300,        // 5 minutes recovery timeout
             half_open_max_requests: 3,    // 3 requests in half-open state
             auto_recovery_enabled: true,  // Enable auto-recovery
+            half_open_quota: HalfOpenQuota { calls_per_minute: 3, evaluation_window_s: 60 },
         };
 
         let state = CircuitBreakerState {
@@ -220,6 +246,11 @@ impl CircuitBreaker {
         env.storage()
             .instance()
             .set(&Symbol::new(env, Self::STATE_KEY), state);
+        // When closing or opening, clear any temporary half-open window tracking
+        if state.state != BreakerState::HalfOpen {
+            let key = CircuitBreakerTempData::HalfOpenWindow;
+            env.storage().temporary().set(&key, &HalfOpenWindow { admitted: 0, completed: 0, failures: 0, window_start: 0 });
+        }
         Ok(())
     }
 
@@ -310,8 +341,15 @@ impl CircuitBreaker {
                 }
             },
             BreakerState::HalfOpen => {
+                // Use quota-based admission for half-open state where configured.
                 let config = Self::get_config(env)?;
-                Ok(state.half_open_requests < config.half_open_max_requests)
+                if config.half_open_quota.calls_per_minute > 0 {
+                    // Attempt to admit the call (this will increment temporary counters)
+                    let admitted = Self::half_open_admit(env, &config)?;
+                    Ok(admitted)
+                } else {
+                    Ok(state.half_open_requests < config.half_open_max_requests)
+                }
             }
         }
     }
@@ -456,6 +494,68 @@ impl CircuitBreaker {
         Ok(false)
     }
 
+    /// Admission helper for half-open quota scheduling.
+    /// Returns Ok(true) if the call is admitted, Ok(false) if not admitted (and state may transition).
+    fn half_open_admit(env: &Env, config: &CircuitBreakerConfig) -> Result<bool, Error> {
+        let current_time = env.ledger().timestamp();
+        let key = CircuitBreakerTempData::HalfOpenWindow;
+
+        let mut window: HalfOpenWindow = env.storage().temporary().get(&key).unwrap_or(HalfOpenWindow {
+            admitted: 0,
+            completed: 0,
+            failures: 0,
+            window_start: current_time,
+        });
+
+        // Reset window if expired
+        if current_time >= window.window_start.saturating_add(config.half_open_quota.evaluation_window_s) {
+            window.admitted = 0;
+            window.completed = 0;
+            window.failures = 0;
+            window.window_start = current_time;
+        }
+
+        if window.admitted < config.half_open_quota.calls_per_minute {
+            // Admit this call (count admitted but decision occurs after completion)
+            window.admitted = window.admitted.saturating_add(1);
+            env.storage().temporary().set(&key, &window);
+            env.storage().temporary().extend_ttl(&key, config.half_open_quota.evaluation_window_s as u32 + 86400, config.half_open_quota.evaluation_window_s as u32 + 86400);
+            return Ok(true);
+        }
+
+        // Quota already admitted for this window; decide based on failures recorded
+        let mut state = Self::get_state(env)?;
+        if window.failures == 0 {
+            // No failures among admitted calls -> close
+            state.state = BreakerState::Closed;
+            state.failure_count = 0;
+            state.half_open_requests = 0;
+            Self::update_state(env, &state)?;
+            let _ = Self::emit_circuit_breaker_event(
+                env,
+                BreakerAction::Resume,
+                BreakerCondition::ManualOverride,
+                &String::from_str(env, "Quota exhausted with no failures: closing circuit"),
+                None,
+            );
+            return Ok(false);
+        } else {
+            // There were failures -> reopen
+            state.state = BreakerState::Open;
+            state.opened_time = current_time;
+            state.half_open_requests = 0;
+            Self::update_state(env, &state)?;
+            let _ = Self::emit_circuit_breaker_event(
+                env,
+                BreakerAction::Trigger,
+                BreakerCondition::HighErrorRate,
+                &String::from_str(env, "Quota exhausted with failures: reopening circuit"),
+                None,
+            );
+            return Ok(false);
+        }
+    }
+
     // ===== RECOVERY MECHANISMS =====
 
     /// Circuit breaker recovery by admin
@@ -566,19 +666,33 @@ impl CircuitBreaker {
                 state.half_open_requests = 0;
                 state.half_open_since = 0;
 
-                let _ = Self::emit_circuit_breaker_event(
-                    env,
-                    BreakerAction::Resume,
-                    BreakerCondition::ManualOverride,
-                    &String::from_str(env, "Auto-recovery: circuit breaker closed"),
-                    None,
-                );
-                crate::monitoring::ContractMonitor::emit_pause_transition_hook(
-                    env,
-                    &String::from_str(env, "unpaused"),
-                    None,
-                    &String::from_str(env, "auto_recovery"),
-                );
+                // Persist updated window
+                env.storage().temporary().set(&key, &window);
+                env.storage().temporary().extend_ttl(&key, config.half_open_quota.evaluation_window_s as u32 + 86400, config.half_open_quota.evaluation_window_s as u32 + 86400);
+            } else {
+                // Backwards compatible path
+                state.half_open_requests += 1;
+
+                let config = Self::get_config(env)?;
+                if state.half_open_requests >= config.half_open_max_requests {
+                    state.state = BreakerState::Closed;
+                    state.failure_count = 0;
+                    state.half_open_requests = 0;
+
+                    let _ = Self::emit_circuit_breaker_event(
+                        env,
+                        BreakerAction::Resume,
+                        BreakerCondition::ManualOverride,
+                        &String::from_str(env, "Auto-recovery: circuit breaker closed"),
+                        None,
+                    );
+                    crate::monitoring::ContractMonitor::emit_pause_transition_hook(
+                        env,
+                        &String::from_str(env, "unpaused"),
+                        None,
+                        &String::from_str(env, "auto_recovery"),
+                    );
+                }
             }
         }
 
@@ -597,6 +711,13 @@ impl CircuitBreaker {
 
         // If in half-open state, open the circuit breaker
         if state.state == BreakerState::HalfOpen {
+            // Record failure in temporary half-open window if present
+            let key = CircuitBreakerTempData::HalfOpenWindow;
+            let mut window: HalfOpenWindow = env.storage().temporary().get(&key).unwrap_or(HalfOpenWindow { admitted: 0, completed: 0, failures: 0, window_start: current_time });
+            window.failures = window.failures.saturating_add(1);
+            window.completed = window.completed.saturating_add(1);
+            env.storage().temporary().set(&key, &window);
+
             state.state = BreakerState::Open;
             state.opened_time = current_time;
             state.half_open_requests = 0;
@@ -800,6 +921,14 @@ impl CircuitBreaker {
             return Err(Error::InvalidInput);
         }
 
+        if config.half_open_quota.calls_per_minute == 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        if config.half_open_quota.evaluation_window_s == 0 {
+            return Err(Error::InvalidInput);
+        }
+
         Ok(())
     }
 
@@ -881,7 +1010,13 @@ impl CircuitBreakerUtils {
             BreakerState::Open => Ok(false),
             BreakerState::HalfOpen => {
                 let config = CircuitBreaker::get_config(env)?;
-                Ok(state.half_open_requests < config.half_open_max_requests)
+                if config.half_open_quota.calls_per_minute > 0 {
+                    // Try to admit a call under quota-based scheduling
+                    let admitted = CircuitBreaker::half_open_admit(env, &config)?;
+                    Ok(admitted)
+                } else {
+                    Ok(state.half_open_requests < config.half_open_max_requests)
+                }
             }
         }
     }
