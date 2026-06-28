@@ -38,6 +38,7 @@ mod fees;
 mod gas;
 mod governance;
 mod graceful_degradation;
+pub mod leaderboard;
 mod market_analytics;
 mod market_id_generator;
 mod markets;
