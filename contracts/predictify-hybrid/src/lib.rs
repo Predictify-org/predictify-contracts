@@ -195,7 +195,7 @@ use crate::config::{
     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
     MIN_PLATFORM_FEE_PERCENTAGE,
 };
-use crate::events::EventEmitter;
+use crate::events::{emit_deprecated, EventEmitter};
 use crate::gas::GasTracker;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
@@ -2754,11 +2754,14 @@ impl PredictifyHybrid {
     /// - Market end time must have passed
     /// - Result must not already be verified
     /// - At least one active oracle source must be available
+    #[deprecated(note = "Use fetch_oracle_result instead. This legacy stub will be removed in a future version.")]
     pub fn verify_result(
         env: Env,
         caller: Address,
         market_id: Symbol,
     ) -> Result<OracleResult, Error> {
+        emit_deprecated(&env, &Symbol::new(&env, "verify_result"));
+
         // Authenticate the caller
         caller.require_auth();
 
@@ -3087,7 +3090,10 @@ impl PredictifyHybrid {
     /// listed above. The sequence is enforced by the order of calls inside
     /// `MarketResolutionManager::resolve_market` and is covered by a
     /// deterministic ordering test (see `resolution_event_ordering_tests`).
+    #[deprecated(note = "Use resolve_market_manual or fetch_oracle_result + resolve_market_manual instead. This legacy stub will be removed in a future version.")]
     pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
+        emit_deprecated(&env, &Symbol::new(&env, "resolve_market"));
+
         // Use the resolution module to resolve the market
         // Temporarily disabled due to resolution module being disabled
         // let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
