@@ -665,7 +665,7 @@ impl<'a> ReflectorOracleClient<'a> {
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("twap"), args);
         // Store result in temporary cache for remainder of transaction
-        self.env.storage().temporary().set(&cache_key, res.clone());
+        self.env.storage().temporary().set(&cache_key, &res);
         res
     }
     /// Check if the Reflector oracle is healthy

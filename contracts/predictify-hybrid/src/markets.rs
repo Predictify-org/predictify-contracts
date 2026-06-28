@@ -1454,7 +1454,7 @@ impl MarketStateManager {
         const MAX_CUMULATIVE_EXTENSION_HOURS: u64 = 72; // 3 days maximum
 
         // Check if adding this extension exceeds the cumulative cap
-        if market.total_extension_days + extension_hours > MAX_CUMULATIVE_EXTENSION_HOURS {
+        if (market.total_extension_days as u64) + extension_hours > MAX_CUMULATIVE_EXTENSION_HOURS {
             return Err(Error::ExtensionCapExceeded);
         }
 
