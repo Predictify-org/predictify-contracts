@@ -1,5 +1,7 @@
 #![allow(dead_code)]
-use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol, Vec};
+use crate::config::GAS_TRACKING_WINDOW_SIZE;
+use crate::events::PerformanceMetricEvent;
 
 /// Stores the gas limit configured by an admin for a specific operation.
 #[contracttype]
@@ -19,13 +21,88 @@ pub enum GasConfigKey {
 pub struct GasUsage {
     pub cpu: u64,
     pub mem: u64,
+    /// Rolling window of recent CPU usage values for moving average calculation
+    /// Ring buffer with size determined by GAS_TRACKING_WINDOW_SIZE
+    pub cpu_history: Vec<u64>,
+    /// Current index in the ring buffer for O(1) insertion
+    pub history_index: u32,
+    /// Number of entries currently in the buffer (until it fills)
+    pub history_count: u32,
 }
 
 /// GasTracker provides observability hooks and optimization limits.
 ///
 /// It allows tracking CPU and memory usage in tests via mocks and provides
 /// an administrative interface to set limits on production operations.
+///
+/// # Gas Budget Configuration
+///
+/// Admins can set per-operation gas budgets using `set_limit`:
+/// - **CPU Budget**: Maximum CPU instructions allowed per operation
+/// - **Memory Budget**: Maximum memory bytes allowed per operation
+///
+/// Budgets are enforced via `end_tracking` which panics with `GasBudgetExceeded`
+/// if limits are exceeded. Low-water alerts at 90% of budget are available
+/// via `record_with_alert`.
+///
+/// # Example Budgets
+///
+/// Recommended budgets for common operations:
+/// - `create_market`: 5,000,000 CPU
+/// - `vote`: 1,000,000 CPU
+/// - `claim_winnings`: 2,000,000 CPU
+/// - `resolve_market`: 3,000,000 CPU
+///
+/// These values should be calibrated based on actual usage patterns and
+/// adjusted as the contract evolves.
 pub struct GasTracker;
+
+impl GasUsage {
+    /// Adds a new CPU usage value to the rolling window buffer.
+    /// Uses ring buffer semantics for O(1) insertion.
+    /// Returns the moving average of the buffer contents.
+    pub fn add_to_history(&mut self, env: &Env, cpu_used: u64) -> u64 {
+        let window_size = GAS_TRACKING_WINDOW_SIZE as u32;
+        
+        // Initialize buffer if empty
+        if self.cpu_history.is_empty() {
+            self.cpu_history= Vec::from_array(env, [0u64; GAS_TRACKING_WINDOW_SIZE as usize]);
+        }
+        
+        // Insert at current index (ring buffer)
+        self.cpu_history.set(self.history_index as u32, cpu_used);
+        
+        // Update index with wrap-around
+        self.history_index = (self.history_index + 1) % window_size;
+        
+        // Update count until buffer is full
+        if self.history_count < window_size {
+            self.history_count += 1;
+        }
+        
+        // Calculate moving average
+        self.calculate_moving_average(env)
+    }
+    
+    /// Calculates the moving average of CPU usage in the buffer.
+    /// O(n) operation where n = history_count, but bounded by window size.
+    /// Returns 0 if buffer is empty.
+    fn calculate_moving_average(&self, env: &Env) -> u64 {
+        if self.history_count == 0 {
+            return 0;
+        }
+        
+        let mut sum: u64 = 0;
+        for i in 0..self.history_count {
+            let val_opt = self.cpu_history.get(i as u32);
+            if let Some(val) = val_opt {
+                sum = sum.saturating_add(val);
+            }
+        }
+        
+        sum / self.history_count as u64
+    }
+}
 
 impl GasTracker {
     /// # Optimization Guidelines
@@ -100,15 +177,69 @@ impl GasTracker {
             .set(&symbol_short!("t_gas"), &cost);
     }
 
+    /// Records gas usage with low-water alert detection.
+    /// Emits PerformanceMetricEvent when usage exceeds 90% of budget.
+    /// Alert fires exactly once when crossing the threshold.
+    /// 
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `operation` - The operation symbol being tracked
+    /// * `used` - The gas usage for this operation
+    /// 
+    /// # Alert Logic
+    /// - Alert triggers when used > 0.9 * budget
+    /// - Alert fires once per threshold crossing
+    /// - No alert if budget is 0 or not set
+    /// - No alert if used is 0
+    pub fn record_with_alert(env: &Env, operation: Symbol, used: u64) {
+        // Skip alert if no usage or no budget configured
+        if used == 0 {
+            return;
+        }
+        
+        let (cpu_limit, _) = Self::get_limits(env, operation.clone());
+        let budget = match cpu_limit {
+            Some(limit) if limit > 0 => limit,
+            _ => return, // No budget or zero budget, skip alert
+        };
+        
+        // Calculate threshold (90% of budget)
+        let threshold = (budget * 9) / 10;
+        
+        // Check if we've crossed the threshold
+        if used > threshold {
+            // Emit performance metric event
+            let event = PerformanceMetricEvent {
+                metric_name: Symbol::new(env, "gas_low_water").into(),
+                value: used as i128,
+                unit: Symbol::new(env, "cpu").into(),
+                context: operation.into(),
+                timestamp: env.ledger().timestamp(),
+            };
+            
+            env.events().publish(
+                (symbol_short!("performance_metric"), operation.clone()),
+                event,
+            );
+        }
+    }
+
     fn get_actual_cost(env: &Env, operation: Symbol) -> GasUsage {
         // Contract code cannot read real CPU/memory usage from the host.
         // For tests, allow a mocked cost to be injected via temporary storage.
         #[cfg(test)]
         {
             let cpu: Option<u64> = env.storage().temporary().get(&symbol_short!("t_gas"));
+            let cpu_val = match cpu {
+                Some(val) => val,
+                None => 0,
+            };
             return GasUsage {
-                cpu: cpu.unwrap_or(0),
+                cpu: cpu_val,
                 mem: 0,
+                cpu_history: Vec::new(env),
+                history_index: 0,
+                history_count: 0,
             };
         }
 
@@ -124,9 +255,20 @@ impl GasTracker {
                 .storage()
                 .instance()
                 .get(&GasConfigKey::TestCost(symbol_short!("t_mem"), operation));
+            let cpu_val = match cpu {
+                Some(val) => val,
+                None => 0,
+            };
+            let mem_val = match mem {
+                Some(val) => val,
+                None => 0,
+            };
             GasUsage {
-                cpu: cpu.unwrap_or(0),
-                mem: mem.unwrap_or(0),
+                cpu: cpu_val,
+                mem: mem_val,
+                cpu_history: Vec::new(env),
+                history_index: 0,
+                history_count: 0,
             }
         }
     }

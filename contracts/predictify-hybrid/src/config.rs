@@ -149,6 +149,16 @@ pub const MAX_TAG_LENGTH: u32 = 50;
 /// Safe range: 1-5 chars. Below 1 is invalid.
 pub const MIN_TAG_LENGTH: u32 = 2;
 
+/// Gas tracking ring buffer size (10)
+///
+/// Rationale: 10 entries provides sufficient history for moving average
+/// calculations while keeping storage overhead minimal. This allows
+/// detection of trends without excessive storage.
+///
+/// Safe range: 5-50 entries. Below 5 provides insufficient history.
+/// Above 50 increases storage costs without meaningful benefit.
+pub const GAS_TRACKING_WINDOW_SIZE: u32 = 10;
+
 /// Maximum number of tags per market (10)
 ///
 /// Rationale: 10 tags provides adequate categorization without
