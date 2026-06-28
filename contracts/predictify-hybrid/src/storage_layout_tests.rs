@@ -56,12 +56,20 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         comparison: String::from_str(env, "gt"),
     };
 
+    let metadata_commitment = Market::compute_metadata_commitment(
+        env,
+        &question,
+        &outcomes,
+        &oracle_config,
+    );
+
     let market = Market {
         admin: admin.clone(),
         question,
         outcomes,
         end_time,
         oracle_config,
+        metadata_commitment,
         has_fallback: false,
         fallback_oracle_config: OracleConfig::none_sentinel(env),
         resolution_timeout: 86400,
