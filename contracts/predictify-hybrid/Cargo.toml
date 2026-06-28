@@ -21,6 +21,10 @@ path = "tests/datakey_collision.rs"
 name = "oracle_callback_fuzz"
 path = "tests/oracle_callback_fuzz.rs"
 
+[[test]]
+name = "err_stability"
+path = "tests/err_stability.rs"
+
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 proptest = "1.4"
