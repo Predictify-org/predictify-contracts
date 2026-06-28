@@ -212,6 +212,7 @@ fn test_public_event_allows_any_address_to_bet() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 
     test.env.mock_all_auths();
@@ -220,6 +221,7 @@ fn test_public_event_allows_any_address_to_bet() {
         &event_id,
         &String::from_str(&test.env, "no"),
         &10_000_000i128,
+        &250,
     );
 
     let event = client.get_event(&event_id).unwrap();
@@ -247,6 +249,7 @@ fn test_global_blacklist_blocks_bettor() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 }
 
@@ -270,6 +273,7 @@ fn test_private_event_blocks_non_allowlisted_address_from_betting() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 }
 
@@ -291,6 +295,7 @@ fn test_private_event_allows_allowlisted_address_to_bet() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 
     let event = client.get_event(&event_id).unwrap();
@@ -313,6 +318,7 @@ fn test_private_event_empty_allowlist_blocks_all_bettors() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 }
 
@@ -366,6 +372,7 @@ fn test_switch_visibility_before_first_bet_enforced() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 
     let event = client.get_event(&event_id).unwrap();
@@ -379,6 +386,7 @@ fn test_switch_visibility_before_first_bet_enforced() {
             event_id.clone(),
             String::from_str(&test.env, "no"),
             10_000_000i128,
+            250,
         )
     });
     assert!(unauthorized_err.is_err());
@@ -399,6 +407,7 @@ fn test_cannot_switch_visibility_after_first_bet() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 
     let result = test.env.as_contract(&test.contract_id, || {
@@ -601,21 +610,21 @@ fn test_create_market_with_non_admin() {
 
     // The create_market function validates caller is admin.
     // Non-admin calls would return Unauthorized (#100).
-    assert_eq!(crate::errors::Error::Unauthorized as i128, 100);
+    assert_eq!(crate::err::Error::Unauthorized as i128, 100);
 }
 
 #[test]
 fn test_create_market_with_empty_outcome() {
     // The create_market function validates outcomes are not empty.
     // Empty outcomes would return InvalidOutcomes (#301).
-    assert_eq!(crate::errors::Error::InvalidOutcomes as i128, 301);
+    assert_eq!(crate::err::Error::InvalidOutcomes as i128, 301);
 }
 
 #[test]
 fn test_create_market_with_empty_question() {
     // The create_market function validates question is not empty.
     // Empty question would return InvalidQuestion (#300).
-    assert_eq!(crate::errors::Error::InvalidQuestion as i128, 300);
+    assert_eq!(crate::err::Error::InvalidQuestion as i128, 300);
 }
 
 #[test]
@@ -693,14 +702,14 @@ fn test_vote_with_invalid_outcome() {
 
     // The vote function validates outcome is valid.
     // Invalid outcome would return InvalidOutcome (#108).
-    assert_eq!(crate::errors::Error::InvalidOutcome as i128, 108);
+    assert_eq!(crate::err::Error::InvalidOutcome as i128, 108);
 }
 
 #[test]
 fn test_vote_on_nonexistent_market() {
     // The vote function validates market exists.
     // Nonexistent market would return MarketNotFound (#101).
-    assert_eq!(crate::errors::Error::MarketNotFound as i128, 101);
+    assert_eq!(crate::err::Error::MarketNotFound as i128, 101);
 }
 
 #[test]
@@ -1335,6 +1344,7 @@ fn test_unpause_restores_operations() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
+        &250,
     );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -1638,14 +1648,14 @@ fn test_reinitialize_prevention() {
 fn test_initialize_invalid_fee_negative() {
     // Initialize with negative fee would return InvalidFeeConfig (#402).
     // Negative values are not allowed for platform fee percentage.
-    assert_eq!(crate::errors::Error::InvalidFeeConfig as i128, 402);
+    assert_eq!(crate::err::Error::InvalidFeeConfig as i128, 402);
 }
 
 #[test]
 fn test_initialize_invalid_fee_too_high() {
     // Initialize with fee exceeding max 10% would return InvalidFeeConfig (#402).
     // Maximum platform fee is enforced to be 10%.
-    assert_eq!(crate::errors::Error::InvalidFeeConfig as i128, 402);
+    assert_eq!(crate::err::Error::InvalidFeeConfig as i128, 402);
 }
 
 #[test]
@@ -2801,12 +2811,14 @@ fn test_refund_on_oracle_failure_admin_success() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
+        &250,
     );
     client.place_bet(
         &user2,
         &market_id,
         &String::from_str(&test.env, "no"),
         &20_000_000,
+        &250,
     );
 
     let market = test.env.as_contract(&test.contract_id, || {
@@ -2856,12 +2868,14 @@ fn test_refund_on_oracle_failure_full_amount_per_user() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &amt1,
+        &250,
     );
     client.place_bet(
         &user2,
         &market_id,
         &String::from_str(&test.env, "no"),
         &amt2,
+        &250,
     );
 
     let market = test.env.as_contract(&test.contract_id, || {
@@ -2899,6 +2913,7 @@ fn test_refund_on_oracle_failure_no_double_refund() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
+        &250,
     );
 
     let market = test.env.as_contract(&test.contract_id, || {
@@ -2941,6 +2956,7 @@ fn test_refund_on_oracle_failure_after_timeout_any_caller() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
+        &250,
     );
 
     let market = test.env.as_contract(&test.contract_id, || {
@@ -3003,6 +3019,7 @@ fn test_refund_on_oracle_failure_uses_market_resolution_timeout() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
+        &250,
     );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -3054,6 +3071,7 @@ fn test_bet_rate_limit_enforced_when_config_set() {
         &market1,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
+        &250,
     );
     test.env.mock_all_auths();
     client.place_bet(
@@ -3061,6 +3079,7 @@ fn test_bet_rate_limit_enforced_when_config_set() {
         &market2,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
+        &250,
     );
     test.env.mock_all_auths();
     let res = client.try_place_bet(
@@ -3068,6 +3087,7 @@ fn test_bet_rate_limit_enforced_when_config_set() {
         &market3,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
+        &250,
     );
     assert!(res.is_err());
 }
@@ -3095,6 +3115,7 @@ fn test_bet_rate_limit_at_limit_ok() {
         &market1,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
+        &250,
     );
     test.env.mock_all_auths();
     client.place_bet(
@@ -3102,6 +3123,7 @@ fn test_bet_rate_limit_at_limit_ok() {
         &market2,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
+        &250,
     );
     // Exactly at limit: both bets succeeded (different markets)
 }
@@ -3119,6 +3141,7 @@ fn test_bet_rate_limit_without_config_ok() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
+        &250,
     );
     // No limit enforced when config not set
 }
@@ -3238,6 +3261,7 @@ fn test_multi_outcome_invalid_outcome_rejected() {
         &market_id,
         &String::from_str(&test.env, "D4"),
         &10_000_000,
+        &250,
     );
     assert!(res.is_err());
 }
@@ -3278,12 +3302,14 @@ fn test_multi_outcome_single_winner_payout() {
         &market_id,
         &String::from_str(&test.env, "win"),
         &100_0000000,
+        &250,
     );
     client.place_bet(
         &loser,
         &market_id,
         &String::from_str(&test.env, "lose"),
         &200_0000000,
+        &250,
     );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -3347,12 +3373,14 @@ fn test_multi_outcome_tie_split_payout() {
         &market_id,
         &String::from_str(&test.env, "A1"),
         &100_0000000,
+        &250,
     );
     client.place_bet(
         &u2,
         &market_id,
         &String::from_str(&test.env, "B2"),
         &100_0000000,
+        &250,
     );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -3419,6 +3447,7 @@ fn test_multi_outcome_one_outcome_no_bets() {
         &market_id,
         &String::from_str(&test.env, "A1"),
         &50_0000000,
+        &250,
     );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -3479,12 +3508,14 @@ fn test_multi_outcome_all_same_outcome() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_0000000,
+        &250,
     );
     client.place_bet(
         &u2,
         &market_id,
         &String::from_str(&test.env, "yes"),
         &20_0000000,
+        &250,
     );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -5053,6 +5084,7 @@ fn test_global_min_pool_blocks_resolution_when_market_min_not_set() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &100_0000000,
+        &250,
     );
 
     let market = test.env.as_contract(&test.contract_id, || {
@@ -5181,6 +5213,7 @@ fn test_cancel_underfunded_event_uses_global_min_pool_when_market_min_not_set() 
         &market_id,
         &String::from_str(&test.env, "yes"),
         &100_0000000,
+        &250,
     );
 
     let market = test.env.as_contract(&test.contract_id, || {
@@ -6357,7 +6390,7 @@ fn test_rollback_requires_admin_authorization() {
     assert_ne!(admin, non_admin);
 
     // Verify Unauthorized error code is correct
-    assert_eq!(crate::errors::Error::Unauthorized as u32, 100);
+    assert_eq!(crate::err::Error::Unauthorized as u32, 100);
 
     // The rollback_upgrade function calls admin.require_auth() and
     // validate_admin_permissions which checks the stored admin.

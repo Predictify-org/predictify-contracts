@@ -37,7 +37,7 @@ struct BetTestSetup {
     market_id: Symbol,
 }
 
-impl BetTestSetup {
+
     /// Test placing a bet with a custom Stellar asset (e.g., USDC)
     #[test]
     fn test_place_bet_with_custom_token() {
@@ -53,13 +53,15 @@ impl BetTestSetup {
 
         // User deposits custom token
         let amount = 1_000_000; // 1 USDC
-        crate::tokens::transfer_token(
-            &setup.env,
-            &custom_asset,
-            &setup.user,
-            &setup.contract_id,
-            amount,
-        );
+        setup.env.as_contract(&setup.contract_id, || {
+            crate::tokens::transfer_token(
+                &setup.env,
+                &custom_asset,
+                &setup.user,
+                &setup.contract_id,
+                amount,
+            );
+        });
 
         // Place bet using custom token
         // (Pseudo-code, implement actual bet placement logic)
@@ -79,14 +81,20 @@ impl BetTestSetup {
             decimals: 6,
         };
         let payout_amount = 2_000_000; // 2 USDC
-                                       // Simulate payout
-        crate::tokens::transfer_token(
-            &setup.env,
-            &custom_asset,
-            &setup.contract_id,
-            &setup.user,
-            payout_amount,
-        );
+        // Mint tokens to the contract first so it has funds to pay out
+        let stellar_client = StellarAssetClient::new(&setup.env, &setup.token_id);
+        stellar_client.mint(&setup.contract_id, &payout_amount);
+
+        // Simulate payout
+        setup.env.as_contract(&setup.contract_id, || {
+            crate::tokens::transfer_token(
+                &setup.env,
+                &custom_asset,
+                &setup.contract_id,
+                &setup.user,
+                payout_amount,
+            );
+        });
         // Assert payout received
         // ...assertions...
     }
@@ -131,8 +139,15 @@ impl BetTestSetup {
                                 // Assert XLM flow works as before
                                 // ...assertions...
     }
+
+impl BetTestSetup {
     /// Create a new test environment with contract deployed and initialized
     fn new() -> Self {
+        Self::new_with_fee(None)
+    }
+
+    /// Create a new test environment with contract deployed and initialized with a specific platform fee
+    fn new_with_fee(platform_fee_percentage: Option<i128>) -> Self {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -144,7 +159,18 @@ impl BetTestSetup {
         // Register and initialize the contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
+        client.initialize(&admin, &platform_fee_percentage, &None);
+        // Persist fee config for slippage guard
+        if let Some(fee) = platform_fee_percentage {
+            // Build a ContractConfig with the fee and enable fees
+            let mut cfg = crate::config::ConfigManager::get_development_config(&env);
+            cfg.fees.platform_fee_percentage = fee;
+            cfg.fees.fees_enabled = true;
+            // Store the configuration using the provided API
+            env.as_contract(&contract_id, || {
+                crate::config::ConfigManager::store_config(&env, &cfg).unwrap();
+            });
+        }
 
         // Setup token for staking
         let token_admin = Address::generate(&env);
@@ -207,7 +233,7 @@ impl BetTestSetup {
                 ),
                 feed_id: String::from_str(env, "BTC/USD"),
                 threshold: 100_000_00000000, // $100,000
-                comparison: String::from_str(env, "gte"),
+                comparison: String::from_str(env, "gt"),
             },
             &None,
             &86400u64,
@@ -261,6 +287,7 @@ fn test_place_bet_exactly_minimum() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MIN_BET_AMOUNT);
@@ -283,6 +310,7 @@ fn test_place_bet_exactly_maximum() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MAX_BET_AMOUNT);
@@ -457,6 +485,7 @@ fn test_place_bet_minimum_with_sufficient_balance() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MIN_BET_AMOUNT);
@@ -482,6 +511,7 @@ fn test_place_bet_maximum_with_sufficient_balance() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
 
     assert_eq!(bet.amount, MAX_BET_AMOUNT);
@@ -528,6 +558,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet1.amount, MIN_BET_AMOUNT);
     assert_eq!(bet1.status, BetStatus::Active);
@@ -540,6 +571,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market2,
         &String::from_str(&setup.env, "yes"),
         &(MIN_BET_AMOUNT + 1_000_000),
+        &250,
     );
     assert_eq!(bet2.amount, MIN_BET_AMOUNT + 1_000_000);
     assert_eq!(bet2.status, BetStatus::Active);
@@ -572,6 +604,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market3,
         &String::from_str(&setup.env, "yes"),
         &10_000_000,
+        &250,
     );
     assert_eq!(bet3.amount, 10_000_000);
 
@@ -583,6 +616,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market4,
         &String::from_str(&setup.env, "yes"),
         &50_000_000,
+        &250,
     );
     assert_eq!(bet4.amount, 50_000_000);
 
@@ -594,6 +628,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market5,
         &String::from_str(&setup.env, "yes"),
         &100_000_000,
+        &250,
     );
     assert_eq!(bet5.amount, 100_000_000);
 
@@ -605,6 +640,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market6,
         &String::from_str(&setup.env, "yes"),
         &(MAX_BET_AMOUNT - 1_000_000),
+        &250,
     );
     assert_eq!(bet6.amount, MAX_BET_AMOUNT - 1_000_000);
 
@@ -616,6 +652,7 @@ fn test_place_bet_valid_amounts_in_range() {
         &market7,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet7.amount, MAX_BET_AMOUNT);
     assert_eq!(bet7.status, BetStatus::Active);
@@ -689,6 +726,7 @@ fn test_multiple_bets_at_different_limits() {
         &market1,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet1.amount, MIN_BET_AMOUNT);
 
@@ -698,6 +736,7 @@ fn test_multiple_bets_at_different_limits() {
         &market2,
         &String::from_str(&setup.env, "yes"),
         &50_000_000,
+        &250,
     );
     assert_eq!(bet2.amount, 50_000_000);
 
@@ -707,6 +746,7 @@ fn test_multiple_bets_at_different_limits() {
         &market3,
         &String::from_str(&setup.env, "yes"),
         &500_000_000,
+        &250,
     );
     assert_eq!(bet3.amount, 500_000_000);
 
@@ -716,6 +756,7 @@ fn test_multiple_bets_at_different_limits() {
         &market4,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet4.amount, MAX_BET_AMOUNT);
 }
@@ -755,6 +796,7 @@ fn test_bet_limit_validation_in_place_bet_flow() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet_min.amount, MIN_BET_AMOUNT);
 
@@ -772,6 +814,7 @@ fn test_bet_limit_validation_in_place_bet_flow() {
         &market2,
         &String::from_str(&setup.env, "yes"),
         &MAX_BET_AMOUNT,
+        &250,
     );
     assert_eq!(bet_max.amount, MAX_BET_AMOUNT);
 }
@@ -837,6 +880,7 @@ fn test_set_global_bet_limits_and_place_bet_exactly_min_max() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &min,
+        &250,
     );
     assert_eq!(bet_min.amount, min);
 
@@ -849,6 +893,7 @@ fn test_set_global_bet_limits_and_place_bet_exactly_min_max() {
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &max,
+        &250,
     );
     assert_eq!(bet_max.amount, max);
 }
@@ -870,6 +915,7 @@ fn test_place_bet_below_configured_min_rejects() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &(min - 1),
+        &250,
     );
 }
 
@@ -890,6 +936,7 @@ fn test_place_bet_above_configured_max_rejects() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &(max + 1),
+        &250,
     );
 }
 
@@ -914,6 +961,7 @@ fn test_set_event_bet_limits_overrides_global() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &event_min,
+        &250,
     );
     assert_eq!(bet.amount, event_min);
 }
@@ -935,6 +983,7 @@ fn test_place_bet_below_event_min_rejects() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &(event_min - 1),
+        &250,
     );
 }
 
@@ -996,22 +1045,16 @@ fn test_try_place_bet_rejected_at_explicit_bet_deadline() {
             .set(&setup.market_id, &updated);
     });
 
-    setup.env.ledger().set(LedgerInfo {
-        timestamp: market.end_time - 10,
-        protocol_version: 22,
-        sequence_number: setup.env.ledger().sequence(),
-        network_id: Default::default(),
-        base_reserve: 10,
-        min_temp_entry_ttl: 1,
-        min_persistent_entry_ttl: 1,
-        max_entry_ttl: 10000,
-    });
+    let mut ledger = setup.env.ledger().get();
+    ledger.timestamp = market.end_time - 10;
+    setup.env.ledger().set(ledger);
 
     let result = client.try_place_bet(
         &setup.user,
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert!(result.is_err());
 }
@@ -1041,6 +1084,7 @@ fn test_try_place_bet_rejected_when_market_metadata_deadline_invalid() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert!(result.is_err());
 }
@@ -1070,6 +1114,100 @@ fn test_try_place_bet_rejected_when_market_metadata_min_pool_invalid() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &MIN_BET_AMOUNT,
+        &250,
     );
     assert!(result.is_err());
 }
+
+// ===== BET SLIPPAGE GUARD TESTS =====
+
+#[test]
+fn test_bet_slippage_none_preserves_behaviour() {
+    // Set platform fee to 300 bps (3.0%) during initialization
+    let setup = BetTestSetup::new_with_fee(Some(300));
+    let client = setup.client();
+
+    // Passing None for max_fee_bps should succeed
+    let bet = client.place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &MIN_BET_AMOUNT,
+        &None,
+    );
+
+    assert_eq!(bet.amount, MIN_BET_AMOUNT);
+    assert_eq!(bet.status, BetStatus::Active);
+}
+
+#[test]
+fn test_bet_slippage_live_fee_above_max_reverts() {
+    // Set platform fee to 250 bps (2.5%) during initialization
+    let setup = BetTestSetup::new_with_fee(Some(250));
+    let client = setup.client();
+
+    // Pass max_fee_bps of 200 bps (2.0%). Since 250 > 200, this should fail.
+    let result = client.try_place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &MIN_BET_AMOUNT,
+        &Some(200u32),
+    );
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_bet_slippage_exact_equal_threshold_succeeds() {
+    // Set platform fee to 200 bps (2.0%) during initialization
+    let setup = BetTestSetup::new_with_fee(Some(200));
+    let client = setup.client();
+
+    // Pass max_fee_bps of 200 bps. 200 <= 200, this should succeed.
+    let bet = client.place_bet(
+        &setup.user,
+        &setup.market_id,
+        &String::from_str(&setup.env, "yes"),
+        &MIN_BET_AMOUNT,
+        &Some(200u32),
+    );
+
+    assert_eq!(bet.amount, MIN_BET_AMOUNT);
+}
+
+#[test]
+fn test_bet_slippage_batch_path_reverts() {
+    // Set platform fee to 300 bps (3.0%) during initialization
+    let setup = BetTestSetup::new_with_fee(Some(300));
+    let client = setup.client();
+
+    let bets = vec![
+        &setup.env,
+        (
+            setup.market_id.clone(),
+            String::from_str(&setup.env, "yes"),
+            MIN_BET_AMOUNT,
+        ),
+    ];
+
+    // Pass max_fee_bps of 200 bps. 300 > 200, this should fail.
+    let result = client.try_place_bets(
+        &setup.user,
+        &bets,
+        &Some(200u32),
+    );
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_get_live_fee_percentage() {
+    let setup = BetTestSetup::new_with_fee(Some(250));
+    setup.env.as_contract(&setup.contract_id, || {
+        let fee = BetManager::get_live_fee_percentage(&setup.env).unwrap();
+        assert_eq!(fee, 250);
+    });
+}
+
+

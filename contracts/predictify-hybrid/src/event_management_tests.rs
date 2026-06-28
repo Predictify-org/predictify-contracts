@@ -1,5 +1,5 @@
 use crate::circuit_breaker::CircuitBreaker;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::{BetStatusUpdatedEvent, MarketResolvedEvent};
 use crate::types::{OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
@@ -190,6 +190,7 @@ fn test_market_resolution_publishes_status_events() {
         &market_id,
         &String::from_str(&setup.env, "Yes"),
         &1_000_000i128,
+        &250,
     );
 
     setup.env.ledger().with_mut(|li| {
@@ -992,7 +993,7 @@ fn test_archive_event_already_archived_returns_error() {
     client.archive_event(&setup.admin, &market_id);
     // Second archive attempt must fail
     let result = client.try_archive_event(&setup.admin, &market_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::AlreadyClaimed)));
+    assert_eq!(result, Err(Ok(crate::err::Error::AlreadyClaimed)));
 }
 
 #[test]
@@ -1009,7 +1010,7 @@ fn test_archive_active_market_returns_invalid_state() {
 
     // Market is Active — must not be archivable
     let result = client.try_archive_event(&setup.admin, &market_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::InvalidState)));
+    assert_eq!(result, Err(Ok(crate::err::Error::InvalidState)));
 }
 
 #[test]
@@ -1019,7 +1020,7 @@ fn test_archive_nonexistent_market_returns_not_found() {
 
     let fake_id = Symbol::new(&setup.env, "ghost");
     let result = client.try_archive_event(&setup.admin, &fake_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::MarketNotFound)));
+    assert_eq!(result, Err(Ok(crate::err::Error::MarketNotFound)));
 }
 
 #[test]
@@ -1043,7 +1044,7 @@ fn test_archive_unauthorized_returns_error() {
     );
 
     let result = client.try_archive_event(&non_admin, &market_id);
-    assert_eq!(result, Err(Ok(crate::errors::Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(crate::err::Error::Unauthorized)));
 }
 
 #[test]
@@ -1070,7 +1071,7 @@ fn test_prune_archive_removes_oldest_entries() {
 
     assert_eq!(client.archive_size(), 2);
 
-    let removed = client.prune_archive(&setup.admin, &1u32);
+    let (removed, _cursor) = client.prune_archive(&setup.admin, &1u32, &None);
     assert_eq!(removed, 1);
     assert_eq!(client.archive_size(), 1);
 }
@@ -1094,7 +1095,7 @@ fn test_prune_archive_count_zero_removes_nothing() {
     );
     client.archive_event(&setup.admin, &market_id);
 
-    let removed = client.prune_archive(&setup.admin, &0u32);
+    let (removed, _cursor) = client.prune_archive(&setup.admin, &0u32, &None);
     assert_eq!(removed, 0);
     assert_eq!(client.archive_size(), 1);
 }
@@ -1104,7 +1105,7 @@ fn test_prune_archive_empty_archive_returns_zero() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
 
-    let removed = client.prune_archive(&setup.admin, &5u32);
+    let (removed, _cursor) = client.prune_archive(&setup.admin, &5u32, &None);
     assert_eq!(removed, 0);
     assert_eq!(client.archive_size(), 0);
 }
@@ -1115,7 +1116,7 @@ fn test_prune_archive_unauthorized_returns_error() {
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
     let non_admin = setup.create_user();
 
-    let result = client.try_prune_archive(&non_admin, &5u32);
+    let result = client.try_prune_archive(&non_admin, &5u32, &None);
     assert_eq!(result, Err(Ok(crate::errors::Error::Unauthorized)));
 }
 

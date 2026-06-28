@@ -20,6 +20,7 @@ Complete API reference for Predictify Hybrid contract, including:
 
 Comprehensive security documentation and guidelines:
 
+- **[Threat Model](./security/THREAT_MODEL.md)** - Oracle-resolution and dispute-attack threat model with code-grounded citations
 - **[Attack Vectors](./security/ATTACK-VECTORS.md)** - Known attack vectors and mitigation strategies
 - **[Audit Checklist](./security/AUDIT_CHECKLIST.md)** - Security audit requirements and checklist
 - **[Soroban SDK Workspace Audit](./security/SOROBAN_SDK_AUDIT.md)** - Workspace Soroban SDK target, verification steps, and audit notes for Protocol 25 alignment

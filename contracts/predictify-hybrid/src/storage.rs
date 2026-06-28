@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::markets::{MarketStateLogic, MarketStateManager};
-use crate::types::{Balance, ReflectorAsset};
-use soroban_sdk::{contracttype, Address, Env, IntoVal, Symbol, Val, Vec};
+use crate::types::{Balance, ReflectorAsset, Market, MarketState, OracleConfig};
+use soroban_sdk::{contracttype, Address, Env, IntoVal, Map, Symbol, Val, Vec};
 
 const STORAGE_CONFIG_KEY: &str = "storage_config";
 const LEDGERS_PER_DAY: u32 = 17_280;
@@ -11,6 +11,12 @@ const BALANCE_TTL_LEDGERS: u32 = 31 * LEDGERS_PER_DAY;
 const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 const EVENT_TTL_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+
+/// TTL for instance storage cache entries, in ledgers.
+/// At ~5 seconds per ledger on Soroban mainnet, 100 ledgers ≈ 8 minutes.
+/// Instance TTL is shared - bumping extends all instance storage keys.
+/// Increase for longer-lived deployments; decrease to reduce ledger rent costs.
+pub const MARKET_CACHE_TTL_LEDGERS: u32 = 100;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StorageTtlTier {
@@ -23,12 +29,28 @@ enum StorageTtlTier {
 // ===== STORAGE OPTIMIZATION TYPES =====
 
 /// Storage key variants for contracts/predictify-hybrid
+///
+/// These variants are used as persistent storage keys. Each variant must have a unique
+/// XDR encoding to avoid collisions in the storage layer. A collision detection test
+/// exists in `tests/datakey_collision.rs` that verifies all variants produce unique
+/// XDR byte representations. If this test fails, it indicates a critical issue with
+/// storage key uniqueness that must be resolved before deploying to production.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
+    /// Cumulative days extended for a given market (u32).
+    MarketExtensionTotal(Symbol),
+    MarketMetadata(Symbol),
+    MarketScratch(Symbol),
+    DisputeHistoryCap,
+    DisputeHistory(Symbol),
+    DisputeStakeCap(Symbol, Address),
+    /// Instance storage cache key for Market structs, keyed by market_id.
+    /// Used by MarketReadCache in markets.rs.
+    MarketCache(Symbol),
 }
 
 /// Storage format version for migration tracking
@@ -133,6 +155,106 @@ pub struct StorageMigration {
     pub error_message: Option<String>,
 }
 
+impl StorageMigration {
+    pub fn promote_market_to_persistent(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+        let temp_key = DataKey::MarketMetadata(market_id.clone());
+        let persistent_key = DataKey::MarketMetadata(market_id.clone());
+
+        let metadata_opt = env.storage().temporary().get::<_, Market>(&temp_key);
+
+        if let Some(metadata) = metadata_opt {
+            metadata.admin.require_auth();
+
+            let config = StorageOptimizer::get_storage_config(env);
+            
+            StorageOptimizer::set_persistent_with_ttl(
+                env,
+                &persistent_key,
+                &metadata,
+                config.market_ttl_ledgers,
+            );
+
+            env.storage().temporary().remove(&temp_key);
+
+            crate::events::EventEmitter::emit_market_archived(
+                env,
+                market_id,
+                &String::from_str(env, "Temporary"),
+                &String::from_str(env, "Persistent"),
+            );
+
+            Ok(())
+        } else {
+            let persistent_opt = env.storage().persistent().get::<_, Market>(&persistent_key);
+            if let Some(metadata) = persistent_opt {
+                metadata.admin.require_auth();
+
+                let config = StorageOptimizer::get_storage_config(env);
+                StorageOptimizer::extend_persistent_ttl(
+                    env,
+                    &persistent_key,
+                    config.market_ttl_ledgers,
+                );
+                Ok(())
+            } else {
+                Err(Error::MarketNotFound)
+            }
+        }
+    }
+
+    pub fn demote_scratch_keys(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+        let temp_key = DataKey::MarketScratch(market_id.clone());
+        let persistent_key = DataKey::MarketScratch(market_id.clone());
+        let metadata_key = DataKey::MarketMetadata(market_id.clone());
+
+        let market = if let Some(m) = env.storage().persistent().get::<_, Market>(&metadata_key) {
+            m
+        } else if let Some(m) = env.storage().temporary().get::<_, Market>(&metadata_key) {
+            m
+        } else {
+            MarketStateManager::get_market(env, market_id)?
+        };
+
+        market.admin.require_auth();
+
+        let scratch_opt = env.storage().persistent().get::<_, Vec<i128>>(&persistent_key);
+
+        if let Some(scratch_data) = scratch_opt {
+            let config = StorageOptimizer::get_storage_config(env);
+
+            env.storage().temporary().set(&temp_key, &scratch_data);
+            env.storage().temporary().extend_ttl(
+                &temp_key,
+                config.balance_ttl_ledgers,
+                config.balance_ttl_ledgers,
+            );
+
+            env.storage().persistent().remove(&persistent_key);
+
+            crate::events::EventEmitter::emit_market_archived(
+                env,
+                market_id,
+                &String::from_str(env, "Persistent"),
+                &String::from_str(env, "Temporary"),
+            );
+
+            Ok(())
+        } else {
+            if env.storage().temporary().has(&temp_key) {
+                let config = StorageOptimizer::get_storage_config(env);
+                env.storage().temporary().extend_ttl(
+                    &temp_key,
+                    config.balance_ttl_ledgers,
+                    config.balance_ttl_ledgers,
+                );
+                Ok(())
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Storage integrity check result
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -192,7 +314,7 @@ impl StorageOptimizer {
         Self::clamp_persistent_ttl(env, Self::ttl_for_tier(&config, tier))
     }
 
-    fn extend_persistent_ttl<K>(env: &Env, key: &K, desired_ttl_ledgers: u32)
+    pub fn extend_persistent_ttl<K>(env: &Env, key: &K, desired_ttl_ledgers: u32)
     where
         K: IntoVal<Env, Val>,
     {
@@ -748,9 +870,8 @@ impl StorageOptimizer {
 
     /// Check if market is compressed
     fn is_market_compressed(env: &Env, market_id: &Symbol) -> bool {
-        env.storage()
-            .persistent()
-            .has(&Symbol::new(env, &format!("compressed_{:?}", market_id)))
+        let key = crate::event_archive::derive_archive_key(env, market_id, "compressed");
+        env.storage().persistent().has(&key)
     }
 
     /// Store compressed market
@@ -758,10 +879,7 @@ impl StorageOptimizer {
         env: &Env,
         compressed_market: &CompressedMarket,
     ) -> Result<(), Error> {
-        let key = Symbol::new(
-            env,
-            &format!("compressed_{:?}", compressed_market.market_id),
-        );
+        let key = crate::event_archive::derive_archive_key(env, &compressed_market.market_id, "compressed");
         Self::set_persistent_with_ttl(
             env,
             &key,
@@ -773,7 +891,7 @@ impl StorageOptimizer {
 
     /// Get compressed market
     fn get_compressed_market(env: &Env, market_id: &Symbol) -> Result<CompressedMarket, Error> {
-        let key = Symbol::new(env, &format!("compressed_{:?}", market_id));
+        let key = crate::event_archive::derive_archive_key(env, market_id, "compressed");
         env.storage()
             .persistent()
             .get(&key)
@@ -786,7 +904,7 @@ impl StorageOptimizer {
         market_id: &Symbol,
         compressed_id: &Symbol,
     ) -> Result<(), Error> {
-        let key = Symbol::new(env, &format!("compressed_ref_{:?}", market_id));
+        let key = crate::event_archive::derive_archive_key(env, market_id, "compressed_ref");
         Self::set_persistent_with_ttl(
             env,
             &key,

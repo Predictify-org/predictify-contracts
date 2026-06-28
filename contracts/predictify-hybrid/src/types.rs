@@ -3,7 +3,7 @@
 use crate::Error;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
 
@@ -1031,6 +1031,13 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
+    /// SHA-256 commitment to the canonical public market metadata.
+    ///
+    /// The committed fields are `question`, `outcomes`, and the primary
+    /// `oracle_config`, encoded with Soroban's canonical XDR serializer before
+    /// hashing. Clients can recompute this value off-chain and call
+    /// `verify_market_metadata` to detect tampered storage reads or stale caches.
+    pub metadata_commitment: BytesN<32>,
     /// Whether a fallback oracle is configured.
     ///
     /// When `true`, automatic resolution attempts the primary oracle once and then this market's
@@ -1092,6 +1099,19 @@ pub struct Market {
     /// Whether unclaimed winnings have already been swept for this market.
     /// Set to true after the first successful sweep to prevent double-crediting the treasury.
     pub winnings_swept: bool,
+}
+
+/// Canonical payload committed by `Market::metadata_commitment`.
+///
+/// Keep this type small and purpose-built so commitment review is simple. The
+/// field order is part of the commitment definition; changing it requires a
+/// documented migration/versioning plan for clients.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketMetadataCommitmentPayload {
+    pub question: String,
+    pub outcomes: Vec<String>,
+    pub oracle_config: OracleConfig,
 }
 
 // ===== CLAIM INFO =====
@@ -1411,6 +1431,53 @@ pub struct DashboardStatisticsV1 {
 }
 
 impl Market {
+    /// Computes the SHA-256 commitment for canonical market metadata.
+    ///
+    /// The commitment covers only public creation metadata that off-chain UIs
+    /// display as market identity: `question`, `outcomes`, and primary
+    /// `oracle_config`. The payload is serialized with Soroban's canonical XDR
+    /// representation before hashing, avoiding ambiguous delimiters or host-side
+    /// formatting differences.
+    pub fn compute_metadata_commitment(
+        env: &Env,
+        question: &String,
+        outcomes: &Vec<String>,
+        oracle_config: &OracleConfig,
+    ) -> BytesN<32> {
+        let payload = MarketMetadataCommitmentPayload {
+            question: question.clone(),
+            outcomes: outcomes.clone(),
+            oracle_config: oracle_config.clone(),
+        };
+        env.crypto().sha256(&payload.to_xdr(env)).into()
+    }
+
+    /// Recomputes and stores this market's metadata commitment after an
+    /// authorized metadata update.
+    pub fn refresh_metadata_commitment(&mut self, env: &Env) {
+        self.metadata_commitment = Self::compute_metadata_commitment(
+            env,
+            &self.question,
+            &self.outcomes,
+            &self.oracle_config,
+        );
+    }
+
+    /// Verifies that `expected` matches both the stored commitment and a fresh
+    /// commitment over the currently stored fields.
+    ///
+    /// Comparing against a fresh commitment means the helper returns `false` if
+    /// any committed field was mutated without also updating the commitment.
+    pub fn verify_metadata_commitment(&self, env: &Env, expected: &BytesN<32>) -> bool {
+        let actual = Self::compute_metadata_commitment(
+            env,
+            &self.question,
+            &self.outcomes,
+            &self.oracle_config,
+        );
+        actual.eq(expected) && self.metadata_commitment.eq(expected)
+    }
+
     /// Create a new market
     pub fn new(
         env: &Env,
@@ -1427,12 +1494,19 @@ impl Market {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(env)),
         };
+        let metadata_commitment = Self::compute_metadata_commitment(
+            env,
+            &question,
+            &outcomes,
+            &oracle_config,
+        );
         Self {
             admin,
             question,
             outcomes,
             end_time,
             oracle_config,
+            metadata_commitment,
             has_fallback,
             fallback_oracle_config: fallback_cfg,
             resolution_timeout,
@@ -1856,6 +1930,13 @@ pub struct GlobalOracleValidationConfig {
     /// Maximum allowed price deviation from the last accepted reading, in basis points.
     /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
+    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
+    /// When set, the new price is compared against the rolling median of recent prices.
+    /// None means rolling-median outlier rejection is disabled.
+    pub max_deviation_z_multiple: Option<u32>,
+    /// Number of historical prices to retain in the rolling deviation history ring buffer.
+    /// Defaults to 10 when None.
+    pub history_size: Option<u32>,
 }
 
 /// Per-event oracle validation configuration override.
@@ -1869,6 +1950,13 @@ pub struct EventOracleValidationConfig {
     /// Maximum allowed price deviation from the last accepted reading, in basis points.
     /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
+    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
+    /// When set, the new price is compared against the rolling median of recent prices.
+    /// None means rolling-median outlier rejection is disabled.
+    pub max_deviation_z_multiple: Option<u32>,
+    /// Number of historical prices to retain in the rolling deviation history ring buffer.
+    /// Defaults to 10 when None.
+    pub history_size: Option<u32>,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.

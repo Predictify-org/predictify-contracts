@@ -11,12 +11,17 @@ pub mod integration;
 pub mod mocks;
 pub mod security;
 
+#[cfg(test)]
+pub mod fee_calculator_proptest;
+
 // DISABLED: API drift - re-enable after fixing
 // mod fee_idempotency_tests;
 mod rate_limiter_tests;
+mod rate_limiter_invariants;
 // mod metadata_validation_tests;
 // mod oracle_provider_compatibility_tests;
 // mod oracle_validation_tests;
 // mod reflector_asset_test_utils;
 
 pub mod dispute_stake_tests;
+pub mod fee_config_commit_reveal_tests;

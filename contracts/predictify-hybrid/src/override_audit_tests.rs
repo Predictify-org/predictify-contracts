@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::audit_trail::{AuditAction, AuditTrailManager};
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::{MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
@@ -69,6 +69,7 @@ fn test_override_rejects_empty_reason() {
         &market_id,
         &String::from_str(&ctx.env, "yes"),
         &String::from_str(&ctx.env, ""),
+        &0u64,
     );
 
     assert_eq!(result, Err(Ok(Error::InvalidInput)));
@@ -86,6 +87,7 @@ fn test_override_appends_audit_record() {
         &market_id,
         &String::from_str(&ctx.env, "yes"),
         &String::from_str(&ctx.env, "Oracle feed was stale; manual data confirmed"),
+        &0u64,
     );
 
     ctx.env.as_contract(&ctx.contract_id, || {
@@ -104,6 +106,8 @@ fn test_override_appends_audit_record() {
             recorded_reason,
             String::from_str(&ctx.env, "Oracle feed was stale; manual data confirmed")
         );
+        
+        assert_eq!(record.override_nonce, Some(0u64));
     });
 }
 
@@ -119,6 +123,7 @@ fn test_override_preserves_audit_integrity() {
         &market_id,
         &String::from_str(&ctx.env, "no"),
         &String::from_str(&ctx.env, "Community consensus contradicted oracle"),
+        &0u64,
     );
 
     ctx.env.as_contract(&ctx.contract_id, || {
@@ -138,6 +143,7 @@ fn test_override_resolves_market() {
         &market_id,
         &String::from_str(&ctx.env, "yes"),
         &String::from_str(&ctx.env, "Verified via secondary source"),
+        &0u64,
     );
 
     let market = ctx.client().get_market(&market_id).unwrap();
@@ -193,6 +199,7 @@ fn test_override_rejects_non_admin() {
         &market_id,
         &String::from_str(&env, "yes"),
         &String::from_str(&env, "Trying to cheat"),
+        &0u64,
     );
 
     assert!(result.is_err());
@@ -209,6 +216,7 @@ fn test_override_unknown_market() {
         &Symbol::new(&ctx.env, "ghost"),
         &String::from_str(&ctx.env, "yes"),
         &String::from_str(&ctx.env, "Some reason"),
+        &0u64,
     );
 
     assert_eq!(result, Err(Ok(Error::MarketNotFound)));
@@ -259,9 +267,112 @@ fn test_override_no_partial_state_on_auth_failure() {
         &market_id,
         &String::from_str(&env, "yes"),
         &String::from_str(&env, "Sneaky"),
+        &0u64,
     );
 
     let after = client.get_market(&market_id).unwrap();
     assert_eq!(before.state, after.state);
     assert_eq!(before.oracle_result, after.oracle_result);
+}
+
+// ── nonce replay protection ───────────────────────────────────────────────────
+
+#[test]
+fn test_override_rejects_replay_nonce() {
+    let ctx = Ctx::new();
+    let market_id = ctx.create_market();
+
+    // First override succeeds
+    ctx.client().admin_override_verification(
+        &ctx.admin,
+        &market_id,
+        &String::from_str(&ctx.env, "yes"),
+        &String::from_str(&ctx.env, "First override"),
+        &0u64,
+    );
+
+    // Second override with same nonce should be rejected
+    let result = ctx.client().try_admin_override_verification(
+        &ctx.admin,
+        &market_id,
+        &String::from_str(&ctx.env, "no"),
+        &String::from_str(&ctx.env, "Replay attempt"),
+        &0u64,
+    );
+
+    assert_eq!(result, Err(Ok(Error::ReplayedOverride)));
+    
+    let market = ctx.client().get_market(&market_id).unwrap();
+    // The market should still have the first override result
+    assert_eq!(market.oracle_result, Some(String::from_str(&ctx.env, "yes")));
+}
+
+#[test]
+fn test_override_rejects_out_of_order_nonce() {
+    let ctx = Ctx::new();
+    let market_id = ctx.create_market();
+
+    // First override with nonce 100 succeeds
+    ctx.client().admin_override_verification(
+        &ctx.admin,
+        &market_id,
+        &String::from_str(&ctx.env, "yes"),
+        &String::from_str(&ctx.env, "First override (nonce 100)"),
+        &100u64,
+    );
+
+    // Second override with nonce 50 (out of order) should be rejected
+    let result = ctx.client().try_admin_override_verification(
+        &ctx.admin,
+        &market_id,
+        &String::from_str(&ctx.env, "no"),
+        &String::from_str(&ctx.env, "Out of order nonce"),
+        &50u64,
+    );
+
+    assert_eq!(result, Err(Ok(Error::ReplayedOverride)));
+    
+    let market = ctx.client().get_market(&market_id).unwrap();
+    // The market should still have the first override result
+    assert_eq!(market.oracle_result, Some(String::from_str(&ctx.env, "yes")));
+}
+
+#[test]
+fn test_override_fresh_admin_can_succeed() {
+    let ctx = Ctx::new();
+    let market_id = ctx.create_market();
+
+    // First admin can override with nonce 0
+    ctx.client().admin_override_verification(
+        &ctx.admin,
+        &market_id,
+        &String::from_str(&ctx.env, "yes"),
+        &String::from_str(&ctx.env, "First admin"),
+        &0u64,
+    );
+
+    let market1 = ctx.client().get_market(&market_id).unwrap();
+    assert_eq!(market1.oracle_result, Some(String::from_str(&ctx.env, "yes")));
+}
+
+// ── nonce persisted in audit trail ─────────────────────────────────────────────
+
+#[test]
+fn test_override_nonce_persisted_in_audit() {
+    let ctx = Ctx::new();
+    let market_id = ctx.create_market();
+
+    ctx.client().admin_override_verification(
+        &ctx.admin,
+        &market_id,
+        &String::from_str(&ctx.env, "yes"),
+        &String::from_str(&ctx.env, "Test reason with nonce"),
+        &42u64,
+    );
+
+    ctx.env.as_contract(&ctx.contract_id, || {
+        let head = AuditTrailManager::get_head(&ctx.env).unwrap();
+        let record = AuditTrailManager::get_record(&ctx.env, head.latest_index).unwrap();
+        assert_eq!(record.override_nonce, Some(42u64));
+    });
 }

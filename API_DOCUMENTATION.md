@@ -131,9 +131,11 @@ This document provides a complete API reference for the Predictify Hybrid smart 
 - `set_global_bet_limits(env, limits)` - Set platform-wide bet limits
 - `set_event_bet_limits(env, market_id, limits)` - Set market-specific limits
 
-**BetManager**
-- `place_bet(env, user, market_id, outcome, amount)` - Place single bet on outcome
-- `place_bets(env, user, market_id, bets)` - Place multiple bets in batch
+**BetManager (Fee Slippage)**
+- `place_bet(env, user, market_id, outcome, amount, max_fee_bps)` - Place single bet with fee slippage guard
+- `place_bets(env, user, market_id, bets, max_fee_bps)` - Place multiple bets in batch with fee slippage guard
+  - The `max_fee_bps` parameter is the maximum fee in basis points the caller is willing to accept.
+  - Bet is rejected with `Error::FeeExceedsMax` if the effective platform fee exceeds `max_fee_bps`.
 - `has_user_bet(env, market_id, user)` - Check if user has active bet
 - `get_bet(env, market_id, user)` - Retrieve user's bet details
 - `get_market_bet_stats(env, market_id)` - Get market betting statistics
@@ -153,6 +155,7 @@ This document provides a complete API reference for the Predictify Hybrid smart 
 - `validate_bet_parameters(env, user, amount, outcome)` - Validate bet inputs
 - `validate_bet_amount_against_limits(env, market_id, amount)` - Check amount limits
 - `validate_bet_amount(amount)` - Check absolute amount constraints
+- `validate_fee_slippage(env, max_fee_bps)` - Reject if platform fee exceeds caller's max bps
 
 **BetUtils**
 - `lock_funds(env, user, amount)` - Lock user funds for bet
@@ -252,24 +255,109 @@ This document provides a complete API reference for the Predictify Hybrid smart 
 
 **Purpose**: Read-only query interface for retrieving market, user, and contract state information.
 
-### Primary Functions
+**Verification method**: `grep -n "pub fn <name>" contracts/predictify-hybrid/src/*.rs`
 
-**QueryManager**
+### Status Key
 
-**Market/Event Queries**
-- `query_event_details(env, market_id)` - Get complete market information
-- `query_event_status(env, market_id)` - Get market status and end time
-- `get_all_markets(env)` - Get list of all market IDs
+- **Implemented** — function exists and returns real data.
+- **Stubbed** — function exists but returns a placeholder / zero value; linked to tracking issue.
+- **Planned** — no implementation exists yet.
 
-**User Bet Queries**
-- `query_user_bet(env, user, market_id)` - Get user's participation details
-- `query_user_bets(env, user)` - Get all user's bets across markets
-- `query_user_balance(env, user)` - Get user balance for each asset
-- `query_market_pool(env, market_id)` - Get market pool statistics
+---
 
-**Contract State Queries**
-- `query_total_pool_size(env)` - Get total platform staking
-- `query_contract_state(env)` - Get overall contract state and status
+### QueryManager — Implemented Functions
+
+All functions below live on `QueryManager` in `queries.rs` unless a different call path is noted.
+
+#### Admin & Multisig Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_admin_role` | `(env, admin: Address) → Result<AdminRole, Error>` | **Implemented** |
+| `query_admin_roles` | `(env) → Result<Map<Address, AdminRole>, Error>` | **Implemented** |
+| `query_has_permission` | `(env, admin: Address, action: String) → Result<bool, Error>` | **Implemented** |
+| `query_multisig_config` | `(env) → Result<MultisigConfig, Error>` | **Implemented** |
+| `query_requires_multisig` | `(env, action: String) → Result<bool, Error>` | **Implemented** |
+
+`get_permissions_for_role` is **Implemented** but not surfaced via `QueryManager`; call `AdminRoleManager::get_permissions_for_role(env, role)` in `admin.rs` directly.
+
+#### Oracle Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_approved_oracles` | `(env) → Result<Vec<Address>, Error>` | **Implemented** |
+| `query_oracle_metadata` | `(env, oracle: Address) → Result<OracleMetadata, Error>` | **Implemented** |
+
+`get_oracle_resolution` is **Stubbed** — `ResolutionManager::get_oracle_resolution(env, market_id)` in `resolution.rs` always returns `Ok(None)`; full persistence not yet implemented (see issue #595).
+
+`get_global_oracle_config` is **Planned** — no implementation exists in any module.
+
+#### Dispute Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_dispute_stats` | `(env, market_id: Symbol) → Result<DisputeStats, Error>` | **Implemented** |
+| `query_market_disputes` | `(env, market_id: Symbol) → Result<Vec<Dispute>, Error>` | **Implemented** |
+| `query_dispute_votes` | `(env, dispute_id: Symbol) → Result<Vec<DisputeVote>, Error>` | **Implemented** |
+
+`get_dispute_timeout_status` is **Implemented** but not surfaced via `QueryManager`; call `DisputeManager::get_dispute_timeout_status(env, dispute_id)` in `disputes.rs` directly.
+
+#### Governance Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_proposals` | `(env) → Result<Vec<Symbol>, Error>` | **Implemented** — delegates to `GovernanceContract::list_proposals` in `governance.rs` |
+| `query_proposal_details` | `(env, proposal_id: Symbol) → Result<GovernanceProposal, Error>` | **Implemented** — delegates to `GovernanceContract::get_proposal` in `governance.rs` |
+
+#### Market / Event Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_event_details` | `(env, market_id: Symbol) → Result<EventDetailsQuery, Error>` | **Implemented** — includes `created_at` |
+| `query_event_status` | `(env, market_id: Symbol) → Result<(MarketStatus, u64), Error>` | **Implemented** |
+| `get_all_markets` | `(env) → Result<Vec<Symbol>, Error>` | **Implemented** |
+| `get_all_markets_paged` | `(env, cursor: u32, limit: u32) → Result<PagedMarketIds, Error>` | **Implemented** |
+
+#### User Bet Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_user_bet` | `(env, user: Address, market_id: Symbol) → Result<UserBetQuery, Error>` | **Implemented** — includes `voted_at` |
+| `query_user_bets` | `(env, user: Address) → Result<MultipleBetsQuery, Error>` | **Implemented** |
+| `query_user_bets_paged` | `(env, user: Address, cursor: u32, limit: u32) → Result<PagedUserBets, Error>` | **Implemented** |
+
+#### Balance & Pool Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_user_balance` | `(env, user: Address) → Result<UserBalanceQuery, Error>` | **Stubbed** — `available_balance` and `total_winnings` fields return `0`; token-contract integration pending (see issue #595) |
+| `query_market_pool` | `(env, market_id: Symbol) → Result<MarketPoolQuery, Error>` | **Stubbed** — `platform_fees` field returns `0`; fees-module integration pending (see issue #595) |
+| `query_total_pool_size` | `(env) → Result<i128, Error>` | **Implemented** |
+
+#### Contract State Queries
+
+| Function | Signature | Status |
+|----------|-----------|--------|
+| `query_contract_state` | `(env) → Result<ContractStateQuery, Error>` | **Stubbed** — core counters implemented; `unique_users` proxied via `DashboardStatisticsV1`; `total_fees_collected` from `StatisticsManager` (see issue #595) |
+| `query_contract_state_paged` | `(env, cursor: u32, limit: u32) → Result<(ContractStateQuery, u32), Error>` | **Stubbed** — same caveats as above |
+
+---
+
+### Bet Limit Getters (outside QueryManager)
+
+| Function | Call path | Status |
+|----------|-----------|--------|
+| `get_effective_bet_limits` | `bets::get_effective_bet_limits(env, market_id)` in `bets.rs`; also exposed as contract entry-point in `lib.rs` | **Implemented** |
+| `get_global_bet_limits` | No standalone getter; limits are read internally by `get_effective_bet_limits` | **Planned** |
+
+---
+
+### Config Getters (outside QueryManager)
+
+| Function | Call path | Status |
+|----------|-----------|--------|
+| `get_config` | `config::ConfigManager::get_config(env)` in `config.rs` | **Implemented** |
+| `get_configuration_history` | `config::ConfigManager::get_configuration_history(env, limit)` in `config.rs` | **Implemented** |
 
 ---
 

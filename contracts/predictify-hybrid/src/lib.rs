@@ -18,10 +18,17 @@ extern crate wee_alloc;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+// Short symbol keys (max length 9 for Soroban compatibility)
+const SYM_PLATFORM_FEE: &str = "plat_fee";      // was "platform_fee" (12 chars)
+const SYM_ALLOWED_ASSETS: &str = "allowed";     // was "allowed_assets" (14 chars)
+const SYM_ADMIN: &str = "Admin";                // kept as is (5 chars)
+
 // Module declarations - all modules enabled
 mod admin;
 #[cfg(test)]
 mod admin_auth_audit_tests;
+#[cfg(test)]
+mod error_code_tests;
 pub mod audit_trail;
 mod balances;
 mod batch_operations;
@@ -45,6 +52,8 @@ mod markets;
 mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
+#[cfg(test)]
+mod metadata_commitment_tests;
 mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
@@ -54,14 +63,23 @@ mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
+mod reporting;
+#[cfg(test)]
+mod reporting_tests;
+#[cfg(test)]
+mod state_snapshot_reporting_tests;
 #[cfg(test)]
 mod require_auth_coverage_tests;
+#[cfg(test)]
+mod resolution_event_ordering_tests;
 mod resolution;
 mod statistics;
 mod storage;
 #[cfg(test)]
 mod storage_layout_tests;
 pub mod tokens;
+#[cfg(test)]
+mod custom_token_tests;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -69,6 +87,8 @@ mod validation;
 // mod validation_tests; // disabled - API drift
 mod versioning;
 mod voting;
+#[cfg(test)]
+mod voting_invariants;
 
 #[cfg(test)]
 mod override_audit_tests;
@@ -101,14 +121,16 @@ mod circuit_breaker_tests;
 // mod upgrade_manager_tests;
 #[cfg(test)]
 mod upgrade_manager_tests;
+#[cfg(test)]
+mod market_state_matrix_tests;
 
 // #[cfg(any())]
 // mod query_tests;
 
 // #[cfg(test)]
 // mod bet_cancellation_tests;
-// #[cfg(any())]
-// mod bet_tests;
+#[cfg(test)]
+mod bet_tests;
 // #[cfg(any())]
 // mod gas_test;
 // #[cfg(any())]
@@ -125,8 +147,8 @@ mod upgrade_manager_tests;
 // #[cfg(test)]
 // mod event_management_tests;
 
-// #[cfg(test)]
-// mod governance_tests;
+#[cfg(test)]
+mod governance_tests;
 
 #[cfg(any())]
 mod category_tags_tests;
@@ -146,15 +168,21 @@ mod property_based_tests;
 // #[path = "tests/dispute_stake_tests.rs"]
 // mod dispute_stake_tests;
 
+#[cfg(test)]
+#[path = "tests/fee_config_commit_reveal_tests.rs"]
+mod fee_config_commit_reveal_tests;
+
 // #[cfg(test)]
 // mod event_creation_tests;
 
 // Re-export commonly used items
 use admin::{
-    AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole,
-    AdminSystemIntegration,
+    AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
+    AdminRole, AdminSystemIntegration,
 };
+pub use admin::Severity;
 pub use err::Error;
+use crate::storage::DataKey;
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
     pub use crate::err::*;
@@ -174,8 +202,14 @@ use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
 };
+
+impl From<crate::reentrancy_guard::GuardError> for Error {
+    fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
+        Error::InvalidState
+    }
+}
 
 impl From<crate::rate_limiter::RateLimiterError> for Error {
     fn from(err: crate::rate_limiter::RateLimiterError) -> Self {
@@ -285,11 +319,12 @@ impl PredictifyHybrid {
         platform_fee_percentage: Option<i128>,
         allowed_assets: Option<Vec<Address>>,
     ) -> Result<(), Error> {
+        
         // Check for re-initialization attempt (critical security check)
         if env
             .storage()
             .persistent()
-            .has(&Symbol::new(&env, "platform_fee"))
+            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
         {
             return Err(Error::InvalidState);
         }
@@ -316,7 +351,7 @@ impl PredictifyHybrid {
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
-            .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
+            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
 
         // Store default contract configuration so validators have deterministic bounds
         let mut default_config = crate::config::ConfigManager::get_development_config(&env);
@@ -365,7 +400,7 @@ impl PredictifyHybrid {
             // Store custom allowed assets
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "allowed_assets"), &assets);
+                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
         } else {
             // Initialize with defaults
             crate::tokens::TokenRegistry::initialize_with_defaults(&env);
@@ -383,7 +418,7 @@ impl PredictifyHybrid {
     fn stored_primary_admin(env: &Env) -> Result<Address, Error> {
         env.storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"))
+            .get(&Symbol::new(env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)
     }
 
@@ -480,7 +515,7 @@ impl PredictifyHybrid {
             return Err(e);
         }
         if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
-            return Err(crate::errors::Error::CBOpen);
+            return Err(crate::err::Error::CBOpen);
         }
         balances::BalanceManager::withdraw(&env, user, asset, amount)
     }
@@ -712,6 +747,8 @@ impl PredictifyHybrid {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
         };
+        let metadata_commitment =
+            Market::compute_metadata_commitment(&env, &question, &outcomes, &oracle_config);
         // Create a new market
         let market = Market {
             admin: admin.clone(),
@@ -719,6 +756,7 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
+            metadata_commitment,
             has_fallback,
             fallback_oracle_config: fallback_cfg,
             resolution_timeout,
@@ -756,6 +794,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         GasTracker::end_tracking(&env, symbol_short!("create"), gas_marker);
@@ -894,6 +933,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         let gas_marker = GasTracker::start_tracking(&env);
@@ -1191,6 +1231,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        max_fee_bps: i128,
     ) -> crate::types::Bet {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
@@ -1198,7 +1239,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         // Use the BetManager to handle the bet placement
-        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
+        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount, max_fee_bps) {
             Ok(bet) => {
                 // Record statistics
                 statistics::StatisticsManager::record_bet_placed(&env, &user, amount);
@@ -1274,13 +1315,14 @@ impl PredictifyHybrid {
         env: Env,
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
+        max_fee_bps: i128,
     ) -> Vec<crate::types::Bet> {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
         {
             panic_with_error!(env, e);
         }
-        match bets::BetManager::place_bets(&env, user, bets) {
+        match bets::BetManager::place_bets(&env, user, bets, max_fee_bps) {
             Ok(placed_bets) => placed_bets,
             Err(e) => panic_with_error!(env, e),
         }
@@ -1840,7 +1882,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1869,7 +1911,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1900,7 +1942,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1926,7 +1968,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)?;
 
         if admin != stored_admin {
@@ -1960,10 +2002,13 @@ impl PredictifyHybrid {
         let fee_percent = crate::config::ConfigManager::get_config(&env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(&env, "platform_fee"))
-                    .unwrap_or(2)
+                // Use the short platform fee key (backwards-compat fallback to legacy long keys
+                // is not possible here because Soroban restricts symbols to <=9 chars).
+                // If you need to read old on-chain keys created with long symbols,
+                // perform a storage migration on-chain (one-time) to move legacy values
+                // under the new short key.
+                let new_key = Symbol::new(&env, SYM_PLATFORM_FEE);
+                env.storage().persistent().get(&new_key).unwrap_or(2)
             });
 
         if fee_percent < 0 || fee_percent > PERCENTAGE_DENOMINATOR {
@@ -2158,6 +2203,20 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
         env.storage().persistent().get(&market_id)
+    }
+
+    /// Verifies a client's expected metadata commitment against on-chain market metadata.
+    ///
+    /// The commitment is `sha256(canonical_xdr({ question, outcomes, oracle_config }))`.
+    /// This helper returns `false` when the market is missing, when `expected` does not
+    /// match the commitment stored at creation/update time, or when any committed field
+    /// in storage was changed without refreshing the stored commitment.
+    pub fn verify_market_metadata(env: Env, market_id: Symbol, expected: BytesN<32>) -> bool {
+        let market: Option<Market> = env.storage().persistent().get(&market_id);
+        match market {
+            Some(market) => market.verify_metadata_commitment(&env, &expected),
+            None => false,
+        }
     }
 
     /// Manually resolves a prediction market by setting the winning outcome (admin only).
@@ -2881,6 +2940,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         outcome: String,
         reason: String,
+        provided_nonce: u64,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
@@ -2904,6 +2964,27 @@ impl PredictifyHybrid {
         markets::MarketStateManager::update_market(&env, &market_id, &market);
 
         // Append an immutable audit record
+        // Validate and store the admin override nonce for replay protection
+        let key = DataKey::AdminOverrideNonce(admin.clone());
+        let mut stored_nonce: u64 = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(0);
+
+        if provided_nonce <= stored_nonce {
+            return Err(Error::ReplayedOverride);
+        }
+
+        // Update the nonce for this admin
+        env.storage().persistent().set(&key, &provided_nonce);
+        env.storage().persistent().extend_ttl(
+            &key,
+            env.storage().max_ttl(),
+            env.storage().max_ttl(),
+        );
+
+        // Append an immutable audit record with the nonce for replay protection
         let mut details = Map::new(&env);
         details.set(Symbol::new(&env, "old_result"), old_result.clone());
         details.set(Symbol::new(&env, "new_result"), outcome.clone());
@@ -2913,6 +2994,7 @@ impl PredictifyHybrid {
             AuditAction::OracleVerificationOverride,
             admin.clone(),
             details,
+            Some(provided_nonce),
         );
 
         // Emit the dedicated override event for off-chain monitors
@@ -2991,9 +3073,21 @@ impl PredictifyHybrid {
     /// - Users can claim winnings
     /// - Market statistics are finalized
     ///
-    /// # Events
+    /// # Event Ordering Contract
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// On every successful resolution `resolve_market` emits exactly **three**
+    /// resolution-signalling events in the following deterministic sequence:
+    ///
+    /// | # | Topic symbol    | Emitter                               | Description                      |
+    /// |---|-----------------|---------------------------------------|----------------------------------|
+    /// | 1 | `mkt_res`       | `EventEmitter::emit_market_resolved`  | Final outcome recorded           |
+    /// | 2 | `st_chng`       | `EventEmitter::emit_state_change_event` | State transition to `Resolved` |
+    /// | 3 | `idx_transition`| `ContractMonitor::emit_resolution_transition_hook` | Off-chain indexer hook |
+    ///
+    /// Off-chain consumers **must** handle these three events in the order
+    /// listed above. The sequence is enforced by the order of calls inside
+    /// `MarketResolutionManager::resolve_market` and is covered by a
+    /// deterministic ordering test (see `resolution_event_ordering_tests`).
     pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
         // Use the resolution module to resolve the market
         // Temporarily disabled due to resolution module being disabled
@@ -3221,6 +3315,31 @@ impl PredictifyHybrid {
         disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
     }
 
+    /// Set the dispute stake cap for a user in a market (governance/admin only)
+    pub fn set_dispute_stake_cap(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        user: Address,
+        cap: i128,
+    ) -> Result<(), Error> {
+        Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+        if cap < 0 {
+            return Err(Error::InvalidInput);
+        }
+        disputes::DisputeManager::set_dispute_stake_cap(&env, &market_id, &user, cap)
+    }
+
+    /// Get the dispute stake cap for a user in a market
+    pub fn get_dispute_stake_cap(
+        env: Env,
+        market_id: Symbol,
+        user: Address,
+    ) -> i128 {
+        let cap_key = storage::DataKey::DisputeStakeCap(market_id, user);
+        env.storage().persistent().get(&cap_key).unwrap_or(0)
+    }
+
     /// Vote on a dispute
     ///
     /// # Errors
@@ -3270,6 +3389,17 @@ impl PredictifyHybrid {
         Self::require_primary_admin(&env, &admin)?;
 
         disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
+    }
+
+    /// Sets the maximum capacity of resolved/expired disputes to retain in history (admin only).
+    pub fn set_history_cap(
+        env: Env,
+        admin: Address,
+        cap: u32,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+
+        disputes::DisputeManager::set_history_cap(&env, admin, cap)
     }
 
     /// Collect fees from a market (admin only)
@@ -3581,8 +3711,8 @@ impl PredictifyHybrid {
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
-    pub fn prune_archive(env: Env, admin: Address, count: u32) -> Result<u32, Error> {
-        crate::event_archive::EventArchive::prune_archive(&env, &admin, count)
+    pub fn prune_archive(env: Env, admin: Address, count: u32, cursor: Option<crate::event_archive::PruneCursor>) -> Result<(u32, crate::event_archive::PruneCursor), Error> {
+        crate::event_archive::EventArchive::prune_archive(&env, &admin, count, cursor)
     }
 
     /// Return the current number of entries in the event archive.
@@ -3718,9 +3848,20 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::FeeConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
+    }
+
+    /// Commit a hash of the new fee configuration (admin only)
+    pub fn commit_fee_config(env: Env, admin: Address, hash: BytesN<32>) -> Result<(), Error> {
+        fees::FeeManager::commit_fee_config(&env, admin, hash)
+    }
+
+    /// Reveal and apply a committed fee configuration (admin only)
+    pub fn reveal_fee_config(env: Env, admin: Address, new_config: fees::FeeConfig) -> Result<fees::FeeConfig, Error> {
+        fees::FeeManager::update_fee_config(&env, admin, new_config)
     }
 
     /// Set global minimum and maximum bet limits (admin only).
@@ -3751,6 +3892,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::BetLimitsUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3827,6 +3969,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3871,7 +4014,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4182,8 +4326,10 @@ impl PredictifyHybrid {
         // Store old description for event
         let old_description = market.question.clone();
 
-        // Update market description
+        // Update market description and refresh the metadata commitment so
+        // clients with stale cached metadata fail verification.
         market.question = new_description.clone();
+        market.refresh_metadata_commitment(&env);
 
         // Save market
         env.storage().persistent().set(&market_id, &market);
@@ -4207,7 +4353,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4331,8 +4478,10 @@ impl PredictifyHybrid {
         // Store old outcomes for event
         let old_outcomes = market.outcomes.clone();
 
-        // Update market outcomes
+        // Update market outcomes and refresh the commitment so stale clients
+        // holding the old metadata commitment fail verification.
         market.outcomes = new_outcomes.clone();
+        market.refresh_metadata_commitment(&env);
 
         // Save market
         env.storage().persistent().set(&market_id, &market);
@@ -4356,7 +4505,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4469,7 +4619,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4587,7 +4738,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4841,7 +4993,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCancelled,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         // Emit cancellation event
         EventEmitter::emit_state_change_event(
@@ -4958,6 +5111,42 @@ impl PredictifyHybrid {
         )
     }
 
+    /// Sets the admin-configurable cumulative extension cap (in days) that applies
+    /// globally to all markets. A value of `0` disables the cap.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Unauthorized`] when the caller is not the primary admin.
+    ///
+    /// # Events
+    ///
+    /// Emits no events; purely a configuration write.
+    pub fn set_cumulative_extension_cap(
+        env: Env,
+        admin: Address,
+        cap_days: u32,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let key = Symbol::new(&env, "cum_ext_cap");
+        env.storage().persistent().set(&key, &cap_days);
+        Ok(())
+    }
+
+    /// Returns the running cumulative extension total (in days) for a given market.
+    /// Returns `0` when no extensions have been recorded yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn get_cumulative_extension_total(env: Env, market_id: Symbol) -> Result<u32, Error> {
+        let key = crate::storage::DataKey::MarketExtensionTotal(market_id);
+        Ok(env.storage().persistent().get(&key).unwrap_or(0u32))
+    }
+
     // ===== STORAGE OPTIMIZATION FUNCTIONS =====
 
     /// Compress market data for storage optimization
@@ -5016,9 +5205,34 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::StorageMigrated,
             env.current_contract_address(),
             Map::new(&env),
+            None,
         );
 
         result
+    }
+
+    /// Promote resolved market metadata from Temporary to Persistent storage
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    pub fn promote_market_to_persistent(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        storage::StorageMigration::promote_market_to_persistent(&env, &market_id)
+    }
+
+    /// Demote scratch keys from Persistent to Temporary storage
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    pub fn demote_scratch_keys(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        storage::StorageMigration::demote_scratch_keys(&env, &market_id)
     }
 
     /// Monitor storage usage and return statistics
@@ -5376,6 +5590,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::ErrorRecovered,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5409,6 +5624,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::PartialRefundExecuted,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5684,6 +5900,34 @@ impl PredictifyHybrid {
         data: monitoring::MonitoringData,
     ) -> Result<bool, Error> {
         monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
+    }
+
+    /// Return all alerts in the bounded monitoring queue (oldest first).
+    ///
+    /// Clients should also check [`is_monitor_overflow`] to detect whether any
+    /// alerts were silently evicted since the last admin reset.
+    pub fn get_monitor_alerts(env: Env) -> Vec<monitoring::MonitoringAlert> {
+        monitoring::ContractMonitor::get_alerts(&env)
+    }
+
+    /// Return `true` if at least one alert has been evicted from the queue due to
+    /// overflow since the last [`clear_monitor_overflow`] call.
+    pub fn is_monitor_overflow(env: Env) -> bool {
+        monitoring::ContractMonitor::is_overflow(&env)
+    }
+
+    /// Reset the monitoring overflow flag.  Only the contract admin may call this.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::AdminNotSet`] – no admin has been initialised.
+    /// - [`Error::Unauthorized`] – `admin` does not match the stored admin address.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn clear_monitor_overflow(env: Env, admin: Address) -> Result<(), Error> {
+        monitoring::ContractMonitor::clear_overflow(&env, &admin)
     }
 
     // ===== ORACLE FALLBACK FUNCTIONS =====
@@ -5969,9 +6213,17 @@ impl PredictifyHybrid {
     ///
     /// - Requires Soroban `require_auth()` from the caller
     /// - Requires the caller to match the stored primary admin in persistent storage
+    /// - Validates WASM hash chain to prevent out-of-order/forked upgrades
     /// - Validates version compatibility
     /// - Performs safety checks before upgrade
     /// - Logs all upgrade attempts for audit trail
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin performing the upgrade (must be authorized)
+    /// * `new_wasm_hash` - Hash of new Wasm bytecode to deploy
+    /// * `expected_predecessor` - Expected current WASM hash (for chain verification)
     ///
     /// # Example
     ///
@@ -5979,17 +6231,19 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, BytesN};
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
-    /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+    /// # let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let current_hash = BytesN::from_array(&env, &[0u8; 32]);
     ///
-    /// // Perform upgrade with admin authorization
+    /// // Perform upgrade with admin authorization and chain verification
     /// admin.require_auth();
-    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash)?;
+    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash, current_hash)?;
     /// # Ok::<(), predictify_hybrid::errors::Error>(())
     /// ```
     ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Returns [`Error::UpgradeChainMismatch`] if the expected predecessor does not match the current WASM hash.
     ///
     /// # Events
     ///
@@ -5998,15 +6252,22 @@ impl PredictifyHybrid {
         env: Env,
         admin: Address,
         new_wasm_hash: soroban_sdk::BytesN<32>,
+        expected_predecessor: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
-        let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
+        let result = upgrade_manager::UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            new_wasm_hash,
+            expected_predecessor,
+        );
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
             crate::audit_trail::AuditAction::ContractUpgraded,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -6049,6 +6310,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::UpgradeRolledBack,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -6918,6 +7180,91 @@ impl PredictifyHybrid {
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
+    /// Verify SAC token decimals match declared value (admin only).
+    ///
+    /// This function performs a critical security check on SAC tokens to prevent
+    /// denomination mistakes that have caused real on-chain losses. It verifies that
+    /// the token's on-chain decimals() value matches what was declared during registration.
+    ///
+    /// This can be called:
+    /// - Automatically during token registration (via add_global_verified/add_event_verified)
+    /// - Manually by admin as part of periodic audits or security reviews
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address (must be authorized)
+    /// * `token_contract` - Address of the token contract to verify
+    /// * `declared_decimals` - The decimals value that was declared during registration
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Decimals match (token is safe)
+    /// - `Err(Error::TokenDecimalsMismatch)` - Mismatch detected (token rejected)
+    /// - `Err(Error::Unauthorized)` - Caller is not admin
+    ///
+    /// # Cross-Contract Call
+    ///
+    /// This function performs a cross-contract call to the token contract's
+    /// `decimals()` function using the Soroban token interface.
+    ///
+    /// # Security Notes
+    ///
+    /// - Verifies via on-chain decimals() call (cannot be spoofed)
+    /// - Mismatch indicates potential token misconfiguration
+    /// - Rejected tokens cannot be used for betting/payouts
+    /// - All registration paths should use verified variants
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let token_contract = Address::from_string("GBUQW...");
+    /// PredictifyHybrid::re_verify_token(&env, &admin, &token_contract, 7)?;
+    /// // Returns Ok if decimals match, TokenDecimalsMismatch error otherwise
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::TokenDecimalsMismatch` - On-chain decimals don't match declared value
+    /// - Other errors from cross-contract call or storage operations
+    ///
+    /// # Events
+    ///
+    /// Emits audit trail record of verification attempt (success or failure).
+    pub fn re_verify_token(
+        env: Env,
+        admin: Address,
+        token_contract: Address,
+        declared_decimals: u32,
+    ) -> Result<(), Error> {
+        // Verify admin authorization
+        Self::require_primary_admin(&env, &admin)?;
+
+        // Create temporary asset for verification
+        let asset = crate::tokens::Asset {
+            contract: token_contract.clone(),
+            symbol: Symbol::new(&env, "TEMP"),
+            decimals: declared_decimals,
+        };
+
+        // Perform decimals verification via cross-contract call
+        crate::tokens::verify_token_decimals(&env, &asset)?;
+
+        // Record verification in audit trail
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::TokenVerified,
+            admin.clone(),
+            Map::new(&env),
+            None,
+        );
+
+        Ok(())
+    }
+
     ///
     /// # Events
     ///
@@ -7076,6 +7423,36 @@ impl PredictifyHybrid {
         min_bets: u64,
     ) -> Result<Vec<types::UserLeaderboardEntryV1>, Error> {
         queries::QueryManager::get_top_users_by_win_rate(&env, limit, min_bets)
+    }
+
+    /// Admin-initiated circuit-breaker resume: Open → HalfOpen with cooldown.
+    ///
+    /// Moves the circuit breaker from `Open` to `HalfOpen` and records the
+    /// current ledger timestamp as the cooldown start.  Probe requests are not
+    /// counted toward the success threshold until `recovery_timeout` seconds have
+    /// elapsed.  After `half_open_max_requests` consecutive probe successes the
+    /// breaker auto-closes; any failure during the probe window re-opens it.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::Unauthorized` — caller is not an authorised admin.
+    /// - `Error::CBError` — breaker is not currently `Open`.
+    pub fn request_resume(env: Env, admin: Address) -> Result<(), Error> {
+        admin.require_auth();
+        crate::circuit_breaker::CircuitBreaker::request_resume(&env, &admin)
+    }
+
+    /// Return a versioned, XDR-stable snapshot of current platform statistics.
+    ///
+    /// The returned [`reporting::SnapshotEnvelope`] contains the current
+    /// [`reporting::PlatformStats`] serialised with `to_xdr`, tagged with
+    /// [`reporting::SNAPSHOT_SCHEMA_VERSION`] and the current ledger timestamp.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ContractStateError` — market index is missing or corrupted.
+    pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
+        reporting::ReportingManager::get_snapshot_envelope(&env)
     }
 }
 

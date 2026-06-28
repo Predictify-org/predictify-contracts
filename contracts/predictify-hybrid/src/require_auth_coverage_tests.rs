@@ -44,7 +44,7 @@
 //! | remove_admin                 | admin        | yes      | yes      |
 //! | migrate_to_multi_admin       | admin        | yes      | yes      |
 //! | upgrade_contract             | admin        | yes      | yes      |
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::{OracleConfig, OracleProvider, ReflectorAsset};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
@@ -76,7 +76,7 @@ fn client<'a>(env: &'a Env, cid: &'a Address) -> PredictifyHybridClient<'a> {
 macro_rules! assert_unauthorized_contract {
     ($result:expr) => {
         match $result {
-            Err(Ok(e)) => assert_eq!(e, crate::errors::Error::Unauthorized,
+            Err(Ok(e)) => assert_eq!(e, crate::err::Error::Unauthorized,
                 "expected Unauthorized, got {:?}", e),
             Ok(_) => panic!("expected Unauthorized error, got Ok"),
             Err(Err(e)) => panic!("expected Unauthorized error, got host error {:?}", e),
@@ -92,7 +92,7 @@ macro_rules! assert_unauthorized_panic {
         match $result {
             Err(Ok(e)) => assert_eq!(
                 e,
-                soroban_sdk::Error::from_contract_error(crate::errors::Error::Unauthorized as u32),
+                soroban_sdk::Error::from_contract_error(crate::err::Error::Unauthorized as u32),
                 "expected Unauthorized, got {:?}", e
             ),
             Ok(_) => panic!("expected Unauthorized error, got Ok"),
@@ -106,7 +106,7 @@ macro_rules! assert_unauthorized_panic {
 macro_rules! assert_auth_ok_contract {
     ($result:expr, $msg:expr) => {
         if let Err(Ok(e)) = $result {
-            assert_ne!(e, crate::errors::Error::Unauthorized, $msg);
+            assert_ne!(e, crate::err::Error::Unauthorized, $msg);
         }
     };
 }
@@ -118,7 +118,7 @@ macro_rules! assert_auth_ok_panic {
         if let Err(Ok(e)) = $result {
             assert_ne!(
                 e,
-                soroban_sdk::Error::from_contract_error(crate::errors::Error::Unauthorized as u32),
+                soroban_sdk::Error::from_contract_error(crate::err::Error::Unauthorized as u32),
                 $msg
             );
         }
@@ -279,7 +279,7 @@ fn test_vote_wrong_subject_rejected() {
     );
     // user_b is a distinct address – must NOT get AlreadyVoted
     if let Err(Ok(e)) = result {
-        assert_ne!(e, soroban_sdk::Error::from_contract_error(crate::errors::Error::AlreadyVoted as u32), "contract confused user_a and user_b");
+        assert_ne!(e, soroban_sdk::Error::from_contract_error(crate::err::Error::AlreadyVoted as u32), "contract confused user_a and user_b");
     }
 }
 
@@ -296,6 +296,7 @@ fn test_place_bet_authorized_succeeds() {
         &market_id,
         &String::from_str(&env, "yes"),
         &1_000_000i128,
+        &250,
     );
     assert_auth_ok_panic!(result, "place_bet rejected authorized user");
 }
@@ -307,7 +308,7 @@ fn test_place_bet_no_auth_panics() {
     let (env, cid, _admin) = setup_no_auth();
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "mkt");
-    client(&env, &cid).place_bet(&user, &market_id, &String::from_str(&env, "yes"), &1_000_000i128);
+    client(&env, &cid).place_bet(&user, &market_id, &String::from_str(&env, "yes"), &1_000_000i128, &250);
 }
 
 // ── place_bets ───────────────────────────────────────────────
@@ -322,7 +323,7 @@ fn test_place_bets_authorized_succeeds() {
         &env,
         (market_id, String::from_str(&env, "yes"), 1_000_000i128),
     ];
-    let result = client(&env, &cid).try_place_bets(&user, &bets);
+    let result = client(&env, &cid).try_place_bets(&user, &bets, &250);
     assert_auth_ok_panic!(result, "place_bets rejected authorized user");
 }
 
@@ -333,7 +334,7 @@ fn test_place_bets_no_auth_panics() {
     let (env, cid, _admin) = setup_no_auth();
     let user = Address::generate(&env);
     let bets: Vec<(Symbol, String, i128)> = Vec::new(&env);
-    client(&env, &cid).place_bets(&user, &bets);
+    client(&env, &cid).place_bets(&user, &bets, &250);
 }
 
 // ── cancel_bet ───────────────────────────────────────────────
@@ -349,6 +350,7 @@ fn test_cancel_bet_authorized_succeeds() {
         &market_id,
         &String::from_str(&env, "yes"),
         &1_000_000i128,
+        &250,
     );
     let result = client(&env, &cid).try_cancel_bet(&user, &market_id);
     assert_auth_ok_contract!(result, "cancel_bet rejected authorized user");
@@ -1005,7 +1007,7 @@ fn test_set_event_bet_limits_forged_admin_rejected() {
 #[test]
 fn test_set_oracle_val_cfg_global_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
-    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&admin, &300u64, &9500u32, &None::<u32>);
+    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&admin, &300u64, &9500u32, &None);
     assert_auth_ok_contract!(result, "set_oracle_val_cfg_global rejected authorized admin");
 }
 
@@ -1014,7 +1016,7 @@ fn test_set_oracle_val_cfg_global_authorized_admin_succeeds() {
 fn test_set_oracle_val_cfg_global_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
-    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&attacker, &300u64, &9500u32, &None::<u32>);
+    let result = client(&env, &cid).try_set_oracle_val_cfg_global(&attacker, &300u64, &9500u32, &None);
     assert_unauthorized_contract!(result);
 }
 
@@ -1026,7 +1028,7 @@ fn test_set_oracle_val_cfg_event_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
     let market_id = make_market(&env, &cid, &admin);
     let result = client(&env, &cid).try_set_oracle_val_cfg_event(
-        &admin, &market_id, &300u64, &9500u32, &None::<u32>,
+        &admin, &market_id, &300u64, &9500u32, &None,
     );
     assert_auth_ok_contract!(result, "set_oracle_val_cfg_event rejected authorized admin");
 }
@@ -1038,7 +1040,7 @@ fn test_set_oracle_val_cfg_event_forged_admin_rejected() {
     let market_id = make_market(&env, &cid, &admin);
     let attacker = Address::generate(&env);
     let result = client(&env, &cid).try_set_oracle_val_cfg_event(
-        &attacker, &market_id, &300u64, &9500u32, &None::<u32>,
+        &attacker, &market_id, &300u64, &9500u32, &None,
     );
     assert_unauthorized_contract!(result);
 }
@@ -1108,7 +1110,7 @@ fn test_archive_event_forged_admin_rejected() {
 #[test]
 fn test_prune_archive_authorized_admin_succeeds() {
     let (env, cid, admin) = setup();
-    let result = client(&env, &cid).try_prune_archive(&admin, &5u32);
+    let result = client(&env, &cid).try_prune_archive(&admin, &5u32, &None);
     assert_auth_ok_contract!(result, "prune_archive rejected authorized admin");
 }
 
@@ -1117,7 +1119,7 @@ fn test_prune_archive_authorized_admin_succeeds() {
 fn test_prune_archive_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
-    let result = client(&env, &cid).try_prune_archive(&attacker, &5u32);
+    let result = client(&env, &cid).try_prune_archive(&attacker, &5u32, &None);
     assert_unauthorized_contract!(result);
 }
 
@@ -1233,7 +1235,7 @@ fn test_admin_calls_before_initialize_return_admin_not_set() {
     let cid = env.register(PredictifyHybrid, ());
     let fake_admin = Address::generate(&env);
     let result = client(&env, &cid).try_set_platform_fee(&fake_admin, &200i128);
-    assert_eq!(result, Err(Ok(crate::errors::Error::AdminNotSet)));
+    assert_eq!(result, Err(Ok(crate::err::Error::AdminNotSet)));
 }
 
 /// Uninitialized contract: upgrade_contract before initialize returns AdminNotSet.
@@ -1245,7 +1247,7 @@ fn test_upgrade_before_initialize_returns_admin_not_set() {
     let fake_admin = Address::generate(&env);
     let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
     let result = client(&env, &cid).try_upgrade_contract(&fake_admin, &wasm_hash);
-    assert_eq!(result, Err(Ok(crate::errors::Error::AdminNotSet)));
+    assert_eq!(result, Err(Ok(crate::err::Error::AdminNotSet)));
 }
 
 /// Correct caller but wrong subject: user A's auth token cannot satisfy
