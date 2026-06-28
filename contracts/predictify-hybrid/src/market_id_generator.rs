@@ -521,7 +521,7 @@ pub struct MarketIdGenerator;
         env.storage().persistent().set(&key, &counters);
     }
 
-}
+
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
