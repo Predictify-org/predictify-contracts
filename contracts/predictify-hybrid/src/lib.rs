@@ -1,4 +1,4 @@
-pub fn distribute_payouts(env: Env, market_id: soroban_sdk::Symbol) -> Result<i128, crate::err::Error> {
+pub fn distribute_payouts(env: Env, market_id: soroban_sdk::Symbol) -> Result<i128, Error> {
     if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(
         &env,
         "distribute_payouts",
@@ -10,13 +10,13 @@ pub fn distribute_payouts(env: Env, market_id: soroban_sdk::Symbol) -> Result<i1
         .persistent()
         .get(&market_id)
         .unwrap_or_else(|| {
-            panic_with_error!(env, crate::err::Error::MarketNotFound);
+            panic_with_error!(env, Error::MarketNotFound);
         });
 
     // Check if market is resolved
     let winning_outcomes = match &market.winning_outcomes {
         Some(outcomes) => outcomes,
-        None => return Err(crate::err::Error::MarketNotResolved),
+        None => return Err(Error::MarketNotResolved),
     };
 
     // Get all bettors
@@ -97,11 +97,11 @@ pub fn distribute_payouts(env: Env, market_id: soroban_sdk::Symbol) -> Result<i1
             if user_stake > 0 {
                 let user_share = (user_stake
                     .checked_mul(fee_denominator - fee_percent)
-                    .ok_or(crate::err::Error::InvalidInput)?)
+                    .ok_or(Error::InvalidInput)?)
                     / fee_denominator;
                 let payout = (user_share
                     .checked_mul(total_pool)
-                    .ok_or(crate::err::Error::InvalidInput)?)
+                    .ok_or(Error::InvalidInput)?)
                     / winning_total;
 
                 if payout >= 0 {
@@ -111,7 +111,7 @@ pub fn distribute_payouts(env: Env, market_id: soroban_sdk::Symbol) -> Result<i1
                     if payout > 0 {
                         total_distributed = total_distributed
                             .checked_add(payout)
-                            .ok_or(crate::err::Error::InvalidInput)?;
+                            .ok_or(Error::InvalidInput)?;
 
                         storage::BalanceStorage::add_balance(
                             &env,
