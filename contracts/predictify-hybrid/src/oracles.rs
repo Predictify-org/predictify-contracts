@@ -5,7 +5,7 @@ use alloc::string::ToString;
 use crate::bandprotocol;
 use crate::err::Error;
 use soroban_sdk::{
-    contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec,
+    contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Val, Vec,
 };
 // use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::types::*;
@@ -646,7 +646,7 @@ impl<'a> ReflectorOracleClient<'a> {
     /// Get TWAP (Time-Weighted Average Price) for an asset
     pub fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
         // Build a cache key unique to this transaction
-        let cache_key = (
+        let cache_key: (Symbol, Val, Val) = (
             Symbol::short("twap_cache"),
             asset.clone().into_val(self.env),
             records.into_val(self.env),
