@@ -593,6 +593,7 @@ mod tests {
             &market_id,
             &String::from_str(&env, "yes"),
             &1_000_000,
+            &250,
         );
 
         assert_eq!(bet.amount, 1_000_000);

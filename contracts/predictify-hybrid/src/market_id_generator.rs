@@ -81,32 +81,6 @@ impl MarketIdGenerator {
 
         // ── Seed sealing methods ───────────────────────────────────────────────────
 
-        /// Seal the seed at contract initialization.
-        ///
-        /// This prevents any further seed regeneration after initialization,
-        /// ensuring deterministic ID generation throughout the contract's lifetime.
-        ///
-        /// # Notes
-        ///
-        /// - Should be called exactly once during contract deployment
-        /// - Sets a storage flag indicating the seed is sealed
-        /// - Using instance().set follows the existing pattern in the codebase
-        ///
-        /// # Panics
-        ///
-        /// - [`Error::InvalidState`] if attempting to re-seal an already sealed seed
-        pub fn seal_seed(env: &Env) {
-            let is_sealed = Self::is_seed_sealed(env);
-            if is_sealed {
-                panic_with_error!(env, Error::InvalidState);
-            }
-
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(env, Self::SEED_SEALED_KEY), &true);
-            Self::bump_seed_storage_ttl(env);
-        }
-
         /// Check if the seed has been sealed.
         ///
         /// Returns `true` if the seed is sealed, preventing further regeneration.
@@ -323,6 +297,44 @@ impl MarketIdGenerator {
         result
     }
 
+    // ── Seed sealing methods ───────────────────────────────────────────────────
+
+    /// Mark the seed as sealed, preventing future regeneration.
+    ///
+    /// This is a one-time operation typically called during contract initialization
+    /// to ensure deterministic ID generation throughout the contract's lifecycle.
+    ///
+    /// # Requirements
+    ///
+    /// This function must be called exactly once before any calls to `generate_market_id`
+    /// to maintain the security guarantees of the Market ID system.
+    ///
+    /// # Panics
+    ///
+    /// - [`Error::InvalidState`] if attempting to seal an already sealed seed
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// #[cfg(test)]
+    /// fn test_seed_sealing() {
+    ///     let env = Env::default();
+    ///     let contract_id = env.register(crate::PredictifyHybrid, ()));
+    ///     
+    ///     // Seed must be unsealed initially
+    ///     assert!(!MarketIdGenerator::is_seed_sealed(&env));
+    ///     
+    ///     // Seal the seed (one-time operation)
+    ///     MarketIdGenerator::seal_seed(&env);
+    ///     
+    ///     // After sealing, regeneration is prohibited
+    ///     assert!(MarketIdGenerator::is_seed_sealed(&env));
+    ///     
+    ///     // Any attempt to generate IDs will fail
+    ///     // (this would be tested with a failing test case)
+    /// }
+    /// ```
+
     // ── Registry write-or-fail methods ────────────────────────────────────────
 
     /// Register a market ID in the registry using write-or-fail pattern.
@@ -458,8 +470,7 @@ impl MarketIdGenerator {
         counters.set(admin.clone(), counter);
         env.storage().persistent().set(&key, &counters);
 
-    }
-}
+
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::{OracleConfig, OracleProvider};
 use soroban_sdk::{contracttype, vec, Address, Env, String};
 

@@ -3,7 +3,7 @@
 use alloc::format;
 use alloc::string::ToString;
 use crate::bandprotocol;
-use crate::errors::Error;
+use crate::err::Error;
 use soroban_sdk::{
     contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec,
 };
@@ -645,18 +645,29 @@ impl<'a> ReflectorOracleClient<'a> {
 
     /// Get TWAP (Time-Weighted Average Price) for an asset
     pub fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
+        // Build a cache key unique to this transaction
+        let cache_key = (
+            Symbol::short(self.env, "twap_cache"),
+            asset.clone().into_val(self.env),
+            records.into_val(self.env),
+        );
+        // Attempt to read from temporary storage (per-transaction cache)
+        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(cache_key.clone()) {
+            return cached;
+        }
+        // Not cached; perform contract call
         let args = vec![
             self.env,
             asset.into_val(self.env),
             records.into_val(self.env),
         ];
-        // Reentrancy guard removed - external call protection no longer needed
         let res = self
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("twap"), args);
+        // Store result in temporary cache for remainder of transaction
+        self.env.storage().temporary().set(cache_key, res.clone());
         res
     }
-
     /// Check if the Reflector oracle is healthy
     pub fn is_healthy(&self) -> bool {
         // Try to get a simple price to check if oracle is responsive

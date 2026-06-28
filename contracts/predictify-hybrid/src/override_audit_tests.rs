@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::audit_trail::{AuditAction, AuditTrailManager};
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::{MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{

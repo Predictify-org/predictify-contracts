@@ -692,3 +692,125 @@ mod gas_efficiency_tests {
         });
     }
 }
+
+// ===== SNAPSHOT ENVELOPE TESTS =====
+
+mod snapshot_envelope_tests {
+    use super::*;
+    use crate::reporting::{ReportingManager, SnapshotEnvelope, SNAPSHOT_SCHEMA_VERSION};
+
+    /// Roundtrip: encode then decode produces the original PlatformStats.
+    ///
+    /// Also asserts byte-stability: encoding the same value twice yields identical payload bytes.
+    #[test]
+    fn test_snapshot_envelope_roundtrip() {
+        let env = create_test_env();
+        let contract_id = env.register(PredictifyHybrid {}, ());
+        env.as_contract(&contract_id, || {
+            create_and_store_test_market(&env, "ROUND_1", MarketState::Active);
+            create_and_store_test_market(&env, "ROUND_2", MarketState::Resolved);
+
+            let envelope = ReportingManager::get_snapshot_envelope(&env)
+                .expect("get_snapshot_envelope must succeed");
+
+            // Schema version is set correctly.
+            assert_eq!(envelope.schema_version, SNAPSHOT_SCHEMA_VERSION);
+
+            // Decode must round-trip back to the same stats.
+            let decoded = SnapshotEnvelope::decode(&env, &envelope)
+                .expect("decode must succeed for current schema version");
+
+            assert_eq!(decoded.total_active_events, 1);
+            assert_eq!(decoded.total_resolved_events, 1);
+
+            // Byte-stability: encoding the decoded value again yields the same payload.
+            let re_encoded = SnapshotEnvelope::encode(&env, &decoded);
+            assert_eq!(
+                envelope.payload, re_encoded.payload,
+                "XDR payload must be byte-stable across encode/decode/encode"
+            );
+        });
+    }
+
+    /// Empty snapshot: no markets → all counts are zero, payload still decodes.
+    #[test]
+    fn test_snapshot_envelope_empty_state() {
+        let env = create_test_env();
+        let contract_id = env.register(PredictifyHybrid {}, ());
+        env.as_contract(&contract_id, || {
+            // Ensure the market index key exists but is empty.
+            let index_key = Symbol::new(&env, "market_index");
+            env.storage()
+                .persistent()
+                .set(&index_key, &svec![&env] as &Vec<Symbol>);
+
+            let envelope = ReportingManager::get_snapshot_envelope(&env)
+                .expect("get_snapshot_envelope must succeed on empty state");
+
+            let decoded = SnapshotEnvelope::decode(&env, &envelope)
+                .expect("decode must succeed on empty payload");
+
+            assert_eq!(decoded.total_active_events, 0);
+            assert_eq!(decoded.total_resolved_events, 0);
+            assert_eq!(decoded.total_pool_all_events, 0);
+            assert_eq!(decoded.total_fees_collected, 0);
+        });
+    }
+
+    /// Ledger-0 timestamp: taken_at is recorded from env.ledger().timestamp(),
+    /// which starts at 0 in the default test environment.
+    #[test]
+    fn test_snapshot_envelope_ledger_zero() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(PredictifyHybrid {}, ());
+        env.as_contract(&contract_id, || {
+            let index_key = Symbol::new(&env, "market_index");
+            env.storage()
+                .persistent()
+                .set(&index_key, &svec![&env] as &Vec<Symbol>);
+
+            let envelope = ReportingManager::get_snapshot_envelope(&env)
+                .expect("get_snapshot_envelope must succeed at ledger 0");
+
+            // Default Soroban test env starts at timestamp 0.
+            assert_eq!(envelope.taken_at, 0, "taken_at must equal ledger timestamp (0 at start)");
+            assert_eq!(envelope.schema_version, SNAPSHOT_SCHEMA_VERSION);
+
+            // Still decodeable.
+            let decoded = SnapshotEnvelope::decode(&env, &envelope)
+                .expect("decode must succeed at ledger 0");
+            assert_eq!(decoded.total_active_events, 0);
+        });
+    }
+
+    /// Version-upgrade guard: decode rejects an envelope whose schema_version
+    /// differs from the current build's SNAPSHOT_SCHEMA_VERSION.
+    #[test]
+    fn test_snapshot_envelope_version_upgrade_rejected() {
+        let env = create_test_env();
+        let contract_id = env.register(PredictifyHybrid {}, ());
+        env.as_contract(&contract_id, || {
+            let index_key = Symbol::new(&env, "market_index");
+            env.storage()
+                .persistent()
+                .set(&index_key, &svec![&env] as &Vec<Symbol>);
+
+            let envelope = ReportingManager::get_snapshot_envelope(&env)
+                .expect("get_snapshot_envelope must succeed");
+
+            // Simulate a "future" envelope from a schema version we don't know.
+            let future_envelope = SnapshotEnvelope {
+                schema_version: SNAPSHOT_SCHEMA_VERSION + 1,
+                taken_at: envelope.taken_at,
+                payload: envelope.payload.clone(),
+            };
+
+            let result = SnapshotEnvelope::decode(&env, &future_envelope);
+            assert!(
+                result.is_err(),
+                "decode must reject an unrecognised schema_version"
+            );
+        });
+    }
+}

@@ -30,7 +30,7 @@
 
 #[cfg(test)]
 mod market_state_matrix {
-    use crate::errors::Error;
+    use crate::err::Error;
     use crate::markets::MarketStateLogic;
     use crate::types::MarketState;
 

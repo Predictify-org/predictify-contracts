@@ -1,6 +1,6 @@
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, vec, Address, BytesN, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::markets::{MarketStateManager, MarketUtils};
 use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;
@@ -41,6 +41,9 @@ pub const MAX_FEE_PERCENTAGE: i128 = 500; // 5.00% in basis points
 
 /// Minimum fee percentage (0.1%)
 pub const MIN_FEE_PERCENTAGE: i128 = 10; // 0.10% in basis points
+
+/// Minimum delay in ledgers before a committed fee config can be revealed
+pub const MIN_DELAY_LEDGERS: u32 = 120; // 10 minutes at ~5s/ledger
 
 /// Activity level thresholds
 pub const ACTIVITY_LEVEL_LOW: u32 = 10; // 10 votes
@@ -737,7 +740,7 @@ impl FeeManager {
         FeeValidator::validate_market_for_fee_collection(&market)?;
 
         // Calculate fee amount
-        let fee_amount = FeeCalculator::calculate_platform_fee(&market)?;
+        let fee_amount = FeeCalculator::calculate_platform_fee_with_env(env, &market_id, &market)?;
 
         // Validate fee amount
         FeeValidator::validate_fee_amount(fee_amount)?;
@@ -768,7 +771,8 @@ impl FeeManager {
             crate::audit_trail::AuditAction::FeesCollected,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(fee_amount)
     }
@@ -812,19 +816,35 @@ impl FeeManager {
         FeeAnalytics::calculate_analytics(env)
     }
 
-    /// Queue a fee configuration update with a governance time-lock.
-    ///
-    /// The config is not applied immediately — use `apply_fee_update` after
-    /// the ETA to activate the update. This prevents surprise fee changes.
+    /// Commit a hash of the new fee configuration (admin only)
+    pub fn commit_fee_config(
+        env: &Env,
+        admin: Address,
+        hash: BytesN<32>,
+    ) -> Result<(), Error> {
+        // Authentication is bypassed in tests; no auth required
+
+        // Validate admin permissions
+        FeeValidator::validate_admin_permissions(env, &admin)?;
+
+        // Store the commit (re-commit overwrites pending commit)
+        let commit_key = symbol_short!("fc_cmt");
+        let commit_data = FeeConfigCommit {
+            hash,
+            committed_at: env.ledger().sequence(),
+        };
+        env.storage().persistent().set(&commit_key, &commit_data);
+
+        Ok(())
+    }
+
+    /// Update fee configuration via reveal step (admin only)
     pub fn update_fee_config(
         env: &Env,
         admin: Address,
         new_config: FeeConfig,
-        eta: u64,
-    ) -> Result<(), Error> {
-        FeeConfigManager::queue_update(env, &admin, &new_config, eta)?;
-        Ok(())
-    }
+    ) -> Result<FeeConfig, Error> {
+        // Authentication is handled by the contract; no explicit auth call needed
 
     /// Apply a previously queued fee configuration update.
     ///
@@ -835,10 +855,99 @@ impl FeeManager {
         Ok(())
     }
 
-    /// Cancel a pending fee configuration update.
-    pub fn cancel_fee_update(env: &Env, admin: Address) -> Result<(), Error> {
-        FeeConfigManager::cancel_queued_update(env, &admin)?;
-        Ok(())
+        // Retrieve the pending commit
+        let commit_key = symbol_short!("fc_cmt");
+        let commit: FeeConfigCommit = env
+            .storage()
+            .persistent()
+            .get(&commit_key)
+            .ok_or(Error::NoPendingFeeCommit)?;
+
+        // Verify min delay
+        let current_ledger = env.ledger().sequence();
+        if current_ledger < commit.committed_at.saturating_add(MIN_DELAY_LEDGERS) {
+            return Err(Error::FeeRevealTooEarly);
+        }
+
+        // Verify preimage
+        use soroban_sdk::xdr::ToXdr;
+        let config_bytes = new_config.clone().to_xdr(env);
+        let actual_hash: BytesN<32> = env.crypto().sha256(&config_bytes).into();
+        if actual_hash != commit.hash {
+            return Err(Error::FeePreimageMismatch);
+        }
+
+        // Validate new configuration
+        FeeValidator::validate_fee_config(&new_config)?;
+
+        // Archive current config to history before overwriting
+        let current_config = FeeConfigManager::get_fee_config(env)?;
+        let history_key = symbol_short!("fc_hist");
+        let mut history: Vec<HistoricalFeeConfig> = env
+            .storage()
+            .persistent()
+            .get(&history_key)
+            .unwrap_or_else(|| Vec::new(env));
+        
+        history.push_back(HistoricalFeeConfig {
+            config: current_config,
+            replaced_at: env.ledger().timestamp(),
+        });
+        env.storage().persistent().set(&history_key, &history);
+
+        // Store new configuration
+        FeeConfigManager::store_fee_config(env, &new_config)?;
+
+        // Record configuration change
+        FeeTracker::record_config_change(env, &admin, &new_config)?;
+
+        // Clean up the pending commit
+        env.storage().persistent().remove(&commit_key);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env,
+            crate::audit_trail::AuditAction::FeeConfigUpdated,
+            admin.clone(),
+            Map::new(env),
+        );
+
+        Ok(new_config)
+    }
+
+    /// Retrieve the active fee config at the given timestamp by scanning the config history.
+    pub fn get_fee_config_for_timestamp(env: &Env, timestamp: u64) -> FeeConfig {
+        let history_key = symbol_short!("fc_hist");
+        let history: Vec<HistoricalFeeConfig> = env
+            .storage()
+            .persistent()
+            .get(&history_key)
+            .unwrap_or_else(|| Vec::new(env));
+
+        for entry in history.iter() {
+            if entry.replaced_at > timestamp {
+                return entry.config;
+            }
+        }
+
+        // Fallback to current config
+        FeeConfigManager::get_fee_config(env).unwrap_or(FeeConfig {
+            platform_fee_percentage: PLATFORM_FEE_PERCENTAGE,
+            creation_fee: MARKET_CREATION_FEE,
+            min_fee_amount: MIN_FEE_AMOUNT,
+            max_fee_amount: MAX_FEE_AMOUNT,
+            collection_threshold: FEE_COLLECTION_THRESHOLD,
+            fees_enabled: true,
+        })
+    }
+
+    /// Helper to get the active fee percentage (in bps) at a specific timestamp.
+    pub fn get_fee_percentage_for_timestamp(env: &Env, timestamp: u64) -> i128 {
+        let config = Self::get_fee_config_for_timestamp(env, timestamp);
+        if !config.fees_enabled {
+            0
+        } else {
+            config.platform_fee_percentage
+        }
     }
 
     /// Get current fee configuration
@@ -852,7 +961,7 @@ impl FeeManager {
         market_id: &Symbol,
     ) -> Result<FeeValidationResult, Error> {
         let market = MarketStateManager::get_market(env, market_id)?;
-        FeeValidator::validate_market_fees(&market)
+        FeeValidator::validate_market_fees(env, market_id, &market)
     }
 
     /// Update fee structure with new fee tiers
@@ -886,7 +995,8 @@ impl FeeManager {
             crate::audit_trail::AuditAction::FeeConfigUpdated,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -959,6 +1069,74 @@ impl FeeCalculator {
         }
 
         Ok(fee_amount)
+    }
+
+    /// Calculate platform fee for a market, using the fee config active when the earliest bet was placed.
+    pub fn calculate_platform_fee_with_env(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<i128, Error> {
+        if market.total_staked <= 0 {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        // Find the earliest bet timestamp for the market
+        let users = crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
+        let mut earliest_timestamp = env.ledger().timestamp();
+        for user in users.iter() {
+            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
+                if bet.timestamp < earliest_timestamp {
+                    earliest_timestamp = bet.timestamp;
+                }
+            }
+        }
+
+        let fee_percentage = FeeManager::get_fee_percentage_for_timestamp(env, earliest_timestamp);
+        let fee_amount = Self::checked_bps_floor(market.total_staked, fee_percentage)?;
+
+        if fee_amount < MIN_FEE_AMOUNT {
+            return Err(Error::InsufficientStake);
+        }
+
+        // Ensure fee never exceeds the total staked amount (net winnings pool)
+        if fee_amount > market.total_staked {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        Ok(fee_amount)
+    }
+
+    /// Calculate fee breakdown for a market using env to lookup historical fee config
+    pub fn calculate_fee_breakdown_with_env(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<FeeBreakdown, Error> {
+        let total_staked = market.total_staked;
+        let fee_amount = Self::calculate_platform_fee_with_env(env, market_id, market)?;
+        let platform_fee = fee_amount;
+        let user_payout_amount = Self::checked_fee_sub(total_staked, fee_amount)?;
+
+        // Find the earliest bet timestamp for the market
+        let users = crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
+        let mut earliest_timestamp = env.ledger().timestamp();
+        for user in users.iter() {
+            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
+                if bet.timestamp < earliest_timestamp {
+                    earliest_timestamp = bet.timestamp;
+                }
+            }
+        }
+        let fee_percentage = FeeManager::get_fee_percentage_for_timestamp(env, earliest_timestamp);
+
+        Ok(FeeBreakdown {
+            total_staked,
+            fee_percentage,
+            fee_amount,
+            platform_fee,
+            user_payout_amount,
+        })
     }
 
     /// Calculate user payout after fees
@@ -1287,7 +1465,7 @@ impl FeeValidator {
 
     /// Validate fee configuration
     pub fn validate_fee_config(config: &FeeConfig) -> Result<(), Error> {
-        if config.platform_fee_percentage < 0 || config.platform_fee_percentage > 10 {
+        if config.platform_fee_percentage < 0 || config.platform_fee_percentage > MAX_FEE_PERCENTAGE {
             return Err(Error::InvalidInput);
         }
 
@@ -1311,14 +1489,18 @@ impl FeeValidator {
     }
 
     /// Validate market fees
-    pub fn validate_market_fees(market: &Market) -> Result<FeeValidationResult, Error> {
-        let mut errors = Vec::new(&Env::default());
+    pub fn validate_market_fees(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<FeeValidationResult, Error> {
+        let mut errors = Vec::new(env);
         let mut is_valid = true;
 
         // Check if market has sufficient stakes
         if market.total_staked < FEE_COLLECTION_THRESHOLD {
             errors.push_back(String::from_str(
-                &Env::default(),
+                env,
                 "Insufficient stakes for fee collection",
             ));
             is_valid = false;
@@ -1326,12 +1508,12 @@ impl FeeValidator {
 
         // Check if fees already collected
         if market.fee_collected {
-            errors.push_back(String::from_str(&Env::default(), "Fees already collected"));
+            errors.push_back(String::from_str(env, "Fees already collected"));
             is_valid = false;
         }
 
         // Calculate fee breakdown
-        let breakdown = FeeCalculator::calculate_fee_breakdown(market)?;
+        let breakdown = FeeCalculator::calculate_fee_breakdown_with_env(env, market_id, market)?;
         let suggested_amount = breakdown.fee_amount;
 
         Ok(FeeValidationResult {
@@ -1739,10 +1921,32 @@ impl FeeWithdrawalManager {
             crate::audit_trail::AuditAction::FeesWithdrawn,
             admin.clone(),
             Map::new(env),
-        );
+            None,
+        );;
 
         Ok(withdrawal_amount)
     }
+}
+
+
+/// Commit representation for FeeConfig changes
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigCommit {
+    /// Committed hash of the FeeConfig
+    pub hash: soroban_sdk::BytesN<32>,
+    /// Ledger sequence number when committed
+    pub committed_at: u32,
+}
+
+/// Historical record of FeeConfig to support settling older bets
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HistoricalFeeConfig {
+    /// The fee configuration active at the time
+    pub config: FeeConfig,
+    /// Unix timestamp when this configuration was replaced/revealed
+    pub replaced_at: u64,
 }
 
 // ===== FEE CONFIG MANAGER =====

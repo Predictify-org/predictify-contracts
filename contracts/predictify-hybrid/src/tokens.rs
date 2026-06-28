@@ -220,7 +220,7 @@ impl TokenRegistry {
     /// denomination mistakes that have caused real losses on other Stellar protocols.
     ///
     /// # Errors
-    /// * `Error::TokenDecimalsMismatch` if declared decimals don't match on-chain value.
+    /// * `Error::AssetDecimalsMismatch` if declared decimals don't match on-chain value.
     ///
     /// # Security Notes
     /// - Performs cross-contract call to token's decimals() function
@@ -251,7 +251,7 @@ impl TokenRegistry {
     /// * `asset` - The asset to register.
     ///
     /// # Errors
-    /// * `Error::TokenDecimalsMismatch` if declared decimals don't match on-chain value.
+    /// * `Error::AssetDecimalsMismatch` if declared decimals don't match on-chain value.
     pub fn add_event_verified(env: &Env, market_id: &Symbol, asset: &Asset) -> Result<(), Error> {
         // Verify decimals before registration
         verify_token_decimals(env, asset)?;
@@ -582,7 +582,7 @@ pub fn validate_token_operation(
 ///
 /// # Returns
 /// * `Ok(())` if the declared decimals match the SAC's decimals() output.
-/// * `Err(Error::TokenDecimalsMismatch)` if they don't match.
+/// * `Err(Error::AssetDecimalsMismatch)` if they don't match.
 ///
 /// # Cross-Contract Call
 /// This function performs a cross-contract call to the token contract's
@@ -602,7 +602,7 @@ pub fn verify_token_decimals(env: &Env, asset: &Asset) -> Result<(), Error> {
     
     // Compare with declared decimals
     if on_chain_decimals != asset.decimals {
-        return Err(Error::TokenDecimalsMismatch);
+        return Err(Error::AssetDecimalsMismatch);
     }
     
     Ok(())
@@ -619,7 +619,7 @@ pub fn verify_token_decimals(env: &Env, asset: &Asset) -> Result<(), Error> {
 ///
 /// # Returns
 /// * `Ok(())` if all assets pass verification.
-/// * `Err(Error::TokenDecimalsMismatch)` if any asset fails (first failure only).
+/// * `Err(Error::AssetDecimalsMismatch)` if any asset fails (first failure only).
 pub fn verify_token_decimals_batch(env: &Env, assets: &Vec<Asset>) -> Result<(), Error> {
     for asset in assets.iter() {
         verify_token_decimals(env, &asset)?;
