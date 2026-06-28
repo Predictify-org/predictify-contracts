@@ -1390,11 +1390,11 @@ impl MarketStateManager {
         market.fee_collected = true;
     }
 
-    /// Extends the market end time to allow for dispute resolution.
+    /// Extends the market end time to allow for dispute resolution with cumulative cap.
     ///
     /// This function extends the market's end time when disputes are raised,
-    /// providing additional time for dispute resolution processes. The extension
-    /// only applies if it would result in a longer end time than currently set.
+    /// providing additional time for dispute resolution processes. Extensions
+    /// are tracked cumulatively and cannot exceed a maximum total (72 hours).
     ///
     /// # Parameters
     ///
@@ -1402,15 +1402,26 @@ impl MarketStateManager {
     /// * `_env` - The Soroban environment for blockchain operations
     /// * `extension_hours` - Number of hours to extend the market (minimum extension)
     ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Extension applied successfully
+    /// * `Err(Error::ExtensionCapExceeded)` - Cumulative extension limit reached
+    ///
     /// # Logic
     ///
-    /// The market end time is extended only if the new time (current time + extension)
-    /// would be later than the current end time. This prevents shortening the market
-    /// duration accidentally.
+    /// 1. Validates that adding this extension doesn't exceed the 72-hour cumulative cap
+    /// 2. Extends end time only if the new time (current time + extension) would be later
+    /// 3. Tracks cumulative extensions to enforce the cap on future calls
+    ///
+    /// # Cumulative Cap
+    ///
+    /// Maximum total extension across all disputes: **72 hours (3 days)**
+    /// This prevents markets from remaining open indefinitely due to repeated disputes.
     ///
     /// # Side Effects
     ///
-    /// * May update `market.end_time` to a later timestamp
+    /// * Updates `market.end_time` to a later timestamp
+    /// * Increments `market.total_extension_hours` by the extension amount
     ///
     /// # Example
     ///
@@ -1425,27 +1436,39 @@ impl MarketStateManager {
     /// let original_end_time = market.end_time;
     ///
     /// // Extend market by 24 hours for dispute resolution
-    /// MarketStateManager::extend_for_dispute(&mut market, &env, 24);
-    ///
-    /// // End time should be extended if needed
-    /// let current_time = env.ledger().timestamp();
-    /// let expected_extension = current_time + (24 * 60 * 60);
-    ///
-    /// if original_end_time < expected_extension {
-    ///     assert_eq!(market.end_time, expected_extension);
-    /// } else {
-    ///     assert_eq!(market.end_time, original_end_time);
+    /// match MarketStateManager::extend_for_dispute(&mut market, &env, 24) {
+    ///     Ok(()) => {
+    ///         println!("Market extended by 24 hours");
+    ///         println!("Total extensions so far: {} hours", market.total_extension_hours);
+    ///     },
+    ///     Err(Error::ExtensionCapExceeded) => {
+    ///         println!("Cannot extend further - cumulative cap reached");
+    ///     },
+    ///     Err(e) => println!("Extension failed: {:?}", e),
     /// }
     ///
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-    pub fn extend_for_dispute(market: &mut Market, _env: &Env, extension_hours: u64) {
+    pub fn extend_for_dispute(market: &mut Market, _env: &Env, extension_hours: u64) -> Result<(), Error> {
+        const MAX_CUMULATIVE_EXTENSION_HOURS: u64 = 72; // 3 days maximum
+
+        // Check if adding this extension exceeds the cumulative cap
+        if market.total_extension_hours + extension_hours > MAX_CUMULATIVE_EXTENSION_HOURS {
+            return Err(Error::ExtensionCapExceeded);
+        }
+
         let current_time = _env.ledger().timestamp();
         let extension_seconds = extension_hours * 60 * 60;
 
+        // Extend end time only if it would result in a later time
         if market.end_time < current_time + extension_seconds {
             market.end_time = current_time + extension_seconds;
         }
+
+        // Track cumulative extension
+        market.total_extension_hours = market.total_extension_hours.saturating_add(extension_hours);
+
+        Ok(())
     }
 }
 
