@@ -176,7 +176,8 @@ impl IntegrationTestSuite {
             market_id,
             &String::from_str(&self.env, outcome),
             &amount,
-         &None,);
+            &250,
+        );
     }
 
     /// Claim winnings for a user

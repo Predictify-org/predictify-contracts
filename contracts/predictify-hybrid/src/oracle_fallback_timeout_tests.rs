@@ -223,7 +223,8 @@ fn refund_on_oracle_failure_uses_market_specific_timeout_for_non_admins() {
         &market_id,
         &String::from_str(&setup.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 
     let market = setup.get_market(&market_id);
     setup.advance_to(market.end_time + resolution_timeout - 1);

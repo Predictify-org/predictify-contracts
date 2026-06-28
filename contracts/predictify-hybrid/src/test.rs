@@ -212,7 +212,8 @@ fn test_public_event_allows_any_address_to_bet() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 
     test.env.mock_all_auths();
     client.place_bet(
@@ -220,7 +221,8 @@ fn test_public_event_allows_any_address_to_bet() {
         &event_id,
         &String::from_str(&test.env, "no"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 
     let event = client.get_event(&event_id).unwrap();
     assert_eq!(event.visibility, EventVisibility::Public);
@@ -247,7 +249,8 @@ fn test_global_blacklist_blocks_bettor() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 }
 
 #[test]
@@ -270,7 +273,8 @@ fn test_private_event_blocks_non_allowlisted_address_from_betting() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 }
 
 #[test]
@@ -291,7 +295,8 @@ fn test_private_event_allows_allowlisted_address_to_bet() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 
     let event = client.get_event(&event_id).unwrap();
     assert_eq!(event.visibility, EventVisibility::Private);
@@ -313,7 +318,8 @@ fn test_private_event_empty_allowlist_blocks_all_bettors() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 }
 
 #[test]
@@ -366,7 +372,8 @@ fn test_switch_visibility_before_first_bet_enforced() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 
     let event = client.get_event(&event_id).unwrap();
     assert_eq!(event.visibility, EventVisibility::Private);
@@ -379,6 +386,7 @@ fn test_switch_visibility_before_first_bet_enforced() {
             event_id.clone(),
             String::from_str(&test.env, "no"),
             10_000_000i128,
+            250,
         )
     });
     assert!(unauthorized_err.is_err());
@@ -399,7 +407,8 @@ fn test_cannot_switch_visibility_after_first_bet() {
         &event_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000i128,
-     &None,);
+        &250,
+    );
 
     let result = test.env.as_contract(&test.contract_id, || {
         PredictifyHybrid::set_event_visibility(
@@ -1335,7 +1344,8 @@ fn test_unpause_restores_operations() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
-     &None,);
+        &250,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -2801,13 +2811,15 @@ fn test_refund_on_oracle_failure_admin_success() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
-     &None,);
+        &250,
+    );
     client.place_bet(
         &user2,
         &market_id,
         &String::from_str(&test.env, "no"),
         &20_000_000,
-     &None,);
+        &250,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -2856,13 +2868,15 @@ fn test_refund_on_oracle_failure_full_amount_per_user() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &amt1,
-     &None,);
+        &250,
+    );
     client.place_bet(
         &user2,
         &market_id,
         &String::from_str(&test.env, "no"),
         &amt2,
-     &None,);
+        &250,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -2899,7 +2913,8 @@ fn test_refund_on_oracle_failure_no_double_refund() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
-     &None,);
+        &250,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -2941,7 +2956,8 @@ fn test_refund_on_oracle_failure_after_timeout_any_caller() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
-     &None,);
+        &250,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -3003,7 +3019,8 @@ fn test_refund_on_oracle_failure_uses_market_resolution_timeout() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_000_000,
-     &None,);
+        &250,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -3054,21 +3071,24 @@ fn test_bet_rate_limit_enforced_when_config_set() {
         &market1,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
-     &None,);
+        &250,
+    );
     test.env.mock_all_auths();
     client.place_bet(
         &user,
         &market2,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
-     &None,);
+        &250,
+    );
     test.env.mock_all_auths();
     let res = client.try_place_bet(
         &user,
         &market3,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
-     &None,);
+        &250,
+    );
     assert!(res.is_err());
 }
 
@@ -3095,14 +3115,16 @@ fn test_bet_rate_limit_at_limit_ok() {
         &market1,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
-     &None,);
+        &250,
+    );
     test.env.mock_all_auths();
     client.place_bet(
         &user,
         &market2,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
-     &None,);
+        &250,
+    );
     // Exactly at limit: both bets succeeded (different markets)
 }
 
@@ -3119,7 +3141,8 @@ fn test_bet_rate_limit_without_config_ok() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &1_000_000,
-     &None,);
+        &250,
+    );
     // No limit enforced when config not set
 }
 
@@ -3238,7 +3261,8 @@ fn test_multi_outcome_invalid_outcome_rejected() {
         &market_id,
         &String::from_str(&test.env, "D4"),
         &10_000_000,
-     &None,);
+        &250,
+    );
     assert!(res.is_err());
 }
 
@@ -3278,13 +3302,15 @@ fn test_multi_outcome_single_winner_payout() {
         &market_id,
         &String::from_str(&test.env, "win"),
         &100_0000000,
-     &None,);
+        &250,
+    );
     client.place_bet(
         &loser,
         &market_id,
         &String::from_str(&test.env, "lose"),
         &200_0000000,
-     &None,);
+        &250,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -3347,13 +3373,15 @@ fn test_multi_outcome_tie_split_payout() {
         &market_id,
         &String::from_str(&test.env, "A1"),
         &100_0000000,
-     &None,);
+        &250,
+    );
     client.place_bet(
         &u2,
         &market_id,
         &String::from_str(&test.env, "B2"),
         &100_0000000,
-     &None,);
+        &250,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -3419,7 +3447,8 @@ fn test_multi_outcome_one_outcome_no_bets() {
         &market_id,
         &String::from_str(&test.env, "A1"),
         &50_0000000,
-     &None,);
+        &250,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -3479,13 +3508,15 @@ fn test_multi_outcome_all_same_outcome() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &10_0000000,
-     &None,);
+        &250,
+    );
     client.place_bet(
         &u2,
         &market_id,
         &String::from_str(&test.env, "yes"),
         &20_0000000,
-     &None,);
+        &250,
+    );
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
             .storage()
@@ -5053,7 +5084,8 @@ fn test_global_min_pool_blocks_resolution_when_market_min_not_set() {
         &market_id,
         &String::from_str(&test.env, "yes"),
         &100_0000000,
-     &None,);
+        &250,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
         test.env
@@ -5181,7 +5213,8 @@ fn test_cancel_underfunded_event_uses_global_min_pool_when_market_min_not_set() 
         &market_id,
         &String::from_str(&test.env, "yes"),
         &100_0000000,
-     &None,);
+        &250,
+    );
 
     let market = test.env.as_contract(&test.contract_id, || {
         test.env

@@ -136,7 +136,8 @@ impl TieSetup {
             market_id,
             &String::from_str(&self.env, outcome),
             &amount,
-         &None,);
+            &250,
+        );
     }
 
     /// Resolve with ties via the admin endpoint.

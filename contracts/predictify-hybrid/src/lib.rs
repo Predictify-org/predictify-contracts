@@ -1225,7 +1225,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         outcome: String,
         amount: i128,
-        max_fee_bps: Option<u32>,
+        max_fee_bps: i128,
     ) -> crate::types::Bet {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
@@ -1309,7 +1309,7 @@ impl PredictifyHybrid {
         env: Env,
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
-        max_fee_bps: Option<u32>,
+        max_fee_bps: i128,
     ) -> Vec<crate::types::Bet> {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")

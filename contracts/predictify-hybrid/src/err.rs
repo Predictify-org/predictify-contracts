@@ -198,12 +198,24 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
-    /// No pending fee config commit found.
-    NoPendingFeeCommit = 506,
-    /// Fee config reveal attempted too early.
-    FeeRevealTooEarly = 507,
-    /// Preimage does not match the committed hash.
-    FeePreimageMismatch = 508,
+    /// Cumulative extension cap reached; no further extensions allowed for this market.
+    CumulativeExtensionCapHit = 506,
+    /// A market state transition was attempted that is not permitted by the state machine.
+    ///
+    /// This error is returned by `MarketStateLogic::validate_state_transition` whenever the
+    /// requested `(from, to)` pair is not in the set of legal edges.  Callers should treat
+    /// this as a terminal error — the transition will never succeed without first moving the
+    /// market through intermediate states that are part of the legal path.
+    ///
+    /// # Examples of illegal transitions
+    ///
+    /// * `Resolved → Active`  (cannot reopen a resolved market)
+    /// * `Closed → Ended`     (terminal state, no transitions allowed)
+    /// * `Active → Active`    (self-loops are not valid transitions)
+    IllegalMarketStateTransition = 507,
+    /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
+    /// The bet is rejected to protect the caller from unexpected fee changes.
+    FeeExceedsMax = 508,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -727,6 +739,7 @@ impl ErrorHandler {
             }
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
+            Error::FeeExceedsMax => RecoveryStrategy::Retry,
             _ => RecoveryStrategy::Abort,
         }
     }
@@ -1294,6 +1307,11 @@ impl ErrorHandler {
                 ErrorSeverity::Low,
                 ErrorCategory::Financial,
                 RecoveryStrategy::Skip,
+            ),
+            Error::FeeExceedsMax => (
+                ErrorSeverity::Low,
+                ErrorCategory::Financial,
+                RecoveryStrategy::Retry,
             ),
             _ => (
                 ErrorSeverity::Medium,
