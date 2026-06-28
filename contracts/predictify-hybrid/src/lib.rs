@@ -1,33 +1,33 @@
-pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol) -> Result<i128, crate::Error> {
-    if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(
+pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol) -> Result<i128, Error> {
+    if let Err(e) = circuit_breaker::CircuitBreaker::require_write_allowed(
         &env,
         "distribute_payouts",
     ) {
         return Err(e);
     }
 
-    let mut market: crate::types::Market = env
+    let mut market: Market = env
         .storage()
         .persistent()
         .get(&market_id)
         .unwrap_or_else(|| {
-            soroban_sdk::panic_with_error!(env, crate::Error::MarketNotFound);
+            soroban_sdk::panic_with_error!(env, Error::MarketNotFound);
         });
 
     // Check if market is resolved
     let winning_outcomes = match &market.winning_outcomes {
         Some(outcomes) => outcomes,
-        None => return Err(crate::Error::MarketNotResolved),
+        None => return Err(Error::MarketNotResolved),
     };
 
     // Get all bettors
-    let bettors = crate::bets::BetStorage::get_all_bets_for_market(&env, &market_id);
+    let bettors = bets::BetStorage::get_all_bets_for_market(&env, &market_id);
 
     // Get fee from legacy storage (backward compatible)
     let fee_percent = env
         .storage()
         .persistent()
-        .get(&soroban_sdk::Symbol::new(&env, "platform_fee"))
+        .get(&Symbol::new(&env, "platform_fee"))
         .unwrap_or(200);
 
     let mut has_unclaimed_winners = false;
@@ -49,7 +49,7 @@ pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol)
 
     if !has_unclaimed_winners {
         for user in bettors.iter() {
-            if let Some(bet) = crate::bets::BetStorage::get_bet(&env, &market_id, &user) {
+            if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
                 if winning_outcomes.contains(&bet.outcome)
                     && !market
                         .claimed
@@ -68,7 +68,7 @@ pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol)
         return Ok(0);
     }
 
-    let summary = crate::resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
+    let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
     let winning_total = summary.winning_total;
     if winning_total == 0 {
         return Ok(0);
@@ -79,7 +79,7 @@ pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol)
     let mut total_distributed: i128 = 0;
 
     // Create budget guard with 100,000 instruction threshold
-    let budget_guard = crate::gas::BudgetGuard::new(&env, 100000);
+    let budget_guard = gas::BudgetGuard::new(&env, 100000);
 
     // 1. Distribute to Voters
     let mut voter_count = 0u32;
@@ -98,31 +98,30 @@ pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol)
             if user_stake > 0 {
                 let user_share = (user_stake
                     .checked_mul(fee_denominator - fee_percent)
-                    .ok_or(crate::Error::InvalidInput)?)
+                    .ok_or(Error::InvalidInput)?)
                     / fee_denominator;
                 let payout = (user_share
                     .checked_mul(total_pool)
-                    .ok_or(crate::Error::InvalidInput)?)
+                    .ok_or(Error::InvalidInput)?)
                     / winning_total;
 
                 if payout >= 0 {
                     market
                         .claimed
-                        .set((*user).clone(), crate::types::ClaimInfo::new(&env, payout));
+                        .set((*user).clone(), ClaimInfo::new(&env, payout));
                     if payout > 0 {
                         total_distributed = total_distributed
                             .checked_add(payout)
-                            .ok_or(crate::Error::InvalidInput)?;
+                            .ok_or(Error::InvalidInput)?;
 
-                        // FIX: pass user directly as &Address instead of &&Address
-                        crate::storage::BalanceStorage::add_balance(
+                        storage::BalanceStorage::add_balance(
                             &env,
                             &user,
-                            &crate::types::ReflectorAsset::Stellar,
+                            &ReflectorAsset::Stellar,
                             payout,
                         )?;
 
-                        crate::events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                        events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                     }
                 }
             }
@@ -137,7 +136,7 @@ pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol)
     // 2. Distribute to Bettors
     let mut bettor_count = 0u32;
     for user in bettors.iter() {
-        if let Some(mut bet) = crate::bets::BetStorage::get_bet(&env, &market_id, &user) {
+        if let Some(mut bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
             if winning_outcomes.contains(&bet.outcome) {
                 if market
                     .claimed
@@ -145,50 +144,49 @@ pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol)
                     .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
-                    bet.status = crate::types::BetStatus::Won;
-                    let _ = crate::bets::BetStorage::store_bet(&env, &bet);
+                    bet.status = BetStatus::Won;
+                    let _ = bets::BetStorage::store_bet(&env, &bet);
                     continue;
                 }
 
                 if bet.amount > 0 {
                     let user_share = (bet.amount
                         .checked_mul(fee_denominator - fee_percent)
-                        .ok_or(crate::Error::InvalidInput)?)
+                        .ok_or(Error::InvalidInput)?)
                         / fee_denominator;
                     let payout = (user_share
                         .checked_mul(total_pool)
-                        .ok_or(crate::Error::InvalidInput)?)
+                        .ok_or(Error::InvalidInput)?)
                         / winning_total;
 
                     if payout > 0 {
                         market
                             .claimed
-                            .set((*user).clone(), crate::types::ClaimInfo::new(&env, payout));
+                            .set((*user).clone(), ClaimInfo::new(&env, payout));
 
                         total_distributed = total_distributed
                             .checked_add(payout)
-                            .ok_or(crate::Error::InvalidInput)?;
+                            .ok_or(Error::InvalidInput)?;
 
-                        bet.status = crate::types::BetStatus::Won;
-                        let _ = crate::bets::BetStorage::store_bet(&env, &bet);
+                        bet.status = BetStatus::Won;
+                        let _ = bets::BetStorage::store_bet(&env, &bet);
 
-                        // FIX: pass user directly as &Address instead of &&Address
-                        match crate::storage::BalanceStorage::add_balance(
+                        match storage::BalanceStorage::add_balance(
                             &env,
                             &user,
-                            &crate::types::ReflectorAsset::Stellar,
+                            &ReflectorAsset::Stellar,
                             payout,
                         ) {
                             Ok(_) => {}
                             Err(e) => soroban_sdk::panic_with_error!(env, e),
                         }
-                        crate::events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                        events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                     }
                 }
             } else {
-                if matches!(bet.status, crate::types::BetStatus::Active) {
-                    bet.status = crate::types::BetStatus::Lost;
-                    let _ = crate::bets::BetStorage::store_bet(&env, &bet);
+                if matches!(bet.status, BetStatus::Active) {
+                    bet.status = BetStatus::Lost;
+                    let _ = bets::BetStorage::store_bet(&env, &bet);
                 }
             }
         }
