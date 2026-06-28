@@ -1,161 +1,204 @@
-pub fn resolve_market(env: &Env, market_id: &Symbol) -> Result<MarketResolution, Error> {
-    // Create budget guard with 50,000 instruction threshold for resolution path
-    // This threshold provides enough budget to complete the current iteration
-    // plus the final state updates and event emissions.
-    let budget_guard = crate::gas::BudgetGuard::new(env, 50000);
-
-    // Get the market from storage
-    let mut market = MarketStateManager::get_market(env, market_id)?;
-
-    // Validate market for resolution (includes min pool size check)
-    let validation = MarketResolutionValidator::validate_market_for_resolution(env, &market);
-    if let Err(Error::InvalidState) = validation {
-        let global_min: i128 = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(env, "global_min_pool"))
-            .unwrap_or(0);
-        let min_pool = market.min_pool_size.unwrap_or(global_min);
-        crate::events::EventEmitter::emit_min_pool_size_not_met(
-            env,
-            market_id,
-            market.total_staked,
-            min_pool,
-        );
-        return Err(Error::InvalidState);
+pub fn distribute_payouts(env: soroban_sdk::Env, market_id: soroban_sdk::Symbol) -> Result<i128, Error> {
+    if let Err(e) = circuit_breaker::CircuitBreaker::require_write_allowed(
+        &env,
+        "distribute_payouts",
+    ) {
+        return Err(e);
     }
-    validation?;
 
-    // CHECKPOINT 1: Before retrieving oracle result
-    budget_guard.check()?;
+    let mut market: Market = env
+        .storage()
+        .persistent()
+        .get(&market_id)
+        .unwrap_or_else(|| {
+            soroban_sdk::panic_with_error!(env, Error::MarketNotFound);
+        });
 
-    // Retrieve the oracle result
-    let oracle_result = market
-        .oracle_result
-        .as_ref()
-        .ok_or(Error::OracleUnavailable)?
-        .clone();
+    // Check if market is resolved
+    let winning_outcomes = match &market.winning_outcomes {
+        Some(outcomes) => outcomes,
+        None => return Err(Error::MarketNotResolved),
+    };
 
-    // CHECKPOINT 2: Before calculating community consensus
-    budget_guard.check()?;
+    // Get all bettors
+    let bettors = bets::BetStorage::get_all_bets_for_market(&env, &market_id);
 
-    // Calculate community consensus
-    let community_consensus = MarketAnalytics::calculate_community_consensus(&market);
+    // Get fee from legacy storage (backward compatible)
+    let fee_percent = env
+        .storage()
+        .persistent()
+        .get(&Symbol::new(&env, "platform_fee"))
+        .unwrap_or(200);
 
-    // CHECKPOINT 3: Before determining winning outcomes
-    budget_guard.check()?;
+    let mut has_unclaimed_winners = false;
 
-    // Determine winning outcome(s) using multi-outcome resolution with tie detection
-    // This handles both single winner and tie cases (pool split)
-    let winning_outcomes = MarketUtils::determine_winning_outcomes(
-        env,
-        &market,
-        &oracle_result,
-        &community_consensus,
-        0, // Tie threshold: 0 = exact ties only
-    );
-
-    // For resolution record, use first outcome (or comma-separated for display)
-    let final_result = if winning_outcomes.len() > 0 {
-        if winning_outcomes.len() == 1 {
-            winning_outcomes.get(0).unwrap().clone()
-        } else {
-            // For ties, just use the first outcome for the final result field
-            // The full list is stored in winning_outcomes
-            winning_outcomes.get(0).unwrap().clone()
+    // Check voters
+    for (user, outcome) in market.votes.iter() {
+        if winning_outcomes.contains(&outcome) {
+            if !market
+                .claimed
+                .get((*user).clone())
+                .map(|info| info.is_claimed())
+                .unwrap_or(false)
+            {
+                has_unclaimed_winners = true;
+                break;
+            }
         }
-    } else {
-        oracle_result.clone()
-    };
+    }
 
-    // Determine resolution method
-    let resolution_method = MarketResolutionAnalytics::determine_resolution_method(
-        &oracle_result,
-        &community_consensus,
-    );
+    if !has_unclaimed_winners {
+        for user in bettors.iter() {
+            if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+                if winning_outcomes.contains(&bet.outcome)
+                    && !market
+                        .claimed
+                        .get((*user).clone())
+                        .map(|info| info.is_claimed())
+                        .unwrap_or(false)
+                {
+                    has_unclaimed_winners = true;
+                    break;
+                }
+            }
+        }
+    }
 
-    // Calculate confidence score
-    let confidence_score = MarketResolutionAnalytics::calculate_confidence_score(
-        &oracle_result,
-        &community_consensus,
-        &resolution_method,
-    );
+    if !has_unclaimed_winners {
+        return Ok(0);
+    }
 
-    // Create market resolution record
-    let resolution = MarketResolution {
-        market_id: market_id.clone(),
-        final_outcome: final_result.clone(),
-        oracle_result,
-        community_consensus,
-        resolution_timestamp: env.ledger().timestamp(),
-        resolution_method,
-        confidence_score,
-    };
+    let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
+    let winning_total = summary.winning_total;
+    if winning_total == 0 {
+        return Ok(0);
+    }
 
-    // Capture old state for event
-    let old_state = market.state.clone();
+    let total_pool = summary.total_pool;
+    let fee_denominator = 10000i128;
+    let mut total_distributed: i128 = 0;
 
-    // CHECKPOINT 4: Before updating market state
+    // Create budget guard with 100,000 instruction threshold
+    let budget_guard = gas::BudgetGuard::new(&env, 100000);
+
+    // 1. Distribute to Voters
+    let mut voter_count = 0u32;
+    for (user, outcome) in market.votes.iter() {
+        if winning_outcomes.contains(&outcome) {
+            if market
+                .claimed
+                .get((*user).clone())
+                .map(|info| info.is_claimed())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let user_stake = market.stakes.get((*user).clone()).unwrap_or(0);
+            if user_stake > 0 {
+                let user_share = (user_stake
+                    .checked_mul(fee_denominator - fee_percent)
+                    .ok_or(Error::InvalidInput)?)
+                    / fee_denominator;
+                let payout = (user_share
+                    .checked_mul(total_pool)
+                    .ok_or(Error::InvalidInput)?)
+                    / winning_total;
+
+                if payout >= 0 {
+                    market
+                        .claimed
+                        .set((*user).clone(), ClaimInfo::new(&env, payout));
+                    if payout > 0 {
+                        total_distributed = total_distributed
+                            .checked_add(payout)
+                            .ok_or(Error::InvalidInput)?;
+
+                        storage::BalanceStorage::add_balance(
+                            &env,
+                            &user,
+                            &ReflectorAsset::Stellar,
+                            payout,
+                        )?;
+
+                        events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                    }
+                }
+            }
+        }
+
+        voter_count += 1;
+        if voter_count % 10 == 0 {
+            budget_guard.check()?;
+        }
+    }
+
+    // 2. Distribute to Bettors
+    let mut bettor_count = 0u32;
+    for user in bettors.iter() {
+        if let Some(mut bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+            if winning_outcomes.contains(&bet.outcome) {
+                if market
+                    .claimed
+                    .get((*user).clone())
+                    .map(|info| info.is_claimed())
+                    .unwrap_or(false)
+                {
+                    bet.status = BetStatus::Won;
+                    let _ = bets::BetStorage::store_bet(&env, &bet);
+                    continue;
+                }
+
+                if bet.amount > 0 {
+                    let user_share = (bet.amount
+                        .checked_mul(fee_denominator - fee_percent)
+                        .ok_or(Error::InvalidInput)?)
+                        / fee_denominator;
+                    let payout = (user_share
+                        .checked_mul(total_pool)
+                        .ok_or(Error::InvalidInput)?)
+                        / winning_total;
+
+                    if payout > 0 {
+                        market
+                            .claimed
+                            .set((*user).clone(), ClaimInfo::new(&env, payout));
+
+                        total_distributed = total_distributed
+                            .checked_add(payout)
+                            .ok_or(Error::InvalidInput)?;
+
+                        bet.status = BetStatus::Won;
+                        let _ = bets::BetStorage::store_bet(&env, &bet);
+
+                        match storage::BalanceStorage::add_balance(
+                            &env,
+                            &user,
+                            &ReflectorAsset::Stellar,
+                            payout,
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => soroban_sdk::panic_with_error!(env, e),
+                        }
+                        events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                    }
+                }
+            } else {
+                if matches!(bet.status, BetStatus::Active) {
+                    bet.status = BetStatus::Lost;
+                    let _ = bets::BetStorage::store_bet(&env, &bet);
+                }
+            }
+        }
+
+        bettor_count += 1;
+        if bettor_count % 10 == 0 {
+            budget_guard.check()?;
+        }
+    }
+
     budget_guard.check()?;
+    env.storage().persistent().set(&market_id, &market);
 
-    // Set winning outcome(s) - supports both single winner and ties
-    MarketStateManager::set_winning_outcomes(
-        &mut market,
-        winning_outcomes.clone(),
-        Some(market_id),
-    );
-    MarketStateManager::update_market(env, market_id, &market);
-    ResolutionOutcomeCache::refresh(env, market_id, &market)?;
-
-    // Decrement active event count since the event is resolved
-    crate::storage::CreatorLimitsManager::decrement_active_events(env, &market.admin);
-
-    // CHECKPOINT 5: Before emitting events
-    budget_guard.check()?;
-
-    // Emit market resolved event
-    let oracle_result_str = market
-        .oracle_result
-        .clone()
-        .unwrap_or_else(|| soroban_sdk::String::from_str(env, "N/A"));
-    let community_consensus_str = soroban_sdk::String::from_str(env, "Consensus");
-    let method_str = match resolution_method {
-        ResolutionMethod::OracleOnly => "OracleOnly",
-        ResolutionMethod::CommunityOnly => "CommunityOnly",
-        ResolutionMethod::Hybrid => "Hybrid",
-        ResolutionMethod::AdminOverride => "AdminOverride",
-        ResolutionMethod::DisputeResolution => "DisputeResolution",
-    };
-    let resolution_method_str = soroban_sdk::String::from_str(env, method_str);
-
-    crate::events::EventEmitter::emit_market_resolved(
-        env,
-        market_id,
-        &final_result,
-        &oracle_result_str,
-        &community_consensus_str,
-        &resolution_method_str,
-        confidence_score as i128,
-    );
-
-    // Emit state change event
-    crate::events::EventEmitter::emit_state_change_event(
-        env,
-        market_id,
-        &old_state,
-        &crate::types::MarketState::Resolved,
-        &soroban_sdk::String::from_str(env, "Automated resolution completed"),
-    );
-    crate::monitoring::ContractMonitor::emit_resolution_transition_hook(
-        env,
-        market_id,
-        &old_state,
-        &crate::types::MarketState::Resolved,
-        &resolution_method_str,
-    );
-
-    // Final checkpoint before returning
-    budget_guard.check()?;
-
-    Ok(resolution)
+    Ok(total_distributed)
 }
