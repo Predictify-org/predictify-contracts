@@ -261,7 +261,7 @@ impl AdminInitializer {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -637,7 +637,7 @@ impl ContractPauseManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
         Ok(())
     }
 
@@ -654,7 +654,7 @@ impl ContractPauseManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
         Ok(())
     }
 
@@ -688,7 +688,7 @@ impl ContractPauseManager {
             current_admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
         Ok(())
     }
 }
@@ -1014,7 +1014,7 @@ impl AdminRoleManager {
             assigned_by.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -2345,7 +2345,7 @@ impl AdminFunctions {
         AdminAccessControl::validate_admin_for_action(env, admin, "update_fees")?;
 
         // Queue fee configuration with governance time-lock
-        FeeManager::update_fee_config(env, admin.clone(), new_config.clone(), eta)?;
+        FeeManager::update_fee_config(env, admin.clone(), new_config.clone())?;
 
         // Log admin action
         let mut params = Map::new(env);

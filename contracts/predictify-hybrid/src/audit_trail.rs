@@ -35,6 +35,7 @@ pub enum AuditAction {
 
     // Resolution & Disputes
     MarketResolved,
+    MarketForceResolved,
     DisputeCreated,
     DisputeResolved,
     OracleVerificationOverride,

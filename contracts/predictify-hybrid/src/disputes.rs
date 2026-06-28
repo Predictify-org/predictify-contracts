@@ -965,7 +965,7 @@ impl DisputeManager {
             user.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -1122,7 +1122,7 @@ impl DisputeManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(resolution)
     }

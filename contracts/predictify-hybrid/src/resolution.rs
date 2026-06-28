@@ -503,6 +503,9 @@ pub enum ResolutionMethod {
     AdminOverride,
     /// Dispute resolution
     DisputeResolution,
+    /// Administrative force-resolve (bypasses time/state checks, idempotent).
+    /// Used for emergency overrides regardless of market state.
+    ForceResolve,
 }
 
 /// Precomputed payout totals persisted at resolution time (O(1) reads on claim/distribute).
@@ -1530,6 +1533,7 @@ impl MarketResolutionManager {
             ResolutionMethod::Hybrid => "Hybrid",
             ResolutionMethod::AdminOverride => "AdminOverride",
             ResolutionMethod::DisputeResolution => "DisputeResolution",
+            ResolutionMethod::ForceResolve => "ForceResolve",
         };
         let resolution_method_str = soroban_sdk::String::from_str(env, method_str);
 
@@ -1840,6 +1844,7 @@ impl MarketResolutionAnalytics {
             }
             ResolutionMethod::AdminOverride => 100,
             ResolutionMethod::DisputeResolution => 75,
+            ResolutionMethod::ForceResolve => 100,
         }
     }
 

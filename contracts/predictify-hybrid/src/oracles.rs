@@ -2471,6 +2471,8 @@ impl OracleValidationConfigManager {
                 max_staleness_secs: Self::DEFAULT_MAX_STALENESS_SECS,
                 max_confidence_bps: Self::DEFAULT_MAX_CONFIDENCE_BPS,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             })
     }
 

@@ -292,7 +292,7 @@ impl BetManager {
     ) -> Result<Bet, Error> {
         let scope = guard_scope_place_bet();
         ReentrancyGuard::with_guard(env, &scope, || {
-            Self::place_bet_inner(env, user, market_id, outcome, amount)
+            Self::place_bet_inner(env, user, market_id, outcome, amount, max_fee_bps)
         })
     }
 
@@ -302,6 +302,7 @@ impl BetManager {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        max_fee_bps: Option<u32>,
     ) -> Result<Bet, Error> {
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user

@@ -51,6 +51,8 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
+    /// Admin override nonce to prevent replay attacks.
+    AdminOverrideNonce(Address),
 }
 
 /// Storage format version for migration tracking

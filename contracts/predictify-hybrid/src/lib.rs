@@ -38,6 +38,7 @@ mod config;
 mod disputes;
 mod edge_cases;
 mod err;
+mod force_resolve;
 mod event_archive;
 mod events;
 mod extensions;
@@ -151,6 +152,8 @@ mod governance_tests;
 mod category_tags_tests;
 #[cfg(test)]
 mod tie_resolution_tests;
+#[cfg(test)]
+mod force_resolve_tests;
 // #[cfg(any())]
 // mod statistics_tests;
 
@@ -2493,6 +2496,149 @@ impl PredictifyHybrid {
         let _ = Self::distribute_payouts(env.clone(), market_id);
     }
 
+    /// Force-resolves a market bypassing time/state constraints, with idempotency-key
+    /// replay protection and audit trail.
+    ///
+    /// This admin-only entrypoint resolves a market **regardless** of its current state
+    /// or whether `end_time` has been reached. Every call must supply a non-empty `reason`
+    /// and a unique `idempotency_key` (a string, e.g. a UUID) scoped to the market.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address performing the force-resolve (must be authorised)
+    /// * `market_id` - Unique identifier of the market to force-resolve
+    /// * `winning_outcomes` - Vector of outcomes to declare as winners (minimum 1, all must be valid)
+    /// * `reason` - Human-readable justification for the force-resolve (stored in audit trail)
+    /// * `idempotency_key` - Unique caller-provided key (e.g. UUID) per market; prevents replay
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Force-resolve succeeded
+    /// * `Err(Error::Unauthorized)` - Caller is not the contract primary admin
+    /// * `Err(Error::MarketNotFound)` - Market does not exist
+    /// * `Err(Error::InvalidOutcome)` - One or more outcomes are invalid for this market
+    /// * `Err(Error::InvalidInput)` - Empty outcomes vector
+    /// * `Err(Error::ForceResolveReasonEmpty)` - Reason string is empty
+    /// * `Err(Error::ForceResolveReplayed)` - Idempotency key has already been used
+    ///
+    /// # Events
+    ///
+    /// On first invocation emits a `ForceResolvedEvent` (topic `frc_rs`) and a state-change
+    /// event. Repeated calls with the same `idempotency_key` are rejected as replays.
+    pub fn force_resolve_market(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        winning_outcomes: Vec<String>,
+        reason: String,
+        idempotency_key: String,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+
+        if reason.is_empty() {
+            return Err(Error::ForceResolveReasonEmpty);
+        }
+
+        if winning_outcomes.len() == 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        for outcome in winning_outcomes.iter() {
+            let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
+            if !outcome_exists {
+                return Err(Error::InvalidOutcome);
+            }
+        }
+
+        // Idempotency check — reject if this key was already consumed
+        if force_resolve::ForceResolveManager::is_already_resolved(
+            &env,
+            &market_id,
+            &idempotency_key,
+        ) {
+            return Err(Error::ForceResolveReplayed);
+        }
+
+        let old_state = market.state.clone();
+
+        market.winning_outcomes = Some(winning_outcomes.clone());
+        market.state = MarketState::Resolved;
+
+        recovery::UnclaimedWinningsPolicy::set_claim_window_start_if_missing(
+            &env,
+            &market_id,
+            env.ledger().timestamp(),
+        );
+
+        env.storage().persistent().set(&market_id, &market);
+
+        force_resolve::ForceResolveManager::mark_resolved(
+            &env,
+            &market_id,
+            &idempotency_key,
+            &admin,
+            &winning_outcomes,
+        );
+
+        let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes);
+        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
+
+        let primary_outcome = winning_outcomes.get(0).unwrap().clone();
+
+        // Emit force-resolved event
+        EventEmitter::emit_force_resolved(
+            &env,
+            &market_id,
+            &admin,
+            &primary_outcome,
+            &reason,
+            &idempotency_key,
+        );
+
+        // Emit state change event
+        EventEmitter::emit_state_change_event(
+            &env,
+            &market_id,
+            &old_state,
+            &MarketState::Resolved,
+            &reason,
+        );
+
+        // Append immutable audit trail record
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "reason"), reason);
+        details.set(Symbol::new(&env, "old_state"), {
+            let s = match old_state {
+                MarketState::Active => "Active",
+                MarketState::Ended => "Ended",
+                MarketState::Disputed => "Disputed",
+                MarketState::Resolved => "Resolved",
+                MarketState::Closed => "Closed",
+                MarketState::Cancelled => "Cancelled",
+            };
+            String::from_str(&env, s)
+        });
+        AuditTrailManager::append_record(
+            &env,
+            AuditAction::MarketForceResolved,
+            admin,
+            details,
+            None,
+        );
+
+        // Auto-distribute payouts
+        let _ = Self::distribute_payouts(env.clone(), market_id);
+
+        Ok(())
+    }
+
     /// Fetches oracle result for a market from external oracle contracts.
     ///
     /// This function retrieves prediction results from configured oracle sources
@@ -3159,10 +3305,9 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    // Temporarily disabled due to resolution module being disabled
-    // pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
-    //     resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
-    // }
+    pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
+        resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
+    }
 
     /// Retrieves comprehensive analytics and statistics for a specific market.
     ///
@@ -3941,6 +4086,8 @@ impl PredictifyHybrid {
             max_staleness_secs,
             max_confidence_bps,
             max_deviation_bps,
+            max_deviation_z_multiple: None,
+            history_size: None,
         };
         crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
 
@@ -3980,6 +4127,8 @@ impl PredictifyHybrid {
             max_staleness_secs,
             max_confidence_bps,
             max_deviation_bps,
+            max_deviation_z_multiple: None,
+            history_size: None,
         };
         crate::oracles::OracleValidationConfigManager::set_event_config(&env, &market_id, &config)?;
 
@@ -3995,7 +4144,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4332,7 +4481,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4482,7 +4631,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4596,7 +4745,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4715,7 +4864,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4970,7 +5119,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         // Emit cancellation event
         EventEmitter::emit_state_change_event(
@@ -6247,6 +6396,17 @@ impl PredictifyHybrid {
         );
 
         result
+    }
+
+    /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event.
+    pub fn admin_broadcast(
+        env: Env,
+        admin: Address,
+        severity: crate::admin::Severity,
+        message_hash: soroban_sdk::BytesN<32>,
+        reason: String,
+    ) -> Result<(), Error> {
+        crate::admin::AdminFunctions::admin_broadcast(&env, &admin, severity, message_hash, reason)
     }
 
     /// Rollback contract to previous version

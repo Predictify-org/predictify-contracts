@@ -1097,7 +1097,7 @@ fn test_get_wasm_hash_chain() {
         let hash_v2 = create_wasm_hash(&env, 2);
         let hash_v3 = create_wasm_hash(&env, 3);
 
-        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash.clone()).unwrap();
         UpgradeManager::upgrade_contract(&env, &admin, hash_v2.clone(), hash_v1.clone()).unwrap();
         UpgradeManager::upgrade_contract(&env, &admin, hash_v3.clone(), hash_v2.clone()).unwrap();
 

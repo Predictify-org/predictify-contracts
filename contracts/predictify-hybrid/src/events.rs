@@ -2031,6 +2031,18 @@ pub struct AdminOverrideEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when an admin force-resolves a market (bypassing end-time checks).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForceResolvedEvent {
+    pub market_id: Symbol,
+    pub admin: Address,
+    pub outcome: String,
+    pub reason: String,
+    pub idempotency_key: String,
+    pub timestamp: u64,
+}
+
 /// Emitted when a fee config update is queued with a governance time-lock.
 /// The config is not applied until `now >= eta`.
 #[contracttype]
@@ -4870,6 +4882,29 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("adm_ovrd"), &event);
         env.events()
             .publish((symbol_short!("adm_ovrd"), market_id.clone()), event);
+    }
+
+    /// Emit force-resolve event when an admin force-resolves a market.
+    pub fn emit_force_resolved(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        outcome: &String,
+        reason: &String,
+        idempotency_key: &String,
+    ) {
+        let event = ForceResolvedEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            outcome: outcome.clone(),
+            reason: reason.clone(),
+            idempotency_key: idempotency_key.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("frc_rs"), &event);
+        env.events()
+            .publish((symbol_short!("frc_rs"), market_id.clone()), event);
     }
 
     /// Emit fee config queued event when a time-locked config update is proposed.
