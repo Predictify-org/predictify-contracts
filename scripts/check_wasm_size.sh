@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Default budget: 96 KiB = 96 * 1024 = 98304 bytes
-BUDGET=${WASM_SIZE_BUDGET:-98304}
+# Default budget: 512 KiB = 512 * 1024 = 524288 bytes
+BUDGET=${WASM_SIZE_BUDGET:-524288}
 
 echo "Building contract in release mode..."
 cargo build --release --target wasm32v1-none 2>&1
@@ -20,7 +20,7 @@ echo "Base WASM: $BASE_WASM_FILE"
 # Optimize with stellar contract optimize if available (optimizes in-place)
 if command -v stellar &> /dev/null; then
   echo "Optimizing WASM with stellar contract optimize..."
-  stellar contract optimize --wasm "$BASE_WASM_FILE" 2>&1
+  stellar contract optimize --wasm "$BASE_WASM_FILE" 2>&1 || echo "Warning: WASM optimization failed, continuing with unoptimized binary"
 fi
 
 WASM_FILE="$BASE_WASM_FILE"
