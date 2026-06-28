@@ -216,6 +216,9 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
+    /// A `place_bets` batch with this idempotency key has already been successfully applied.
+    /// Resubmitting an identical key within the TTL window is rejected to prevent double-submission.
+    IdempotentBatchAlreadyApplied = 509,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

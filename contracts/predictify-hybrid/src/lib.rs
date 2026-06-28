@@ -130,6 +130,7 @@ mod market_state_matrix_tests;
 // mod bet_cancellation_tests;
 #[cfg(test)]
 mod bet_tests;
+mod place_bets_idempotency_tests;
 // #[cfg(any())]
 // mod gas_test;
 // #[cfg(any())]
@@ -1315,13 +1316,14 @@ impl PredictifyHybrid {
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
         max_fee_bps: i128,
+        idempotency_key: soroban_sdk::BytesN<32>,
     ) -> Vec<crate::types::Bet> {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
         {
             panic_with_error!(env, e);
         }
-        match bets::BetManager::place_bets(&env, user, bets, max_fee_bps) {
+        match bets::BetManager::place_bets(&env, user, bets, max_fee_bps, idempotency_key) {
             Ok(placed_bets) => placed_bets,
             Err(e) => panic_with_error!(env, e),
         }
