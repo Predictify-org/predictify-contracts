@@ -1,4 +1,4 @@
-pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
+pub fn distribute_payouts(env: Env, market_id: soroban_sdk::Symbol) -> Result<i128, crate::err::Error> {
     if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(
         &env,
         "distribute_payouts",
@@ -10,13 +10,13 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
         .persistent()
         .get(&market_id)
         .unwrap_or_else(|| {
-            panic_with_error!(env, Error::MarketNotFound);
+            panic_with_error!(env, crate::err::Error::MarketNotFound);
         });
 
     // Check if market is resolved
     let winning_outcomes = match &market.winning_outcomes {
         Some(outcomes) => outcomes,
-        None => return Err(Error::MarketNotResolved),
+        None => return Err(crate::err::Error::MarketNotResolved),
     };
 
     // Get all bettors
@@ -26,10 +26,9 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
     let fee_percent = env
         .storage()
         .persistent()
-        .get(&Symbol::new(&env, "platform_fee"))
+        .get(&soroban_sdk::Symbol::new(&env, "platform_fee"))
         .unwrap_or(200);
 
-    // Check if payouts have already been distributed
     let mut has_unclaimed_winners = false;
 
     // Check voters
@@ -76,7 +75,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
 
     let total_pool = summary.total_pool;
     let fee_denominator = 10000i128;
-
     let mut total_distributed: i128 = 0;
 
     // Create budget guard with 100,000 instruction threshold
@@ -99,11 +97,11 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
             if user_stake > 0 {
                 let user_share = (user_stake
                     .checked_mul(fee_denominator - fee_percent)
-                    .ok_or(Error::InvalidInput)?)
+                    .ok_or(crate::err::Error::InvalidInput)?)
                     / fee_denominator;
                 let payout = (user_share
                     .checked_mul(total_pool)
-                    .ok_or(Error::InvalidInput)?)
+                    .ok_or(crate::err::Error::InvalidInput)?)
                     / winning_total;
 
                 if payout >= 0 {
@@ -113,7 +111,7 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                     if payout > 0 {
                         total_distributed = total_distributed
                             .checked_add(payout)
-                            .ok_or(Error::InvalidInput)?;
+                            .ok_or(crate::err::Error::InvalidInput)?;
 
                         storage::BalanceStorage::add_balance(
                             &env,
@@ -191,7 +189,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
     }
 
     budget_guard.check()?;
-
     env.storage().persistent().set(&market_id, &market);
 
     Ok(total_distributed)
