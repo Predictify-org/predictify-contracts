@@ -5210,6 +5210,38 @@ impl PredictifyHybrid {
         result
     }
 
+    /// Read-only recovery dry run for ops verification.
+    ///
+    /// Returns the recovery plan that `recover_market_state` would follow without
+    /// executing any side effects. No admin authentication is required. Useful for
+    /// pre-flight checks before executing a live recovery.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `market_id` - The market to analyse.
+    ///
+    /// # Returns
+    /// A [`recovery::DryRunResult`] describing integrity status, detected issues,
+    /// and planned recovery actions.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn recovery_dry_run(
+        env: Env,
+        market_id: Symbol,
+    ) -> crate::recovery::DryRunResult {
+        match crate::recovery::RecoveryManager::recovery_dry_run(&env, &market_id) {
+            Ok(result) => result,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+
     /// Promote resolved market metadata from Temporary to Persistent storage
     ///
     /// # Errors
@@ -5604,37 +5636,6 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-
-    /// Read-only recovery dry run for ops verification.
-    ///
-    /// Returns the recovery plan that `recover_market_state` would follow without
-    /// executing any side effects. No admin authentication is required. Useful for
-    /// pre-flight checks before executing a live recovery.
-    ///
-    /// # Parameters
-    /// * `env` - The Soroban environment.
-    /// * `market_id` - The market to analyse.
-    ///
-    /// # Returns
-    /// A [`recovery::DryRunResult`] describing integrity status, detected issues,
-    /// and planned recovery actions.
-    ///
-    /// # Errors
-    ///
-    /// This entrypoint surfaces contract errors via panic in internal calls.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn recovery_dry_run(
-        env: Env,
-        market_id: Symbol,
-    ) -> crate::recovery::DryRunResult {
-        match crate::recovery::RecoveryManager::recovery_dry_run(&env, &market_id) {
-            Ok(result) => result,
-            Err(e) => panic_with_error!(env, e),
-        }
-    }
     pub fn partial_refund_mechanism(
         env: Env,
         admin: Address,
