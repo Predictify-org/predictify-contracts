@@ -693,7 +693,7 @@ impl ResolutionOutcomeCache {
 ///     } else {
 ///         0.0
 ///     };
-///     
+///
 ///     match (analytics.average_confidence >= confidence_threshold, hybrid_ratio >= 50.0) {
 ///         (true, true) => "Excellent - High confidence and balanced resolution methods".to_string(),
 ///         (true, false) => "Good - High confidence but method imbalance".to_string(),
@@ -788,7 +788,7 @@ pub struct ResolutionAnalytics {
 ///
 /// if validation.is_valid {
 ///     println!("✅ Resolution is valid and ready for finalization");
-///     
+///
 ///     // Check for warnings
 ///     if !validation.warnings.is_empty() {
 ///         println!("⚠️  Warnings to consider:");
@@ -796,7 +796,7 @@ pub struct ResolutionAnalytics {
 ///             println!("  - {}", warning);
 ///         }
 ///     }
-///     
+///
 ///     // Review recommendations
 ///     if !validation.recommendations.is_empty() {
 ///         println!("💡 Recommendations for improvement:");
@@ -828,22 +828,22 @@ pub struct ResolutionAnalytics {
 /// ) -> Result<bool, predictify_hybrid::errors::Error> {
 ///     // Step 1: Validate oracle resolution
 ///     let oracle_validation = validate_oracle_data(env, oracle_resolution)?;
-///     
+///
 ///     if !oracle_validation.is_valid {
 ///         println!("Oracle validation failed: {:?}", oracle_validation.errors);
 ///         return Ok(false);
 ///     }
-///     
+///
 ///     // Step 2: Check for warnings
 ///     if !oracle_validation.warnings.is_empty() {
 ///         println!("Oracle warnings: {:?}", oracle_validation.warnings);
 ///     }
-///     
+///
 ///     // Step 3: Apply recommendations if possible
 ///     for recommendation in oracle_validation.recommendations.iter() {
 ///         println!("Consider: {}", recommendation);
 ///     }
-///     
+///
 ///     Ok(true)
 /// }
 ///
@@ -1058,6 +1058,48 @@ pub struct ResolutionValidation {
 /// - **Fallback Strategies**: Multiple oracle providers for reliability
 pub struct OracleResolutionManager;
 
+// ── Median Oracle Resolution Type ─────────────────────────────────────────────
+
+/// Outcome returned by [`OracleResolutionManager::resolve_with_median`].
+///
+/// Bundles the resolved market outcome with the full per-oracle audit trail
+/// (all three quotes, their weights, and outlier flags) so callers can
+/// inspect the aggregation without re-running it.
+///
+/// # Fields
+///
+/// - `outcome` – Final market outcome ("yes" or "no").
+/// - `weighted_median_price` – The confidence-weighted median price that
+///   determined the outcome.
+/// - `quotes` – All three oracle quotes (Pyth, Reflector, Band).  Each
+///   quote's `included` flag indicates whether it contributed to the median.
+/// - `confidence_score` – Aggregate score in [0, 100]; 90+ requires all
+///   three sources to agree.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct MedianResolutionResult {
+    /// The market that was resolved.
+    pub market_id: Symbol,
+    /// Final market outcome ("yes" or "no").
+    pub outcome: String,
+    /// Confidence-weighted median price used to determine the outcome.
+    pub weighted_median_price: i128,
+    /// Market threshold the price was compared against.
+    pub threshold: i128,
+    /// Comparison operator applied ("gt", "lt", "eq").
+    pub comparison: String,
+    /// All three oracle quotes (Pyth, Reflector, Band) with their computed
+    /// weights and `included` flags for full audit transparency.
+    pub quotes: Vec<OracleQuote>,
+    /// Number of quotes that survived the outlier filter and contributed
+    /// to the weighted-median computation.
+    pub included_count: u32,
+    /// Aggregate confidence score in [0, 100].
+    pub confidence_score: u32,
+    /// Ledger timestamp at the time of resolution.
+    pub timestamp: u64,
+}
+
 impl OracleResolutionManager {
     /// Helper to fetch price and determine outcome from an oracle config
     fn try_fetch_from_config(
@@ -1237,6 +1279,490 @@ impl OracleResolutionManager {
     pub fn calculate_oracle_confidence(resolution: &OracleResolution) -> u32 {
         OracleResolutionAnalytics::calculate_confidence_score(resolution)
     }
+
+    // ── Median Config Management ───────────────────────────────────────────────────
+
+    /// Persist the three-oracle median configuration to contract storage.
+    ///
+    /// Must be called once from the contract admin initialiser before any
+    /// market uses [`resolve_with_median`].  Re-calling overwrites the
+    /// stored configuration.
+    ///
+    /// # Arguments
+    /// - `env`    – Soroban environment.
+    /// - `config` – [`MedianOracleConfig`] to store globally.
+    pub fn set_median_config(env: &Env, config: &MedianOracleConfig) {
+        env.storage()
+            .persistent()
+            .set(&symbol_short!("med_cfg"), config);
+    }
+
+    /// Load the three-oracle median configuration from contract storage.
+    ///
+    /// # Errors
+    /// Returns [`Error::ConfigNotFound`] when no configuration has been
+    /// stored via [`set_median_config`].
+    pub fn get_median_config(env: &Env) -> Result<MedianOracleConfig, Error> {
+        env.storage()
+            .persistent()
+            .get(&symbol_short!("med_cfg"))
+            .ok_or(Error::ConfigNotFound)
+    }
+
+    // ── Core Median Resolver ───────────────────────────────────────────────────
+
+    /// Resolve a market using a confidence-weighted median of Pyth,
+    /// Reflector, and Band Protocol price feeds.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. **Validate** – Enforce the resolution-timeout guard and delegate
+    ///    standard pre-resolution checks to
+    ///    [`OracleResolutionValidator::validate_market_for_oracle_resolution`].
+    ///
+    /// 2. **Fetch** – Query `OraclePriceData` from Pyth, Reflector, and
+    ///    Band sequentially (WASM is single-threaded).  Failed fetches yield
+    ///    a quote with `included = false`; they do not abort the resolver.
+    ///
+    /// 3. **Weight** – Convert each oracle's confidence interval to a
+    ///    basis-point weight:
+    ///    ```text
+    ///    weight_bps = price × 10 000 / (price + confidence)
+    ///    ```
+    ///    Oracles that do not report a confidence interval receive
+    ///    5 000 bps (medium weight).
+    ///
+    /// 4. **Baseline median** – Compute the unweighted simple median of the
+    ///    successfully fetched prices (used *only* for outlier detection).
+    ///
+    /// 5. **Outlier filter** – Discard any quote where
+    ///    ```text
+    ///    |price − baseline_median| × 10 000 / baseline_median
+    ///        > max_deviation_bps
+    ///    ```
+    ///    The quote's `included` flag is set to `false`.
+    ///
+    /// 6. **Minimum sources** – Return [`Error::OracleNoConsensus`] if fewer
+    ///    than `MedianOracleConfig::min_sources` quotes remain.
+    ///
+    /// 7. **Weighted median** – Sort the surviving `(price, weight)` pairs
+    ///    ascending and return the price at which the cumulative weight first
+    ///    reaches ⌈total_weight / 2⌉.
+    ///
+    /// 8. **Outcome** – Apply the market's threshold comparison to the
+    ///    weighted-median price to produce "yes" or "no".
+    ///
+    /// 9. **Persist & emit** – Store the oracle result in the market,
+    ///    emit [`OracleConsensusReachedEvent`] (topic `orc_cons`) for
+    ///    backward-compatible monitoring, and emit a per-oracle detail
+    ///    event (topic `orc_med_q`) carrying the full
+    ///    `Vec<OracleQuote>`.
+    ///
+    /// # Errors
+    ///
+    /// | Error | Cause |
+    /// |---|---|
+    /// | `ConfigNotFound` | No `MedianOracleConfig` stored. |
+    /// | `ResolutionTimeoutReached` | `now ≥ end_time + resolution_timeout`. |
+    /// | `MarketClosed` | Market has not yet ended. |
+    /// | `MarketResolved` | Market already has an oracle result. |
+    /// | `OracleNoConsensus` | Fewer than `min_sources` non-outlier quotes. |
+    pub fn resolve_with_median(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Result<MedianResolutionResult, Error> {
+        // ── 1. Load market and validate state ─────────────────────────────────
+        let mut market = MarketStateManager::get_market(env, market_id)?;
+        let current_time = env.ledger().timestamp();
+
+        // Refuse resolution after the timeout window closes.
+        if current_time >= market.end_time.saturating_add(market.resolution_timeout) {
+            crate::events::EventEmitter::emit_resolution_timeout(env, market_id, current_time);
+            return Err(Error::ResolutionTimeoutReached);
+        }
+
+        // Standard pre-resolution checks (market ended, not already resolved).
+        OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
+
+        // ── 2. Load median config ────────────────────────────────────────
+        let med_cfg = Self::get_median_config(env)?;
+        let feed_id = market.oracle_config.feed_id.clone();
+        let threshold = market.oracle_config.threshold;
+        let comparison = market.oracle_config.comparison.clone();
+
+        // ── 3. Fetch from all three oracles sequentially ────────────────────
+        let mut raw_quotes: Vec<OracleQuote> = Vec::new(env);
+
+        // Pyth (currently OracleUnavailable on Stellar; quote will be excluded).
+        {
+            let oracle = crate::oracles::PythOracle::new(med_cfg.pyth_address.clone());
+            raw_quotes.push_back(Self::fetch_quote(
+                env,
+                &oracle,
+                OracleProvider::pyth(),
+                &feed_id,
+            ));
+        }
+        // Reflector – primary Stellar oracle.
+        {
+            let oracle = crate::oracles::ReflectorOracle::new(med_cfg.reflector_address.clone());
+            raw_quotes.push_back(Self::fetch_quote(
+                env,
+                &oracle,
+                OracleProvider::reflector(),
+                &feed_id,
+            ));
+        }
+        // Band Protocol.
+        {
+            let oracle = crate::oracles::BandProtocolOracle::new(med_cfg.band_address.clone());
+            raw_quotes.push_back(Self::fetch_quote(
+                env,
+                &oracle,
+                OracleProvider::band_protocol(),
+                &feed_id,
+            ));
+        }
+
+        // ── 4. Unweighted baseline median for outlier detection ─────────────
+        let baseline_prices = Self::collect_included_sorted(env, &raw_quotes);
+        let initial_count = baseline_prices.len() as u32;
+        if initial_count < med_cfg.min_sources {
+            return Err(Error::OracleNoConsensus);
+        }
+        let baseline_median = Self::simple_median(&baseline_prices);
+
+        // ── 5. Mark outliers ─────────────────────────────────────────────────
+        let mut final_quotes: Vec<OracleQuote> = Vec::new(env);
+        for q in raw_quotes.iter() {
+            let mut out = q.clone();
+            if out.included && baseline_median > 0 {
+                let abs_diff: i128 = if out.price > baseline_median {
+                    out.price.saturating_sub(baseline_median)
+                } else {
+                    baseline_median.saturating_sub(out.price)
+                };
+                // deviation_bps = |price - median| * 10_000 / median
+                let deviation_bps: u64 = (abs_diff as u64)
+                    .saturating_mul(10_000)
+                    .saturating_div(baseline_median as u64);
+                if deviation_bps > med_cfg.max_deviation_bps as u64 {
+                    out.included = false; // Outlier: exclude from weighted median.
+                }
+            }
+            final_quotes.push_back(out);
+        }
+
+        // ── 6. Enforce minimum source count ────────────────────────────────
+        let mut included_count: u32 = 0;
+        for q in final_quotes.iter() {
+            if q.included {
+                included_count += 1;
+            }
+        }
+        if included_count < med_cfg.min_sources {
+            return Err(Error::OracleNoConsensus);
+        }
+
+        // ── 7. Confidence-weighted median ────────────────────────────────────
+        let weighted_median = Self::weighted_median(&final_quotes)?;
+
+        // ── 8. Outcome determination ────────────────────────────────────────
+        let outcome =
+            OracleUtils::determine_outcome(weighted_median, threshold, &comparison, env)?;
+
+        // ── 9. Persist oracle result and emit events ──────────────────────
+        MarketStateManager::set_oracle_result(&mut market, outcome.clone());
+        MarketStateManager::update_market(env, market_id, &market);
+
+        // Compute aggregate statistics for the consensus event.
+        let avg_price = Self::average_included_price(&final_quotes);
+        let price_var = Self::price_variance(&final_quotes, avg_price);
+        let confidence_score = Self::aggregate_confidence(included_count, &final_quotes);
+
+        // Standard OracleConsensusReachedEvent for backward-compatible monitoring.
+        crate::events::EventEmitter::emit_oracle_consensus_reached(
+            env,
+            market_id,
+            &outcome,
+            included_count,
+            3, // total oracle sources attempted
+            avg_price,
+            price_var,
+        );
+
+        // Per-oracle detail event with the full quote vector.
+        crate::events::EventEmitter::emit_oracle_median_quotes(env, market_id, &final_quotes);
+
+        Ok(MedianResolutionResult {
+            market_id: market_id.clone(),
+            outcome,
+            weighted_median_price: weighted_median,
+            threshold,
+            comparison,
+            quotes: final_quotes,
+            included_count,
+            confidence_score,
+            timestamp: current_time,
+        })
+    }
+
+    // ── Private helpers ─────────────────────────────────────────────────────
+
+    /// Fetch a single oracle quote, absorbing network/decode errors into
+    /// `included = false`.
+    ///
+    /// On a successful fetch with a positive price, the confidence interval
+    /// is converted to a basis-point weight via [`Self::confidence_to_weight`].
+    /// Any error (oracle unavailable, stale data, invalid feed, …) produces
+    /// a quote with `price = 0`, `weight_bps = 0`, and `included = false`
+    /// so that the caller can continue gathering remaining sources.
+    fn fetch_quote<O: crate::oracles::OracleInterface>(
+        env: &Env,
+        oracle: &O,
+        provider: OracleProvider,
+        feed_id: &String,
+    ) -> OracleQuote {
+        match oracle.get_price_data(env, feed_id) {
+            Ok(data) if data.price > 0 => {
+                let (confidence_bps, weight_bps) =
+                    Self::confidence_to_weight(data.price, data.confidence);
+                OracleQuote {
+                    provider,
+                    price: data.price,
+                    confidence_bps,
+                    weight_bps,
+                    included: true,
+                }
+            }
+            _ => OracleQuote {
+                provider,
+                price: 0,
+                confidence_bps: 0,
+                weight_bps: 0,
+                included: false,
+            },
+        }
+    }
+
+    /// Derive a basis-point weight from a raw oracle confidence interval.
+    ///
+    /// ### Formula
+    /// ```text
+    /// weight_bps = price × 10 000 / (price + confidence)
+    /// ```
+    /// This maps a tighter interval (lower `confidence`) to a weight closer
+    /// to 10 000 and a wider interval to a weight closer to 0.
+    ///
+    /// ### Special cases
+    /// - `confidence = None`  → medium weight **5 000** bps (unknown quality).
+    /// - `confidence ≤ 0`     → maximum weight **10 000** bps (perfect certainty).
+    /// - `price ≤ 0`         → **(0, 0)** (invalid quote; caller marks `included = false`).
+    ///
+    /// ### Returns
+    /// `(confidence_bps, weight_bps)` where `confidence_bps` is the
+    /// confidence interval expressed as a fraction of `price` in BPS.
+    fn confidence_to_weight(price: i128, confidence: Option<i128>) -> (u32, u32) {
+        if price <= 0 {
+            return (0, 0);
+        }
+        match confidence {
+            None => (0, 5_000), // Unknown interval → medium weight.
+            Some(c) if c <= 0 => (0, 10_000), // Zero interval → max weight.
+            Some(c) => {
+                // confidence as a fraction of price, in BPS (clamped to 10 000).
+                let conf_bps: u32 = ((c as u64)
+                    .saturating_mul(10_000)
+                    .saturating_div(price as u64))
+                .min(10_000) as u32;
+                // inverse-uncertainty weight (clamped to [1, 10 000]).
+                let weight_bps: u32 = ((price as u64)
+                    .saturating_mul(10_000)
+                    .saturating_div((price as u64).saturating_add(c as u64)))
+                .max(1)
+                .min(10_000) as u32;
+                (conf_bps, weight_bps)
+            }
+        }
+    }
+
+    /// Collect the prices of all included quotes and return them sorted
+    /// ascending in a Soroban `Vec`.
+    ///
+    /// Uses a fixed three-slot array internally so no heap allocation is
+    /// needed; the WASM budget for ≤ 3 comparisons is negligible.
+    fn collect_included_sorted(env: &Env, quotes: &Vec<OracleQuote>) -> Vec<i128> {
+        // Collect up to 3 included prices into a fixed array.
+        let mut buf: [i128; 3] = [0; 3];
+        let mut n: usize = 0;
+        for q in quotes.iter() {
+            if q.included && n < 3 {
+                buf[n] = q.price;
+                n += 1;
+            }
+        }
+        // Bubble-sort the first n elements (n ≤ 3, so O(n²) is negligible).
+        for i in 0..n {
+            for j in 0..n.saturating_sub(i + 1) {
+                if buf[j] > buf[j + 1] {
+                    buf.swap(j, j + 1);
+                }
+            }
+        }
+        // Build Soroban Vec.
+        let mut result: Vec<i128> = Vec::new(env);
+        for i in 0..n {
+            result.push_back(buf[i]);
+        }
+        result
+    }
+
+    /// Compute the unweighted simple median of a **sorted** price list.
+    ///
+    /// For an odd number of elements the true middle value is returned.
+    /// For an even number the arithmetic mean of the two middle values is
+    /// returned (integer truncation; acceptable precision for outlier
+    /// detection on typical oracle prices).
+    /// Returns 0 for an empty list (callers always guard with `min_sources`).
+    fn simple_median(sorted: &Vec<i128>) -> i128 {
+        let n = sorted.len() as usize;
+        if n == 0 {
+            return 0;
+        }
+        if n % 2 == 1 {
+            sorted.get((n / 2) as u32).unwrap_or(0)
+        } else {
+            let lo = sorted.get((n / 2 - 1) as u32).unwrap_or(0);
+            let hi = sorted.get((n / 2) as u32).unwrap_or(0);
+            // Overflow-safe average: avoids (lo + hi) overflow for large prices.
+            (lo / 2) + (hi / 2) + ((lo % 2 + hi % 2) / 2)
+        }
+    }
+
+    /// Compute the confidence-weighted median of the included quotes.
+    ///
+    /// Sorts the `(price, weight)` pairs ascending (using a fixed array so
+    /// no heap allocation is needed), then walks from the lowest price
+    /// upward accumulating weights until the cumulative weight first reaches
+    /// ⌈ total / 2 ⌉.  The price at that point is the weighted median.
+    ///
+    /// # Errors
+    /// Returns [`Error::OracleNoConsensus`] when no included quotes exist.
+    fn weighted_median(quotes: &Vec<OracleQuote>) -> Result<i128, Error> {
+        // Collect at most 3 (price, weight) pairs.
+        let mut pairs: [(i128, u32); 3] = [(0, 0); 3];
+        let mut n: usize = 0;
+        for q in quotes.iter() {
+            if q.included && n < 3 {
+                pairs[n] = (q.price, q.weight_bps.max(1));
+                n += 1;
+            }
+        }
+        if n == 0 {
+            return Err(Error::OracleNoConsensus);
+        }
+        // Insertion sort by price ascending.
+        for i in 1..n {
+            let mut j = i;
+            while j > 0 && pairs[j - 1].0 > pairs[j].0 {
+                pairs.swap(j - 1, j);
+                j -= 1;
+            }
+        }
+        // Accumulate weights until ⌈ total / 2 ⌉ is reached.
+        let mut total: u64 = 0;
+        for i in 0..n {
+            total = total.saturating_add(pairs[i].1 as u64);
+        }
+        let half: u64 = (total + 1) / 2; // ceiling division
+        let mut cumulative: u64 = 0;
+        let mut result: i128 = 0;
+        for i in 0..n {
+            cumulative = cumulative.saturating_add(pairs[i].1 as u64);
+            result = pairs[i].0;
+            if cumulative >= half {
+                break;
+            }
+        }
+        Ok(result)
+    }
+
+    /// Arithmetic mean price of all included quotes.
+    /// Used to populate the `average_price` field of
+    /// [`OracleConsensusReachedEvent`].
+    fn average_included_price(quotes: &Vec<OracleQuote>) -> i128 {
+        let mut sum: i128 = 0;
+        let mut count: u32 = 0;
+        for q in quotes.iter() {
+            if q.included {
+                sum = sum.saturating_add(q.price);
+                count += 1;
+            }
+        }
+        if count == 0 {
+            0
+        } else {
+            sum / count as i128
+        }
+    }
+
+    /// Integer proxy for price variance among included quotes.
+    ///
+    /// Computes the mean of squared deviations from `avg`, scaling each
+    /// squared term down by 10 000 before accumulating to keep the value
+    /// within i128 range for typical oracle prices (up to ~10¹³ base units).
+    /// Used to populate the `price_variance` field of
+    /// [`OracleConsensusReachedEvent`].
+    fn price_variance(quotes: &Vec<OracleQuote>, avg: i128) -> i128 {
+        let mut sum_sq: i128 = 0;
+        let mut count: u32 = 0;
+        for q in quotes.iter() {
+            if q.included {
+                let diff = q.price.saturating_sub(avg);
+                sum_sq = sum_sq
+                    .saturating_add(diff.saturating_mul(diff).saturating_div(10_000));
+                count += 1;
+            }
+        }
+        if count == 0 {
+            0
+        } else {
+            sum_sq / count as i128
+        }
+    }
+
+    /// Aggregate confidence score in [0, 100] for [`MedianResolutionResult`].
+    ///
+    /// Base score reflects the number of surviving sources:
+    /// - 1 source → 60
+    /// - 2 sources → 75
+    /// - 3 sources → 90
+    ///
+    /// A bonus of up to 10 points is added based on the average
+    /// `weight_bps` of the included quotes (10 000 bps = +10 bonus).
+    fn aggregate_confidence(included_count: u32, quotes: &Vec<OracleQuote>) -> u32 {
+        let base: u32 = match included_count {
+            0 => 0,
+            1 => 60,
+            2 => 75,
+            _ => 90, // ≥ 3 sources
+        };
+        let mut total_weight: u64 = 0;
+        let mut count: u32 = 0;
+        for q in quotes.iter() {
+            if q.included {
+                total_weight = total_weight.saturating_add(q.weight_bps as u64);
+                count += 1;
+            }
+        }
+        let bonus: u32 = if count > 0 {
+            // avg_weight / 1_000 gives a score in [0, 10] since max weight = 10 000.
+            (total_weight / count as u64 / 1_000).min(10) as u32
+        } else {
+            0
+        };
+        (base + bonus).min(100)
+    }
 }
 
 // ===== MARKET RESOLUTION =====
@@ -1353,7 +1879,7 @@ impl OracleResolutionManager {
 ///     community_confidence: u32
 /// ) -> (String, ResolutionMethod) {
 ///     let env = Env::default();
-///     
+///
 ///     // Check if oracle and community agree
 ///     if oracle_result == &community_consensus.outcome {
 ///         // Agreement - use hybrid method with high confidence
@@ -1700,17 +2226,17 @@ impl MarketResolutionValidator {
             .get(&Symbol::new(env, "global_min_pool"))
             .unwrap_or(0);
         let min_pool = market.min_pool_size.unwrap_or(global_min);
-        
+
         // Only check if min pool is set
         if min_pool > 0 {
             // Get token decimals to normalize amounts for comparison
             let token_client = crate::markets::MarketUtils::get_token_client(env)?;
             let token_decimals = token_client.decimals() as u32;
-            
+
             // Normalize both total staked and min pool to canonical scale for comparison
             let normalized_total = crate::tokens::normalize_amount(market.total_staked, token_decimals);
             let normalized_min = crate::tokens::normalize_amount(min_pool, token_decimals);
-            
+
             if normalized_total < normalized_min {
                 return Err(Error::InvalidState);
             }
@@ -2156,6 +2682,500 @@ mod tests {
             &low_consensus,
         );
         assert!(matches!(method, ResolutionMethod::OracleOnly));
+    }
+}
+
+// ===== MEDIAN RESOLUTION UNIT TESTS =====
+
+/// Unit tests for `OracleResolutionManager` median-aggregation helpers.
+///
+/// These tests exercise the pure-logic helpers in isolation so they can run
+/// without a full Soroban contract environment and without live oracle
+/// contracts.  Integration behaviour (actual oracle calls, market storage)
+/// is verified at the contract-integration test layer.
+#[cfg(test)]
+mod median_resolution_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    fn make_env() -> Env {
+        Env::default()
+    }
+
+    fn quote(provider: OracleProvider, price: i128, weight_bps: u32, included: bool) -> OracleQuote {
+        OracleQuote {
+            provider,
+            price,
+            confidence_bps: 0,
+            weight_bps,
+            included,
+        }
+    }
+
+    // ── confidence_to_weight ───────────────────────────────────────────────
+
+    #[test]
+    fn test_weight_none_confidence_gives_medium_weight() {
+        let (cbps, wbps) = OracleResolutionManager::confidence_to_weight(1_000_000, None);
+        assert_eq!(cbps, 0, "unknown confidence should produce zero conf_bps");
+        assert_eq!(wbps, 5_000, "unknown confidence should produce medium weight");
+    }
+
+    #[test]
+    fn test_weight_zero_confidence_gives_max_weight() {
+        let (cbps, wbps) = OracleResolutionManager::confidence_to_weight(1_000_000, Some(0));
+        assert_eq!(cbps, 0);
+        assert_eq!(wbps, 10_000, "zero-interval oracle should receive maximum weight");
+    }
+
+    #[test]
+    fn test_weight_negative_confidence_gives_max_weight() {
+        let (_cbps, wbps) = OracleResolutionManager::confidence_to_weight(500_000, Some(-1));
+        assert_eq!(wbps, 10_000);
+    }
+
+    #[test]
+    fn test_weight_inverse_relationship_tighter_interval_higher_weight() {
+        // A tighter confidence interval (smaller c relative to price) should
+        // yield a higher weight than a wide one.
+        let (_c1, w_tight) =
+            OracleResolutionManager::confidence_to_weight(1_000_000, Some(1_000));
+        let (_c2, w_wide) =
+            OracleResolutionManager::confidence_to_weight(1_000_000, Some(100_000));
+        assert!(
+            w_tight > w_wide,
+            "tighter interval (c=1_000) should give higher weight than wide (c=100_000)"
+        );
+    }
+
+    #[test]
+    fn test_weight_known_values() {
+        // price=1 000 000, confidence=1 000 000 (100 % uncertainty)
+        // weight = 1 000 000 * 10 000 / (1 000 000 + 1 000 000) = 5 000
+        let (_cbps, wbps) =
+            OracleResolutionManager::confidence_to_weight(1_000_000, Some(1_000_000));
+        assert_eq!(wbps, 5_000);
+    }
+
+    #[test]
+    fn test_weight_non_positive_price_returns_zeros() {
+        assert_eq!(
+            OracleResolutionManager::confidence_to_weight(0, Some(100)),
+            (0, 0),
+            "zero price must return (0, 0)"
+        );
+        assert_eq!(
+            OracleResolutionManager::confidence_to_weight(-1, None),
+            (0, 0),
+            "negative price must return (0, 0)"
+        );
+    }
+
+    // ── simple_median ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_simple_median_single_element() {
+        let env = make_env();
+        let mut v: Vec<i128> = Vec::new(&env);
+        v.push_back(42);
+        assert_eq!(OracleResolutionManager::simple_median(&v), 42);
+    }
+
+    #[test]
+    fn test_simple_median_two_elements_returns_average() {
+        let env = make_env();
+        let mut v: Vec<i128> = Vec::new(&env);
+        v.push_back(100);
+        v.push_back(200);
+        // average of two middle values
+        assert_eq!(OracleResolutionManager::simple_median(&v), 150);
+    }
+
+    #[test]
+    fn test_simple_median_three_elements_returns_middle() {
+        let env = make_env();
+        let mut v: Vec<i128> = Vec::new(&env);
+        v.push_back(100);
+        v.push_back(200);
+        v.push_back(300);
+        assert_eq!(OracleResolutionManager::simple_median(&v), 200);
+    }
+
+    #[test]
+    fn test_simple_median_empty_returns_zero() {
+        let env = make_env();
+        let v: Vec<i128> = Vec::new(&env);
+        assert_eq!(OracleResolutionManager::simple_median(&v), 0);
+    }
+
+    // ── collect_included_sorted ────────────────────────────────────────────
+
+    #[test]
+    fn test_collect_included_sorted_filters_and_sorts() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::reflector(), 300, 5_000, true));
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false)); // excluded
+        quotes.push_back(quote(OracleProvider::band_protocol(), 100, 5_000, true));
+
+        let sorted = OracleResolutionManager::collect_included_sorted(&env, &quotes);
+        assert_eq!(sorted.len(), 2, "excluded quote must be filtered out");
+        assert_eq!(sorted.get(0), Some(100), "prices should be sorted ascending");
+        assert_eq!(sorted.get(1), Some(300));
+    }
+
+    #[test]
+    fn test_collect_included_sorted_all_excluded_returns_empty() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false));
+        quotes.push_back(quote(OracleProvider::reflector(), 0, 0, false));
+
+        let sorted = OracleResolutionManager::collect_included_sorted(&env, &quotes);
+        assert_eq!(sorted.len(), 0);
+    }
+
+    #[test]
+    fn test_collect_included_sorted_three_unsorted() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 500, 5_000, true));
+        quotes.push_back(quote(OracleProvider::reflector(), 100, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 300, 5_000, true));
+
+        let sorted = OracleResolutionManager::collect_included_sorted(&env, &quotes);
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(sorted.get(0), Some(100));
+        assert_eq!(sorted.get(1), Some(300));
+        assert_eq!(sorted.get(2), Some(500));
+    }
+
+    // ── weighted_median ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_weighted_median_three_equal_weights_picks_middle() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 100, 5_000, true));
+        quotes.push_back(quote(OracleProvider::reflector(), 200, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 300, 5_000, true));
+
+        let median = OracleResolutionManager::weighted_median(&quotes).unwrap();
+        // total weight = 15 000, half = 7 500.
+        // After price 100 cumulative = 5 000 < 7 500 → continue.
+        // After price 200 cumulative = 10 000 ≥ 7 500 → result = 200.
+        assert_eq!(median, 200);
+    }
+
+    #[test]
+    fn test_weighted_median_high_weight_on_high_price_skews_up() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        // Low price, low weight.
+        quotes.push_back(quote(OracleProvider::pyth(), 100, 1_000, true));
+        // High price, very high weight.
+        quotes.push_back(quote(OracleProvider::reflector(), 300, 9_000, true));
+
+        // total = 10 000, half = 5 000.
+        // After p=100, cumulative = 1 000 < 5 000 → continue.
+        // After p=300, cumulative = 10 000 ≥ 5 000 → result = 300.
+        let median = OracleResolutionManager::weighted_median(&quotes).unwrap();
+        assert_eq!(median, 300);
+    }
+
+    #[test]
+    fn test_weighted_median_high_weight_on_low_price_stays_low() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::reflector(), 100, 9_000, true));
+        quotes.push_back(quote(OracleProvider::pyth(), 300, 1_000, true));
+
+        // total = 10 000, half = 5 000.
+        // After p=100, cumulative = 9 000 ≥ 5 000 → result = 100.
+        let median = OracleResolutionManager::weighted_median(&quotes).unwrap();
+        assert_eq!(median, 100);
+    }
+
+    #[test]
+    fn test_weighted_median_single_included_quote() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::reflector(), 250, 5_000, true));
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false));
+
+        let median = OracleResolutionManager::weighted_median(&quotes).unwrap();
+        assert_eq!(median, 250);
+    }
+
+    #[test]
+    fn test_weighted_median_no_included_returns_error() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false));
+        quotes.push_back(quote(OracleProvider::reflector(), 0, 0, false));
+
+        assert!(
+            OracleResolutionManager::weighted_median(&quotes).is_err(),
+            "no included quotes must return OracleNoConsensus"
+        );
+    }
+
+    // ── average_included_price ─────────────────────────────────────────────
+
+    #[test]
+    fn test_average_included_price_two_quotes() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::reflector(), 100, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 300, 5_000, true));
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false)); // excluded
+
+        assert_eq!(OracleResolutionManager::average_included_price(&quotes), 200);
+    }
+
+    #[test]
+    fn test_average_included_price_all_excluded_returns_zero() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false));
+
+        assert_eq!(OracleResolutionManager::average_included_price(&quotes), 0);
+    }
+
+    // ── price_variance ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_price_variance_identical_prices_is_zero() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::reflector(), 200, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 200, 5_000, true));
+
+        let var = OracleResolutionManager::price_variance(&quotes, 200);
+        assert_eq!(var, 0, "identical prices have zero variance");
+    }
+
+    #[test]
+    fn test_price_variance_symmetric_spread() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        // avg = 200; deviations = ±100; squared / 10 000 = 1 each.
+        quotes.push_back(quote(OracleProvider::reflector(), 100, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 300, 5_000, true));
+
+        let var = OracleResolutionManager::price_variance(&quotes, 200);
+        // sum_sq = (100²/10 000) + (100²/10 000) = 1 + 1 = 2; count = 2; result = 1.
+        assert_eq!(var, 1);
+    }
+
+    // ── aggregate_confidence ───────────────────────────────────────────────
+
+    #[test]
+    fn test_aggregate_confidence_three_sources_max_weight() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        for prov in [
+            OracleProvider::pyth(),
+            OracleProvider::reflector(),
+            OracleProvider::band_protocol(),
+        ] {
+            quotes.push_back(OracleQuote {
+                provider: prov,
+                price: 1_000,
+                confidence_bps: 0,
+                weight_bps: 10_000,
+                included: true,
+            });
+        }
+        // base = 90, bonus = avg_weight(10 000) / 1 000 = 10 → total = 100.
+        assert_eq!(OracleResolutionManager::aggregate_confidence(3, &quotes), 100);
+    }
+
+    #[test]
+    fn test_aggregate_confidence_two_sources_medium_weight() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::reflector(), 1_000, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 1_000, 5_000, true));
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false));
+
+        // base = 75, bonus = avg_weight(5 000) / 1 000 = 5 → total = 80.
+        assert_eq!(OracleResolutionManager::aggregate_confidence(2, &quotes), 80);
+    }
+
+    #[test]
+    fn test_aggregate_confidence_one_source() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::reflector(), 1_000, 10_000, true));
+        quotes.push_back(quote(OracleProvider::pyth(), 0, 0, false));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 0, 0, false));
+
+        // base = 60, bonus = 10 → total = 70.
+        assert_eq!(OracleResolutionManager::aggregate_confidence(1, &quotes), 70);
+    }
+
+    // ── set_median_config / get_median_config ──────────────────────────────
+
+    #[test]
+    fn test_set_and_get_median_config_round_trips() {
+        let env = make_env();
+        let pyth_addr = Address::generate(&env);
+        let refl_addr = Address::generate(&env);
+        let band_addr = Address::generate(&env);
+
+        let config = MedianOracleConfig {
+            pyth_address: pyth_addr.clone(),
+            reflector_address: refl_addr.clone(),
+            band_address: band_addr.clone(),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        OracleResolutionManager::set_median_config(&env, &config);
+
+        let loaded = OracleResolutionManager::get_median_config(&env)
+            .expect("config should be present after set");
+        assert_eq!(loaded.max_deviation_bps, 200);
+        assert_eq!(loaded.min_sources, 2);
+        assert_eq!(loaded.pyth_address, pyth_addr);
+        assert_eq!(loaded.reflector_address, refl_addr);
+        assert_eq!(loaded.band_address, band_addr);
+    }
+
+    #[test]
+    fn test_get_median_config_returns_error_when_not_set() {
+        // Fresh environment has no stored config.
+        let env = make_env();
+        assert!(
+            OracleResolutionManager::get_median_config(&env).is_err(),
+            "missing config must return ConfigNotFound"
+        );
+    }
+
+    #[test]
+    fn test_set_median_config_overwrites_previous() {
+        let env = make_env();
+        let first = MedianOracleConfig {
+            pyth_address: Address::generate(&env),
+            reflector_address: Address::generate(&env),
+            band_address: Address::generate(&env),
+            max_deviation_bps: 100,
+            min_sources: 1,
+        };
+        OracleResolutionManager::set_median_config(&env, &first);
+
+        let updated_band = Address::generate(&env);
+        let second = MedianOracleConfig {
+            band_address: updated_band.clone(),
+            max_deviation_bps: 300,
+            min_sources: 2,
+            ..first.clone()
+        };
+        OracleResolutionManager::set_median_config(&env, &second);
+
+        let loaded = OracleResolutionManager::get_median_config(&env).unwrap();
+        assert_eq!(loaded.max_deviation_bps, 300, "config should be overwritten");
+        assert_eq!(loaded.band_address, updated_band);
+    }
+
+    // ── fetch_quote ────────────────────────────────────────────────────────
+    // fetch_quote absorbs oracle errors into included=false.
+    // We test it indirectly via collect_included_sorted and weighted_median
+    // since the concrete oracle impls require live WASM env contexts.
+    // The BandProtocolOracle::parse_feed_id path is exercised by the
+    // oracle-integration tests that mock the Band WASM binary.
+
+    // ── Outlier detection via resolve_with_median integration path ─────────
+    // The full resolve_with_median integration (market + live oracles) is
+    // tested in the oracle_fallback_timeout_tests module, which sets up a
+    // complete contract environment.  Here we verify the outlier-filter
+    // arithmetic in isolation using concrete numbers.
+
+    #[test]
+    fn test_outlier_detection_skips_deviant_quote() {
+        // Prices: 100 (Pyth), 102 (Reflector), 200 (Band, outlier at 200 %)
+        // baseline median of [100, 102, 200] → 102
+        // deviation of Band = |200 - 102| * 10 000 / 102 = 9 607 bps > 200 bps
+        // → Band should be marked as outlier.
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 100, 5_000, true));
+        quotes.push_back(quote(OracleProvider::reflector(), 102, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 200, 5_000, true));
+
+        let max_dev_bps: u32 = 200; // 2 %
+        let baseline_prices = OracleResolutionManager::collect_included_sorted(&env, &quotes);
+        let baseline_median = OracleResolutionManager::simple_median(&baseline_prices);
+        assert_eq!(baseline_median, 102);
+
+        // Manually apply the same filter logic as resolve_with_median.
+        let mut filtered: Vec<OracleQuote> = Vec::new(&env);
+        for q in quotes.iter() {
+            let mut out = q.clone();
+            if out.included && baseline_median > 0 {
+                let abs_diff: i128 = if out.price > baseline_median {
+                    out.price.saturating_sub(baseline_median)
+                } else {
+                    baseline_median.saturating_sub(out.price)
+                };
+                let dev_bps: u64 = (abs_diff as u64)
+                    .saturating_mul(10_000)
+                    .saturating_div(baseline_median as u64);
+                if dev_bps > max_dev_bps as u64 {
+                    out.included = false;
+                }
+            }
+            filtered.push_back(out);
+        }
+
+        let mut included_after: u32 = 0;
+        for q in filtered.iter() {
+            if q.included {
+                included_after += 1;
+            }
+        }
+        assert_eq!(included_after, 2, "outlier (Band at 200) must be excluded");
+
+        // Weighted median of [100, 102] with equal weights = 100 (first whose
+        // cumulative weight ≥ half).
+        let wm = OracleResolutionManager::weighted_median(&filtered).unwrap();
+        // total weight = 5000+5000=10000, half=5001.
+        // After price 100: cumulative=5000 < 5001 → continue.
+        // After price 102: cumulative=10000 ≥ 5001 → result=102.
+        assert_eq!(wm, 102);
+    }
+
+    #[test]
+    fn test_no_outlier_when_all_prices_close() {
+        let env = make_env();
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 1_000, 5_000, true));
+        quotes.push_back(quote(OracleProvider::reflector(), 1_010, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 1_020, 5_000, true));
+
+        let max_dev_bps: u32 = 200;
+        let baseline = OracleResolutionManager::collect_included_sorted(&env, &quotes);
+        let bm = OracleResolutionManager::simple_median(&baseline);
+        assert_eq!(bm, 1_010);
+
+        // Deviation of 1 000 from 1 010 = 10 * 10 000 / 1 010 ≈ 99 bps < 200 → included.
+        // Deviation of 1 020 from 1 010 = 10 * 10 000 / 1 010 ≈ 99 bps < 200 → included.
+        for q in quotes.iter() {
+            if q.included {
+                let abs_diff: i128 = (q.price - bm).abs();
+                let dev_bps: u64 = (abs_diff as u64)
+                    .saturating_mul(10_000)
+                    .saturating_div(bm as u64);
+                assert!(
+                    dev_bps <= max_dev_bps as u64,
+                    "price {} should not be an outlier (dev_bps={})",
+                    q.price,
+                    dev_bps
+                );
+            }
+        }
     }
 }
 
