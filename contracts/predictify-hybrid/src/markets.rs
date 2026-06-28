@@ -4,7 +4,7 @@ use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, V
 
 // use crate::config; // Unused import
 use crate::err::Error;
-use crate::storage::{DataKey, MARKET_CACHE_TTL_LEDGERS};
+use crate::storage::{check_market_creation_rent, DataKey, MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS};
 use crate::types::*;
 // Oracle imports removed - not currently used
 
@@ -128,15 +128,12 @@ impl MarketCreator {
         // Use the generated id after creation in higher-level flows when event metadata is required.
        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
-        // Pre-flight check: ensure sufficient storage rent budget to prevent under-funded archives
-        let min_rent_budget = env.storage().max_ttl();
-        if env.ledger().sequence() + min_rent_budget > u32::MAX {
-            return Err(Error::InsufficientStorageRentBudget);
-        }
+        // Pre-flight check: ensure sufficient storage rent budget
+        check_market_creation_rent(env)?;
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
-        env.storage().persistent().extend_ttl(&market_id, min_rent_budget, min_rent_budget);
+        env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
 
         // CACHE INVALIDATION: ensure cache is empty for new market
         MarketReadCache::new(env).invalidate(&market_id);

@@ -181,7 +181,7 @@ use admin::{
 };
 pub use admin::Severity;
 pub use err::Error;
-use crate::storage::DataKey;
+use crate::storage::{check_market_creation_rent, DataKey, MARKET_TTL_LEDGERS};
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
     pub use crate::err::*;
@@ -779,8 +779,14 @@ impl PredictifyHybrid {
             winnings_swept: false,
         };
 
+        // Pre-flight check: ensure sufficient storage rent budget
+        if let Err(e) = check_market_creation_rent(&env) {
+            panic_with_error!(env, e);
+        }
+
         // Store the market
         env.storage().persistent().set(&market_id, &market);
+        env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
 
         // Emit events
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, end_time);

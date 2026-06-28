@@ -216,6 +216,19 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
+    /// Storage rent is insufficient for the requested persistent key allocation.
+    /// The caller must extend the contract instance TTL or provide a larger
+    /// transaction inclusion fee to cover the storage rent for new market entries.
+    ///
+    /// # Formula
+    ///
+    /// `rent_needed = persistent_keys_count * MARKET_TTL_LEDGERS`
+    ///
+    /// This estimate uses the market-tier TTL (≈365 days) for each new persistent
+    /// entry. The TTL per key is clamped to `env.storage().max_ttl()` to respect
+    /// the network's maximum. The instance TTL headroom is also checked to ensure
+    /// the contract is not on the verge of expiry.
+    InsufficientStorageRent = 509,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -612,6 +625,9 @@ impl ErrorHandler {
             Error::InvalidState => {
                 "Invalid system state. The contract may be in an unexpected condition."
             }
+            Error::InsufficientStorageRent => {
+                "Insufficient storage rent. Extend the contract instance TTL or increase the transaction fee to cover persistent storage rent."
+            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -740,6 +756,7 @@ impl ErrorHandler {
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
+            Error::InsufficientStorageRent => RecoveryStrategy::Retry,
             _ => RecoveryStrategy::Abort,
         }
     }
@@ -1313,6 +1330,11 @@ impl ErrorHandler {
                 ErrorCategory::Financial,
                 RecoveryStrategy::Retry,
             ),
+            Error::InsufficientStorageRent => (
+                ErrorSeverity::Medium,
+                ErrorCategory::System,
+                RecoveryStrategy::Retry,
+            ),
             _ => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Unknown,
@@ -1350,6 +1372,9 @@ impl ErrorHandler {
                 "The oracle is temporarily unavailable. Please try again later."
             }
             (Error::InvalidInput, _) => "Check your input parameters and try again.",
+            (Error::InsufficientStorageRent, _) => {
+                "Increase the transaction inclusion fee or extend the contract instance TTL to cover storage rent."
+            }
             (_, ErrorCategory::Validation) => "Review and correct the input data.",
             (_, ErrorCategory::System) => {
                 "A system error occurred. Contact support if the issue persists."
@@ -1419,6 +1444,7 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
+            Error::InsufficientStorageRent => "Insufficient storage rent for persistent key allocation",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::GasBudgetExceeded => "Gas budget exceeded",
@@ -1590,6 +1616,7 @@ impl Error {
             Error::NoPendingFeeCommit => "NO_PENDING_FEE_COMMIT",
             Error::FeeRevealTooEarly => "FEE_REVEAL_TOO_EARLY",
             Error::FeePreimageMismatch => "FEE_PREIMAGE_MISMATCH",
+            Error::InsufficientStorageRent => "INSUFFICIENT_STORAGE_RENT",
         }
     }
 }
@@ -1697,7 +1724,7 @@ mod tests {
             Error::CumulativeExtensionCapHit,
             Error::DuplicateMarketId,
             Error::IllegalMarketStateTransition,
-            Error::InsufficientStorageRentBudget,
+            Error::InsufficientStorageRent,
             Error::DisputeStakeCapExceeded,
             Error::UpgradeChainMismatch,
             Error::ReplayedOverride,
