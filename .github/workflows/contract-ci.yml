@@ -23,7 +23,7 @@ jobs:
     - name: Install Rust target for Soroban
       run: |
         source $HOME/.cargo/env
-        rustup target add wasm32v1-none
+        rustup target add wasm32v1-none wasm32-unknown-unknown
     - name: Install Stellar CLI with Homebrew
       run: |
         brew update
