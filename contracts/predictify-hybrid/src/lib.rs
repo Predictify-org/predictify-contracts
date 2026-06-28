@@ -29,10 +29,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
         .get(&Symbol::new(&env, "platform_fee"))
         .unwrap_or(200); // Default 2% if not set
 
-    // Since place_bet now updates market.votes and market.stakes,
-    // we can use the vote-based payout system for both bets and votes
-    let _total_distributed = 0;
-
     // Check if payouts have already been distributed
     let mut has_unclaimed_winners = false;
 
@@ -85,12 +81,9 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
     let mut total_distributed: i128 = 0;
 
     // Create budget guard with 100,000 instruction threshold for payout loop
-    // Payout loops can be large, so we use a higher threshold.
     let budget_guard = crate::gas::BudgetGuard::new(&env, 100000);
 
     // 1. Distribute to Voters
-    // Distribute payouts to all winners (handles both single and multi-winner cases)
-    // For multi-winner (ties), pool is split proportionally among all winners
     let mut voter_count = 0u32;
     for (user, outcome) in market.votes.iter() {
         if winning_outcomes.contains(&outcome) {
@@ -105,13 +98,10 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
 
             let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
             if user_stake > 0 {
-                let fee_denominator = 10000i128;
                 let user_share = (user_stake
                     .checked_mul(fee_denominator - fee_percent)
                     .ok_or(Error::InvalidInput)?)
                     / fee_denominator;
-                // Payout calculation: (user_stake / total_winning_stakes) * total_pool
-                // This automatically handles split pools for ties - each winner gets proportional share
                 let payout = (user_share
                     .checked_mul(total_pool)
                     .ok_or(Error::InvalidInput)?)
@@ -121,7 +111,7 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                     // Allow 0 payout but mark as claimed
                     market
                         .claimed
-                        .set(user.clone(), ClaimInfo::new(&env, payout));
+                        .set(user.clone(), crate::types::ClaimInfo::new(&env, payout));
                     if payout > 0 {
                         total_distributed = total_distributed
                             .checked_add(payout)
@@ -135,21 +125,20 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                             payout,
                         )?;
 
-                        EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                        crate::events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                     }
                 }
             }
         }
 
         voter_count += 1;
-        // Check budget every 10 iterations to avoid overhead on every iteration
+        // Check budget every 10 iterations
         if voter_count % 10 == 0 {
             budget_guard.check()?;
         }
     }
 
     // 2. Distribute to Bettors
-    // Check if bet outcome is in winning outcomes (supports multi-outcome/tie scenarios)
     let mut bettor_count = 0u32;
     for user in bettors.iter() {
         if let Some(mut bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
@@ -160,8 +149,8 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                     .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
-                    // Already claimed (perhaps as a voter or double check)
-                    bet.status = BetStatus::Won;
+                    // Already claimed
+                    bet.status = crate::types::BetStatus::Won;
                     let _ = bets::BetStorage::store_bet(&env, &bet);
                     continue;
                 }
@@ -174,14 +163,14 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                     if payout > 0 {
                         market
                             .claimed
-                            .set(user.clone(), ClaimInfo::new(&env, payout));
+                            .set(user.clone(), crate::types::ClaimInfo::new(&env, payout));
                         total_distributed += payout;
 
                         // Update bet status
-                        bet.status = BetStatus::Won;
+                        bet.status = crate::types::BetStatus::Won;
                         let _ = bets::BetStorage::store_bet(&env, &bet);
 
-                        // Credit winnings to user balance instead of direct transfer
+                        // Credit winnings to user balance
                         match storage::BalanceStorage::add_balance(
                             &env,
                             &user,
@@ -191,13 +180,13 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                             Ok(_) => {}
                             Err(e) => panic_with_error!(env, e),
                         }
-                        EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                        crate::events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                     }
                 }
             } else {
                 // Mark losing bet
-                if bet.status == BetStatus::Active {
-                    bet.status = BetStatus::Lost;
+                if bet.status == crate::types::BetStatus::Active {
+                    bet.status = crate::types::BetStatus::Lost;
                     let _ = bets::BetStorage::store_bet(&env, &bet);
                 }
             }
