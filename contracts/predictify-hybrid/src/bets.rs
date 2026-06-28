@@ -21,7 +21,7 @@
 
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::reentrancy_guard::{ReentrancyGuard, GuardError as ReentrancyError};
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
@@ -205,6 +205,34 @@ fn validate_limits_bounds(limits: &BetLimits) -> Result<(), Error> {
 pub struct BetManager;
 
 impl BetManager {
+    /// Helper to get the active platform fee percentage in basis points (bps).
+    pub fn get_live_fee_percentage(env: &Env) -> Result<i128, Error> {
+        // 1. Try contract configuration
+        if let Ok(cfg) = crate::config::ConfigManager::get_config(env) {
+            if !cfg.fees.fees_enabled {
+                return Ok(0);
+            }
+            return Ok(cfg.fees.platform_fee_percentage);
+        }
+
+        // 2. Try fee-specific configuration
+        if let Ok(fee_config) = crate::fees::FeeConfigManager::get_fee_config(env) {
+            if !fee_config.fees_enabled {
+                return Ok(0);
+            }
+            return Ok(fee_config.platform_fee_percentage);
+        }
+
+        // 3. Try legacy key alone
+        let fee_key = Symbol::new(env, "platform_fee");
+        if let Some(legacy_fee) = env.storage().persistent().get::<Symbol, i128>(&fee_key) {
+            return Ok(legacy_fee);
+        }
+
+        // 4. Default constant (fallback to DEFAULT_PLATFORM_FEE_PERCENTAGE)
+        Ok(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE)
+    }
+
     /// Place a bet on a market outcome with fund locking.
     ///
     /// This function processes a user's bet on a prediction market, including
@@ -217,6 +245,7 @@ impl BetManager {
     /// - `market_id` - Symbol identifying the market
     /// - `outcome` - The outcome the user is betting on
     /// - `amount` - The amount to lock for this bet
+    /// - `max_fee_bps` - Optional maximum platform fee percentage in basis points (slippage guard)
     ///
     /// # Returns
     ///
@@ -249,7 +278,8 @@ impl BetManager {
     ///     user.clone(),
     ///     Symbol::new(&env, "BTC_100K"),
     ///     String::from_str(&env, "yes"),
-    ///     10_000_000 // 1.0 XLM
+    ///     10_000_000, // 1.0 XLM
+    ///     None
     /// )?;
     /// ```
     pub fn place_bet(
@@ -258,6 +288,7 @@ impl BetManager {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        max_fee_bps: Option<u32>,
     ) -> Result<Bet, Error> {
         let scope = guard_scope_place_bet();
         ReentrancyGuard::with_guard(env, &scope, || {
@@ -275,6 +306,14 @@ impl BetManager {
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
+
+        // Slippage check: verify live fee is not above the maximum acceptable threshold
+        if let Some(max_fee) = max_fee_bps {
+            let actual_fee = Self::get_live_fee_percentage(env)?;
+            if actual_fee > max_fee as i128 {
+                return Err(Error::FeeAboveAcceptable);
+            }
+        }
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
@@ -334,6 +373,7 @@ impl BetManager {
     /// - `env` - The Soroban environment
     /// - `user` - Address of the user placing the bets
     /// - `bets` - Vector of tuples (market_id, outcome, amount)
+    /// - `max_fee_bps` - Optional maximum platform fee percentage in basis points (slippage guard)
     ///
     /// # Returns
     ///
@@ -358,10 +398,19 @@ impl BetManager {
         env: &Env,
         user: Address,
         bets: soroban_sdk::Vec<(Symbol, String, i128)>,
+        max_fee_bps: Option<u32>,
     ) -> Result<soroban_sdk::Vec<Bet>, Error> {
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
+
+        // Slippage check: verify live fee is not above the maximum acceptable threshold
+        if let Some(max_fee) = max_fee_bps {
+            let actual_fee = Self::get_live_fee_percentage(env)?;
+            if actual_fee > max_fee as i128 {
+                return Err(Error::FeeAboveAcceptable);
+            }
+        }
 
         // Validate batch size
         if bets.is_empty() {
@@ -692,14 +741,7 @@ impl BetManager {
             return Ok(0);
         }
 
-        let fee_percentage = crate::config::ConfigManager::get_config(env)
-            .map(|cfg| cfg.fees.platform_fee_percentage)
-            .unwrap_or_else(|_| {
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(env, "platform_fee"))
-                    .unwrap_or(200)
-            });
+        let fee_percentage = crate::fees::FeeManager::get_fee_percentage_for_timestamp(env, bet.timestamp);
 
         let fee = (summary.total_pool * fee_percentage as i128) / 10_000;
         let distributable_pool = summary.total_pool - fee;

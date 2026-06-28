@@ -24,3 +24,4 @@ mod rate_limiter_invariants;
 // mod reflector_asset_test_utils;
 
 pub mod dispute_stake_tests;
+pub mod fee_config_commit_reveal_tests;

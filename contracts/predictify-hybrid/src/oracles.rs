@@ -3,7 +3,7 @@
 use alloc::format;
 use alloc::string::ToString;
 use crate::bandprotocol;
-use crate::errors::Error;
+use crate::err::Error;
 use soroban_sdk::{
     contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec,
 };
@@ -1504,6 +1504,119 @@ impl OracleInstance {
 /// - **Condition Checking**: Verify market conditions are met
 /// - **Outcome Generation**: Generate final market outcomes
 /// - **Validation**: Ensure oracle data is suitable for market resolution
+/// Rolling deviation history ring buffer for per-market price tracking.
+///
+/// Maintains a FIFO ring buffer of the most recent oracle prices for a market.
+/// Used by the rolling-median outlier rejection logic to detect anomalous quotes.
+///
+/// # Ring Buffer Semantics
+///
+/// - New prices are appended; when `prices.len()` reaches `capacity`, the oldest
+///   entry is evicted (FIFO).
+/// - The median is computed by sorting a copy of the prices, so the original
+///   insertion order is preserved.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleDeviationHistory {
+    /// Historical prices stored in insertion order (oldest first).
+    pub prices: Vec<i128>,
+    /// Maximum number of prices to retain before evicting the oldest.
+    pub capacity: u32,
+}
+
+impl OracleDeviationHistory {
+    /// Create a new empty ring buffer with the given capacity.
+    pub fn new(env: &Env, capacity: u32) -> Self {
+        Self {
+            prices: Vec::new(env),
+            capacity: if capacity == 0 { 1 } else { capacity },
+        }
+    }
+
+    /// Push a new price into the ring buffer.
+    /// If the buffer is at capacity, the oldest price is evicted first.
+    pub fn push(&mut self, price: i128) {
+        if self.prices.len() >= self.capacity as u32 {
+            // Remove oldest (FIFO eviction)
+            self.prices.remove(0);
+        }
+        self.prices.push_back(price);
+    }
+
+    /// Returns the number of prices currently stored.
+    pub fn len(&self) -> u32 {
+        self.prices.len()
+    }
+
+    /// Returns `true` when no prices have been recorded yet.
+    pub fn is_empty(&self) -> bool {
+        self.prices.is_empty()
+    }
+
+    /// Remove and discard the last (most recently pushed) price.
+    ///
+    /// Used to revert the history when a price is rejected as an outlier,
+    /// so the outlier does not pollute future rolling-median calculations.
+    pub fn pop_last(&mut self) {
+        let n = self.prices.len();
+        if n > 0 {
+            self.prices.remove(n - 1);
+        }
+    }
+
+    /// Compute the rolling median of stored prices using i128 math.
+    ///
+    /// Returns `None` when the buffer is empty. For an even number of entries,
+    /// returns the lower-middle value (not the average) to keep the computation
+    /// simple and avoid division.
+    ///
+    /// # Panics
+    ///
+    /// Never panics; the buffer is guaranteed non-empty before the sort path.
+    pub fn rolling_median(&self) -> Option<i128> {
+        let n = self.prices.len();
+        if n == 0 {
+            return None;
+        }
+
+        // Copy into a mutable vec for sorting.
+        let mut sorted: alloc::vec::Vec<i128> = alloc::vec::Vec::with_capacity(n as usize);
+        for p in self.prices.iter() {
+            sorted.push(p);
+        }
+        sorted.sort_unstable();
+
+        let mid = (n as usize) / 2;
+        Some(sorted[mid])
+    }
+
+    /// Compute the Median Absolute Deviation (MAD) from the rolling median.
+    ///
+    /// MAD = median(|price_i - median|) for all prices in the buffer.
+    /// Returns `None` when the buffer has fewer than 2 entries (insufficient data).
+    ///
+    /// # Panics
+    ///
+    /// Never panics; all indexing is bounds-checked.
+    pub fn mad(&self) -> Option<i128> {
+        let median = self.rolling_median()?;
+        let n = self.prices.len();
+        if n < 2 {
+            return None;
+        }
+
+        let mut deviations: alloc::vec::Vec<i128> = alloc::vec::Vec::with_capacity(n as usize);
+        for p in self.prices.iter() {
+            let dev = if p > median { p - median } else { median - p };
+            deviations.push(dev);
+        }
+        deviations.sort_unstable();
+
+        let mid = (n as usize) / 2;
+        Some(deviations[mid])
+    }
+}
+
 pub struct OracleUtils;
 
 impl OracleUtils {
@@ -2366,7 +2479,12 @@ impl OracleValidationConfigManager {
         env: &Env,
         config: &GlobalOracleValidationConfig,
     ) -> Result<(), Error> {
-        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps, config.max_deviation_bps)?;
+        Self::validate_config_values(
+            config.max_staleness_secs,
+            config.max_confidence_bps,
+            config.max_deviation_bps,
+            config.max_deviation_z_multiple,
+        )?;
         env.storage()
             .persistent()
             .set(&OracleValidationKey::GlobalConfig, config);
@@ -2389,7 +2507,12 @@ impl OracleValidationConfigManager {
         market_id: &Symbol,
         config: &EventOracleValidationConfig,
     ) -> Result<(), Error> {
-        Self::validate_config_values(config.max_staleness_secs, config.max_confidence_bps, config.max_deviation_bps)?;
+        Self::validate_config_values(
+            config.max_staleness_secs,
+            config.max_confidence_bps,
+            config.max_deviation_bps,
+            config.max_deviation_z_multiple,
+        )?;
         let mut per_event: soroban_sdk::Map<Symbol, EventOracleValidationConfig> = env
             .storage()
             .persistent()
@@ -2409,22 +2532,58 @@ impl OracleValidationConfigManager {
                 max_staleness_secs: event_cfg.max_staleness_secs,
                 max_confidence_bps: event_cfg.max_confidence_bps,
                 max_deviation_bps: event_cfg.max_deviation_bps,
+                max_deviation_z_multiple: event_cfg.max_deviation_z_multiple,
+                history_size: event_cfg.history_size,
             }
         } else {
             Self::get_global_config(env)
         }
     }
 
-    /// Validate oracle data for staleness and confidence interval.
+    /// Get or initialise the rolling deviation history for a market.
+    fn get_or_init_history(env: &Env, market_id: &Symbol, capacity: u32) -> OracleDeviationHistory {
+        let hist_key = Self::history_key(env, market_id);
+        env.storage()
+            .persistent()
+            .get::<_, OracleDeviationHistory>(&hist_key)
+            .unwrap_or_else(|| OracleDeviationHistory::new(env, capacity))
+    }
+
+    /// Persist the rolling deviation history for a market.
+    fn save_history(env: &Env, market_id: &Symbol, history: &OracleDeviationHistory) {
+        let hist_key = Self::history_key(env, market_id);
+        env.storage().persistent().set(&hist_key, history);
+    }
+
+    /// Composite storage key for deviation history.
+    fn history_key(env: &Env, market_id: &Symbol) -> (Symbol, Symbol) {
+        (Symbol::new(env, "ORC_HIST"), market_id.clone())
+    }
+
+    /// Validate oracle data for staleness, confidence interval, and rolling-median
+    /// outlier rejection.
     ///
     /// Confidence validation is applied only when the provider supplies a confidence
     /// interval (e.g., Pyth) and the value is present. The confidence ratio is
     /// computed as: `abs(confidence) / abs(price)` and compared against the
     /// configured threshold in basis points (bps).
     ///
-    /// When `max_deviation_bps` is set, the price is also compared against the last
+    /// ## Deviation Guard (legacy)
+    ///
+    /// When `max_deviation_bps` is set, the price is compared against the last
     /// accepted reference price stored for this market. If no reference exists yet
     /// (first reading), the price is accepted and stored as the reference.
+    ///
+    /// ## Rolling-Median Outlier Rejection (new)
+    ///
+    /// When `max_deviation_z_multiple` is set, the price is compared against the
+    /// rolling median of the recent price history. The deviation is measured in
+    /// basis points from the median. If the deviation exceeds the z-multiple
+    /// threshold, the quote is rejected with `Error::OracleQuoteOutlier`.
+    ///
+    /// The rolling median is computed from an `OracleDeviationHistory` ring buffer
+    /// stored per market, using i128 integer math (no floating point). The history
+    /// size is configurable via `history_size` (default 10).
     pub fn validate_oracle_data(
         env: &Env,
         market_id: &Symbol,
@@ -2489,7 +2648,56 @@ impl OracleValidationConfigManager {
             }
         }
 
-        // Deviation guard: compare against last accepted reference price.
+        // Rolling-median outlier rejection (new, takes precedence over legacy
+        // single-reference check when both are configured).
+        if let Some(z_multiple_bps) = config.max_deviation_z_multiple {
+            let history_capacity = config.history_size.unwrap_or(10);
+            let mut history = Self::get_or_init_history(env, market_id, history_capacity);
+
+            // Push the new price into the history (it becomes part of the
+            // rolling window for *future* checks).
+            history.push(data.price);
+
+            // Only reject once we have at least 2 entries in the history,
+            // so the first reading is always accepted.
+            if history.len() >= 2 {
+                if let Some(median) = history.rolling_median() {
+                    let median_abs = if median < 0 { -median } else { median };
+                    if median_abs > 0 {
+                        let diff = if data.price > median {
+                            data.price - median
+                        } else {
+                            median - data.price
+                        };
+                        let deviation_bps = ((diff * 10_000) / median_abs) as u32;
+                        if deviation_bps > z_multiple_bps {
+                            // Restore history to before this quote was pushed
+                            // so the outlier doesn't pollute future checks.
+                            history.pop_last();
+                            Self::save_history(env, market_id, &history);
+
+                            EventEmitter::emit_oracle_validation_failed(
+                                env,
+                                market_id,
+                                &provider.name(),
+                                feed_id,
+                                &String::from_str(env, "rolling_median_outlier"),
+                                observed_age,
+                                config.max_staleness_secs,
+                                Some(deviation_bps),
+                                z_multiple_bps,
+                            );
+                            return Err(Error::OracleQuoteOutlier);
+                        }
+                    }
+                }
+            }
+
+            Self::save_history(env, market_id, &history);
+            return Ok(());
+        }
+
+        // Legacy deviation guard: compare against last accepted reference price.
         // On the first reading there is no reference yet — accept and store it.
         if let Some(max_dev_bps) = config.max_deviation_bps {
             let ref_key = (Symbol::new(env, "ORC_REF"), market_id.clone());
@@ -2531,10 +2739,23 @@ impl OracleValidationConfigManager {
         env.storage().persistent().get(&ref_key)
     }
 
+    /// Return the rolling deviation history for a market, if any.
+    pub fn get_deviation_history(env: &Env, market_id: &Symbol) -> Option<OracleDeviationHistory> {
+        let hist_key = Self::history_key(env, market_id);
+        env.storage().persistent().get(&hist_key)
+    }
+
+    /// Clear the rolling deviation history for a market (admin use).
+    pub fn clear_deviation_history(env: &Env, market_id: &Symbol) {
+        let hist_key = Self::history_key(env, market_id);
+        env.storage().persistent().remove(&hist_key);
+    }
+
     fn validate_config_values(
         max_staleness_secs: u64,
         max_confidence_bps: u32,
         max_deviation_bps: Option<u32>,
+        max_deviation_z_multiple: Option<u32>,
     ) -> Result<(), Error> {
         if max_staleness_secs == 0 || max_confidence_bps == 0 {
             return Err(Error::InvalidInput);
@@ -2544,6 +2765,11 @@ impl OracleValidationConfigManager {
         }
         if let Some(dev) = max_deviation_bps {
             if dev == 0 || dev > 10_000 {
+                return Err(Error::InvalidInput);
+            }
+        }
+        if let Some(z) = max_deviation_z_multiple {
+            if z == 0 || z > 10_000 {
                 return Err(Error::InvalidInput);
             }
         }

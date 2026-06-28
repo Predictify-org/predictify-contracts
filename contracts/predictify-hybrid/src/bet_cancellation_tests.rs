@@ -120,7 +120,7 @@ impl BetCancellationTestSetup {
             &self.market_id,
             &String::from_str(&self.env, outcome),
             &amount,
-        );
+         &None,);
     }
 
     fn get_user_balance(&self, user: &Address) -> i128 {

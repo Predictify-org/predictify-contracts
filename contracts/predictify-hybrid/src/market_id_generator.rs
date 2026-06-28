@@ -81,32 +81,6 @@ pub struct MarketIdGenerator;
 
         // ── Seed sealing methods ───────────────────────────────────────────────────
 
-        /// Seal the seed at contract initialization.
-        ///
-        /// This prevents any further seed regeneration after initialization,
-        /// ensuring deterministic ID generation throughout the contract's lifetime.
-        ///
-        /// # Notes
-        ///
-        /// - Should be called exactly once during contract deployment
-        /// - Sets a storage flag indicating the seed is sealed
-        /// - Using instance().set follows the existing pattern in the codebase
-        ///
-        /// # Panics
-        ///
-        /// - [`Error::InvalidState`] if attempting to re-seal an already sealed seed
-        pub fn seal_seed(env: &Env) {
-            let is_sealed = Self::is_seed_sealed(env);
-            if is_sealed {
-                panic_with_error!(env, Error::InvalidState);
-            }
-
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(env, Self::SEED_SEALED_KEY), &true);
-            Self::bump_seed_storage_ttl(env);
-        }
-
         /// Check if the seed has been sealed.
         ///
         /// Returns `true` if the seed is sealed, preventing further regeneration.
@@ -410,63 +384,6 @@ pub struct MarketIdGenerator;
     ///     // (this would be tested with a failing test case)
     /// }
     /// ```
-    pub fn seal_seed(env: &Env) {
-        // Instance storage pattern used throughout the codebase
-        let is_sealed = Self::is_seed_sealed(env);
-        if is_sealed {
-            panic_with_error!(env, Error::InvalidState);
-        }
-
-        // Use instance().set pattern with explicit bump TTL
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(env, Self::SEED_SEALED_KEY), &true);
-        
-        // Bump TTL explicitly following the guidelines
-        Self::bump_seed_storage_ttl(env);
-    }
-
-    /// Check if the seed has been sealed.
-    ///
-    /// Returns `true` if the seed is sealed, preventing further regeneration.
-    ///
-    /// # Returns
-    ///
-    /// - `true` if the seed is sealed and cannot be regenerated
-    /// - `false` if the seed is still unsealed and can be regenerated
-    pub fn is_seed_sealed(env: &Env) -> bool {
-        env.storage()
-            .persistent()
-            .get(&Symbol::new(env, Self::SEED_SEALED_KEY))
-            .unwrap_or(false)
-    }
-
-    /// Ensure the seed is not sealed before regeneration.
-    ///
-    /// This safety check prevents any seed regeneration after sealing.
-    /// It provides explicit validation before attempting to regenerate the seed.
-    ///
-    /// # Panics
-    ///
-    /// - [`Error::InvalidState`] if attempting to regenerate an already sealed seed
-    fn ensure_seed_not_sealed(env: &Env) {
-        if Self::is_seed_sealed(env) {
-            panic_with_error!(env, Error::InvalidState);
-        }
-    }
-
-    /// Bump TTL for seed-related storage to ensure long-term persistence.
-    ///
-    /// This ensures the seed sealing flag persists for the contract's entire lifetime.
-    ///
-    /// # Safety Note
-    ///
-    /// Uses the maximum allowed TTL to ensure the seed flag remains valid even as
-    /// the contract matures and storage entries age.
-    fn bump_seed_storage_ttl(env: &Env) {
-        let key = Symbol::new(env, Self::SEED_SEALED_KEY);
-        env.storage()
-            .persistent()
             .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
     }
 
@@ -606,20 +523,6 @@ pub struct MarketIdGenerator;
         env.storage().persistent().set(&key, &counters);
     }
 
-    fn register_market_id(env: &Env, market_id: &Symbol, admin: &Address, timestamp: u64) {
-        let key = Symbol::new(env, Self::REGISTRY_KEY);
-        let mut registry: Vec<MarketIdRegistryEntry> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(Vec::new(env));
-        registry.push_back(MarketIdRegistryEntry {
-            market_id: market_id.clone(),
-            admin: admin.clone(),
-            timestamp,
-        });
-        env.storage().persistent().set(&key, &registry);
-    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
