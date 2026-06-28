@@ -71,6 +71,7 @@ The function will panic with specific errors if:
 - `Error::InvalidInput` - Any bet amount exceeds maximum
 - `Error::InvalidOutcome` - Any selected outcome is not valid for its market
 - `Error::InsufficientBalance` - User doesn't have enough total funds
+- `Error::FeeExceedsMax` - Effective platform fee exceeds caller-supplied `max_fee_bps`
 
 ## Usage Examples
 
@@ -102,8 +103,8 @@ let bets = vec![
     ),
 ];
 
-// Place all bets in a single transaction
-let placed_bets = contract.place_bets(env.clone(), user, bets);
+// Place all bets in a single transaction (max 2.5% fee)
+let placed_bets = contract.place_bets(env.clone(), user, bets, 250);
 
 // All bets are now active
 assert_eq!(placed_bets.len(), 3);
@@ -129,7 +130,7 @@ let bets = vec![
 
 // This will panic with Error::MarketNotFound
 // No bets will be placed (atomic revert)
-contract.place_bets(env.clone(), user, bets);
+contract.place_bets(env.clone(), user, bets, 250);
 ```
 
 ## Validation Rules

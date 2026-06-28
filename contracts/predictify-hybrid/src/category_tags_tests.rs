@@ -414,12 +414,14 @@ fn test_category_tags_do_not_affect_resolution_and_payouts() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &10_0000000,
+        &250,
     );
     client.place_bet(
         &setup.user2,
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &20_0000000,
+        &250,
     );
 
     // Payout multiplier for "yes" should be (30/10)*100 = 300 and unchanged by category/tags
@@ -459,6 +461,7 @@ fn test_update_category_after_bets_forbidden() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &10_0000000,
+        &250,
     );
 
     // Attempt to update category after bets have been placed -> should panic with #111

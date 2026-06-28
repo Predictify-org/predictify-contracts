@@ -155,6 +155,7 @@ pub fn place_bets(
     env: Env,
     user: Address,
     bets: Vec<(Symbol, String, i128)>,
+    max_fee_bps: i128,
 ) -> Vec<Bet>
 ```
 
@@ -163,6 +164,7 @@ pub fn place_bets(
 - `env`: Soroban environment
 - `user`: User address (authenticated)
 - `bets`: Vector of (market_id, outcome, amount) tuples
+- `max_fee_bps`: Maximum fee in basis points accepted (slippage guard)
 
 ### Returns
 
@@ -203,8 +205,8 @@ let bets = vec![
     ),
 ];
 
-// Place all bets in a single transaction
-let placed_bets = contract.place_bets(env.clone(), user, bets);
+// Place all bets in a single transaction (max 2.5% fee)
+let placed_bets = contract.place_bets(env.clone(), user, bets, 250);
 
 // All bets are now active
 assert_eq!(placed_bets.len(), 3);

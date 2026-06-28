@@ -1,7 +1,7 @@
 extern crate alloc;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Configuration management system for Predictify Hybrid contract
 ///
@@ -439,47 +439,22 @@ pub const ORACLE_STATS_STORAGE_KEY: &str = "OracleStats";
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[contracttype]
+// duplicate derive removed
 pub enum Environment {
-    /// Development environment with relaxed validation and low fees.
-    ///
-    /// Characteristics:
-    /// - Minimal fees for easy testing
-    /// - Relaxed validation rules
-    /// - Short timeouts for faster iteration
-    /// - Permissive market creation limits
-    /// - Debug-friendly error messages
     Development,
-
-    /// Testnet environment that mirrors production settings.
-    ///
-    /// Characteristics:
-    /// - Production-like fee structures
-    /// - Full validation enabled
-    /// - Realistic timeouts and limits
-    /// - Comprehensive testing capabilities
-    /// - Integration testing support
     Testnet,
-
-    /// Production mainnet environment with full security.
-    ///
-    /// Characteristics:
-    /// - Optimized fee structures
-    /// - Strict validation and security
-    /// - Production timeouts and limits
-    /// - Maximum security features
-    /// - Audit-ready configuration
     Mainnet,
-
-    /// Custom environment for specialized deployments.
-    ///
-    /// Characteristics:
-    /// - Configurable parameters
-    /// - Flexible validation rules
-    /// - Custom fee structures
-    /// - Specialized use case support
-    /// - Enterprise deployment ready
     Custom,
 }
+
+impl Default for Environment {
+    fn default() -> Self {
+        Environment::Development
+    }
+}
+
+
+
 
 /// Network-specific configuration for Stellar blockchain connectivity.
 ///
@@ -573,6 +548,21 @@ pub struct NetworkConfig {
     pub contract_address: Address,
 }
 
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        use soroban_sdk::{Env, String, Address};
+        let env = Env::default();
+        NetworkConfig {
+            environment: Environment::Development,
+            passphrase: String::from_str(&env, ""),
+            rpc_url: String::from_str(&env, ""),
+            network_id: String::from_str(&env, ""),
+            contract_address: Address::from_str(&env, ""),
+        }
+    }
+}
+
+
 /// Comprehensive fee structure configuration for the prediction platform.
 ///
 /// This struct defines all fee-related parameters that govern the economic
@@ -615,7 +605,7 @@ pub struct NetworkConfig {
 /// let platform_fee = (payout * fee_config.platform_fee_percentage) / 10000;
 /// println!("Platform fee: {} stroops", platform_fee); // 25 XLM
 /// ```
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 #[contracttype]
 pub struct FeeConfig {
     /// Platform fee percentage in basis points (1/100th of a percent).
@@ -712,7 +702,7 @@ pub struct FeeConfig {
 /// let is_large_market = market_volume >= voting_config.large_market_threshold;
 /// println!("Large market: {}", is_large_market); // false
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct VotingConfig {
     /// Minimum stake required to vote on a market outcome (in stroops).
@@ -818,7 +808,7 @@ pub struct VotingConfig {
 ///
 /// println!("Market valid: {}", valid_question && valid_outcomes && valid_duration);
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct MarketConfig {
     /// Maximum allowed market duration in days.
@@ -939,7 +929,7 @@ pub struct MarketConfig {
 ///                 extension_days <= extension_config.max_extension_days;
 /// println!("Can extend: {}", can_extend); // true
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct ExtensionConfig {
     /// Maximum number of days that can be added in a single extension.
@@ -1023,7 +1013,7 @@ pub struct ExtensionConfig {
 ///
 /// println!("Final confidence: {}%", weighted_confidence); // 87%
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct ResolutionConfig {
     /// Minimum allowed confidence score (typically 0).
@@ -1115,7 +1105,7 @@ pub struct ResolutionConfig {
 /// ```
 /// Runtime/config settings for oracle requests (age, retries, timeout).
 /// Named to avoid conflict with types::OracleConfig (market oracle config).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct OracleRuntimeConfig {
     /// Maximum age of oracle data before it's considered stale (in seconds).
@@ -1234,7 +1224,7 @@ pub struct OracleRuntimeConfig {
 /// - Document rationale for production configuration values
 /// - Monitor system behavior after configuration updates
 /// - Maintain configuration version history for rollbacks
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct ContractConfig {
     /// Network connectivity and environment configuration.

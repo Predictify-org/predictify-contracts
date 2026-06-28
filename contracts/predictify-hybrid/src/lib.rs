@@ -51,6 +51,8 @@ mod markets;
 mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
+#[cfg(test)]
+mod metadata_commitment_tests;
 mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;
@@ -60,6 +62,11 @@ mod queries;
 mod rate_limiter;
 mod recovery;
 mod reentrancy_guard;
+mod reporting;
+#[cfg(test)]
+mod reporting_tests;
+#[cfg(test)]
+mod state_snapshot_reporting_tests;
 #[cfg(test)]
 mod require_auth_coverage_tests;
 #[cfg(test)]
@@ -121,8 +128,8 @@ mod market_state_matrix_tests;
 
 // #[cfg(test)]
 // mod bet_cancellation_tests;
-// #[cfg(any())]
-// mod bet_tests;
+#[cfg(test)]
+mod bet_tests;
 // #[cfg(any())]
 // mod gas_test;
 // #[cfg(any())]
@@ -160,6 +167,10 @@ mod property_based_tests;
 // #[path = "tests/dispute_stake_tests.rs"]
 // mod dispute_stake_tests;
 
+#[cfg(test)]
+#[path = "tests/fee_config_commit_reveal_tests.rs"]
+mod fee_config_commit_reveal_tests;
+
 // #[cfg(test)]
 // mod event_creation_tests;
 
@@ -170,6 +181,7 @@ use admin::{
 };
 pub use admin::Severity;
 pub use err::Error;
+use crate::storage::DataKey;
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
     pub use crate::err::*;
@@ -189,7 +201,7 @@ use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
 };
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
@@ -306,6 +318,7 @@ impl PredictifyHybrid {
         platform_fee_percentage: Option<i128>,
         allowed_assets: Option<Vec<Address>>,
     ) -> Result<(), Error> {
+        
         // Check for re-initialization attempt (critical security check)
         if env
             .storage()
@@ -501,7 +514,7 @@ impl PredictifyHybrid {
             return Err(e);
         }
         if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
-            return Err(crate::errors::Error::CBOpen);
+            return Err(crate::err::Error::CBOpen);
         }
         balances::BalanceManager::withdraw(&env, user, asset, amount)
     }
@@ -733,6 +746,8 @@ impl PredictifyHybrid {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
         };
+        let metadata_commitment =
+            Market::compute_metadata_commitment(&env, &question, &outcomes, &oracle_config);
         // Create a new market
         let market = Market {
             admin: admin.clone(),
@@ -740,6 +755,7 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
+            metadata_commitment,
             has_fallback,
             fallback_oracle_config: fallback_cfg,
             resolution_timeout,
@@ -777,6 +793,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         GasTracker::end_tracking(&env, symbol_short!("create"), gas_marker);
@@ -915,6 +932,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         let gas_marker = GasTracker::start_tracking(&env);
@@ -1212,6 +1230,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        max_fee_bps: i128,
     ) -> crate::types::Bet {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
@@ -1219,7 +1238,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         // Use the BetManager to handle the bet placement
-        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
+        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount, max_fee_bps) {
             Ok(bet) => {
                 // Record statistics
                 statistics::StatisticsManager::record_bet_placed(&env, &user, amount);
@@ -1295,13 +1314,14 @@ impl PredictifyHybrid {
         env: Env,
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
+        max_fee_bps: i128,
     ) -> Vec<crate::types::Bet> {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
         {
             panic_with_error!(env, e);
         }
-        match bets::BetManager::place_bets(&env, user, bets) {
+        match bets::BetManager::place_bets(&env, user, bets, max_fee_bps) {
             Ok(placed_bets) => placed_bets,
             Err(e) => panic_with_error!(env, e),
         }
@@ -2182,6 +2202,20 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
         env.storage().persistent().get(&market_id)
+    }
+
+    /// Verifies a client's expected metadata commitment against on-chain market metadata.
+    ///
+    /// The commitment is `sha256(canonical_xdr({ question, outcomes, oracle_config }))`.
+    /// This helper returns `false` when the market is missing, when `expected` does not
+    /// match the commitment stored at creation/update time, or when any committed field
+    /// in storage was changed without refreshing the stored commitment.
+    pub fn verify_market_metadata(env: Env, market_id: Symbol, expected: BytesN<32>) -> bool {
+        let market: Option<Market> = env.storage().persistent().get(&market_id);
+        match market {
+            Some(market) => market.verify_metadata_commitment(&env, &expected),
+            None => false,
+        }
     }
 
     /// Manually resolves a prediction market by setting the winning outcome (admin only).
@@ -3676,8 +3710,8 @@ impl PredictifyHybrid {
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
-    pub fn prune_archive(env: Env, admin: Address, count: u32) -> Result<u32, Error> {
-        crate::event_archive::EventArchive::prune_archive(&env, &admin, count)
+    pub fn prune_archive(env: Env, admin: Address, count: u32, cursor: Option<crate::event_archive::PruneCursor>) -> Result<(u32, crate::event_archive::PruneCursor), Error> {
+        crate::event_archive::EventArchive::prune_archive(&env, &admin, count, cursor)
     }
 
     /// Return the current number of entries in the event archive.
@@ -3813,20 +3847,20 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::FeeConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
     }
 
-    /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event (admin only).
-    pub fn admin_broadcast(
-        env: Env,
-        admin: Address,
-        severity: Severity,
-        message_hash: soroban_sdk::BytesN<32>,
-        reason: String,
-    ) -> Result<(), Error> {
-        AdminFunctions::admin_broadcast(&env, &admin, severity, message_hash, reason)
+    /// Commit a hash of the new fee configuration (admin only)
+    pub fn commit_fee_config(env: Env, admin: Address, hash: BytesN<32>) -> Result<(), Error> {
+        fees::FeeManager::commit_fee_config(&env, admin, hash)
+    }
+
+    /// Reveal and apply a committed fee configuration (admin only)
+    pub fn reveal_fee_config(env: Env, admin: Address, new_config: fees::FeeConfig) -> Result<fees::FeeConfig, Error> {
+        fees::FeeManager::update_fee_config(&env, admin, new_config)
     }
 
     /// Set global minimum and maximum bet limits (admin only).
@@ -3857,6 +3891,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::BetLimitsUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3933,6 +3968,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3977,7 +4013,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4288,8 +4325,10 @@ impl PredictifyHybrid {
         // Store old description for event
         let old_description = market.question.clone();
 
-        // Update market description
+        // Update market description and refresh the metadata commitment so
+        // clients with stale cached metadata fail verification.
         market.question = new_description.clone();
+        market.refresh_metadata_commitment(&env);
 
         // Save market
         env.storage().persistent().set(&market_id, &market);
@@ -4313,7 +4352,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4437,8 +4477,10 @@ impl PredictifyHybrid {
         // Store old outcomes for event
         let old_outcomes = market.outcomes.clone();
 
-        // Update market outcomes
+        // Update market outcomes and refresh the commitment so stale clients
+        // holding the old metadata commitment fail verification.
         market.outcomes = new_outcomes.clone();
+        market.refresh_metadata_commitment(&env);
 
         // Save market
         env.storage().persistent().set(&market_id, &market);
@@ -4462,7 +4504,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4575,7 +4618,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4693,7 +4737,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         Ok(())
     }
@@ -4947,7 +4992,8 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCancelled,
             admin.clone(),
             details,
-        );
+            None,
+        );;
 
         // Emit cancellation event
         EventEmitter::emit_state_change_event(
@@ -5158,6 +5204,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::StorageMigrated,
             env.current_contract_address(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5542,6 +5589,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::ErrorRecovered,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5575,6 +5623,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::PartialRefundExecuted,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -6217,6 +6266,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::ContractUpgraded,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -6259,6 +6309,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::UpgradeRolledBack,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -7207,6 +7258,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::TokenVerified,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -7387,6 +7439,19 @@ impl PredictifyHybrid {
     pub fn request_resume(env: Env, admin: Address) -> Result<(), Error> {
         admin.require_auth();
         crate::circuit_breaker::CircuitBreaker::request_resume(&env, &admin)
+    }
+
+    /// Return a versioned, XDR-stable snapshot of current platform statistics.
+    ///
+    /// The returned [`reporting::SnapshotEnvelope`] contains the current
+    /// [`reporting::PlatformStats`] serialised with `to_xdr`, tagged with
+    /// [`reporting::SNAPSHOT_SCHEMA_VERSION`] and the current ledger timestamp.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ContractStateError` — market index is missing or corrupted.
+    pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
+        reporting::ReportingManager::get_snapshot_envelope(&env)
     }
 }
 

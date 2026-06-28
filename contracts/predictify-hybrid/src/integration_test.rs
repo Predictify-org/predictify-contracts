@@ -176,6 +176,7 @@ impl IntegrationTestSuite {
             market_id,
             &String::from_str(&self.env, outcome),
             &amount,
+            &250,
         );
     }
 
@@ -313,7 +314,7 @@ fn test_complete_market_lifecycle_with_betting_and_payouts() {
 
     for (user_idx, outcome, amount) in bets {
         let user = test_suite.get_user(user_idx);
-        test_suite.place_bet(&user, &market_id, outcome, amount);
+        test_suite.place_bet(&user, &market_id, outcome, amount, &None);
 
         // Verify bet was placed by checking balance decrease
         let new_balance = test_suite.get_user_balance(&user);
@@ -394,7 +395,7 @@ fn test_market_cancellation_flow() {
         let user = test_suite.get_user(i);
         let outcome = if i % 2 == 0 { "yes" } else { "no" };
         let amount = 50_0000000; // 50 XLM each
-        test_suite.place_bet(&user, &market_id, outcome, amount);
+        test_suite.place_bet(&user, &market_id, outcome, amount, &None);
     }
 
     // Step 3: Verify market is active and has bets
@@ -455,7 +456,7 @@ fn test_market_with_fallback_oracle() {
         let user = test_suite.get_user(i);
         let outcome = if i % 2 == 0 { "yes" } else { "no" };
         let amount = ((i + 1) * 10) as i128 * 1_0000000;
-        test_suite.place_bet(&user, &market_id, outcome, amount);
+        test_suite.place_bet(&user, &market_id, outcome, amount, &None);
     }
 
     // Step 4: Advance time to market end
@@ -524,7 +525,7 @@ fn test_multi_market_concurrent_execution() {
             "below_45k"
         };
         let amount_1 = ((user_idx + 1) * 5) as i128 * 1_0000000;
-        test_suite.place_bet(&user, &market_1, outcome_1, amount_1);
+        test_suite.place_bet(&user, &market_1, outcome_1, amount_1, &None);
 
         // Bet on market 2
         let outcome_2 = if user_idx % 3 == 0 {
@@ -533,7 +534,7 @@ fn test_multi_market_concurrent_execution() {
             "below_3k"
         };
         let amount_2 = ((user_idx + 1) * 3) as i128 * 1_0000000;
-        test_suite.place_bet(&user, &market_2, outcome_2, amount_2);
+        test_suite.place_bet(&user, &market_2, outcome_2, amount_2, &None);
 
         // Bet on market 3
         let outcome_3 = if user_idx % 4 == 0 {
@@ -542,7 +543,7 @@ fn test_multi_market_concurrent_execution() {
             "below_0.5"
         };
         let amount_3 = ((user_idx + 1) * 2) as i128 * 1_0000000;
-        test_suite.place_bet(&user, &market_3, outcome_3, amount_3);
+        test_suite.place_bet(&user, &market_3, outcome_3, amount_3, &None);
     }
 
     // Step 3: Verify all markets have bets
@@ -627,7 +628,7 @@ fn test_market_lifecycle_edge_cases() {
 
     // Single user places bet
     let user = test_suite.get_user(0);
-    test_suite.place_bet(&user, &market_single_bettor, "outcome_a", 100_0000000);
+    test_suite.place_bet(&user, &market_single_bettor, "outcome_a", 100_0000000, &None);
 
     // Advance time and resolve
     test_suite.advance_time(3);
@@ -672,7 +673,7 @@ fn test_invalid_operations_by_market_state() {
     // test_suite.claim_winnings(&user, &market_id); // Should fail
 
     // Test Case 2: Place bets while market is active
-    test_suite.place_bet(&user, &market_id, "yes", 50_0000000);
+    test_suite.place_bet(&user, &market_id, "yes", 50_0000000, &None);
 
     // Test Case 3: Advance time and end market
     test_suite.advance_time(31);
@@ -680,7 +681,7 @@ fn test_invalid_operations_by_market_state() {
 
     // Test Case 4: Cannot place bets on ended market
     let user2 = test_suite.get_user(1);
-    // test_suite.place_bet(&user2, &market_id, "no", 25_0000000); // Should fail
+    // test_suite.place_bet(&user2, &market_id, "no", 25_0000000, &None); // Should fail
 
     // Test Case 5: Resolve market
     test_suite.resolve_market(&market_id).unwrap();
@@ -691,7 +692,7 @@ fn test_invalid_operations_by_market_state() {
 
     // Test Case 6: Cannot place bets on resolved market
     let user3 = test_suite.get_user(2);
-    // test_suite.place_bet(&user3, &market_id, "yes", 10_0000000); // Should fail
+    // test_suite.place_bet(&user3, &market_id, "yes", 10_0000000, &None); // Should fail
 
     // Test Case 7: Can claim winnings from resolved market
     test_suite.claim_winnings(&user, &market_id);
@@ -724,7 +725,7 @@ fn test_concurrent_user_interactions() {
 
     for (user_idx, outcome, amount) in betting_actions {
         let user = test_suite.get_user(user_idx);
-        test_suite.place_bet(&user, &market_id, outcome, amount);
+        test_suite.place_bet(&user, &market_id, outcome, amount, &None);
     }
 
     // Verify all bets were placed correctly
@@ -763,7 +764,7 @@ fn test_market_state_transitions() {
 
     // User places bet
     let user = test_suite.get_user(0);
-    test_suite.place_bet(&user, &market_id, "success", 50_0000000);
+    test_suite.place_bet(&user, &market_id, "success", 50_0000000, &None);
 
     // Advance time: Active → Ended
     test_suite.advance_time(6);
@@ -820,7 +821,7 @@ fn test_oracle_configuration_validation() {
     // Both markets should function normally
     for market_id in [&market_no_fallback, &market_with_fallback] {
         let user = test_suite.get_user(0);
-        test_suite.place_bet(&user, market_id, "yes", 25_0000000);
+        test_suite.place_bet(&user, market_id, "yes", 25_0000000, &None);
 
         test_suite.advance_time(11);
         test_suite.resolve_market(market_id).unwrap();
@@ -855,8 +856,8 @@ fn test_audit_trail_completeness() {
     let user1 = test_suite.get_user(0);
     let user2 = test_suite.get_user(1);
 
-    test_suite.place_bet(&user1, &market_id, "option_a", 30_0000000);
-    test_suite.place_bet(&user2, &market_id, "option_b", 20_0000000);
+    test_suite.place_bet(&user1, &market_id, "option_a", 30_0000000, &None);
+    test_suite.place_bet(&user2, &market_id, "option_b", 20_0000000, &None);
 
     // Advance time and resolve
     test_suite.advance_time(6);

@@ -47,6 +47,7 @@ pub enum DataKey {
     MarketScratch(Symbol),
     DisputeHistoryCap,
     DisputeHistory(Symbol),
+    DisputeStakeCap(Symbol, Address),
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),

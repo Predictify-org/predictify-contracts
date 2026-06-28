@@ -1,4 +1,4 @@
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::{
     FallbackUsedEvent, ManualResolutionRequiredEvent, RefundOnOracleFailureEvent,
     ResolutionTimeoutEvent,
@@ -223,6 +223,7 @@ fn refund_on_oracle_failure_uses_market_specific_timeout_for_non_admins() {
         &market_id,
         &String::from_str(&setup.env, "yes"),
         &10_000_000i128,
+        &250,
     );
 
     let market = setup.get_market(&market_id);

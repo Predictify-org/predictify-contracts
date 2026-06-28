@@ -5,7 +5,7 @@
 mod circuit_breaker_tests {
     use crate::admin::AdminRoleManager;
     use crate::circuit_breaker::*;
-    use crate::errors::Error;
+    use crate::err::Error;
     use soroban_sdk::{testutils::Address, vec, Env, String, Vec};
 
     #[test]
@@ -457,6 +457,7 @@ mod circuit_breaker_tests {
                 market_id.clone(),
                 String::from_str(&env, "yes"),
                 10_0000000,
+                250,
             );
             assert!(bet_result.is_err());
             assert_eq!(bet_result.unwrap_err(), crate::Error::CBOpen);
@@ -471,6 +472,7 @@ mod circuit_breaker_tests {
                 market_id.clone(),
                 String::from_str(&env, "yes"),
                 10_0000000,
+                250,
             );
             assert!(bet_result2.is_ok());
         });

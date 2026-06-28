@@ -4,7 +4,7 @@ use alloc::string::ToString; // Only for primitive types, not soroban_sdk::Strin
 
 use soroban_sdk::{Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Comprehensive utility function system for Predictify Hybrid contract
 ///

@@ -15,7 +15,7 @@ use crate::admin::{
     AdminManager, AdminRole, AdminSystemIntegration, ContractPauseManager, MultisigConfig,
     MultisigManager, PendingAdminAction,
 };
-use crate::errors::Error;
+use crate::err::Error;
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger, LedgerInfo},

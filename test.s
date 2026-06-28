@@ -1,0 +1,3 @@
+.global main
+main:
+    ret

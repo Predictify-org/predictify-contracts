@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::err::Error;
-use crate::tokens::{Asset, TokenRegistry};
+use crate::tokens::{verify_token_decimals, verify_token_decimals_batch, Asset, TokenRegistry};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use crate::types::{OracleConfig, OracleProvider};
 use core::convert::TryInto;
@@ -115,6 +115,7 @@ fn test_bet_placement_with_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     // Verify balance decreased
@@ -142,6 +143,7 @@ fn test_insufficient_balance() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
     
     // Should return an error (likely HostError due to transfer failure)
@@ -169,6 +171,7 @@ fn test_payout_distribution_flow() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     client.place_bet(
@@ -176,6 +179,7 @@ fn test_payout_distribution_flow() {
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &bet_amount,
+        &250,
     );
 
     // Advance time to end market but NOT past dispute window
@@ -249,6 +253,7 @@ fn test_switch_token_support() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &10_000_000,
+        &250,
     );
     assert_eq!(token1_client.balance(&user1), 0);
     
@@ -276,6 +281,7 @@ fn test_switch_token_support() {
         &setup.market_id,
         &String::from_str(&setup.env, "no"),
         &20_000_000,
+        &250,
     );
     
     // Verify balances for Token 2
@@ -305,6 +311,7 @@ fn test_cancel_refund_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     // Verify balance before cancellation
@@ -342,6 +349,7 @@ fn test_fee_collection_custom_token() {
         &setup.market_id,
         &String::from_str(&setup.env, "yes"),
         &bet_amount,
+        &250,
     );
 
     // Advance time to end market
@@ -562,5 +570,193 @@ fn test_asset_validate_edge_decimals() {
         asset_19.validate_for_market(&env),
         Err(Error::InvalidInput)
     );
+}
+
+// ===== SAC decimals() self-test on token registration =====
+
+#[test]
+fn test_verify_token_decimals_passes_when_match() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    let live_decimals: u32 = token_client.decimals().try_into().unwrap();
+
+    let asset = Asset::new(token_id, Symbol::new(&env, "TEST"), live_decimals);
+
+    let result = verify_token_decimals(&env, &asset);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_verify_token_decimals_fails_on_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    // Declare a wrong decimal count
+    let asset = Asset::new(token_id, Symbol::new(&env, "TEST"), 99);
+
+    let result = verify_token_decimals(&env, &asset);
+    assert_eq!(result, Err(Error::AssetDecimalsMismatch));
+}
+
+#[test]
+fn test_verify_token_decimals_native_xlm() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    let live_decimals: u32 = token_client.decimals().try_into().unwrap();
+
+    // Native XLM has 7 decimals
+    let asset = Asset::new(token_id, Symbol::new(&env, "XLM"), live_decimals);
+
+    let result = verify_token_decimals(&env, &asset);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_verify_token_decimals_batch_all_pass() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    let live_decimals: u32 = token_client.decimals().try_into().unwrap();
+
+    let asset_a = Asset::new(token_id.clone(), Symbol::new(&env, "AAA"), live_decimals);
+    let asset_b = Asset::new(token_id.clone(), Symbol::new(&env, "BBB"), live_decimals);
+
+    let assets = vec![&env, asset_a, asset_b];
+    let result = verify_token_decimals_batch(&env, &assets);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_verify_token_decimals_batch_fails_on_first_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let asset_ok = Asset::new(token_id.clone(), Symbol::new(&env, "OK"), 7);
+    let asset_bad = Asset::new(token_id, Symbol::new(&env, "BAD"), 99);
+
+    let assets = vec![&env, asset_ok, asset_bad];
+    let result = verify_token_decimals_batch(&env, &assets);
+    assert_eq!(result, Err(Error::AssetDecimalsMismatch));
+}
+
+#[test]
+fn test_add_global_verified_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    let live_decimals: u32 = token_client.decimals().try_into().unwrap();
+
+    let asset = Asset::new(token_id, Symbol::new(&env, "TEST"), live_decimals);
+
+    env.as_contract(&contract_id, || {
+        let result = TokenRegistry::add_global_verified(&env, &asset);
+        assert!(result.is_ok());
+
+        let global = TokenRegistry::get_global_assets(&env);
+        assert_eq!(global.len(), 1);
+        assert_eq!(global.get(0).unwrap().decimals, live_decimals);
+    });
+}
+
+#[test]
+fn test_add_global_verified_fails_on_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let asset = Asset::new(token_id, Symbol::new(&env, "TEST"), 99);
+
+    env.as_contract(&contract_id, || {
+        let result = TokenRegistry::add_global_verified(&env, &asset);
+        assert_eq!(result, Err(Error::AssetDecimalsMismatch));
+    });
+}
+
+#[test]
+fn test_add_event_verified_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    let live_decimals: u32 = token_client.decimals().try_into().unwrap();
+
+    let asset = Asset::new(token_id, Symbol::new(&env, "TEST"), live_decimals);
+    let market_id = Symbol::new(&env, "market_1");
+
+    env.as_contract(&contract_id, || {
+        let result = TokenRegistry::add_event_verified(&env, &market_id, &asset);
+        assert!(result.is_ok());
+
+        let event_assets = TokenRegistry::get_event_assets(&env, &market_id);
+        assert_eq!(event_assets.len(), 1);
+        assert_eq!(event_assets.get(0).unwrap().decimals, live_decimals);
+    });
+}
+
+#[test]
+fn test_add_event_verified_fails_on_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredictifyHybrid, ());
+    let admin = Address::generate(&env);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin);
+    let token_id = token_contract.address();
+
+    let asset = Asset::new(token_id, Symbol::new(&env, "TEST"), 99);
+    let market_id = Symbol::new(&env, "market_1");
+
+    env.as_contract(&contract_id, || {
+        let result = TokenRegistry::add_event_verified(&env, &market_id, &asset);
+        assert_eq!(result, Err(Error::AssetDecimalsMismatch));
+    });
 }
 

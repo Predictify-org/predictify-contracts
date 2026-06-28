@@ -669,7 +669,7 @@ fn test_apply_migration_unauthorized_caller() {
         // Use internal function - attacker should still be rejected
         let result = UpgradeManager::apply_migration_internal(&env, &attacker, migration, None);
         assert!(result.is_err(), "Expected Err for non-admin caller");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::Unauthorized);
+        assert_eq!(result.unwrap_err(), crate::err::Error::Unauthorized);
     });
 }
 
@@ -704,7 +704,7 @@ fn test_apply_migration_rejects_invalid_step_empty_script() {
 
         let result = UpgradeManager::apply_migration_internal(&env, &admin, bad_migration, None);
         assert!(result.is_err(), "Expected Err for empty migration script");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -731,7 +731,7 @@ fn test_apply_migration_rejects_downgrade() {
 
         let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
         assert!(result.is_err(), "Expected Err for downgrade migration");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -760,7 +760,7 @@ fn test_apply_migration_rejects_incompatible_major_version() {
 
         let result = UpgradeManager::apply_migration_internal(&env, &admin, migration, None);
         assert!(result.is_err(), "Expected Err for cross-major incompatible migration");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -790,7 +790,7 @@ fn test_apply_migration_rejects_irreversible_without_ack() {
             result.is_err(),
             "Expected Err: irreversible migration without ack"
         );
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -859,7 +859,7 @@ fn test_apply_migration_rejects_double_apply() {
         // since calling require_auth twice in same frame causes Soroban auth errors
         let result = applied.validate_for_apply(&env, &current_version, &None);
         assert!(result.is_err(), "Expected Err for double-apply validation");
-        assert_eq!(result.unwrap_err(), crate::errors::Error::InvalidInput);
+        assert_eq!(result.unwrap_err(), crate::err::Error::InvalidInput);
     });
 }
 
@@ -1020,7 +1020,7 @@ fn test_upgrade_chain_rejects_wrong_predecessor() {
         assert!(result.is_err(), "Upgrade should fail with wrong predecessor");
         assert_eq!(
             result.unwrap_err(),
-            crate::errors::Error::UpgradeChainMismatch,
+            crate::err::Error::UpgradeChainMismatch,
             "Should return UpgradeChainMismatch error"
         );
 
@@ -1065,7 +1065,7 @@ fn test_upgrade_chain_rejects_genesis_violation() {
         assert!(result.is_err(), "Upgrade should fail when genesis case is violated");
         assert_eq!(
             result.unwrap_err(),
-            crate::errors::Error::UpgradeChainMismatch,
+            crate::err::Error::UpgradeChainMismatch,
             "Should return UpgradeChainMismatch error"
         );
     });
@@ -1216,13 +1216,13 @@ fn test_upgrade_chain_detects_fork() {
         assert!(result.is_err(), "Forked upgrade should be rejected");
         assert_eq!(
             result.unwrap_err(),
-            crate::errors::Error::UpgradeChainMismatch,
+            crate::err::Error::UpgradeChainMismatch,
             "Should return UpgradeChainMismatch error for fork"
         );
     });
 }
 
-// ── Failed migration also stored in history ───────────────────────────────────
+    // ── Failed migration also stored in history ───────────────────────────────────
 
 /// A migration that fails validation is recorded as Failed in the history.
 #[test]
@@ -1258,6 +1258,201 @@ fn test_apply_migration_stores_failed_record_on_invalid_step() {
             history.get(0).unwrap().status,
             crate::versioning::MigrationStatus::Failed
         );
+    });
+}
+
+// ── WASM HASH CHAIN VERIFICATION TESTS (#619) ────────────────────────────────────
+
+/// Test successful rollback with valid chain target
+#[test]
+fn test_rollback_upgrade_valid_chain_target() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // First upgrade (genesis)
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+
+        // Second upgrade
+        let hash_v2 = create_wasm_hash(&env, 2);
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v2.clone(), hash_v1.clone()).unwrap();
+
+        // Verify we can rollback to hash_v1 (valid chain target)
+        let current_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        assert_eq!(current_hash, hash_v2);
+
+        let result = UpgradeManager::rollback_upgrade(&env, &admin, hash_v1.clone());
+        assert!(result.is_ok(), "Rollback to valid chain target should succeed");
+
+        // Verify rollback
+        let new_current_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        assert_eq!(new_current_hash, hash_v1, "Current hash should be v1 after rollback");
+
+        // Verify chain is still valid
+        let chain_valid = UpgradeManager::verify_upgrade_chain(&env, 0).unwrap();
+        assert!(chain_valid, "Chain should remain valid after rollback");
+    });
+}
+
+/// Test rollback to invalid/non-existent hash (should fail)
+#[test]
+fn test_rollback_upgrade_invalid_chain_target() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // First upgrade (genesis)
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+
+        // Try to rollback to a non-existent hash (not in chain)
+        let invalid_hash = create_wasm_hash(&env, 999); // Not in chain
+        let result = UpgradeManager::rollback_upgrade(&env, &admin, invalid_hash);
+        assert!(result.is_err(), "Rollback to invalid target should fail");
+
+        // Verify current hash is unchanged
+        let current_hash = UpgradeManager::get_current_wasm_hash_public(&env);
+        assert_eq!(current_hash, hash_v1, "Current hash should be unchanged");
+    });
+}
+
+/// Test verify_upgrade_chain with valid chain
+#[test]
+fn test_verify_upgrade_chain_valid() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // Perform multiple upgrades
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        let hash_v2 = create_wasm_hash(&env, 2);
+        let hash_v3 = create_wasm_hash(&env, 3);
+
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v2.clone(), hash_v1.clone()).unwrap();
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v3.clone(), hash_v2.clone()).unwrap();
+
+        // Verify entire chain
+        let chain_valid = UpgradeManager::verify_upgrade_chain(&env, 0).unwrap();
+        assert!(chain_valid, "Full chain should be valid");
+
+        // Verify first 2 upgrades
+        let first_two_valid = UpgradeManager::verify_upgrade_chain(&env, 2).unwrap();
+        assert!(first_two_valid, "First two upgrades should form valid chain");
+
+        // Verify only first upgrade (depth=1)
+        let first_valid = UpgradeManager::verify_upgrade_chain(&env, 1).unwrap();
+        assert!(first_valid, "Single upgrade should be valid (genesis with zero hash)");
+    });
+}
+
+/// Test verify_upgrade_chain with invalid/broken chain
+#[test]
+fn test_verify_upgrade_chain_broken() {
+    let (env, admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Initialize version
+        let version_manager = VersionManager::new(&env);
+        let current_version = Version::new(
+            &env,
+            1,
+            0,
+            0,
+            String::from_str(&env, "Initial version"),
+            false,
+        );
+        version_manager
+            .track_contract_version(&env, current_version)
+            .unwrap();
+
+        // Create a valid chain
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let hash_v1 = create_wasm_hash(&env, 1);
+        let hash_v2 = create_wasm_hash(&env, 2);
+
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v1.clone(), zero_hash).unwrap();
+        UpgradeManager::upgrade_contract(&env, &admin, hash_v2.clone(), hash_v1.clone()).unwrap();
+
+        // Manually break the chain by modifying the first record's previous_wasm_hash
+        let mut history = UpgradeManager::get_upgrade_history(&env).unwrap();
+        let first_record = history.get_mut(0).unwrap();
+        first_record.previous_wasm_hash = create_wasm_hash(&env, 99); // Break chain
+        
+        // Store the broken chain
+        let storage_key = Symbol::new(&env, "upgrade_history");
+        env.storage().persistent().set(&storage_key, &history);
+
+        // Verify chain should now be invalid
+        let chain_valid = UpgradeManager::verify_upgrade_chain(&env, 0).unwrap();
+        assert!(!chain_valid, "Broken chain should return invalid");
+        
+        // Verify only first record (should be invalid due to broken genesis)
+        let first_valid = UpgradeManager::verify_upgrade_chain(&env, 1).unwrap();
+        assert!(!first_valid, "Broken genesis record should be invalid");
+
+        // Verify second record should fail (invalid previous_wasm_hash)
+        let second_valid = UpgradeManager::verify_upgrade_chain(&env, 2).unwrap();
+        assert!(!second_valid, "Chain with broken first link should be invalid");
+    });
+}
+
+/// Test verify_upgrade_chain with empty history
+#[test]
+fn test_verify_upgrade_chain_empty() {
+    let (env, _admin, contract_id) = setup_test_env();
+
+    env.as_contract(&contract_id, || {
+        // Verify empty chain is valid
+        let chain_valid = UpgradeManager::verify_upgrade_chain(&env, 0).unwrap();
+        assert!(chain_valid, "Empty chain should be valid");
+
+        // Verify with depth 5 (should still be valid since chain is empty)
+        let chain_valid_with_depth = UpgradeManager::verify_upgrade_chain(&env, 5).unwrap();
+        assert!(chain_valid_with_depth, "Empty chain with depth limit should be valid");
     });
 }
 

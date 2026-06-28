@@ -134,11 +134,11 @@ impl GovernanceContract {
             return;
         }
         if voting_period_seconds <= 0 || quorum_votes == 0 {
-            panic_with_error!(env, crate::errors::Error::InvalidInput);
+            panic_with_error!(env, crate::err::Error::InvalidInput);
         }
         if let Some(ref d) = quorum_decay {
             if d.floor_bps > 10000 || d.halving_seconds == 0 {
-                panic_with_error!(env, crate::errors::Error::InvalidInput);
+                panic_with_error!(env, crate::err::Error::InvalidInput);
             }
         }
         env.storage().persistent().set(&StorageKey::Admin, &admin);
