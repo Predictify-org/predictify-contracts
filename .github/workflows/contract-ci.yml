@@ -39,6 +39,11 @@ jobs:
         source $HOME/.cargo/env
         stellar contract build --verbose
 
+    - name: Check WASM size
+      run: |
+        source $HOME/.cargo/env
+        bash scripts/check_wasm_size.sh
+
     - name: Run Cargo tests
       run: |
         source $HOME/.cargo/env
