@@ -910,6 +910,7 @@ impl MarketStateManager {
         }
 
         market.question = new_description;
+        market.refresh_metadata_commitment(_env);
         Self::update_market(_env, market_id, &market);
         Ok(())
     }

@@ -563,24 +563,33 @@ impl ContractMonitor {
     fn get_market_data(env: &Env, _market_id: &Symbol) -> Result<Market, Error> {
         // This would retrieve actual market data from storage
         // For now, return a placeholder
+        let question = String::from_str(env, "Sample Market");
+        let outcomes = Vec::new(env);
+        let oracle_config = OracleConfig {
+            provider: OracleProvider::reflector(),
+            oracle_address: Address::from_str(
+                env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ),
+            feed_id: String::from_str(env, "sample_feed"),
+            threshold: 100,
+            comparison: String::from_str(env, ">="),
+        };
         Ok(Market {
             admin: Address::from_str(
                 env,
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
             ),
-            question: String::from_str(env, "Sample Market"),
-            outcomes: Vec::new(env),
+            question: question.clone(),
+            outcomes: outcomes.clone(),
             end_time: env.ledger().timestamp() + 86400,
-            oracle_config: OracleConfig {
-                provider: OracleProvider::reflector(),
-                oracle_address: Address::from_str(
-                    env,
-                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                ),
-                feed_id: String::from_str(env, "sample_feed"),
-                threshold: 100,
-                comparison: String::from_str(env, ">="),
-            },
+            metadata_commitment: Market::compute_metadata_commitment(
+                env,
+                &question,
+                &outcomes,
+                &oracle_config,
+            ),
+            oracle_config,
             has_fallback: false,
             fallback_oracle_config: OracleConfig::none_sentinel(env),
             resolution_timeout: 86400,
