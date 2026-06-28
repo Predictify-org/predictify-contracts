@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol};
 
+use crate::err::Error;
+
 /// Stores the gas limit configured by an admin for a specific operation.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -131,3 +133,94 @@ impl GasTracker {
         }
     }
 }
+
+/// BudgetGuard provides CPU instruction budget monitoring at checkpoints.
+///
+/// It records the CPU instruction cost at creation and checks remaining budget
+/// at each checkpoint, returning `Error::OperationWouldExceedBudget` if the
+/// remaining budget falls below the configured threshold.
+///
+/// This guard is designed to be used in hot-path loops (e.g., resolution and
+/// payout distribution) to abort gracefully before the host runs out of resources.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let budget_guard = BudgetGuard::new(env, 50000);
+///
+/// // At each checkpoint:
+/// budget_guard.check()?;
+/// ```
+///
+/// # Usage Guidelines
+///
+/// - Create the guard once at the start of the operation
+/// - Call `check()` at strategic checkpoints (every 10-50 iterations)
+/// - Use a threshold of 50,000-100,000 instructions for safe abort
+#[derive(Clone)]
+pub struct BudgetGuard {
+    env: Env,
+    start_instructions: u64,
+    threshold_remaining: u64,
+}
+
+impl BudgetGuard {
+    /// Create a new BudgetGuard with the current CPU instruction cost.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `threshold_remaining` - Minimum remaining instructions required
+    ///   (recommended: 50,000 for resolution, 100,000 for payout loops)
+    ///
+    /// # Returns
+    /// A new BudgetGuard instance
+    ///
+    /// # Note
+    /// The threshold should be high enough to complete the current iteration
+    /// plus any post-loop cleanup operations.
+    pub fn new(env: &Env, threshold_remaining: u64) -> Self {
+        let start_instructions = env.budget().cpu_instruction_cost();
+        BudgetGuard {
+            env: env.clone(),
+            start_instructions,
+            threshold_remaining,
+        }
+    }
+
+    /// Check if enough budget remains to continue the operation.
+    ///
+    /// This method reads the current CPU instruction cost from the environment
+    /// and compares the consumed amount against the threshold.
+    ///
+    /// # Returns
+    /// * `Ok(())` - Enough budget remains
+    /// * `Err(Error::OperationWouldExceedBudget)` - Budget would be exceeded
+    ///
+    /// # Performance
+    /// This is a lightweight call that reads a single value from the host.
+    /// It should be called at regular intervals, not on every iteration.
+    pub fn check(&self) -> Result<(), Error> {
+        let current = self.env.budget().cpu_instruction_cost();
+        let remaining = current.saturating_sub(self.start_instructions);
+        if remaining < self.threshold_remaining {
+            return Err(Error::OperationWouldExceedBudget);
+        }
+        Ok(())
+    }
+
+    /// Get the current remaining budget consumed so far.
+    ///
+    /// # Returns
+    /// The number of CPU instructions consumed since the guard was created.
+    pub fn consumed(&self) -> u64 {
+        let current = self.env.budget().cpu_instruction_cost();
+        current.saturating_sub(self.start_instructions)
+    }
+
+    /// Get the configured threshold.
+    pub fn threshold(&self) -> u64 {
+        self.threshold_remaining
+    }
+}
+#[cfg(test)]
+mod gas_test;

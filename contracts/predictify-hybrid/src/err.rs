@@ -137,8 +137,11 @@ pub enum Error {
     ExtensionDenied = 416,
     /// Gas budget cap has been exceeded for the operation.
     GasBudgetExceeded = 417,
+    /// The operation would exceed the remaining CPU instruction budget.
+    /// This is a pre-emptive guard that aborts before the host runs out of resources.
+    OperationWouldExceedBudget = 418,
     /// Admin address has not been set. Contract initialization is incomplete.
-    AdminNotSet = 418,
+    AdminNotSet = 419,
     /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
     /// This prevents silently inflated or deflated stakes via normalize_amount.
     AssetDecimalsMismatch = 439,
@@ -185,7 +188,7 @@ pub enum Error {
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
     DuplicateMarketId = 441,
 
-    // ===== CIRCUIT BREAKER ERRORS ====="
+    // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
     CBNotInitialized = 500,
     /// Circuit breaker is already open (active). Cannot open again.
@@ -612,6 +615,9 @@ impl ErrorHandler {
             Error::InvalidState => {
                 "Invalid system state. The contract may be in an unexpected condition."
             }
+            Error::OperationWouldExceedBudget => {
+                "Operation would exceed CPU instruction budget. The market has too many participants to process in this transaction."
+            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -740,6 +746,7 @@ impl ErrorHandler {
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
+            Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
         }
     }
@@ -1141,7 +1148,8 @@ impl ErrorHandler {
             | Error::AdminNotSet
             | Error::DisputeFeeFailed
             | Error::InvalidState
-            | Error::InvalidOracleConfig => 0,
+            | Error::InvalidOracleConfig
+            | Error::OperationWouldExceedBudget => 0,
             _ => 1,
         }
     }
@@ -1313,6 +1321,11 @@ impl ErrorHandler {
                 ErrorCategory::Financial,
                 RecoveryStrategy::Retry,
             ),
+            Error::OperationWouldExceedBudget => (
+                ErrorSeverity::Critical,
+                ErrorCategory::System,
+                RecoveryStrategy::NoRecovery,
+            ),
             _ => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Unknown,
@@ -1350,6 +1363,9 @@ impl ErrorHandler {
                 "The oracle is temporarily unavailable. Please try again later."
             }
             (Error::InvalidInput, _) => "Check your input parameters and try again.",
+            (Error::OperationWouldExceedBudget, _) => {
+                "The operation requires too much CPU time. Try with fewer winners or split across multiple transactions."
+            }
             (_, ErrorCategory::Validation) => "Review and correct the input data.",
             (_, ErrorCategory::System) => {
                 "A system error occurred. Contact support if the issue persists."
@@ -1491,6 +1507,9 @@ impl Error {
             Error::NoPendingFeeCommit => "No pending fee config commit found",
             Error::FeeRevealTooEarly => "Fee config reveal attempted too early",
             Error::FeePreimageMismatch => "Preimage does not match the committed hash",
+            Error::OperationWouldExceedBudget => {
+                "Operation would exceed CPU instruction budget"
+            }
         }
     }
 
@@ -1590,6 +1609,7 @@ impl Error {
             Error::NoPendingFeeCommit => "NO_PENDING_FEE_COMMIT",
             Error::FeeRevealTooEarly => "FEE_REVEAL_TOO_EARLY",
             Error::FeePreimageMismatch => "FEE_PREIMAGE_MISMATCH",
+            Error::OperationWouldExceedBudget => "OPERATION_WOULD_EXCEED_BUDGET",
         }
     }
 }
@@ -1701,6 +1721,7 @@ mod tests {
             Error::DisputeStakeCapExceeded,
             Error::UpgradeChainMismatch,
             Error::ReplayedOverride,
+            Error::OperationWouldExceedBudget,
         ]
     }
 
