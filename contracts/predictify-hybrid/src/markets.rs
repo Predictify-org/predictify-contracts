@@ -1467,7 +1467,7 @@ impl MarketStateManager {
         }
 
         // Track cumulative extension
-        market.total_extension_days = market.total_extension_days.saturating_add(extension_hours);
+        market.total_extension_days = market.total_extension_days.saturating_add(extension_hours as u32);
 
         Ok(())
     }

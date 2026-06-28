@@ -1516,6 +1516,10 @@ impl Error {
             Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
             Error::UpgradeChainMismatch => "Upgrade chain predecessor hash mismatch",
             Error::ReplayedOverride => "Admin override nonce replayed; rejected",
+            Error::AssetDecimalsMismatch => "Asset decimals mismatch between stored and SAC decimals",
+            Error::DuplicateMarketId => "Market ID already exists in the registry",
+            Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
+            Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
             Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
         }
     }
@@ -1621,6 +1625,10 @@ impl Error {
             Error::ExtensionCapExceeded => "EXTENSION_CAP_EXCEEDED",
             Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
             Error::ReplayedOverride => "REPLAYED_OVERRIDE",
+            Error::AssetDecimalsMismatch => "ASSET_DECIMALS_MISMATCH",
+            Error::DuplicateMarketId => "DUPLICATE_MARKET_ID",
+            Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
+            Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
         }
     }

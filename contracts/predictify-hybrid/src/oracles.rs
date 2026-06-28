@@ -661,7 +661,7 @@ impl<'a> ReflectorOracleClient<'a> {
             asset.into_val(self.env),
             records.into_val(self.env),
         ];
-        let res = self
+        let res: Option<i128> = self
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("twap"), args);
         // Store result in temporary cache for remainder of transaction
@@ -2482,6 +2482,8 @@ impl OracleValidationConfigManager {
                 max_staleness_secs: Self::DEFAULT_MAX_STALENESS_SECS,
                 max_confidence_bps: Self::DEFAULT_MAX_CONFIDENCE_BPS,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             })
     }
 
