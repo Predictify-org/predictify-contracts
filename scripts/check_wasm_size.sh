@@ -8,14 +8,14 @@ echo "Building contract in release mode..."
 # Build the contract. We use stellar contract build as per CI.
 # We assume it builds the release version or we use cargo.
 # To be sure it's release, we can use cargo build.
-cargo build --release --target wasm32-unknown-unknown
+cargo build --release --target wasm32v1-none
 
 # Find the wasm file. 
-# It should be in target/wasm32-unknown-unknown/release/*.wasm
-WASM_FILE=$(find target/wasm32-unknown-unknown/release -name "*.wasm" | head -n 1)
+# It should be in target/wasm32v1-none/release/*.wasm
+WASM_FILE=$(find target/wasm32v1-none/release -name "*.wasm" | head -n 1)
 
 if [ -z "$WASM_FILE" ]; then
-  echo "Error: WASM file not found in target/wasm32-unknown-unknown/release"
+  echo "Error: WASM file not found in target/wasm32v1-none/release"
   exit 1
 fi
 
