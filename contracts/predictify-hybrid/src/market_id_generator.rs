@@ -469,7 +469,7 @@ impl MarketIdGenerator {
             .unwrap_or(soroban_sdk::Map::new(env));
         counters.set(admin.clone(), counter);
         env.storage().persistent().set(&key, &counters);
-
+    }
 
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
