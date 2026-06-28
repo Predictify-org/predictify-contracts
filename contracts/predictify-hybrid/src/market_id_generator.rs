@@ -384,8 +384,6 @@ pub struct MarketIdGenerator;
     ///     // (this would be tested with a failing test case)
     /// }
     /// ```
-            .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
-    }
 
     // ── Registry write-or-fail methods ────────────────────────────────────────
 
