@@ -5,19 +5,25 @@ set -e
 BUDGET=${WASM_SIZE_BUDGET:-98304}
 
 echo "Building contract in release mode..."
-# Build the contract. We use stellar contract build as per CI.
-# We assume it builds the release version or we use cargo.
-# To be sure it's release, we can use cargo build.
-cargo build --release --target wasm32v1-none
+cargo build --release --target wasm32v1-none 2>&1
 
-# Find the wasm file. 
-# It should be in target/wasm32v1-none/release/*.wasm
-WASM_FILE=$(find target/wasm32v1-none/release -name "*.wasm" | head -n 1)
+# Find the wasm file
+BASE_WASM_FILE=$(find target/wasm32v1-none/release -name "*.wasm" | head -n 1)
 
-if [ -z "$WASM_FILE" ]; then
+if [ -z "$BASE_WASM_FILE" ]; then
   echo "Error: WASM file not found in target/wasm32v1-none/release"
   exit 1
 fi
+
+echo "Base WASM: $BASE_WASM_FILE"
+
+# Optimize with stellar contract optimize if available (optimizes in-place)
+if command -v stellar &> /dev/null; then
+  echo "Optimizing WASM with stellar contract optimize..."
+  stellar contract optimize --wasm "$BASE_WASM_FILE" 2>&1
+fi
+
+WASM_FILE="$BASE_WASM_FILE"
 
 # Handle both Linux and macOS stat commands
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -32,6 +38,8 @@ echo "Budget: $BUDGET bytes"
 
 if [ "$SIZE" -gt "$BUDGET" ]; then
   echo "Error: WASM size ($SIZE bytes) exceeds budget ($BUDGET bytes)!"
+  BASE_SIZE=$(stat -f%z "$BASE_WASM_FILE" 2>/dev/null || stat -c%s "$BASE_WASM_FILE" 2>/dev/null)
+  echo "Note: base WASM size was $BASE_SIZE bytes"
   exit 1
 fi
 
