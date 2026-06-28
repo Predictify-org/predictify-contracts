@@ -3,7 +3,7 @@
 use crate::governance::{GovernanceContract, GovernanceError, QuorumDecay};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
-    Address, Env, String, Symbol,
+    Address, Bytes, BytesN, Env, String, Symbol,
 };
 
 struct GovernanceFixture {
@@ -132,6 +132,43 @@ impl GovernanceFixture {
     fn get_quorum_decay(&self) -> Option<QuorumDecay> {
         self.env.as_contract(&self.contract_id, || {
             GovernanceContract::get_quorum_decay(self.env.clone())
+        })
+    }
+
+    fn commit_vote(
+        &self,
+        voter: Address,
+        proposal_id: Symbol,
+        commitment: BytesN<32>,
+    ) -> Result<(), GovernanceError> {
+        self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::commit_vote(
+                self.env.clone(),
+                voter,
+                proposal_id,
+                commitment,
+            )
+        })
+    }
+
+    fn reveal_vote(
+        &self,
+        voter: Address,
+        proposal_id: Symbol,
+        salt: Bytes,
+        support: bool,
+    ) -> Result<(), GovernanceError> {
+        self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::reveal_vote(self.env.clone(), voter, proposal_id, salt, support)
+        })
+    }
+
+    /// Build a commitment = sha256(salt ++ support_byte) inside the contract context.
+    fn make_commitment(&self, salt: &Bytes, support: bool) -> BytesN<32> {
+        let mut preimage = salt.clone();
+        preimage.push_back(if support { 1u8 } else { 0u8 });
+        self.env.as_contract(&self.contract_id, || {
+            self.env.crypto().sha256(&preimage).into()
         })
     }
 }
@@ -614,4 +651,183 @@ fn quorum_decay_monotonic_non_increasing() {
         );
         prev = cur;
     }
+}
+
+// ---- Vote Salt (Commit-Reveal) Tests ----
+
+#[test]
+fn vote_salt_commit_reveal_full_lifecycle() {
+    let fixture = GovernanceFixture::new(100, 2);
+    let proposal_id = fixture.create_noop_proposal("salt_ok_1");
+
+    let salt_one = Bytes::from_slice(&fixture.env, b"random-salt-v1-a");
+    let salt_two = Bytes::from_slice(&fixture.env, b"random-salt-v1-b");
+
+    let commitment_one = fixture.make_commitment(&salt_one, true);
+    let commitment_two = fixture.make_commitment(&salt_two, true);
+
+    // Commit phase
+    fixture
+        .commit_vote(fixture.voter_one.clone(), proposal_id.clone(), commitment_one)
+        .unwrap();
+    fixture
+        .commit_vote(fixture.voter_two.clone(), proposal_id.clone(), commitment_two)
+        .unwrap();
+
+    // Reveal phase (within voting window)
+    fixture
+        .reveal_vote(fixture.voter_one.clone(), proposal_id.clone(), salt_one, true)
+        .unwrap();
+    fixture
+        .reveal_vote(fixture.voter_two.clone(), proposal_id.clone(), salt_two, true)
+        .unwrap();
+
+    // Advance past end_time and validate
+    fixture.advance_time(100);
+    let result = fixture.validate(proposal_id).unwrap();
+    assert_eq!(result, (true, String::from_str(&fixture.env, "passed")));
+}
+
+#[test]
+fn vote_salt_wrong_reveal_rejected() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("salt_bad_1");
+
+    let real_salt = Bytes::from_slice(&fixture.env, b"correct-salt-xyz");
+    let wrong_salt = Bytes::from_slice(&fixture.env, b"wrong-salt-xyz00");
+
+    let commitment = fixture.make_commitment(&real_salt, true);
+    fixture
+        .commit_vote(fixture.voter_one.clone(), proposal_id.clone(), commitment)
+        .unwrap();
+
+    // Wrong salt → InvalidReveal
+    let err = fixture.reveal_vote(
+        fixture.voter_one.clone(),
+        proposal_id.clone(),
+        wrong_salt,
+        true,
+    );
+    assert_eq!(err, Err(GovernanceError::InvalidReveal));
+
+    // Wrong support value → InvalidReveal
+    let err2 = fixture.reveal_vote(
+        fixture.voter_one.clone(),
+        proposal_id.clone(),
+        real_salt.clone(),
+        false, // committed FOR but revealing AGAINST
+    );
+    assert_eq!(err2, Err(GovernanceError::InvalidReveal));
+
+    // Correct reveal succeeds
+    fixture
+        .reveal_vote(fixture.voter_one.clone(), proposal_id, real_salt, true)
+        .unwrap();
+}
+
+#[test]
+fn vote_salt_duplicate_commit_rejected() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("salt_dup_1");
+
+    let salt = Bytes::from_slice(&fixture.env, b"salt-dup-test-aa");
+    let commitment = fixture.make_commitment(&salt, true);
+
+    fixture
+        .commit_vote(fixture.voter_one.clone(), proposal_id.clone(), commitment.clone())
+        .unwrap();
+
+    // Second commit by same voter → CommitmentExists
+    let err = fixture.commit_vote(fixture.voter_one.clone(), proposal_id, commitment);
+    assert_eq!(err, Err(GovernanceError::CommitmentExists));
+}
+
+#[test]
+fn vote_salt_reveal_without_commit_rejected() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("salt_nocommit_1");
+
+    let salt = Bytes::from_slice(&fixture.env, b"some-salt-value1");
+    let err = fixture.reveal_vote(fixture.voter_one.clone(), proposal_id, salt, true);
+    assert_eq!(err, Err(GovernanceError::NoCommitment));
+}
+
+#[test]
+fn vote_salt_commit_rejected_after_voting_ends() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("salt_late_1");
+
+    fixture.advance_time(100); // past end_time
+
+    let salt = Bytes::from_slice(&fixture.env, b"too-late-salt-aa");
+    let commitment = fixture.make_commitment(&salt, true);
+    let err = fixture.commit_vote(fixture.voter_one.clone(), proposal_id, commitment);
+    assert_eq!(err, Err(GovernanceError::VotingEnded));
+}
+
+#[test]
+fn vote_salt_reveal_rejected_after_voting_ends() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("salt_lrev_1");
+
+    let salt = Bytes::from_slice(&fixture.env, b"late-reveal-salt");
+    let commitment = fixture.make_commitment(&salt, true);
+
+    // Commit while voting is open
+    fixture
+        .commit_vote(fixture.voter_one.clone(), proposal_id.clone(), commitment)
+        .unwrap();
+
+    // Advance past end_time before reveal
+    fixture.advance_time(100);
+
+    let err = fixture.reveal_vote(fixture.voter_one.clone(), proposal_id, salt, true);
+    assert_eq!(err, Err(GovernanceError::VotingEnded));
+}
+
+#[test]
+fn vote_salt_double_reveal_rejected() {
+    let fixture = GovernanceFixture::new(200, 1);
+    let proposal_id = fixture.create_noop_proposal("salt_drev_1");
+
+    let salt = Bytes::from_slice(&fixture.env, b"double-reveal-s1");
+    let commitment = fixture.make_commitment(&salt, true);
+
+    fixture
+        .commit_vote(fixture.voter_one.clone(), proposal_id.clone(), commitment)
+        .unwrap();
+    fixture
+        .reveal_vote(fixture.voter_one.clone(), proposal_id.clone(), salt.clone(), true)
+        .unwrap();
+
+    // Second reveal → AlreadyVoted (commitment removed, Vote entry exists)
+    let err = fixture.reveal_vote(fixture.voter_one.clone(), proposal_id, salt, true);
+    assert_eq!(err, Err(GovernanceError::AlreadyVoted));
+}
+
+#[test]
+fn vote_salt_direct_vote_then_commit_rejected() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("salt_dv_1");
+
+    // Cast direct vote first
+    fixture
+        .vote(fixture.voter_one.clone(), proposal_id.clone(), true)
+        .unwrap();
+
+    // Then try to commit → AlreadyVoted
+    let salt = Bytes::from_slice(&fixture.env, b"direct-then-salt");
+    let commitment = fixture.make_commitment(&salt, true);
+    let err = fixture.commit_vote(fixture.voter_one.clone(), proposal_id, commitment);
+    assert_eq!(err, Err(GovernanceError::AlreadyVoted));
+}
+
+#[test]
+fn vote_salt_commit_not_found_wrong_proposal() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let real_salt = Bytes::from_slice(&fixture.env, b"salt-real-propid");
+    let fake_proposal = Symbol::new(&fixture.env, "no_exist");
+    let commitment = fixture.make_commitment(&real_salt, true);
+    let err = fixture.commit_vote(fixture.voter_one.clone(), fake_proposal, commitment);
+    assert_eq!(err, Err(GovernanceError::ProposalNotFound));
 }
