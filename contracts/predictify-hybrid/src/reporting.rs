@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, xdr::ToXdr, Bytes, Env, Map, String, Symbol, Vec};
-use crate::errors::Error;
+use soroban_sdk::{contracttype, xdr::{FromXdr, ToXdr}, Bytes, Env, Map, String, Symbol, Vec};
+use crate::err::Error;
 use crate::queries::QueryManager;
 use crate::types::{Market, MarketState, MarketPoolQuery};
 

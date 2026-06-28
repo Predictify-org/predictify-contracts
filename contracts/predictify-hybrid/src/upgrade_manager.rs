@@ -640,8 +640,9 @@ impl UpgradeManager {
             return Ok(true);
         }
 
-        let verify_count = if depth == 0 || depth > chain.len() {
-            chain.len()
+        let chain_len = chain.len() as u64;
+        let verify_count = if depth == 0 || depth > chain_len {
+            chain_len
         } else {
             depth
         };

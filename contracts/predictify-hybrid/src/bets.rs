@@ -311,10 +311,11 @@ impl BetManager {
         user.require_auth();
 
         // Slippage check: verify live fee is not above the maximum acceptable threshold
-        if let Some(max_fee) = max_fee_bps {
+        // max_fee_bps == 0 means no slippage guard
+        if max_fee_bps > 0 {
             let actual_fee = Self::get_live_fee_percentage(env)?;
-            if actual_fee > max_fee as i128 {
-                return Err(Error::FeeAboveAcceptable);
+            if actual_fee > max_fee_bps {
+                return Err(Error::FeeExceedsMax);
             }
         }
 
@@ -412,10 +413,11 @@ impl BetManager {
         user.require_auth();
 
         // Slippage check: verify live fee is not above the maximum acceptable threshold
-        if let Some(max_fee) = max_fee_bps {
+        // max_fee_bps == 0 means no slippage guard
+        if max_fee_bps > 0 {
             let actual_fee = Self::get_live_fee_percentage(env)?;
-            if actual_fee > max_fee as i128 {
-                return Err(Error::FeeAboveAcceptable);
+            if actual_fee > max_fee_bps {
+                return Err(Error::FeeExceedsMax);
             }
         }
 

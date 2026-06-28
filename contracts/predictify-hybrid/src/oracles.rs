@@ -647,12 +647,12 @@ impl<'a> ReflectorOracleClient<'a> {
     pub fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
         // Build a cache key unique to this transaction
         let cache_key = (
-            Symbol::short(self.env, "twap_cache"),
+            Symbol::short("twap_cache"),
             asset.clone().into_val(self.env),
             records.into_val(self.env),
         );
         // Attempt to read from temporary storage (per-transaction cache)
-        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(cache_key.clone()) {
+        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(&cache_key) {
             return cached;
         }
         // Not cached; perform contract call
@@ -665,7 +665,7 @@ impl<'a> ReflectorOracleClient<'a> {
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("twap"), args);
         // Store result in temporary cache for remainder of transaction
-        self.env.storage().temporary().set(cache_key, res.clone());
+        self.env.storage().temporary().set(&cache_key, res.clone());
         res
     }
     /// Check if the Reflector oracle is healthy

@@ -216,6 +216,24 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
+    /// No pending fee config commit was found for reveal or apply.
+    NoPendingFeeCommit = 519,
+    /// Fee config reveal was attempted too early (before timelock expiry).
+    FeeRevealTooEarly = 520,
+    /// Preimage does not match the committed hash during fee reveal.
+    FeePreimageMismatch = 521,
+    /// Dispute stake cap has been exceeded for this address.
+    DisputeStakeCapExceeded = 522,
+    /// Storage rent budget is insufficient for the requested operation.
+    InsufficientStorageRentBudget = 523,
+    /// The cumulative extension cap for this market has been reached.
+    ExtensionCapExceeded = 524,
+    /// The upgrade chain predecessor hash does not match the expected value.
+    UpgradeChainMismatch = 525,
+    /// An admin override nonce was replayed; reject to prevent replay attacks.
+    ReplayedOverride = 526,
+    /// Oracle quote is an outlier relative to the rolling median history.
+    OracleQuoteOutlier = 527,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1446,7 +1464,7 @@ impl Error {
             Error::InvalidExtensionDays => "Invalid extension days value",
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
-            Error::FeeAboveAcceptable => "Fee is above the acceptable threshold",
+            Error::FeeExceedsMax => "Fee is above the acceptable threshold",
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1491,6 +1509,14 @@ impl Error {
             Error::NoPendingFeeCommit => "No pending fee config commit found",
             Error::FeeRevealTooEarly => "Fee config reveal attempted too early",
             Error::FeePreimageMismatch => "Preimage does not match the committed hash",
+            Error::DisputeStakeCapExceeded => "Dispute stake cap exceeded for this address",
+            Error::InsufficientStorageRentBudget => {
+                "Insufficient storage rent budget for operation"
+            }
+            Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
+            Error::UpgradeChainMismatch => "Upgrade chain predecessor hash mismatch",
+            Error::ReplayedOverride => "Admin override nonce replayed; rejected",
+            Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
         }
     }
 
@@ -1545,7 +1571,7 @@ impl Error {
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
-            Error::FeeAboveAcceptable => "FEE_ABOVE_ACCEPTABLE",
+            Error::FeeExceedsMax => "FEE_ABOVE_ACCEPTABLE",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
@@ -1590,6 +1616,119 @@ impl Error {
             Error::NoPendingFeeCommit => "NO_PENDING_FEE_COMMIT",
             Error::FeeRevealTooEarly => "FEE_REVEAL_TOO_EARLY",
             Error::FeePreimageMismatch => "FEE_PREIMAGE_MISMATCH",
+            Error::DisputeStakeCapExceeded => "DISPUTE_STAKE_CAP_EXCEEDED",
+            Error::InsufficientStorageRentBudget => "INSUFFICIENT_STORAGE_RENT_BUDGET",
+            Error::ExtensionCapExceeded => "EXTENSION_CAP_EXCEEDED",
+            Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
+            Error::ReplayedOverride => "REPLAYED_OVERRIDE",
+            Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+        }
+    }
+}
+    }
+
+    /// Returns the canonical string code for the error.
+    ///
+    /// The string code is a consistent uppercase identifier (e.g., "UNAUTHORIZED",
+    /// "ORACLE_UNAVAILABLE")
+    /// suitable for error comparison, logging, and external systems.
+    ///
+    /// # Returns
+    ///
+    /// A static uppercase string code identifying the error.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Error::Unauthorized => "UNAUTHORIZED",
+            Error::MarketNotFound => "MARKET_NOT_FOUND",
+            Error::MarketClosed => "MARKET_CLOSED",
+            Error::MarketResolved => "MARKET_ALREADY_RESOLVED",
+            Error::MarketNotResolved => "MARKET_NOT_RESOLVED",
+            Error::NothingToClaim => "NOTHING_TO_CLAIM",
+            Error::AlreadyClaimed => "ALREADY_CLAIMED",
+            Error::InsufficientStake => "INSUFFICIENT_STAKE",
+            Error::InvalidOutcome => "INVALID_OUTCOME",
+            Error::AlreadyVoted => "ALREADY_VOTED",
+            Error::AlreadyBet => "ALREADY_BET",
+            Error::BetsAlreadyPlaced => "BETS_ALREADY_PLACED",
+            Error::InsufficientBalance => "INSUFFICIENT_BALANCE",
+            Error::OracleUnavailable => "ORACLE_UNAVAILABLE",
+            Error::InvalidOracleConfig => "INVALID_ORACLE_CONFIG",
+            Error::GasBudgetExceeded => "GAS_BUDGET_EXCEEDED",
+            Error::InvalidQuestion => "INVALID_QUESTION",
+            Error::InvalidOutcomes => "INVALID_OUTCOMES",
+            Error::InvalidDuration => "INVALID_DURATION",
+            Error::InvalidThreshold => "INVALID_THRESHOLD",
+            Error::InvalidComparison => "INVALID_COMPARISON",
+            Error::InvalidState => "INVALID_STATE",
+            Error::InvalidInput => "INVALID_INPUT",
+            Error::InvalidFeeConfig => "INVALID_FEE_CONFIG",
+            Error::ConfigNotFound => "CONFIGURATION_NOT_FOUND",
+            Error::AlreadyDisputed => "ALREADY_DISPUTED",
+            Error::DisputeVoteExpired => "DISPUTE_VOTING_PERIOD_EXPIRED",
+            Error::DisputeVoteDenied => "DISPUTE_VOTING_NOT_ALLOWED",
+            Error::DisputeAlreadyVoted => "DISPUTE_ALREADY_VOTED",
+            Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
+            Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
+            Error::DisputeError => "DISPUTE_ERROR",
+            Error::DisputerCannotVote => "DISPUTER_CANNOT_VOTE",
+            Error::SweepAlreadyDone => "SWEEP_ALREADY_DONE",
+            Error::FeeArithmeticOverflow => "FEE_ARITHMETIC_OVERFLOW",
+            Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
+            Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
+            Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
+            Error::ExtensionDenied => "EXTENSION_DENIED",
+            Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::FeeExceedsMax => "FEE_ABOVE_ACCEPTABLE",
+            Error::OracleStale => "ORACLE_STALE",
+            Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
+            Error::OracleVerified => "ORACLE_VERIFIED",
+            Error::MarketNotReady => "MARKET_NOT_READY",
+            Error::FallbackOracleUnavailable => "FALLBACK_ORACLE_UNAVAILABLE",
+            Error::ResolutionTimeoutReached => "RESOLUTION_TIMEOUT_REACHED",
+            Error::OracleConfidenceTooWide => "ORACLE_CONFIDENCE_TOO_WIDE",
+            Error::InvalidOracleFeed => "INVALID_ORACLE_FEED",
+            Error::OracleCallbackAuthFailed => "ORACLE_CALLBACK_AUTH_FAILED",
+            Error::OracleCallbackUnauthorized => "ORACLE_CALLBACK_UNAUTHORIZED",
+            Error::OracleCallbackInvalidSignature => "ORACLE_CALLBACK_INVALID_SIGNATURE",
+            Error::OracleCallbackReplayDetected => "ORACLE_CALLBACK_REPLAY_DETECTED",
+            Error::OracleCallbackTimeout => "ORACLE_CALLBACK_TIMEOUT",
+
+            // Metadata length limit errors
+            Error::QuestionTooLong => "QUESTION_TOO_LONG",
+            Error::OutcomeTooLong => "OUTCOME_TOO_LONG",
+            Error::TooManyOutcomes => "TOO_MANY_OUTCOMES",
+            Error::FeedIdTooLong => "FEED_ID_TOO_LONG",
+            Error::ComparisonTooLong => "COMPARISON_TOO_LONG",
+            Error::CategoryTooLong => "CATEGORY_TOO_LONG",
+            Error::CategoryTooShort => "CATEGORY_TOO_SHORT",
+            Error::TagTooLong => "TAG_TOO_LONG",
+            Error::TagTooShort => "TAG_TOO_SHORT",
+            Error::TooManyTags => "TOO_MANY_TAGS",
+            Error::ExtensionReasonTooLong => "EXTENSION_REASON_TOO_LONG",
+            Error::SourceTooLong => "SOURCE_TOO_LONG",
+            Error::ErrorMessageTooLong => "ERROR_MESSAGE_TOO_LONG",
+            Error::SignatureTooLong => "SIGNATURE_TOO_LONG",
+            Error::TooManyExtensions => "TOO_MANY_EXTENSIONS",
+            Error::TooManyOracleResults => "TOO_MANY_ORACLE_RESULTS",
+            Error::TooManyWinningOutcomes => "TOO_MANY_WINNING_OUTCOMES",
+            Error::ArchiveFull => "ARCHIVE_FULL",
+
+            // Circuit breaker errors
+            Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
+            Error::CBAlreadyOpen => "CIRCUIT_BREAKER_ALREADY_OPEN",
+            Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
+            Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
+            Error::CBError => "CIRCUIT_BREAKER_ERROR",
+            Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Error::NoPendingFeeCommit => "NO_PENDING_FEE_COMMIT",
+            Error::FeeRevealTooEarly => "FEE_REVEAL_TOO_EARLY",
+            Error::FeePreimageMismatch => "FEE_PREIMAGE_MISMATCH",
+            Error::DisputeStakeCapExceeded => "DISPUTE_STAKE_CAP_EXCEEDED",
+            Error::InsufficientStorageRentBudget => "INSUFFICIENT_STORAGE_RENT_BUDGET",
+            Error::ExtensionCapExceeded => "EXTENSION_CAP_EXCEEDED",
+            Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
+            Error::ReplayedOverride => "REPLAYED_OVERRIDE",
+            Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
         }
     }
 }
@@ -1666,7 +1805,7 @@ mod tests {
             Error::AdminNotSet,
             Error::AssetDecimalsMismatch,
             Error::InvalidOracleFeed,
-            Error::FeeAboveAcceptable,
+            Error::FeeExceedsMax,
             // Metadata length limit errors
             Error::QuestionTooLong,
             Error::OutcomeTooLong,
@@ -1687,7 +1826,6 @@ mod tests {
             Error::TooManyWinningOutcomes,
             Error::ArchiveFull,
             // Circuit breaker errors
-            Error::AdminNotSet,
             Error::CBNotInitialized,
             Error::CBAlreadyOpen,
             Error::CBNotOpen,
@@ -1697,10 +1835,16 @@ mod tests {
             Error::CumulativeExtensionCapHit,
             Error::DuplicateMarketId,
             Error::IllegalMarketStateTransition,
-            Error::InsufficientStorageRentBudget,
+            Error::FeeExceedsMax,
+            Error::NoPendingFeeCommit,
+            Error::FeeRevealTooEarly,
+            Error::FeePreimageMismatch,
             Error::DisputeStakeCapExceeded,
+            Error::InsufficientStorageRentBudget,
+            Error::ExtensionCapExceeded,
             Error::UpgradeChainMismatch,
             Error::ReplayedOverride,
+            Error::OracleQuoteOutlier,
         ]
     }
 
