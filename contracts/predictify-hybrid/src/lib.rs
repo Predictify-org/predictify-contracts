@@ -33,6 +33,7 @@ pub mod audit_trail;
 mod balances;
 mod batch_operations;
 mod bets;
+pub mod capabilities;
 mod circuit_breaker;
 mod config;
 mod disputes;
@@ -441,6 +442,31 @@ impl PredictifyHybrid {
         admin.require_auth();
         let _ = Self::stored_primary_admin(env)?;
         Ok(())
+    }
+
+    /// Returns the contract's capabilities as a u64 bitmap.
+    ///
+    /// Each set bit represents an active contract feature. Clients can check
+    /// for specific capabilities by masking with bitwise AND against the
+    /// constants defined in [`crate::capabilities::capability`].
+    ///
+    /// This is a **pure read** that performs no storage writes and emits no
+    /// events. It is safe to call at any time on any network.
+    ///
+    /// # Returns
+    ///
+    /// A `u64` where each set bit represents an active contract capability.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// let caps = contract.capabilities();
+    /// if caps & 0x0001 != 0 {
+    ///     // versioning is supported
+    /// }
+    /// ```
+    pub fn capabilities(env: Env) -> u64 {
+        crate::capabilities::capabilities(&env)
     }
 
     fn require_admin_permission(
