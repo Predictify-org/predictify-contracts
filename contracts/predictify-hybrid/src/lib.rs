@@ -27,7 +27,7 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
         .storage()
         .persistent()
         .get(&Symbol::new(&env, "platform_fee"))
-        .unwrap_or(200); // Default 2% if not set
+        .unwrap_or(200);
 
     // Check if payouts have already been distributed
     let mut has_unclaimed_winners = false;
@@ -47,7 +47,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
         }
     }
 
-    // Check bettors
     if !has_unclaimed_winners {
         for user in bettors.iter() {
             if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
@@ -76,11 +75,11 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
     }
 
     let total_pool = summary.total_pool;
-    let fee_denominator = 10000i128; // Fee is in basis points
+    let fee_denominator = 10000i128;
 
     let mut total_distributed: i128 = 0;
 
-    // Create budget guard with 100,000 instruction threshold for payout loop
+    // Create budget guard with 100,000 instruction threshold
     let budget_guard = crate::gas::BudgetGuard::new(&env, 100000);
 
     // 1. Distribute to Voters
@@ -108,7 +107,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                     / winning_total;
 
                 if payout >= 0 {
-                    // Allow 0 payout but mark as claimed
                     market
                         .claimed
                         .set(user.clone(), crate::types::ClaimInfo::new(&env, payout));
@@ -117,7 +115,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                             .checked_add(payout)
                             .ok_or(Error::InvalidInput)?;
 
-                        // Credit winnings to user balance
                         storage::BalanceStorage::add_balance(
                             &env,
                             &user,
@@ -132,7 +129,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
         }
 
         voter_count += 1;
-        // Check budget every 10 iterations
         if voter_count % 10 == 0 {
             budget_guard.check()?;
         }
@@ -149,7 +145,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                     .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
-                    // Already claimed
                     bet.status = crate::types::BetStatus::Won;
                     let _ = bets::BetStorage::store_bet(&env, &bet);
                     continue;
@@ -166,11 +161,9 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                             .set(user.clone(), crate::types::ClaimInfo::new(&env, payout));
                         total_distributed += payout;
 
-                        // Update bet status
                         bet.status = crate::types::BetStatus::Won;
                         let _ = bets::BetStorage::store_bet(&env, &bet);
 
-                        // Credit winnings to user balance
                         match storage::BalanceStorage::add_balance(
                             &env,
                             &user,
@@ -184,7 +177,6 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
                     }
                 }
             } else {
-                // Mark losing bet
                 if bet.status == crate::types::BetStatus::Active {
                     bet.status = crate::types::BetStatus::Lost;
                     let _ = bets::BetStorage::store_bet(&env, &bet);
@@ -193,16 +185,13 @@ pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
         }
 
         bettor_count += 1;
-        // Check budget every 10 iterations
         if bettor_count % 10 == 0 {
             budget_guard.check()?;
         }
     }
 
-    // Final checkpoint before saving
     budget_guard.check()?;
 
-    // Save final market state
     env.storage().persistent().set(&market_id, &market);
 
     Ok(total_distributed)
