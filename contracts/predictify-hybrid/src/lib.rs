@@ -113,6 +113,8 @@ mod circuit_breaker_tests;
 // mod upgrade_manager_tests;
 #[cfg(test)]
 mod upgrade_manager_tests;
+#[cfg(test)]
+mod market_state_matrix_tests;
 
 // #[cfg(any())]
 // mod query_tests;
@@ -3036,9 +3038,21 @@ impl PredictifyHybrid {
     /// - Users can claim winnings
     /// - Market statistics are finalized
     ///
-    /// # Events
+    /// # Event Ordering Contract
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// On every successful resolution `resolve_market` emits exactly **three**
+    /// resolution-signalling events in the following deterministic sequence:
+    ///
+    /// | # | Topic symbol    | Emitter                               | Description                      |
+    /// |---|-----------------|---------------------------------------|----------------------------------|
+    /// | 1 | `mkt_res`       | `EventEmitter::emit_market_resolved`  | Final outcome recorded           |
+    /// | 2 | `st_chng`       | `EventEmitter::emit_state_change_event` | State transition to `Resolved` |
+    /// | 3 | `idx_transition`| `ContractMonitor::emit_resolution_transition_hook` | Off-chain indexer hook |
+    ///
+    /// Off-chain consumers **must** handle these three events in the order
+    /// listed above. The sequence is enforced by the order of calls inside
+    /// `MarketResolutionManager::resolve_market` and is covered by a
+    /// deterministic ordering test (see `resolution_event_ordering_tests`).
     pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
         // Use the resolution module to resolve the market
         // Temporarily disabled due to resolution module being disabled
@@ -7114,6 +7128,90 @@ impl PredictifyHybrid {
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
+    /// Verify SAC token decimals match declared value (admin only).
+    ///
+    /// This function performs a critical security check on SAC tokens to prevent
+    /// denomination mistakes that have caused real on-chain losses. It verifies that
+    /// the token's on-chain decimals() value matches what was declared during registration.
+    ///
+    /// This can be called:
+    /// - Automatically during token registration (via add_global_verified/add_event_verified)
+    /// - Manually by admin as part of periodic audits or security reviews
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address (must be authorized)
+    /// * `token_contract` - Address of the token contract to verify
+    /// * `declared_decimals` - The decimals value that was declared during registration
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Decimals match (token is safe)
+    /// - `Err(Error::TokenDecimalsMismatch)` - Mismatch detected (token rejected)
+    /// - `Err(Error::Unauthorized)` - Caller is not admin
+    ///
+    /// # Cross-Contract Call
+    ///
+    /// This function performs a cross-contract call to the token contract's
+    /// `decimals()` function using the Soroban token interface.
+    ///
+    /// # Security Notes
+    ///
+    /// - Verifies via on-chain decimals() call (cannot be spoofed)
+    /// - Mismatch indicates potential token misconfiguration
+    /// - Rejected tokens cannot be used for betting/payouts
+    /// - All registration paths should use verified variants
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let token_contract = Address::from_string("GBUQW...");
+    /// PredictifyHybrid::re_verify_token(&env, &admin, &token_contract, 7)?;
+    /// // Returns Ok if decimals match, TokenDecimalsMismatch error otherwise
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::TokenDecimalsMismatch` - On-chain decimals don't match declared value
+    /// - Other errors from cross-contract call or storage operations
+    ///
+    /// # Events
+    ///
+    /// Emits audit trail record of verification attempt (success or failure).
+    pub fn re_verify_token(
+        env: Env,
+        admin: Address,
+        token_contract: Address,
+        declared_decimals: u32,
+    ) -> Result<(), Error> {
+        // Verify admin authorization
+        Self::require_primary_admin(&env, &admin)?;
+
+        // Create temporary asset for verification
+        let asset = crate::tokens::Asset {
+            contract: token_contract.clone(),
+            symbol: Symbol::new(&env, "TEMP"),
+            decimals: declared_decimals,
+        };
+
+        // Perform decimals verification via cross-contract call
+        crate::tokens::verify_token_decimals(&env, &asset)?;
+
+        // Record verification in audit trail
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::TokenVerified,
+            admin.clone(),
+            Map::new(&env),
+        );
+
+        Ok(())
+    }
+
     ///
     /// # Events
     ///

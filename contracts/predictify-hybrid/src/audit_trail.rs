@@ -28,8 +28,9 @@ pub enum AuditAction {
     FeesWithdrawn,
     FeeConfigUpdated,
 
-    // Oracle & Config Actions
+    // Token & Oracle Actions
     OracleConfigUpdated,
+    TokenVerified,
     BetLimitsUpdated,
 
     // Resolution & Disputes
