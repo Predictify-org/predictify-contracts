@@ -121,6 +121,8 @@ mod circuit_breaker_tests;
 #[cfg(test)]
 mod upgrade_manager_tests;
 #[cfg(test)]
+mod capability_bitmap_tests;
+#[cfg(test)]
 mod market_state_matrix_tests;
 
 // #[cfg(any())]
@@ -6333,6 +6335,19 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_contract_version(env: Env) -> Result<versioning::Version, Error> {
         upgrade_manager::UpgradeManager::get_contract_version(&env)
+    }
+
+    /// Return the current capability bitmap for the contract version.
+    ///
+    /// Clients can call this to probe which features are supported without
+    /// maintaining a client-side version-to-capability lookup table.
+    ///
+    /// Returns a `u64` bitmask where each bit corresponds to a `CAPABILITY_*`
+    /// constant defined in the [`versioning`] module.
+    pub fn capabilities(env: Env) -> u64 {
+        versioning::VersionManager::new(&env)
+            .get_current_capabilities(&env)
+            .unwrap_or(0)
     }
 
     /// Check if upgrade is available
