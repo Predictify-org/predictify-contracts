@@ -572,7 +572,7 @@ impl OracleInterface for PythOracle {
 ///     }
 ///     
 ///     // Get TWAP for ETH over last 10 records
-///     if let Some(eth_twap) = client.twap(ReflectorAsset::ETH, 10) {
+///     if let Some(eth_twap) = client.twap(ReflectorAsset::ETH, 10, false) {
 ///         println!("ETH TWAP: ${}", eth_twap / 100);
 ///     }
 ///     
@@ -644,16 +644,18 @@ impl<'a> ReflectorOracleClient<'a> {
     }
 
     /// Get TWAP (Time-Weighted Average Price) for an asset
-    pub fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
+    pub fn twap(&self, asset: ReflectorAsset, records: u32, force_refresh: bool) -> Option<i128> {
         // Build a cache key unique to this transaction
         let cache_key = (
             Symbol::short(self.env, "twap_cache"),
             asset.clone().into_val(self.env),
             records.into_val(self.env),
         );
-        // Attempt to read from temporary storage (per-transaction cache)
-        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(cache_key.clone()) {
-            return cached;
+        // Attempt to read from temporary storage (per-transaction cache) if not forced
+        if !force_refresh {
+            if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(cache_key.clone()) {
+                return cached;
+            }
         }
         // Not cached; perform contract call
         let args = vec![
