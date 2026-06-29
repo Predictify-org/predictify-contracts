@@ -3962,6 +3962,8 @@ impl PredictifyHybrid {
             max_staleness_secs,
             max_confidence_bps,
             max_deviation_bps,
+            max_deviation_z_multiple: None,
+            history_size: None,
         };
         crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
 
@@ -4001,6 +4003,8 @@ impl PredictifyHybrid {
             max_staleness_secs,
             max_confidence_bps,
             max_deviation_bps,
+            max_deviation_z_multiple: None,
+            history_size: None,
         };
         crate::oracles::OracleValidationConfigManager::set_event_config(&env, &market_id, &config)?;
 
