@@ -7379,6 +7379,21 @@ impl PredictifyHybrid {
     pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
         reporting::ReportingManager::get_snapshot_envelope(&env)
     }
+
+    /// Set an emergency contact address for security advisories (admin-only).
+    pub fn set_admin_emergency_contact(env: Env, admin: Address, contact: Address) {
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "emerg_contact"), &contact);
+    }
+
+    /// Get the currently configured emergency contact address.
+    pub fn get_admin_emergency_contact(env: Env) -> Option<Address> {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "emerg_contact"))
+    }
 }
 
 // ===== TESTS =====
