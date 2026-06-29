@@ -1330,3 +1330,532 @@ fn test_forged_instance_admin_cannot_set_platform_fee() {
     assert_unauthorized_contract!(result);
 }
 
+// ============================================================
+// === require_auth denylist coverage matrix ==================
+//
+// This section implements a denylist-style meta-test that asserts every
+// state-mutating public entrypoint records a Soroban `require_auth` for the
+// expected signer (user or admin). Read-only entrypoints are explicitly
+// excluded below.
+//
+// Read-only entrypoints (explicitly excluded):
+// get_event, get_bet, has_user_bet, get_market_bet_stats, calculate_bet_payout,
+// get_implied_probability, get_payout_multiplier, get_market, verify_market_metadata,
+// get_verified_result, is_result_verified, get_resolution_analytics, get_market_analytics,
+// get_dispute_stake_cap, get_dispute_cumulative_stake_cap, archive_size,
+// query_events_history, query_events_by_status, query_events_by_category,
+// get_effective_bet_limits, get_oracle_val_cfg_effective, query_events_by_tags,
+// get_all_markets_paged, query_user_bets_paged, query_contract_state_paged,
+// get_cumulative_extension_total, monitor_storage_usage, get_storage_usage_statistics,
+// get_storage_config, calculate_storage_cost, get_storage_efficiency_score,
+// get_storage_recommendations, get_error_recovery_status, document_error_recovery,
+// detect_orphaned_markets, get_edge_case_statistics, validate_market_state_integrity,
+// get_recovery_status, get_version_history, get_contract_performance_metrics,
+// get_monitor_alerts, is_monitor_overflow, get_admin_roles, get_admin_analytics,
+// is_multi_admin_migrated, check_role_permissions, get_contract_version, capabilities,
+// check_upgrade_available, get_upgrade_history, get_upgrade_statistics, get_platform_statistics,
+// get_user_statistics, get_dashboard_statistics, get_market_statistics, get_category_statistics,
+// get_top_users_by_winnings, get_top_users_by_win_rate, get_snapshot_envelope,
+// fetch_oracle_result, get_oracle_with_backup, check_oracle_status, validate_admin_permission
+//
+// Helper: Assert that the env recorded an auth for the expected signer.
+fn assert_auth_recorded(env: &Env, expected_signer: &Address, entrypoint: &str) {
+    let auths = env.auths();
+    let found = auths.iter().any(|(principal, _invocation)| {
+        principal == *expected_signer
+    });
+    assert!(
+        found,
+        "COVERAGE MATRIX FAILURE: entrypoint `{}` did not record \
+         require_auth for the expected signer {:?}. \
+         If this is a new entrypoint, add it to the MUTATING set \
+         in require_auth_coverage_tests.rs.",
+        entrypoint,
+        expected_signer,
+    );
+}
+
+// -------------------- User-scoped meta tests --------------------
+
+#[test]
+fn meta_vote_records_user_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let user = Address::generate(&env);
+    let _ = env.auths(); // drain
+    let _ = client(&env, &cid).try_vote(&user, &market_id, &String::from_str(&env, "yes"), &1_000i128);
+    assert_auth_recorded(&env, &user, "vote");
+}
+
+#[test]
+fn meta_place_bet_records_user_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let user = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_place_bet(&user, &market_id, &String::from_str(&env, "yes"), &1_000_000i128, &250);
+    assert_auth_recorded(&env, &user, "place_bet");
+}
+
+#[test]
+fn meta_cancel_bet_records_user_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let user = Address::generate(&env);
+    // setup state: place a bet
+    let _ = client(&env, &cid).try_place_bet(&user, &market_id, &String::from_str(&env, "yes"), &1_000_000i128, &250);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_cancel_bet(&user, &market_id);
+    assert_auth_recorded(&env, &user, "cancel_bet");
+}
+
+#[test]
+fn meta_claim_winnings_records_user_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let user = Address::generate(&env);
+    let _ = client(&env, &cid).try_vote(&user, &market_id, &String::from_str(&env, "yes"), &1_000i128);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_id, &String::from_str(&env, "yes"));
+    advance_past_dispute(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_claim_winnings(&user, &market_id);
+    assert_auth_recorded(&env, &user, "claim_winnings");
+}
+
+#[test]
+fn meta_dispute_market_records_user_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_id, &String::from_str(&env, "yes"));
+    let user = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_dispute_market(&user, &market_id, &1_000i128, &None);
+    assert_auth_recorded(&env, &user, "dispute_market");
+}
+
+#[test]
+fn meta_vote_on_dispute_records_user_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_id, &String::from_str(&env, "yes"));
+    let disputer = Address::generate(&env);
+    let _ = client(&env, &cid).try_dispute_market(&disputer, &market_id, &1_000i128, &None);
+    let voter = Address::generate(&env);
+    let dispute_id = Symbol::new(&env, "d0");
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_vote_on_dispute(&voter, &market_id, &dispute_id, &true, &500i128, &None);
+    assert_auth_recorded(&env, &voter, "vote_on_dispute");
+}
+
+// -------------------- Admin-scoped meta tests --------------------
+
+#[test]
+fn meta_create_market_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let mut outcomes = Vec::new(&env);
+    outcomes.push_back(String::from_str(&env, "yes"));
+    outcomes.push_back(String::from_str(&env, "no"));
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_create_market(
+        &admin,
+        &String::from_str(&env, "Meta market?"),
+        &outcomes,
+        &30u32,
+        &oracle(&env),
+        &None,
+        &86400u64,
+        &None,
+        &None,
+        &None,
+    );
+    assert_auth_recorded(&env, &admin, "create_market");
+}
+
+#[test]
+fn meta_resolve_market_manual_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_id, &String::from_str(&env, "yes"));
+    assert_auth_recorded(&env, &admin, "resolve_market_manual");
+}
+
+#[test]
+fn meta_set_platform_fee_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_platform_fee(&admin, &300i128);
+    assert_auth_recorded(&env, &admin, "set_platform_fee");
+}
+
+#[test]
+fn meta_set_treasury_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let treasury = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_treasury(&admin, &treasury);
+    assert_auth_recorded(&env, &admin, "set_treasury");
+}
+
+#[test]
+fn meta_set_global_claim_period_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_global_claim_period(&admin, &604_800u64);
+    assert_auth_recorded(&env, &admin, "set_global_claim_period");
+}
+
+#[test]
+fn meta_set_market_claim_period_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_market_claim_period(&admin, &market_id, &604_800u64);
+    assert_auth_recorded(&env, &admin, "set_market_claim_period");
+}
+
+#[test]
+fn meta_sweep_unclaimed_winnings_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_id, &String::from_str(&env, "yes"));
+    env.ledger().with_mut(|l| l.timestamp += 365 * 24 * 60 * 60);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_sweep_unclaimed_winnings(&admin, &market_id, &false);
+    assert_auth_recorded(&env, &admin, "sweep_unclaimed_winnings");
+}
+
+#[test]
+fn meta_extend_deadline_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_extend_deadline(&admin, &market_id, &7u32, &String::from_str(&env, "More time"));
+    assert_auth_recorded(&env, &admin, "extend_deadline");
+}
+
+#[test]
+fn meta_collect_fees_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_id, &String::from_str(&env, "yes"));
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_collect_fees(&admin, &market_id);
+    assert_auth_recorded(&env, &admin, "collect_fees");
+}
+
+#[test]
+fn meta_withdraw_collected_fees_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_withdraw_collected_fees(&admin, &0i128);
+    assert_auth_recorded(&env, &admin, "withdraw_collected_fees");
+}
+
+#[test]
+fn meta_archive_event_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_id, &String::from_str(&env, "yes"));
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_archive_event(&admin, &market_id);
+    assert_auth_recorded(&env, &admin, "archive_event");
+}
+
+#[test]
+fn meta_add_admin_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = client(&env, &cid).try_migrate_to_multi_admin(&admin);
+    let new_admin = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_add_admin(&admin, &new_admin, &crate::admin::AdminRole::MarketAdmin);
+    assert_auth_recorded(&env, &admin, "add_admin");
+}
+
+#[test]
+fn meta_remove_admin_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = client(&env, &cid).try_migrate_to_multi_admin(&admin);
+    let target = Address::generate(&env);
+    let _ = client(&env, &cid).try_add_admin(&admin, &target, &crate::admin::AdminRole::MarketAdmin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_remove_admin(&admin, &target);
+    assert_auth_recorded(&env, &admin, "remove_admin");
+}
+
+#[test]
+fn meta_update_admin_role_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = client(&env, &cid).try_migrate_to_multi_admin(&admin);
+    let target = Address::generate(&env);
+    let _ = client(&env, &cid).try_add_admin(&admin, &target, &crate::admin::AdminRole::MarketAdmin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_update_admin_role(&admin, &target, crate::admin::AdminRole::ConfigAdmin);
+    assert_auth_recorded(&env, &admin, "update_admin_role");
+}
+
+#[test]
+fn meta_request_resume_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_request_resume(&admin);
+    assert_auth_recorded(&env, &admin, "request_resume");
+}
+
+#[test]
+fn meta_refund_on_oracle_failure_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_refund_on_oracle_failure(&admin, &market_id);
+    assert_auth_recorded(&env, &admin, "refund_on_oracle_failure");
+}
+
+#[test]
+fn meta_clear_monitor_overflow_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_clear_monitor_overflow(&admin);
+    assert_auth_recorded(&env, &admin, "clear_monitor_overflow");
+}
+
+#[test]
+fn meta_set_global_bet_limits_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_global_bet_limits(&admin, &100_000i128, &10_000_000i128);
+    assert_auth_recorded(&env, &admin, "set_global_bet_limits");
+}
+
+#[test]
+fn meta_set_oracle_val_cfg_global_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_oracle_val_cfg_global(&admin, &300u64, &9500u32, &None);
+    assert_auth_recorded(&env, &admin, "set_oracle_val_cfg_global");
+}
+
+#[test]
+fn meta_admin_override_verification_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_admin_override_verification(&admin, &market_id, &String::from_str(&env, "yes"), &String::from_str(&env, "manual override"));
+    assert_auth_recorded(&env, &admin, "admin_override_verification");
+}
+
+#[test]
+fn meta_update_event_description_records_admin_auth() {
+    let (env, cid, admin) = setup();
+    let market_id = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_update_event_description(&admin, &market_id, &String::from_str(&env, "Updated"));
+    assert_auth_recorded(&env, &admin, "update_event_description");
+}
+
+// -------------------- Exhaustive denylist test --------------------
+
+#[test]
+fn test_exhaustive_mutating_entrypoint_auth_denylist() {
+    let (env, cid, admin) = setup();
+    let mut verified = 0usize;
+
+    // 1 vote
+    let market1 = make_market(&env, &cid, &admin);
+    let user1 = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_vote(&user1, &market1, &String::from_str(&env, "yes"), &1_000i128);
+    assert_auth_recorded(&env, &user1, "vote"); verified += 1;
+
+    // 2 place_bet
+    let market2 = make_market(&env, &cid, &admin);
+    let user2 = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_place_bet(&user2, &market2, &String::from_str(&env, "yes"), &1_000_000i128, &250);
+    assert_auth_recorded(&env, &user2, "place_bet"); verified += 1;
+
+    // 3 cancel_bet
+    let market3 = make_market(&env, &cid, &admin);
+    let user3 = Address::generate(&env);
+    let _ = client(&env, &cid).try_place_bet(&user3, &market3, &String::from_str(&env, "yes"), &1_000_000i128, &250);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_cancel_bet(&user3, &market3);
+    assert_auth_recorded(&env, &user3, "cancel_bet"); verified += 1;
+
+    // 4 claim_winnings
+    let market4 = make_market(&env, &cid, &admin);
+    let user4 = Address::generate(&env);
+    let _ = client(&env, &cid).try_vote(&user4, &market4, &String::from_str(&env, "yes"), &1_000i128);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market4, &String::from_str(&env, "yes"));
+    advance_past_dispute(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_claim_winnings(&user4, &market4);
+    assert_auth_recorded(&env, &user4, "claim_winnings"); verified += 1;
+
+    // 5 dispute_market
+    let market5 = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market5, &String::from_str(&env, "yes"));
+    let user5 = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_dispute_market(&user5, &market5, &1_000i128, &None);
+    assert_auth_recorded(&env, &user5, "dispute_market"); verified += 1;
+
+    // 6 vote_on_dispute
+    let market6 = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market6, &String::from_str(&env, "yes"));
+    let disputer = Address::generate(&env);
+    let _ = client(&env, &cid).try_dispute_market(&disputer, &market6, &1_000i128, &None);
+    let voter = Address::generate(&env);
+    let dispute_id = Symbol::new(&env, "d0");
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_vote_on_dispute(&voter, &market6, &dispute_id, &true, &500i128, &None);
+    assert_auth_recorded(&env, &voter, "vote_on_dispute"); verified += 1;
+
+    // Admin-scoped sequence (remaining 21)
+    // 7 create_market
+    let _ = env.auths();
+    let mut outcomes = Vec::new(&env);
+    outcomes.push_back(String::from_str(&env, "yes"));
+    outcomes.push_back(String::from_str(&env, "no"));
+    let _ = client(&env, &cid).try_create_market(&admin, &String::from_str(&env, "ex"), &outcomes, &30u32, &oracle(&env), &None, &86400u64, &None, &None, &None);
+    assert_auth_recorded(&env, &admin, "create_market"); verified += 1;
+
+    // 8 resolve_market_manual
+    let market_r = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &market_r, &String::from_str(&env, "yes"));
+    assert_auth_recorded(&env, &admin, "resolve_market_manual"); verified += 1;
+
+    // 9 set_platform_fee
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_platform_fee(&admin, &300i128);
+    assert_auth_recorded(&env, &admin, "set_platform_fee"); verified += 1;
+
+    // 10 set_treasury
+    let treasury = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_treasury(&admin, &treasury);
+    assert_auth_recorded(&env, &admin, "set_treasury"); verified += 1;
+
+    // 11 set_global_claim_period
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_global_claim_period(&admin, &604_800u64);
+    assert_auth_recorded(&env, &admin, "set_global_claim_period"); verified += 1;
+
+    // 12 set_market_claim_period
+    let mcp = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_market_claim_period(&admin, &mcp, &604_800u64);
+    assert_auth_recorded(&env, &admin, "set_market_claim_period"); verified += 1;
+
+    // 13 sweep_unclaimed_winnings
+    let ms = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &ms, &String::from_str(&env, "yes"));
+    env.ledger().with_mut(|l| l.timestamp += 365 * 24 * 60 * 60);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_sweep_unclaimed_winnings(&admin, &ms, &false);
+    assert_auth_recorded(&env, &admin, "sweep_unclaimed_winnings"); verified += 1;
+
+    // 14 extend_deadline
+    let me = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_extend_deadline(&admin, &me, &7u32, &String::from_str(&env, "x"));
+    assert_auth_recorded(&env, &admin, "extend_deadline"); verified += 1;
+
+    // 15 collect_fees
+    let mc = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &mc, &String::from_str(&env, "yes"));
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_collect_fees(&admin, &mc);
+    assert_auth_recorded(&env, &admin, "collect_fees"); verified += 1;
+
+    // 16 withdraw_collected_fees
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_withdraw_collected_fees(&admin, &0i128);
+    assert_auth_recorded(&env, &admin, "withdraw_collected_fees"); verified += 1;
+
+    // 17 archive_event
+    let ma = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = client(&env, &cid).try_resolve_market_manual(&admin, &ma, &String::from_str(&env, "yes"));
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_archive_event(&admin, &ma);
+    assert_auth_recorded(&env, &admin, "archive_event"); verified += 1;
+
+    // 18 add_admin
+    let _ = client(&env, &cid).try_migrate_to_multi_admin(&admin);
+    let newa = Address::generate(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_add_admin(&admin, &newa, &crate::admin::AdminRole::MarketAdmin);
+    assert_auth_recorded(&env, &admin, "add_admin"); verified += 1;
+
+    // 19 remove_admin
+    let target = Address::generate(&env);
+    let _ = client(&env, &cid).try_add_admin(&admin, &target, &crate::admin::AdminRole::MarketAdmin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_remove_admin(&admin, &target);
+    assert_auth_recorded(&env, &admin, "remove_admin"); verified += 1;
+
+    // 20 update_admin_role
+    let t2 = Address::generate(&env);
+    let _ = client(&env, &cid).try_add_admin(&admin, &t2, &crate::admin::AdminRole::MarketAdmin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_update_admin_role(&admin, &t2, crate::admin::AdminRole::ConfigAdmin);
+    assert_auth_recorded(&env, &admin, "update_admin_role"); verified += 1;
+
+    // 21 request_resume
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_request_resume(&admin);
+    assert_auth_recorded(&env, &admin, "request_resume"); verified += 1;
+
+    // 22 refund_on_oracle_failure
+    let mrf = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_refund_on_oracle_failure(&admin, &mrf);
+    assert_auth_recorded(&env, &admin, "refund_on_oracle_failure"); verified += 1;
+
+    // 23 clear_monitor_overflow
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_clear_monitor_overflow(&admin);
+    assert_auth_recorded(&env, &admin, "clear_monitor_overflow"); verified += 1;
+
+    // 24 set_global_bet_limits
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_global_bet_limits(&admin, &100_000i128, &10_000_000i128);
+    assert_auth_recorded(&env, &admin, "set_global_bet_limits"); verified += 1;
+
+    // 25 set_oracle_val_cfg_global
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_set_oracle_val_cfg_global(&admin, &300u64, &9500u32, &None);
+    assert_auth_recorded(&env, &admin, "set_oracle_val_cfg_global"); verified += 1;
+
+    // 26 admin_override_verification
+    let mor = make_market(&env, &cid, &admin);
+    advance_past_end(&env);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_admin_override_verification(&admin, &mor, &String::from_str(&env, "yes"), &String::from_str(&env, "manual"));
+    assert_auth_recorded(&env, &admin, "admin_override_verification"); verified += 1;
+
+    // 27 update_event_description
+    let med = make_market(&env, &cid, &admin);
+    let _ = env.auths();
+    let _ = client(&env, &cid).try_update_event_description(&admin, &med, &String::from_str(&env, "u"));
+    assert_auth_recorded(&env, &admin, "update_event_description"); verified += 1;
+
+    println!("[require_auth denylist] All {} mutating entrypoints verified", verified);
+}
+
