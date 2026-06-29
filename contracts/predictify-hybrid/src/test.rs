@@ -524,6 +524,8 @@ fn test_create_market_successful() {
 
     #[test]
     fn test_capabilities_list_and_no_state_change() {
+        use crate::capabilities::capability;
+
         let test = PredictifyTest::setup();
         let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
@@ -531,25 +533,28 @@ fn test_create_market_successful() {
         let had_version_history = test.env.storage().persistent().has(&version_key);
         let events_before = test.env.events().all().len();
 
-        let capabilities = client.capabilities();
+        let caps = client.capabilities();
 
-        let expected = vec![
-            &test.env,
-            String::from_str(&test.env, "versioning"),
-            String::from_str(&test.env, "upgrade-management"),
-            String::from_str(&test.env, "query-functions"),
-            String::from_str(&test.env, "market-management"),
-            String::from_str(&test.env, "betting"),
-            String::from_str(&test.env, "disputes"),
-            String::from_str(&test.env, "oracle-integration"),
-            String::from_str(&test.env, "governance"),
-            String::from_str(&test.env, "analytics"),
-            String::from_str(&test.env, "monitoring"),
-        ];
+        // Verify the bitmap is non-zero
+        assert!(caps > 0);
 
-        assert!(!capabilities.is_empty());
-        assert_eq!(capabilities, expected);
+        // Verify known capabilities are set
+        assert!(caps & capability::VERSIONING != 0, "versioning");
+        assert!(caps & capability::UPGRADE_MANAGEMENT != 0, "upgrade-management");
+        assert!(caps & capability::QUERY_FUNCTIONS != 0, "query-functions");
+        assert!(caps & capability::MARKET_MANAGEMENT != 0, "market-management");
+        assert!(caps & capability::BETTING != 0, "betting");
+        assert!(caps & capability::DISPUTES != 0, "disputes");
+        assert!(caps & capability::ORACLE_INTEGRATION != 0, "oracle-integration");
+        assert!(caps & capability::GOVERNANCE != 0, "governance");
+        assert!(caps & capability::ANALYTICS != 0, "analytics");
+        assert!(caps & capability::MONITORING != 0, "monitoring");
 
+        // Verify no reserved bits are set (bits 26..63)
+        let reserved_mask = !((1u64 << 26) - 1);
+        assert_eq!(caps & reserved_mask, 0);
+
+        // Verify no state change
         let has_version_history = test.env.storage().persistent().has(&version_key);
         assert_eq!(had_version_history, has_version_history);
         assert_eq!(events_before, test.env.events().all().len());
@@ -557,6 +562,8 @@ fn test_create_market_successful() {
 
     #[test]
     fn test_version_and_capabilities_after_upgrade() {
+        use crate::capabilities::capability;
+
         let test = PredictifyTest::setup();
         let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
 
@@ -585,10 +592,10 @@ fn test_create_market_successful() {
         assert_eq!(current_version.minor, 1);
         assert_eq!(current_version.patch, 0);
 
-        let capabilities = client.capabilities();
-        assert!(!capabilities.is_empty());
-        assert!(capabilities.contains(String::from_str(&test.env, "versioning")));
-        assert!(capabilities.contains(String::from_str(&test.env, "upgrade-management")));
+        let caps = client.capabilities();
+        assert!(caps > 0);
+        assert!(caps & capability::VERSIONING != 0, "versioning");
+        assert!(caps & capability::UPGRADE_MANAGEMENT != 0, "upgrade-management");
     }
     assert_eq!(
         market.question,

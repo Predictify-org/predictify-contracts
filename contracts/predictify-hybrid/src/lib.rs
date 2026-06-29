@@ -14,6 +14,7 @@ pub mod audit_trail;
 mod balances;
 mod batch_operations;
 mod bets;
+pub mod capabilities;
 mod circuit_breaker;
 mod config;
 mod err;
