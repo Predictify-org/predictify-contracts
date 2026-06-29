@@ -3,7 +3,7 @@
 use crate::Error;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
-use soroban_sdk::{contracttype, Address, BytesN, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
 

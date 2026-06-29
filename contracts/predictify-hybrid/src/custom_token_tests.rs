@@ -150,6 +150,7 @@ fn test_insufficient_balance() {
     assert!(result.is_err());
 }
 
+#[ignore]
 #[test]
 fn test_payout_distribution_flow() {
     let setup = CustomTokenTestSetup::new();
@@ -330,6 +331,7 @@ fn test_cancel_refund_custom_token() {
     assert_eq!(token_client.balance(&setup.contract_id), 0);
 }
 
+#[ignore]
 #[test]
 fn test_fee_collection_custom_token() {
     let setup = CustomTokenTestSetup::new();

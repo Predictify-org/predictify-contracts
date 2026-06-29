@@ -640,8 +640,9 @@ impl UpgradeManager {
             return Ok(true);
         }
 
-        let verify_count = if depth == 0 || depth > chain.len() {
-            chain.len()
+        let chain_len = chain.len() as u64;
+        let verify_count = if depth == 0 || depth > chain_len {
+            chain_len
         } else {
             depth
         };
@@ -649,7 +650,7 @@ impl UpgradeManager {
         let zero_hash = BytesN::from_array(env, &[0u8; 32]);
 
         for i in 0..verify_count {
-            let record = chain.get(i).ok_or(Error::InvalidInput)?;
+            let record = chain.get(i as u32).ok_or(Error::InvalidInput)?;
 
             if i == 0 {
                 // First record: previous_wasm_hash must be zero for genesis
@@ -658,7 +659,7 @@ impl UpgradeManager {
                 }
             } else {
                 // Subsequent records: previous_wasm_hash must match previous record's new_wasm_hash
-                let prev_record = chain.get(i - 1).ok_or(Error::InvalidInput)?;
+                let prev_record = chain.get((i - 1) as u32).ok_or(Error::InvalidInput)?;
                 if record.previous_wasm_hash != prev_record.new_wasm_hash {
                     return Ok(false);
                 }

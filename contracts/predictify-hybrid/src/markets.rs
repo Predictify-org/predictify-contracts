@@ -1422,7 +1422,7 @@ impl MarketStateManager {
     /// # Side Effects
     ///
     /// * Updates `market.end_time` to a later timestamp
-    /// * Increments `market.total_extension_hours` by the extension amount
+    /// * Increments `market.total_extension_days` by the extension amount
     ///
     /// # Example
     ///
@@ -1440,7 +1440,7 @@ impl MarketStateManager {
     /// match MarketStateManager::extend_for_dispute(&mut market, &env, 24) {
     ///     Ok(()) => {
     ///         println!("Market extended by 24 hours");
-    ///         println!("Total extensions so far: {} hours", market.total_extension_hours);
+    ///         println!("Total extensions so far: {} hours", market.total_extension_days);
     ///     },
     ///     Err(Error::ExtensionCapExceeded) => {
     ///         println!("Cannot extend further - cumulative cap reached");
@@ -1454,7 +1454,7 @@ impl MarketStateManager {
         const MAX_CUMULATIVE_EXTENSION_HOURS: u64 = 72; // 3 days maximum
 
         // Check if adding this extension exceeds the cumulative cap
-        if market.total_extension_hours + extension_hours > MAX_CUMULATIVE_EXTENSION_HOURS {
+        if (market.total_extension_days as u64) + extension_hours > MAX_CUMULATIVE_EXTENSION_HOURS {
             return Err(Error::ExtensionCapExceeded);
         }
 
@@ -1467,7 +1467,7 @@ impl MarketStateManager {
         }
 
         // Track cumulative extension
-        market.total_extension_hours = market.total_extension_hours.saturating_add(extension_hours);
+        market.total_extension_days = market.total_extension_days.saturating_add(extension_hours as u32);
 
         Ok(())
     }

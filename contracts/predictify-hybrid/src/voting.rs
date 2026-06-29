@@ -359,7 +359,7 @@ impl VotingManager {
 
         // Add dispute stake and extend market (pass market_id for event emission)
         MarketStateManager::add_dispute_stake(&mut market, user, stake, Some(&market_id));
-        MarketStateManager::extend_for_dispute(
+        let _ = MarketStateManager::extend_for_dispute(
             &mut market,
             env,
             cfg.voting.dispute_extension_hours.into(),

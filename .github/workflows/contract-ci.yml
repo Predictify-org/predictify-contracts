@@ -37,7 +37,21 @@ jobs:
     - name: Build Soroban contract
       run: |
         source $HOME/.cargo/env
-        stellar contract build --verbose
+        cargo build --release --target wasm32v1-none
+
+    - name: Optimize WASM
+      run: |
+        source $HOME/.cargo/env
+        WASM_FILE=$(find target/wasm32v1-none/release -name "*.wasm" | head -n 1)
+        if [ -n "$WASM_FILE" ] && command -v stellar &> /dev/null; then
+          echo "Optimizing WASM..."
+          stellar contract optimize --wasm "$WASM_FILE" || true
+        fi
+
+    - name: Check WASM size
+      run: |
+        source $HOME/.cargo/env
+        bash scripts/check_wasm_size.sh
 
     - name: Run Cargo tests
       run: |
