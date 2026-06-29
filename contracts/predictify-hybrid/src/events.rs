@@ -513,12 +513,12 @@ pub struct MarketResolvedEvent {
 ///
 /// ```rust
 /// # use soroban_sdk::{Env, Address, Symbol, String};
-/// # use predictify_hybrid::events::DisputeCreatedEvent;
+/// # use predictify_hybrid::events::DisputeOpenedEvent;
 /// # let env = Env::default();
 /// # let disputer = Address::generate(&env);
 ///
-/// // Dispute creation event
-/// let event = DisputeCreatedEvent {
+/// // Dispute opening event
+/// let event = DisputeOpenedEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
 ///     disputer: disputer.clone(),
 ///     stake: 50_000_000, // 5.0 XLM dispute stake
@@ -563,7 +563,7 @@ pub struct MarketResolvedEvent {
 /// - **Economic Monitoring**: Track dispute stakes and economic activity
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DisputeCreatedEvent {
+pub struct DisputeOpenedEvent {
     /// Market ID
     pub market_id: Symbol,
     /// Disputer address
@@ -2039,15 +2039,15 @@ impl EventSchemaRegistry {
     /// | name              | topic symbol  | schema_version |
     /// |-------------------|---------------|----------------|
     /// | `"oracle_result"` | `oracle_rs`   | 1              |
-    /// | `"dispute_created"` | `dispt_crt` | 1              |
+    /// | `"dispute_opened"` | `dispt_opn` | 1              |
     pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
         match name {
             "oracle_result" => Some(EventSchemaEntry {
                 topic: symbol_short!("oracle_rs"),
                 schema_version: 1,
             }),
-            "dispute_created" => Some(EventSchemaEntry {
-                topic: symbol_short!("dispt_crt"),
+            "dispute_opened" => Some(EventSchemaEntry {
+                topic: symbol_short!("dispt_opn"),
                 schema_version: 1,
             }),
             _ => None,
@@ -2658,22 +2658,22 @@ impl EventEmitter {
             .publish((symbol_short!("pool_lo"), market_id.clone()), event);
     }
 
-    /// Emit dispute created event.
+    /// Emit dispute opened event.
     ///
     /// Topic and schema version are resolved from [`EventSchemaRegistry`].
-    pub fn emit_dispute_created(
+    pub fn emit_dispute_opened(
         env: &Env,
         market_id: &Symbol,
         disputer: &Address,
         stake: i128,
         reason: Option<String>,
     ) {
-        let schema = EventSchemaRegistry::get_schema(env, "dispute_created")
+        let schema = EventSchemaRegistry::get_schema(env, "dispute_opened")
             .unwrap_or(EventSchemaEntry {
-                topic: symbol_short!("dispt_crt"),
+                topic: symbol_short!("dispt_opn"),
                 schema_version: 1,
             });
-        let event = DisputeCreatedEvent {
+        let event = DisputeOpenedEvent {
             market_id: market_id.clone(),
             disputer: disputer.clone(),
             stake,
@@ -4234,8 +4234,8 @@ impl EventValidator {
         Ok(())
     }
 
-    /// Validate dispute created event
-    pub fn validate_dispute_created_event(event: &DisputeCreatedEvent) -> Result<(), Error> {
+    /// Validate dispute opened event
+    pub fn validate_dispute_opened_event(event: &DisputeOpenedEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         if event.stake <= 0 {
@@ -4427,13 +4427,13 @@ impl EventTestingUtils {
         }
     }
 
-    /// Create test dispute created event
-    pub fn create_test_dispute_created_event(
+    /// Create test dispute opened event
+    pub fn create_test_dispute_opened_event(
         env: &Env,
         market_id: &Symbol,
         disputer: &Address,
-    ) -> DisputeCreatedEvent {
-        DisputeCreatedEvent {
+    ) -> DisputeOpenedEvent {
+        DisputeOpenedEvent {
             market_id: market_id.clone(),
             disputer: disputer.clone(),
             stake: 10_0000000,
@@ -4757,10 +4757,10 @@ mod event_schema_registry_tests {
     }
 
     #[test]
-    fn test_registry_lookup_dispute_created() {
+    fn test_registry_lookup_dispute_opened() {
         let env = Env::default();
-        let schema = EventSchemaRegistry::get_schema(&env, "dispute_created").unwrap();
-        assert_eq!(schema.topic, symbol_short!("dispt_crt"));
+        let schema = EventSchemaRegistry::get_schema(&env, "dispute_opened").unwrap();
+        assert_eq!(schema.topic, symbol_short!("dispt_opn"));
         assert_eq!(schema.schema_version, 1);
     }
 
@@ -4776,7 +4776,7 @@ mod event_schema_registry_tests {
         let env = Env::default();
         // Schema version must equal the pinned baseline; any bump is a breaking change.
         const EXPECTED_ORACLE_RESULT_VERSION: u32 = 1;
-        const EXPECTED_DISPUTE_CREATED_VERSION: u32 = 1;
+        const EXPECTED_DISPUTE_OPENED_VERSION: u32 = 1;
 
         let oracle_schema = EventSchemaRegistry::get_schema(&env, "oracle_result").unwrap();
         assert_eq!(
@@ -4784,10 +4784,10 @@ mod event_schema_registry_tests {
             "OracleResultEvent schema_version mismatch: expected {EXPECTED_ORACLE_RESULT_VERSION}"
         );
 
-        let dispute_schema = EventSchemaRegistry::get_schema(&env, "dispute_created").unwrap();
+        let dispute_schema = EventSchemaRegistry::get_schema(&env, "dispute_opened").unwrap();
         assert_eq!(
-            dispute_schema.schema_version, EXPECTED_DISPUTE_CREATED_VERSION,
-            "DisputeCreatedEvent schema_version mismatch: expected {EXPECTED_DISPUTE_CREATED_VERSION}"
+            dispute_schema.schema_version, EXPECTED_DISPUTE_OPENED_VERSION,
+            "DisputeOpenedEvent schema_version mismatch: expected {EXPECTED_DISPUTE_OPENED_VERSION}"
         );
     }
 
@@ -4810,13 +4810,13 @@ mod event_schema_registry_tests {
     }
 
     #[test]
-    fn test_emit_dispute_created_uses_registry_topic() {
+    fn test_emit_dispute_opened_uses_registry_topic() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
         env.as_contract(&contract_id, || {
             let market_id = soroban_sdk::symbol_short!("mkt2");
             let disputer = soroban_sdk::Address::generate(&env);
-            EventEmitter::emit_dispute_created(
+            EventEmitter::emit_dispute_opened(
                 &env, &market_id, &disputer, 50_000_000, None,
             );
         });
@@ -5113,5 +5113,46 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("cum_set"), &event);
         env.events()
             .publish((symbol_short!("cum_set"), user.clone()), event);
+    }
+}
+
+#[cfg(test)]
+mod focused_dispute_tests {
+    use super::*;
+    use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol};
+
+    #[test]
+    fn test_dispute_opened_event_topics() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "mkt_123");
+        let disputer = Address::generate(&env);
+        let stake = 50_000_000i128;
+        let reason = None;
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_dispute_opened(&env, &market_id, &disputer, stake, reason);
+        });
+
+        let events = env.events().all();
+        // Expect at least one event with 3 topics: (topic0, topic1, topic2)
+        // topic0 = dispt_opn
+        // topic1 = mkt_123
+        // topic2 = 1 (schema version)
+
+        let mut found = false;
+        for event in events.iter() {
+            if event.2.len() == 3 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+
+                if topic0 == symbol_short!("dispt_opn") {
+                    assert_eq!(topic1, market_id, "Market ID must be topic1");
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "DisputeOpenedEvent not found with correct topic structure");
     }
 }
