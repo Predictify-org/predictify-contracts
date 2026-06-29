@@ -1196,6 +1196,7 @@ fn test_bet_slippage_batch_path_reverts() {
         &setup.user,
         &bets,
         &Some(200u32),
+        &soroban_sdk::BytesN::from_array(&setup.env, &[1u8; 32]),
     );
 
     assert!(result.is_err());

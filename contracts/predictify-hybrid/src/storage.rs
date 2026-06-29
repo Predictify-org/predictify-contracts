@@ -11,6 +11,10 @@ const BALANCE_TTL_LEDGERS: u32 = 31 * LEDGERS_PER_DAY;
 const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 const EVENT_TTL_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+/// TTL for consumed `place_bets` idempotency keys (≈ 7 days at 5 s/ledger).
+/// A key stored beyond this window is treated as expired; the same raw bytes
+/// can be reused in a fresh batch after expiry.
+pub const PLACE_BETS_IDEM_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 
 /// TTL for instance storage cache entries, in ledgers.
 /// At ~5 seconds per ledger on Soroban mainnet, 100 ledgers ≈ 8 minutes.

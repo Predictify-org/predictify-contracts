@@ -323,7 +323,7 @@ fn test_place_bets_authorized_succeeds() {
         &env,
         (market_id, String::from_str(&env, "yes"), 1_000_000i128),
     ];
-    let result = client(&env, &cid).try_place_bets(&user, &bets, &250);
+    let result = client(&env, &cid).try_place_bets(&user, &bets, &250, &soroban_sdk::BytesN::from_array(&env, &[1u8; 32]));
     assert_auth_ok_panic!(result, "place_bets rejected authorized user");
 }
 
@@ -334,7 +334,7 @@ fn test_place_bets_no_auth_panics() {
     let (env, cid, _admin) = setup_no_auth();
     let user = Address::generate(&env);
     let bets: Vec<(Symbol, String, i128)> = Vec::new(&env);
-    client(&env, &cid).place_bets(&user, &bets, &250);
+    client(&env, &cid).place_bets(&user, &bets, &250, &soroban_sdk::BytesN::from_array(&env, &[2u8; 32]));
 }
 
 // ── cancel_bet ───────────────────────────────────────────────
