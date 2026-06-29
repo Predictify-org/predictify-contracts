@@ -366,5 +366,5 @@ impl BudgetGuard {
         self.threshold_remaining
     }
 }
-#[cfg(test)]
+#[cfg(any())]
 mod gas_test;

@@ -1676,6 +1676,11 @@ impl MarketResolutionValidator {
                 if admin != &stored_admin {
                     return Err(Error::Unauthorized);
                 }
+                Ok(())
+            }
+            None => Err(Error::Unauthorized),
+        }
+    }
 
     /// Validate outcome
     pub fn validate_outcome(
