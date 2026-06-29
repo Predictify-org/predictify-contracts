@@ -8,7 +8,7 @@ use soroban_sdk::{contracttype, Address, Env, IntoVal, Map, Symbol, Val, Vec};
 const STORAGE_CONFIG_KEY: &str = "storage_config";
 const LEDGERS_PER_DAY: u32 = 17_280;
 const BALANCE_TTL_LEDGERS: u32 = 31 * LEDGERS_PER_DAY;
-const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+pub const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 const EVENT_TTL_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 /// TTL for consumed `place_bets` idempotency keys (≈ 7 days at 5 s/ledger).
@@ -21,6 +21,33 @@ pub const PLACE_BETS_IDEM_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 /// Instance TTL is shared - bumping extends all instance storage keys.
 /// Increase for longer-lived deployments; decrease to reduce ledger rent costs.
 pub const MARKET_CACHE_TTL_LEDGERS: u32 = 100;
+
+/// Number of persistent storage keys allocated during a single `create_market` call.
+pub const MARKET_CREATION_PERSISTENT_KEYS: u32 = 1;
+
+/// Pre-flight storage-rent check for market creation.
+///
+/// Verifies that the ledger has enough sequence headroom so the new persistent
+/// entry's `live_until_ledger` does not overflow `u32`.
+///
+/// # Formula
+///
+/// 1. `effective_ttl = MIN(MARKET_TTL_LEDGERS, env.storage().max_ttl())`
+/// 2. The current ledger sequence plus `effective_ttl` must not overflow `u32`.
+///
+/// # Errors
+///
+/// Returns [`Error::InsufficientStorageRent`] if the sequence would overflow.
+pub fn check_market_creation_rent(env: &Env) -> Result<(), Error> {
+    let effective_ttl = MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
+    let current_seq = env.ledger().sequence();
+
+    if current_seq.checked_add(effective_ttl).is_none() {
+        return Err(Error::InsufficientStorageRent);
+    }
+
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StorageTtlTier {

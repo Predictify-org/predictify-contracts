@@ -1,7 +1,7 @@
 use crate::err::Error;
 use crate::types::{OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
-use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::{
     vec, Address, ConversionError, Env, Error as HostError, InvokeError, String, Symbol, Vec,
 };
@@ -301,4 +301,71 @@ fn create_event_rejects_past_end_time() {
     );
 
     assert_contract_error(result, Error::InvalidDuration);
+}
+
+// ── Storage Rent Pre-flight Tests ─────────────────────────────────────────────
+
+#[test]
+fn create_market_accepts_sufficient_storage_rent() {
+    let setup = TestSetup::new();
+    let market_id = setup.client().create_market(
+        &setup.admin,
+        &String::from_str(&setup.env, "Will sufficient storage rent be accepted?"),
+        &setup.valid_outcomes(),
+        &30u32,
+        &setup.valid_oracle_config(),
+        &None,
+        &86_400u64,
+    );
+    let market = setup.client().get_market(&market_id).unwrap();
+    assert_eq!(
+        market.question,
+        String::from_str(&setup.env, "Will sufficient storage rent be accepted?")
+    );
+}
+
+#[test]
+fn create_market_rejects_overflow_ledger_sequence() {
+    let setup = TestSetup::new();
+    // Set ledger sequence near u32::MAX so that current_seq + effective_ttl overflows.
+    setup.env.ledger().set(LedgerInfo {
+        sequence_number: u32::MAX - 1_000,
+        timestamp: 1_000_000_000,
+        ..Default::default()
+    });
+    let result = setup.client().try_create_market(
+        &setup.admin,
+        &String::from_str(&setup.env, "Will overflow be rejected?"),
+        &setup.valid_outcomes(),
+        &30u32,
+        &setup.valid_oracle_config(),
+        &None,
+        &86_400u64,
+    );
+    assert_contract_error(result, Error::InsufficientStorageRent);
+}
+
+#[test]
+fn create_market_accepts_normal_ledger_sequence() {
+    let setup = TestSetup::new();
+    // Set ledger to a realistic sequence to confirm normal-path passes.
+    setup.env.ledger().set(LedgerInfo {
+        sequence_number: 1_000_000,
+        timestamp: 1_000_000_000,
+        ..Default::default()
+    });
+    let market_id = setup.client().create_market(
+        &setup.admin,
+        &String::from_str(&setup.env, "Will normal sequence be accepted?"),
+        &setup.valid_outcomes(),
+        &30u32,
+        &setup.valid_oracle_config(),
+        &None,
+        &86_400u64,
+    );
+    let market = setup.client().get_market(&market_id).unwrap();
+    assert_eq!(
+        market.question,
+        String::from_str(&setup.env, "Will normal sequence be accepted?")
+    );
 }
