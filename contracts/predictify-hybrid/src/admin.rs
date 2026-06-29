@@ -3716,7 +3716,7 @@ impl Default for AdminAnalytics {
 // ===== MODULE TESTS =====
 
 #[cfg(any())]
-mod tests {
+mod tests_disabled {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::testutils::Events;
