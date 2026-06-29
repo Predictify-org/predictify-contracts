@@ -71,6 +71,7 @@ enum StorageTtlTier {
 pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
+    AdminOverrideNonce(Address),
     ArchivedMarket(Symbol, u64),
     /// Cumulative days extended for a given market (u32).
     MarketExtensionTotal(Symbol),
