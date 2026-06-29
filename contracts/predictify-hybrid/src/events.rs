@@ -4883,6 +4883,32 @@ impl EventEmitter {
         );
     }
 
+    /// Emit a per-oracle quote detail event produced by the median resolver.
+    ///
+    /// Published under the Soroban event topic `orc_med_q` alongside every
+    /// `OracleConsensusReachedEvent` emitted by
+    /// `OracleResolutionManager::resolve_with_median`.
+    ///
+    /// Consumers listening to `orc_med_q` receive the full
+    /// `Vec<OracleQuote>` so they can inspect individual oracle prices,
+    /// confidence weights, and outlier flags without re-running the
+    /// aggregation logic.
+    ///
+    /// # Parameters
+    /// - `market_id` – The market that was resolved.
+    /// - `quotes`    – All three oracle quotes (Pyth, Reflector, Band) with
+    ///                 their computed weights and `included` flags.
+    pub fn emit_oracle_median_quotes(
+        env: &Env,
+        market_id: &Symbol,
+        quotes: &Vec<crate::types::OracleQuote>,
+    ) {
+        env.events().publish(
+            (symbol_short!("orc_med_q"), market_id.clone()),
+            quotes.clone(),
+        );
+    }
+
     /// Emit admin override event when an admin manually overrides an oracle-verified result.
     pub fn emit_admin_override(
         env: &Env,
