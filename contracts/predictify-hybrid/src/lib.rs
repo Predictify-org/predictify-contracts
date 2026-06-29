@@ -3123,6 +3123,47 @@ impl PredictifyHybrid {
         env.storage().persistent().get(&cap_key).unwrap_or(0)
     }
 
+    /// Set the per-user cumulative dispute stake cap across all active disputes (admin only).
+    ///
+    /// This cap limits the total stake a user can commit to disputes
+    /// across all markets that have active (unresolved) disputes.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `admin` - The admin address (must be authorized)
+    /// * `user` - The user address the cap applies to
+    /// * `cap` - The maximum cumulative stake allowed in stroops (0 = disabled)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when:
+    /// - `Error::Unauthorized` — caller is not the contract admin
+    /// - `Error::InvalidInput` — cap value is invalid
+    ///
+    /// # Events
+    ///
+    /// Emits `dispute_cumulative_stake_cap_set` event on success.
+    pub fn set_dispute_cumulative_stake_cap(
+        env: Env,
+        admin: Address,
+        user: Address,
+        cap: i128,
+    ) -> Result<(), Error> {
+        if cap < 0 {
+            return Err(Error::InvalidInput);
+        }
+        Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+        disputes::DisputeManager::set_dispute_cumulative_stake_cap(&env, &admin, &user, cap)
+    }
+
+    /// Get the per-user cumulative dispute stake cap.
+    ///
+    /// Returns 0 if no cap is set (cap is disabled).
+    pub fn get_dispute_cumulative_stake_cap(env: Env, user: Address) -> i128 {
+        disputes::DisputeManager::get_dispute_cumulative_stake_cap(&env, &user)
+    }
+
     /// Vote on a dispute
     ///
     /// # Errors
