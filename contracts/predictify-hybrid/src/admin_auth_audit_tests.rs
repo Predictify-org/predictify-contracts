@@ -40,10 +40,11 @@ impl TestSetup {
 fn test_upgrade_contract_requires_persistent_primary_admin() {
     let setup = TestSetup::uninitialized();
     let wasm_hash = BytesN::from_array(&setup.env, &[7; 32]);
+    let predecessor = BytesN::from_array(&setup.env, &[0; 32]);
 
     let result = setup
         .client()
-        .try_upgrade_contract(&setup.admin, &wasm_hash);
+        .try_upgrade_contract(&setup.admin, &wasm_hash, &predecessor);
 
     assert_eq!(result, Err(Ok(Error::AdminNotSet)));
 }
@@ -53,6 +54,7 @@ fn test_upgrade_contract_rejects_legacy_instance_admin_bypass() {
     let setup = TestSetup::initialized();
     let attacker = Address::generate(&setup.env);
     let wasm_hash = BytesN::from_array(&setup.env, &[9; 32]);
+    let predecessor = BytesN::from_array(&setup.env, &[0; 32]);
 
     setup.env.as_contract(&setup.contract_id, || {
         setup
@@ -62,7 +64,7 @@ fn test_upgrade_contract_rejects_legacy_instance_admin_bypass() {
             .set(&Symbol::new(&setup.env, "admin"), &attacker);
     });
 
-    let result = setup.client().try_upgrade_contract(&attacker, &wasm_hash);
+    let result = setup.client().try_upgrade_contract(&attacker, &wasm_hash, &predecessor);
 
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }

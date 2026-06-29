@@ -174,6 +174,12 @@ pub enum Error {
     TooManyOracleResults = 433,
     /// Too many winning outcomes specified.
     TooManyWinningOutcomes = 434,
+    /// Force-resolve idempotency key has already been used for this market.
+    ///
+    /// The same `(market_id, idempotency_key)` pair was already consumed by a
+    /// previous `force_resolve_market` call. The operation is safe to treat as
+    /// a no-op; no resolution was re-applied.
+    ForceResolveAlreadyUsed = 435,
     /// The event archive has reached its maximum capacity. Prune old entries before archiving more.
     ArchiveFull = 440,
     /// Category string is shorter than the minimum allowed length (when a category is set).
@@ -630,6 +636,15 @@ impl ErrorHandler {
             Error::InvalidState => {
                 "Invalid system state. The contract may be in an unexpected condition."
             }
+            Error::ForceResolveAlreadyUsed => {
+                "Force-resolve idempotency key already used. The operation is a safe no-op."
+            }
+            Error::ForceResolveReplayed => {
+                "Force-resolve idempotency key already used. Use a new unique key."
+            }
+            Error::ForceResolveReasonEmpty => {
+                "Force-resolve reason is empty. Provide a non-empty reason string."
+            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -751,7 +766,11 @@ impl ErrorHandler {
             Error::AlreadyVoted
             | Error::AlreadyBet
             | Error::AlreadyClaimed
-            | Error::FeeAlreadyCollected => RecoveryStrategy::Skip,
+            | Error::FeeAlreadyCollected
+            | Error::ForceResolveAlreadyUsed => RecoveryStrategy::Skip,
+            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => {
+                RecoveryStrategy::Retry
+            }
             Error::Unauthorized | Error::MarketClosed | Error::MarketResolved => {
                 RecoveryStrategy::Abort
             }
@@ -1152,6 +1171,7 @@ impl ErrorHandler {
             Error::AlreadyVoted
             | Error::AlreadyBet
             | Error::AlreadyClaimed
+            | Error::ForceResolveAlreadyUsed
             | Error::FeeAlreadyCollected
             | Error::Unauthorized
             | Error::MarketClosed
@@ -1252,7 +1272,7 @@ impl ErrorHandler {
     /// # Returns
     ///
     /// A tuple of (severity, category, recovery_strategy) for the error.
-    fn get_error_classification(error: &Error) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
+    pub(crate) fn get_error_classification(error: &Error) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
         match error {
             // Critical
             Error::AdminNotSet => (
@@ -1316,10 +1336,16 @@ impl ErrorHandler {
             Error::AlreadyVoted
             | Error::AlreadyBet
             | Error::AlreadyClaimed
+            | Error::ForceResolveAlreadyUsed
             | Error::NothingToClaim => (
                 ErrorSeverity::Low,
                 ErrorCategory::UserOperation,
                 RecoveryStrategy::Skip,
+            ),
+            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => (
+                ErrorSeverity::Low,
+                ErrorCategory::UserOperation,
+                RecoveryStrategy::Retry,
             ),
             Error::FeeAlreadyCollected => (
                 ErrorSeverity::Low,
@@ -1735,6 +1761,7 @@ mod tests {
             Error::RateLimitExceeded,
             Error::CumulativeExtensionCapHit,
             Error::DuplicateMarketId,
+            Error::ForceResolveAlreadyUsed,
             Error::IllegalMarketStateTransition,
             Error::FeeExceedsMax,
             Error::NoPendingFeeCommit,

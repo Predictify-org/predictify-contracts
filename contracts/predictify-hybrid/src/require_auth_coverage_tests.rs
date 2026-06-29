@@ -1058,6 +1058,7 @@ fn test_admin_override_verification_authorized_admin_auth_passes() {
         &market_id,
         &String::from_str(&env, "yes"),
         &String::from_str(&env, "manual override"),
+        &0u64,
     );
     // Auth passes; the function returns OracleUnavailable because the oracle
     // module is currently disabled – that is NOT an auth failure.
@@ -1075,6 +1076,7 @@ fn test_admin_override_verification_forged_admin_rejected() {
         &market_id,
         &String::from_str(&env, "yes"),
         &String::from_str(&env, "hack"),
+        &0u64,
     );
     assert_unauthorized_contract!(result);
 }
@@ -1208,7 +1210,8 @@ fn test_migrate_to_multi_admin_forged_admin_rejected() {
 fn test_upgrade_contract_authorized_admin_auth_passes() {
     let (env, cid, admin) = setup();
     let wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let result = client(&env, &cid).try_upgrade_contract(&admin, &wasm_hash);
+    let predecessor = BytesN::from_array(&env, &[0u8; 32]);
+    let result = client(&env, &cid).try_upgrade_contract(&admin, &wasm_hash, &predecessor);
     // Auth passes; may fail for other reasons (invalid wasm hash etc.)
     assert_auth_ok_contract!(result, "upgrade_contract rejected authorized admin");
 }
@@ -1219,7 +1222,8 @@ fn test_upgrade_contract_forged_admin_rejected() {
     let (env, cid, _admin) = setup();
     let attacker = Address::generate(&env);
     let wasm_hash = BytesN::from_array(&env, &[9u8; 32]);
-    let result = client(&env, &cid).try_upgrade_contract(&attacker, &wasm_hash);
+    let predecessor = BytesN::from_array(&env, &[0u8; 32]);
+    let result = client(&env, &cid).try_upgrade_contract(&attacker, &wasm_hash, &predecessor);
     assert_unauthorized_contract!(result);
 }
 
@@ -1246,7 +1250,8 @@ fn test_upgrade_before_initialize_returns_admin_not_set() {
     let cid = env.register(PredictifyHybrid, ());
     let fake_admin = Address::generate(&env);
     let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
-    let result = client(&env, &cid).try_upgrade_contract(&fake_admin, &wasm_hash);
+    let predecessor = BytesN::from_array(&env, &[0u8; 32]);
+    let result = client(&env, &cid).try_upgrade_contract(&fake_admin, &wasm_hash, &predecessor);
     assert_eq!(result, Err(Ok(crate::err::Error::AdminNotSet)));
 }
 

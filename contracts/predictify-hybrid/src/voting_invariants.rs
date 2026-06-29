@@ -18,6 +18,7 @@
 
 #![cfg(test)]
 
+use alloc::format;
 use crate::markets::MarketStateManager;
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 use crate::voting::VotingUtils;
