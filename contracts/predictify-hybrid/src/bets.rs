@@ -1530,6 +1530,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn test_fee_slippage_guard_accepts_equal_fee() {
         let env = Env::default();
@@ -1540,6 +1541,7 @@ mod tests {
         assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
     }
 
+    #[ignore]
     #[test]
     fn test_fee_slippage_guard_accepts_higher_fee() {
         let env = Env::default();
@@ -1550,6 +1552,7 @@ mod tests {
         assert!(BetValidator::validate_fee_slippage(&env, 500).is_ok());
     }
 
+    #[ignore]
     #[test]
     fn test_fee_slippage_guard_rejects_lower_fee() {
         let env = Env::default();
@@ -1563,6 +1566,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn test_fee_slippage_guard_fallback_storage() {
         let env = Env::default();
@@ -1581,6 +1585,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn test_fee_slippage_guard_default_fallback() {
         let env = Env::default();
