@@ -79,7 +79,7 @@ impl MarketIdGenerator {
         /// Maximum collision-retry attempts before giving up.
         pub const MAX_RETRIES: u32 = 10;
 
-        // ── Seed sealing methods ───────────────────────────────────────────────────
+    // ── Seed sealing methods ───────────────────────────────────────────────────
 
         /// Check if the seed has been sealed.
         ///
@@ -134,170 +134,22 @@ impl MarketIdGenerator {
 
     /// Generate a unique, collision-resistant market ID for `admin`.
     ///
-    /// The ID is derived from SHA-256(ledger_sequence ‖ global_nonce) and
-    /// formatted as `mkt_{8 hex chars}_{admin_counter}`.
+    /// Returns `true` if the seed is sealed, preventing further regeneration.
+    ///
+    /// Check if the seed has been sealed.
+    ///
+    /// Returns `true` if the seed is sealed, preventing further regeneration.
     ///
     /// # Returns
     ///
-    /// A unique market ID symbol that is registered in the market ID registry
-    /// and can be used as a valid market identifier.
-    ///
-    /// # Panics
-    ///
-    /// - [`Error::InvalidInput`] if the admin's counter has reached [`MAX_COUNTER`].
-    /// - [`Error::DuplicateMarketId`] if a collision is detected during ID generation
-    ///   after [`MAX_RETRIES`] attempts. This provides hard failure on collisions.
-    /// - [`Error::InvalidState`] if attempting to generate IDs after the seed has been sealed.
-    ///
-    /// # Security
-    ///
-    /// This function provides the primary rejection path for duplicate market IDs:
-    /// 1. The seed is sealed at contract initialization, preventing regeneration
-    /// 2. All generated IDs are written to a write-or-fail registry
-    /// 3. Any collision results in a hard Error::DuplicateMarketId failure
-    /// 4. No unwrap() calls are used in the allocation flow, ensuring safe error handling
-    pub fn generate_market_id(env: &Env, admin: &Address) -> Symbol {
-        let timestamp = env.ledger().timestamp();
-        let admin_counter = Self::get_admin_counter(env, admin);
-
-        if admin_counter > Self::MAX_COUNTER {
-            panic_with_error!(env, Error::InvalidInput);
-        }
-
-        Self::ensure_seed_not_sealed(env);
-
-        for attempt in 0..Self::MAX_RETRIES {
-            let current_admin_counter = admin_counter + attempt;
-            if current_admin_counter > Self::MAX_COUNTER {
-                panic_with_error!(env, Error::InvalidInput);
-            }
-
-            let nonce = Self::get_and_bump_global_nonce(env);
-            let market_id = Self::build_market_id(env, nonce, current_admin_counter, admin);
-
-            if !Self::check_market_id_collision(env, &market_id) {
-                Self::set_admin_counter(env, admin, current_admin_counter + 1);
-                Self::register_market_id(env, &market_id, admin, timestamp);
-                return market_id;
-            }
-        }
-
-        panic_with_error!(env, Error::DuplicateMarketId);
-    }
-
-    /// Returns `true` if `market_id` already exists in persistent storage.
-    pub fn check_market_id_collision(env: &Env, market_id: &Symbol) -> bool {
+    /// - `true` if the seed is sealed and cannot be regenerated
+    /// - `false` if the seed is still unsealed and can be regenerated
+    pub fn is_seed_sealed(env: &Env) -> bool {
         env.storage()
             .persistent()
-            .get::<Symbol, Market>(market_id)
-            .is_some()
+            .get(&Symbol::new(env, Self::SEED_SEALED_KEY))
+            .unwrap_or(false)
     }
-
-    /// Returns `true` if `market_id` passes format validation *and* exists in
-    /// persistent storage (i.e. it is a live market).
-    pub fn is_market_id_valid(env: &Env, market_id: &Symbol) -> bool {
-        Self::validate_market_id_format(env, market_id)
-            && Self::check_market_id_collision(env, market_id)
-    }
-
-    /// Returns `true` if `market_id` starts with the `mkt_` prefix.
-    ///
-    /// Legacy IDs (created before this module existed) do not carry the prefix
-    /// and will return `false` here; callers should treat them as valid but
-    /// unstructured.
-    #[cfg(not(target_family = "wasm"))]
-    pub fn validate_market_id_format(_env: &Env, market_id: &Symbol) -> bool {
-        // Symbol::to_string() requires std/Display unavailable in WASM no_std.
-        // Use cfg guard: full logic in std, safe fallback in WASM.
-        #[cfg(not(target_family = "wasm"))]
-        { use alloc::string::ToString; return market_id.to_string().starts_with("mkt_"); }
-        #[allow(unreachable_code)]
-        { let _ = market_id; true }
-    }
-
-    #[cfg(target_family = "wasm")]
-    pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
-        // Soroban's contract-facing Symbol type does not expose string conversion
-        // on wasm builds. Market IDs are generated internally, so runtime callers
-        // rely on collision/registry checks rather than reparsing the prefix.
-        true
-    }
-
-    /// Parse the counter and legacy flag out of a market ID symbol.
-    ///
-    /// Returns [`Error::InvalidInput`] if the ID cannot be parsed.
-    #[cfg(not(target_family = "wasm"))]
-    pub fn parse_market_id_components(
-        _env: &Env,
-        market_id: &Symbol,
-    ) -> Result<MarketIdComponents, Error> {
-        // Symbol::to_string() requires std/Display unavailable in WASM no_std.
-        #[cfg(not(target_family = "wasm"))]
-        {
-            use alloc::string::ToString;
-            let s = market_id.to_string();
-            if !s.starts_with("mkt_") {
-                return Ok(MarketIdComponents { counter: 0, is_legacy: true });
-            }
-            let parts: alloc::vec::Vec<&str> = s.splitn(3, '_').collect();
-            if parts.len() != 3 { return Err(Error::InvalidInput); }
-            let counter = parts[2].parse::<u32>().map_err(|_| Error::InvalidInput)?;
-            return Ok(MarketIdComponents { counter, is_legacy: false });
-        }
-        #[allow(unreachable_code)]
-        { let _ = market_id; Ok(MarketIdComponents { counter: 0, is_legacy: true }) }
-    }
-
-    #[cfg(target_family = "wasm")]
-    pub fn parse_market_id_components(
-        _env: &Env,
-        _market_id: &Symbol,
-    ) -> Result<MarketIdComponents, Error> {
-        // Symbol string parsing is not available in the wasm contract build.
-        // This helper is only used for diagnostics/tests on host builds.
-        Err(Error::InvalidInput)
-    }
-
-    /// Return a paginated slice of the market ID registry.
-    pub fn get_market_id_registry(env: &Env, start: u32, limit: u32) -> Vec<MarketIdRegistryEntry> {
-        let key = Symbol::new(env, Self::REGISTRY_KEY);
-        let registry: Vec<MarketIdRegistryEntry> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(Vec::new(env));
-
-        let mut result = Vec::new(env);
-        let end = core::cmp::min(start + limit, registry.len());
-        for i in start..end {
-            if let Some(entry) = registry.get(i) {
-                result.push_back(entry);
-            }
-        }
-        result
-    }
-
-    /// Return all market IDs created by `admin`.
-    pub fn get_admin_markets(env: &Env, admin: &Address) -> Vec<Symbol> {
-        let key = Symbol::new(env, Self::REGISTRY_KEY);
-        let registry: Vec<MarketIdRegistryEntry> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(Vec::new(env));
-
-        let mut result = Vec::new(env);
-        for i in 0..registry.len() {
-            if let Some(entry) = registry.get(i) {
-                if entry.admin == *admin {
-                    result.push_back(entry.market_id);
-                }
-            }
-        }
-        result
-    }
-
-    // ── Seed sealing methods ───────────────────────────────────────────────────
 
     /// Mark the seed as sealed, preventing future regeneration.
     ///
@@ -334,141 +186,164 @@ impl MarketIdGenerator {
     ///     // (this would be tested with a failing test case)
     /// }
     /// ```
+    pub fn seal_seed(env: &Env) {
+        // Instance storage pattern used throughout the codebase
+        let is_sealed = Self::is_seed_sealed(env);
+        if is_sealed {
+            panic_with_error!(env, Error::InvalidState);
+        }
 
-    // ── Registry write-or-fail methods ────────────────────────────────────────
+        // Use instance().set pattern with explicit bump TTL
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, Self::SEED_SEALED_KEY), &true);
+        
+        // Bump TTL explicitly following the guidelines
+        Self::bump_seed_storage_ttl(env);
+    }
 
-    /// Register a market ID in the registry using write-or-fail pattern.
+    /// Ensure the seed is not sealed before regeneration.
     ///
-    /// This method provides the hard rejection path for any ID collision by
-    /// using a write-or-fail approach where the registry write is atomic and
-    /// will fail on any collision, ensuring deterministic behavior.
-    ///
-    /// # Parameters
-    ///
-    /// - `market_id` - The market ID symbol to register (must be unique)
-    /// - `admin` - The admin who created the market
-    /// - `timestamp` - Ledger timestamp when the market was created
+    /// This safety check prevents any seed regeneration after sealing.
+    /// It provides explicit validation before attempting to regenerate the seed.
     ///
     /// # Panics
     ///
-    /// - [`Error::DuplicateMarketId`] if the market ID already exists in the registry
-    /// - [`Error::InvalidState`] if any storage operation fails
-    ///
-    /// # Security Guarantees
-    ///
-    /// This method provides the hard rejection path for duplicate market IDs:
-    /// 1. Uses `env.storage().persistent().set()` with collision checking
-    /// 2. No unwrap() calls - all failures are properly handled with panic_with_error
-    /// 3. Ensures deterministic ID generation by rejecting all collisions
-    /// 4. Maintains the integrity of the market ID registry
-    fn register_market_id(env: &Env, market_id: &Symbol, admin: &Address, timestamp: u64) {
-        let key = Symbol::new(env, Self::REGISTRY_KEY);
-        
-        // Get the existing registry
-        let mut registry: Vec<MarketIdRegistryEntry> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(Vec::new(env));
-        
-        // Check for collision before attempting to write
-        for entry in registry.iter() {
-            if entry.market_id == *market_id {
-                panic_with_error!(env, Error::DuplicateMarketId);
-            }
+    /// - [`Error::InvalidState`] if attempting to regenerate an already sealed seed
+    fn ensure_seed_not_sealed(env: &Env) {
+        if Self::is_seed_sealed(env) {
+            panic_with_error!(env, Error::InvalidState);
         }
-        
-        // Register the new market ID
-        registry.push_back(MarketIdRegistryEntry {
-            market_id: market_id.clone(),
-            admin: admin.clone(),
-            timestamp,
-        });
-        
-        // Atomic write to persistent storage
-        env.storage().persistent().set(&key, &registry);
-        
-        // Bump TTL for the registry to maintain long-term persistence
-        Self::bump_registry_storage_ttl(env, &key);
     }
 
-    /// Bump TTL for registry entries to ensure long-term persistence.
+    /// Bump TTL for seed-related storage to ensure long-term persistence.
     ///
-    /// This ensures the market ID registry persists for the contract's entire lifetime,
-    /// preventing premature expiration of stored market IDs.
+    /// This ensures the seed sealing flag persists for the contract's entire lifetime.
     ///
-    /// # Parameters
+    /// # Safety Note
     ///
-    /// - `key` - The storage key whose TTL should be extended
-    fn bump_registry_storage_ttl(env: &Env, key: &Symbol) {
-        // Extend TTL for the registry to maintain long-term persistence
+    /// Uses the maximum allowed TTL to ensure the seed flag remains valid even as
+    /// the contract matures and storage entries age.
+    fn bump_seed_storage_ttl(env: &Env) {
+        let key = Symbol::new(env, Self::SEED_SEALED_KEY);
         env.storage()
             .persistent()
             .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
     }
 
-    // ── Private helpers ──────────────────────────────────────────────────────
+// ── Public API ───────────────────────────────────────────────────────────
 
-    /// Build a market ID symbol.
-    ///
-    /// Hash input layout (big-endian):
-    /// ```text
-    /// [ ledger_sequence (4 B) | global_nonce (4 B) | admin_address (32 B) ]
-    /// ```
-    ///
-    /// Including the admin address binds the hash to the caller, so two admins
-    /// with the same sequence and nonce still produce different IDs.
-    fn build_market_id(env: &Env, nonce: u32, admin_counter: u32, admin: &Address) -> Symbol {
-        let sequence = env.ledger().sequence();
+/// Generate a unique, collision-resistant market ID for `admin`.
+///
+/// The ID is derived from SHA-256(ledger_sequence ‖ global_nonce) and
+/// formatted as `mkt_{8 hex chars}_{admin_counter}`.
+///
+/// # Returns
+///
+/// A unique market ID symbol that is registered in the market ID registry
+/// and can be used as a valid market identifier.
+///
+/// # Panics
+///
+/// - [`Error::InvalidInput`] if the admin's counter has reached [`MAX_COUNTER`].
+/// - [`Error::DuplicateMarketId`] if a collision is detected during ID generation
+///   after [`MAX_RETRIES`] attempts. This provides hard failure on collisions.
+/// - [`Error::InvalidState`] if attempting to generate IDs after the seed has been sealed.
+///
+/// # Security
+///
+/// This function provides the primary rejection path for duplicate market IDs:
+/// 1. The seed is sealed at contract initialization, preventing regeneration
+/// 2. All generated IDs are written to a write-or-fail registry
+/// 3. Any collision results in a hard Error::DuplicateMarketId failure
+/// 4. No unwrap() calls are used in the allocation flow, ensuring safe error handling
+pub fn generate_market_id(env: &Env, admin: &Address) -> Symbol {
+    let timestamp = env.ledger().timestamp();
+    let admin_counter = Self::get_admin_counter(env, admin);
 
-        let seq_bytes = Bytes::from_array(env, &sequence.to_be_bytes());
-        let nonce_bytes = Bytes::from_array(env, &nonce.to_be_bytes());
-        // Serialize the admin address to bytes for inclusion in the hash seed.
-        let admin_bytes = admin.clone().to_xdr(env);
-
-        let mut input = seq_bytes;
-        input.append(&nonce_bytes);
-        input.append(&admin_bytes);
-
-        let hash = env.crypto().sha256(&input);
-        let hash_bytes = hash.to_bytes();
-
-        // First 4 bytes → 8 hex chars.
-        let hex: alloc::string::String = (0..4)
-            .map(|i| format!("{:02x}", hash_bytes.get(i).unwrap_or(0)))
-            .collect();
-
-        let id_str = format!("mkt_{}_{}", hex, admin_counter);
-        Symbol::new(env, &id_str)
+    if admin_counter > Self::MAX_COUNTER {
+        panic_with_error!(env, Error::InvalidInput);
     }
 
-    /// Read the global nonce and increment it atomically.
-    fn get_and_bump_global_nonce(env: &Env) -> u32 {
-        let key = Symbol::new(env, Self::GLOBAL_NONCE_KEY);
-        let nonce: u32 = env.storage().persistent().get(&key).unwrap_or(0u32);
-        env.storage().persistent().set(&key, &(nonce + 1));
-        nonce
+    Self::ensure_seed_not_sealed(env);
+
+    for attempt in 0..Self::MAX_RETRIES {
+        let current_admin_counter = admin_counter + attempt;
+        if current_admin_counter > Self::MAX_COUNTER {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+
+        let nonce = Self::get_and_bump_global_nonce(env);
+        let market_id = Self::build_market_id(env, nonce, current_admin_counter, admin);
+
+        if !Self::check_market_id_collision(env, &market_id) {
+            Self::set_admin_counter(env, admin, current_admin_counter + 1);
+            Self::register_market_id(env, &market_id, admin, timestamp);
+            return market_id;
+        }
     }
 
-    pub(crate) fn get_admin_counter(env: &Env, admin: &Address) -> u32 {
-        let key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
-        let counters: soroban_sdk::Map<Address, u32> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(soroban_sdk::Map::new(env));
-        counters.get(admin.clone()).unwrap_or(0)
-    }
+    panic_with_error!(env, Error::DuplicateMarketId);
+}
 
-    fn set_admin_counter(env: &Env, admin: &Address, counter: u32) {
-        let key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
-        let mut counters: soroban_sdk::Map<Address, u32> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(soroban_sdk::Map::new(env));
-        counters.set(admin.clone(), counter);
-        env.storage().persistent().set(&key, &counters);
+/// Returns `true` if `market_id` already exists in persistent storage.
+pub fn check_market_id_collision(env: &Env, market_id: &Symbol) -> bool {
+    env.storage()
+        .persistent()
+        .get::<Symbol, Market>(market_id)
+        .is_some()
+}
+
+/// Returns `true` if `market_id` passes format validation *and* exists in
+/// persistent storage (i.e. it is a live market).
+pub fn is_market_id_valid(env: &Env, market_id: &Symbol) -> bool {
+    Self::validate_market_id_format(env, market_id)
+        && Self::check_market_id_collision(env, market_id)
+}
+
+/// Returns `true` if `market_id` starts with the `mkt_` prefix.
+///
+/// Legacy IDs (created before this module existed) do not carry the prefix
+/// and will return `false` here; callers should treat them as valid but
+/// unstructured.
+#[cfg(not(target_family = "wasm"))]
+pub fn validate_market_id_format(_env: &Env, market_id: &Symbol) -> bool {
+    // Symbol::to_string() requires std/Display unavailable in WASM no_std.
+    // Use cfg guard: full logic in std, safe fallback in WASM.
+    #[cfg(not(target_family = "wasm"))]
+    { use alloc::string::ToString; return market_id.to_string().starts_with("mkt_"); }
+    #[allow(unreachable_code)]
+    { let _ = market_id; true }
+}
+
+#[cfg(target_family = "wasm")]
+pub fn validate_market_id_format(_env: &Env, _market_id: &Symbol) -> bool {
+    // Soroban's contract-facing Symbol type does not expose string conversion
+    // on wasm builds. Market IDs are generated internally, so runtime callers
+    // rely on collision/registry checks rather than reparsing the prefix.
+    true
+}
+
+/// Parse the counter and legacy flag out of a market ID symbol.
+///
+/// Returns [`Error::InvalidInput`] if the ID cannot be parsed.
+#[cfg(not(target_family = "wasm"))]
+pub fn parse_market_id_components(
+    _env: &Env,
+    market_id: &Symbol,
+) -> Result<MarketIdComponents, Error> {
+    // Symbol::to_string() requires std/Display unavailable in WASM no_std.
+    #[cfg(not(target_family = "wasm"))]
+    {
+        use alloc::string::ToString;
+        let s = market_id.to_string();
+        if !s.starts_with("mkt_") {
+            return Ok(MarketIdComponents { counter: 0, is_legacy: true });
+        }
+        let parts: alloc::vec::Vec<&str> = s.splitn(3, '_').collect();
+        if parts.len() != 3 { return Err(Error::InvalidInput); }
+        let counter = parts[2].parse::<u32>().map_err(|_| Error::InvalidInput)?;
+        return Ok(MarketIdComponents { counter, is_legacy: false });
     }
 }
 
