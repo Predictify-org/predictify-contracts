@@ -1507,6 +1507,34 @@ impl PredictifyHybrid {
     ///
     /// Claims are allowed until `market.end_time + claim_period_seconds` unless overridden
     /// per market. After expiry, claims revert with `Error::ResolutionTimeoutReached`.
+    /// Set governance-controlled minimum bet size in basis points of the market token.
+    /// admin-only. 1 bps = 0.01%. Stored as a u32 (0..=10000).
+    pub fn set_governance_min_bet_bps(env: Env, admin: Address, min_bet_bps: u32) {
+        admin.require_auth();
+        if min_bet_bps > 10_000 {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, SYM_ADMIN))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "gov_min_bps"), &min_bet_bps);
+    }
+
+    /// Get the governance-set minimum bet bps (0 = not set).
+    pub fn get_governance_min_bet_bps(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "gov_min_bps"))
+            .unwrap_or(0u32)
+    }
+
     pub fn set_global_claim_period(env: Env, admin: Address, claim_period_seconds: u64) {
         admin.require_auth();
 
