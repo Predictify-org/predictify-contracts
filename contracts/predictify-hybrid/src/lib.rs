@@ -7591,4 +7591,4 @@ mod tests {
             assert!(guard.consumed() == 0); // No instructions consumed yet in test host
         });
     }
-}
+}mod event_topic_catalog;
