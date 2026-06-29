@@ -11,6 +11,7 @@ mod admin;
 // #[cfg(any())]
 // mod error_code_tests;
 pub mod audit_trail;
+mod analytics;
 mod balances;
 mod batch_operations;
 mod bets;
@@ -26,7 +27,7 @@ mod gas;
 mod governance;
 mod markets;
 mod monitoring;
-mod oracle;
+mod oracles;
 mod reentrancy_guard;
 mod reporting;
 // #[cfg(any())]
@@ -716,6 +717,9 @@ impl PredictifyHybrid {
 
         env.storage().persistent().set(&market_id, &market);
 
+        // Invalidate analytics cache so next read recomputes fresh stats.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
         // Emit vote cast event
         EventEmitter::emit_vote_cast(&env, &market_id, &user, &outcome, stake);
 
@@ -873,10 +877,12 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         // Use the BetManager to handle the bet placement
-        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount, max_fee_bps) {
+        match bets::BetManager::place_bet(&env, user.clone(), market_id.clone(), outcome, amount, max_fee_bps) {
             Ok(bet) => {
                 // Record statistics
                 statistics::StatisticsManager::record_bet_placed(&env, &user, amount);
+                // Invalidate analytics cache — staked amounts have changed.
+                analytics::AnalyticsCache::new(&env).invalidate(&market_id);
                 bet
             }
             Err(e) => panic_with_error!(env, e),
@@ -957,8 +963,15 @@ impl PredictifyHybrid {
         {
             panic_with_error!(env, e);
         }
-        match bets::BetManager::place_bets(&env, user, bets, max_fee_bps, idempotency_key) {
-            Ok(placed_bets) => placed_bets,
+        match bets::BetManager::place_bets(&env, user, bets.clone(), max_fee_bps, idempotency_key) {
+            Ok(placed_bets) => {
+                // Invalidate analytics cache for every market touched by this batch.
+                let cache = analytics::AnalyticsCache::new(&env);
+                for (market_id, _, _) in bets.iter() {
+                    cache.invalidate(&market_id);
+                }
+                placed_bets
+            }
             Err(e) => panic_with_error!(env, e),
         }
     }
@@ -1480,6 +1493,9 @@ impl PredictifyHybrid {
                     .set(user.clone(), ClaimInfo::new(&env, payout));
                 env.storage().persistent().set(&market_id, &market);
 
+                // Invalidate analytics cache — claimed map has changed.
+                analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
                 // Emit winnings claimed event
                 EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
 
@@ -1501,6 +1517,7 @@ impl PredictifyHybrid {
         // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
         market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
         env.storage().persistent().set(&market_id, &market);
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
     }
 
     /// Set the global claim period for resolved markets (admin only).
@@ -1998,7 +2015,10 @@ impl PredictifyHybrid {
         );
 
         // Automatically distribute payouts to winners after resolution
-        let _ = Self::distribute_payouts(env.clone(), market_id);
+        let _ = Self::distribute_payouts(env.clone(), market_id.clone());
+
+        // Invalidate analytics cache — market state and winning_outcomes have changed.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
 
         GasTracker::end_tracking(&env, symbol_short!("res_man"), gas_marker);
     }
@@ -2145,7 +2165,10 @@ impl PredictifyHybrid {
         );
 
         // Automatically distribute payouts (handles split pool for ties)
-        let _ = Self::distribute_payouts(env.clone(), market_id);
+        let _ = Self::distribute_payouts(env.clone(), market_id.clone());
+
+        // Invalidate analytics cache — market state and winning_outcomes have changed.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
     }
 
     /// Force-resolves a market bypassing time/state constraints, with idempotency-key
@@ -2880,6 +2903,9 @@ impl PredictifyHybrid {
 
         statistics::StatisticsManager::record_market_resolved(&env);
 
+        // Invalidate analytics cache — market state has changed.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
         Ok(())
     }
 
@@ -3058,16 +3084,14 @@ impl PredictifyHybrid {
         env: Env,
         market_id: Symbol,
     ) -> Result<markets::MarketStats, Error> {
-        let market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        // Fast path: serve from the instance analytics cache when hot.
+        // The cache is invalidated on every write (vote, bet, claim, resolve, dispute).
+        if let Some(cached) = analytics::get_or_compute(&env, &market_id) {
+            return Ok(cached);
+        }
 
-        // Calculate market statistics
-        let stats = markets::MarketAnalytics::get_market_stats(&market);
-
-        Ok(stats)
+        // Slow path: market not found in persistent storage.
+        Err(Error::MarketNotFound)
     }
 
     /// Dispute a market resolution
@@ -3095,7 +3119,12 @@ impl PredictifyHybrid {
             return Err(Error::from(rate_err));
         }
 
-        disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
+        let result = disputes::DisputeManager::process_dispute(&env, user, market_id.clone(), stake, reason);
+        if result.is_ok() {
+            // Invalidate analytics cache — dispute stakes have changed.
+            analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+        }
+        result
     }
 
     /// Set the dispute stake cap for a user in a market (governance/admin only)
@@ -3191,9 +3220,14 @@ impl PredictifyHybrid {
             return Err(Error::from(rate_err));
         }
 
-        disputes::DisputeManager::vote_on_dispute(
-            &env, user, market_id, dispute_id, vote, stake, reason,
-        )
+        let result = disputes::DisputeManager::vote_on_dispute(
+            &env, user, market_id.clone(), dispute_id, vote, stake, reason,
+        );
+        if result.is_ok() {
+            // Invalidate analytics cache — dispute stakes have changed.
+            analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+        }
+        result
     }
 
     /// Resolve a dispute (admin only)
