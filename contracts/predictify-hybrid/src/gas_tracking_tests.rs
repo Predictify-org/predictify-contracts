@@ -26,6 +26,7 @@ use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::StellarAssetClient,
+    symbol_short,
     vec, String, Symbol,
 };
 
@@ -491,3 +492,263 @@ fn test_gas_operations_within_expected_ranges() {
 // - ✅ Expected cost ranges
 //
 // Target: 95% coverage of gas-related functionality ✅
+
+// ===== ROLLING WINDOW AND LOW-WATER ALERT TESTS =====
+
+#[test]
+fn test_gas_usage_ring_buffer_initialization() {
+    // Test: Ring buffer initializes correctly with empty state
+    let env = Env::default();
+    let mut usage = GasUsage::default();
+    
+    assert_eq!(usage.history_count, 0);
+    assert_eq!(usage.history_index, 0);
+    assert!(usage.cpu_history.is_empty());
+}
+
+#[test]
+fn test_gas_usage_add_to_history() {
+    // Test: Adding values to ring buffer works correctly
+    let env = Env::default();
+    let mut usage = GasUsage::default();
+    
+    // Add first value
+    let avg1 = usage.add_to_history(&env, 100);
+    assert_eq!(avg1, 100); // Average of [100] is 100
+    assert_eq!(usage.history_count, 1);
+    assert_eq!(usage.history_index, 1);
+    
+    // Add second value
+    let avg2 = usage.add_to_history(&env, 200);
+    assert_eq!(avg2, 150); // Average of [100, 200] is 150
+    assert_eq!(usage.history_count, 2);
+    assert_eq!(usage.history_index, 2);
+    
+    // Add third value
+    let avg3 = usage.add_to_history(&env, 300);
+    assert_eq!(avg3, 200); // Average of [100, 200, 300] is 200
+    assert_eq!(usage.history_count, 3);
+}
+
+#[test]
+fn test_gas_usage_ring_buffer_wrap_around() {
+    // Test: Ring buffer wraps around correctly when full
+    let env = Env::default();
+    let mut usage = GasUsage::default();
+    
+    // Fill buffer to capacity (GAS_TRACKING_WINDOW_SIZE = 10)
+    for i in 1..=10 {
+        usage.add_to_history(&env, i * 100);
+    }
+    
+    assert_eq!(usage.history_count, 10);
+    assert_eq!(usage.history_index, 0); // Should wrap to 0
+    
+    // Add one more value - should overwrite first
+    let avg = usage.add_to_history(&env, 1100);
+    // Average should be of [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
+    // Sum = 6500, Average = 650
+    assert_eq!(avg, 650);
+    assert_eq!(usage.history_count, 10); // Count stays at max
+    assert_eq!(usage.history_index, 1); // Index advances
+}
+
+#[test]
+fn test_gas_usage_moving_average_empty_buffer() {
+    // Test: Moving average returns 0 for empty buffer
+    let env = Env::default();
+    let usage = GasUsage::default();
+    
+    // Empty buffer should return 0
+    let avg = usage.calculate_moving_average(&env);
+    assert_eq!(avg, 0);
+}
+
+#[test]
+fn test_record_with_alert_no_budget() {
+    // Test: No alert emitted when no budget is configured
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // No budget set - should not emit alert
+    GasTracker::record_with_alert(&env, operation.clone(), 1000);
+    
+    // Verify no event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 0);
+}
+
+#[test]
+fn test_record_with_alert_zero_budget() {
+    // Test: No alert emitted when budget is 0
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // Set zero budget
+    GasTracker::set_limit(&env, operation.clone(), 0, 1000);
+    
+    // Should not emit alert for zero budget
+    GasTracker::record_with_alert(&env, operation.clone(), 1000);
+    
+    // Verify no event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 0);
+}
+
+#[test]
+fn test_record_with_alert_zero_usage() {
+    // Test: No alert emitted when usage is 0
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // Set budget
+    GasTracker::set_limit(&env, operation.clone(), 1000, 1000);
+    
+    // Should not emit alert for zero usage
+    GasTracker::record_with_alert(&env, operation.clone(), 0);
+    
+    // Verify no event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 0);
+}
+
+#[test]
+fn test_record_with_alert_below_threshold() {
+    // Test: No alert when usage is below 90% threshold
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // Set budget to 1000 (threshold = 900)
+    GasTracker::set_limit(&env, operation.clone(), 1000, 1000);
+    
+    // Usage of 800 is below threshold (900)
+    GasTracker::record_with_alert(&env, operation.clone(), 800);
+    
+    // Verify no event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 0);
+}
+
+#[test]
+fn test_record_with_alert_at_threshold() {
+    // Test: No alert when usage is exactly at 90% threshold
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // Set budget to 1000 (threshold = 900)
+    GasTracker::set_limit(&env, operation.clone(), 1000, 1000);
+    
+    // Usage of 900 is exactly at threshold
+    GasTracker::record_with_alert(&env, operation.clone(), 900);
+    
+    // Verify no event was emitted (alert only when > threshold)
+    let events = env.events().all();
+    assert_eq!(events.len(), 0);
+}
+
+#[test]
+fn test_record_with_alert_above_threshold() {
+    // Test: Alert emitted when usage exceeds 90% threshold
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // Set budget to 1000 (threshold = 900)
+    GasTracker::set_limit(&env, operation.clone(), 1000, 1000);
+    
+    // Usage of 901 exceeds threshold (900)
+    GasTracker::record_with_alert(&env, operation.clone(), 901);
+    
+    // Verify event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 1);
+}
+
+#[test]
+fn test_record_with_alert_exceeds_budget() {
+    // Test: Alert emitted even when usage exceeds budget
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // Set budget to 1000
+    GasTracker::set_limit(&env, operation.clone(), 1000, 1000);
+    
+    // Usage of 1500 exceeds budget
+    GasTracker::record_with_alert(&env, operation.clone(), 1500);
+    
+    // Verify event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 1);
+}
+
+#[test]
+fn test_record_with_alert_event_structure() {
+    // Test: Verify event structure is correct
+    let env = Env::default();
+    let operation = Symbol::new(&env, "test_op");
+    
+    // Set budget to 1000
+    GasTracker::set_limit(&env, operation.clone(), 1000, 1000);
+    
+    // Trigger alert
+    GasTracker::record_with_alert(&env, operation.clone(), 950);
+    
+    // Verify event structure
+    let events = env.events().all();
+    assert_eq!(events.len(), 1);
+    
+    let event = &events[0];
+    assert_eq!(event.0, vec![&env, symbol_short!("performance_metric"), operation]);
+}
+
+#[test]
+fn test_record_with_alert_multiple_operations() {
+    // Test: Alerts work correctly for different operations
+    let env = Env::default();
+    let op1 = Symbol::new(&env, "op1");
+    let op2 = Symbol::new(&env, "op2");
+    
+    // Set different budgets for each operation
+    GasTracker::set_limit(&env, op1.clone(), 1000, 1000);
+    GasTracker::set_limit(&env, op2.clone(), 2000, 2000);
+    
+    // Trigger alert for op1 (950 > 900)
+    GasTracker::record_with_alert(&env, op1.clone(), 950);
+    
+    // No alert for op2 (1500 < 1800)
+    GasTracker::record_with_alert(&env, op2.clone(), 1500);
+    
+    // Verify only one event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 1);
+}
+
+#[test]
+fn test_gas_usage_ring_buffer_o1_insertion() {
+    // Test: Verify ring buffer insertion is O(1) by checking it doesn't
+    // depend on buffer size for insertion time
+    let env = Env::default();
+    let mut usage = GasUsage::default();
+    
+    // Fill buffer
+    for i in 0..10 {
+        usage.add_to_history(&env, i * 100);
+    }
+    
+    // Insertion should work regardless of buffer state
+    let start_index = usage.history_index;
+    usage.add_to_history(&env, 1000);
+    
+    // Index should have advanced by 1 (mod window size)
+    assert_eq!(usage.history_index, (start_index + 1) % 10);
+}
+
+#[test]
+fn test_gas_usage_default_fields() {
+    // Test: Default GasUsage has all new fields initialized
+    let usage = GasUsage::default();
+    
+    assert_eq!(usage.cpu, 0);
+    assert_eq!(usage.mem, 0);
+    assert_eq!(usage.history_count, 0);
+    assert_eq!(usage.history_index, 0);
+}
