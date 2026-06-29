@@ -7379,6 +7379,29 @@ impl PredictifyHybrid {
     pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
         reporting::ReportingManager::get_snapshot_envelope(&env)
     }
+
+    /// Take a lifecycle metric snapshot keyed by ledger sequence.
+    /// Captures cumulative dispute fees, governance min-bet bps, and oracle confidence threshold.
+    /// Returns the ledger sequence at which the snapshot was taken.
+    pub fn take_lifecycle_snapshot(env: Env, caller: Address) -> u64 {
+        caller.require_auth();
+        let ledger = env.ledger().sequence() as u64;
+        let timestamp = env.ledger().timestamp();
+        let cum_fee: i128 = env.storage().instance()
+            .get(&Symbol::new(&env, "cum_disp_fee")).unwrap_or(0);
+        let min_bet_bps: u32 = env.storage().instance()
+            .get(&Symbol::new(&env, "gov_min_bps")).unwrap_or(0);
+        let oracle_conf: u32 = env.storage().instance()
+            .get(&Symbol::new(&env, "oracle_conf_bps")).unwrap_or(0);
+        let key = (Symbol::new(&env, "snap"), ledger);
+        env.storage().instance().set(&key, &(timestamp, cum_fee, min_bet_bps, oracle_conf));
+        ledger
+    }
+
+    /// Retrieve a lifecycle snapshot (timestamp, cum_dispute_fee, min_bet_bps, oracle_conf_bps).
+    pub fn get_lifecycle_snapshot(env: Env, ledger_seq: u64) -> Option<(u64, i128, u32, u32)> {
+        env.storage().instance().get(&(Symbol::new(&env, "snap"), ledger_seq))
+    }
 }
 
 // ===== TESTS =====
