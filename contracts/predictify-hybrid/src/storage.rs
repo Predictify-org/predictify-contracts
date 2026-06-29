@@ -51,6 +51,7 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
+    AntiGriefFloor,
 }
 
 /// Storage format version for migration tracking

@@ -769,6 +769,23 @@ impl DisputeManager {
         env.storage().persistent().get(&key)
     }
 
+    /// Sets the anti-grief minimum stake floor.
+    pub fn set_anti_grief_floor(env: &Env, admin: Address, floor: i128) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        let key = DataKey::AntiGriefFloor;
+        env.storage().persistent().set(&key, &floor);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Retrieves the anti-grief minimum stake floor.
+    pub fn get_anti_grief_floor(env: &Env) -> Option<i128> {
+        let key = DataKey::AntiGriefFloor;
+        env.storage().persistent().get(&key)
+    }
+
     /// Evicts the oldest resolved/expired disputes if history size exceeds the cap.
     pub fn apply_eviction(
         env: &Env,
@@ -887,6 +904,12 @@ impl DisputeManager {
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         DisputeValidator::validate_market_for_dispute(env, &market)?;
+
+        // Enforce anti-grief floor
+        let anti_grief_floor = Self::get_anti_grief_floor(env).unwrap_or(0);
+        if stake < anti_grief_floor {
+            return Err(Error::InvalidStakeAmount);
+        }
 
         // Validate dispute parameters
         DisputeValidator::validate_dispute_parameters(env, &market_id, &user, &market, stake)?;

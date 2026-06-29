@@ -3401,6 +3401,17 @@ impl PredictifyHybrid {
         disputes::DisputeManager::set_history_cap(&env, admin, cap)
     }
 
+    /// Sets the global anti-grief minimum stake floor (admin only).
+    pub fn set_anti_grief_floor(
+        env: Env,
+        admin: Address,
+        floor: i128,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+
+        disputes::DisputeManager::set_anti_grief_floor(&env, admin, floor)
+    }
+
     /// Collect fees from a market (admin only)
     ///
     /// # Errors
