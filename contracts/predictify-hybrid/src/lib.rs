@@ -7441,6 +7441,29 @@ impl PredictifyHybrid {
     pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
         reporting::ReportingManager::get_snapshot_envelope(&env)
     }
+
+    /// Accumulate dispute fees. Called after each dispute resolution to add
+    /// `fee_amount` to the running cumulative total. Returns the new total.
+    pub fn accumulate_dispute_fee(env: Env, caller: Address, fee_amount: i128) -> i128 {
+        caller.require_auth();
+        if fee_amount < 0 {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+        let key = Symbol::new(&env, "cum_disp_fee");
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0i128);
+        let new_total = current.checked_add(fee_amount)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
+        env.storage().instance().set(&key, &new_total);
+        new_total
+    }
+
+    /// Get the cumulative dispute fee total accumulated so far.
+    pub fn get_cumulative_dispute_fee(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "cum_disp_fee"))
+            .unwrap_or(0i128)
+    }
 }
 
 // ===== TESTS =====
