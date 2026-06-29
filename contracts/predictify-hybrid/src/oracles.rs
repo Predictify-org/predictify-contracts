@@ -572,7 +572,7 @@ impl OracleInterface for PythOracle {
 ///     }
 ///     
 ///     // Get TWAP for ETH over last 10 records
-///     if let Some(eth_twap) = client.twap(ReflectorAsset::ETH, 10) {
+///     if let Some(eth_twap) = client.twap(ReflectorAsset::ETH, 10, false) {
 ///         println!("ETH TWAP: ${}", eth_twap / 100);
 ///     }
 ///     
@@ -644,7 +644,7 @@ impl<'a> ReflectorOracleClient<'a> {
     }
 
     /// Get TWAP (Time-Weighted Average Price) for an asset
-    pub fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
+    pub fn twap(&self, asset: ReflectorAsset, records: u32, force_refresh: bool) -> Option<i128> {
         // Build a cache key unique to this transaction
         let cache_key: (Symbol, Val, Val) = (
             Symbol::short("twap_cache"),
