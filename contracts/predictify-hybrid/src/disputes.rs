@@ -943,8 +943,8 @@ impl DisputeManager {
         };
         DisputeUtils::add_vote_to_dispute(env, &market_id, dispute_vote)?;
 
-        // Emit dispute created event
-        crate::events::EventEmitter::emit_dispute_created(
+        // Emit dispute opened event
+        crate::events::EventEmitter::emit_dispute_opened(
             env,
             &market_id,
             &user,
