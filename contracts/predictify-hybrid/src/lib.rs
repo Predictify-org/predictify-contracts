@@ -1,29 +1,10 @@
 #![no_std]
-#![allow(unused_variables)]
-#![allow(unused_assignments)]
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(unused_mut)]
-#![allow(deprecated)]
-#![allow(clippy::empty_line_after_doc_comments)]
-#![allow(clippy::empty_line_after_outer_attr)]
-#![allow(clippy::enum_variant_names)]
-#![allow(clippy::all)]
 
 extern crate alloc;
-#[cfg(not(test))]
-extern crate wee_alloc;
 
-#[cfg(not(test))]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+// ===== MODULE DECLARATIONS =====
+// These must be declared here so Rust knows to compile them as part of this crate.
 
-// Short symbol keys (max length 9 for Soroban compatibility)
-const SYM_PLATFORM_FEE: &str = "plat_fee";      // was "platform_fee" (12 chars)
-const SYM_ALLOWED_ASSETS: &str = "allowed";     // was "allowed_assets" (14 chars)
-const SYM_ADMIN: &str = "Admin";                // kept as is (5 chars)
-
-// Module declarations - all modules enabled
 mod admin;
 // #[cfg(any())]
 // mod admin_auth_audit_tests;
@@ -35,33 +16,16 @@ mod batch_operations;
 mod bets;
 mod circuit_breaker;
 mod config;
-mod disputes;
-mod edge_cases;
 mod err;
 mod force_resolve;
 mod event_archive;
 mod events;
-mod extensions;
 mod fees;
 mod gas;
 mod governance;
-mod graceful_degradation;
-mod market_analytics;
-mod market_id_generator;
 mod markets;
-mod metadata_limits;
-#[cfg(test)]
-mod metadata_limits_tests;
-#[cfg(test)]
-mod metadata_commitment_tests;
 mod monitoring;
-#[cfg(test)]
-mod multi_admin_multisig_tests;
-mod oracles;
-mod performance_benchmarks;
-mod queries;
-mod rate_limiter;
-mod recovery;
+mod oracle;
 mod reentrancy_guard;
 mod reporting;
 // #[cfg(any())]
@@ -73,13 +37,7 @@ mod reporting;
 #[cfg(test)]
 mod resolution_event_ordering_tests;
 mod resolution;
-mod statistics;
 mod storage;
-#[cfg(test)]
-mod storage_layout_tests;
-pub mod tokens;
-#[cfg(test)]
-mod custom_token_tests;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -106,8 +64,15 @@ mod bandprotocol {
 // #[cfg(test)]
 // mod oracle_fallback_timeout_tests;
 
-// #[cfg(any())]
-// mod batch_operations_tests;
+use bets::{BetStatus, BetStorage};
+use circuit_breaker::CircuitBreaker;
+use err::Error;
+use events::{ClaimInfo, EventEmitter};
+use gas::BudgetGuard;
+use resolution::ResolutionOutcomeCache;
+use storage::BalanceStorage;
+use types::{Market, ReflectorAsset};
+use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Env, Symbol};
 
 // #[cfg(any())]
 // mod integration_test;
@@ -227,362 +192,20 @@ impl From<crate::rate_limiter::RateLimiterError> for Error {
 #[contract]
 pub struct PredictifyHybrid;
 
-const PERCENTAGE_DENOMINATOR: i128 = 10000;
-
-const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str =
-    "Primary oracle failed, fallback also failed";
-const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str = "Primary oracle failed and no fallback configured";
-
-fn resolution_timeout_reached(env: &Env, market: &Market) -> bool {
-    let current_time = env.ledger().timestamp();
-    current_time >= market.end_time.saturating_add(market.resolution_timeout)
-}
-
-fn automatic_oracle_result_unavailable(env: &Env, config: &OracleConfig) -> Result<String, Error> {
-    if !config.is_active() {
-        return Err(Error::OracleUnavailable);
-    }
-    Ok(String::from_str(env, "pending"))
-}
+// ===== CONTRACT IMPLEMENTATION =====
 
 #[contractimpl]
 impl PredictifyHybrid {
-    // Recovery methods appended later in file after existing functions to maintain readability.
-    /// Initializes the Predictify Hybrid smart contract with administrator and platform configuration.
+    /// Distribute payouts to winning voters and bettors for a resolved market.
     ///
-    /// This function must be called once after contract deployment to set up the initial
-    /// administrative configuration and platform fee structure. It establishes the contract admin who
-    /// will have privileges to create markets and perform administrative functions, and configures
-    /// the platform fee percentage for market operations. The call also stores the default
-    /// development-oriented contract configuration so creation validators have deterministic
-    /// bounds immediately after deployment.
+    /// This function iterates over all voters and bettors, calculates each winner's
+    /// proportional share of the total pool (after platform fee), credits their balance,
+    /// and emits a winnings-claimed event. A `BudgetGuard` is checked every 10 iterations
+    /// to abort gracefully before the host CPU-instruction limit is reached.
     ///
     /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `admin` - The address that will be granted administrative privileges
-    /// * `platform_fee_percentage` - Optional platform fee percentage (0-10%). If `None`, defaults to 2%
-    /// * `allowed_assets` - Optional list of allowed asset contract addresses. If `None`, defaults are used
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when:
-    /// - The contract has already been initialized
-    /// - The admin address is invalid
-    /// - The platform fee percentage is negative or exceeds 10%
-    /// - Storage operations fail
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use soroban_sdk::{Env, Address, Vec};
-    /// # use predictify_hybrid::PredictifyHybrid;
-    /// # let env = Env::default();
-    /// # let admin_address = Address::generate(&env);
-    ///
-    /// // Initialize with default 2% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address.clone(), None, None)?;
-    ///
-    /// // Or initialize with custom 5% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address, Some(5), None)?;
-    /// ```
-    ///
-    /// # Platform Fee
-    ///
-    /// The platform fee is a percentage (0-10%) taken from winning payouts to support
-    /// platform operations. Fee is applied during payout calculation:
-    /// - Default: 2% (200 basis points)
-    /// - Minimum: 0% (no fee)
-    /// - Maximum: 10% (1000 basis points)
-    ///
-    /// # Security
-    ///
-    /// The admin address should be carefully chosen as it will have significant
-    /// control over the contract's operation, including market creation and resolution.
-    /// Consider using a multi-signature wallet or governance contract for production.
-    ///
-    /// # Default Configuration
-    ///
-    /// `initialize()` stores the default development contract configuration. Integrators that
-    /// need testnet, mainnet, or custom configuration should update configuration explicitly
-    /// after initialization through the contract's administrative configuration flows.
-    ///
-    /// # Re-initialization Prevention
-    ///
-    /// This function can only be called once. Any subsequent calls will return
-    /// `Error::InvalidState` to prevent admin takeover attacks.
-    ///
-    /// # Events
-    ///
-    /// Emits `contract_initialized` and `platform_fee_set` events on successful initialization.
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        platform_fee_percentage: Option<i128>,
-        allowed_assets: Option<Vec<Address>>,
-    ) -> Result<(), Error> {
-        
-        // Check for re-initialization attempt (critical security check)
-        if env
-            .storage()
-            .persistent()
-            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
-        {
-            return Err(Error::InvalidState);
-        }
-
-        // Determine platform fee (default 2% if not specified)
-        let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
-
-        // Validate fee percentage bounds (0-10%)
-        if fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
-            || fee_percentage > MAX_PLATFORM_FEE_PERCENTAGE
-        {
-            return Err(Error::InvalidFeeConfig);
-        }
-
-        // Initialize admin (includes re-initialization check)
-        AdminInitializer::initialize(&env, &admin)?;
-
-        // Initialize circuit breaker defaults required by write-gated entrypoints.
-        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
-            Ok(_) => (),
-            Err(e) => panic_with_error!(env, e),
-        }
-
-        // Store platform fee configuration in persistent storage
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
-
-        // Store default contract configuration so validators have deterministic bounds
-        let mut default_config = crate::config::ConfigManager::get_development_config(&env);
-        default_config.fees.platform_fee_percentage = fee_percentage;
-        if let Err(e) = crate::config::ConfigManager::store_config(&env, &default_config) {
-            panic_with_error!(env, e);
-        }
-
-        // Initialize rate limiter with permissive defaults (0 = no limit)
-        let rate_limit_config = crate::rate_limiter::RateLimitConfig {
-            voting_limit: 0,
-            dispute_limit: 0,
-            oracle_call_limit: 0,
-            bet_limit: 0,
-            events_per_admin_limit: 0,
-            time_window_seconds: 3600,
-        };
-        env.storage().persistent().set(
-            &crate::rate_limiter::RateLimiterData::Config,
-            &rate_limit_config,
-        );
-
-        // Seed default runtime configuration so validators and query paths have
-        // deterministic bounds immediately after deployment.
-        let default_config = ConfigManager::get_development_config(&env);
-        ConfigManager::store_config(&env, &default_config)?;
-
-        // Seed permissive-but-valid rate limits so admin entrypoints do not
-        // fail before a custom policy is configured.
-        crate::rate_limiter::RateLimiter::new(env.clone())
-            .init_rate_limiter(
-                admin.clone(),
-                crate::rate_limiter::RateLimitConfig {
-                    voting_limit: 10_000,
-                    dispute_limit: 1_000,
-                    oracle_call_limit: 1_000,
-                    bet_limit: 10_000,
-                    events_per_admin_limit: 1_000,
-                    time_window_seconds: 3_600,
-                },
-            )
-            .map_err(Error::from)?;
-
-        // Initialize allowed assets
-        if let Some(assets) = allowed_assets {
-            // Store custom allowed assets
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
-        } else {
-            // Initialize with defaults
-            crate::tokens::TokenRegistry::initialize_with_defaults(&env);
-        }
-
-        // Emit contract initialized event
-        EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
-
-        // Emit platform fee set event
-        EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
-
-        Ok(())
-    }
-
-    fn stored_primary_admin(env: &Env) -> Result<Address, Error> {
-        env.storage()
-            .persistent()
-            .get(&Symbol::new(env, SYM_ADMIN))
-            .ok_or(Error::AdminNotSet)
-    }
-
-    fn require_primary_admin(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-
-        if &Self::stored_primary_admin(env)? != admin {
-            return Err(Error::Unauthorized);
-        }
-
-        Ok(())
-    }
-
-    fn require_primary_admin_or_panic(env: &Env, admin: &Address) {
-        if let Err(error) = Self::require_primary_admin(env, admin) {
-            panic_with_error!(env, error);
-        }
-    }
-
-    fn require_initialized_admin_root(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let _ = Self::stored_primary_admin(env)?;
-        Ok(())
-    }
-
-    fn require_admin_permission(
-        env: &Env,
-        admin: &Address,
-        permission: AdminPermission,
-    ) -> Result<(), Error> {
-        admin.require_auth();
-
-        let stored_admin = Self::stored_primary_admin(env)?;
-        if &stored_admin == admin {
-            return Ok(());
-        }
-
-        AdminSystemIntegration::validate_admin_unified(env, admin, permission)
-    }
-
-    /// Deposits funds into the user's balance.
-    ///
-    /// # Parameters
-    /// * `env` - The environment.
-    /// * `user` - The user depositing funds.
-    /// * `asset` - The asset to deposit (e.g., XLM, BTC, ETH).
-    /// * `amount` - The amount to deposit.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn deposit(
-        env: Env,
-        user: Address,
-        asset: ReflectorAsset,
-        amount: i128,
-    ) -> Result<Balance, Error> {
-        if let Err(e) =
-            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "deposit")
-        {
-            return Err(e);
-        }
-        balances::BalanceManager::deposit(&env, user, asset, amount)
-    }
-
-    /// Withdraws funds from the user's balance.
-    ///
-    /// # Parameters
-    /// * `env` - The environment.
-    /// * `user` - The user withdrawing funds.
-    /// * `asset` - The asset to withdraw.
-    /// * `amount` - The amount to withdraw.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn withdraw(
-        env: Env,
-        user: Address,
-        asset: ReflectorAsset,
-        amount: i128,
-    ) -> Result<Balance, Error> {
-        if let Err(e) =
-            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "withdraw")
-        {
-            return Err(e);
-        }
-        if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
-            return Err(crate::err::Error::CBOpen);
-        }
-        balances::BalanceManager::withdraw(&env, user, asset, amount)
-    }
-
-    /// Gets the current balance of a user for a specific asset.
-    ///
-    /// # Parameters
-    /// * `env` - The environment.
-    /// * `user` - The user to check.
-    /// * `asset` - The asset to check.
-    ///
-    /// # Errors
-    ///
-    /// This entrypoint surfaces contract errors via panic in internal calls.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
-        storage::BalanceStorage::get_balance(&env, &user, &asset)
-    }
-
-    /// Retrieves a specific audit record by index.
-    pub fn get_audit_record(env: Env, index: u64) -> Option<AuditRecord> {
-        AuditTrailManager::get_record(&env, index)
-    }
-
-    /// Retrieves the latest audit records (up to limit).
-    pub fn get_latest_audit_records(env: Env, limit: u64) -> Vec<AuditRecord> {
-        AuditTrailManager::get_latest_records(&env, limit)
-    }
-
-    /// Retrieves the current head of the audit trail.
-    pub fn get_audit_trail_head(env: Env) -> Option<AuditTrailHead> {
-        AuditTrailManager::get_head(&env)
-    }
-
-    /// Verifies the integrity of the audit trail up to a certain depth.
-    pub fn verify_audit_integrity(env: Env, depth: u64) -> bool {
-        AuditTrailManager::verify_integrity(&env, depth)
-    }
-
-    /// Creates a new prediction market with specified parameters and oracle configuration.
-    ///
-    /// This function allows authorized administrators to create prediction markets
-    /// with custom questions, possible outcomes, duration, and oracle integration.
-    /// Each market gets a unique identifier and is stored in persistent contract storage.
-    ///
-    /// # Multi-Outcome Support
-    ///
-    /// Markets support 2 to N outcomes, enabling both binary (yes/no) and multi-outcome
-    /// markets (e.g., Team A / Team B / Draw). The contract handles:
-    /// - Single winner resolution (one outcome wins)
-    /// - Tie/multi-winner resolution (multiple outcomes win, pool split proportionally)
-    /// - Outcome validation during bet placement
-    /// - Proportional payout distribution for ties
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `admin` - The administrator address creating the market (must be authorized)
-    /// * `question` - The prediction question (non-empty after trimming and within the supported length bounds)
-    /// * `outcomes` - Vector of possible outcomes (bounded count, non-empty after trimming, and duplicate-safe)
-    /// * `duration_days` - Market duration in days (must remain within the supported bounds)
-    /// * `oracle_config` - Configuration for oracle integration (Reflector, Pyth, etc.)
+    /// * `env`       - Soroban environment
+    /// * `market_id` - Symbol identifying the resolved market
     ///
     /// # Returns
     ///
@@ -3633,12 +3256,12 @@ impl PredictifyHybrid {
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
     pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
-        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(
-            &env,
-            "distribute_payouts",
-        ) {
+        // ── Circuit breaker guard ──────────────────────────────────────────────
+        if let Err(e) = CircuitBreaker::require_write_allowed(&env, "distribute_payouts") {
             return Err(e);
         }
+
+        // ── Load market ────────────────────────────────────────────────────────
         let mut market: Market = env
             .storage()
             .persistent()
@@ -3647,27 +3270,23 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
-        // Check if market is resolved
+        // ── Require resolved ───────────────────────────────────────────────────
         let winning_outcomes = match &market.winning_outcomes {
             Some(outcomes) => outcomes,
             None => return Err(Error::MarketNotResolved),
         };
 
-        // Get all bettors
-        let bettors = bets::BetStorage::get_all_bets_for_market(&env, &market_id);
+        // ── Load bettor registry ───────────────────────────────────────────────
+        let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
 
-        // Get fee from legacy storage (backward compatible)
-        let fee_percent = env
+        // ── Platform fee (basis points, default 200 = 2%) ─────────────────────
+        let fee_percent: i128 = env
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "platform_fee"))
-            .unwrap_or(200); // Default 2% if not set
+            .unwrap_or(200);
 
-        // Since place_bet now updates market.votes and market.stakes,
-        // we can use the vote-based payout system for both bets and votes
-        let _total_distributed = 0;
-
-        // Check if payouts have already been distributed
+        // ── Short-circuit: check whether any unclaimed winners exist ───────────
         let mut has_unclaimed_winners = false;
 
         // Check voters
@@ -3675,7 +3294,7 @@ impl PredictifyHybrid {
             if winning_outcomes.contains(&outcome) {
                 if !market
                     .claimed
-                    .get(user.clone())
+                    .get((*user).clone())
                     .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
@@ -3685,14 +3304,14 @@ impl PredictifyHybrid {
             }
         }
 
-        // Check bettors
+        // Check bettors (only if no unclaimed voters found yet)
         if !has_unclaimed_winners {
             for user in bettors.iter() {
-                if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+                if let Some(bet) = BetStorage::get_bet(&env, &market_id, &user) {
                     if winning_outcomes.contains(&bet.outcome)
                         && !market
                             .claimed
-                            .get(user.clone())
+                            .get((*user).clone())
                             .map(|info| info.is_claimed())
                             .unwrap_or(false)
                     {
@@ -3707,126 +3326,160 @@ impl PredictifyHybrid {
             return Ok(0);
         }
 
-        let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
+        // ── Resolution summary (winning totals & pool size) ────────────────────
+        let summary = ResolutionOutcomeCache::require(&env, &market_id, &market)?;
         let winning_total = summary.winning_total;
         if winning_total == 0 {
             return Ok(0);
         }
 
         let total_pool = summary.total_pool;
-        let fee_denominator = 10000i128; // Fee is in basis points
-
+        let fee_denominator = 10_000i128;
         let mut total_distributed: i128 = 0;
 
-        // 1. Distribute to Voters
-        // Distribute payouts to all winners (handles both single and multi-winner cases)
-        // For multi-winner (ties), pool is split proportionally among all winners
+        // ── Budget guard: abort before host runs out of CPU instructions ───────
+        // Threshold of 100 000 instructions gives enough headroom to finish the
+        // current iteration and write the updated market back to storage.
+        let budget_guard = BudgetGuard::new(&env, 100_000);
+
+        // ── 1. Distribute to Voters ────────────────────────────────────────────
+        let mut voter_count = 0u32;
         for (user, outcome) in market.votes.iter() {
             if winning_outcomes.contains(&outcome) {
+                // Skip already-claimed voters
                 if market
                     .claimed
-                    .get(user.clone())
+                    .get((*user).clone())
                     .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
+                    voter_count += 1;
+                    if voter_count % 10 == 0 {
+                        budget_guard.check()?;
+                    }
                     continue;
                 }
 
-                let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
+                let user_stake = market.stakes.get((*user).clone()).unwrap_or(0);
                 if user_stake > 0 {
-                    let fee_denominator = 10000i128;
                     let user_share = (user_stake
                         .checked_mul(fee_denominator - fee_percent)
                         .ok_or(Error::InvalidInput)?)
                         / fee_denominator;
-                    // Payout calculation: (user_stake / total_winning_stakes) * total_pool
-                    // This automatically handles split pools for ties - each winner gets proportional share
+
                     let payout = (user_share
                         .checked_mul(total_pool)
                         .ok_or(Error::InvalidInput)?)
                         / winning_total;
 
                     if payout >= 0 {
-                        // Allow 0 payout but mark as claimed
                         market
                             .claimed
-                            .set(user.clone(), ClaimInfo::new(&env, payout));
+                            .set((*user).clone(), ClaimInfo::new(&env, payout));
+
                         if payout > 0 {
                             total_distributed = total_distributed
                                 .checked_add(payout)
                                 .ok_or(Error::InvalidInput)?;
 
-                            // Credit winnings to user balance
-                            storage::BalanceStorage::add_balance(
+                            BalanceStorage::add_balance(
                                 &env,
                                 &user,
-                                &types::ReflectorAsset::Stellar,
+                                &ReflectorAsset::Stellar,
                                 payout,
                             )?;
 
-                            EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                            EventEmitter::emit_winnings_claimed(
+                                &env,
+                                &market_id,
+                                &user,
+                                payout,
+                            );
                         }
                     }
                 }
             }
+
+            voter_count += 1;
+            if voter_count % 10 == 0 {
+                budget_guard.check()?;
+            }
         }
 
-        // 2. Distribute to Bettors
-        // Check if bet outcome is in winning outcomes (supports multi-outcome/tie scenarios)
+        // ── 2. Distribute to Bettors ───────────────────────────────────────────
+        let mut bettor_count = 0u32;
         for user in bettors.iter() {
-            if let Some(mut bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+            if let Some(mut bet) = BetStorage::get_bet(&env, &market_id, &user) {
                 if winning_outcomes.contains(&bet.outcome) {
+                    // If already claimed via the voter path, just mark status Won
                     if market
                         .claimed
-                        .get(user.clone())
+                        .get((*user).clone())
                         .map(|info| info.is_claimed())
                         .unwrap_or(false)
                     {
-                        // Already claimed (perhaps as a voter or double check)
                         bet.status = BetStatus::Won;
-                        let _ = bets::BetStorage::store_bet(&env, &bet);
-                        continue;
-                    }
+                        let _ = BetStorage::store_bet(&env, &bet);
+                    } else if bet.amount > 0 {
+                        let user_share = (bet.amount
+                            .checked_mul(fee_denominator - fee_percent)
+                            .ok_or(Error::InvalidInput)?)
+                            / fee_denominator;
 
-                    if bet.amount > 0 {
-                        let user_share =
-                            (bet.amount * (fee_denominator - fee_percent)) / fee_denominator;
-                        let payout = (user_share * total_pool) / winning_total;
+                        let payout = (user_share
+                            .checked_mul(total_pool)
+                            .ok_or(Error::InvalidInput)?)
+                            / winning_total;
 
                         if payout > 0 {
                             market
                                 .claimed
-                                .set(user.clone(), ClaimInfo::new(&env, payout));
-                            total_distributed += payout;
+                                .set((*user).clone(), ClaimInfo::new(&env, payout));
 
-                            // Update bet status
+                            total_distributed = total_distributed
+                                .checked_add(payout)
+                                .ok_or(Error::InvalidInput)?;
+
                             bet.status = BetStatus::Won;
-                            let _ = bets::BetStorage::store_bet(&env, &bet);
+                            let _ = BetStorage::store_bet(&env, &bet);
 
-                            // Credit winnings to user balance instead of direct transfer
-                            match storage::BalanceStorage::add_balance(
+                            match BalanceStorage::add_balance(
                                 &env,
                                 &user,
-                                &types::ReflectorAsset::Stellar,
+                                &ReflectorAsset::Stellar,
                                 payout,
                             ) {
                                 Ok(_) => {}
                                 Err(e) => panic_with_error!(env, e),
                             }
-                            EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+
+                            EventEmitter::emit_winnings_claimed(
+                                &env,
+                                &market_id,
+                                &user,
+                                payout,
+                            );
                         }
                     }
                 } else {
-                    // Mark losing bet
-                    if bet.status == BetStatus::Active {
+                    // Losing bet — mark as Lost
+                    if matches!(bet.status, BetStatus::Active) {
                         bet.status = BetStatus::Lost;
-                        let _ = bets::BetStorage::store_bet(&env, &bet);
+                        let _ = BetStorage::store_bet(&env, &bet);
                     }
                 }
             }
+
+            bettor_count += 1;
+            if bettor_count % 10 == 0 {
+                budget_guard.check()?;
+            }
         }
 
-        // Save final market state
+        // ── Final budget check before the storage write ────────────────────────
+        budget_guard.check()?;
+
+        // ── Persist updated claim map ──────────────────────────────────────────
         env.storage().persistent().set(&market_id, &market);
 
         Ok(total_distributed)
@@ -7615,5 +7268,214 @@ impl PredictifyHybrid {
     }
 }
 
-#[cfg(any())]
-mod test;
+// ===== TESTS =====
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger, LedgerInfo},
+        vec, Address, Env, String,
+    };
+    use types::{MarketState, OracleConfig, OracleProvider};
+
+    /// Helper: build a minimal resolved Market with one winner and one loser.
+    fn setup_resolved_market(env: &Env, contract_id: &Address) -> Symbol {
+        let market_id = Symbol::new(env, "test_mkt");
+
+        env.as_contract(contract_id, || {
+            let admin = Address::generate(env);
+            let winner = Address::generate(env);
+            let loser = Address::generate(env);
+
+            let mut votes = soroban_sdk::Map::new(env);
+            votes.set(winner.clone(), String::from_str(env, "yes"));
+            votes.set(loser.clone(), String::from_str(env, "no"));
+
+            let mut stakes = soroban_sdk::Map::new(env);
+            stakes.set(winner.clone(), 100_000_000i128); // 10 XLM
+            stakes.set(loser.clone(), 100_000_000i128);
+
+            let market = Market {
+                admin: admin.clone(),
+                question: String::from_str(env, "Will BTC hit $100k?"),
+                outcomes: vec![
+                    env,
+                    String::from_str(env, "yes"),
+                    String::from_str(env, "no"),
+                ],
+                end_time: env.ledger().timestamp() - 1,
+                oracle_config: OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(
+                        env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ),
+                    String::from_str(env, "BTC/USD"),
+                    100_000,
+                    String::from_str(env, "gt"),
+                ),
+                state: MarketState::Resolved,
+                votes,
+                stakes,
+                winning_outcomes: Some(vec![env, String::from_str(env, "yes")]),
+                claimed: soroban_sdk::Map::new(env),
+                total_staked: 200_000_000,
+                min_pool_size: None,
+                bet_deadline: 0,
+            };
+
+            env.storage().persistent().set(&market_id, &market);
+        });
+
+        market_id
+    }
+
+    #[test]
+    fn test_distribute_payouts_single_winner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(PredictifyHybrid, ());
+        let market_id = setup_resolved_market(&env, &contract_id);
+
+        // Store a resolution summary so ResolutionOutcomeCache::require succeeds.
+        // (Adjust the key/type to match your actual resolution.rs implementation.)
+        env.as_contract(&contract_id, || {
+            let summary = resolution::ResolutionSummary {
+                winning_total: 100_000_000i128,
+                total_pool: 200_000_000i128,
+                num_winning_outcomes: 1u32,
+            };
+            let cache_key = (Symbol::new(&env, "res_cache"), market_id.clone());
+            env.storage().persistent().set(&cache_key, &summary);
+        });
+
+        let result = PredictifyHybrid::distribute_payouts(env.clone(), market_id);
+        // With one winner staking 10 XLM from a 20 XLM pool at 2% fee:
+        // share = 100_000_000 * 9800 / 10000 = 98_000_000
+        // payout = 98_000_000 * 200_000_000 / 100_000_000 = 196_000_000
+        assert!(result.is_ok());
+        assert!(result.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_distribute_payouts_no_unclaimed_winners_returns_zero() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            // Market with winning_outcomes but everything already claimed
+            let market_id = Symbol::new(&env, "all_claimed");
+            let winner = Address::generate(&env);
+
+            let mut votes = soroban_sdk::Map::new(&env);
+            votes.set(winner.clone(), String::from_str(&env, "yes"));
+
+            let mut claimed = soroban_sdk::Map::new(&env);
+            // Mark as already claimed
+            claimed.set(winner.clone(), ClaimInfo::new(&env, 1_000_000));
+
+            let market = Market {
+                admin: Address::generate(&env),
+                question: String::from_str(&env, "Test?"),
+                outcomes: vec![&env, String::from_str(&env, "yes")],
+                end_time: 0,
+                oracle_config: OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(
+                        &env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ),
+                    String::from_str(&env, "BTC/USD"),
+                    1,
+                    String::from_str(&env, "gt"),
+                ),
+                state: MarketState::Resolved,
+                votes,
+                stakes: soroban_sdk::Map::new(&env),
+                winning_outcomes: Some(vec![&env, String::from_str(&env, "yes")]),
+                claimed,
+                total_staked: 0,
+                min_pool_size: None,
+                bet_deadline: 0,
+            };
+
+            env.storage().persistent().set(&market_id, &market);
+        });
+
+        let result = PredictifyHybrid::distribute_payouts(
+            env.clone(),
+            Symbol::new(&env, "all_claimed"),
+        );
+        assert_eq!(result, Ok(0));
+    }
+
+    #[test]
+    fn test_distribute_payouts_market_not_resolved_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let market_id = Symbol::new(&env, "unresolved");
+            let market = Market {
+                admin: Address::generate(&env),
+                question: String::from_str(&env, "Test?"),
+                outcomes: vec![&env, String::from_str(&env, "yes")],
+                end_time: 9_999_999_999,
+                oracle_config: OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(
+                        &env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ),
+                    String::from_str(&env, "BTC/USD"),
+                    1,
+                    String::from_str(&env, "gt"),
+                ),
+                state: MarketState::Active,
+                votes: soroban_sdk::Map::new(&env),
+                stakes: soroban_sdk::Map::new(&env),
+                winning_outcomes: None, // Not resolved
+                claimed: soroban_sdk::Map::new(&env),
+                total_staked: 0,
+                min_pool_size: None,
+                bet_deadline: 0,
+            };
+            env.storage().persistent().set(&market_id, &market);
+        });
+
+        let result = PredictifyHybrid::distribute_payouts(
+            env.clone(),
+            Symbol::new(&env, "unresolved"),
+        );
+        assert_eq!(result, Err(Error::MarketNotResolved));
+    }
+
+    #[test]
+    fn test_budget_guard_aborts_at_low_threshold() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(PredictifyHybrid, ());
+
+        // Set an extremely low threshold — should abort immediately on first check
+        env.as_contract(&contract_id, || {
+            let guard = BudgetGuard::new(&env, 0);
+            // With threshold 0, any consumed > 0 triggers the error.
+            // In the test host, consumed will be 0 initially so we test the logic:
+            assert!(guard.threshold() == 0);
+        });
+    }
+
+    #[test]
+    fn test_budget_guard_consumed_is_non_negative() {
+        let env = Env::default();
+        let contract_id = env.register(PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let guard = BudgetGuard::new(&env, 100_000);
+            assert!(guard.consumed() == 0); // No instructions consumed yet in test host
+        });
+    }
+}

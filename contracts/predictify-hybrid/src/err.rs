@@ -137,8 +137,11 @@ pub enum Error {
     ExtensionDenied = 416,
     /// Gas budget cap has been exceeded for the operation.
     GasBudgetExceeded = 417,
+    /// The operation would exceed the remaining CPU instruction budget.
+    /// This is a pre-emptive guard that aborts before the host runs out of resources.
+    OperationWouldExceedBudget = 418,
     /// Admin address has not been set. Contract initialization is incomplete.
-    AdminNotSet = 418,
+    AdminNotSet = 419,
     /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
     /// This prevents silently inflated or deflated stakes via normalize_amount.
     AssetDecimalsMismatch = 439,
@@ -191,7 +194,7 @@ pub enum Error {
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
     DuplicateMarketId = 441,
 
-    // ===== CIRCUIT BREAKER ERRORS ====="
+    // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
     CBNotInitialized = 500,
     /// Circuit breaker is already open (active). Cannot open again.
@@ -777,6 +780,7 @@ impl ErrorHandler {
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
+            Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
         }
     }
@@ -1179,7 +1183,8 @@ impl ErrorHandler {
             | Error::AdminNotSet
             | Error::DisputeFeeFailed
             | Error::InvalidState
-            | Error::InvalidOracleConfig => 0,
+            | Error::InvalidOracleConfig
+            | Error::OperationWouldExceedBudget => 0,
             _ => 1,
         }
     }
@@ -1357,6 +1362,11 @@ impl ErrorHandler {
                 ErrorCategory::Financial,
                 RecoveryStrategy::Retry,
             ),
+            Error::OperationWouldExceedBudget => (
+                ErrorSeverity::Critical,
+                ErrorCategory::System,
+                RecoveryStrategy::NoRecovery,
+            ),
             _ => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Unknown,
@@ -1394,6 +1404,9 @@ impl ErrorHandler {
                 "The oracle is temporarily unavailable. Please try again later."
             }
             (Error::InvalidInput, _) => "Check your input parameters and try again.",
+            (Error::OperationWouldExceedBudget, _) => {
+                "The operation requires too much CPU time. Try with fewer winners or split across multiple transactions."
+            }
             (_, ErrorCategory::Validation) => "Review and correct the input data.",
             (_, ErrorCategory::System) => {
                 "A system error occurred. Contact support if the issue persists."

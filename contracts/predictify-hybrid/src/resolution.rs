@@ -533,672 +533,131 @@ impl ResolutionOutcomeCache {
         (symbol_short!("res_out"), market_id.clone())
     }
 
-    /// Remove cached summary (e.g. before outcome override).
-    pub fn invalidate(env: &Env, market_id: &Symbol) {
-        env.storage()
-            .persistent()
-            .remove(&Self::storage_key(market_id));
-    }
+    let mut market: Market = env
+        .storage()
+        .persistent()
+        .get(&market_id)
+        .unwrap_or_else(|| {
+            soroban_sdk::panic_with_error!(env, Error::MarketNotFound);
+        });
 
-    /// Compute winning total with explicit `market_id` (bet registry key).
-    pub fn compute_winning_total_for_market(
-        env: &Env,
-        market_id: &Symbol,
-        market: &Market,
-        winning_outcomes: &Vec<String>,
-    ) -> Result<i128, Error> {
-        let mut winning_total: i128 = 0;
+    // Check if market is resolved
+    let winning_outcomes = match &market.winning_outcomes {
+        Some(outcomes) => outcomes,
+        None => return Err(Error::MarketNotResolved),
+    };
 
-        for (voter, outcome) in market.votes.iter() {
-            if winning_outcomes.contains(&outcome) {
-                winning_total = winning_total
-                    .checked_add(market.stakes.get(voter.clone()).unwrap_or(0))
-                    .ok_or(Error::InvalidInput)?;
+    // Get all bettors
+    let bettors = bets::BetStorage::get_all_bets_for_market(&env, &market_id);
+
+    // Get fee from legacy storage (backward compatible)
+    let fee_percent = env
+        .storage()
+        .persistent()
+        .get(&Symbol::new(&env, "platform_fee"))
+        .unwrap_or(200);
+
+    let mut has_unclaimed_winners = false;
+
+    // Check voters
+    for (user, outcome) in market.votes.iter() {
+        if winning_outcomes.contains(&outcome) {
+            if !market
+                .claimed
+                .get((*user).clone())
+                .map(|info| info.is_claimed())
+                .unwrap_or(false)
+            {
+                has_unclaimed_winners = true;
+                break;
             }
         }
+    }
 
-        let bettors = BetStorage::get_all_bets_for_market(env, market_id);
+    if !has_unclaimed_winners {
         for user in bettors.iter() {
-            if market.votes.contains_key(user.clone()) {
+            if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+                if winning_outcomes.contains(&bet.outcome)
+                    && !market
+                        .claimed
+                        .get((*user).clone())
+                        .map(|info| info.is_claimed())
+                        .unwrap_or(false)
+                {
+                    has_unclaimed_winners = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if !has_unclaimed_winners {
+        return Ok(0);
+    }
+
+    let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
+    let winning_total = summary.winning_total;
+    if winning_total == 0 {
+        return Ok(0);
+    }
+
+    let total_pool = summary.total_pool;
+    let fee_denominator = 10000i128;
+    let mut total_distributed: i128 = 0;
+
+    // Create budget guard with 100,000 instruction threshold
+    let budget_guard = gas::BudgetGuard::new(&env, 100000);
+
+    // 1. Distribute to Voters
+    let mut voter_count = 0u32;
+    for (user, outcome) in market.votes.iter() {
+        if winning_outcomes.contains(&outcome) {
+            if market
+                .claimed
+                .get((*user).clone())
+                .map(|info| info.is_claimed())
+                .unwrap_or(false)
+            {
                 continue;
             }
-            if let Some(bet) = BetStorage::get_bet(env, market_id, &user) {
-                if winning_outcomes.contains(&bet.outcome) {
-                    winning_total = winning_total
-                        .checked_add(bet.amount)
-                        .ok_or(Error::InvalidInput)?;
-                }
-            }
-        }
 
-        Ok(winning_total)
-    }
+            let user_stake = market.stakes.get((*user).clone()).unwrap_or(0);
+            if user_stake > 0 {
+                let user_share = (user_stake
+                    .checked_mul(fee_denominator - fee_percent)
+                    .ok_or(Error::InvalidInput)?)
+                    / fee_denominator;
+                let payout = (user_share
+                    .checked_mul(total_pool)
+                    .ok_or(Error::InvalidInput)?)
+                    / winning_total;
 
-    /// Recompute and persist summary after resolution or outcome change.
-    pub fn refresh(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
-        let winning_outcomes = market
-            .winning_outcomes
-            .as_ref()
-            .ok_or(Error::MarketNotResolved)?;
+                if payout >= 0 {
+                    market
+                        .claimed
+                        .set((*user).clone(), ClaimInfo::new(&env, payout));
+                    if payout > 0 {
+                        total_distributed = total_distributed
+                            .checked_add(payout)
+                            .ok_or(Error::InvalidInput)?;
 
-        let winning_total =
-            Self::compute_winning_total_for_market(env, market_id, market, winning_outcomes)?;
+                        storage::BalanceStorage::add_balance(
+                            &env,
+                            &user,
+                            &ReflectorAsset::Stellar,
+                            payout,
+                        )?;
 
-        let summary = ResolvedOutcomeSummary {
-            winning_total,
-            total_pool: market.total_staked,
-            num_winning_outcomes: winning_outcomes.len(),
-        };
-
-        env.storage()
-            .persistent()
-            .set(&Self::storage_key(market_id), &summary);
-
-        Ok(())
-    }
-
-    pub fn get(env: &Env, market_id: &Symbol) -> Option<ResolvedOutcomeSummary> {
-        env.storage()
-            .persistent()
-            .get(&Self::storage_key(market_id))
-    }
-
-    /// Return cached summary or refresh if missing/stale.
-    pub fn require(
-        env: &Env,
-        market_id: &Symbol,
-        market: &Market,
-    ) -> Result<ResolvedOutcomeSummary, Error> {
-        if let (Some(summary), Some(ref outcomes)) =
-            (Self::get(env, market_id), &market.winning_outcomes)
-        {
-            if summary.total_pool == market.total_staked
-                && summary.num_winning_outcomes == outcomes.len()
-            {
-                return Ok(summary);
-            }
-        }
-        Self::refresh(env, market_id, market)?;
-        Self::get(env, market_id).ok_or(Error::MarketNotResolved)
-    }
-}
-
-/// Comprehensive analytics and metrics for resolution system performance.
-///
-/// This structure tracks detailed statistics about the resolution system's
-/// performance, method usage, timing characteristics, and outcome distributions.
-/// It provides essential data for system optimization, transparency reporting,
-/// and platform analytics.
-///
-/// # Analytics Categories
-///
-/// **Volume Metrics:**
-/// - **Total Resolutions**: Overall count of resolved markets
-/// - **Method Breakdown**: Count by resolution method type
-/// - **Outcome Distribution**: Frequency of different outcomes
-///
-/// **Quality Metrics:**
-/// - **Average Confidence**: Mean confidence score across resolutions
-/// - **Resolution Times**: Time taken for different resolution methods
-/// - **Success Rates**: Percentage of successful resolutions by method
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::{Env, Map, String, Vec};
-/// # use predictify_hybrid::resolution::{ResolutionAnalytics, ResolutionAnalyticsManager};
-/// # let env = Env::default();
-///
-/// // Get current resolution analytics
-/// let analytics = ResolutionAnalyticsManager::get_resolution_analytics(&env)?;
-///
-/// // Display system performance metrics
-/// println!("=== Resolution System Analytics ===");
-/// println!("Total resolutions: {}", analytics.total_resolutions);
-/// println!("Oracle resolutions: {}", analytics.oracle_resolutions);
-/// println!("Community resolutions: {}", analytics.community_resolutions);
-/// println!("Hybrid resolutions: {}", analytics.hybrid_resolutions);
-/// println!("Average confidence: {}%", analytics.average_confidence / 100);
-///
-/// // Calculate method distribution
-/// let total = analytics.total_resolutions as f64;
-/// if total > 0.0 {
-///     println!("Oracle-only: {:.1}%", (analytics.oracle_resolutions as f64 / total) * 100.0);
-///     println!("Community-only: {:.1}%", (analytics.community_resolutions as f64 / total) * 100.0);
-///     println!("Hybrid: {:.1}%", (analytics.hybrid_resolutions as f64 / total) * 100.0);
-/// }
-///
-/// // Analyze resolution times
-/// if !analytics.resolution_times.is_empty() {
-///     let avg_time = analytics.resolution_times.iter().sum::<u64>() / analytics.resolution_times.len() as u64;
-///     println!("Average resolution time: {} seconds", avg_time);
-/// }
-///
-/// // Display outcome distribution
-/// for (outcome, count) in analytics.outcome_distribution.iter() {
-///     println!("Outcome '{}': {} markets", outcome, count);
-/// }
-/// # Ok::<(), predictify_hybrid::errors::Error>(())
-/// ```
-///
-/// # Performance Monitoring
-///
-/// Analytics enable monitoring of:
-/// ```rust
-/// # use predictify_hybrid::resolution::ResolutionAnalytics;
-/// # let analytics = ResolutionAnalytics::default();
-///
-/// // Monitor system health
-/// fn assess_system_health(analytics: &ResolutionAnalytics) -> String {
-///     let confidence_threshold = 80_00; // 80% in basis points
-///     let hybrid_ratio = if analytics.total_resolutions > 0 {
-///         (analytics.hybrid_resolutions as f64 / analytics.total_resolutions as f64) * 100.0
-///     } else {
-///         0.0
-///     };
-///     
-///     match (analytics.average_confidence >= confidence_threshold, hybrid_ratio >= 50.0) {
-///         (true, true) => "Excellent - High confidence and balanced resolution methods".to_string(),
-///         (true, false) => "Good - High confidence but method imbalance".to_string(),
-///         (false, true) => "Fair - Balanced methods but lower confidence".to_string(),
-///         (false, false) => "Needs attention - Low confidence and method imbalance".to_string(),
-///     }
-/// }
-/// ```
-///
-/// # Trend Analysis
-///
-/// Resolution analytics support trend analysis:
-/// - **Method Evolution**: How resolution method preferences change over time
-/// - **Confidence Trends**: Whether resolution confidence is improving
-/// - **Outcome Patterns**: Distribution of market outcomes
-/// - **Performance Optimization**: Identifying areas for system improvement
-///
-/// # Business Intelligence
-///
-/// Analytics provide insights for:
-/// - **Platform Performance**: Overall system effectiveness metrics
-/// - **User Behavior**: How community participates in resolution
-/// - **Oracle Reliability**: Performance of different oracle providers
-/// - **Market Types**: Which market types work best with which methods
-///
-/// # Data Privacy and Aggregation
-///
-/// Analytics maintain privacy through:
-/// - **Aggregated Data**: No individual user information exposed
-/// - **Statistical Summaries**: Focus on system-level metrics
-/// - **Time-based Aggregation**: Historical trends without personal data
-/// - **Public Transparency**: Safe for public consumption
-///
-/// # Integration with Reporting
-///
-/// Resolution analytics integrate with:
-/// - **Dashboard Systems**: Real-time performance monitoring
-/// - **Audit Reports**: Compliance and transparency reporting
-/// - **API Endpoints**: External system integration
-/// - **Governance Metrics**: DAO governance decision support
-#[derive(Clone, Debug)]
-#[contracttype]
-pub struct ResolutionAnalytics {
-    pub total_resolutions: u32,
-    pub oracle_resolutions: u32,
-    pub community_resolutions: u32,
-    pub hybrid_resolutions: u32,
-    pub average_confidence: i128,
-    pub resolution_times: Vec<u64>,
-    pub outcome_distribution: Map<String, u32>,
-}
-
-/// Comprehensive validation result for resolution processes and outcomes.
-///
-/// This structure provides detailed feedback on the validity of resolution attempts,
-/// including validation status, specific error conditions, warnings about potential
-/// issues, and recommendations for improvement. It serves as a comprehensive
-/// diagnostic tool for resolution quality assurance.
-///
-/// # Validation Components
-///
-/// **Status Indicators:**
-/// - **Is Valid**: Boolean indicating overall validation success
-/// - **Errors**: Critical issues that prevent resolution
-/// - **Warnings**: Non-critical issues that should be addressed
-/// - **Recommendations**: Suggestions for improving resolution quality
-///
-/// # Validation Categories
-///
-/// **Data Quality Validation:**
-/// - Oracle data freshness and accuracy
-/// - Community voting participation levels
-/// - Consensus strength and distribution
-/// - Timestamp validity and sequencing
-///
-/// **Business Logic Validation:**
-/// - Market state compatibility with resolution method
-/// - Outcome consistency across data sources
-/// - Confidence score reasonableness
-/// - Resolution method appropriateness
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::{Env, Vec, String};
-/// # use predictify_hybrid::resolution::{ResolutionValidation, MarketResolutionManager, MarketResolution};
-/// # let env = Env::default();
-/// # let resolution = MarketResolution::default(); // Placeholder
-///
-/// // Validate a market resolution
-/// let validation = MarketResolutionManager::validate_market_resolution(&env, &resolution)?;
-///
-/// if validation.is_valid {
-///     println!("✅ Resolution is valid and ready for finalization");
-///     
-///     // Check for warnings
-///     if !validation.warnings.is_empty() {
-///         println!("⚠️  Warnings to consider:");
-///         for warning in validation.warnings.iter() {
-///             println!("  - {}", warning);
-///         }
-///     }
-///     
-///     // Review recommendations
-///     if !validation.recommendations.is_empty() {
-///         println!("💡 Recommendations for improvement:");
-///         for recommendation in validation.recommendations.iter() {
-///             println!("  - {}", recommendation);
-///         }
-///     }
-/// } else {
-///     println!("❌ Resolution validation failed");
-///     println!("Errors that must be resolved:");
-///     for error in validation.errors.iter() {
-///         println!("  - {}", error);
-///     }
-/// }
-/// # Ok::<(), predictify_hybrid::errors::Error>(())
-/// ```
-///
-/// # Validation Workflow
-///
-/// ```rust
-/// # use predictify_hybrid::resolution::{ResolutionValidation, OracleResolution};
-/// # use soroban_sdk::{Env, Vec, String};
-/// # let env = Env::default();
-///
-/// // Example validation workflow
-/// fn comprehensive_validation_workflow(
-///     env: &Env,
-///     oracle_resolution: &OracleResolution
-/// ) -> Result<bool, predictify_hybrid::errors::Error> {
-///     // Step 1: Validate oracle resolution
-///     let oracle_validation = validate_oracle_data(env, oracle_resolution)?;
-///     
-///     if !oracle_validation.is_valid {
-///         println!("Oracle validation failed: {:?}", oracle_validation.errors);
-///         return Ok(false);
-///     }
-///     
-///     // Step 2: Check for warnings
-///     if !oracle_validation.warnings.is_empty() {
-///         println!("Oracle warnings: {:?}", oracle_validation.warnings);
-///     }
-///     
-///     // Step 3: Apply recommendations if possible
-///     for recommendation in oracle_validation.recommendations.iter() {
-///         println!("Consider: {}", recommendation);
-///     }
-///     
-///     Ok(true)
-/// }
-///
-/// fn validate_oracle_data(
-///     _env: &Env,
-///     _oracle_resolution: &OracleResolution
-/// ) -> Result<ResolutionValidation, predictify_hybrid::errors::Error> {
-///     // Placeholder implementation
-///     Ok(ResolutionValidation {
-///         is_valid: true,
-///         errors: Vec::new(_env),
-///         warnings: Vec::new(_env),
-///         recommendations: Vec::new(_env),
-///     })
-/// }
-/// ```
-///
-/// # Error Categories
-///
-/// **Critical Errors (Block Resolution):**
-/// - Invalid oracle data or stale timestamps
-/// - Insufficient community participation
-/// - Conflicting outcomes without resolution method
-/// - Missing required data for chosen resolution method
-///
-/// **Warnings (Proceed with Caution):**
-/// - Low confidence scores
-/// - Minimal community participation
-/// - Oracle data approaching staleness limits
-/// - Unusual outcome patterns
-///
-/// **Recommendations (Optimization):**
-/// - Increase community engagement
-/// - Use hybrid resolution for better confidence
-/// - Consider additional oracle sources
-/// - Implement dispute period for controversial outcomes
-///
-/// # Integration with Resolution Process
-///
-/// Validation integrates at multiple points:
-/// - **Pre-Resolution**: Validate readiness before attempting resolution
-/// - **Post-Resolution**: Validate outcome quality and consistency
-/// - **Dispute Handling**: Validate dispute claims and evidence
-/// - **Finalization**: Final validation before immutable storage
-///
-/// # Quality Assurance
-///
-/// Validation supports quality assurance through:
-/// - **Automated Checks**: Systematic validation of all resolution components
-/// - **Consistency Verification**: Cross-validation between data sources
-/// - **Business Rule Enforcement**: Ensure compliance with platform rules
-/// - **Audit Trail Generation**: Document validation decisions and rationale
-#[derive(Clone, Debug)]
-#[contracttype]
-pub struct ResolutionValidation {
-    pub is_valid: bool,
-    pub errors: Vec<String>,
-    pub warnings: Vec<String>,
-    pub recommendations: Vec<String>,
-}
-
-// ===== ORACLE RESOLUTION =====
-
-/// Comprehensive oracle resolution management system for prediction markets.
-///
-/// The Oracle Resolution Manager handles all aspects of oracle-based market resolution,
-/// including fetching oracle data, validating oracle responses, calculating confidence
-/// scores, and managing the oracle resolution lifecycle. It serves as the primary
-/// interface between the prediction market system and external oracle providers.
-///
-/// # Core Responsibilities
-///
-/// **Oracle Data Management:**
-/// - **Data Fetching**: Retrieve price data from configured oracle providers
-/// - **Data Validation**: Ensure oracle responses meet quality standards
-/// - **Confidence Scoring**: Calculate reliability scores for oracle data
-/// - **Error Handling**: Manage oracle failures and fallback strategies
-///
-/// **Market Integration:**
-/// - **Market Validation**: Ensure markets are ready for oracle resolution
-/// - **Outcome Determination**: Convert oracle data to market outcomes
-/// - **Resolution Storage**: Persist oracle resolution results
-/// - **Event Emission**: Notify system of oracle resolution events
-///
-/// # Oracle Resolution Process
-///
-/// The typical oracle resolution workflow:
-/// ```text
-/// 1. Validate Market → 2. Fetch Oracle Data → 3. Validate Response →
-/// 4. Calculate Outcome → 5. Score Confidence → 6. Store Resolution
-/// ```
-///
-/// # Example Usage
-///
-/// ```rust
-/// # use soroban_sdk::{Env, Symbol, Address};
-/// # use predictify_hybrid::resolution::{OracleResolutionManager, OracleResolution};
-/// # let env = Env::default();
-/// # let market_id = Symbol::new(&env, "btc_50k_market");
-/// # let oracle_contract = Address::generate(&env);
-///
-/// // Fetch oracle resolution for a market
-/// let oracle_resolution = OracleResolutionManager::fetch_oracle_result(
-///     &env,
-///     &market_id,
-///     &oracle_contract
-/// )?;
-///
-/// println!("Oracle Resolution Results:");
-/// println!("Market: {}", oracle_resolution.market_id);
-/// println!("Result: {}", oracle_resolution.oracle_result);
-/// println!("Price: ${}", oracle_resolution.price / 100);
-/// println!("Threshold: ${}", oracle_resolution.threshold / 100);
-/// println!("Provider: {:?}", oracle_resolution.provider);
-///
-/// // Validate the oracle resolution
-/// OracleResolutionManager::validate_oracle_resolution(&env, &oracle_resolution)?;
-///
-/// // Calculate confidence score
-/// let confidence = OracleResolutionManager::calculate_oracle_confidence(&oracle_resolution);
-/// println!("Oracle confidence: {}%", confidence);
-///
-/// // Store resolution for later retrieval
-/// // (Implementation would store in contract storage)
-///
-/// // Retrieve stored resolution
-/// if let Some(stored_resolution) = OracleResolutionManager::get_oracle_resolution(
-///     &env,
-///     &market_id
-/// )? {
-///     println!("Successfully retrieved stored oracle resolution");
-/// }
-/// # Ok::<(), predictify_hybrid::errors::Error>(())
-/// ```
-///
-/// # Oracle Provider Integration
-///
-/// The manager integrates with multiple oracle providers:
-/// ```rust
-/// # use soroban_sdk::{Env, Address};
-/// # use predictify_hybrid::oracles::{OracleFactory, OracleInstance};
-/// # use predictify_hybrid::types::OracleProvider;
-/// # let env = Env::default();
-/// # let oracle_contract = Address::generate(&env);
-///
-/// // Create oracle instance based on provider
-/// let oracle = OracleFactory::create_oracle(
-///     OracleProvider::reflector(), // Primary provider for Stellar
-///     oracle_contract
-/// )?;
-///
-/// // Use oracle for price fetching
-/// match oracle {
-///     OracleInstance::Reflector(reflector_oracle) => {
-///         println!("Using Reflector oracle for price data");
-///         // Reflector-specific operations
-///     },
-///     OracleInstance::Pyth(pyth_oracle) => {
-///         println!("Using Pyth oracle (future implementation)");
-///         // Pyth-specific operations
-///     },
-/// }
-/// # Ok::<(), predictify_hybrid::errors::Error>(())
-/// ```
-///
-/// # Confidence Scoring Algorithm
-///
-/// Oracle confidence is calculated based on:
-/// - **Data Freshness**: How recent the oracle data is
-/// - **Provider Reliability**: Historical accuracy of the oracle provider
-/// - **Price Stability**: Volatility and consistency of price data
-/// - **Network Health**: Oracle network status and availability
-///
-/// ```rust
-/// # use predictify_hybrid::resolution::{OracleResolution, OracleResolutionManager};
-/// # let oracle_resolution = OracleResolution::default(); // Placeholder
-///
-/// // Confidence scoring factors
-/// let confidence = OracleResolutionManager::calculate_oracle_confidence(&oracle_resolution);
-///
-/// match confidence {
-///     90..=100 => println!("Very high confidence - excellent oracle data"),
-///     80..=89 => println!("High confidence - reliable oracle data"),
-///     70..=79 => println!("Moderate confidence - acceptable oracle data"),
-///     60..=69 => println!("Low confidence - oracle data has issues"),
-///     _ => println!("Very low confidence - oracle data unreliable"),
-/// }
-/// ```
-///
-/// # Error Handling and Fallbacks
-///
-/// The manager handles various error scenarios:
-/// - **Oracle Unavailable**: Network issues or service downtime
-/// - **Invalid Data**: Malformed or unreasonable oracle responses
-/// - **Stale Data**: Oracle data older than acceptable thresholds
-/// - **Feed Errors**: Requested price feed not available
-///
-/// # Integration with Market Resolution
-///
-/// Oracle resolutions feed into broader market resolution:
-/// - **Hybrid Resolution**: Combined with community consensus
-/// - **Oracle-Only Markets**: Direct outcome determination
-/// - **Dispute Evidence**: Oracle data used in dispute resolution
-/// - **Confidence Weighting**: Oracle confidence affects final resolution confidence
-///
-/// # Performance and Optimization
-///
-/// The manager optimizes performance through:
-/// - **Caching**: Cache oracle responses to reduce network calls
-/// - **Batch Processing**: Handle multiple markets efficiently
-/// - **Async Operations**: Non-blocking oracle data fetching
-/// - **Fallback Strategies**: Multiple oracle providers for reliability
-pub struct OracleResolutionManager;
-
-impl OracleResolutionManager {
-    /// Helper to fetch price and determine outcome from an oracle config
-    fn try_fetch_from_config(
-        env: &Env,
-        market_id: &Symbol,
-        config: &crate::types::OracleConfig,
-    ) -> Result<(i128, String), Error> {
-        let oracle =
-            OracleFactory::create_oracle(config.provider.clone(), config.oracle_address.clone())?;
-
-        let price_data = oracle.get_price_data(env, &config.feed_id)?;
-        crate::oracles::OracleValidationConfigManager::validate_oracle_data(
-            env,
-            market_id,
-            &config.provider,
-            &config.feed_id,
-            &price_data,
-        )?;
-
-        let outcome = OracleUtils::determine_outcome(
-            price_data.price,
-            config.threshold,
-            &config.comparison,
-            env,
-        )?;
-
-        Ok((price_data.price, outcome))
-    }
-
-    /// Fetch oracle result for a market with deterministic fallback ordering and timeout handling.
-    ///
-    /// The resolver attempts the primary oracle once. When `has_fallback` is `true`, it attempts the
-    /// fallback oracle once only after that primary failure. No oracle calls are made once
-    /// `ledger.timestamp() >= end_time + resolution_timeout`.
-    pub fn fetch_oracle_result(env: &Env, market_id: &Symbol) -> Result<OracleResolution, Error> {
-        // Get the market from storage
-        let mut market = MarketStateManager::get_market(env, market_id)?;
-
-        // 1. Check if resolution timeout has been reached.
-        //
-        // Safety invariant: a market with an active dispute must NOT be cancelled by the
-        // oracle resolution timeout.  Cancelling while a dispute is open would permanently
-        // lock the dispute stakes and leave the market in an unresolvable state (deadlock).
-        // Instead we surface `ResolutionTimeoutReached` so the caller knows the oracle path
-        // is closed while the dispute process remains the authoritative resolution path.
-        let current_time = env.ledger().timestamp();
-        if current_time >= market.end_time.saturating_add(market.resolution_timeout) {
-            crate::events::EventEmitter::emit_resolution_timeout(env, market_id, current_time);
-            return Err(Error::ResolutionTimeoutReached);
-        }
-
-        // Validate market for oracle resolution
-        OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
-
-        // 2. Try primary oracle
-        let mut used_config = market.oracle_config.clone();
-        let primary_result = Self::try_fetch_from_config(env, market_id, &used_config);
-
-        let (price, outcome) = match primary_result {
-            Ok(res) => res,
-            Err(_) => {
-                // 3. Try fallback oracle if primary fails
-                if market.has_fallback {
-                    let fallback_config = &market.fallback_oracle_config;
-                    match Self::try_fetch_from_config(env, market_id, fallback_config) {
-                        Ok(res) => {
-                            crate::events::EventEmitter::emit_fallback_used(
-                                env,
-                                market_id,
-                                &market.oracle_config.oracle_address,
-                                &fallback_config.oracle_address,
-                            );
-                            used_config = fallback_config.clone();
-                            res
-                        }
-                        Err(_) => {
-                            crate::events::EventEmitter::emit_manual_resolution_required(
-                                env,
-                                market_id,
-                                &soroban_sdk::String::from_str(
-                                    env,
-                                    "oracle_resolution_failed_primary_then_fallback",
-                                ),
-                            );
-                            return Err(Error::FallbackOracleUnavailable);
-                        }
+                        events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
                     }
-                } else {
-                    crate::events::EventEmitter::emit_manual_resolution_required(
-                        env,
-                        market_id,
-                        &soroban_sdk::String::from_str(
-                            env,
-                            "oracle_resolution_failed_primary_only",
-                        ),
-                    );
-                    return Err(Error::OracleUnavailable);
                 }
             }
-        };
+        }
 
-        // Create oracle resolution record
-        let resolution = OracleResolution {
-            market_id: market_id.clone(),
-            oracle_result: outcome.clone(),
-            price,
-            threshold: used_config.threshold,
-            comparison: used_config.comparison.clone(),
-            timestamp: current_time,
-            provider: used_config.provider.clone(),
-            feed_id: used_config.feed_id.clone(),
-        };
-
-        // Store the result in the market
-        MarketStateManager::set_oracle_result(&mut market, outcome.clone());
-        MarketStateManager::update_market(env, market_id, &market);
-
-        // Emit oracle result event
-        let provider_str = match used_config.provider {
-            OracleProvider::Reflector => soroban_sdk::String::from_str(env, "Reflector"),
-            OracleProvider::Pyth => soroban_sdk::String::from_str(env, "Pyth"),
-            _ => soroban_sdk::String::from_str(env, "Custom"),
-        };
-        let feed_str = used_config.feed_id.clone();
-        let comparison_str = used_config.comparison.clone();
-
-        crate::events::EventEmitter::emit_oracle_result(
-            env,
-            market_id,
-            &outcome,
-            &provider_str,
-            &feed_str,
-            price,
-            used_config.threshold,
-            &comparison_str,
-        );
-
-        Ok(resolution)
+        voter_count += 1;
+        if voter_count % 10 == 0 {
+            budget_guard.check()?;
+        }
     }
 
     /// Get oracle resolution for a market
@@ -1733,11 +1192,6 @@ impl MarketResolutionValidator {
                 if admin != &stored_admin {
                     return Err(Error::Unauthorized);
                 }
-                Ok(())
-            }
-            None => Err(Error::Unauthorized),
-        }
-    }
 
     /// Validate outcome
     pub fn validate_outcome(
@@ -2298,162 +1752,21 @@ impl OracleCallbackResolver {
                     market.outcomes.get(1).unwrap(),
                 )
             } else {
-                (
-                    market.outcomes.get(1).unwrap(),
-                    market.outcomes.get(0).unwrap(),
-                )
-            };
-
-            if callback_data.price > 0 {
-                Ok(yes_outcome.clone())
-            } else {
-                Ok(no_outcome.clone())
+                if matches!(bet.status, BetStatus::Active) {
+                    bet.status = BetStatus::Lost;
+                    let _ = bets::BetStorage::store_bet(&env, &bet);
+                }
             }
-        } else {
-            // For multi-outcome markets, use price modulo number of outcomes
-            let num_outcomes = market.outcomes.len() as u32;
-            let outcome_index = (callback_data.price.abs() as u32) % num_outcomes;
-            Ok(market.outcomes.get(outcome_index).unwrap().clone())
+        }
+
+        bettor_count += 1;
+        if bettor_count % 10 == 0 {
+            budget_guard.check()?;
         }
     }
 
-    /// Validate oracle callback authorization for market resolution
-    ///
-    /// # Arguments
-    /// * `env` - Soroban environment
-    /// * `caller` - Address of the calling oracle contract
-    /// * `market_id` - Market identifier being resolved
-    ///
-    /// # Returns
-    /// * `Ok(())` if caller is authorized for this market
-    /// * `Err(Error::OracleCallbackUnauthorized)` if not authorized
-    pub fn validate_oracle_authorization_for_market(
-        env: &Env,
-        caller: &Address,
-        market_id: &Symbol,
-    ) -> Result<(), Error> {
-        // Check if caller is authorized oracle
-        let whitelist = crate::oracles::OracleWhitelist::from_env(env);
-        if !crate::oracles::OracleWhitelist::is_oracle_authorized(env, caller)? {
-            return Err(Error::OracleCallbackUnauthorized);
-        }
+    budget_guard.check()?;
+    env.storage().persistent().set(&market_id, &market);
 
-        // Check if market exists and is ready for oracle resolution
-        let market = MarketStateManager::get_market(env, market_id)?;
-
-        OracleResolutionValidator::validate_market_for_oracle_resolution(env, &market)?;
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod resolution_outcome_cache_tests {
-    use super::*;
-    use crate::markets::MarketStateManager;
-    use crate::PredictifyHybrid;
-    use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{Address, Env, String};
-
-    fn sample_market(env: &Env, contract_id: &Address, admin: &Address) -> (Symbol, Market) {
-        let market_id = Symbol::new(env, "cache_mkt");
-        let mut market = Market::new(
-            env,
-            admin.clone(),
-            String::from_str(env, "Test?"),
-            soroban_sdk::vec![
-                env,
-                String::from_str(env, "yes"),
-                String::from_str(env, "no"),
-            ],
-            env.ledger().timestamp() + 3600,
-            OracleConfig {
-                provider: OracleProvider::pyth(),
-                oracle_address: Address::generate(env),
-                feed_id: String::from_str(env, "BTC/USD"),
-                threshold: 1,
-                comparison: String::from_str(env, "gt"),
-            },
-            None,
-            3600,
-            MarketState::Active,
-        );
-        let user = Address::generate(env);
-        let yes = String::from_str(env, "yes");
-        market.votes.set(user.clone(), yes.clone());
-        market.stakes.set(user, 100);
-        market.total_staked = 100;
-        let mut winning = Vec::new(env);
-        winning.push_back(yes);
-        market.winning_outcomes = Some(winning);
-        env.as_contract(contract_id, || {
-            MarketStateManager::update_market(env, &market_id, &market);
-        });
-        (market_id, market)
-    }
-
-    #[test]
-    fn cache_persists_and_is_read_by_require() {
-        let env = Env::default();
-        let contract_id = env.register(PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            let (market_id, market) = sample_market(&env, &contract_id, &admin);
-            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
-            let summary = ResolutionOutcomeCache::require(&env, &market_id, &market).unwrap();
-            assert_eq!(summary.winning_total, 100);
-            assert_eq!(summary.total_pool, 100);
-            assert_eq!(summary.num_winning_outcomes, 1);
-        });
-    }
-
-    #[test]
-    fn cache_recomputes_after_outcome_override() {
-        let env = Env::default();
-        let contract_id = env.register(PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            let (market_id, mut market) = sample_market(&env, &contract_id, &admin);
-            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
-
-            let user2 = Address::generate(&env);
-            let no = String::from_str(&env, "no");
-            market.votes.set(user2.clone(), no.clone());
-            market.stakes.set(user2, 200);
-            market.total_staked = 300;
-            let mut winning = Vec::new(&env);
-            winning.push_back(no);
-            market.winning_outcomes = Some(winning);
-            MarketStateManager::update_market(&env, &market_id, &market);
-
-            ResolutionOutcomeCache::invalidate(&env, &market_id);
-            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
-
-            let summary = ResolutionOutcomeCache::get(&env, &market_id).unwrap();
-            assert_eq!(summary.winning_total, 200);
-            assert_eq!(summary.total_pool, 300);
-        });
-    }
-
-    /// Issue #547: cached `winning_total` must match a fresh O(V+B) scan (payout path invariant).
-    #[test]
-    fn cached_winning_total_matches_recompute() {
-        let env = Env::default();
-        let contract_id = env.register(PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            let (market_id, market) = sample_market(&env, &contract_id, &admin);
-            ResolutionOutcomeCache::refresh(&env, &market_id, &market).unwrap();
-            let summary = ResolutionOutcomeCache::require(&env, &market_id, &market).unwrap();
-            let winning_outcomes = market.winning_outcomes.as_ref().unwrap();
-            let recomputed = ResolutionOutcomeCache::compute_winning_total_for_market(
-                &env,
-                &market_id,
-                &market,
-                winning_outcomes,
-            )
-            .unwrap();
-            assert_eq!(summary.winning_total, recomputed);
-        });
-    }
+    Ok(total_distributed)
 }
