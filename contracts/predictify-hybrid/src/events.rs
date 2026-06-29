@@ -776,6 +776,34 @@ pub struct DisputeStakeCapSetEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a user's cumulative dispute stake cap across all active disputes is exceeded.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeCumulativeStakeCapExceededEvent {
+    /// User address
+    pub user: Address,
+    /// Cap amount
+    pub cap: i128,
+    /// Current cumulative stake across active disputes
+    pub cumulative_stake: i128,
+    /// Attempted stake
+    pub attempted_stake: i128,
+    /// Timestamp of violation
+    pub timestamp: u64,
+}
+
+/// Event emitted when a per-user cumulative dispute stake cap is set.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeCumulativeStakeCapSetEvent {
+    /// User address
+    pub user: Address,
+    /// Cap amount
+    pub cap: i128,
+    /// Timestamp
+    pub timestamp: u64,
+}
+
 // ===== ORACLE RESULT VERIFICATION EVENTS =====
 
 /// Event emitted when oracle result verification is initiated for a market.
@@ -4918,5 +4946,37 @@ impl EventEmitter {
         };
         env.events()
             .publish((symbol_short!("fee_ccl"), admin.clone()), event);
+    }
+
+    /// Emit cumulative dispute stake cap exceeded event.
+    pub fn emit_dispute_cumulative_stake_cap_exceeded(
+        env: &Env,
+        user: &Address,
+        cap: i128,
+        cumulative_stake: i128,
+        attempted_stake: i128,
+    ) {
+        let event = DisputeCumulativeStakeCapExceededEvent {
+            user: user.clone(),
+            cap,
+            cumulative_stake,
+            attempted_stake,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cum_cap"), &event);
+        env.events()
+            .publish((symbol_short!("cum_cap"), user.clone()), event);
+    }
+
+    /// Emit cumulative dispute stake cap set event.
+    pub fn emit_dispute_cumulative_stake_cap_set(env: &Env, user: &Address, cap: i128) {
+        let event = DisputeCumulativeStakeCapSetEvent {
+            user: user.clone(),
+            cap,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cum_set"), &event);
+        env.events()
+            .publish((symbol_short!("cum_set"), user.clone()), event);
     }
 }

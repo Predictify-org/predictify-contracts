@@ -216,6 +216,8 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
+    /// Per-user cumulative dispute stake cap exceeded across active disputes.
+    DisputeStakeCapExceeded = 509,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

@@ -48,6 +48,8 @@ pub enum DataKey {
     DisputeHistoryCap,
     DisputeHistory(Symbol),
     DisputeStakeCap(Symbol, Address),
+    /// Per-user cumulative dispute stake cap across all active disputes.
+    DisputeCumulativeStakeCap(Address),
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
