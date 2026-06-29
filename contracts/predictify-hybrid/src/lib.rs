@@ -4018,7 +4018,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4357,7 +4357,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4509,7 +4509,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4623,7 +4623,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4742,7 +4742,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -4997,7 +4997,7 @@ impl PredictifyHybrid {
             admin.clone(),
             details,
             None,
-        );;
+        );
 
         // Emit cancellation event
         EventEmitter::emit_state_change_event(

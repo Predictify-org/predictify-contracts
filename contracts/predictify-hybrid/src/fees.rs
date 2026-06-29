@@ -772,7 +772,7 @@ impl FeeManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(fee_amount)
     }
@@ -997,7 +997,7 @@ impl FeeManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -1923,7 +1923,7 @@ impl FeeWithdrawalManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(withdrawal_amount)
     }

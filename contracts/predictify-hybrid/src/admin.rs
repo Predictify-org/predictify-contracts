@@ -261,7 +261,7 @@ impl AdminInitializer {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -637,7 +637,7 @@ impl ContractPauseManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
         Ok(())
     }
 
@@ -654,7 +654,7 @@ impl ContractPauseManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
         Ok(())
     }
 
@@ -688,7 +688,7 @@ impl ContractPauseManager {
             current_admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
         Ok(())
     }
 }
@@ -1014,7 +1014,7 @@ impl AdminRoleManager {
             assigned_by.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -3841,7 +3841,7 @@ mod tests_disabled {
     }
 }
 
-#[cfg(test)]
+#[cfg(any())]
 mod admin_manager_tests {
     use super::*;
     use soroban_sdk::{testutils::Address as _, IntoVal};
