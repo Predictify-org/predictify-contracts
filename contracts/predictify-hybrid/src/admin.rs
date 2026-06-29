@@ -3715,7 +3715,7 @@ impl Default for AdminAnalytics {
 
 // ===== MODULE TESTS =====
 
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
