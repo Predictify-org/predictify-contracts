@@ -1370,6 +1370,16 @@ pub struct GovernanceVoteCastEvent {
     pub timestamp: u64,
 }
 
+/// Governance vote committed event — emitted when a voter submits a salted commitment
+/// during the commit phase of commit-reveal voting.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceVoteCommittedEvent {
+    pub proposal_id: Symbol,
+    pub voter: Address,
+    pub timestamp: u64,
+}
+
 /// Event emitted when a fallback oracle is used for market resolution.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3772,6 +3782,18 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("gov_vote"), &event);
         env.events()
             .publish((symbol_short!("gov_vote"), proposal_id.clone()), event);
+    }
+
+    /// Emit governance vote committed event (commit phase of commit-reveal)
+    pub fn emit_governance_vote_committed(env: &Env, proposal_id: &Symbol, voter: &Address) {
+        let event = GovernanceVoteCommittedEvent {
+            proposal_id: proposal_id.clone(),
+            voter: voter.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("gov_cmit"), &event);
+        env.events()
+            .publish((symbol_short!("gov_cmit"), proposal_id.clone()), event);
     }
 
     /// Emit governance proposal executed event

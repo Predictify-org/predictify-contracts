@@ -1,5 +1,5 @@
 use crate::events::EventEmitter;
-use soroban_sdk::{contracttype, panic_with_error, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, BytesN, Env, String, Symbol, Vec};
 
 /// ---------- CONTRACT TYPES ----------
 
@@ -49,6 +49,8 @@ enum StorageKey {
     /// Tracks how many delegators are currently delegating to a given address.
     /// Capped at MAX_INCOMING_DELEGATIONS to bound storage.
     DelegateCount(Address),
+    /// Commit-reveal: stores sha256(salt ++ [0|1]) per (proposal, voter).
+    VoteCommitment(Symbol, Address),
 }
 
 /// Maximum number of delegators that may point to a single delegate address.
@@ -81,6 +83,12 @@ pub enum GovernanceError {
     NoDelegationSet,
     /// Delegation would create a cycle (A→B→A).
     DelegationCycle,
+    /// Caller has not committed a vote for this proposal yet.
+    NoCommitment,
+    /// The revealed (salt, support) pair does not match the stored commitment.
+    InvalidReveal,
+    /// A commitment already exists for this (proposal, voter) pair.
+    CommitmentExists,
 }
 
 /// ---------- CONTRACT ----------
@@ -300,6 +308,160 @@ impl GovernanceContract {
             .set(&StorageKey::Proposal(proposal_id.clone()), &p);
 
         // Emit governance vote event
+        EventEmitter::emit_governance_vote_cast(&env, &proposal_id, &voter, support);
+
+        Ok(())
+    }
+
+    /// Commit a salted vote for a proposal (commit phase of commit-reveal).
+    ///
+    /// The caller supplies a 32-byte commitment = `sha256(salt ++ support_byte)` where
+    /// `support_byte` is `0x01` for FOR and `0x00` for AGAINST.  The commitment is
+    /// stored on-chain but the actual vote preference stays hidden until `reveal_vote`.
+    ///
+    /// Constraints
+    /// - Voting window must be open (`start_time <= now < end_time`).
+    /// - Each (proposal, voter) pair may only commit once.
+    /// - The voter must not have already voted via the direct `vote()` path.
+    pub fn commit_vote(
+        env: Env,
+        voter: Address,
+        proposal_id: Symbol,
+        commitment: BytesN<32>,
+    ) -> Result<(), GovernanceError> {
+        voter.require_auth();
+
+        let p: GovernanceProposal = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, GovernanceProposal>(&StorageKey::Proposal(proposal_id.clone()))
+            .ok_or(GovernanceError::ProposalNotFound)?;
+
+        let now = env.ledger().timestamp();
+        if now < p.start_time {
+            return Err(GovernanceError::VotingNotStarted);
+        }
+        if now >= p.end_time {
+            return Err(GovernanceError::VotingEnded);
+        }
+
+        // Guard: direct vote already cast
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::AlreadyVoted);
+        }
+
+        // Guard: commitment already stored
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::VoteCommitment(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::CommitmentExists);
+        }
+
+        env.storage().persistent().set(
+            &StorageKey::VoteCommitment(proposal_id.clone(), voter.clone()),
+            &commitment,
+        );
+
+        EventEmitter::emit_governance_vote_committed(&env, &proposal_id, &voter);
+
+        Ok(())
+    }
+
+    /// Reveal a previously committed vote (reveal phase of commit-reveal).
+    ///
+    /// The contract recomputes `sha256(salt ++ support_byte)` and verifies it matches
+    /// the stored commitment.  On success the vote weight is tallied and the commitment
+    /// entry is replaced with the recorded vote, preventing double-reveals.
+    ///
+    /// Constraints
+    /// - A commitment for this (proposal, voter) must exist.
+    /// - Voting window must still be open when revealing.
+    /// - The voter must not have already been counted (guards against re-reveal).
+    pub fn reveal_vote(
+        env: Env,
+        voter: Address,
+        proposal_id: Symbol,
+        salt: Bytes,
+        support: bool,
+    ) -> Result<(), GovernanceError> {
+        voter.require_auth();
+
+        let stored: BytesN<32> = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, BytesN<32>>(&StorageKey::VoteCommitment(
+                proposal_id.clone(),
+                voter.clone(),
+            ))
+            .ok_or(GovernanceError::NoCommitment)?;
+
+        // Verify commitment: sha256(salt ++ support_byte)
+        let mut preimage = Bytes::new(&env);
+        preimage.append(&salt);
+        preimage.push_back(if support { 1u8 } else { 0u8 });
+        let expected: BytesN<32> = env.crypto().sha256(&preimage).into();
+        if stored != expected {
+            return Err(GovernanceError::InvalidReveal);
+        }
+
+        let mut p: GovernanceProposal = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, GovernanceProposal>(&StorageKey::Proposal(proposal_id.clone()))
+            .ok_or(GovernanceError::ProposalNotFound)?;
+
+        let now = env.ledger().timestamp();
+        if now < p.start_time {
+            return Err(GovernanceError::VotingNotStarted);
+        }
+        if now >= p.end_time {
+            return Err(GovernanceError::VotingEnded);
+        }
+
+        // Guard: already counted via direct vote or prior reveal
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::AlreadyVoted);
+        }
+
+        // Tally with delegation weight
+        let delegated: u128 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(voter.clone()))
+            .unwrap_or(0) as u128;
+        let weight: u128 = 1 + delegated;
+
+        if support {
+            p.for_votes += weight;
+            env.storage()
+                .persistent()
+                .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &1i32);
+        } else {
+            p.against_votes += weight;
+            env.storage()
+                .persistent()
+                .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &2i32);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&StorageKey::Proposal(proposal_id.clone()), &p);
+
+        // Remove commitment after reveal to free storage
+        env.storage()
+            .persistent()
+            .remove(&StorageKey::VoteCommitment(proposal_id.clone(), voter.clone()));
+
         EventEmitter::emit_governance_vote_cast(&env, &proposal_id, &voter, support);
 
         Ok(())
