@@ -46,6 +46,12 @@ Operational procedures and incident management:
 
 - **[Incident Response & Oracle Monitoring](./operations/INCIDENT_RESPONSE.md)** - Incident response procedures, security protocols and specific runbooks for oracle health degradation.
 
+### 📉 [Deprecation Policy](./DEPRECATION_POLICY.md)
+
+Lifecycle management for contract entrypoints:
+
+- **[Deprecation Policy](./DEPRECATION_POLICY.md)** - Full lifecycle stages, migration guides, and currently deprecated functions.
+
 ### 📋 [Contract Documentation](./contracts/)
 
 Implementation-specific documentation for the Predictify Hybrid contract:
