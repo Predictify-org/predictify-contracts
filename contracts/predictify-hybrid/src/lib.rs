@@ -7625,4 +7625,4 @@ mod tests {
             assert!(guard.consumed() == 0); // No instructions consumed yet in test host
         });
     }
-}
+}mod dispute_multisig;
