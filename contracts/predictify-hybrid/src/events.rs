@@ -5156,3 +5156,53 @@ mod focused_dispute_tests {
         assert!(found, "DisputeOpenedEvent not found with correct topic structure");
     }
 }
+
+// ===== SLASHING EVENTS =====
+
+/// Event emitted when an actor is slashed for a specific misbehavior.
+///
+/// This event provides a complete, typed record of every slashing action,
+/// including the misbehavior variant, the amount slashed, and a hash of
+/// the evidence so the raw evidence is not stored on-chain.
+///
+/// # Fields
+///
+/// * `actor`         - Address of the party being slashed
+/// * `misbehavior`   - Which [`SlashableMisbehavior`] variant triggered the slash
+/// * `slash_amount`  - Token amount deducted from the actor's stake (in stroops)
+/// * `evidence_hash` - SHA-256 / Soroban `env.crypto().sha256()` hash of the raw evidence bytes
+/// * `market_id`     - Market context (optional; `None` for system-level slashes)
+/// * `timestamp`     - Ledger timestamp when the slash was executed
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, BytesN, Symbol};
+/// # use predictify_hybrid::events::SlashExecutedEvent;
+/// # use predictify_hybrid::disputes::SlashableMisbehavior;
+/// # let env = Env::default();
+/// let event = SlashExecutedEvent {
+///     actor: Address::generate(&env),
+///     misbehavior: SlashableMisbehavior::LosingDispute,
+///     slash_amount: 5_000_000,
+///     evidence_hash: BytesN::from_array(&env, &[0u8; 32]),
+///     market_id: Some(Symbol::new(&env, "btc_50k")),
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlashExecutedEvent {
+    /// The address that was slashed.
+    pub actor: Address,
+    /// The misbehavior that triggered the slash.
+    pub misbehavior: crate::disputes::SlashableMisbehavior,
+    /// Stroops deducted from the actor.
+    pub slash_amount: i128,
+    /// SHA-256 hash of the raw evidence bytes (evidence is not stored on-chain).
+    pub evidence_hash: BytesN<32>,
+    /// Market context for this slash (None for system-level events).
+    pub market_id: Option<Symbol>,
+    /// Ledger timestamp when the slash was executed.
+    pub timestamp: u64,
+}

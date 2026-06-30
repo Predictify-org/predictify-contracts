@@ -3587,3 +3587,362 @@ mod tests {
     }
 }
 
+
+// ===== SLASHABLE MISBEHAVIOR =====
+
+/// The full set of slashable misbehaviors recognized by the protocol.
+///
+/// Each variant maps to a configurable slash percentage stored via
+/// [`SlashingExecutor::set_slash_config`]. The percentage is expressed
+/// in basis points (e.g. `500` = 5 %). Defaults are applied when no
+/// explicit configuration exists.
+///
+/// # Variants
+///
+/// | Variant        | Default slash | When triggered                                   |
+/// |----------------|--------------|--------------------------------------------------|
+/// | `LosingDispute`  | 20 %         | Disputer's stake when the dispute is rejected    |
+/// | `ColludedVote`   | 50 %         | Voter proved to coordinate outcomes off-chain    |
+/// | `DoubleStake`    | 100 %        | Same actor staked both sides of the same dispute |
+/// | `OracleSpoof`    | 100 %        | Actor attempted to feed fabricated oracle data   |
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::disputes::SlashableMisbehavior;
+/// let m = SlashableMisbehavior::LosingDispute;
+/// assert_eq!(m.default_slash_bps(), 2000);
+/// assert_eq!(m.variant_name(), "LosingDispute");
+/// ```
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SlashableMisbehavior {
+    /// Actor opened a dispute that was ultimately rejected by community vote.
+    LosingDispute,
+    /// Actor coordinated votes with other parties to manipulate a dispute outcome.
+    ColludedVote,
+    /// Actor staked both sides of the same dispute to game the reward distribution.
+    DoubleStake,
+    /// Actor attempted to inject fabricated / spoofed oracle data.
+    OracleSpoof,
+}
+
+impl SlashableMisbehavior {
+    /// Returns the variant name as a static string slice.
+    ///
+    /// Used to derive storage keys and audit detail labels.
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            SlashableMisbehavior::LosingDispute => "LosingDispute",
+            SlashableMisbehavior::ColludedVote => "ColludedVote",
+            SlashableMisbehavior::DoubleStake => "DoubleStake",
+            SlashableMisbehavior::OracleSpoof => "OracleSpoof",
+        }
+    }
+
+    /// Default slash percentage in basis points when no explicit config is set.
+    ///
+    /// | Variant        | bps  | % |
+    /// |----------------|------|---|
+    /// | LosingDispute  | 2000 | 20 |
+    /// | ColludedVote   | 5000 | 50 |
+    /// | DoubleStake    | 10000| 100 |
+    /// | OracleSpoof    | 10000| 100 |
+    pub fn default_slash_bps(&self) -> u32 {
+        match self {
+            SlashableMisbehavior::LosingDispute => 2000,
+            SlashableMisbehavior::ColludedVote => 5000,
+            SlashableMisbehavior::DoubleStake => 10000,
+            SlashableMisbehavior::OracleSpoof => 10000,
+        }
+    }
+
+    /// Returns a [`Symbol`] key suitable for persistent storage lookups.
+    ///
+    /// Soroban `Symbol::new` requires ≤ 32 alphanumeric + `_` chars.
+    pub fn to_symbol(&self, env: &Env) -> Symbol {
+        Symbol::new(env, self.variant_name())
+    }
+}
+
+// ===== SLASH RECORD =====
+
+/// Persistent record of a completed slash operation.
+///
+/// Stored under [`DataKey::SlashRecord`] `(actor, misbehavior_symbol)` to
+/// provide idempotency: a second call to [`SlashingExecutor::slash`] for the
+/// same `(actor, misbehavior)` pair returns `Err(Error::AlreadySlashed)`.
+///
+/// The `evidence_hash` field stores the SHA-256 hash of the raw evidence so
+/// the full evidence payload is never persisted on-chain.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlashRecord {
+    /// Actor that was slashed.
+    pub actor: Address,
+    /// Misbehavior that triggered the slash.
+    pub misbehavior: SlashableMisbehavior,
+    /// Amount slashed (in stroops).
+    pub slash_amount: i128,
+    /// SHA-256 hash of the raw evidence bytes.
+    pub evidence_hash: soroban_sdk::BytesN<32>,
+    /// Market context (None for system-level slashes).
+    pub market_id: Option<Symbol>,
+    /// Ledger timestamp at the time of slash.
+    pub timestamp: u64,
+    /// Audit trail index returned by [`AuditTrailManager::append_record`].
+    pub audit_index: u64,
+}
+
+// ===== SLASH CONFIG =====
+
+/// Per-variant slash configuration set by an admin.
+///
+/// Stored under [`DataKey::SlashConfig`] `(misbehavior_symbol)`.
+///
+/// # Fields
+///
+/// * `slash_bps` — Slash percentage in basis points (0–10000).
+///   E.g. `2000` = 20 %. Capped at 10 000 (100 %).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlashConfig {
+    /// Slash amount expressed in basis points (1 bp = 0.01 %).
+    /// Valid range: 0–10000.
+    pub slash_bps: u32,
+}
+
+// ===== SLASHING EXECUTOR =====
+
+/// Executor for all slashing operations.
+///
+/// Encapsulates the full slash lifecycle:
+///
+/// 1. **Authorize** — verifies the caller is an admin.
+/// 2. **Idempotency check** — rejects re-slashes for the same `(actor, misbehavior)`.
+/// 3. **Config lookup** — reads the configured basis-point percentage or falls back
+///    to [`SlashableMisbehavior::default_slash_bps`].
+/// 4. **Amount calculation** — `slash_amount = stake * slash_bps / 10_000`.
+/// 5. **Evidence hashing** — SHA-256 of raw evidence bytes (never stored raw).
+/// 6. **Audit trail** — appends a [`AuditAction::SlashExecuted`] record with details.
+/// 7. **Event emission** — emits a typed [`SlashExecutedEvent`].
+/// 8. **Persistence** — writes the [`SlashRecord`] for idempotency.
+///
+/// # Security
+///
+/// * No `unwrap()` calls in production paths.
+/// * Evidence is hashed before storage; raw bytes are never persisted.
+/// * Admin authorization is enforced via [`DisputeValidator::validate_admin_permissions`].
+/// * Re-entry for `(actor, misbehavior)` is rejected with [`Error::AlreadySlashed`].
+pub struct SlashingExecutor;
+
+impl SlashingExecutor {
+    // ── Config helpers ────────────────────────────────────────────────────────
+
+    /// Returns the slash basis points for a given misbehavior.
+    ///
+    /// Reads from persistent storage; falls back to
+    /// [`SlashableMisbehavior::default_slash_bps`] when no config exists.
+    pub fn get_slash_bps(env: &Env, misbehavior: SlashableMisbehavior) -> u32 {
+        let key = DataKey::SlashConfig(misbehavior.to_symbol(env));
+        env.storage()
+            .persistent()
+            .get::<_, SlashConfig>(&key)
+            .map(|cfg| cfg.slash_bps)
+            .unwrap_or_else(|| misbehavior.default_slash_bps())
+    }
+
+    /// Admin function to set the slash basis points for a misbehavior variant.
+    ///
+    /// # Arguments
+    ///
+    /// * `env`        — Soroban environment.
+    /// * `admin`      — Caller; must be an authorized admin.
+    /// * `misbehavior`— The variant whose config is being updated.
+    /// * `slash_bps`  — New slash percentage in basis points (0–10000).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`] if `admin` is not an authorized admin.
+    /// * [`Error::InvalidInput`] if `slash_bps` > 10000.
+    pub fn set_slash_config(
+        env: &Env,
+        admin: Address,
+        misbehavior: SlashableMisbehavior,
+        slash_bps: u32,
+    ) -> Result<(), crate::errors::Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        if slash_bps > 10_000 {
+            return Err(crate::errors::Error::InvalidInput);
+        }
+
+        let key = DataKey::SlashConfig(misbehavior.to_symbol(env));
+        let cfg = SlashConfig { slash_bps };
+        env.storage().persistent().set(&key, &cfg);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, 535_680, 535_680);
+
+        Ok(())
+    }
+
+    // ── Core executor ─────────────────────────────────────────────────────────
+
+    /// Execute a slash against `actor` for the given `misbehavior`.
+    ///
+    /// # Arguments
+    ///
+    /// * `env`        — Soroban environment.
+    /// * `admin`      — Caller; must be an authorized admin.
+    /// * `actor`      — Address being slashed.
+    /// * `misbehavior`— Reason for the slash.
+    /// * `stake`      — Actor's current stake (in stroops). The slash amount
+    ///                  is derived as `stake * slash_bps / 10_000`.
+    /// * `evidence`   — Raw evidence bytes. **Never stored raw**: only the
+    ///                  SHA-256 hash is persisted and emitted in the event.
+    /// * `market_id`  — Optional market context.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(SlashRecord)` containing the persisted record.
+    ///
+    /// # Errors
+    ///
+    /// | Error                  | Condition                                              |
+    /// |------------------------|--------------------------------------------------------|
+    /// | `Unauthorized`         | `admin` is not an authorized admin                     |
+    /// | `AlreadySlashed`       | `(actor, misbehavior)` pair already has a slash record |
+    /// | `InvalidInput`         | `stake` is negative                                    |
+    ///
+    /// # Idempotency
+    ///
+    /// A second call with the same `(actor, misbehavior)` will return
+    /// `Err(Error::AlreadySlashed)` immediately — no state is modified.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let record = SlashingExecutor::slash(
+    ///     &env,
+    ///     admin,
+    ///     actor,
+    ///     SlashableMisbehavior::LosingDispute,
+    ///     10_000_000, // 1 XLM stake
+    ///     b"dispute_id=abc;tx=xyz",
+    ///     Some(market_id),
+    /// )?;
+    /// assert_eq!(record.misbehavior, SlashableMisbehavior::LosingDispute);
+    /// ```
+    pub fn slash(
+        env: &Env,
+        admin: Address,
+        actor: Address,
+        misbehavior: SlashableMisbehavior,
+        stake: i128,
+        evidence: &soroban_sdk::Bytes,
+        market_id: Option<Symbol>,
+    ) -> Result<SlashRecord, crate::errors::Error> {
+        // 1. Authorization
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        // 2. Basic input validation — stake must be non-negative
+        if stake < 0 {
+            return Err(crate::errors::Error::InvalidInput);
+        }
+
+        // 3. Idempotency check — reject if already slashed for this pair
+        let record_key = DataKey::SlashRecord(actor.clone(), misbehavior.to_symbol(env));
+        if env
+            .storage()
+            .persistent()
+            .get::<_, SlashRecord>(&record_key)
+            .is_some()
+        {
+            return Err(crate::errors::Error::AlreadySlashed);
+        }
+
+        // 4. Determine slash amount via configured or default basis points
+        let slash_bps = Self::get_slash_bps(env, misbehavior) as i128;
+        // Saturating: slash_amount can be at most `stake` (when bps = 10_000).
+        let slash_amount = (stake.saturating_mul(slash_bps))
+            .checked_div(10_000)
+            .unwrap_or(0);
+
+        // 5. Hash the evidence — SHA-256 via Soroban crypto primitives
+        let evidence_hash: soroban_sdk::BytesN<32> = env.crypto().sha256(evidence).into();
+
+        // 6. Append to audit trail
+        let mut details = soroban_sdk::Map::new(env);
+        details.set(
+            Symbol::new(env, "misbehavior"),
+            soroban_sdk::String::from_str(env, misbehavior.variant_name()),
+        );
+        details.set(
+            Symbol::new(env, "slash_amount"),
+            // Use a placeholder string; NumericUtils::i128_to_string returns "0"
+            // as the SDK doesn't support direct integer-to-string conversion.
+            // The actual slash_amount is captured in the event payload and audit index.
+            crate::utils::NumericUtils::i128_to_string(env, &slash_amount),
+        );
+
+        let audit_index = crate::audit_trail::AuditTrailManager::append_record(
+            env,
+            crate::audit_trail::AuditAction::SlashExecuted,
+            admin.clone(),
+            details,
+            None,
+        );
+
+        // 7. Emit typed event
+        let event_payload = crate::events::SlashExecutedEvent {
+            actor: actor.clone(),
+            misbehavior,
+            slash_amount,
+            evidence_hash: evidence_hash.clone(),
+            market_id: market_id.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events().publish(
+            (symbol_short!("slash"), symbol_short!("exec")),
+            event_payload,
+        );
+
+        // 8. Build and persist the slash record
+        let record = SlashRecord {
+            actor: actor.clone(),
+            misbehavior,
+            slash_amount,
+            evidence_hash,
+            market_id,
+            timestamp: env.ledger().timestamp(),
+            audit_index,
+        };
+
+        env.storage().persistent().set(&record_key, &record);
+        env.storage()
+            .persistent()
+            .extend_ttl(&record_key, 535_680, 535_680);
+
+        Ok(record)
+    }
+
+    // ── Query helpers ─────────────────────────────────────────────────────────
+
+    /// Returns the slash record for a given `(actor, misbehavior)` pair, if any.
+    pub fn get_slash_record(
+        env: &Env,
+        actor: &Address,
+        misbehavior: SlashableMisbehavior,
+    ) -> Option<SlashRecord> {
+        let key = DataKey::SlashRecord(actor.clone(), misbehavior.to_symbol(env));
+        env.storage().persistent().get::<_, SlashRecord>(&key)
+    }
+
+    /// Returns `true` if `actor` has already been slashed for `misbehavior`.
+    pub fn is_slashed(env: &Env, actor: &Address, misbehavior: SlashableMisbehavior) -> bool {
+        Self::get_slash_record(env, actor, misbehavior).is_some()
+    }
+}

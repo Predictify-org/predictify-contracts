@@ -245,6 +245,10 @@ pub enum Error {
     ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+    /// The actor has already been slashed for this misbehavior. Re-entry is not allowed.
+    AlreadySlashed = 528,
+    /// Slash configuration for the given misbehavior variant has not been set.
+    SlashConfigNotFound = 529,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
