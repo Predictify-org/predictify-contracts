@@ -15,6 +15,7 @@
 
 use crate::rate_limiter::{
     RateLimitConfig, RateLimiter, RateLimiterContract, RateLimiterContractClient, RateLimiterData,
+    RefillMode,
 };
 use soroban_sdk::{
     testutils::{Address as _, AuthorizedInvocation},
@@ -29,6 +30,7 @@ fn create_test_config() -> RateLimitConfig {
         bet_limit: 20,
         events_per_admin_limit: 5,
         time_window_seconds: 3600,
+        refill_mode: RefillMode::Linear,
     }
 }
 
@@ -268,6 +270,7 @@ mod configuration_validation {
             bet_limit: 20,
             events_per_admin_limit: 5,
             time_window_seconds: 3600,
+            refill_mode: RefillMode::Linear,
         };
         let result = RateLimiterContract::validate_rate_limit_config(env.clone(), config);
         assert_eq!(result, Err(crate::rate_limiter::RateLimiterError::InvalidVotingLimit));
@@ -283,6 +286,7 @@ mod configuration_validation {
             bet_limit: 20,
             events_per_admin_limit: 5,
             time_window_seconds: 30, // Less than 60 seconds
+            refill_mode: RefillMode::Linear,
         };
         let result = RateLimiterContract::validate_rate_limit_config(env.clone(), config);
         assert_eq!(result, Err(crate::rate_limiter::RateLimiterError::InvalidTimeWindow));
@@ -298,6 +302,7 @@ mod configuration_validation {
             bet_limit: 20,
             events_per_admin_limit: 5,
             time_window_seconds: 3000000, // More than 30 days
+            refill_mode: RefillMode::Linear,
         };
         let result = RateLimiterContract::validate_rate_limit_config(env.clone(), config);
         assert_eq!(result, Err(crate::rate_limiter::RateLimiterError::InvalidTimeWindow));
@@ -321,6 +326,7 @@ mod update_rate_limits {
             bet_limit: 500,
             events_per_admin_limit: 100,
             time_window_seconds: 7200,
+            refill_mode: RefillMode::Linear,
         };
 
         let result = client.try_update_rate_limits(&admin, &new_config);
@@ -344,6 +350,7 @@ mod update_rate_limits {
             bet_limit: 20,
             events_per_admin_limit: 5,
             time_window_seconds: 3600,
+            refill_mode: RefillMode::Linear,
         };
 
         let result = client.try_update_rate_limits(&admin, &invalid_config);

@@ -3,7 +3,7 @@
 use crate::governance::{GovernanceContract, GovernanceError, QuorumDecay};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
-    Address, Env, String, Symbol,
+    Address, BytesN, Env, String, Symbol,
 };
 
 struct GovernanceFixture {
@@ -78,8 +78,15 @@ impl GovernanceFixture {
     }
 
     fn vote(&self, voter: Address, proposal_id: Symbol, support: bool) -> Result<(), GovernanceError> {
+        // Fetch the proposal's salt from storage and include it in the vote call.
+        // This mirrors how a real off-chain client would obtain the salt before
+        // submitting a signed vote transaction.
+        let salt = self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::get_proposal_salt(self.env.clone(), proposal_id.clone())
+                .expect("proposal salt must be readable before voting")
+        });
         self.env.as_contract(&self.contract_id, || {
-            GovernanceContract::vote(self.env.clone(), voter, proposal_id, support)
+            GovernanceContract::vote(self.env.clone(), voter, proposal_id, support, salt)
         })
     }
 
@@ -132,6 +139,27 @@ impl GovernanceFixture {
     fn get_quorum_decay(&self) -> Option<QuorumDecay> {
         self.env.as_contract(&self.contract_id, || {
             GovernanceContract::get_quorum_decay(self.env.clone())
+        })
+    }
+
+    /// Return the salt stored for a given proposal (view helper).
+    fn get_salt(&self, proposal_id: Symbol) -> BytesN<32> {
+        self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::get_proposal_salt(self.env.clone(), proposal_id)
+                .expect("proposal not found when reading salt")
+        })
+    }
+
+    /// Vote with a caller-supplied salt — used to simulate a salt-mismatch.
+    fn vote_with_salt(
+        &self,
+        voter: Address,
+        proposal_id: Symbol,
+        support: bool,
+        salt: BytesN<32>,
+    ) -> Result<(), GovernanceError> {
+        self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::vote(self.env.clone(), voter, proposal_id, support, salt)
         })
     }
 }
@@ -614,4 +642,174 @@ fn quorum_decay_monotonic_non_increasing() {
         );
         prev = cur;
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Governance salt tests (vote-replay prevention — issue #668)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Salt is stored in the proposal and retrievable via `get_proposal_salt`.
+/// The same salt value must appear in the full proposal struct.
+#[test]
+fn governance_salt_stored_and_retrievable_via_view() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("gov_salt_view");
+
+    // get_proposal_salt must return Ok
+    let salt = fixture.get_salt(proposal_id.clone());
+
+    // The same salt must be accessible via get_proposal
+    let proposal = fixture.get(proposal_id.clone()).unwrap();
+    assert_eq!(salt, proposal.salt, "view salt must match struct field");
+}
+
+/// Salt entropy comes from `Env::prng`, not the timestamp.
+/// Two proposals created at the same ledger time must have distinct salts.
+#[test]
+fn governance_salt_differs_between_proposals_same_time() {
+    let fixture = GovernanceFixture::new(100, 1);
+
+    let id1 = fixture.create_noop_proposal("gov_salt_a");
+    let id2 = fixture.create_noop_proposal("gov_salt_b");
+
+    let salt1 = fixture.get_salt(id1);
+    let salt2 = fixture.get_salt(id2);
+
+    assert_ne!(
+        salt1, salt2,
+        "two proposals created at the same timestamp must have distinct salts"
+    );
+}
+
+/// A vote with the correct salt succeeds; the full lifecycle still works.
+#[test]
+fn governance_salt_correct_vote_succeeds() {
+    let fixture = GovernanceFixture::new(100, 2);
+    let proposal_id = fixture.create_noop_proposal("gov_salt_ok");
+
+    let salt = fixture.get_salt(proposal_id.clone());
+
+    // Vote with the correct salt — should succeed
+    let result = fixture.vote_with_salt(
+        fixture.voter_one.clone(),
+        proposal_id.clone(),
+        true,
+        salt.clone(),
+    );
+    assert!(result.is_ok(), "vote with correct salt must succeed");
+
+    // Another voter with the same salt also succeeds
+    let result2 = fixture.vote_with_salt(
+        fixture.voter_two.clone(),
+        proposal_id.clone(),
+        true,
+        salt,
+    );
+    assert!(result2.is_ok(), "second voter with correct salt must succeed");
+}
+
+/// A vote with an incorrect salt (wrong bytes) is rejected with `SaltMismatch`.
+#[test]
+fn governance_salt_wrong_salt_rejected() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let proposal_id = fixture.create_noop_proposal("gov_salt_bad");
+
+    // Build a salt with all zeros — extremely unlikely to match a PRNG-generated salt.
+    let wrong_salt = BytesN::from_array(&fixture.env, &[0u8; 32]);
+
+    let result = fixture.vote_with_salt(
+        fixture.voter_one.clone(),
+        proposal_id.clone(),
+        true,
+        wrong_salt,
+    );
+    assert_eq!(
+        result,
+        Err(GovernanceError::SaltMismatch),
+        "vote with wrong salt must be rejected"
+    );
+}
+
+/// A signature bound to proposal P1's salt cannot be replayed on a re-submitted
+/// proposal P2 that has the same payload but a different salt.
+#[test]
+fn governance_salt_prevents_replay_across_resubmitted_proposals() {
+    let fixture = GovernanceFixture::new(100, 1);
+
+    // Submit P1 and record its salt
+    let id1 = fixture.create_noop_proposal("gov_rp_1");
+    let salt1 = fixture.get_salt(id1.clone());
+
+    // Simulate a re-submitted proposal with a different id (incremented counter in production)
+    let id2 = fixture.create_noop_proposal("gov_rp_2");
+    let salt2 = fixture.get_salt(id2.clone());
+
+    // The two salts must be distinct (PRNG-generated)
+    assert_ne!(salt1, salt2, "re-submitted proposal must have a different salt");
+
+    // Replaying salt1 on P2 must fail
+    let replay_result = fixture.vote_with_salt(
+        fixture.voter_one.clone(),
+        id2.clone(),
+        true,
+        salt1.clone(),
+    );
+    assert_eq!(
+        replay_result,
+        Err(GovernanceError::SaltMismatch),
+        "replaying P1's salt on P2 must be rejected"
+    );
+
+    // Replaying salt2 on P1 must also fail
+    let replay_result2 = fixture.vote_with_salt(
+        fixture.voter_one.clone(),
+        id1.clone(),
+        true,
+        salt2,
+    );
+    assert_eq!(
+        replay_result2,
+        Err(GovernanceError::SaltMismatch),
+        "replaying P2's salt on P1 must be rejected"
+    );
+
+    // But voting on each proposal with its own salt succeeds
+    assert!(
+        fixture
+            .vote_with_salt(fixture.voter_two.clone(), id1.clone(), true, salt1.clone())
+            .is_ok(),
+        "valid vote on P1 with P1's salt must succeed"
+    );
+}
+
+/// `get_proposal_salt` returns `ProposalNotFound` for a non-existent proposal.
+#[test]
+fn governance_salt_view_returns_not_found_for_missing_proposal() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let missing = Symbol::new(&fixture.env, "no_exist");
+
+    let result = fixture.env.as_contract(&fixture.contract_id, || {
+        GovernanceContract::get_proposal_salt(fixture.env.clone(), missing)
+    });
+    assert_eq!(result, Err(GovernanceError::ProposalNotFound));
+}
+
+/// The convenience `fixture.vote()` helper transparently fetches and uses the
+/// correct salt, so all existing lifecycle tests remain valid.
+#[test]
+fn governance_salt_fixture_vote_helper_uses_correct_salt() {
+    let fixture = GovernanceFixture::new(100, 2);
+    let proposal_id = fixture.create_noop_proposal("gov_salt_helper");
+
+    // These should all pass using the auto-fetched salt
+    fixture
+        .vote(fixture.voter_one.clone(), proposal_id.clone(), true)
+        .unwrap();
+    fixture
+        .vote(fixture.voter_two.clone(), proposal_id.clone(), true)
+        .unwrap();
+
+    fixture.advance_time(100);
+    let (passed, _) = fixture.validate(proposal_id.clone()).unwrap();
+    assert!(passed, "proposal should pass after valid votes");
 }

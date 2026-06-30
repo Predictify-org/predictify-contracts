@@ -1,5 +1,45 @@
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, Symbol};
 
+/// How the token bucket refills between requests.
+///
+/// ## Linear (default)
+/// The bucket resets fully at the start of each new time window.  This is
+/// the original behaviour and remains the default for backwards compatibility.
+///
+/// ## HalfLife
+/// Tokens are replenished using an exponential (half-life) model:
+///
+/// ```
+/// available = capacity - (remaining_used >> (elapsed / half_life_seconds))
+/// ```
+///
+/// In plain terms: the number of *consumed* tokens halves every
+/// `half_life_seconds` of idle time, causing the available count to
+/// approach `capacity` asymptotically.  All arithmetic uses pure integer
+/// math (no floats) via repeated right-shifts, which are equivalent to
+/// division by powers of two.
+///
+/// ### Integer-safe formula
+/// Let `used = capacity - available_at_last_check`.
+/// After `elapsed` seconds the new used amount is:
+///
+/// ```
+/// half_lives_elapsed = elapsed / half_life_seconds   (integer division)
+/// new_used = used >> half_lives_elapsed               (saturates to 0)
+/// new_available = capacity - new_used
+/// ```
+///
+/// Because `new_used >= 0` and `new_used <= capacity`, there is **no
+/// overflow** for any combination of inputs.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RefillMode {
+    /// Reset bucket fully at the start of every new time window (original behaviour).
+    Linear,
+    /// Exponential decay: consumed tokens halve every `half_life_seconds`.
+    HalfLife(u64), // half_life_seconds stored as the inner value
+}
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RateLimitConfig {
@@ -9,8 +49,21 @@ pub struct RateLimitConfig {
     pub bet_limit: u32,              // Max bets per user per time window (0 = no limit)
     pub events_per_admin_limit: u32, // Max events per admin per time window (0 = no limit)
     pub time_window_seconds: u64,    // Time window in seconds
+    /// Refill strategy.  Defaults to `RefillMode::Linear` for backwards
+    /// compatibility with callers that do not set this field explicitly.
+    pub refill_mode: RefillMode,
 }
 
+/// Token-bucket state kept in temporary storage per (key, user/market).
+///
+/// For **Linear** mode:
+///   - `count` is the number of actions taken in the current window.
+///   - `window_start` is the start of the current window.
+///
+/// For **HalfLife** mode:
+///   - `count` is treated as the number of *consumed* tokens (i.e. `capacity - available`).
+///   - `window_start` is the timestamp of the last time the bucket was updated,
+///     used to compute how much decay to apply before the next check.
 // Rate limit tracking
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -64,6 +117,38 @@ impl RateLimiter {
             .ok_or(RateLimiterError::ConfigNotFound)
     }
 
+    // Check if rate limit is exceeded, respecting the configured RefillMode.
+    //
+    // For Linear mode: exceeded when count >= limit (same as before).
+    // For HalfLife mode: exceeded when the number of available tokens after
+    //   decay is 0 (i.e. decayed_used >= capacity).
+    fn check_limit_with_config(
+        &self,
+        limit_state: &RateLimit,
+        capacity: u32,
+        config: &RateLimitConfig,
+    ) -> Result<(), RateLimiterError> {
+        match &config.refill_mode {
+            RefillMode::Linear => {
+                // Original window-reset semantics.
+                let current_time = self.env.ledger().timestamp();
+                let active = current_time < limit_state.window_start.saturating_add(config.time_window_seconds);
+                let effective_count = if active { limit_state.count } else { 0 };
+                if effective_count >= capacity {
+                    return Err(RateLimiterError::RateLimitExceeded);
+                }
+            }
+            RefillMode::HalfLife(half_life_secs) => {
+                let now = self.env.ledger().timestamp();
+                let available = Self::halflife_available(limit_state, capacity, *half_life_secs, now);
+                if available == 0 {
+                    return Err(RateLimiterError::RateLimitExceeded);
+                }
+            }
+        }
+        Ok(())
+    }
+
     // Check if rate limit is exceeded
     fn check_limit(&self, current_count: u32, limit: u32) -> Result<(), RateLimiterError> {
         if current_count >= limit {
@@ -89,15 +174,59 @@ impl RateLimiter {
         &self,
         key: &RateLimiterData,
         mut limit: RateLimit,
-        time_window: u64,
+        config: &RateLimitConfig,
+        capacity: u32,
     ) -> Result<(), RateLimiterError> {
         let current_time = self.env.ledger().timestamp();
+        let time_window = config.time_window_seconds;
 
-        if current_time >= limit.window_start + time_window {
-            limit.count = 1;
-            limit.window_start = current_time;
-        } else {
-            limit.count += 1;
+        match &config.refill_mode {
+            RefillMode::Linear => {
+                // Original behaviour: reset the bucket at the start of a new window.
+                if current_time >= limit.window_start.saturating_add(time_window) {
+                    limit.count = 1;
+                    limit.window_start = current_time;
+                } else {
+                    limit.count = limit.count.saturating_add(1);
+                }
+            }
+            RefillMode::HalfLife(half_life_secs) => {
+                // Half-life (exponential decay) refill.
+                //
+                // `limit.count` stores consumed tokens (= capacity - available).
+                // Each `half_life_secs` of elapsed time halves the consumed amount,
+                // so the bucket asymptotically approaches full capacity.
+                //
+                // elapsed may be 0 if called multiple times in the same ledger
+                // second, which is fine: no decay happens, consumed stays the same.
+                let half_life = *half_life_secs;
+                if half_life == 0 {
+                    // Safety: treat zero half-life as instant full refill (linear reset).
+                    limit.count = 1;
+                    limit.window_start = current_time;
+                } else {
+                    let elapsed = current_time.saturating_sub(limit.window_start);
+                    // Number of full half-lives elapsed (integer division).
+                    let half_lives = elapsed / half_life;
+
+                    // Decay consumed tokens: right-shift by half_lives (capped at 31
+                    // to avoid shifting a u32 by >= 32, which would be UB in Rust).
+                    let decayed_used = if half_lives >= 32 {
+                        0u32
+                    } else {
+                        limit.count >> half_lives
+                    };
+
+                    // Now charge one more token. Use saturating_add to avoid wrap.
+                    // If decayed_used >= capacity, this means we're already over —
+                    // the check_limit call before us would have blocked it; but we
+                    // use saturating_add defensively anyway.
+                    let new_used = decayed_used.saturating_add(1).min(capacity);
+
+                    limit.count = new_used;
+                    limit.window_start = current_time;
+                }
+            }
         }
 
         self.env.storage().temporary().set(key, &limit);
@@ -108,6 +237,27 @@ impl RateLimiter {
         );
 
         Ok(())
+    }
+
+    /// Compute the number of *available* tokens for a bucket in HalfLife mode,
+    /// given the stored state and current timestamp.
+    ///
+    /// Returns `capacity` when there is no stored state (first use).
+    /// In Linear mode this is unused; callers use the window-reset logic.
+    ///
+    /// Pure function — does not touch storage.
+    fn halflife_available(limit: &RateLimit, capacity: u32, half_life_secs: u64, now: u64) -> u32 {
+        if half_life_secs == 0 {
+            return capacity;
+        }
+        let elapsed = now.saturating_sub(limit.window_start);
+        let half_lives = elapsed / half_life_secs;
+        let decayed_used = if half_lives >= 32 {
+            0u32
+        } else {
+            limit.count >> half_lives
+        };
+        capacity.saturating_sub(decayed_used)
     }
 
     // Rate limit voting operations
@@ -122,8 +272,8 @@ impl RateLimiter {
         let key = RateLimiterData::UserVoting(user.clone(), market_id.clone());
         let limit = self.get_or_create_limit(&key);
 
-        self.check_limit(limit.count, config.voting_limit)?;
-        self.update_limit(&key, limit, config.time_window_seconds)?;
+        self.check_limit_with_config(&limit, config.voting_limit, &config)?;
+        self.update_limit(&key, limit, &config, config.voting_limit)?;
 
         Ok(())
     }
@@ -140,8 +290,8 @@ impl RateLimiter {
         let key = RateLimiterData::UserDisputes(user.clone(), market_id.clone());
         let limit = self.get_or_create_limit(&key);
 
-        self.check_limit(limit.count, config.dispute_limit)?;
-        self.update_limit(&key, limit, config.time_window_seconds)?;
+        self.check_limit_with_config(&limit, config.dispute_limit, &config)?;
+        self.update_limit(&key, limit, &config, config.dispute_limit)?;
 
         Ok(())
     }
@@ -152,8 +302,8 @@ impl RateLimiter {
         let key = RateLimiterData::OracleCalls(market_id.clone());
         let limit = self.get_or_create_limit(&key);
 
-        self.check_limit(limit.count, config.oracle_call_limit)?;
-        self.update_limit(&key, limit, config.time_window_seconds)?;
+        self.check_limit_with_config(&limit, config.oracle_call_limit, &config)?;
+        self.update_limit(&key, limit, &config, config.oracle_call_limit)?;
 
         Ok(())
     }
@@ -168,8 +318,8 @@ impl RateLimiter {
         }
         let key = RateLimiterData::UserBets(user.clone());
         let limit = self.get_or_create_limit(&key);
-        self.check_limit(limit.count, config.bet_limit)?;
-        self.update_limit(&key, limit, config.time_window_seconds)?;
+        self.check_limit_with_config(&limit, config.bet_limit, &config)?;
+        self.update_limit(&key, limit, &config, config.bet_limit)?;
         Ok(())
     }
 
@@ -182,8 +332,8 @@ impl RateLimiter {
         }
         let key = RateLimiterData::AdminEvents(admin.clone());
         let limit = self.get_or_create_limit(&key);
-        self.check_limit(limit.count, config.events_per_admin_limit)?;
-        self.update_limit(&key, limit, config.time_window_seconds)?;
+        self.check_limit_with_config(&limit, config.events_per_admin_limit, &config)?;
+        self.update_limit(&key, limit, &config, config.events_per_admin_limit)?;
         Ok(())
     }
 
@@ -219,9 +369,27 @@ impl RateLimiter {
 
         let current_time = self.env.ledger().timestamp();
 
+        let (voting_remaining, dispute_remaining) = match &config.refill_mode {
+            RefillMode::Linear => {
+                let v_active = current_time < voting_limit.window_start.saturating_add(config.time_window_seconds);
+                let d_active = current_time < dispute_limit.window_start.saturating_add(config.time_window_seconds);
+                let v_count = if v_active { voting_limit.count } else { 0 };
+                let d_count = if d_active { dispute_limit.count } else { 0 };
+                (
+                    config.voting_limit.saturating_sub(v_count),
+                    config.dispute_limit.saturating_sub(d_count),
+                )
+            }
+            RefillMode::HalfLife(half_life_secs) => {
+                let v_avail = Self::halflife_available(&voting_limit, config.voting_limit, *half_life_secs, current_time);
+                let d_avail = Self::halflife_available(&dispute_limit, config.dispute_limit, *half_life_secs, current_time);
+                (v_avail, d_avail)
+            }
+        };
+
         Ok(RateLimitStatus {
-            voting_remaining: config.voting_limit.saturating_sub(voting_limit.count),
-            dispute_remaining: config.dispute_limit.saturating_sub(dispute_limit.count),
+            voting_remaining,
+            dispute_remaining,
             window_reset_time: voting_limit.window_start + config.time_window_seconds,
             current_time,
         })
@@ -256,6 +424,17 @@ impl RateLimiter {
             return Err(RateLimiterError::InvalidTimeWindow);
         }
 
+        // Validate HalfLife parameter: half_life_seconds must be > 0 and fit within the time window.
+        if let RefillMode::HalfLife(half_life_secs) = config.refill_mode {
+            if half_life_secs == 0 {
+                return Err(RateLimiterError::InvalidHalfLife);
+            }
+            // half_life_seconds must not exceed the time window (it would be meaningless).
+            if half_life_secs > config.time_window_seconds {
+                return Err(RateLimiterError::InvalidHalfLife);
+            }
+        }
+
         Ok(())
     }
 }
@@ -284,6 +463,8 @@ pub enum RateLimiterError {
     Unauthorized = 7,
     InvalidBetLimit = 8,
     InvalidEventsLimit = 9,
+    /// `half_life_seconds` is zero or exceeds the configured `time_window_seconds`.
+    InvalidHalfLife = 10,
 }
 
 #[contract]
@@ -383,6 +564,7 @@ mod tests {
             bet_limit: 50,
             events_per_admin_limit: 10,
             time_window_seconds: 3600, // 1 hour
+            refill_mode: RefillMode::Linear,
         }
     }
 
@@ -477,6 +659,7 @@ mod tests {
             bet_limit: 0,
             events_per_admin_limit: 0,
             time_window_seconds: 3600,
+            refill_mode: RefillMode::Linear,
         };
         let result = RateLimiterContract::validate_rate_limit_config(env.clone(), invalid_config);
         assert_eq!(result, Err(RateLimiterError::InvalidVotingLimit));
@@ -489,6 +672,7 @@ mod tests {
             bet_limit: 0,
             events_per_admin_limit: 0,
             time_window_seconds: 30, // Less than 60
+            refill_mode: RefillMode::Linear,
         };
         let result = RateLimiterContract::validate_rate_limit_config(env.clone(), invalid_config);
         assert_eq!(result, Err(RateLimiterError::InvalidTimeWindow));
@@ -516,6 +700,7 @@ mod tests {
             bet_limit: 100,
             events_per_admin_limit: 20,
             time_window_seconds: 7200,
+            refill_mode: RefillMode::Linear,
         };
 
         client.update_rate_limits(&admin, &new_config);

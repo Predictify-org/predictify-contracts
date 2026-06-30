@@ -947,3 +947,4 @@ mod tests {
         assert_eq!(all_ids.len(), 25);
     }
 }
+} // close impl MarketIdGenerator

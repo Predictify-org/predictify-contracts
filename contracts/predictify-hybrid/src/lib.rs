@@ -367,6 +367,7 @@ impl PredictifyHybrid {
             bet_limit: 0,
             events_per_admin_limit: 0,
             time_window_seconds: 3600,
+            refill_mode: crate::rate_limiter::RefillMode::Linear,
         };
         env.storage().persistent().set(
             &crate::rate_limiter::RateLimiterData::Config,
@@ -390,6 +391,7 @@ impl PredictifyHybrid {
                     bet_limit: 10_000,
                     events_per_admin_limit: 1_000,
                     time_window_seconds: 3_600,
+                    refill_mode: crate::rate_limiter::RefillMode::Linear,
                 },
             )
             .map_err(Error::from)?;
