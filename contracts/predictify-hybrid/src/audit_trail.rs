@@ -49,6 +49,10 @@ pub enum AuditAction {
     // Recovery
     ErrorRecovered,
     PartialRefundExecuted,
+
+    // Slashing
+    /// Emitted when an actor is slashed for a specific misbehavior.
+    SlashExecuted,
 }
 
 /// A single record in the immutable, tamper-evident audit trail.

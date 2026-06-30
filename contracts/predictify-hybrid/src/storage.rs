@@ -85,8 +85,15 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
-    /// Nonce for admin override replay protection.
-    AdminOverrideNonce(Address),
+    /// Anti-grief minimum stake floor (i128).
+    AntiGriefFloor,
+    /// Idempotency record for a (actor, misbehavior_tag) slash pair.
+    /// Value type: `SlashRecord` (defined in disputes.rs).
+    /// The `Symbol` encodes the misbehavior variant name.
+    SlashRecord(Address, Symbol),
+    /// Per-variant slash percentage configuration.
+    /// Key: misbehavior variant name (Symbol); Value: u32 basis-points percentage.
+    SlashConfig(Symbol),
 }
 
 /// Storage format version for migration tracking

@@ -18,6 +18,7 @@ mod bets;
 pub mod capabilities;
 mod circuit_breaker;
 mod config;
+mod disputes;
 mod err;
 mod force_resolve;
 mod event_archive;
@@ -142,6 +143,10 @@ mod property_based_tests;
 #[cfg(test)]
 #[path = "tests/fee_config_commit_reveal_tests.rs"]
 mod fee_config_commit_reveal_tests;
+
+#[cfg(test)]
+#[path = "tests/slashable_misbehavior_tests.rs"]
+mod slashable_misbehavior_tests;
 
 // #[cfg(test)]
 // mod event_creation_tests;
