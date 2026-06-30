@@ -88,7 +88,8 @@ fn general_errors() {
     assert_eq!(Error::InvalidExtensionDays as u32, 415);
     assert_eq!(Error::ExtensionDenied as u32, 416);
     assert_eq!(Error::GasBudgetExceeded as u32, 417);
-    assert_eq!(Error::AdminNotSet as u32, 418);
+    assert_eq!(Error::OperationWouldExceedBudget as u32, 418);
+    assert_eq!(Error::AdminNotSet as u32, 419);
     assert_eq!(Error::QuestionTooLong as u32, 420);
     assert_eq!(Error::OutcomeTooLong as u32, 421);
     assert_eq!(Error::TooManyOutcomes as u32, 422);
@@ -104,6 +105,7 @@ fn general_errors() {
     assert_eq!(Error::TooManyExtensions as u32, 432);
     assert_eq!(Error::TooManyOracleResults as u32, 433);
     assert_eq!(Error::TooManyWinningOutcomes as u32, 434);
+    assert_eq!(Error::ForceResolveAlreadyUsed as u32, 435);
     assert_eq!(Error::CategoryTooShort as u32, 436);
     assert_eq!(Error::TagTooShort as u32, 437);
     assert_eq!(Error::DisputerCannotVote as u32, 438);
@@ -111,7 +113,14 @@ fn general_errors() {
     assert_eq!(Error::DuplicateMarketId as u32, 441);
 }
 
-// ===== Circuit Breaker Errors (500-508) =====
+// ===== Override / Replay Error =====
+
+#[test]
+fn override_errors() {
+    assert_eq!(Error::ReplayedOverride as u32, 526);
+}
+
+// ===== Circuit Breaker Errors (500-527) =====
 
 #[test]
 fn circuit_breaker_errors() {
@@ -124,6 +133,14 @@ fn circuit_breaker_errors() {
     assert_eq!(Error::CumulativeExtensionCapHit as u32, 506);
     assert_eq!(Error::IllegalMarketStateTransition as u32, 507);
     assert_eq!(Error::FeeExceedsMax as u32, 508);
+    assert_eq!(Error::NoPendingFeeCommit as u32, 519);
+    assert_eq!(Error::FeeRevealTooEarly as u32, 520);
+    assert_eq!(Error::FeePreimageMismatch as u32, 521);
+    assert_eq!(Error::DisputeStakeCapExceeded as u32, 522);
+    assert_eq!(Error::InsufficientStorageRentBudget as u32, 523);
+    assert_eq!(Error::ExtensionCapExceeded as u32, 524);
+    assert_eq!(Error::UpgradeChainMismatch as u32, 525);
+    assert_eq!(Error::OracleQuoteOutlier as u32, 527);
 }
 
 // ===== Asset decimals =====

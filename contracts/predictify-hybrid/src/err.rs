@@ -193,8 +193,6 @@ pub enum Error {
     // ===== VALIDATION ERRORS (435-437) =====
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
     DuplicateMarketId = 441,
-    /// Override replay detected. Nonce has already been used.
-    ReplayedOverride = 442,
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -644,12 +642,6 @@ impl ErrorHandler {
             Error::ForceResolveAlreadyUsed => {
                 "Force-resolve idempotency key already used. The operation is a safe no-op."
             }
-            Error::ForceResolveReplayed => {
-                "Force-resolve idempotency key already used. Use a new unique key."
-            }
-            Error::ForceResolveReasonEmpty => {
-                "Force-resolve reason is empty. Provide a non-empty reason string."
-            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -773,9 +765,7 @@ impl ErrorHandler {
             | Error::AlreadyClaimed
             | Error::FeeAlreadyCollected
             | Error::ForceResolveAlreadyUsed => RecoveryStrategy::Skip,
-            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => {
-                RecoveryStrategy::Retry
-            }
+
             Error::Unauthorized | Error::MarketClosed | Error::MarketResolved => {
                 RecoveryStrategy::Abort
             }
@@ -1279,7 +1269,9 @@ impl ErrorHandler {
     /// # Returns
     ///
     /// A tuple of (severity, category, recovery_strategy) for the error.
-    pub(crate) fn get_error_classification(error: &Error) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
+    pub(crate) fn get_error_classification(
+        error: &Error,
+    ) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
         match error {
             // Critical
             Error::AdminNotSet => (
@@ -1349,11 +1341,7 @@ impl ErrorHandler {
                 ErrorCategory::UserOperation,
                 RecoveryStrategy::Skip,
             ),
-            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => (
-                ErrorSeverity::Low,
-                ErrorCategory::UserOperation,
-                RecoveryStrategy::Retry,
-            ),
+
             Error::FeeAlreadyCollected => (
                 ErrorSeverity::Low,
                 ErrorCategory::Financial,
@@ -1478,7 +1466,9 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
-            Error::InsufficientStorageRent => "Insufficient storage rent for persistent key allocation",
+            Error::OperationWouldExceedBudget => {
+                "Operation would exceed the available CPU instruction budget"
+            }
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::GasBudgetExceeded => "Gas budget exceeded",
@@ -1503,6 +1493,9 @@ impl Error {
             Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
             Error::NoFeesToCollect => "No fees available to collect",
+            Error::ForceResolveAlreadyUsed => {
+                "Force-resolve idempotency key already used for this market"
+            }
             Error::InvalidExtensionDays => "Invalid extension days value",
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
@@ -1555,14 +1548,22 @@ impl Error {
             Error::InsufficientStorageRentBudget => {
                 "Insufficient storage rent budget for operation"
             }
-            Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
+            Error::ExtensionCapExceeded => {
+                "Cumulative extension cap for this market has been reached"
+            }
             Error::UpgradeChainMismatch => "Upgrade chain predecessor hash mismatch",
             Error::ReplayedOverride => "Admin override nonce replayed; rejected",
-            Error::AssetDecimalsMismatch => "Asset decimals mismatch between stored and SAC decimals",
+            Error::AssetDecimalsMismatch => {
+                "Asset decimals mismatch between stored and SAC decimals"
+            }
             Error::DuplicateMarketId => "Market ID already exists in the registry",
-            Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
+            Error::CumulativeExtensionCapHit => {
+                "Cumulative extension cap reached; no further extensions allowed"
+            }
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
-            Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            Error::OracleQuoteOutlier => {
+                "Oracle quote is an outlier relative to the rolling median"
+            }
         }
     }
 
@@ -1593,6 +1594,7 @@ impl Error {
             Error::OracleUnavailable => "ORACLE_UNAVAILABLE",
             Error::InvalidOracleConfig => "INVALID_ORACLE_CONFIG",
             Error::GasBudgetExceeded => "GAS_BUDGET_EXCEEDED",
+            Error::OperationWouldExceedBudget => "OPERATION_WOULD_EXCEED_BUDGET",
             Error::InvalidQuestion => "INVALID_QUESTION",
             Error::InvalidOutcomes => "INVALID_OUTCOMES",
             Error::InvalidDuration => "INVALID_DURATION",
@@ -1617,6 +1619,7 @@ impl Error {
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::ForceResolveAlreadyUsed => "FORCE_RESOLVE_ALREADY_USED",
             Error::FeeExceedsMax => "FEE_ABOVE_ACCEPTABLE",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
