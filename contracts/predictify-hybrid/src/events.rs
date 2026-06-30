@@ -576,6 +576,18 @@ pub struct DisputeOpenedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when suspected collusion is detected among disputers.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SuspectedCollusionFlagEvent {
+    pub market_id: Symbol,
+    pub user1: Address,
+    pub user2: Address,
+    pub stake_delta: i128,
+    pub time_delta: u64,
+    pub timestamp: u64,
+}
+
 /// Event emitted when a dispute is successfully resolved with final outcome and rewards.
 ///
 /// This event captures the complete dispute resolution process, including the final
@@ -2684,6 +2696,29 @@ impl EventEmitter {
         Self::store_event(env, &schema.topic, &event);
         env.events()
             .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+    }
+
+    /// Emit suspected collusion flag event.
+    pub fn emit_suspected_collusion_flag(
+        env: &Env,
+        market_id: &Symbol,
+        user1: &Address,
+        user2: &Address,
+        stake_delta: i128,
+        time_delta: u64,
+    ) {
+        let event = SuspectedCollusionFlagEvent {
+            market_id: market_id.clone(),
+            user1: user1.clone(),
+            user2: user2.clone(),
+            stake_delta,
+            time_delta,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("sus_col"), &event);
+        env.events()
+            .publish((symbol_short!("sus_col"), market_id.clone()), event);
     }
 
     /// Emit dispute resolved event
