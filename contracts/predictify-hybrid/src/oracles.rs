@@ -1628,9 +1628,145 @@ impl OracleDeviationHistory {
     }
 }
 
+/// A single oracle price reading paired with its configured aggregation weight.
+///
+/// Used by [`OracleUtils::weighted_median`] to combine readings from multiple
+/// oracle sources where each source is trusted to a different degree (for
+/// example, a primary source might carry more weight than a fallback).
+///
+/// # Fields
+///
+/// - `price`: the price reported by the source, expressed as a scaled integer
+///   (the same fixed-point representation used elsewhere in this module).
+/// - `weight`: the relative influence of this source during aggregation. A
+///   higher weight pulls the weighted median toward this reading. A weight of
+///   `0` excludes the reading from the aggregation entirely, which makes it easy
+///   to disable a source via configuration without removing it from the list.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightedOraclePrice {
+    /// The price reported by the oracle source (scaled integer).
+    pub price: i128,
+    /// The relative weight of this source; `0` excludes the reading.
+    pub weight: u32,
+}
+
+impl WeightedOraclePrice {
+    /// Construct a new weighted reading from a price and weight.
+    pub fn new(price: i128, weight: u32) -> Self {
+        Self { price, weight }
+    }
+}
+
 pub struct OracleUtils;
 
 impl OracleUtils {
+    /// Aggregate per-oracle price readings using a configurable weighted median.
+    ///
+    /// The weighted median is the price at which the cumulative weight of all
+    /// lower-or-equal priced readings first reaches at least half of the total
+    /// weight. Compared to a plain (unweighted) median it lets each source
+    /// contribute proportionally to its configured trust level, and compared to
+    /// a weighted *mean* it is robust to outliers: a single source reporting a
+    /// wildly wrong price cannot drag the result far, regardless of its weight.
+    ///
+    /// # Arguments
+    ///
+    /// - `env`: the contract environment (unused for computation but kept for
+    ///   signature consistency with the rest of the oracle utilities).
+    /// - `readings`: the per-source readings to aggregate. Readings with a
+    ///   weight of `0` are skipped, allowing a source to be disabled via
+    ///   configuration without removing it from the list.
+    ///
+    /// # Returns
+    ///
+    /// The weighted median price on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidInput`] when there are no readings with a
+    /// positive weight to aggregate (an empty list, or every reading carrying a
+    /// zero weight).
+    ///
+    /// # Tie-breaking
+    ///
+    /// When the total weight splits exactly in half between two adjacent
+    /// readings the lower of the two prices is returned. This mirrors the
+    /// lower-middle convention used by [`OracleDeviationHistory::rolling_median`]
+    /// and deliberately avoids any division so the result is exact and the math
+    /// stays overflow-safe.
+    ///
+    /// # Overflow safety
+    ///
+    /// All weight accumulation uses checked `i128` arithmetic. Because the
+    /// inputs are `u32` weights widened to `i128`, overflow is unreachable for
+    /// any realistic number of readings; the checked operations map the
+    /// theoretical edge to [`Error::InvalidInput`] rather than panicking, so the
+    /// function is safe to call from production paths with no `unwrap()`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Vec};
+    /// # use predictify_hybrid::oracles::{OracleUtils, WeightedOraclePrice};
+    /// # let env = Env::default();
+    /// let mut readings = Vec::new(&env);
+    /// readings.push_back(WeightedOraclePrice::new(100, 1));
+    /// readings.push_back(WeightedOraclePrice::new(102, 5)); // heavily weighted
+    /// readings.push_back(WeightedOraclePrice::new(101, 1));
+    /// // The high-weight reading dominates: median resolves to 102.
+    /// assert_eq!(OracleUtils::weighted_median(&env, &readings).unwrap(), 102);
+    /// ```
+    pub fn weighted_median(
+        env: &Env,
+        readings: &Vec<WeightedOraclePrice>,
+    ) -> Result<i128, Error> {
+        let _ = env;
+
+        // Collect the readings that carry weight into a sortable buffer while
+        // accumulating the total weight with overflow-safe i128 math.
+        let mut entries: alloc::vec::Vec<(i128, i128)> =
+            alloc::vec::Vec::with_capacity(readings.len() as usize);
+        let mut total_weight: i128 = 0;
+        for reading in readings.iter() {
+            if reading.weight == 0 {
+                continue;
+            }
+            let weight = reading.weight as i128;
+            total_weight = total_weight
+                .checked_add(weight)
+                .ok_or(Error::InvalidInput)?;
+            entries.push((reading.price, weight));
+        }
+
+        if entries.is_empty() || total_weight <= 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        // Sort ascending by price; weights ride along with their prices.
+        entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+        // Walk the sorted readings accumulating weight. The first price at which
+        // twice the cumulative weight reaches the total weight is the (lower)
+        // weighted median. Comparing `2 * cumulative` against `total` keeps the
+        // crossing test exact and division-free.
+        let mut cumulative: i128 = 0;
+        for (price, weight) in entries.iter() {
+            cumulative = cumulative
+                .checked_add(*weight)
+                .ok_or(Error::InvalidInput)?;
+            let doubled = cumulative.checked_mul(2).ok_or(Error::InvalidInput)?;
+            if doubled >= total_weight {
+                return Ok(*price);
+            }
+        }
+
+        // Unreachable: the loop always crosses half the total weight before it
+        // ends. Return the largest price as a non-panicking fallback so there is
+        // no `unwrap()` on the production path.
+        Ok(entries[entries.len() - 1].0)
+    }
+
     /// Compare prices using different operators
     pub fn compare_prices(
         price: i128,
@@ -4702,3 +4838,121 @@ pub const NONCE_CLEANUP_INTERVAL: u64 = 3600; // 1 hour
 //     }
 // }
 //
+
+// ===== WEIGHTED MEDIAN AGGREGATION TESTS =====
+
+#[cfg(test)]
+mod weighted_median_tests {
+    use super::*;
+
+    /// Build a `Vec<WeightedOraclePrice>` from `(price, weight)` pairs.
+    fn readings(env: &Env, pairs: &[(i128, u32)]) -> Vec<WeightedOraclePrice> {
+        let mut v = Vec::new(env);
+        for (price, weight) in pairs.iter() {
+            v.push_back(WeightedOraclePrice::new(*price, *weight));
+        }
+        v
+    }
+
+    #[test]
+    fn high_weight_source_dominates() {
+        let env = Env::default();
+        // The heavily-weighted middle reading pulls the median to its value.
+        let r = readings(&env, &[(100, 1), (102, 5), (101, 1)]);
+        assert_eq!(OracleUtils::weighted_median(&env, &r).unwrap(), 102);
+    }
+
+    #[test]
+    fn equal_weights_match_plain_median_odd() {
+        let env = Env::default();
+        // With equal weights the result is the ordinary median.
+        let r = readings(&env, &[(10, 1), (30, 1), (20, 1)]);
+        assert_eq!(OracleUtils::weighted_median(&env, &r).unwrap(), 20);
+    }
+
+    #[test]
+    fn equal_weights_match_plain_median_even_lower_middle() {
+        let env = Env::default();
+        // Even count, equal weights: the lower-middle value is returned,
+        // matching `OracleDeviationHistory::rolling_median`.
+        let r = readings(&env, &[(10, 1), (20, 1), (30, 1), (40, 1)]);
+        assert_eq!(OracleUtils::weighted_median(&env, &r).unwrap(), 20);
+    }
+
+    #[test]
+    fn single_reading_returns_its_price() {
+        let env = Env::default();
+        let r = readings(&env, &[(42, 7)]);
+        assert_eq!(OracleUtils::weighted_median(&env, &r).unwrap(), 42);
+    }
+
+    #[test]
+    fn zero_weight_readings_are_skipped() {
+        let env = Env::default();
+        // The (5, 0) reading is disabled and must not affect the result.
+        let r = readings(&env, &[(5, 0), (100, 2), (200, 1)]);
+        assert_eq!(OracleUtils::weighted_median(&env, &r).unwrap(), 100);
+    }
+
+    #[test]
+    fn input_order_does_not_change_result() {
+        let env = Env::default();
+        let unsorted = readings(&env, &[(102, 5), (100, 1), (101, 1)]);
+        let sorted = readings(&env, &[(100, 1), (101, 1), (102, 5)]);
+        assert_eq!(
+            OracleUtils::weighted_median(&env, &unsorted).unwrap(),
+            OracleUtils::weighted_median(&env, &sorted).unwrap()
+        );
+    }
+
+    #[test]
+    fn exact_half_split_breaks_to_lower_price() {
+        let env = Env::default();
+        // Total weight splits evenly between the two readings; the lower price
+        // is returned by the lower-middle tie-break convention.
+        let r = readings(&env, &[(200, 2), (100, 2)]);
+        assert_eq!(OracleUtils::weighted_median(&env, &r).unwrap(), 100);
+    }
+
+    #[test]
+    fn dominant_weight_outvotes_extreme_outliers() {
+        let env = Env::default();
+        // A single high-weight source outweighs two extreme outliers, showing
+        // the median's robustness compared to a weighted mean.
+        let r = readings(&env, &[(1, 10), (1_000, 1), (2_000, 1)]);
+        assert_eq!(OracleUtils::weighted_median(&env, &r).unwrap(), 1);
+    }
+
+    #[test]
+    fn handles_large_values_without_overflow() {
+        let env = Env::default();
+        let r = readings(
+            &env,
+            &[(i128::MAX, 1), (i128::MAX - 2, 1), (i128::MAX - 1, 1)],
+        );
+        assert_eq!(
+            OracleUtils::weighted_median(&env, &r).unwrap(),
+            i128::MAX - 1
+        );
+    }
+
+    #[test]
+    fn empty_input_is_rejected() {
+        let env = Env::default();
+        let r = readings(&env, &[]);
+        assert_eq!(
+            OracleUtils::weighted_median(&env, &r),
+            Err(Error::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn all_zero_weights_is_rejected() {
+        let env = Env::default();
+        let r = readings(&env, &[(100, 0), (200, 0)]);
+        assert_eq!(
+            OracleUtils::weighted_median(&env, &r),
+            Err(Error::InvalidInput)
+        );
+    }
+}

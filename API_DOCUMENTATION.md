@@ -490,6 +490,7 @@ All functions below live on `QueryManager` in `queries.rs` unless a different ca
 - `OracleConfig` (struct) - Provider, feed_id, threshold, comparison operator
 - `OracleResult` (struct) - Price, confidence, timestamp
 - `OracleInstance` (enum) - Reflector or Pyth oracle instance
+- `WeightedOraclePrice` (struct) - A `(price, weight)` oracle reading for configurable per-source weighted-median aggregation; `weight = 0` excludes the reading
 
 ### Reflector Oracle
 
@@ -548,6 +549,7 @@ All functions below live on `QueryManager` in `queries.rs` unless a different ca
 - `compare_prices(price, threshold, comparison)` - Apply price comparison
 - `determine_outcome(price, threshold, comparison, outcomes)` - Map price to outcome
 - `validate_oracle_response(price)` - Validate price data format
+- `weighted_median(env, readings)` - Aggregate `Vec<WeightedOraclePrice>` using configurable per-source weights and return the (lower) weighted median; returns `Error::InvalidInput` when no reading carries a positive weight. Overflow-safe (checked `i128` math, no `unwrap()`), outlier-robust, and order-independent
 
 ### Oracle Whitelist & Validation
 
