@@ -18,6 +18,7 @@ pub mod fee_calculator_proptest;
 // mod fee_idempotency_tests;
 mod rate_limiter_tests;
 mod rate_limiter_invariants;
+mod rate_limiter_halflife_tests;
 // mod metadata_validation_tests;
 // mod oracle_provider_compatibility_tests;
 // mod oracle_validation_tests;

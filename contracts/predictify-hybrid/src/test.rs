@@ -3069,6 +3069,7 @@ fn test_bet_rate_limit_enforced_when_config_set() {
         bet_limit: 2,
         events_per_admin_limit: 10,
         time_window_seconds: 3600,
+        refill_mode: crate::rate_limiter::RefillMode::Linear,
     };
     test.env.mock_all_auths();
     client.set_rate_limits(&test.admin, &config);
@@ -3113,6 +3114,7 @@ fn test_bet_rate_limit_at_limit_ok() {
         bet_limit: 2,
         events_per_admin_limit: 10,
         time_window_seconds: 3600,
+        refill_mode: crate::rate_limiter::RefillMode::Linear,
     };
     test.env.mock_all_auths();
     client.set_rate_limits(&test.admin, &config);

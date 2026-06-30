@@ -78,8 +78,15 @@ impl GovernanceFixture {
     }
 
     fn vote(&self, voter: Address, proposal_id: Symbol, support: bool) -> Result<(), GovernanceError> {
+        // Fetch the proposal's salt from storage and include it in the vote call.
+        // This mirrors how a real off-chain client would obtain the salt before
+        // submitting a signed vote transaction.
+        let salt = self.env.as_contract(&self.contract_id, || {
+            GovernanceContract::get_proposal_salt(self.env.clone(), proposal_id.clone())
+                .expect("proposal salt must be readable before voting")
+        });
         self.env.as_contract(&self.contract_id, || {
-            GovernanceContract::vote(self.env.clone(), voter, proposal_id, support)
+            GovernanceContract::vote(self.env.clone(), voter, proposal_id, support, salt)
         })
     }
 

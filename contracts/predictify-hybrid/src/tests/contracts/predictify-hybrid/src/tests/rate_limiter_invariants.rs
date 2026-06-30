@@ -43,6 +43,7 @@ mod rate_limiter_invariants {
             bet_limit: 50,
             events_per_admin_limit: 10,
             time_window_seconds,
+            refill_mode: crate::rate_limiter::RefillMode::Linear,
         }
     }
 
@@ -278,6 +279,7 @@ mod rate_limiter_invariants {
             bet_limit: 0, // disabled
             events_per_admin_limit: 0,
             time_window_seconds: 3600,
+            refill_mode: crate::rate_limiter::RefillMode::Linear,
         };
         let contract_id = env.register_contract(None, RateLimiterContract);
         let client = RateLimiterContractClient::new(&env, &contract_id);
