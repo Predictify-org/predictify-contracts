@@ -87,6 +87,10 @@ pub enum DataKey {
     MarketCache(Symbol),
     /// Nonce for admin override replay protection.
     AdminOverrideNonce(Address),
+    /// Configuration for dispute collusion detector
+    CollusionDetectorConfig,
+    /// Nonce for event replay protection
+    EventNonce(Symbol),
 }
 
 /// Storage format version for migration tracking
