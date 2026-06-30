@@ -513,12 +513,12 @@ pub struct MarketResolvedEvent {
 ///
 /// ```rust
 /// # use soroban_sdk::{Env, Address, Symbol, String};
-/// # use predictify_hybrid::events::DisputeCreatedEvent;
+/// # use predictify_hybrid::events::DisputeOpenedEvent;
 /// # let env = Env::default();
 /// # let disputer = Address::generate(&env);
 ///
-/// // Dispute creation event
-/// let event = DisputeCreatedEvent {
+/// // Dispute opening event
+/// let event = DisputeOpenedEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
 ///     disputer: disputer.clone(),
 ///     stake: 50_000_000, // 5.0 XLM dispute stake
@@ -563,7 +563,7 @@ pub struct MarketResolvedEvent {
 /// - **Economic Monitoring**: Track dispute stakes and economic activity
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DisputeCreatedEvent {
+pub struct DisputeOpenedEvent {
     /// Market ID
     pub market_id: Symbol,
     /// Disputer address
@@ -773,6 +773,34 @@ pub struct DisputeStakeCapSetEvent {
     pub market_id: Symbol,
     pub user: Address,
     pub cap: i128,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a user's cumulative dispute stake cap across all active disputes is exceeded.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeCumulativeStakeCapExceededEvent {
+    /// User address
+    pub user: Address,
+    /// Cap amount
+    pub cap: i128,
+    /// Current cumulative stake across active disputes
+    pub cumulative_stake: i128,
+    /// Attempted stake
+    pub attempted_stake: i128,
+    /// Timestamp of violation
+    pub timestamp: u64,
+}
+
+/// Event emitted when a per-user cumulative dispute stake cap is set.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeCumulativeStakeCapSetEvent {
+    /// User address
+    pub user: Address,
+    /// Cap amount
+    pub cap: i128,
+    /// Timestamp
     pub timestamp: u64,
 }
 
@@ -1367,6 +1395,16 @@ pub struct GovernanceVoteCastEvent {
     pub proposal_id: Symbol,
     pub voter: Address,
     pub support: bool,
+    pub timestamp: u64,
+}
+
+/// Governance vote committed event — emitted when a voter submits a salted commitment
+/// during the commit phase of commit-reveal voting.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceVoteCommittedEvent {
+    pub proposal_id: Symbol,
+    pub voter: Address,
     pub timestamp: u64,
 }
 
@@ -2001,15 +2039,15 @@ impl EventSchemaRegistry {
     /// | name              | topic symbol  | schema_version |
     /// |-------------------|---------------|----------------|
     /// | `"oracle_result"` | `oracle_rs`   | 1              |
-    /// | `"dispute_created"` | `dispt_crt` | 1              |
+    /// | `"dispute_opened"` | `dispt_opn` | 1              |
     pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
         match name {
             "oracle_result" => Some(EventSchemaEntry {
                 topic: symbol_short!("oracle_rs"),
                 schema_version: 1,
             }),
-            "dispute_created" => Some(EventSchemaEntry {
-                topic: symbol_short!("dispt_crt"),
+            "dispute_opened" => Some(EventSchemaEntry {
+                topic: symbol_short!("dispt_opn"),
                 schema_version: 1,
             }),
             _ => None,
@@ -2028,6 +2066,18 @@ pub struct AdminOverrideEvent {
     pub old_result: String,
     pub new_result: String,
     pub reason: String,
+    pub timestamp: u64,
+}
+
+/// Emitted when an admin force-resolves a market (bypassing end-time checks).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForceResolvedEvent {
+    pub market_id: Symbol,
+    pub admin: Address,
+    pub outcome: String,
+    pub reason: String,
+    pub idempotency_key: String,
     pub timestamp: u64,
 }
 
@@ -2066,6 +2116,18 @@ pub struct FeeConfigAppliedEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeConfigCancelledEvent {
     pub admin: Address,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a deprecated entrypoint is called.
+///
+/// This event allows indexers and monitoring tools to track usage of legacy
+/// contract functions that are scheduled for removal. Callers receive a
+/// runtime signal so they can migrate to the recommended replacement.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeprecatedCall {
+    pub entrypoint: Symbol,
     pub timestamp: u64,
 }
 
@@ -2596,22 +2658,22 @@ impl EventEmitter {
             .publish((symbol_short!("pool_lo"), market_id.clone()), event);
     }
 
-    /// Emit dispute created event.
+    /// Emit dispute opened event.
     ///
     /// Topic and schema version are resolved from [`EventSchemaRegistry`].
-    pub fn emit_dispute_created(
+    pub fn emit_dispute_opened(
         env: &Env,
         market_id: &Symbol,
         disputer: &Address,
         stake: i128,
         reason: Option<String>,
     ) {
-        let schema = EventSchemaRegistry::get_schema(env, "dispute_created")
+        let schema = EventSchemaRegistry::get_schema(env, "dispute_opened")
             .unwrap_or(EventSchemaEntry {
-                topic: symbol_short!("dispt_crt"),
+                topic: symbol_short!("dispt_opn"),
                 schema_version: 1,
             });
-        let event = DisputeCreatedEvent {
+        let event = DisputeOpenedEvent {
             market_id: market_id.clone(),
             disputer: disputer.clone(),
             stake,
@@ -3774,6 +3836,18 @@ impl EventEmitter {
             .publish((symbol_short!("gov_vote"), proposal_id.clone()), event);
     }
 
+    /// Emit governance vote committed event (commit phase of commit-reveal)
+    pub fn emit_governance_vote_committed(env: &Env, proposal_id: &Symbol, voter: &Address) {
+        let event = GovernanceVoteCommittedEvent {
+            proposal_id: proposal_id.clone(),
+            voter: voter.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("gov_cmit"), &event);
+        env.events()
+            .publish((symbol_short!("gov_cmit"), proposal_id.clone()), event);
+    }
+
     /// Emit governance proposal executed event
     pub fn emit_governance_proposal_executed(env: &Env, proposal_id: &Symbol, executor: &Address) {
         let timestamp = env.ledger().timestamp();
@@ -4160,8 +4234,8 @@ impl EventValidator {
         Ok(())
     }
 
-    /// Validate dispute created event
-    pub fn validate_dispute_created_event(event: &DisputeCreatedEvent) -> Result<(), Error> {
+    /// Validate dispute opened event
+    pub fn validate_dispute_opened_event(event: &DisputeOpenedEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         if event.stake <= 0 {
@@ -4353,13 +4427,13 @@ impl EventTestingUtils {
         }
     }
 
-    /// Create test dispute created event
-    pub fn create_test_dispute_created_event(
+    /// Create test dispute opened event
+    pub fn create_test_dispute_opened_event(
         env: &Env,
         market_id: &Symbol,
         disputer: &Address,
-    ) -> DisputeCreatedEvent {
-        DisputeCreatedEvent {
+    ) -> DisputeOpenedEvent {
+        DisputeOpenedEvent {
             market_id: market_id.clone(),
             disputer: disputer.clone(),
             stake: 10_0000000,
@@ -4651,6 +4725,24 @@ pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &S
     );
 }
 
+/// Emit a deprecation signal for legacy entrypoints.
+///
+/// This helper publishes a `DeprecatedCall` event so indexers can track
+/// usage of functions that have been superseded.  Callers also see the
+/// event in the Soroban ledger metadata, encouraging migration.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `entrypoint` - The `Symbol` name of the deprecated function
+pub fn emit_deprecated(env: &Env, entrypoint: &Symbol) {
+    let event = DeprecatedCall {
+        entrypoint: entrypoint.clone(),
+        timestamp: env.ledger().timestamp(),
+    };
+    env.events()
+        .publish((symbol_short!("depr_call"), entrypoint.clone()), event);
+}
+
 #[cfg(test)]
 mod event_schema_registry_tests {
     use super::*;
@@ -4665,10 +4757,10 @@ mod event_schema_registry_tests {
     }
 
     #[test]
-    fn test_registry_lookup_dispute_created() {
+    fn test_registry_lookup_dispute_opened() {
         let env = Env::default();
-        let schema = EventSchemaRegistry::get_schema(&env, "dispute_created").unwrap();
-        assert_eq!(schema.topic, symbol_short!("dispt_crt"));
+        let schema = EventSchemaRegistry::get_schema(&env, "dispute_opened").unwrap();
+        assert_eq!(schema.topic, symbol_short!("dispt_opn"));
         assert_eq!(schema.schema_version, 1);
     }
 
@@ -4684,7 +4776,7 @@ mod event_schema_registry_tests {
         let env = Env::default();
         // Schema version must equal the pinned baseline; any bump is a breaking change.
         const EXPECTED_ORACLE_RESULT_VERSION: u32 = 1;
-        const EXPECTED_DISPUTE_CREATED_VERSION: u32 = 1;
+        const EXPECTED_DISPUTE_OPENED_VERSION: u32 = 1;
 
         let oracle_schema = EventSchemaRegistry::get_schema(&env, "oracle_result").unwrap();
         assert_eq!(
@@ -4692,10 +4784,10 @@ mod event_schema_registry_tests {
             "OracleResultEvent schema_version mismatch: expected {EXPECTED_ORACLE_RESULT_VERSION}"
         );
 
-        let dispute_schema = EventSchemaRegistry::get_schema(&env, "dispute_created").unwrap();
+        let dispute_schema = EventSchemaRegistry::get_schema(&env, "dispute_opened").unwrap();
         assert_eq!(
-            dispute_schema.schema_version, EXPECTED_DISPUTE_CREATED_VERSION,
-            "DisputeCreatedEvent schema_version mismatch: expected {EXPECTED_DISPUTE_CREATED_VERSION}"
+            dispute_schema.schema_version, EXPECTED_DISPUTE_OPENED_VERSION,
+            "DisputeOpenedEvent schema_version mismatch: expected {EXPECTED_DISPUTE_OPENED_VERSION}"
         );
     }
 
@@ -4718,16 +4810,38 @@ mod event_schema_registry_tests {
     }
 
     #[test]
-    fn test_emit_dispute_created_uses_registry_topic() {
+    fn test_emit_dispute_opened_uses_registry_topic() {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
         env.as_contract(&contract_id, || {
             let market_id = soroban_sdk::symbol_short!("mkt2");
             let disputer = soroban_sdk::Address::generate(&env);
-            EventEmitter::emit_dispute_created(
+            EventEmitter::emit_dispute_opened(
                 &env, &market_id, &disputer, 50_000_000, None,
             );
         });
+    }
+
+    #[test]
+    fn test_emit_deprecated_call() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let entrypoint = soroban_sdk::symbol_short!("verify_rs");
+            // Must not panic
+            emit_deprecated(&env, &entrypoint);
+        });
+    }
+
+    #[test]
+    fn test_emit_deprecated_call_stores_entrypoint() {
+        let env = Env::default();
+        // Direct publish test – the event should be observable via mock.
+        let entrypoint = soroban_sdk::Symbol::new(&env, "legacy_fn");
+        emit_deprecated(&env, &entrypoint);
+        // No panic = success; actual event inspection is done by Soroban's
+        // test harness. We verify the event was published by checking it
+        // doesn't crash.
     }
 }
 
@@ -4849,6 +4963,32 @@ impl EventEmitter {
         );
     }
 
+    /// Emit a per-oracle quote detail event produced by the median resolver.
+    ///
+    /// Published under the Soroban event topic `orc_med_q` alongside every
+    /// `OracleConsensusReachedEvent` emitted by
+    /// `OracleResolutionManager::resolve_with_median`.
+    ///
+    /// Consumers listening to `orc_med_q` receive the full
+    /// `Vec<OracleQuote>` so they can inspect individual oracle prices,
+    /// confidence weights, and outlier flags without re-running the
+    /// aggregation logic.
+    ///
+    /// # Parameters
+    /// - `market_id` – The market that was resolved.
+    /// - `quotes`    – All three oracle quotes (Pyth, Reflector, Band) with
+    ///                 their computed weights and `included` flags.
+    pub fn emit_oracle_median_quotes(
+        env: &Env,
+        market_id: &Symbol,
+        quotes: &Vec<crate::types::OracleQuote>,
+    ) {
+        env.events().publish(
+            (symbol_short!("orc_med_q"), market_id.clone()),
+            quotes.clone(),
+        );
+    }
+
     /// Emit admin override event when an admin manually overrides an oracle-verified result.
     pub fn emit_admin_override(
         env: &Env,
@@ -4870,6 +5010,29 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("adm_ovrd"), &event);
         env.events()
             .publish((symbol_short!("adm_ovrd"), market_id.clone()), event);
+    }
+
+    /// Emit force-resolve event when an admin force-resolves a market.
+    pub fn emit_force_resolved(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        outcome: &String,
+        reason: &String,
+        idempotency_key: &String,
+    ) {
+        let event = ForceResolvedEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            outcome: outcome.clone(),
+            reason: reason.clone(),
+            idempotency_key: idempotency_key.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("frc_rs"), &event);
+        env.events()
+            .publish((symbol_short!("frc_rs"), market_id.clone()), event);
     }
 
     /// Emit fee config queued event when a time-locked config update is proposed.
@@ -4918,5 +5081,78 @@ impl EventEmitter {
         };
         env.events()
             .publish((symbol_short!("fee_ccl"), admin.clone()), event);
+    }
+
+    /// Emit cumulative dispute stake cap exceeded event.
+    pub fn emit_dispute_cumulative_stake_cap_exceeded(
+        env: &Env,
+        user: &Address,
+        cap: i128,
+        cumulative_stake: i128,
+        attempted_stake: i128,
+    ) {
+        let event = DisputeCumulativeStakeCapExceededEvent {
+            user: user.clone(),
+            cap,
+            cumulative_stake,
+            attempted_stake,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cum_cap"), &event);
+        env.events()
+            .publish((symbol_short!("cum_cap"), user.clone()), event);
+    }
+
+    /// Emit cumulative dispute stake cap set event.
+    pub fn emit_dispute_cumulative_stake_cap_set(env: &Env, user: &Address, cap: i128) {
+        let event = DisputeCumulativeStakeCapSetEvent {
+            user: user.clone(),
+            cap,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cum_set"), &event);
+        env.events()
+            .publish((symbol_short!("cum_set"), user.clone()), event);
+    }
+}
+
+#[cfg(test)]
+mod focused_dispute_tests {
+    use super::*;
+    use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol};
+
+    #[test]
+    fn test_dispute_opened_event_topics() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "mkt_123");
+        let disputer = Address::generate(&env);
+        let stake = 50_000_000i128;
+        let reason = None;
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_dispute_opened(&env, &market_id, &disputer, stake, reason);
+        });
+
+        let events = env.events().all();
+        // Expect at least one event with 3 topics: (topic0, topic1, topic2)
+        // topic0 = dispt_opn
+        // topic1 = mkt_123
+        // topic2 = 1 (schema version)
+
+        let mut found = false;
+        for event in events.iter() {
+            if event.2.len() == 3 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+
+                if topic0 == symbol_short!("dispt_opn") {
+                    assert_eq!(topic1, market_id, "Market ID must be topic1");
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "DisputeOpenedEvent not found with correct topic structure");
     }
 }

@@ -5,7 +5,7 @@ use alloc::string::ToString;
 use crate::bandprotocol;
 use crate::err::Error;
 use soroban_sdk::{
-    contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Vec,
+    contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Val, Vec,
 };
 // use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::types::*;
@@ -572,7 +572,7 @@ impl OracleInterface for PythOracle {
 ///     }
 ///     
 ///     // Get TWAP for ETH over last 10 records
-///     if let Some(eth_twap) = client.twap(ReflectorAsset::ETH, 10) {
+///     if let Some(eth_twap) = client.twap(ReflectorAsset::ETH, 10, false) {
 ///         println!("ETH TWAP: ${}", eth_twap / 100);
 ///     }
 ///     
@@ -644,15 +644,15 @@ impl<'a> ReflectorOracleClient<'a> {
     }
 
     /// Get TWAP (Time-Weighted Average Price) for an asset
-    pub fn twap(&self, asset: ReflectorAsset, records: u32) -> Option<i128> {
+    pub fn twap(&self, asset: ReflectorAsset, records: u32, force_refresh: bool) -> Option<i128> {
         // Build a cache key unique to this transaction
-        let cache_key = (
-            Symbol::short(self.env, "twap_cache"),
+        let cache_key: (Symbol, Val, Val) = (
+            Symbol::short("twap_cache"),
             asset.clone().into_val(self.env),
             records.into_val(self.env),
         );
         // Attempt to read from temporary storage (per-transaction cache)
-        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(cache_key.clone()) {
+        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(&cache_key) {
             return cached;
         }
         // Not cached; perform contract call
@@ -661,11 +661,11 @@ impl<'a> ReflectorOracleClient<'a> {
             asset.into_val(self.env),
             records.into_val(self.env),
         ];
-        let res = self
+        let res: Option<i128> = self
             .env
             .invoke_contract(&self.contract_id, &symbol_short!("twap"), args);
         // Store result in temporary cache for remainder of transaction
-        self.env.storage().temporary().set(cache_key, res.clone());
+        self.env.storage().temporary().set(&cache_key, &res);
         res
     }
     /// Check if the Reflector oracle is healthy
@@ -2482,6 +2482,8 @@ impl OracleValidationConfigManager {
                 max_staleness_secs: Self::DEFAULT_MAX_STALENESS_SECS,
                 max_confidence_bps: Self::DEFAULT_MAX_CONFIDENCE_BPS,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             })
     }
 

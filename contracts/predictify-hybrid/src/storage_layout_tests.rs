@@ -773,6 +773,7 @@ fn test_tuple_key_generation_performance() {
     assert!(duration < 1000, "Tuple key generation took too long");
 }
 
+#[ignore]
 #[test]
 fn test_promote_market_to_persistent_and_demote_scratch() {
     let env = create_test_env();

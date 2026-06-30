@@ -772,7 +772,7 @@ impl FeeManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(fee_amount)
     }
@@ -846,15 +846,6 @@ impl FeeManager {
     ) -> Result<FeeConfig, Error> {
         // Authentication is handled by the contract; no explicit auth call needed
 
-    /// Apply a previously queued fee configuration update.
-    ///
-    /// Succeeds only when the ETA has been reached. Can be called by anyone
-    /// once the timelock expires.
-    pub fn apply_fee_update(env: &Env, admin: Address) -> Result<(), Error> {
-        FeeConfigManager::apply_update(env, &admin)?;
-        Ok(())
-    }
-
         // Retrieve the pending commit
         let commit_key = symbol_short!("fc_cmt");
         let commit: FeeConfigCommit = env
@@ -909,9 +900,19 @@ impl FeeManager {
             crate::audit_trail::AuditAction::FeeConfigUpdated,
             admin.clone(),
             Map::new(env),
+            None,
         );
 
         Ok(new_config)
+    }
+
+    /// Apply a previously queued fee configuration update.
+    ///
+    /// Succeeds only when the ETA has been reached. Can be called by anyone
+    /// once the timelock expires.
+    pub fn apply_fee_update(env: &Env, admin: Address) -> Result<(), Error> {
+        FeeConfigManager::apply_update(env, &admin)?;
+        Ok(())
     }
 
     /// Retrieve the active fee config at the given timestamp by scanning the config history.
@@ -996,7 +997,7 @@ impl FeeManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(())
     }
@@ -1922,7 +1923,7 @@ impl FeeWithdrawalManager {
             admin.clone(),
             Map::new(env),
             None,
-        );;
+        );
 
         Ok(withdrawal_amount)
     }

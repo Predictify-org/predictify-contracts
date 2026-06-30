@@ -640,16 +640,17 @@ impl UpgradeManager {
             return Ok(true);
         }
 
-        let verify_count = if depth == 0 || depth > chain.len() {
-            chain.len()
+        let chain_len = chain.len() as u64;
+        let verify_count = if depth == 0 || depth > chain_len {
+            chain_len
         } else {
-            depth
+            depth as u32
         };
 
         let zero_hash = BytesN::from_array(env, &[0u8; 32]);
 
         for i in 0..verify_count {
-            let record = chain.get(i).ok_or(Error::InvalidInput)?;
+            let record = chain.get(i as u32).ok_or(Error::InvalidInput)?;
 
             if i == 0 {
                 // First record: previous_wasm_hash must be zero for genesis
@@ -658,7 +659,7 @@ impl UpgradeManager {
                 }
             } else {
                 // Subsequent records: previous_wasm_hash must match previous record's new_wasm_hash
-                let prev_record = chain.get(i - 1).ok_or(Error::InvalidInput)?;
+                let prev_record = chain.get((i - 1) as u32).ok_or(Error::InvalidInput)?;
                 if record.previous_wasm_hash != prev_record.new_wasm_hash {
                     return Ok(false);
                 }
@@ -1146,7 +1147,7 @@ mod tests {
     fn test_upgrade_proposal_validation() {
         let env = Env::default();
         let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-        let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
+        let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false, 0);
 
         let mut proposal = UpgradeProposal::new(
             &env,
@@ -1179,15 +1180,14 @@ mod tests {
             // Initialize version
             let version_manager = VersionManager::new(&env);
             let current_version =
-                Version::new(&env, 1, 0, 0, String::from_str(&env, "Current"), false);
+                Version::new(&env, 1, 0, 0, String::from_str(&env, "Current"), false, 0);
             version_manager
                 .track_contract_version(&env, current_version)
                 .unwrap();
 
             // Create upgrade proposal
             let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-            let target_version =
-                Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
+            let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false, 0);
 
             let proposal = UpgradeProposal::new(
                 &env,

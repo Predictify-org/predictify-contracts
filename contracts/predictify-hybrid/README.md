@@ -708,13 +708,40 @@ soroban contract invoke --id <contract_id> -- set_token_contract --token_contrac
 - **Fallback**: TWAP used as fallback if latest price unavailable
 - **Caching**: Consider caching oracle results for efficiency
 
+## Governance
+
+The contract includes a full on-chain governance module (`src/governance.rs`) supporting:
+
+- **Proposals**: Any address can create a proposal with an optional contract execution target.
+- **Direct voting**: Cast a FOR/AGAINST vote within the open voting window.
+- **Commit-reveal voting (vote salt)**: Submit a salted commitment hash first, reveal later — prevents front-running and precomputation of results before the window closes.
+- **Quorum decay**: The required quorum decreases linearly from the base quorum toward a configurable floor over the proposal lifetime, preventing stale proposals from lingering forever.
+- **Delegation**: Delegate vote weight (up to 50 incoming delegations per address).
+
+See [`docs/contracts/GOVERNANCE.md`](../../docs/contracts/GOVERNANCE.md) for the full API reference.
+
+### Vote Salt Quick Reference
+
+```text
+commit_vote(voter, proposal_id, sha256(salt ++ support_byte))  // hide preference
+reveal_vote(voter, proposal_id, salt, support)                  // tally vote
+```
+
+`support_byte = 0x01` (FOR) · `0x00` (AGAINST)
+
+### Quorum Decay Quick Reference
+
+```rust
+QuorumDecay { floor_bps: 2000, halving_seconds: 86400 }
+// floor = 20 % of base quorum; full decay after 2 days
+```
+
 ## Future Enhancements
 
 1. **Multiple Oracle Support**: Add more oracle providers
 2. **Oracle Aggregation**: Combine multiple oracle results
 3. **Dynamic Asset Support**: Parse feed_id for different asset pairs
 4. **Price Validation**: Add confidence intervals and staleness checks
-5. **Governance**: Add DAO-style governance for parameter updates
 
 ## Troubleshooting
 

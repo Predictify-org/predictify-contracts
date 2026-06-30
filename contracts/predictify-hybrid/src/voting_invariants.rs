@@ -18,10 +18,12 @@
 
 #![cfg(test)]
 
+use alloc::format;
 use crate::markets::MarketStateManager;
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 use crate::voting::VotingUtils;
 use proptest::prelude::*;
+use alloc::format;
 use soroban_sdk::{testutils::Address as _, vec as svec, Address, Env, String};
 
 // ── Constants ────────────────────────────────────────────────────────────────

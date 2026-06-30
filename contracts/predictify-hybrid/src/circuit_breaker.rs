@@ -1226,6 +1226,7 @@ mod tests {
             recovery_timeout: 300,
             half_open_max_requests: 3,
             auto_recovery_enabled: true,
+            half_open_quota: HalfOpenQuota { calls_per_minute: 3, evaluation_window_s: 60 },
         };
         assert_eq!(config.max_error_rate, 10);
         assert_eq!(config.half_open_max_requests, 3);
@@ -1318,6 +1319,7 @@ mod tests {
             recovery_timeout: 600,
             half_open_max_requests: 5,
             auto_recovery_enabled: true,
+            half_open_quota: HalfOpenQuota { calls_per_minute: 3, evaluation_window_s: 60 },
         };
         let result = CircuitBreaker::validate_config(&config);
         assert!(result.is_ok());
@@ -1338,6 +1340,7 @@ mod tests {
             error_count: 0,
             pause_scope: PauseScope::BettingOnly,
             allow_withdrawals: false,
+            half_open_since: 0,
         };
         assert_eq!(state.state, BreakerState::Closed);
         state.state = BreakerState::Open;
@@ -1358,6 +1361,7 @@ mod tests {
             error_count: 0,
             pause_scope: PauseScope::BettingOnly,
             allow_withdrawals: false,
+            half_open_since: 0,
         };
         assert_eq!(state.failure_count, 0);
         state.failure_count += 1;
@@ -1387,6 +1391,7 @@ mod tests {
             error_count: 0,
             pause_scope: PauseScope::BettingOnly,
             allow_withdrawals: true,
+            half_open_since: 0,
         };
         assert!(state.allow_withdrawals);
     }

@@ -195,22 +195,13 @@ impl StatisticsManager {
     ///
     /// Safely updates user statistics for claimed winnings using checked arithmetic.
     /// Win rate is recalculated and clamped to valid range (0-10000 basis points).
+    /// Also updates the bounded leaderboard heaps.
     ///
     /// # Parameters
     /// * `env` - Soroban environment
     /// * `user` - Address of the user claiming winnings
     /// * `amount` - Winnings amount in token units
     pub fn record_winnings_claimed(env: &Env, user: &Address, amount: i128) {
-        // Note: fees are already deducted from 'amount' usually?
-        // Or do we track total fees collected separately?
-        // The implementation plan says "increments fees".
-        // But claim_winnings in lib.rs logic:
-        // user_share = user_stake * (1 - fee) * total_pool / winning_total
-        // The fee part stays in the contract or is sent to fee collector?
-        // lib.rs seems to deduct fee from user_share.
-        // So the "fee collected" is the difference.
-        // I need to update the hook to pass the fee amount.
-
         // Update user stats
         let mut u_stats = Self::get_user_stats(env, user);
         u_stats.total_winnings = u_stats
@@ -223,9 +214,7 @@ impl StatisticsManager {
             .unwrap_or(u_stats.total_bets_won);
         u_stats.last_activity_ts = env.ledger().timestamp();
 
-        // Recalculate win rate
-        // Win rate = (bets_won / bets_placed) * 10000 (basis points)
-        // Clamped to maximum 10000 (100.00%) for safety
+        // Recalculate win rate (basis points, clamped to 10000)
         if u_stats.total_bets_placed > 0 {
             let win_rate_bp =
                 (u_stats.total_bets_won as u128 * 10000) / u_stats.total_bets_placed as u128;
@@ -233,6 +222,31 @@ impl StatisticsManager {
         }
 
         Self::set_user_stats(env, user, &u_stats);
+
+        // Push updated entry into leaderboard heaps.
+        let entry = UserLeaderboardEntryV1 {
+            user: user.clone(),
+            rank: 0,
+            total_winnings: u_stats.total_winnings,
+            win_rate: u_stats.win_rate,
+            total_bets_placed: u_stats.total_bets_placed,
+            winning_bets: u_stats.total_bets_won,
+            total_wagered: u_stats.total_amount_wagered,
+            last_activity: u_stats.last_activity_ts,
+        };
+        crate::leaderboard::LeaderboardHeap::push_winnings(
+            env,
+            user,
+            crate::leaderboard::MAX_CAPACITY,
+            u_stats.total_winnings,
+            &entry,
+        );
+        crate::leaderboard::LeaderboardHeap::push_win_rate(
+            env,
+            user,
+            crate::leaderboard::MAX_CAPACITY,
+            &entry,
+        );
     }
 
     /// Record fees collected

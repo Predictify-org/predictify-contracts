@@ -3,7 +3,7 @@
 use crate::Error;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
-use soroban_sdk::{contracttype, Address, BytesN, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
 
@@ -2007,6 +2007,84 @@ impl MultiOracleResult {
     }
 }
 
+// ── Median Oracle Aggregation Types ─────────────────────────────────────────
+
+/// A single oracle's price quote produced by
+/// `OracleResolutionManager::resolve_with_median`.
+///
+/// One `OracleQuote` is collected from each of Pyth, Reflector, and Band.
+/// The `included` flag is `false` either because the oracle fetch failed
+/// or because the reported price was rejected as an outlier by the
+/// configured `max_deviation_bps` threshold.
+///
+/// # Confidence Weight Derivation
+///
+/// When the oracle reports a confidence interval `c` for a price `p`, the
+/// weight is computed as:
+/// ```text
+/// weight_bps = p × 10 000 / (p + c)
+/// ```
+/// A tighter interval (lower `c`) raises the weight toward 10 000.  When
+/// no interval is reported, a medium weight of 5 000 bps is used.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleQuote {
+    /// Oracle provider (Pyth, Reflector, or Band Protocol).
+    pub provider: OracleProvider,
+    /// Raw price from the oracle feed, in market base units.
+    /// Zero when `included` is `false`.
+    pub price: i128,
+    /// Confidence interval expressed as a fraction of `price` in basis
+    /// points (100 bps = 1 %).  Zero indicates the oracle did not report
+    /// a confidence interval; a larger value means higher price uncertainty.
+    pub confidence_bps: u32,
+    /// Influence weight for the weighted-median computation, in basis
+    /// points (10 000 = full weight).  Derived from the confidence
+    /// interval: tighter intervals yield higher weights.  Zero for
+    /// excluded quotes.
+    pub weight_bps: u32,
+    /// `true` when this quote participates in the final median computation.
+    /// `false` for failed fetches or outliers that exceed
+    /// `MedianOracleConfig::max_deviation_bps`.
+    pub included: bool,
+}
+
+/// Global configuration for the three-oracle median resolver.
+///
+/// Stored once by the contract admin via
+/// `OracleResolutionManager::set_median_config` and referenced by every
+/// subsequent call to `OracleResolutionManager::resolve_with_median`.
+///
+/// # Outlier Detection
+///
+/// After all three feeds are queried, an unweighted simple median is
+/// computed.  Any quote whose price satisfies
+/// ```text
+/// |price − simple_median| × 10 000 / simple_median > max_deviation_bps
+/// ```
+/// is discarded before the final weighted-median computation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MedianOracleConfig {
+    /// Contract address of the Pyth price oracle.
+    /// On Stellar this oracle returns `OracleUnavailable`; the quote will
+    /// be excluded with `included = false`.
+    pub pyth_address: Address,
+    /// Contract address of the Reflector oracle (primary on Stellar).
+    pub reflector_address: Address,
+    /// Contract address of the Band Protocol oracle.
+    pub band_address: Address,
+    /// Maximum price deviation allowed before a quote is rejected as an
+    /// outlier, in basis points (1 bps = 0.01 %).
+    /// Recommended default: 200 (2 %).
+    pub max_deviation_bps: u32,
+    /// Minimum number of non-outlier quotes required for a valid
+    /// resolution.  `resolve_with_median` returns `OracleNoConsensus`
+    /// when fewer quotes survive filtering.  Must be ≥ 1;
+    /// recommended value: 2.
+    pub min_sources: u32,
+}
+
 /// Oracle source configuration for multi-oracle support.
 ///
 /// Defines a single oracle source with its configuration, weight, and status.
@@ -2271,7 +2349,7 @@ pub enum OracleVerificationStatus {
 /// } else {
 ///     let age = env.ledger().timestamp() - price_data.timestamp;
 ///     println!("Price data is {} seconds old", age);
-///     
+///
 ///     if age > 3600 { // 1 hour
 ///         println!("Data is very stale - reject for resolution");
 ///     }
@@ -2664,7 +2742,7 @@ impl MarketExtension {
 /// for (month, trend_data) in monthly_trends {
 ///     println!("Month {}: {} extensions, {:.1}% approval rate",
 ///         month, trend_data.count, trend_data.approval_rate);
-///     
+///
 ///     if trend_data.count > trend_data.previous_month_count {
 ///         println!("  ↗ Extension requests increasing");
 ///     } else {
@@ -3320,10 +3398,10 @@ impl MarketCreationParams {
 /// if consensus.is_reliable() {
 ///     let resolution_outcome = consensus.outcome.clone();
 ///     let confidence_score = consensus.calculate_confidence();
-///     
+///
 ///     println!("Resolving market to: {}", resolution_outcome);
 ///     println!("Confidence: {:.1}%", confidence_score);
-///     
+///
 ///     // Apply resolution
 ///     apply_market_resolution(resolution_outcome, confidence_score);
 /// } else {
