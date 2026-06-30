@@ -242,7 +242,7 @@ pub enum Error {
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
     /// An admin override nonce was replayed; reject to prevent replay attacks.
-    ReplayedOverride = 526,
+    ReplayedAdminOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
 }

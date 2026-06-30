@@ -30,7 +30,7 @@ fn test_append_and_get_record() {
         );
         assert_eq!(index1, 1);
 
-        let record1 = AuditTrailManager::get_record(&env, 1).unwrap();
+        let AuditRecordVersioned::V1(record1) = AuditTrailManager::get_record(&env, 1).unwrap() else { panic!() };
         assert_eq!(record1.index, 1);
         assert_eq!(record1.action, AuditAction::ContractInitialized);
         assert_eq!(record1.actor, actor.clone());
@@ -50,7 +50,7 @@ fn test_append_and_get_record() {
         );
         assert_eq!(index2, 2);
 
-        let record2 = AuditTrailManager::get_record(&env, 2).unwrap();
+        let AuditRecordVersioned::V1(record2) = AuditTrailManager::get_record(&env, 2).unwrap() else { panic!() };
         assert_eq!(record2.index, 2);
         assert_eq!(record2.action, AuditAction::MarketCreated);
 
@@ -113,7 +113,7 @@ fn test_verify_integrity_tampering() {
         );
 
         // Tamper with record 1
-        let mut record1 = AuditTrailManager::get_record(&env, 1).unwrap();
+        let AuditRecordVersioned::V1(mut record1) = AuditTrailManager::get_record(&env, 1).unwrap() else { panic!() };
         record1.action = AuditAction::AdminAdded; // Mutate action
         env.storage()
             .persistent()

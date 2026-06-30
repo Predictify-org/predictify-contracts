@@ -28,3 +28,7 @@ pub mod fee_config_commit_reveal_tests;
 pub mod reflector_twap_cache_tests;
 pub mod dispute_anti_grief_tests;
 pub mod oracle_differential_fuzz;
+pub mod dispute_collusion_tests;
+pub mod err_code_stability_tests;
+pub mod event_replay_nonce_tests;
+pub mod audit_compact_encoding_tests;

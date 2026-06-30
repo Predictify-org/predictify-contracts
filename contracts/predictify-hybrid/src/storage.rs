@@ -71,7 +71,6 @@ enum StorageTtlTier {
 pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
-    AdminOverrideNonce(Address),
     ArchivedMarket(Symbol, u64),
     /// Cumulative days extended for a given market (u32).
     MarketExtensionTotal(Symbol),
@@ -87,6 +86,12 @@ pub enum DataKey {
     MarketCache(Symbol),
     /// Nonce for admin override replay protection.
     AdminOverrideNonce(Address),
+    /// Configuration for dispute collusion detector
+    CollusionDetectorConfig,
+    /// Nonce for event replay protection
+    EventNonce(Symbol),
+    /// Audit reason table for compact encoding
+    AuditReasonTable,
 }
 
 /// Storage format version for migration tracking
