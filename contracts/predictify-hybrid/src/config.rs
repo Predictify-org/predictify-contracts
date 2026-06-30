@@ -370,6 +370,18 @@ pub const ORACLE_TIMEOUT_SECONDS: u64 = 30;
 
 // ===== MONITORING CONSTANTS =====
 
+/// Oracle health degradation threshold — consecutive bad samples needed to flip from Working to Degraded.
+///
+/// Higher values reduce flapping but delay detection of real issues.
+/// Safe range: 2–10.  Defaults trade off promptness vs stability.
+pub const ORACLE_HEALTH_DEGRADED_THRESHOLD: u32 = 3;
+
+/// Oracle health recovery threshold — consecutive good samples needed to flip from Degraded back to Working.
+///
+/// Higher values prevent premature recovery after a transient blip.
+/// Safe range: 2–10.  Should be >= the degraded threshold for stability.
+pub const ORACLE_HEALTH_RECOVERY_THRESHOLD: u32 = 3;
+
 /// Maximum number of alerts retained in the monitoring queue (FIFO, oldest dropped first).
 ///
 /// When the queue is full and a new alert arrives, the oldest entry is evicted and
