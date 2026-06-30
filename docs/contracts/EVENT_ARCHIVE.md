@@ -2,6 +2,8 @@
 
 Bounded on-chain storage for resolved and cancelled prediction markets, with paginated historical queries.
 
+
+
 ## Overview
 
 `EventArchive` (in `contracts/predictify-hybrid/src/event_archive.rs`) lets admins mark resolved or cancelled markets as archived and exposes read-only paginated queries for analytics and UI. Only public metadata is returned — no votes, individual stakes, or addresses.
