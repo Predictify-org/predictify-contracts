@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::audit_trail::{AuditAction, AuditTrailManager};
+use crate::audit_trail::{AuditAction, AuditTrailManager, AuditRecordVersioned};
 use crate::err::Error;
 use crate::types::{MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
@@ -95,7 +95,7 @@ fn test_override_appends_audit_record() {
         let head = AuditTrailManager::get_head(&ctx.env).unwrap();
         assert!(head.latest_index >= 1);
 
-        let record = AuditTrailManager::get_record(&ctx.env, head.latest_index).unwrap();
+        let AuditRecordVersioned::V1(record) = AuditTrailManager::get_record(&ctx.env, head.latest_index).unwrap() else { panic!() };
         assert_eq!(record.action, AuditAction::OracleVerificationOverride);
         assert_eq!(record.actor, ctx.admin);
 
@@ -377,7 +377,7 @@ fn test_override_nonce_persisted_in_audit() {
 
     ctx.env.as_contract(&ctx.contract_id, || {
         let head = AuditTrailManager::get_head(&ctx.env).unwrap();
-        let record = AuditTrailManager::get_record(&ctx.env, head.latest_index).unwrap();
+        let AuditRecordVersioned::V1(record) = AuditTrailManager::get_record(&ctx.env, head.latest_index).unwrap() else { panic!() };
         assert_eq!(record.override_nonce, Some(42u64));
     });
 }
