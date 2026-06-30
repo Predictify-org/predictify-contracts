@@ -26,6 +26,15 @@ pub enum AdminRole {
 /// - Event testing utilities and examples
 /// - Event documentation and examples
 
+
+/// Wrapper to embed a replay protection nonce into event payloads
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventPayload<P> {
+    pub nonce: u64,
+    pub payload: P,
+}
+
 // ===== EVENT TYPES =====
 
 /// Event emitted when a new prediction market is successfully created.
@@ -2147,6 +2156,20 @@ pub struct DeprecatedCall {
 pub struct EventEmitter;
 
 impl EventEmitter {
+
+    pub fn publish_with_nonce<T, P>(env: &Env, topics: T, primary_topic: Symbol, payload: P)
+    where
+        T: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+        P: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+    {
+        let key = crate::storage::DataKey::EventNonce(primary_topic.clone());
+        let nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(nonce + 1));
+        
+        let wrapped = EventPayload { nonce, payload };
+        env.events().publish(topics, wrapped);
+    }
+
     /// Emit market created event
     pub fn emit_market_created(
         env: &Env,
@@ -2166,8 +2189,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_crt"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_crt"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_crt"), market_id.clone()), symbol_short!("mkt_crt").clone(), event);
     }
 
     /// Emit fallback used event
@@ -2185,8 +2207,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("fbk_used"), &event);
-        env.events()
-            .publish((symbol_short!("fbk_used"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("fbk_used"), market_id.clone()), symbol_short!("fbk_used").clone(), event);
     }
 
     /// Emit resolution timeout event
@@ -2197,8 +2218,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("res_tmo"), &event);
-        env.events()
-            .publish((symbol_short!("res_tmo"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("res_tmo"), market_id.clone()), symbol_short!("res_tmo").clone(), event);
     }
 
     /// Emit event created event
@@ -2221,8 +2241,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("evt_crt"), &event);
-        env.events()
-            .publish((symbol_short!("evt_crt"), event_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("evt_crt"), event_id.clone()), symbol_short!("evt_crt").clone(), event);
     }
 
     /// Emit vote cast event
@@ -2242,8 +2261,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("vote"), &event);
-        env.events()
-            .publish((symbol_short!("vote"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("vote"), market_id.clone()), symbol_short!("vote").clone(), event);
     }
 
     /// Emit statistics updated event
@@ -2261,7 +2279,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("stats_upd"), &event);
-        env.events().publish((symbol_short!("stats_upd"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("stats_upd"),), symbol_short!("stats_upd").clone(), event);
     }
 
     /// Emit bet placed event when a user places a bet on a market
@@ -2304,8 +2322,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("bet_plc"), &event);
-        env.events()
-            .publish((symbol_short!("bet_plc"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("bet_plc"), market_id.clone()), symbol_short!("bet_plc").clone(), event);
     }
 
     /// Emit bet status updated event when a bet's status changes
@@ -2352,8 +2369,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("bet_upd"), &event);
-        env.events()
-            .publish((symbol_short!("bet_upd"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("bet_upd"), market_id.clone()), symbol_short!("bet_upd").clone(), event);
     }
 
     /// Emit oracle result event.
@@ -2387,8 +2403,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &schema.topic, &event);
-        env.events()
-            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+        Self::publish_with_nonce(env, (schema.topic, market_id.clone(), schema.schema_version), schema.topic.clone(), event);
     }
 
     // ===== ORACLE RESULT VERIFICATION EVENT EMISSION METHODS =====
@@ -2421,8 +2436,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("orc_init"), &event);
-        env.events()
-            .publish((symbol_short!("orc_init"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("orc_init"), market_id.clone()), symbol_short!("orc_init").clone(), event);
     }
 
     /// Emit oracle result verified event
@@ -2473,8 +2487,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("orc_ver"), &event);
-        env.events()
-            .publish((symbol_short!("orc_ver"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("orc_ver"), market_id.clone()), symbol_short!("orc_ver").clone(), event);
     }
 
     /// Emit oracle verification failed event
@@ -2508,8 +2521,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("orc_fail"), &event);
-        env.events()
-            .publish((symbol_short!("orc_fail"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("orc_fail"), market_id.clone()), symbol_short!("orc_fail").clone(), event);
     }
 
     /// Emit oracle validation failed event.
@@ -2537,8 +2549,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("orc_val"), &event);
-        env.events()
-            .publish((symbol_short!("orc_val"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("orc_val"), market_id.clone()), symbol_short!("orc_val").clone(), event);
     }
 
     /// Emit oracle consensus reached event
@@ -2582,8 +2593,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("orc_cons"), &event);
-        env.events()
-            .publish((symbol_short!("orc_cons"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("orc_cons"), market_id.clone()), symbol_short!("orc_cons").clone(), event);
     }
 
     /// Emit oracle health status event
@@ -2617,8 +2627,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("orc_hlth"), &event);
-        env.events()
-            .publish((symbol_short!("orc_hlth"), oracle_address.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("orc_hlth"), oracle_address.clone()), symbol_short!("orc_hlth").clone(), event);
     }
 
     /// Emit market resolved event
@@ -2642,9 +2651,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_res"), &event);
-        env.events().publish(
-            (
-                symbol_short!("mkt_res"),
+        Self::publish_with_nonce(env, (symbol_short!("mkt_res"),
                 market_id.clone(),
                 resolution_method.clone(),
             ),
@@ -2667,7 +2674,7 @@ impl EventEmitter {
         };
         Self::store_event(env, &symbol_short!("pool_lo"), &event);
         env.events()
-            .publish((symbol_short!("pool_lo"), market_id.clone()), event);
+            .publish((symbol_short!("pool_lo"), market_id.clone()), symbol_short!("mkt_res").clone(), event);
     }
 
     /// Emit dispute opened event.
@@ -2694,8 +2701,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &schema.topic, &event);
-        env.events()
-            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+        Self::publish_with_nonce(env, (schema.topic, market_id.clone(), schema.schema_version), schema.topic.clone(), event);
     }
 
     /// Emit suspected collusion flag event.
@@ -2717,8 +2723,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("sus_col"), &event);
-        env.events()
-            .publish((symbol_short!("sus_col"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("sus_col"), market_id.clone()), symbol_short!("sus_col").clone(), event);
     }
 
     /// Emit dispute resolved event
@@ -2740,8 +2745,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("dispt_res"), &event);
-        env.events()
-            .publish((symbol_short!("dispt_res"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("dispt_res"), market_id.clone()), symbol_short!("dispt_res").clone(), event);
     }
 
     /// Emit dispute history evicted event
@@ -2757,8 +2761,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("dh_evct"), &event);
-        env.events()
-            .publish((symbol_short!("dh_evct"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("dh_evct"), market_id.clone()), symbol_short!("dh_evct").clone(), event);
     }
 
     /// Emit fee collected event
@@ -2778,8 +2781,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("fee_col"), &event);
-        env.events()
-            .publish((symbol_short!("fee_col"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("fee_col"), market_id.clone()), symbol_short!("fee_col").clone(), event);
     }
 
     /// Emit an admin fee withdrawal attempt event.
@@ -2811,8 +2813,7 @@ impl EventEmitter {
         };
 
         // Publish to the Soroban event stream
-        env.events()
-            .publish((symbol_short!("fwd_att"), admin.clone()), event.clone());
+        Self::publish_with_nonce(env, (symbol_short!("fwd_att"), admin.clone()), symbol_short!("fwd_att").clone(), event.clone());
 
         // Also store the last event for simple on-chain querying/debugging
         Self::store_event(env, &symbol_short!("fwd_att"), &event);
@@ -2833,8 +2834,7 @@ impl EventEmitter {
             timestamp,
         };
 
-        env.events()
-            .publish((symbol_short!("fwd_ok"), admin.clone()), event.clone());
+        Self::publish_with_nonce(env, (symbol_short!("fwd_ok"), admin.clone()), symbol_short!("fwd_ok").clone(), event.clone());
         Self::store_event(env, &symbol_short!("fwd_ok"), &event);
     }
 
@@ -2857,8 +2857,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("ext_req"), &event);
-        env.events()
-            .publish((symbol_short!("ext_req"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("ext_req"), market_id.clone()), symbol_short!("ext_req").clone(), event);
     }
 
     /// Emit configuration updated event
@@ -2878,8 +2877,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("cfg_upd"), &event);
-        env.events()
-            .publish((symbol_short!("cfg_upd"), updated_by.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("cfg_upd"), updated_by.clone()), symbol_short!("cfg_upd").clone(), event);
     }
 
     /// Emit bet limits updated event (global or per-event).
@@ -2898,8 +2896,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("bet_lim"), &event);
-        env.events()
-            .publish((symbol_short!("bet_lim"), scope.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("bet_lim"), scope.clone()), symbol_short!("bet_lim").clone(), event);
     }
 
     /// Emit error logged event
@@ -2921,7 +2918,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("err_log"), &event);
-        env.events().publish((symbol_short!("err_log"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("err_log"),), symbol_short!("err_log").clone(), event);
     }
 
     /// Emit error recovery event
@@ -2945,7 +2942,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("err_rec"), &event);
-        env.events().publish((symbol_short!("err_rec"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("err_rec"),), symbol_short!("err_rec").clone(), event);
     }
 
     /// Emit performance metric event
@@ -2965,7 +2962,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("perf_met"), &event);
-        env.events().publish((symbol_short!("perf_met"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("perf_met"),), symbol_short!("perf_met").clone(), event);
     }
 
     /// Emit admin action logged event
@@ -2979,8 +2976,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("adm_act"), &event);
-        env.events()
-            .publish((symbol_short!("adm_act"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("adm_act"), admin.clone()), symbol_short!("adm_act").clone(), event);
     }
 
     /// Emit admin initialized event
@@ -2991,8 +2987,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("adm_init"), &event);
-        env.events()
-            .publish((symbol_short!("adm_init"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("adm_init"), admin.clone()), symbol_short!("adm_init").clone(), event);
     }
 
     /// Emit admin transferred event (primary admin role transferred to new address).
@@ -3003,8 +2998,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("adm_xfer"), &event);
-        env.events()
-            .publish((symbol_short!("adm_xfer"), new_admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("adm_xfer"), new_admin.clone()), symbol_short!("adm_xfer").clone(), event);
     }
 
     /// Emit contract paused event.
@@ -3014,8 +3008,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ctr_pause"), &event);
-        env.events()
-            .publish((symbol_short!("ctr_pause"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("ctr_pause"), admin.clone()), symbol_short!("ctr_pause").clone(), event);
     }
 
     /// Emit contract unpaused event.
@@ -3025,8 +3018,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ctr_unp"), &event);
-        env.events()
-            .publish((symbol_short!("ctr_unp"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("ctr_unp"), admin.clone()), symbol_short!("ctr_unp").clone(), event);
     }
 
     /// Emit contract initialized event (full initialization with platform fee)
@@ -3036,8 +3028,7 @@ impl EventEmitter {
             platform_fee_percentage: fee,
             timestamp: env.ledger().timestamp(),
         };
-        env.events()
-            .publish((Symbol::new(env, "contract_initialized"),), event);
+        Self::publish_with_nonce(env, (Symbol::new(env, "contract_initialized"),), Symbol::new(env, "contract_initialized").clone(), event);
     }
 
     pub fn emit_platform_fee_set(env: &Env, fee: i128, admin: &Address) {
@@ -3046,8 +3037,7 @@ impl EventEmitter {
             set_by: admin.clone(),
             timestamp: env.ledger().timestamp(),
         };
-        env.events()
-            .publish((Symbol::new(env, "platform_fee_set"),), event);
+        Self::publish_with_nonce(env, (Symbol::new(env, "platform_fee_set"),), Symbol::new(env, "platform_fee_set").clone(), event);
     }
 
     /// Emit admin emergency broadcast event
@@ -3063,8 +3053,7 @@ impl EventEmitter {
             reason,
             timestamp: env.ledger().timestamp(),
         };
-        env.events()
-            .publish((Symbol::new(env, "admin_broadcast"),), event);
+        Self::publish_with_nonce(env, (Symbol::new(env, "admin_broadcast"),), Symbol::new(env, "admin_broadcast").clone(), event);
     }
 
     /// Emit config initialized event
@@ -3084,8 +3073,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("cfg_init"), &event);
-        env.events()
-            .publish((symbol_short!("cfg_init"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("cfg_init"), admin.clone()), symbol_short!("cfg_init").clone(), event);
     }
 
     /// Emit admin role assigned event
@@ -3110,8 +3098,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("adm_role"), &event);
-        env.events()
-            .publish((symbol_short!("adm_role"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("adm_role"), admin.clone()), symbol_short!("adm_role").clone(), event);
     }
 
     /// Emit admin role deactivated event
@@ -3124,8 +3111,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("adm_deact"), &event);
-        env.events()
-            .publish((symbol_short!("adm_deact"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("adm_deact"), admin.clone()), symbol_short!("adm_deact").clone(), event);
     }
 
     /// Emit market closed event
@@ -3137,8 +3123,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_close"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_close"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_close"), market_id.clone()), symbol_short!("mkt_close").clone(), event);
     }
 
     /// Emit refund on oracle failure event (market cancelled, all bets refunded in full).
@@ -3149,8 +3134,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ref_oracl"), &event);
-        env.events()
-            .publish((symbol_short!("ref_oracl"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("ref_oracl"), market_id.clone()), symbol_short!("ref_oracl").clone(), event);
     }
 
     /// Emit market finalized event
@@ -3163,8 +3147,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_final"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_final"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_final"), market_id.clone()), symbol_short!("mkt_final").clone(), event);
     }
 
     /// Emit dispute timeout set event
@@ -3184,8 +3167,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("tout_set"), &event);
-        env.events()
-            .publish((symbol_short!("tout_set"), dispute_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("tout_set"), dispute_id.clone()), symbol_short!("tout_set").clone(), event);
     }
 
     /// Emit dispute timeout expired event
@@ -3205,8 +3187,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("tout_exp"), &event);
-        env.events()
-            .publish((symbol_short!("tout_exp"), dispute_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("tout_exp"), dispute_id.clone()), symbol_short!("tout_exp").clone(), event);
     }
 
     /// Emit dispute timeout extended event
@@ -3226,8 +3207,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("tout_ext"), &event);
-        env.events()
-            .publish((symbol_short!("tout_ext"), dispute_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("tout_ext"), dispute_id.clone()), symbol_short!("tout_ext").clone(), event);
     }
 
     /// Emit dispute vote rejected event
@@ -3245,8 +3225,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("d_v_rej"), &event);
-        env.events()
-            .publish((symbol_short!("d_v_rej"), dispute_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("d_v_rej"), dispute_id.clone()), symbol_short!("d_v_rej").clone(), event);
     }
 
     /// Emit dispute auto-resolved event
@@ -3266,8 +3245,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("auto_res"), &event);
-        env.events()
-            .publish((symbol_short!("auto_res"), dispute_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("auto_res"), dispute_id.clone()), symbol_short!("auto_res").clone(), event);
     }
 
     /// Emit storage cleanup event
@@ -3279,8 +3257,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("stor_cln"), &event);
-        env.events()
-            .publish((symbol_short!("stor_cln"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("stor_cln"), market_id.clone()), symbol_short!("stor_cln").clone(), event);
     }
 
     /// Emit storage optimization event
@@ -3296,8 +3273,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("stor_opt"), &event);
-        env.events()
-            .publish((symbol_short!("stor_opt"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("stor_opt"), market_id.clone()), symbol_short!("stor_opt").clone(), event);
     }
 
     /// Emit storage migration event
@@ -3317,8 +3293,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("stor_mig"), &event);
-        env.events()
-            .publish((symbol_short!("stor_mig"), migration_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("stor_mig"), migration_id.clone()), symbol_short!("stor_mig").clone(), event);
     }
 
     /// Emit market archived event
@@ -3336,8 +3311,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("mkt_arch"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_arch"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_arch"), market_id.clone()), symbol_short!("mkt_arch").clone(), event);
     }
 
     /// Emit circuit breaker event
@@ -3353,7 +3327,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ora_deg"), &event);
-        env.events().publish((symbol_short!("ora_deg"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("ora_deg"),), symbol_short!("ora_deg").clone(), event);
     }
 
     /// Emit oracle recovery event when oracle service recovers
@@ -3364,7 +3338,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ora_rec"), &event);
-        env.events().publish((symbol_short!("ora_rec"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("ora_rec"),), symbol_short!("ora_rec").clone(), event);
     }
 
     /// Emit manual resolution required event when automatic resolution fails
@@ -3375,8 +3349,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("man_res"), &event);
-        env.events()
-            .publish((symbol_short!("man_res"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("man_res"), market_id.clone()), symbol_short!("man_res").clone(), event);
     }
 
     /// Emit state change event when market state transitions
@@ -3418,8 +3391,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("st_chng"), &event);
-        env.events()
-            .publish((symbol_short!("st_chng"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("st_chng"), market_id.clone()), symbol_short!("st_chng").clone(), event);
     }
 
     /// Emit winnings claimed event when user claims payout
@@ -3452,8 +3424,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_clm"), &event);
-        env.events()
-            .publish((symbol_short!("win_clm"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("win_clm"), market_id.clone()), symbol_short!("win_clm").clone(), event);
     }
 
     /// Emit winnings claimed batch event
@@ -3480,8 +3451,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_btc"), &event);
-        env.events()
-            .publish((symbol_short!("win_btc"), user.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("win_btc"), user.clone()), symbol_short!("win_btc").clone(), event);
     }
     /// Emit global claim period updated event.
     pub fn emit_claim_period_updated(env: &Env, admin: &Address, claim_period_seconds: u64) {
@@ -3491,8 +3461,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("clm_prd"), &event);
-        env.events()
-            .publish((symbol_short!("clm_prd"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("clm_prd"), admin.clone()), symbol_short!("clm_prd").clone(), event);
     }
 
     /// Emit market claim period updated event.
@@ -3509,8 +3478,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("m_clm_pd"), &event);
-        env.events()
-            .publish((symbol_short!("m_clm_pd"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("m_clm_pd"), market_id.clone()), symbol_short!("m_clm_pd").clone(), event);
     }
 
     /// Emit treasury updated event.
@@ -3521,8 +3489,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("treas_up"), &event);
-        env.events()
-            .publish((symbol_short!("treas_up"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("treas_up"), admin.clone()), symbol_short!("treas_up").clone(), event);
     }
 
     /// Emit unclaimed winnings swept event.
@@ -3543,8 +3510,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("unc_swip"), &event);
-        env.events()
-            .publish((symbol_short!("unc_swip"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("unc_swip"), market_id.clone()), symbol_short!("unc_swip").clone(), event);
     }
 
     /// Emit market deadline extended event
@@ -3598,8 +3564,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_ext"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_ext"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_ext"), market_id.clone()), symbol_short!("mkt_ext").clone(), event);
     }
 
     /// Emit market description updated event
@@ -3641,8 +3606,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_dsc"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_dsc"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_dsc"), market_id.clone()), symbol_short!("mkt_dsc").clone(), event);
     }
 
     /// Emit market outcomes updated event
@@ -3684,8 +3648,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_out"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_out"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_out"), market_id.clone()), symbol_short!("mkt_out").clone(), event);
     }
 
     /// Emit market category updated event
@@ -3727,8 +3690,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_cat"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_cat"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_cat"), market_id.clone()), symbol_short!("mkt_cat").clone(), event);
     }
 
     /// Emit market tags updated event
@@ -3770,8 +3732,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_tag"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_tag"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("mkt_tag"), market_id.clone()), symbol_short!("mkt_tag").clone(), event);
     }
 
     /// Emit error event with full error context
@@ -3827,7 +3788,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("err_evt"), &event);
-        env.events().publish((symbol_short!("err_evt"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("err_evt"),), symbol_short!("err_evt").clone(), event);
     }
 
     /// Emit governance proposal created event
@@ -3847,8 +3808,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("gov_prop"), &event);
-        env.events()
-            .publish((symbol_short!("gov_prop"), proposal_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("gov_prop"), proposal_id.clone()), symbol_short!("gov_prop").clone(), event);
     }
 
     /// Emit governance vote cast event
@@ -3867,8 +3827,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("gov_vote"), &event);
-        env.events()
-            .publish((symbol_short!("gov_vote"), proposal_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("gov_vote"), proposal_id.clone()), symbol_short!("gov_vote").clone(), event);
     }
 
     /// Emit governance vote committed event (commit phase of commit-reveal)
@@ -3879,8 +3838,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("gov_cmit"), &event);
-        env.events()
-            .publish((symbol_short!("gov_cmit"), proposal_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("gov_cmit"), proposal_id.clone()), symbol_short!("gov_cmit").clone(), event);
     }
 
     /// Emit governance proposal executed event
@@ -3893,8 +3851,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("gov_exec"), &event);
-        env.events()
-            .publish((symbol_short!("gov_exec"), proposal_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("gov_exec"), proposal_id.clone()), symbol_short!("gov_exec").clone(), event);
     }
 
     /// Emit governance proposal auto-rejected event
@@ -3915,8 +3872,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("gov_rej"), &event);
-        env.events()
-            .publish((symbol_short!("gov_rej"), proposal_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("gov_rej"), proposal_id.clone()), symbol_short!("gov_rej").clone(), event);
     }
 
     /// Emit contract upgraded event when contract Wasm is upgraded
@@ -3934,8 +3890,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("up_grade"), &event);
-        env.events()
-            .publish((symbol_short!("up_grade"), upgrade_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("up_grade"), upgrade_id.clone()), symbol_short!("up_grade").clone(), event);
     }
 
     /// Emit contract rollback event when contract is rolled back
@@ -3951,7 +3906,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("rollback"), &event);
-        env.events().publish((symbol_short!("rollback"),), event);
+        Self::publish_with_nonce(env, (symbol_short!("rollback"),), symbol_short!("rollback").clone(), event);
     }
 
     /// Emit upgrade chain mismatch event when hash verification fails
@@ -3971,8 +3926,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("chain_mm"), &event);
-        env.events()
-            .publish((symbol_short!("chain_mm"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("chain_mm"), admin.clone()), symbol_short!("chain_mm").clone(), event);
     }
 
     /// Emit upgrade proposal created event
@@ -3990,8 +3944,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("up_prop"), &event);
-        env.events()
-            .publish((symbol_short!("up_prop"), proposal_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("up_prop"), proposal_id.clone()), symbol_short!("up_prop").clone(), event);
     }
 
     /// Emit balance changed event for deposits and withdrawals
@@ -4003,8 +3956,7 @@ impl EventEmitter {
         amount: i128,
         new_balance: i128,
     ) {
-        env.events().publish(
-            (symbol_short!("bal_chg"), user, asset.clone()),
+        Self::publish_with_nonce(env, (symbol_short!("bal_chg"), user, asset.clone()),
             (
                 operation.clone(),
                 amount,
@@ -4775,7 +4727,7 @@ pub fn emit_deprecated(env: &Env, entrypoint: &Symbol) {
         timestamp: env.ledger().timestamp(),
     };
     env.events()
-        .publish((symbol_short!("depr_call"), entrypoint.clone()), event);
+        .publish((symbol_short!("depr_call"), entrypoint.clone()), symbol_short!("bal_chg").clone(), event);
 }
 
 #[cfg(test)]
@@ -4881,6 +4833,20 @@ mod event_schema_registry_tests {
 }
 
 impl EventEmitter {
+
+    pub fn publish_with_nonce<T, P>(env: &Env, topics: T, primary_topic: Symbol, payload: P)
+    where
+        T: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+        P: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+    {
+        let key = crate::storage::DataKey::EventNonce(primary_topic.clone());
+        let nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(nonce + 1));
+        
+        let wrapped = EventPayload { nonce, payload };
+        env.events().publish(topics, wrapped);
+    }
+
     pub fn emit_threshold_proposed(
         env: &Env,
         admin: &Address,
@@ -4897,8 +4863,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("thld_prop"), &event);
-        env.events().publish(
-            (symbol_short!("thld_prop"), admin.clone()),
+        Self::publish_with_nonce(env, (symbol_short!("thld_prop"), admin.clone()),
             event,
         );
     }
@@ -5044,7 +5009,7 @@ impl EventEmitter {
 
         Self::store_event(env, &symbol_short!("adm_ovrd"), &event);
         env.events()
-            .publish((symbol_short!("adm_ovrd"), market_id.clone()), event);
+            .publish((symbol_short!("adm_ovrd"), market_id.clone()), symbol_short!("thld_prop").clone(), event);
     }
 
     /// Emit force-resolve event when an admin force-resolves a market.
@@ -5066,8 +5031,7 @@ impl EventEmitter {
         };
 
         Self::store_event(env, &symbol_short!("frc_rs"), &event);
-        env.events()
-            .publish((symbol_short!("frc_rs"), market_id.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("frc_rs"), market_id.clone()), symbol_short!("frc_rs").clone(), event);
     }
 
     /// Emit fee config queued event when a time-locked config update is proposed.
@@ -5088,8 +5052,7 @@ impl EventEmitter {
             fees_enabled: config.fees_enabled,
             timestamp: env.ledger().timestamp(),
         };
-        env.events()
-            .publish((symbol_short!("fee_qd"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("fee_qd"), admin.clone()), symbol_short!("fee_qd").clone(), event);
     }
 
     /// Emit fee config applied event when a queued update becomes effective.
@@ -5104,8 +5067,7 @@ impl EventEmitter {
             fees_enabled: config.fees_enabled,
             timestamp: env.ledger().timestamp(),
         };
-        env.events()
-            .publish((symbol_short!("fee_apd"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("fee_apd"), admin.clone()), symbol_short!("fee_apd").clone(), event);
     }
 
     /// Emit fee config cancelled event when a queued update is cancelled.
@@ -5114,8 +5076,7 @@ impl EventEmitter {
             admin: admin.clone(),
             timestamp: env.ledger().timestamp(),
         };
-        env.events()
-            .publish((symbol_short!("fee_ccl"), admin.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("fee_ccl"), admin.clone()), symbol_short!("fee_ccl").clone(), event);
     }
 
     /// Emit cumulative dispute stake cap exceeded event.
@@ -5134,8 +5095,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("cum_cap"), &event);
-        env.events()
-            .publish((symbol_short!("cum_cap"), user.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("cum_cap"), user.clone()), symbol_short!("cum_cap").clone(), event);
     }
 
     /// Emit cumulative dispute stake cap set event.
@@ -5146,8 +5106,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("cum_set"), &event);
-        env.events()
-            .publish((symbol_short!("cum_set"), user.clone()), event);
+        Self::publish_with_nonce(env, (symbol_short!("cum_set"), user.clone()), symbol_short!("cum_set").clone(), event);
     }
 }
 
