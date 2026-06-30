@@ -342,7 +342,7 @@ fn create_market_rejects_overflow_ledger_sequence() {
         &None,
         &86_400u64,
     );
-    assert_contract_error(result, Error::InsufficientStorageRent);
+    assert_contract_error(result, Error::InsufficientStorageRentBudget);
 }
 
 #[test]
