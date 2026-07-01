@@ -317,6 +317,19 @@ pub struct StorageIntegrityResult {
 pub struct StorageOptimizer;
 
 impl StorageOptimizer {
+    // Private helper to check projected TTL pressure against 90% of max_ttl.
+    // additional_keys: number of new persistent keys that will be added (e.g., market creation).
+    fn exceeds_ttl_pressure(env: &Env, additional_keys: u32) -> bool {
+        // Get the network's maximum TTL for persistent entries.
+        let max_ttl = env.storage().max_ttl();
+        // 90% threshold (integer division).
+        let threshold = max_ttl * 90 / 100;
+        // Effective TTL for a market entry (capped by max_ttl).
+        let effective_ttl = MARKET_TTL_LEDGERS.min(max_ttl);
+        // Projected total TTL usage if we add the new keys.
+        let projected = effective_ttl.saturating_add(additional_keys);
+        projected > threshold
+    }
     fn default_storage_config(env: &Env) -> StorageConfig {
         StorageConfig {
             compression_enabled: true,
