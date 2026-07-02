@@ -195,6 +195,8 @@ pub enum Error {
     DuplicateMarketId = 441,
     /// Override replay detected. Nonce has already been used.
     ReplayedOverride = 442,
+    /// Signer rotation cooldown has not yet expired.
+    SignerRotationCooldown = 443,
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
