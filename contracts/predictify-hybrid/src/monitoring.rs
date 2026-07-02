@@ -3,6 +3,7 @@
 use alloc::format;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
+use crate::admin::AdminAccessControl;
 use crate::err::Error;
 use crate::events::EventEmitter;
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
@@ -204,12 +205,133 @@ pub struct TransitionHookEvent {
     pub timestamp: u64,
 }
 
+/// Rolling Window Ring Buffer
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct RollingWindow {
+    pub capacity: u32,
+    pub entries: Vec<i128>,
+    pub head: u32,
+    pub count: u32,
+}
+
+impl RollingWindow {
+    pub fn new(env: &Env, capacity: u32) -> Self {
+        Self {
+            capacity,
+            entries: Vec::new(env),
+            head: 0,
+            count: 0,
+        }
+    }
+
+    pub fn push(&mut self, env: &Env, value: i128) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.entries.len() < self.capacity {
+            self.entries.push_back(value);
+            self.count += 1;
+        } else {
+            self.entries.set(self.head, value);
+        }
+        self.head = (self.head + 1) % self.capacity;
+    }
+
+    pub fn average(&self) -> i128 {
+        if self.count == 0 {
+            return 0;
+        }
+        let mut sum: i128 = 0;
+        for i in 0..self.entries.len() {
+            sum = sum.saturating_add(self.entries.get(i).unwrap_or(0));
+        }
+        sum / (self.count as i128)
+    }
+}
+
 // ===== CONTRACT MONITOR STRUCT =====
 
 /// Main contract monitoring system
 pub struct ContractMonitor;
 
 impl ContractMonitor {
+    const MTTR_WINDOW_KEY: &'static str = "MTTR_WINDOW";
+    const MTBF_WINDOW_KEY: &'static str = "MTBF_WINDOW";
+    const LAST_INCIDENT_TIME_KEY: &'static str = "LAST_INCIDENT_TIME";
+    const WINDOW_CAPACITY_KEY: &'static str = "MON_WINDOW_CAPACITY";
+
+    pub fn set_window_capacity(env: &Env, admin: &Address, capacity: u32) -> Result<(), Error> {
+        AdminAccessControl::require_admin_auth(env, admin)?;
+        if capacity == 0 || capacity > 10000 {
+            return Err(Error::InvalidInput);
+        }
+        env.storage().persistent().set(&Symbol::new(env, Self::WINDOW_CAPACITY_KEY), &capacity);
+        Ok(())
+    }
+
+    pub fn get_window_capacity(env: &Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::WINDOW_CAPACITY_KEY))
+            .unwrap_or(10)
+    }
+
+    pub fn get_mttr_window(env: &Env) -> RollingWindow {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::MTTR_WINDOW_KEY))
+            .unwrap_or_else(|| RollingWindow::new(env, Self::get_window_capacity(env)))
+    }
+
+    pub fn get_mtbf_window(env: &Env) -> RollingWindow {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::MTBF_WINDOW_KEY))
+            .unwrap_or_else(|| RollingWindow::new(env, Self::get_window_capacity(env)))
+    }
+
+    pub fn get_mttr(env: &Env) -> i128 {
+        Self::get_mttr_window(env).average()
+    }
+
+    pub fn get_mtbf(env: &Env) -> i128 {
+        Self::get_mtbf_window(env).average()
+    }
+
+    pub fn record_incident(env: &Env, current_time: u64) -> Result<(), Error> {
+        let last_time: u64 = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::LAST_INCIDENT_TIME_KEY))
+            .unwrap_or(0);
+
+        if last_time > 0 && current_time >= last_time {
+            let mtbf_seconds = (current_time - last_time) as i128;
+            let mut window = Self::get_mtbf_window(env);
+            window.capacity = Self::get_window_capacity(env);
+            window.push(env, mtbf_seconds);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(env, Self::MTBF_WINDOW_KEY), &window);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, Self::LAST_INCIDENT_TIME_KEY), &current_time);
+        Ok(())
+    }
+
+    pub fn record_recovery(env: &Env, recovery_time_seconds: i128) -> Result<(), Error> {
+        let mut window = Self::get_mttr_window(env);
+        window.capacity = Self::get_window_capacity(env);
+        window.push(env, recovery_time_seconds);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, Self::MTTR_WINDOW_KEY), &window);
+        Ok(())
+    }
+
     fn market_state_label(env: &Env, state: &MarketState) -> String {
         match state {
             MarketState::Active => String::from_str(env, "Active"),
