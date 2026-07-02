@@ -1,5 +1,7 @@
 # Predictify Hybrid Contract - API Documentation
 
+
+
 ## Overview
 
 This document provides a complete API reference for the Predictify Hybrid smart contract. It details all public modules, their purposes, and available functions organized by functional domain.
