@@ -59,6 +59,54 @@ pub struct EventSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Snapshot Diffing
+// ---------------------------------------------------------------------------
+
+/// A snapshot containing multiple event states for offline comparison.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateSnapshot {
+    pub events: Map<Symbol, EventSnapshot>,
+}
+
+/// A symmetric diff of two `StateSnapshot`s.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotDiff {
+    pub changed_markets: Vec<Symbol>,
+}
+
+impl StateSnapshot {
+    /// Computes a symmetric difference between two `StateSnapshot`s.
+    /// Returns a deterministic, ordered list of market IDs whose snapshots differ
+    /// (either because they are in one but not the other, or their values differ).
+    pub fn diff(env: &Env, a: &Self, b: &Self) -> SnapshotDiff {
+        let mut unique_keys: Map<Symbol, ()> = Map::new(env);
+        
+        for key in a.events.keys().into_iter() {
+            unique_keys.set(key.clone(), ());
+        }
+        for key in b.events.keys().into_iter() {
+            unique_keys.set(key.clone(), ());
+        }
+        
+        let mut changed = Vec::new(env);
+        for key in unique_keys.keys().into_iter() {
+            let val_a = a.events.get(key.clone());
+            let val_b = b.events.get(key.clone());
+            if val_a != val_b {
+                changed.push_back(key);
+            }
+        }
+        
+        SnapshotDiff {
+            changed_markets: changed,
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
 // SnapshotEnvelope
 // ---------------------------------------------------------------------------
 
