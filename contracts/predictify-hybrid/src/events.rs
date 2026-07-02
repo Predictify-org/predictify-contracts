@@ -3093,6 +3093,16 @@ impl EventEmitter {
             .publish((symbol_short!("adm_deact"), admin.clone()), event);
     }
 
+    /// Emit signer rotation cooldown hit event
+    pub fn emit_signer_rotation_cooldown_hit(env: &Env, admin: &Address, last_rotation: u64, cooldown: u64) {
+        let topics = (Symbol::new(env, "Admin"), Symbol::new(env, "SignerRotationCooldownHit"));
+        let mut data = Map::new(env);
+        data.set(String::from_str(env, "admin"), admin.to_val());
+        data.set(String::from_str(env, "last_rotation"), last_rotation);
+        data.set(String::from_str(env, "cooldown"), cooldown);
+        env.events().publish(topics, data);
+    }
+
     /// Emit market closed event
     pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
         let event = MarketClosedEvent {

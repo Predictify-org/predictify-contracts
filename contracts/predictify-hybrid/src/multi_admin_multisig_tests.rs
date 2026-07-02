@@ -1236,3 +1236,89 @@ fn test_double_execute_blocked_even_after_extra_approval() {
         );
     });
 }
+
+// ===== SIGNER ROTATION COOLDOWN TESTS =====
+
+#[test]
+fn test_rotation_cooldown_enforced_rotate_signer() {
+    let (env, contract_id, admin) = setup_contract();
+    env.as_contract(&contract_id, || {
+        let admin2 = Address::generate(&env);
+        let admin3 = Address::generate(&env);
+        let admin4 = Address::generate(&env);
+        
+        // Use regular AdminManager for setup to bypass cooldown initially
+        AdminManager::add_admin(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
+        
+        // First rotation succeeds
+        let res = MultisigManager::rotate_signer(&env, &admin, &admin2, &admin3, AdminRole::SuperAdmin);
+        assert!(res.is_ok());
+        
+        // Second rotation immediately after fails
+        let res2 = MultisigManager::rotate_signer(&env, &admin, &admin3, &admin4, AdminRole::SuperAdmin);
+        assert_eq!(res2, Err(Error::SignerRotationCooldown));
+        
+        // Warp time past default 1-hour cooldown
+        warp_time(&env, 3601);
+        
+        // Rotation succeeds now
+        let res3 = MultisigManager::rotate_signer(&env, &admin, &admin3, &admin4, AdminRole::SuperAdmin);
+        assert!(res3.is_ok());
+    });
+}
+
+#[test]
+fn test_rotation_cooldown_enforced_add_remove_signer() {
+    let (env, contract_id, admin) = setup_contract();
+    env.as_contract(&contract_id, || {
+        let admin2 = Address::generate(&env);
+        let admin3 = Address::generate(&env);
+        
+        // First action (add) succeeds
+        let res = MultisigManager::add_signer(&env, &admin, &admin2, AdminRole::SuperAdmin);
+        assert!(res.is_ok());
+        
+        // Immediate second action (remove) fails due to cooldown
+        let res2 = MultisigManager::remove_signer(&env, &admin, &admin2);
+        assert_eq!(res2, Err(Error::SignerRotationCooldown));
+        
+        // Warp time past cooldown
+        warp_time(&env, 3601);
+        
+        // Now remove succeeds
+        let res3 = MultisigManager::remove_signer(&env, &admin, &admin2);
+        assert!(res3.is_ok());
+        
+        // Immediate next action fails
+        let res4 = MultisigManager::add_signer(&env, &admin, &admin3, AdminRole::SuperAdmin);
+        assert_eq!(res4, Err(Error::SignerRotationCooldown));
+    });
+}
+
+#[test]
+fn test_set_rotation_cooldown() {
+    let (env, contract_id, admin) = setup_contract();
+    env.as_contract(&contract_id, || {
+        let res = MultisigManager::set_rotation_cooldown(&env, &admin, 7200);
+        assert!(res.is_ok());
+        
+        let state = MultisigManager::get_rotation_state(&env);
+        assert_eq!(state.cooldown_seconds, 7200);
+        
+        let admin2 = Address::generate(&env);
+        let admin3 = Address::generate(&env);
+        
+        // Action 1
+        MultisigManager::add_signer(&env, &admin, &admin2, AdminRole::SuperAdmin).unwrap();
+        
+        // Try after 1 hour (fails because new cooldown is 2 hours)
+        warp_time(&env, 3601);
+        let res2 = MultisigManager::add_signer(&env, &admin, &admin3, AdminRole::SuperAdmin);
+        assert_eq!(res2, Err(Error::SignerRotationCooldown));
+        
+        // Warp another hour
+        warp_time(&env, 3600);
+        let res3 = MultisigManager::add_signer(&env, &admin, &admin3, AdminRole::SuperAdmin);
+        assert!(res3.is_ok());
+    });
+}
