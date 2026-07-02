@@ -887,3 +887,44 @@ fn test_demote_scratch_keys_auth_failure() {
         let _ = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
     });
 }
+
+#[test]
+fn test_check_ttl_pressure() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+
+    env.as_contract(&contract_id, || {
+        use soroban_sdk::IntoVal;
+        
+        let key1 = Symbol::new(&env, "TestKey1");
+        let value1 = String::from_str(&env, "TestValue1");
+
+        let key2 = Symbol::new(&env, "TestKey2");
+        let value2 = String::from_str(&env, "TestValue2");
+
+        env.storage().persistent().set(&key1, &value1);
+        env.storage().persistent().extend_ttl(&key1, 200, 200);
+
+        env.storage().persistent().set(&key2, &value2);
+        env.storage().persistent().extend_ttl(&key2, 100, 100);
+        
+        let keys = vec![&env, key1.into_val(&env), key2.into_val(&env)];
+        let pressures = StorageOptimizer::check_ttl_pressure(&env, keys);
+        
+        assert_eq!(pressures.len(), 2);
+        
+        let pressure0 = pressures.get(0).unwrap();
+        let pressure1 = pressures.get(1).unwrap();
+        
+        assert_eq!(pressure0.key, key2.into_val(&env));
+        assert!(pressure0.remaining_ledgers <= 100);
+        
+        assert_eq!(pressure1.key, key1.into_val(&env));
+        assert!(pressure1.remaining_ledgers <= 200);
+        assert!(pressure0.remaining_ledgers < pressure1.remaining_ledgers);
+        
+        let expected_bump = crate::storage::MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
+        assert_eq!(pressure0.recommended_bump, expected_bump);
+        assert_eq!(pressure1.recommended_bump, expected_bump);
+    });
+}

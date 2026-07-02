@@ -57,6 +57,14 @@ enum StorageTtlTier {
     Archive,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTtlPressure {
+    pub key: Val,
+    pub remaining_ledgers: u32,
+    pub recommended_bump: u32,
+}
+
 // ===== STORAGE OPTIMIZATION TYPES =====
 
 /// Storage key variants for contracts/predictify-hybrid
@@ -85,8 +93,8 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
-    /// Nonce for admin override replay protection.
-    AdminOverrideNonce(Address),
+    /// Stores the state for multisig signer rotation cooldowns
+    MultisigRotationState,
 }
 
 /// Storage format version for migration tracking
@@ -373,6 +381,41 @@ impl StorageOptimizer {
         Self::extend_persistent_ttl(env, key, desired_ttl_ledgers);
     }
 
+    /// Pre-flight query to check TTL pressure of keys
+    pub fn check_ttl_pressure(env: &Env, keys: Vec<Val>) -> Vec<StorageTtlPressure> {
+        let max_ttl = env.storage().max_ttl();
+        let mut pressures = alloc::vec::Vec::new();
+        
+        for key in keys.iter() {
+            let mut remaining = None;
+            
+            if env.storage().persistent().has(&key) {
+                remaining = Some(env.storage().persistent().get_ttl(&key));
+            } else if env.storage().temporary().has(&key) {
+                remaining = Some(env.storage().temporary().get_ttl(&key));
+            } else if env.storage().instance().has(&key) {
+                remaining = Some(env.storage().instance().get_ttl());
+            }
+            
+            if let Some(r) = remaining {
+                let bump = MARKET_TTL_LEDGERS.min(max_ttl);
+                pressures.push(StorageTtlPressure {
+                    key: key.clone(),
+                    remaining_ledgers: r,
+                    recommended_bump: bump,
+                });
+            }
+        }
+        
+        pressures.sort_by_key(|p| p.remaining_ledgers);
+        
+        let mut result = Vec::new(env);
+        for p in pressures {
+            result.push_back(p);
+        }
+        result
+    }
+
     /// Compress market data for storage optimization
     pub fn compress_market_data(env: &Env, market: &Market) -> Result<CompressedMarket, Error> {
         // Create a simple compression by removing unnecessary fields and optimizing structure
@@ -423,7 +466,7 @@ impl StorageOptimizer {
                 MarketStateManager::remove_market(env, market_id);
 
                 // Emit cleanup event
-                events::EventEmitter::emit_storage_cleanup_event(
+                crate::events::EventEmitter::emit_storage_cleanup_event(
                     env,
                     market_id,
                     &String::from_str(env, "old_market_cleanup"),
@@ -561,7 +604,7 @@ impl StorageOptimizer {
             Self::update_market_to_compressed(env, market_id, &compressed_market.market_id)?;
 
             // Emit optimization event
-            events::EventEmitter::emit_storage_optimization_event(
+            crate::events::EventEmitter::emit_storage_optimization_event(
                 env,
                 market_id,
                 &String::from_str(env, "compression_applied"),
