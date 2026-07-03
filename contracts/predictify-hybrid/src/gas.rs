@@ -19,7 +19,7 @@ pub enum GasConfigKey {
 
 /// Represents consumed resources for an operation.
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GasUsage {
     pub cpu: u64,
     pub mem: u64,
@@ -60,6 +60,15 @@ pub struct GasUsage {
 pub struct GasTracker;
 
 impl GasUsage {
+    pub fn new(env: &Env) -> Self {
+        Self {
+            cpu: 0,
+            mem: 0,
+            cpu_history: Vec::new(env),
+            history_index: 0,
+            history_count: 0,
+        }
+    }
     /// Adds a new CPU usage value to the rolling window buffer.
     /// Uses ring buffer semantics for O(1) insertion.
     /// Returns the moving average of the buffer contents.
@@ -210,17 +219,18 @@ impl GasTracker {
         
         // Check if we've crossed the threshold
         if used > threshold {
+            use alloc::string::ToString;
             // Emit performance metric event
             let event = PerformanceMetricEvent {
-                metric_name: Symbol::new(env, "gas_low_water").into(),
+                metric_name: soroban_sdk::String::from_str(env, "gas_low_water"),
                 value: used as i128,
-                unit: Symbol::new(env, "cpu").into(),
-                context: operation.into(),
+                unit: soroban_sdk::String::from_str(env, "cpu"),
+                context: soroban_sdk::String::from_str(env, &operation.to_string()),
                 timestamp: env.ledger().timestamp(),
             };
             
             env.events().publish(
-                (symbol_short!("performance_metric"), operation.clone()),
+                (Symbol::new(env, "performance_metric"), operation.clone()),
                 event,
             );
         }

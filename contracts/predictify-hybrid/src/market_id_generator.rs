@@ -79,56 +79,7 @@ impl MarketIdGenerator {
         /// Maximum collision-retry attempts before giving up.
         pub const MAX_RETRIES: u32 = 10;
 
-    // ── Seed sealing methods ───────────────────────────────────────────────────
 
-        /// Check if the seed has been sealed.
-        ///
-        /// Returns `true` if the seed is sealed, preventing further regeneration.
-        ///
-        /// Check if the seed has been sealed.
-        ///
-        /// Returns `true` if the seed is sealed, preventing further regeneration.
-        ///
-        /// # Returns
-        ///
-        /// - `true` if the seed is sealed and cannot be regenerated
-        /// - `false` if the seed is still unsealed and can be regenerated
-        pub fn is_seed_sealed(env: &Env) -> bool {
-            env.storage()
-                .persistent()
-                .get(&Symbol::new(env, Self::SEED_SEALED_KEY))
-                .unwrap_or(false)
-        }
-
-        /// Ensure the seed is not sealed before regeneration.
-
-        ///
-        /// This safety check prevents any seed regeneration after sealing.
-        /// It provides explicit validation before attempting to regenerate the seed.
-        ///
-        /// # Panics
-        ///
-        /// - [`Error::InvalidState`] if attempting to regenerate an already sealed seed
-        fn ensure_seed_not_sealed(env: &Env) {
-            if Self::is_seed_sealed(env) {
-                panic_with_error!(env, Error::InvalidState);
-            }
-        }
-
-        /// Bump TTL for seed-related storage to ensure long-term persistence.
-        ///
-        /// This ensures the seed sealing flag persists for the contract's entire lifetime.
-        ///
-        /// # Safety Note
-        ///
-        /// Uses the maximum allowed TTL to ensure the seed flag remains valid even as
-        /// the contract matures and storage entries age.
-        fn bump_seed_storage_ttl(env: &Env) {
-            let key = Symbol::new(env, Self::SEED_SEALED_KEY);
-            env.storage()
-                .persistent()
-                .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
-        }
 
     // ── Public API ───────────────────────────────────────────────────────────
 
@@ -344,6 +295,45 @@ pub fn parse_market_id_components(
         if parts.len() != 3 { return Err(Error::InvalidInput); }
         let counter = parts[2].parse::<u32>().map_err(|_| Error::InvalidInput)?;
         return Ok(MarketIdComponents { counter, is_legacy: false });
+    }
+}
+
+    /// Get market ID registry with pagination
+    pub fn get_market_id_registry(env: &Env, start: u32, limit: u32) -> Vec<MarketIdRegistryEntry> {
+        let registry_key = Symbol::new(env, Self::REGISTRY_KEY);
+        let registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&registry_key)
+            .unwrap_or(Vec::new(env));
+
+        let mut result = Vec::new(env);
+        let end = core::cmp::min(start + limit, registry.len());
+
+        for i in start..end {
+            if let Some(entry) = registry.get(i) {
+                result.push_back(entry);
+            }
+        }
+        result
+    }
+
+    /// Register a newly created market ID
+    fn register_market_id(env: &Env, market_id: &Symbol, admin: &Address, timestamp: u64) {
+        let registry_key = Symbol::new(env, Self::REGISTRY_KEY);
+        let mut registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&registry_key)
+            .unwrap_or(Vec::new(env));
+
+        registry.push_back(MarketIdRegistryEntry {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            timestamp,
+        });
+
+        env.storage().persistent().set(&registry_key, &registry);
     }
 }
 

@@ -43,7 +43,7 @@ pub fn check_market_creation_rent(env: &Env) -> Result<(), Error> {
     let current_seq = env.ledger().sequence();
 
     if current_seq.checked_add(effective_ttl).is_none() {
-        return Err(Error::InsufficientStorageRent);
+        return Err(Error::InsufficientStorageRentBudget);
     }
 
     Ok(())
@@ -71,7 +71,6 @@ enum StorageTtlTier {
 pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
-    AdminOverrideNonce(Address),
     ArchivedMarket(Symbol, u64),
     /// Cumulative days extended for a given market (u32).
     MarketExtensionTotal(Symbol),
@@ -87,6 +86,7 @@ pub enum DataKey {
     MarketCache(Symbol),
     /// Nonce for admin override replay protection.
     AdminOverrideNonce(Address),
+    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
 }
 
 /// Storage format version for migration tracking

@@ -1,5 +1,5 @@
 use alloc::format;
-use soroban_sdk::{contracttype, panic_with_error, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;

@@ -1044,7 +1044,7 @@ impl FeeCalculator {
     }
 
     fn checked_bps_floor(amount: i128, bps: i128) -> Result<i128, Error> {
-        Self::checked_mul_div_floor(amount, bps, crate::PERCENTAGE_DENOMINATOR)
+        Self::checked_mul_div_floor(amount, bps, crate::config::PERCENTAGE_DENOMINATOR)
     }
 
     /// Calculate platform fee for a market
@@ -1155,7 +1155,7 @@ impl FeeCalculator {
 
         let fee_percentage = PLATFORM_FEE_PERCENTAGE;
         let user_share =
-            Self::checked_bps_floor(user_stake, crate::PERCENTAGE_DENOMINATOR - fee_percentage)?;
+            Self::checked_bps_floor(user_stake, crate::config::PERCENTAGE_DENOMINATOR - fee_percentage)?;
         let payout = Self::checked_mul_div_floor(user_share, total_pool, winning_total)?;
 
         Ok(payout)

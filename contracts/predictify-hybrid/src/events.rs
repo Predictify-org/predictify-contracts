@@ -5142,7 +5142,7 @@ mod focused_dispute_tests {
         // topic2 = 1 (schema version)
 
         let mut found = false;
-        for event in events.iter() {
+        for event in events.events().iter() {
             if event.2.len() == 3 {
                 let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
                 let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
