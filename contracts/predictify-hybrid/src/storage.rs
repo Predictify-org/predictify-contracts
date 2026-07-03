@@ -87,6 +87,10 @@ pub enum DataKey {
     MarketCache(Symbol),
     /// Nonce for admin override replay protection.
     AdminOverrideNonce(Address),
+    /// Global counter for bets placed in the current ledger.
+    PerLedgerBetCounter,
+    /// Configurable per-ledger bet cap.
+    PerLedgerBetCap,
 }
 
 /// Storage format version for migration tracking

@@ -173,6 +173,42 @@ impl RateLimiter {
         Ok(())
     }
 
+    /// Rate limit global bets per ledger to dampen flash-trading bursts.
+    /// Resets implicitly when ledger sequence advances.
+    pub fn rate_limit_global_bets_per_ledger(&self) -> Result<(), crate::err::Error> {
+        let cap: u32 = self.env.storage().persistent().get(&crate::storage::DataKey::PerLedgerBetCap).unwrap_or(0);
+        if cap == 0 {
+            return Ok(());
+        }
+
+        let seq = self.env.ledger().sequence();
+        let counter_key = crate::storage::DataKey::PerLedgerBetCounter;
+        
+        // Stored as (ledger_sequence, count)
+        let mut count: (u32, u32) = self.env.storage().temporary().get(&counter_key).unwrap_or((seq, 0));
+        
+        if count.0 != seq {
+            count = (seq, 0);
+        }
+
+        if count.1 >= cap {
+            return Err(crate::err::Error::PerLedgerBetCapExceeded);
+        }
+
+        count.1 += 1;
+        self.env.storage().temporary().set(&counter_key, &count);
+        self.env.storage().temporary().extend_ttl(&counter_key, 100, 100);
+
+        Ok(())
+    }
+
+    /// Set the global per-ledger bet cap (admin only).
+    pub fn set_per_ledger_bet_cap(&self, admin: Address, cap: u32) -> Result<(), RateLimiterError> {
+        admin.require_auth();
+        self.env.storage().persistent().set(&crate::storage::DataKey::PerLedgerBetCap, &cap);
+        Ok(())
+    }
+
     /// Rate limit event creation: max events per admin per time window.
     /// Caller (e.g. create_market) must have already authenticated admin.
     pub fn rate_limit_admin_events(&self, admin: Address) -> Result<(), RateLimiterError> {

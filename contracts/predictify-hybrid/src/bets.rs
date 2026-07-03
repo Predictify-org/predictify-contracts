@@ -310,6 +310,10 @@ impl BetManager {
         // Require authentication from the user
         user.require_auth();
 
+        // Enforce global per-ledger bet cap
+        let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
+        rate_limiter.rate_limit_global_bets_per_ledger()?;
+
         // Slippage check: verify live fee is not above the maximum acceptable threshold
         // max_fee_bps == 0 means no slippage guard
         if max_fee_bps > 0 {
@@ -452,6 +456,10 @@ impl BetManager {
 
         for bet_data in bets.iter() {
             let (market_id, outcome, amount) = bet_data;
+
+            // Enforce global per-ledger bet cap for each bet in the batch
+            let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
+            rate_limiter.rate_limit_global_bets_per_ledger()?;
 
             // Get and validate market
             let market = MarketStateManager::get_market(env, &market_id)?;
