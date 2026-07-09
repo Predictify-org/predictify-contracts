@@ -1,11 +1,10 @@
 #![cfg(test)]
 
 use crate::err::Error;
-use crate::force_resolve::ForceResolveManager;
 use crate::types::{MarketState, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
+    testutils::{Address as _, Ledger},
     vec, Address, Env, String, Symbol, Vec,
 };
 
@@ -21,20 +20,8 @@ impl Ctx {
         env.mock_all_auths();
         let admin = Address::generate(&env);
         let contract_id = env.register(PredictifyHybrid, ());
-        let token_contract =
-            env.register_stellar_asset_contract_v2(Address::generate(&env));
-        let token_id = token_contract.address();
-        env.as_contract(&contract_id, || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "TokenID"), &token_id);
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "platform_fee"), &200i128);
-            crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
-        });
         PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
-        Ctx { env, contract_id, admin }
+        Self { env, contract_id, admin }
     }
 
     fn client(&self) -> PredictifyHybridClient<'_> {
@@ -341,4 +328,20 @@ fn test_force_resolve_unauthorized() {
         &key(&ctx.env, "key-unauth"),
     );
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_force_resolve_rejects_empty_outcome() {
+    let ctx = Ctx::new();
+    let market_id = ctx.create_market();
+
+    let result = ctx.client().try_force_resolve_market(
+        &ctx.admin,
+        &market_id,
+        &outcomes(&ctx.env, &[""]),
+        &reason(&ctx.env, "Empty outcome string"),
+        &key(&ctx.env, "key_009"),
+    );
+
+    assert_eq!(result, Err(Ok(Error::InvalidOutcome)));
 }

@@ -90,6 +90,8 @@ mod voting_invariants;
 
 #[cfg(test)]
 mod override_audit_tests;
+#[cfg(test)]
+mod force_resolve_tests;
 #[cfg(any())]
 mod test_audit_trail;
 // #[cfg(any())]

@@ -362,28 +362,6 @@ pub struct MarketIdGenerator;
     /// # Panics
     ///
     /// - [`Error::InvalidState`] if attempting to seal an already sealed seed
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// #[cfg(test)]
-    /// fn test_seed_sealing() {
-    ///     let env = Env::default();
-    ///     let contract_id = env.register(crate::PredictifyHybrid, ()));
-    ///     
-    ///     // Seed must be unsealed initially
-    ///     assert!(!MarketIdGenerator::is_seed_sealed(&env));
-    ///     
-    ///     // Seal the seed (one-time operation)
-    ///     MarketIdGenerator::seal_seed(&env);
-    ///     
-    ///     // After sealing, regeneration is prohibited
-    ///     assert!(MarketIdGenerator::is_seed_sealed(&env));
-    ///     
-    ///     // Any attempt to generate IDs will fail
-    ///     // (this would be tested with a failing test case)
-    /// }
-    /// ```
 
     // ── Registry write-or-fail methods ────────────────────────────────────────
 
