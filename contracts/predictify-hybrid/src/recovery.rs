@@ -730,6 +730,7 @@ fn symbol_to_string(env: &Env, sym: &Symbol) -> String {
 mod tests {
     use super::*;
     use alloc::string::ToString;
+    use soroban_sdk::vec;
     use soroban_sdk::testutils::Address as _;
 
     struct RecoveryTest {
@@ -1076,6 +1077,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 86400,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
             env.storage().persistent().set(&market_id, &market);
         });

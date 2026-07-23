@@ -69,9 +69,9 @@ enum StorageTtlTier {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
+    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
     Whitelisted(Address),
     Blacklisted(Address),
-    AdminOverrideNonce(Address),
     ArchivedMarket(Symbol, u64),
     /// Cumulative days extended for a given market (u32).
     MarketExtensionTotal(Symbol),

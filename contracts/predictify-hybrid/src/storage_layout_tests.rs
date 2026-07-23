@@ -91,6 +91,7 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         bet_deadline: 0,
         dispute_window_seconds: 0,
         winnings_swept: false,
+        timelock_config: crate::timelock::MarketTimelockConfig::default(),
     };
 
     (market_id, market)

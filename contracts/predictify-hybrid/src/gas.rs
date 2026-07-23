@@ -220,7 +220,7 @@ impl GasTracker {
             };
             
             env.events().publish(
-                (symbol_short!("performance_metric"), operation.clone()),
+                (symbol_short!("perf_metr"), operation.clone()),
                 event,
             );
         }

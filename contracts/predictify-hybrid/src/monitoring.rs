@@ -611,6 +611,7 @@ impl ContractMonitor {
             bet_deadline: 0,
             dispute_window_seconds: 86400,
             winnings_swept: false,
+            timelock_config: crate::timelock::MarketTimelockConfig::default(),
         })
     }
 

@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::Error;
+use crate::timelock::MarketTimelockConfig;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
@@ -1099,6 +1100,8 @@ pub struct Market {
     /// Whether unclaimed winnings have already been swept for this market.
     /// Set to true after the first successful sweep to prevent double-crediting the treasury.
     pub winnings_swept: bool,
+    /// Per-market timelock configuration for admin actions.
+    pub timelock_config: MarketTimelockConfig,
 }
 
 /// Canonical payload committed by `Market::metadata_commitment`.
@@ -1530,6 +1533,7 @@ impl Market {
             bet_deadline: 0,
             dispute_window_seconds: 86400, // 24h default
             winnings_swept: false,
+            timelock_config: MarketTimelockConfig::default(),
         }
     }
 

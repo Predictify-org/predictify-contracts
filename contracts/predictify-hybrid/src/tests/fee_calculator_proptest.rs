@@ -59,6 +59,7 @@ pub mod proptest {
             bet_deadline: 0,
             dispute_window_seconds: 86400,
             winnings_swept: false,
+            timelock_config: crate::timelock::MarketTimelockConfig::default(),
         };
 
         MarketStateManager::update_market(env, &market_id, &market);
