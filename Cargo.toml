@@ -8,7 +8,7 @@ members = [
 soroban-sdk = "25.0.0"
 
 [patch.crates-io]
-ethnum = { version = "1.6.0" }
+ethnum = { git = "https://github.com/ebfull/ethnum.git", branch = "main" }
 
 [profile.release]
 opt-level = "z"
