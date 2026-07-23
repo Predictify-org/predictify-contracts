@@ -211,6 +211,31 @@ pub struct PredictifyHybrid;
 
 #[contractimpl]
 impl PredictifyHybrid {
+    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>, _allowed_assets: Option<soroban_sdk::Vec<Address>>) -> Result<(), Error> {
+        if env.storage().persistent().has(&Symbol::new(&env, SYM_PLATFORM_FEE)) {
+            return Err(Error::InvalidState);
+        }
+        let fee_percentage = platform_fee_percentage.unwrap_or(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE);
+        if fee_percentage < crate::config::MIN_PLATFORM_FEE_PERCENTAGE || fee_percentage > crate::config::MAX_PLATFORM_FEE_PERCENTAGE {
+            panic_with_error!(env, Error::InvalidFeeConfig);
+        }
+        env.storage().persistent().set(&Symbol::new(&env, SYM_ADMIN), &admin);
+        env.storage().persistent().set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
+        Ok(())
+    }
+
+    pub fn deposit(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
+        crate::balances::BalanceManager::deposit(&env, user, asset, amount)
+    }
+
+    pub fn withdraw(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
+        crate::balances::BalanceManager::withdraw(&env, user, asset, amount)
+    }
+
+    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> types::Balance {
+        crate::balances::BalanceManager::get_balance(&env, user, asset)
+    }
+
     /// Distribute payouts to winning voters and bettors for a resolved market.
     ///
     /// This function iterates over all voters and bettors, calculates each winner's
@@ -7734,30 +7759,7 @@ mod tests {
         crate::admin::ContractPauseManager::unpause(&env, &admin)
     }
 
-    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>, _allowed_assets: Option<soroban_sdk::Vec<Address>>) -> Result<(), Error> {
-        if env.storage().persistent().has(&Symbol::new(&env, SYM_PLATFORM_FEE)) {
-            return Err(Error::InvalidState);
-        }
-        let fee_percentage = platform_fee_percentage.unwrap_or(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE);
-        if fee_percentage < crate::config::MIN_PLATFORM_FEE_PERCENTAGE || fee_percentage > crate::config::MAX_PLATFORM_FEE_PERCENTAGE {
-            panic_with_error!(env, Error::InvalidFeeConfig);
-        }
-        env.storage().persistent().set(&Symbol::new(&env, SYM_ADMIN), &admin);
-        env.storage().persistent().set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
-        Ok(())
-    }
 
-    pub fn deposit(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::deposit(&env, user, asset, amount)
-    }
-
-    pub fn withdraw(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::withdraw(&env, user, asset, amount)
-    }
-
-    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> types::Balance {
-        crate::balances::BalanceManager::get_balance(&env, user, asset)
-    }
 }}mod dispute_multisig;
 mod disputes;
 mod edge_cases;
