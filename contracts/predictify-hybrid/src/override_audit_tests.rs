@@ -22,7 +22,7 @@ impl Ctx {
         env.mock_all_auths();
         let admin = Address::generate(&env);
         let contract_id = env.register(PredictifyHybrid, ());
-        PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+        crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
         Self { env, contract_id, admin }
     }
 
@@ -169,7 +169,7 @@ fn test_override_rejects_non_admin() {
     let admin = Address::generate(&env);
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None, &None);
+    crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
     // Create market while auths are still mocked
     let market_id = client.create_market(
@@ -236,7 +236,7 @@ fn test_override_no_partial_state_on_auth_failure() {
     let admin = Address::generate(&env);
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None, &None);
+    crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
     let market_id = client.create_market(
         &admin,

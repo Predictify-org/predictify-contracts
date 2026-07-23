@@ -33,7 +33,7 @@ impl Ctx {
                 .set(&Symbol::new(&env, "platform_fee"), &200i128);
             crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
         });
-        PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+        crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
         Ctx { env, contract_id, admin }
     }
 
@@ -97,7 +97,7 @@ fn test_force_resolve_active_market() {
         &reason(&ctx.env, "Emergency"),
         &key(&ctx.env, "key-001"),
     );
-    assert_eq!(result, Ok(()));
+    assert_eq!(result, Ok(Ok(())));
 
     let market = ctx.client().get_market(&market_id).unwrap();
     assert_eq!(market.state, MarketState::Resolved);
@@ -116,7 +116,7 @@ fn test_force_resolve_before_end_time_succeeds() {
         &reason(&ctx.env, "Force resolve before end time"),
         &key(&ctx.env, "key-early"),
     );
-    assert_eq!(result, Ok(()));
+    assert_eq!(result, Ok(Ok(())));
 
     let market = ctx.client().get_market(&market_id).unwrap();
     assert_eq!(market.state, MarketState::Resolved);
@@ -138,7 +138,7 @@ fn test_force_resolve_ended_market() {
         &reason(&ctx.env, "Ended market resolve"),
         &key(&ctx.env, "ended-key"),
     );
-    assert_eq!(result, Ok(()));
+    assert_eq!(result, Ok(Ok(())));
 
     let market = ctx.client().get_market(&market_id).unwrap();
     assert_eq!(market.state, MarketState::Resolved);
@@ -318,7 +318,7 @@ fn test_force_resolve_multiple_winning_outcomes() {
         &reason(&ctx.env, "Tie"),
         &key(&ctx.env, "multi-key"),
     );
-    assert_eq!(result, Ok(()));
+    assert_eq!(result, Ok(Ok(())));
 
     let market = ctx.client().get_market(&market_id).unwrap();
     assert_eq!(market.state, MarketState::Resolved);
