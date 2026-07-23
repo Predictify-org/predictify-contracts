@@ -11,6 +11,7 @@ doctest = false
 [dependencies]
 soroban-sdk = { workspace = true }
 wee_alloc = "0.4.5"
+ethnum = "=1.4.0"
 
 
 # Disabled: pre-existing SDK incompatibilities
