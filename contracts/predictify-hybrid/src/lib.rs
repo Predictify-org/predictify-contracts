@@ -44,6 +44,7 @@ mod markets;
 mod metadata_limits;
 #[cfg(test)]
 mod metadata_limits_tests;
+mod monitor;
 mod monitoring;
 #[cfg(test)]
 mod multi_admin_multisig_tests;

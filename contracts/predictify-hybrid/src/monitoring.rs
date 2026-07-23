@@ -5,6 +5,7 @@ use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::errors::Error;
 use crate::events::EventEmitter;
+use crate::monitor::{BoundedMonitorQueue, MonitorEvent, MonitorEventCategory, MonitorEventSeverity};
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 /// Comprehensive monitoring system for Predictify contract health and performance.
 ///
@@ -514,6 +515,125 @@ impl ContractMonitor {
             ),
             event,
         );
+    }
+
+    // ===== BOUNDED QUEUE INTEGRATION =====
+
+    /// Record a monitor event into the bounded queue.
+    ///
+    /// Wraps a `MonitorEvent` and pushes it into the `BoundedMonitorQueue`.
+    /// When the queue is at capacity, the oldest event is evicted and an
+    /// overflow event is emitted automatically.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `event` - The monitor event to record.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Event recorded but caused an eviction (overflow).
+    /// * `Ok(false)` - Event recorded normally.
+    /// * `Err(Error)` - Queue not initialized or storage error.
+    pub fn record_event(env: &Env, event: &MonitorEvent) -> Result<bool, Error> {
+        BoundedMonitorQueue::push(env, event)
+    }
+
+    /// Record a monitoring alert into the bounded queue.
+    ///
+    /// Converts a `MonitoringAlert` into a `MonitorEvent` and pushes it
+    /// into the `BoundedMonitorQueue`. The alert's severity is mapped to
+    /// `MonitorEventSeverity` and its type to `MonitorEventCategory`.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `alert` - The monitoring alert to record.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Alert recorded but caused an overflow.
+    /// * `Ok(false)` - Alert recorded normally.
+    /// * `Err(Error)` - Queue not initialized or storage error.
+    pub fn record_alert(env: &Env, alert: &MonitoringAlert) -> Result<bool, Error> {
+        let severity = match alert.severity {
+            AlertSeverity::Info => MonitorEventSeverity::Info,
+            AlertSeverity::Warning => MonitorEventSeverity::Warning,
+            AlertSeverity::Critical | AlertSeverity::Emergency => {
+                MonitorEventSeverity::Critical
+            }
+        };
+
+        let category = match alert.alert_type {
+            MonitoringAlertType::MarketHealth => MonitorEventCategory::Market,
+            MonitoringAlertType::OracleHealth => MonitorEventCategory::Oracle,
+            MonitoringAlertType::FeeCollection => MonitorEventCategory::Fee,
+            MonitoringAlertType::DisputeResolution => MonitorEventCategory::Dispute,
+            MonitoringAlertType::Security | MonitoringAlertType::Performance => {
+                MonitorEventCategory::System
+            }
+            MonitoringAlertType::SystemOverload
+            | MonitoringAlertType::DataIntegrity
+            | MonitoringAlertType::NetworkIssues => MonitorEventCategory::CircuitBreaker,
+            MonitoringAlertType::Custom => MonitorEventCategory::Admin,
+        };
+
+        let mut meta = alert.metadata.clone();
+        meta.set(
+            String::from_str(env, "alert_id"),
+            alert.alert_id.clone(),
+        );
+
+        let event = MonitorEvent {
+            event_id: Symbol::new(env, "alert"),
+            category,
+            severity,
+            message: alert.description.clone(),
+            market_id: None,
+            actor: None,
+            timestamp: alert.timestamp,
+            metadata: meta,
+        };
+
+        Self::record_event(env, &event)
+    }
+
+    /// Drain up to `max_count` events from the bounded queue.
+    ///
+    /// Returns drained events in FIFO order (oldest first) and removes them
+    /// from the queue. Useful for off-chain indexers to consume events in
+    /// batches.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `max_count` - Maximum number of events to drain. Use `u32::MAX` for all.
+    ///
+    /// # Returns
+    ///
+    /// A vector of drained events in FIFO order.
+    pub fn drain_events(env: &Env, max_count: u32) -> Result<Vec<MonitorEvent>, Error> {
+        BoundedMonitorQueue::drain(env, max_count)
+    }
+
+    /// Peek at the oldest event in the bounded queue without removing it.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(event))` - The oldest event if the queue is non-empty.
+    /// * `Ok(None)` - The queue is empty.
+    pub fn peek_next_event(env: &Env) -> Result<Option<MonitorEvent>, Error> {
+        BoundedMonitorQueue::peek(env)
+    }
+
+    /// Return current bounded queue statistics.
+    ///
+    /// Provides a snapshot of queue utilization, overflow history, and
+    /// throughput counters for monitoring dashboards.
+    pub fn get_queue_stats(
+        env: &Env,
+    ) -> Result<crate::monitor::MonitorQueueStats, Error> {
+        Ok(BoundedMonitorQueue::stats(env))
     }
 
     /// Validate monitoring data integrity
@@ -1362,5 +1482,215 @@ mod tests {
         });
 
         assert_eq!(env.events().all().events().len(), 1);
+    }
+
+    // ===== BOUNDED QUEUE INTEGRATION TESTS =====
+
+    fn make_monitor_event(env: &Env, id: &str) -> crate::monitor::MonitorEvent {
+        crate::monitor::MonitorEvent {
+            event_id: Symbol::new(env, id),
+            category: MonitorEventCategory::System,
+            severity: MonitorEventSeverity::Info,
+            message: String::from_str(env, "test"),
+            market_id: None,
+            actor: None,
+            timestamp: env.ledger().timestamp(),
+            metadata: Map::new(env),
+        }
+    }
+
+    fn setup_queue(env: &Env, contract_id: &soroban_sdk::Address, capacity: u32) {
+        env.as_contract(contract_id, || {
+            crate::monitor::BoundedMonitorQueue::initialize(env, capacity).unwrap();
+        });
+    }
+
+    #[test]
+    fn record_event_pushes_into_queue() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 8);
+        let ev = make_monitor_event(&env, "rec1");
+
+        let overflowed = env
+            .as_contract(&contract_id, || ContractMonitor::record_event(&env, &ev))
+            .unwrap();
+        assert!(!overflowed);
+
+        let stats = env
+            .as_contract(&contract_id, || ContractMonitor::get_queue_stats(&env))
+            .unwrap();
+        assert_eq!(stats.current_len, 1);
+        assert_eq!(stats.total_pushed, 1);
+    }
+
+    #[test]
+    fn record_event_returns_overflow_when_full() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 2);
+
+        env.as_contract(&contract_id, || {
+            let ev1 = make_monitor_event(&env, "a");
+            let ev2 = make_monitor_event(&env, "b");
+            ContractMonitor::record_event(&env, &ev1).unwrap();
+            ContractMonitor::record_event(&env, &ev2).unwrap();
+
+            // Third push should overflow.
+            let ev3 = make_monitor_event(&env, "c");
+            let overflowed = ContractMonitor::record_event(&env, &ev3).unwrap();
+            assert!(overflowed);
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.overflow_count, 1);
+            assert_eq!(stats.current_len, 2);
+        });
+    }
+
+    #[test]
+    fn drain_events_returns_fifo() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "x")).unwrap();
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "y")).unwrap();
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "z")).unwrap();
+
+            let drained = ContractMonitor::drain_events(&env, 2).unwrap();
+            assert_eq!(drained.len(), 2);
+            assert_eq!(drained.get(0).unwrap().event_id, Symbol::new(&env, "x"));
+            assert_eq!(drained.get(1).unwrap().event_id, Symbol::new(&env, "y"));
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.current_len, 1);
+        });
+    }
+
+    #[test]
+    fn peek_next_event_does_not_remove() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "peek1")).unwrap();
+
+            let peeked = ContractMonitor::peek_next_event(&env).unwrap().unwrap();
+            assert_eq!(peeked.event_id, Symbol::new(&env, "peek1"));
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.current_len, 1);
+        });
+    }
+
+    #[test]
+    fn peek_next_event_empty_queue_returns_none() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            let result = ContractMonitor::peek_next_event(&env).unwrap();
+            assert!(result.is_none());
+        });
+    }
+
+    #[test]
+    fn record_alert_pushes_into_queue() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 8);
+
+        let alert = MonitoringUtils::create_alert(
+            &env,
+            MonitoringAlertType::OracleHealth,
+            AlertSeverity::Critical,
+            String::from_str(&env, "Oracle down"),
+            String::from_str(&env, "Primary oracle unreachable"),
+            String::from_str(&env, "oracle"),
+        );
+
+        env.as_contract(&contract_id, || {
+            let overflowed = ContractMonitor::record_alert(&env, &alert).unwrap();
+            assert!(!overflowed);
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.current_len, 1);
+        });
+    }
+
+    #[test]
+    fn record_alert_maps_severity_correctly() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 8);
+
+        let alert = MonitoringUtils::create_alert(
+            &env,
+            MonitoringAlertType::Security,
+            AlertSeverity::Emergency,
+            String::from_str(&env, "Intrusion"),
+            String::from_str(&env, "Unauthorized access attempt"),
+            String::from_str(&env, "auth"),
+        );
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_alert(&env, &alert).unwrap();
+
+            let peeked = ContractMonitor::peek_next_event(&env).unwrap().unwrap();
+            assert_eq!(peeked.severity, MonitorEventSeverity::Critical);
+            assert_eq!(peeked.category, MonitorEventCategory::System);
+        });
+    }
+
+    #[test]
+    fn drain_events_empty_queue_returns_empty_vec() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            let drained = ContractMonitor::drain_events(&env, 10).unwrap();
+            assert_eq!(drained.len(), 0);
+        });
+    }
+
+    #[test]
+    fn drain_events_large_max_drains_all() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            for i in 0..3 {
+                ContractMonitor::record_event(&env, &make_monitor_event(&env, &format!("d{}", i)))
+                    .unwrap();
+            }
+
+            let drained = ContractMonitor::drain_events(&env, u32::MAX).unwrap();
+            assert_eq!(drained.len(), 3);
+            assert!(ContractMonitor::get_queue_stats(&env).unwrap().is_empty);
+        });
+    }
+
+    #[test]
+    fn overflow_emits_event_with_evicted_id() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 1);
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "first")).unwrap();
+            let overflowed =
+                ContractMonitor::record_event(&env, &make_monitor_event(&env, "second")).unwrap();
+            assert!(overflowed);
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.overflow_count, 1);
+            assert_eq!(stats.current_len, 1);
+            assert_eq!(stats.total_pushed, 2);
+        });
     }
 }
