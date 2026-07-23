@@ -46,6 +46,7 @@ fn test_append_and_get_record() {
             AuditAction::MarketCreated,
             actor.clone(),
             Map::new(&env),
+            None,
         );
         assert_eq!(index2, 2);
 
@@ -80,7 +81,8 @@ fn test_verify_integrity() {
                 AuditAction::ContractPaused,
                 actor.clone(),
                 Map::new(&env),
-            );
+            None,
+        );
         }
 
         assert!(AuditTrailManager::verify_integrity(&env, 5));
@@ -100,12 +102,14 @@ fn test_verify_integrity_tampering() {
             AuditAction::ContractPaused,
             actor.clone(),
             Map::new(&env),
+            None,
         );
         AuditTrailManager::append_record(
             &env,
             AuditAction::ContractUnpaused,
             actor.clone(),
             Map::new(&env),
+            None,
         );
 
         // Tamper with record 1
@@ -134,7 +138,8 @@ fn test_public_queries() {
                 AuditAction::AdminRoleUpdated,
                 actor.clone(),
                 Map::new(&env),
-            );
+            None,
+        );
         }
     });
 

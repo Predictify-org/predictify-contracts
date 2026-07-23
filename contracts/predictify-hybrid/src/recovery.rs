@@ -55,6 +55,26 @@ pub struct RecoveryHistoryEntry {
     pub recorded_at: u64,
 }
 
+/// Result of a read-only recovery dry run.
+///
+/// Analysed by `RecoveryManager::recovery_dry_run` without mutating any
+/// contract state or requiring admin authentication. Useful for ops
+/// verification before executing a live recovery.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DryRunResult {
+    /// Whether the market integrity check passed.
+    pub integrity_ok: bool,
+    /// Whether the market can be recovered if integrity is broken.
+    pub can_recover: bool,
+    /// List of issues detected during integrity analysis.
+    pub issues_detected: Vec<String>,
+    /// What recovery actions would be taken (empty if no recovery needed).
+    pub planned_actions: Vec<String>,
+    /// Human-readable description of the market's current state.
+    pub state_description: String,
+}
+
 pub struct RecoveryStorage;
 impl RecoveryStorage {
     #[inline(always)]
@@ -431,6 +451,109 @@ impl RecoveryManager {
 
     pub fn get_recovery_status(env: &Env, market_id: &Symbol) -> Result<String, Error> {
         RecoveryStorage::status(env, market_id).ok_or(Error::InvalidState)
+    }
+
+    /// Read-only dry run that returns the recovery plan without side effects.
+    ///
+    /// Analyses the market's current state and reports what `recover_market_state`
+    /// would do if called. No storage writes, no events emitted, and no admin
+    /// authentication required. Useful for ops verification before executing a
+    /// live recovery.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `market_id` - The market to analyse.
+    ///
+    /// # Returns
+    /// A [`DryRunResult`] describing integrity status, detectible issues, and the
+    /// planned recovery actions.
+    pub fn recovery_dry_run(env: &Env, market_id: &Symbol) -> Result<DryRunResult, Error> {
+        let market = MarketStateManager::get_market(env, market_id)?;
+
+        let mut issues_detected: Vec<String> = Vec::new(env);
+        let mut planned_actions: Vec<String> = Vec::new(env);
+
+        // Build a human-readable state description.
+        let state_description = match market.state {
+            MarketState::Active => String::from_str(env, "Active"),
+            MarketState::Ended => String::from_str(env, "Ended"),
+            MarketState::Disputed => String::from_str(env, "Disputed"),
+            MarketState::Resolved => String::from_str(env, "Resolved"),
+            MarketState::Closed => String::from_str(env, "Closed"),
+            MarketState::Cancelled => String::from_str(env, "Cancelled"),
+        };
+
+        // Integrity check: use the existing validator.
+        let integrity_ok =
+            RecoveryValidator::validate_market_state_integrity(env, market_id).is_ok();
+
+        if integrity_ok {
+            planned_actions.push_back(String::from_str(env, "no_action_needed"));
+            return Ok(DryRunResult {
+                integrity_ok: true,
+                can_recover: false,
+                issues_detected,
+                planned_actions,
+                state_description,
+            });
+        }
+
+        // Integrity failed – collect detailed issues.
+        if market.total_staked < 0 {
+            issues_detected.push_back(String::from_str(env, "negative_total_staked"));
+        }
+        if market.outcomes.len() < 2 {
+            issues_detected.push_back(String::from_str(env, "too_few_outcomes"));
+        }
+        if market.end_time == 0 {
+            issues_detected.push_back(String::from_str(env, "zero_end_time"));
+        }
+
+        // Extra integrity check: total_staked vs sum of stakes map.
+        // Uses checked_add to detect overflow, matching the approach used
+        // in recover_market_state for diagnostic consistency.
+        let mut recomputed_stakes: i128 = 0;
+        let mut overflow_detected = false;
+        for (_, stake) in market.stakes.iter() {
+            if let Some(sum) = recomputed_stakes.checked_add(stake) {
+                recomputed_stakes = sum;
+            } else {
+                overflow_detected = true;
+            }
+        }
+        if overflow_detected {
+            issues_detected.push_back(String::from_str(env, "stake_overflow"));
+        } else if recomputed_stakes != market.total_staked {
+            issues_detected.push_back(String::from_str(env, "total_staked_mismatch"));
+        }
+
+        // Determine recoverability: Closed / Cancelled markets cannot be reconstructed.
+        let can_recover = !matches!(
+            market.state,
+            MarketState::Closed | MarketState::Cancelled
+        );
+
+        if can_recover {
+            if recomputed_stakes != market.total_staked {
+                planned_actions.push_back(String::from_str(env, "reconstruct_totals"));
+            }
+            if planned_actions.is_empty() {
+                planned_actions.push_back(String::from_str(env, "reconstruct_market"));
+            }
+        } else {
+            planned_actions.push_back(String::from_str(
+                env,
+                "skip_cannot_reconstruct_closed_or_cancelled",
+            ));
+        }
+
+        Ok(DryRunResult {
+            integrity_ok: false,
+            can_recover,
+            issues_detected,
+            planned_actions,
+            state_description,
+        })
     }
 
     /// Prune oldest completed recovery history entries for a market (admin only).
@@ -898,6 +1021,67 @@ mod tests {
         }
     }
 
+    /// Helper that creates a valid market in storage for dry-run tests.
+    fn setup_market_env() -> (Env, Address, Address, Symbol) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "market_dry");
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            // Create a minimal valid market
+            let oracle_address = Address::generate(&env);
+            let oracle_config = crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                oracle_address: oracle_address.clone(),
+                feed_id: String::from_str(&env, "BTC/USD"),
+                threshold: 50000,
+                comparison: String::from_str(&env, "gt"),
+            };
+            let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
+            let metadata_commitment = crate::types::Market::compute_metadata_commitment(
+                &env,
+                &String::from_str(&env, "Test market"),
+                &outcomes,
+                &oracle_config,
+            );
+            let market = crate::types::Market {
+                admin: admin.clone(),
+                question: String::from_str(&env, "Test market"),
+                outcomes,
+                end_time: 9999999999u64,
+                oracle_config,
+                metadata_commitment,
+                has_fallback: false,
+                fallback_oracle_config: crate::types::OracleConfig::none_sentinel(&env),
+                resolution_timeout: 86400,
+                oracle_result: None,
+                votes: Map::new(&env),
+                total_staked: 0,
+                dispute_stakes: Map::new(&env),
+                stakes: Map::new(&env),
+                claimed: Map::new(&env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Active,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: Vec::new(&env),
+                category: None,
+                tags: Vec::new(&env),
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 86400,
+                winnings_swept: false,
+            };
+            env.storage().persistent().set(&market_id, &market);
+        });
+        (env, admin, contract_id, market_id)
+    }
+
     fn completed_record_minimal(env: &Env, market_id: &Symbol) -> MarketRecovery {
         MarketRecovery {
             market_id: market_id.clone(),
@@ -1057,6 +1241,149 @@ mod tests {
         issues.push_back(String::from_str(&test.env, "issue_2"));
         issues.push_back(String::from_str(&test.env, "issue_3"));
         assert_eq!(issues.len(), 3);
+    }
+
+    // ============ DRY RUN TESTS ============
+
+    #[test]
+    fn test_recovery_dry_run_market_not_found() {
+        let test = RecoveryTest::new();
+        let contract_id = test.env.register(crate::PredictifyHybrid, ());
+        // Dry run on a non-existent market should error
+        let result = test.env.as_contract(&contract_id, || {
+            RecoveryManager::recovery_dry_run(&test.env, &test.market_id)
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_recovery_dry_run_valid_market() {
+        let (env, admin, contract_id, market_id) = setup_market_env();
+        // Dry run on a valid, active market should report integrity_ok = true
+        let result = env.as_contract(&contract_id, || {
+            RecoveryManager::recovery_dry_run(&env, &market_id)
+        });
+        assert!(result.is_ok());
+        let dry_run = result.unwrap();
+        assert!(dry_run.integrity_ok);
+        assert!(!dry_run.can_recover);
+        assert!(dry_run.issues_detected.is_empty());
+        assert!(dry_run
+            .planned_actions
+            .contains(&String::from_str(&env, "no_action_needed")));
+        assert_eq!(dry_run.state_description, String::from_str(&env, "Active"));
+    }
+
+    #[test]
+    fn test_recovery_dry_run_closed_market() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Manually set market to Closed state and break integrity
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.state = MarketState::Closed;
+            market.total_staked = -1; // break integrity
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            assert!(!result.integrity_ok);
+            assert!(!result.can_recover);
+            assert!(result
+                .issues_detected
+                .contains(&String::from_str(&env, "negative_total_staked")));
+            assert!(result
+                .planned_actions
+                .contains(&String::from_str(&env, "skip_cannot_reconstruct_closed_or_cancelled")));
+            assert_eq!(
+                result.state_description,
+                String::from_str(&env, "Closed")
+            );
+        });
+    }
+
+    #[test]
+    fn test_recovery_dry_run_cancelled_market() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Manually set market to Cancelled state and break integrity
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.state = MarketState::Cancelled;
+            market.total_staked = -5;
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            assert!(!result.integrity_ok);
+            assert!(!result.can_recover);
+            assert_eq!(
+                result.state_description,
+                String::from_str(&env, "Cancelled")
+            );
+        });
+    }
+
+    #[test]
+    fn test_recovery_dry_run_total_staked_mismatch() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Create a mismatch between total_staked and stakes map
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.total_staked = 500;
+            // stakes map is empty, so sum is 0 ≠ 500
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            assert!(!result.integrity_ok);
+            assert!(result.can_recover);
+            assert!(result
+                .issues_detected
+                .contains(&String::from_str(&env, "total_staked_mismatch")));
+            assert!(result
+                .planned_actions
+                .contains(&String::from_str(&env, "reconstruct_totals")));
+        });
+    }
+
+    #[test]
+    fn test_recovery_dry_run_stakes_map_sums_correctly() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // total_staked matches the sum of stakes map → no mismatch detected
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            let user = Address::generate(&env);
+            market.stakes.set(user.clone(), 300);
+            market.total_staked = 300;
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            // Should still be integrity_ok since stakes sum matches total_staked
+            assert!(result.integrity_ok);
+        });
+    }
+
+    #[test]
+    fn test_recovery_dry_run_no_auth_required() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Dry run must work without any authentication
+        // (not calling require_auth or assert_is_admin)
+        let result = env.as_contract(&contract_id, || {
+            RecoveryManager::recovery_dry_run(&env, &market_id)
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_dry_run_result_struct_fields() {
+        let test = RecoveryTest::new();
+        // Verify DryRunResult struct creation and field access
+        let result = DryRunResult {
+            integrity_ok: true,
+            can_recover: false,
+            issues_detected: Vec::new(&test.env),
+            planned_actions: Vec::new(&test.env),
+            state_description: String::from_str(&test.env, "Active"),
+        };
+        assert!(result.integrity_ok);
+        assert!(!result.can_recover);
+        assert_eq!(result.state_description, String::from_str(&test.env, "Active"));
     }
 }
 

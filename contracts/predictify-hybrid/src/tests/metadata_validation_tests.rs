@@ -1,4 +1,4 @@
-use crate::errors::Error;
+use crate::err::Error;
 use crate::validation::{InputValidator, MarketValidator, OutcomeDeduplicator, ValidationError};
 use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
 

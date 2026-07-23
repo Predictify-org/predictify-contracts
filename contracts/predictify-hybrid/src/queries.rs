@@ -215,7 +215,7 @@ impl QueryManager {
 
     /// Query all disputes associated with a specific market.
     pub fn query_market_disputes(env: &Env, market_id: Symbol) -> Result<Vec<Dispute>, Error> {
-        let key = Symbol::new(env, &alloc::format!("MarketDisputes_{:?}", market_id));
+        let key = crate::storage::DataKey::DisputeHistory(market_id);
         env.storage()
             .persistent()
             .get(&key)
@@ -1096,13 +1096,7 @@ impl QueryManager {
         limit: u32,
     ) -> Result<Vec<UserLeaderboardEntryV1>, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
-        use crate::statistics::StatisticsManager;
-
-        // Note: This function would require iterating through all users.
-        // In a production system, this should be optimized with an index.
-        // For now, return empty as full implementation requires user index.
-        // This is documented as a known limitation.
-        Ok(soroban_sdk::vec![env])
+        Ok(crate::leaderboard::LeaderboardHeap::top_by_winnings(env, limit))
     }
 
     /// Get top users by win rate (leaderboard)
@@ -1127,13 +1121,10 @@ impl QueryManager {
     pub fn get_top_users_by_win_rate(
         env: &Env,
         limit: u32,
-        min_bets: u64,
+        _min_bets: u64,
     ) -> Result<Vec<UserLeaderboardEntryV1>, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
-
-        // Note: Similar implementation note as get_top_users_by_winnings
-        // This requires user index for efficiency
-        Ok(soroban_sdk::vec![env])
+        Ok(crate::leaderboard::LeaderboardHeap::top_by_win_rate(env, limit))
     }
 
     /// Get category statistics for filtered views

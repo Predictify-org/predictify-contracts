@@ -1,6 +1,6 @@
 use soroban_sdk::{Address, Env, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Simple global access control lists for users and event creators.
 ///

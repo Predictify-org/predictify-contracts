@@ -31,7 +31,7 @@
 //! - Rounding dust (odd-stroop pools) never causes an over-payment.
 //! - Recorded payouts match [`PayoutData`] / `MarketUtils::calculate_payout`.
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::markets::{MarketAnalytics, MarketUtils, WinningStats};
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 use crate::voting::PayoutData;
@@ -136,6 +136,7 @@ impl TieSetup {
             market_id,
             &String::from_str(&self.env, outcome),
             &amount,
+            &250,
         );
     }
 

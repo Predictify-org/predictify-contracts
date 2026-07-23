@@ -3,7 +3,7 @@
 
 use soroban_sdk::{contracttype, Env, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Explicit opt-in token that a caller must pass to `apply_migration` (or
 /// `UpgradeManager::apply_migration`) when a `VersionMigration` reports

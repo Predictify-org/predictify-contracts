@@ -11,16 +11,71 @@
 //! [`Error::ArchiveFull`]. Admins can call `prune_archive` to remove the oldest
 //! N entries and make room for new ones.
 //!
-//! # Pagination
+//! # Paginated Pruning
+//!
+//! `prune_archive` supports gas-safe paginated deletion via [`PruneCursor`].
+//! Entries are always removed oldest-first (ascending archive timestamp). A
+//! single call removes at most [`MAX_QUERY_LIMIT`] entries.
+//!
+//! Typical multi-page usage:
+//! ```ignore
+//! let mut cursor = None;
+//! loop {
+//!     let (removed, next) = contract.prune_archive(admin, count, cursor);
+//!     cursor = Some(next.clone());
+//!     if next.done { break; }
+//! }
+//! ```
+//!
+//! # Pagination (queries)
 //!
 //! All query functions accept a `cursor` (start index) and `limit` (capped at
 //! [`MAX_QUERY_LIMIT`]) and return `(entries, next_cursor)`. Callers should
 //! advance the cursor until `next_cursor == previous_cursor` (no more pages).
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::market_id_generator::MarketIdGenerator;
 use crate::types::{EventHistoryEntry, Market, MarketState};
-use soroban_sdk::{panic_with_error, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, String, Symbol, Vec};
+
+// ---------------------------------------------------------------------------
+// Deterministic archive key derivation
+// ---------------------------------------------------------------------------
+
+/// Derive a deterministic archive storage key from a `market_id` and a `suffix`.
+///
+/// This is the single source of truth for all archive-related storage key
+/// derivation. It replaces legacy `format!`-based string concatenation with
+/// a consistent tuple-namespace pattern that is fully deterministic and
+/// avoids dynamic heap allocation.
+///
+/// The returned tuple `(Symbol, Symbol, Symbol)` implements `IntoVal<Env, Val>`
+/// and can be used directly with `env.storage().persistent().get(&key)`,
+/// `.set()`, `.has()`, and `.remove()`.
+///
+/// # Determinism
+///
+/// `derive_archive_key(env, id, s)` always produces the same storage key for
+/// the same `env`, `id`, and `s` — regardless of call count, order, or the
+/// state of any other storage.
+///
+/// # Arguments
+/// * `env` - Soroban environment.
+/// * `market_id` - The market / event identifier.
+/// * `suffix` - A short string label for the key variant (e.g. `"compressed"`,
+///   `"compressed_ref"`).
+///
+/// # Returns
+///
+/// A 3-tuple `(Symbol, Symbol, Symbol)` suitable for use as a Soroban
+/// persistent storage key.
+pub fn derive_archive_key(env: &Env, market_id: &Symbol, suffix: &str) -> (Symbol, Symbol, Symbol) {
+    (
+        Symbol::new(env, "__archive"),
+        market_id.clone(),
+        Symbol::new(env, suffix),
+    )
+}
 
 /// Maximum events returned per query (gas safety).
 pub const MAX_QUERY_LIMIT: u32 = 30;
@@ -38,6 +93,69 @@ pub const MAX_ARCHIVE_SIZE: u32 = 1_000;
 
 /// Storage key for archived event timestamps (market_id -> archived_at).
 const ARCHIVED_TS_KEY: &str = "evt_archived";
+
+/// Storage key for the sorted archive index [(timestamp, market_id)] in ascending order.
+const ARCHIVED_INDEX_KEY: &str = "evt_arch_ix";
+
+/// Pagination cursor for archive pruning.
+///
+/// Returned by `prune_archive` so callers can resume pruning from where they left off.
+/// Pass `None` to start from the beginning.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct PruneCursor {
+    /// Timestamp of the last pruned entry; 0 means "start from the beginning".
+    pub last_timestamp: u64,
+    /// Market ID of the last pruned entry (tiebreaker for same-timestamp entries).
+    pub last_market_id: Symbol,
+    /// Whether there are no more entries to prune.
+    pub done: bool,
+}
+
+impl PruneCursor {
+    /// Create a new cursor pointing to the beginning (before any entries).
+    pub fn new(env: &Env) -> Self {
+        Self {
+            last_timestamp: 0,
+            last_market_id: Symbol::new(env, "_"),
+            done: false,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sorted index helpers
+// ---------------------------------------------------------------------------
+
+/// Insert a (timestamp, market_id) pair into the sorted archive index,
+/// maintaining ascending order by timestamp (then by market_id as tiebreaker).
+fn insert_into_sorted_index(env: &Env, timestamp: u64, market_id: &Symbol) {
+    let index_key = Symbol::new(env, ARCHIVED_INDEX_KEY);
+    let index: Vec<(u64, Symbol)> = env
+        .storage()
+        .persistent()
+        .get(&index_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let mut new_index = Vec::new(env);
+    let mut inserted = false;
+
+    for i in 0..index.len() {
+        if let Some(entry) = index.get(i) {
+            if !inserted && (timestamp < entry.0 || (timestamp == entry.0 && *market_id < entry.1))
+            {
+                new_index.push_back((timestamp, market_id.clone()));
+                inserted = true;
+            }
+            new_index.push_back(entry);
+        }
+    }
+    if !inserted {
+        new_index.push_back((timestamp, market_id.clone()));
+    }
+
+    env.storage().persistent().set(&index_key, &new_index);
+}
 
 /// Event archive and historical query manager.
 pub struct EventArchive;
@@ -99,24 +217,37 @@ impl EventArchive {
         archived.set(market_id.clone(), now);
         env.storage().persistent().set(&key, &archived);
 
+        // Maintain the sorted index for deterministic pruning
+        insert_into_sorted_index(env, now, market_id);
+
         Ok(())
     }
 
     /// Remove the oldest `count` entries from the archive (admin only).
     ///
     /// Frees capacity so that new events can be archived after the cap is reached.
-    /// Entries are removed in insertion order (oldest first). The underlying
-    /// `Map` does not preserve insertion order, so we iterate the market registry
-    /// to find the oldest archived IDs.
+    /// Entries are pruned deterministically by archive timestamp ascending (oldest first).
+    /// A [`PruneCursor`] enables paginated pruning — pass the returned cursor on the next call
+    /// to resume where you left off.
     ///
     /// # Arguments
     /// * `env` - Soroban environment
     /// * `admin` - Caller must be contract admin
     /// * `count` - Number of oldest entries to remove (capped at [`MAX_QUERY_LIMIT`])
+    /// * `cursor` - [`Some(PruneCursor)`] to resume from a previous position, or [`None`] to
+    ///   start from the beginning
+    ///
+    /// # Returns
+    /// `(number_pruned, new_cursor)` — the caller should persist `new_cursor` for the next call.
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
-    pub fn prune_archive(env: &Env, admin: &Address, count: u32) -> Result<u32, Error> {
+    pub fn prune_archive(
+        env: &Env,
+        admin: &Address,
+        count: u32,
+        cursor: Option<PruneCursor>,
+    ) -> Result<(u32, PruneCursor), Error> {
         admin.require_auth();
 
         let stored_admin: Address = env
@@ -130,44 +261,109 @@ impl EventArchive {
         }
 
         let count = core::cmp::min(count, MAX_QUERY_LIMIT);
-        let key = Symbol::new(env, ARCHIVED_TS_KEY);
+        if count == 0 {
+            return Ok((0, cursor.unwrap_or_else(|| PruneCursor::new(env))));
+        }
+
+        // Read the sorted index
+        let index_key = Symbol::new(env, ARCHIVED_INDEX_KEY);
+        let index: Vec<(u64, Symbol)> = env
+            .storage()
+            .persistent()
+            .get(&index_key)
+            .unwrap_or_else(|| Vec::new(env));
+
+        if index.is_empty() {
+            return Ok((
+                0,
+                PruneCursor {
+                    last_timestamp: 0,
+                    last_market_id: Symbol::new(env, "_"),
+                    done: true,
+                },
+            ));
+        }
+
+        // Determine starting position from cursor
+        let start_cursor = cursor.unwrap_or_else(|| PruneCursor::new(env));
+
+        // If cursor says done, there's nothing more to prune
+        if start_cursor.done {
+            return Ok((0, start_cursor));
+        }
+
+        let start_pos = if start_cursor.last_timestamp == 0 {
+            0u32
+        } else {
+            // Find first entry strictly after the cursor
+            let mut pos = 0u32;
+            for i in 0..index.len() {
+                if let Some(entry) = index.get(i) {
+                    if entry.0 > start_cursor.last_timestamp
+                        || (entry.0 == start_cursor.last_timestamp
+                            && entry.1 > start_cursor.last_market_id)
+                    {
+                        break;
+                    }
+                    pos = i + 1;
+                }
+            }
+            pos
+        };
+
+        if start_pos >= index.len() {
+            return Ok((
+                0,
+                PruneCursor {
+                    last_timestamp: start_cursor.last_timestamp,
+                    last_market_id: start_cursor.last_market_id,
+                    done: true,
+                },
+            ));
+        }
+
+        // Remove up to `count` entries starting from start_pos
+        let archived_key = Symbol::new(env, ARCHIVED_TS_KEY);
         let mut archived: soroban_sdk::Map<Symbol, u64> = env
             .storage()
             .persistent()
-            .get(&key)
-            .unwrap_or(soroban_sdk::Map::new(env));
+            .get(&archived_key)
+            .unwrap_or_else(|| soroban_sdk::Map::new(env));
 
-        if archived.is_empty() || count == 0 {
-            return Ok(0);
-        }
-
-        // Walk the registry (chronological order) to find the oldest archived IDs.
-        let registry_len = MarketIdGenerator::get_market_id_registry(env, 0, u32::MAX).len();
         let mut removed = 0u32;
-        let mut cursor = 0u32;
+        let mut last_ts: u64 = 0;
+        let mut last_id = Symbol::new(env, "_");
+        let mut new_index = Vec::new(env);
 
-        while removed < count && cursor < registry_len {
-            let page = MarketIdGenerator::get_market_id_registry(env, cursor, MAX_QUERY_LIMIT);
-            let page_len = page.len();
-            for i in 0..page_len {
-                if removed >= count {
-                    break;
+        for i in 0..index.len() {
+            if let Some(entry) = index.get(i) {
+                if i < start_pos {
+                    // Keep entries before start_pos
+                    new_index.push_back(entry);
+                } else if removed < count {
+                    // Remove this entry from the archive map
+                    archived.remove(entry.1.clone());
+                    last_ts = entry.0;
+                    last_id = entry.1.clone();
+                    removed += 1;
+                } else {
+                    // Keep remaining entries
+                    new_index.push_back(entry);
                 }
-                if let Some(entry) = page.get(i) {
-                    if archived.get(entry.market_id.clone()).is_some() {
-                        archived.remove(entry.market_id);
-                        removed += 1;
-                    }
-                }
-            }
-            cursor += page_len;
-            if page_len == 0 {
-                break;
             }
         }
 
-        env.storage().persistent().set(&key, &archived);
-        Ok(removed)
+        env.storage().persistent().set(&archived_key, &archived);
+        env.storage().persistent().set(&index_key, &new_index);
+
+        let done = removed < count || new_index.is_empty();
+        let new_cursor = PruneCursor {
+            last_timestamp: last_ts,
+            last_market_id: last_id,
+            done,
+        };
+
+        Ok((removed, new_cursor))
     }
 
     /// Check if an event is archived.
@@ -425,10 +621,131 @@ impl EventArchive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{Market, MarketState, OracleConfig};
     use alloc::string::ToString;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::Map;
-    use crate::types::{Market, MarketState, OracleConfig};
+
+    // =========================================================================
+    // derive_archive_key tests
+    // =========================================================================
+
+    #[test]
+    fn test_derive_archive_key_deterministic() {
+        // Same inputs must always produce the same key.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "market_42");
+
+        let key_a = derive_archive_key(&env, &market_id, "compressed");
+        let key_b = derive_archive_key(&env, &market_id, "compressed");
+
+        assert_eq!(key_a, key_b);
+    }
+
+    #[test]
+    fn test_derive_archive_key_different_ids_produce_different_keys() {
+        // Different market IDs with the same suffix must produce different keys.
+        let env = Env::default();
+        let id1 = Symbol::new(&env, "market_1");
+        let id2 = Symbol::new(&env, "market_2");
+
+        let key1 = derive_archive_key(&env, &id1, "compressed");
+        let key2 = derive_archive_key(&env, &id2, "compressed");
+
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_derive_archive_key_different_suffixes_produce_different_keys() {
+        // Different suffixes with the same market ID must produce different keys.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "market_99");
+
+        let compressed_key = derive_archive_key(&env, &market_id, "compressed");
+        let ref_key = derive_archive_key(&env, &market_id, "compressed_ref");
+
+        assert_ne!(compressed_key, ref_key);
+    }
+
+    #[test]
+    fn test_derive_archive_key_long_market_id() {
+        // Maximum-length market IDs (32 chars for Soroban Symbol) must work.
+        let env = Env::default();
+        let long_id = Symbol::new(&env, "a_very_long_market_id_32_chars__");
+
+        let key = derive_archive_key(&env, &long_id, "compressed");
+        // The key should not panic and be usable in storage operations.
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&key, &42u32);
+            let val: Option<u32> = env.storage().persistent().get(&key);
+            assert_eq!(val, Some(42));
+        });
+    }
+
+    #[test]
+    fn test_derive_archive_key_special_char_suffix() {
+        // Suffixes with underscores and numbers (valid Symbol chars) must work.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "m1");
+
+        let key = derive_archive_key(&env, &market_id, "compressed_v2");
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&key, &true);
+            let val: Option<bool> = env.storage().persistent().get(&key);
+            assert_eq!(val, Some(true));
+        });
+    }
+
+    #[test]
+    fn test_derive_archive_key_namespace_isolation() {
+        // Keys with different market IDs must not collide in storage.
+        let env = Env::default();
+        let id_a = Symbol::new(&env, "market_a");
+        let id_b = Symbol::new(&env, "market_b");
+
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let key_a = derive_archive_key(&env, &id_a, "compressed");
+            let key_b = derive_archive_key(&env, &id_b, "compressed");
+
+            env.storage().persistent().set(&key_a, &100u32);
+            env.storage().persistent().set(&key_b, &200u32);
+
+            let val_a: Option<u32> = env.storage().persistent().get(&key_a);
+            let val_b: Option<u32> = env.storage().persistent().get(&key_b);
+
+            assert_eq!(val_a, Some(100));
+            assert_eq!(val_b, Some(200));
+        });
+    }
+
+    #[test]
+    fn test_derive_archive_key_storage_roundtrip() {
+        // Full write-read roundtrip to verify the key works with persistent storage.
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "roundtrip_test");
+        let suffix = "migration";
+
+        let key = derive_archive_key(&env, &market_id, suffix);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let stored_value: u64 = 123456789;
+
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&key, &stored_value);
+
+            let retrieved: Option<u64> = env.storage().persistent().get(&key);
+            assert_eq!(retrieved, Some(stored_value));
+
+            // Verify the tuple components are as expected
+            let (ns, id, sfx) = key;
+            assert_eq!(ns, Symbol::new(&env, "__archive"));
+            assert_eq!(id, market_id);
+            assert_eq!(sfx, Symbol::new(&env, suffix));
+        });
+    }
 
     struct EventArchiveTest {
         env: Env,
@@ -757,15 +1074,21 @@ mod tests {
         let test = EventArchiveTest::new();
         let env = &test.env;
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        
+
         env.as_contract(&contract_id, || {
             let max_length_id = Symbol::new(env, "a_very_long_market_id_32_chars__");
-            
+
             let market = Market {
                 admin: test.admin.clone(),
                 question: String::from_str(env, "Will BTC reach 100k?"),
                 outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
                 end_time: env.ledger().timestamp() + 3600,
+                metadata_commitment: Market::compute_metadata_commitment(
+                    env,
+                    &String::from_str(env, "Will BTC reach 100k?"),
+                    &soroban_sdk::vec![env, String::from_str(env, "yes")],
+                    &OracleConfig::none_sentinel(env),
+                ),
                 oracle_config: OracleConfig::none_sentinel(env),
                 has_fallback: false,
                 fallback_oracle_config: OracleConfig::none_sentinel(env),
@@ -790,7 +1113,8 @@ mod tests {
                 winnings_swept: false,
             };
 
-            let res = crate::storage::StorageOptimizer::archive_market_data(env, &max_length_id, &market);
+            let res =
+                crate::storage::StorageOptimizer::archive_market_data(env, &max_length_id, &market);
             assert!(res.is_ok());
         });
     }
@@ -800,15 +1124,21 @@ mod tests {
         let test = EventArchiveTest::new();
         let env = &test.env;
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        
+
         env.as_contract(&contract_id, || {
             let market_id = Symbol::new(env, "market_1");
-            
+
             let market = Market {
                 admin: test.admin.clone(),
                 question: String::from_str(env, "Will BTC reach 100k?"),
                 outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
                 end_time: env.ledger().timestamp() + 3600,
+                metadata_commitment: Market::compute_metadata_commitment(
+                    env,
+                    &String::from_str(env, "Will BTC reach 100k?"),
+                    &soroban_sdk::vec![env, String::from_str(env, "yes")],
+                    &OracleConfig::none_sentinel(env),
+                ),
                 oracle_config: OracleConfig::none_sentinel(env),
                 has_fallback: false,
                 fallback_oracle_config: OracleConfig::none_sentinel(env),
@@ -833,11 +1163,225 @@ mod tests {
                 winnings_swept: false,
             };
 
-            let res1 = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            let res1 =
+                crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
             assert!(res1.is_ok());
 
-            let res2 = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            let res2 =
+                crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
             assert!(res2.is_ok());
+        });
+    }
+
+    // =========================================================================
+    // prune_archive paginated cursor tests
+    // =========================================================================
+
+    /// Helper: seed the archive sorted index and timestamp map directly so
+    /// prune tests don't need a full market lifecycle.
+    fn seed_archive(env: &Env, entries: &[(&str, u64)]) {
+        let archived_key = Symbol::new(env, ARCHIVED_TS_KEY);
+        let mut map: soroban_sdk::Map<Symbol, u64> = soroban_sdk::Map::new(env);
+        for (id, ts) in entries {
+            let sym = Symbol::new(env, id);
+            map.set(sym.clone(), *ts);
+            insert_into_sorted_index(env, *ts, &sym);
+        }
+        env.storage().persistent().set(&archived_key, &map);
+    }
+
+    #[test]
+    fn test_prune_archive_none_cursor_starts_from_beginning() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("mkt_a", 100), ("mkt_b", 200), ("mkt_c", 300)]);
+
+            let (removed, cursor) =
+                EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
+
+            assert_eq!(removed, 2);
+            assert_eq!(cursor.done, false);
+            // last pruned should be the 2nd oldest (ts=200)
+            assert_eq!(cursor.last_timestamp, 200);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_cursor_resume_continues_from_last_position() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(
+                &env,
+                &[("mkt_a", 100), ("mkt_b", 200), ("mkt_c", 300), ("mkt_d", 400)],
+            );
+
+            // First page: prune 2
+            let (removed1, cursor1) =
+                EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
+            assert_eq!(removed1, 2);
+            assert_eq!(cursor1.done, false);
+
+            // Resume with cursor — should prune the next 2
+            let (removed2, cursor2) =
+                EventArchive::prune_archive(&env, &admin, 2, Some(cursor1)).unwrap();
+            assert_eq!(removed2, 2);
+            assert_eq!(cursor2.done, true);
+            assert_eq!(EventArchive::archive_size(&env), 0);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_done_flag_set_when_exhausted() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("mkt_x", 500), ("mkt_y", 600)]);
+
+            // Prune more than available
+            let (removed, cursor) =
+                EventArchive::prune_archive(&env, &admin, 10, None).unwrap();
+
+            assert_eq!(removed, 2);
+            assert_eq!(cursor.done, true);
+            assert_eq!(EventArchive::archive_size(&env), 0);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_done_cursor_is_idempotent() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("mkt_p", 100)]);
+
+            let (_, done_cursor) =
+                EventArchive::prune_archive(&env, &admin, 5, None).unwrap();
+            assert!(done_cursor.done);
+
+            // Calling again with a done cursor must remove nothing
+            let (removed2, cursor2) =
+                EventArchive::prune_archive(&env, &admin, 5, Some(done_cursor)).unwrap();
+            assert_eq!(removed2, 0);
+            assert!(cursor2.done);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_preserves_oldest_first_order() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            // Insert out-of-order timestamps; oldest must be pruned first
+            seed_archive(
+                &env,
+                &[("newest", 9000), ("oldest", 1000), ("middle", 5000)],
+            );
+
+            let (removed, cursor) =
+                EventArchive::prune_archive(&env, &admin, 1, None).unwrap();
+            assert_eq!(removed, 1);
+            // The entry with ts=1000 ("oldest") must be gone, others remain
+            assert!(!EventArchive::is_archived(&env, &Symbol::new(&env, "oldest")));
+            assert!(EventArchive::is_archived(&env, &Symbol::new(&env, "middle")));
+            assert!(EventArchive::is_archived(&env, &Symbol::new(&env, "newest")));
+            assert_eq!(cursor.last_timestamp, 1000);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_count_capped_at_max_query_limit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            // Seed with MAX_QUERY_LIMIT + 5 entries
+            let total = (MAX_QUERY_LIMIT + 5) as usize;
+            // Build entries as (id_str, timestamp) — we do this via repeated seeding
+            // Use insert_into_sorted_index + manual map update for each
+            let archived_key = Symbol::new(&env, ARCHIVED_TS_KEY);
+            let mut archived: soroban_sdk::Map<Symbol, u64> = soroban_sdk::Map::new(&env);
+            for i in 0..total {
+                // Symbol names must be ≤ 32 chars, prefix "m" + zero-padded index
+                let name = alloc::format!("market_{:04}", i);
+                let sym = Symbol::new(&env, &name);
+                archived.set(sym.clone(), i as u64 + 1);
+                insert_into_sorted_index(&env, i as u64 + 1, &sym);
+            }
+            env.storage().persistent().set(&archived_key, &archived);
+
+            // Requesting more than MAX_QUERY_LIMIT should only remove MAX_QUERY_LIMIT
+            let (removed, _) =
+                EventArchive::prune_archive(&env, &admin, MAX_QUERY_LIMIT + 100, None).unwrap();
+            assert_eq!(removed, MAX_QUERY_LIMIT);
+        });
+    }
+
+    #[test]
+    fn test_prune_archive_partial_page_then_done() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let admin = Address::generate(&env);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            seed_archive(&env, &[("a", 10), ("b", 20), ("c", 30)]);
+
+            // Prune 2, then prune 2 more (only 1 remains → partial page → done)
+            let (r1, cur1) = EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
+            assert_eq!(r1, 2);
+            assert!(!cur1.done);
+
+            let (r2, cur2) =
+                EventArchive::prune_archive(&env, &admin, 2, Some(cur1)).unwrap();
+            assert_eq!(r2, 1); // only 1 entry left
+            assert!(cur2.done);
         });
     }
 
@@ -846,16 +1390,22 @@ mod tests {
         let test = EventArchiveTest::new();
         let env = &test.env;
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        
+
         env.as_contract(&contract_id, || {
             let market_id = Symbol::new(env, "retrievable_market");
             let timestamp = env.ledger().timestamp();
-            
+
             let market = Market {
                 admin: test.admin.clone(),
                 question: String::from_str(env, "Will BTC reach 100k?"),
                 outcomes: soroban_sdk::vec![env, String::from_str(env, "yes")],
                 end_time: env.ledger().timestamp() + 3600,
+                metadata_commitment: Market::compute_metadata_commitment(
+                    env,
+                    &String::from_str(env, "Will BTC reach 100k?"),
+                    &soroban_sdk::vec![env, String::from_str(env, "yes")],
+                    &OracleConfig::none_sentinel(env),
+                ),
                 oracle_config: OracleConfig::none_sentinel(env),
                 has_fallback: false,
                 fallback_oracle_config: OracleConfig::none_sentinel(env),
@@ -880,13 +1430,14 @@ mod tests {
                 winnings_swept: false,
             };
 
-            let res = crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
+            let res =
+                crate::storage::StorageOptimizer::archive_market_data(env, &market_id, &market);
             assert!(res.is_ok());
 
             let key = crate::storage::DataKey::ArchivedMarket(market_id.clone(), timestamp);
             let retrieved: Option<Market> = env.storage().persistent().get(&key);
             assert!(retrieved.is_some());
-            
+
             let retrieved_market = retrieved.unwrap();
             assert_eq!(retrieved_market.question, market.question);
             assert_eq!(retrieved_market.admin, market.admin);
