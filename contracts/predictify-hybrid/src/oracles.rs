@@ -643,7 +643,16 @@ impl<'a> ReflectorOracleClient<'a> {
         res
     }
 
-    /// Get TWAP (Time-Weighted Average Price) for an asset
+    /// Get TWAP (Time-Weighted Average Price) for an asset.
+    ///
+    /// Uses an intra-transaction cache keyed by (asset, records) to avoid
+    /// duplicate oracle calls within the same transaction.  The cache lives
+    /// in temporary storage and is automatically discarded when the
+    /// transaction ends.
+    ///
+    /// When `force_refresh` is `true` the cache is bypassed and a fresh
+    /// oracle call is made; the result still updates the cache so subsequent
+    /// calls in the same transaction benefit from it.
     pub fn twap(&self, asset: ReflectorAsset, records: u32, force_refresh: bool) -> Option<i128> {
         // Build a cache key unique to this transaction
         let cache_key: (Symbol, Val, Val) = (
@@ -652,10 +661,13 @@ impl<'a> ReflectorOracleClient<'a> {
             records.into_val(self.env),
         );
         // Attempt to read from temporary storage (per-transaction cache)
-        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(&cache_key) {
-            return cached;
+        // only when the caller hasn't requested a forced refresh.
+        if !force_refresh {
+            if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(&cache_key) {
+                return cached;
+            }
         }
-        // Not cached; perform contract call
+        // Not cached (or force_refresh requested); perform contract call
         let args = vec![
             self.env,
             asset.into_val(self.env),
