@@ -245,6 +245,12 @@ pub enum Error {
     ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+    /// User's cumulative stake on this market would exceed the per-user max bet cap.
+    MaxBetCapExceeded = 528,
+    /// The max bet cap value is invalid (must be positive).
+    InvalidCap = 529,
+    /// Arithmetic overflow occurred during checked operation (e.g., checked_add on i128).
+    Overflow = 530,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
