@@ -7,9 +7,6 @@ members = [
 [workspace.dependencies]
 soroban-sdk = "25.0.0"
 
-[package.metadata.cargo-edit]
-resolver = "2"
-
 [patch.crates-io]
 ethnum = { version = "1.6.0" }
 
