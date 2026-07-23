@@ -3119,11 +3119,11 @@ fn test_validate_bet_amount_against_limits() {
 
     // Below min → InsufficientStake.
     let err = validate_bet_amount_against_limits(999_999, &limits).unwrap_err();
-    assert_eq!(err, crate::errors::Error::InsufficientStake);
+    assert_eq!(err, crate::err::Error::InsufficientStake);
 
     // Above max → InvalidInput.
     let err = validate_bet_amount_against_limits(100_000_001, &limits).unwrap_err();
-    assert_eq!(err, crate::errors::Error::InvalidInput);
+    assert_eq!(err, crate::err::Error::InvalidInput);
 }
 
 // ── DisputeValidator ──────────────────────────────────────────────────────────

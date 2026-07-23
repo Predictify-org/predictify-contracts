@@ -115,311 +115,24 @@ pub struct RecoveryHistoryEntry {
     pub recorded_at: u64,
 }
 
-/// Manages per-market recovery requests with admin timelock protection.
+/// Result of a read-only recovery dry run.
 ///
-/// Provides a two-phase recovery process:
-/// 1. **Initiate**: Admin schedules a recovery action; timelock starts.
-/// 2. **Execute**: After the timelock expires, the admin can execute the action.
-///
-/// Either phase can be cancelled by the admin before execution.
-pub struct RecoveryTimelockManager;
-
-impl RecoveryTimelockManager {
-    // ---- Storage keys ----
-
-    #[inline(always)]
-    fn pending_key(env: &Env, market_id: &Symbol) -> (Symbol, Symbol) {
-        (Symbol::new(env, "rcv_tl_pending"), market_id.clone())
-    }
-
-    #[inline(always)]
-    fn config_key(env: &Env) -> Symbol {
-        Symbol::new(env, "rcv_tl_config")
-    }
-
-    // ---- Config ----
-
-    /// Get the current recovery timelock configuration (or defaults if not set).
-    pub fn get_config(env: &Env) -> RecoveryTimelockConfig {
-        env.storage()
-            .persistent()
-            .get(&Self::config_key(env))
-            .unwrap_or(RecoveryTimelockConfig {
-                timelock_seconds: DEFAULT_RECOVERY_TIMELOCK_SECONDS,
-            })
-    }
-
-    /// Set/update the recovery timelock configuration (admin only).
-    ///
-    /// Security: timelock_seconds may only be increased (tightened), never decreased.
-    /// Auth is enforced by the calling entrypoint.
-    pub fn set_config(
-        env: &Env,
-        admin: &Address,
-        config: &RecoveryTimelockConfig,
-    ) -> Result<(), Error> {
-        RecoveryManager::assert_is_admin(env, admin)?;
-
-        if config.timelock_seconds < MIN_RECOVERY_TIMELOCK_SECONDS
-            || config.timelock_seconds > MAX_RECOVERY_TIMELOCK_SECONDS
-        {
-            return Err(Error::RecoveryTimelockConfigInvalid);
-        }
-
-        // Only allow tightening if already set.
-        if env.storage().persistent().has(&Self::config_key(env)) {
-            let current = Self::get_config(env);
-            if config.timelock_seconds < current.timelock_seconds {
-                return Err(Error::RecoveryTimelockConfigInvalid);
-            }
-        }
-
-        env.storage()
-            .persistent()
-            .set(&Self::config_key(env), config);
-        Ok(())
-    }
-
-    // ---- Pending request ----
-
-    /// Get the pending recovery request for a market, if any.
-    pub fn get_pending(env: &Env, market_id: &Symbol) -> Option<PendingMarketRecovery> {
-        env.storage()
-            .persistent()
-            .get(&Self::pending_key(env, market_id))
-    }
-
-    /// Initiate a per-market recovery request.
-    ///
-    /// Creates a pending request with a timelock. The recovery cannot be executed
-    /// until `initiated_at + timelock_seconds` has elapsed.
-    ///
-    /// # Errors
-    /// - `RecoveryAlreadyPending` if a request already exists for this market
-    /// - `MarketNotRecoverable` if the market is in a non-recoverable state
-    /// - `InvalidRecoveryAction` if the action is invalid for the current market state
-    pub fn initiate_recovery(
-        env: &Env,
-        admin: &Address,
-        market_id: &Symbol,
-        action: &PerMarketRecoveryAction,
-        reason: &String,
-    ) -> Result<PendingMarketRecovery, Error> {
-        RecoveryManager::assert_is_admin(env, admin)?;
-
-        // Reject if already pending.
-        if Self::get_pending(env, market_id).is_some() {
-            return Err(Error::RecoveryAlreadyPending);
-        }
-
-        // Validate market exists and is in a recoverable state.
-        let market = MarketStateManager::get_market(env, market_id)?;
-
-        match market.state {
-            MarketState::Active | MarketState::Closed | MarketState::Cancelled | MarketState::Resolved => {
-                return Err(Error::MarketNotRecoverable);
-            }
-            _ => {}
-        }
-
-        // Validate action against current market state.
-        Self::validate_action_for_state(&market.state, action)?;
-
-        let now = env.ledger().timestamp();
-        let schedule = Self::get_config(env);
-
-        let request = PendingMarketRecovery {
-            market_id: market_id.clone(),
-            initiated_by: admin.clone(),
-            action: action.clone(),
-            initiated_at: now,
-            execute_after: now.saturating_add(schedule.timelock_seconds),
-            reason: reason.clone(),
-        };
-
-        env.storage()
-            .persistent()
-            .set(&Self::pending_key(env, market_id), &request);
-
-        Self::emit_recovery_initiated(env, &request);
-
-        Ok(request)
-    }
-
-    /// Execute a pending recovery request after the timelock has expired.
-    ///
-    /// # Errors
-    /// - `RecoveryRequestNotFound` if no pending request exists
-    /// - `RecoveryTimelockActive` if the timelock has not yet expired
-    pub fn execute_recovery(
-        env: &Env,
-        admin: &Address,
-        market_id: &Symbol,
-    ) -> Result<bool, Error> {
-        RecoveryManager::assert_is_admin(env, admin)?;
-
-        let request = Self::get_pending(env, market_id).ok_or(Error::RecoveryRequestNotFound)?;
-
-        let now = env.ledger().timestamp();
-        if now < request.execute_after {
-            return Err(Error::RecoveryTimelockActive);
-        }
-
-        let result = Self::execute_action(env, &request)?;
-
-        env.storage()
-            .persistent()
-            .remove(&Self::pending_key(env, market_id));
-
-        Self::emit_recovery_executed(env, &request, result);
-
-        Ok(result)
-    }
-
-    /// Cancel a pending recovery request.
-    pub fn cancel_recovery(
-        env: &Env,
-        admin: &Address,
-        market_id: &Symbol,
-    ) -> Result<(), Error> {
-        RecoveryManager::assert_is_admin(env, admin)?;
-
-        let request = Self::get_pending(env, market_id).ok_or(Error::RecoveryRequestNotFound)?;
-
-        env.storage()
-            .persistent()
-            .remove(&Self::pending_key(env, market_id));
-
-        Self::emit_recovery_cancelled(env, &request);
-
-        Ok(())
-    }
-
-    // ---- Action validation ----
-
-    /// Validate that a recovery action is appropriate for the given market state.
-    fn validate_action_for_state(
-        state: &MarketState,
-        action: &PerMarketRecoveryAction,
-    ) -> Result<(), Error> {
-        match action {
-            PerMarketRecoveryAction::ReconstructState => {
-                match state {
-                    MarketState::Active
-                    | MarketState::Closed
-                    | MarketState::Cancelled
-                    | MarketState::Resolved => Err(Error::InvalidRecoveryAction),
-                    _ => Ok(()),
-                }
-            }
-            PerMarketRecoveryAction::CancelMarket => {
-                match state {
-                    MarketState::Ended | MarketState::Disputed => Ok(()),
-                    _ => Err(Error::InvalidRecoveryAction),
-                }
-            }
-            PerMarketRecoveryAction::ForceResolve => {
-                match state {
-                    MarketState::Ended | MarketState::Disputed => Ok(()),
-                    _ => Err(Error::InvalidRecoveryAction),
-                }
-            }
-        }
-    }
-
-    // ---- Action execution ----
-
-    /// Execute the concrete recovery action described in a pending request.
-    fn execute_action(env: &Env, request: &PendingMarketRecovery) -> Result<bool, Error> {
-        let mut market = MarketStateManager::get_market(env, &request.market_id)?;
-
-        match request.action {
-            PerMarketRecoveryAction::ReconstructState => {
-                // Recompute total_staked from stakes map.
-                let mut recomputed: i128 = 0;
-                for (_, v) in market.stakes.iter() {
-                    recomputed = recomputed.saturating_add(v);
-                }
-                market.total_staked = recomputed;
-                MarketStateManager::update_market(env, &request.market_id, &market);
-                Ok(true)
-            }
-            PerMarketRecoveryAction::CancelMarket => {
-                // Mark all unclaimed stakes as claimed (refund simulation).
-                for (user, stake) in market.stakes.iter() {
-                    if stake > 0 && market.claimed.get(user.clone()).is_none() {
-                        market.claimed.set(user, ClaimInfo::new(env, stake));
-                    }
-                }
-                market.total_staked = 0;
-                market.state = MarketState::Cancelled;
-                MarketStateManager::update_market(env, &request.market_id, &market);
-                Ok(true)
-            }
-            PerMarketRecoveryAction::ForceResolve => {
-                if market.state == MarketState::Ended {
-                    Ok(false)
-                } else {
-                    market.state = MarketState::Ended;
-                    MarketStateManager::update_market(env, &request.market_id, &market);
-                    Ok(true)
-                }
-            }
-        }
-    }
-
-    // ---- Events ----
-
-    fn emit_recovery_initiated(env: &Env, request: &PendingMarketRecovery) {
-        let topic = Symbol::new(env, "rcv_tl_init");
-        let action_sym = match request.action {
-            PerMarketRecoveryAction::ReconstructState => Symbol::new(env, "reconstruct"),
-            PerMarketRecoveryAction::CancelMarket => Symbol::new(env, "cancel"),
-            PerMarketRecoveryAction::ForceResolve => Symbol::new(env, "force_resolve"),
-        };
-        env.events().publish(
-            (
-                topic,
-                request.initiated_by.clone(),
-                request.market_id.clone(),
-            ),
-            (
-                action_sym,
-                request.initiated_at,
-                request.execute_after,
-                request.reason.clone(),
-            ),
-        );
-    }
-
-    fn emit_recovery_executed(env: &Env, request: &PendingMarketRecovery, success: bool) {
-        let topic = Symbol::new(env, "rcv_tl_exec");
-        let action_sym = match request.action {
-            PerMarketRecoveryAction::ReconstructState => Symbol::new(env, "reconstruct"),
-            PerMarketRecoveryAction::CancelMarket => Symbol::new(env, "cancel"),
-            PerMarketRecoveryAction::ForceResolve => Symbol::new(env, "force_resolve"),
-        };
-        env.events().publish(
-            (
-                topic,
-                request.initiated_by.clone(),
-                request.market_id.clone(),
-            ),
-            (action_sym, success, env.ledger().timestamp()),
-        );
-    }
-
-    fn emit_recovery_cancelled(env: &Env, request: &PendingMarketRecovery) {
-        let topic = Symbol::new(env, "rcv_tl_cancel");
-        env.events().publish(
-            (
-                topic,
-                request.initiated_by.clone(),
-                request.market_id.clone(),
-            ),
-            (request.initiated_at, env.ledger().timestamp()),
-        );
-    }
+/// Analysed by `RecoveryManager::recovery_dry_run` without mutating any
+/// contract state or requiring admin authentication. Useful for ops
+/// verification before executing a live recovery.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DryRunResult {
+    /// Whether the market integrity check passed.
+    pub integrity_ok: bool,
+    /// Whether the market can be recovered if integrity is broken.
+    pub can_recover: bool,
+    /// List of issues detected during integrity analysis.
+    pub issues_detected: Vec<String>,
+    /// What recovery actions would be taken (empty if no recovery needed).
+    pub planned_actions: Vec<String>,
+    /// Human-readable description of the market's current state.
+    pub state_description: String,
 }
 
 pub struct RecoveryStorage;
@@ -798,6 +511,109 @@ impl RecoveryManager {
 
     pub fn get_recovery_status(env: &Env, market_id: &Symbol) -> Result<String, Error> {
         RecoveryStorage::status(env, market_id).ok_or(Error::InvalidState)
+    }
+
+    /// Read-only dry run that returns the recovery plan without side effects.
+    ///
+    /// Analyses the market's current state and reports what `recover_market_state`
+    /// would do if called. No storage writes, no events emitted, and no admin
+    /// authentication required. Useful for ops verification before executing a
+    /// live recovery.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `market_id` - The market to analyse.
+    ///
+    /// # Returns
+    /// A [`DryRunResult`] describing integrity status, detectible issues, and the
+    /// planned recovery actions.
+    pub fn recovery_dry_run(env: &Env, market_id: &Symbol) -> Result<DryRunResult, Error> {
+        let market = MarketStateManager::get_market(env, market_id)?;
+
+        let mut issues_detected: Vec<String> = Vec::new(env);
+        let mut planned_actions: Vec<String> = Vec::new(env);
+
+        // Build a human-readable state description.
+        let state_description = match market.state {
+            MarketState::Active => String::from_str(env, "Active"),
+            MarketState::Ended => String::from_str(env, "Ended"),
+            MarketState::Disputed => String::from_str(env, "Disputed"),
+            MarketState::Resolved => String::from_str(env, "Resolved"),
+            MarketState::Closed => String::from_str(env, "Closed"),
+            MarketState::Cancelled => String::from_str(env, "Cancelled"),
+        };
+
+        // Integrity check: use the existing validator.
+        let integrity_ok =
+            RecoveryValidator::validate_market_state_integrity(env, market_id).is_ok();
+
+        if integrity_ok {
+            planned_actions.push_back(String::from_str(env, "no_action_needed"));
+            return Ok(DryRunResult {
+                integrity_ok: true,
+                can_recover: false,
+                issues_detected,
+                planned_actions,
+                state_description,
+            });
+        }
+
+        // Integrity failed – collect detailed issues.
+        if market.total_staked < 0 {
+            issues_detected.push_back(String::from_str(env, "negative_total_staked"));
+        }
+        if market.outcomes.len() < 2 {
+            issues_detected.push_back(String::from_str(env, "too_few_outcomes"));
+        }
+        if market.end_time == 0 {
+            issues_detected.push_back(String::from_str(env, "zero_end_time"));
+        }
+
+        // Extra integrity check: total_staked vs sum of stakes map.
+        // Uses checked_add to detect overflow, matching the approach used
+        // in recover_market_state for diagnostic consistency.
+        let mut recomputed_stakes: i128 = 0;
+        let mut overflow_detected = false;
+        for (_, stake) in market.stakes.iter() {
+            if let Some(sum) = recomputed_stakes.checked_add(stake) {
+                recomputed_stakes = sum;
+            } else {
+                overflow_detected = true;
+            }
+        }
+        if overflow_detected {
+            issues_detected.push_back(String::from_str(env, "stake_overflow"));
+        } else if recomputed_stakes != market.total_staked {
+            issues_detected.push_back(String::from_str(env, "total_staked_mismatch"));
+        }
+
+        // Determine recoverability: Closed / Cancelled markets cannot be reconstructed.
+        let can_recover = !matches!(
+            market.state,
+            MarketState::Closed | MarketState::Cancelled
+        );
+
+        if can_recover {
+            if recomputed_stakes != market.total_staked {
+                planned_actions.push_back(String::from_str(env, "reconstruct_totals"));
+            }
+            if planned_actions.is_empty() {
+                planned_actions.push_back(String::from_str(env, "reconstruct_market"));
+            }
+        } else {
+            planned_actions.push_back(String::from_str(
+                env,
+                "skip_cannot_reconstruct_closed_or_cancelled",
+            ));
+        }
+
+        Ok(DryRunResult {
+            integrity_ok: false,
+            can_recover,
+            issues_detected,
+            planned_actions,
+            state_description,
+        })
     }
 
     /// Prune oldest completed recovery history entries for a market (admin only).
@@ -1266,6 +1082,67 @@ mod tests {
         }
     }
 
+    /// Helper that creates a valid market in storage for dry-run tests.
+    fn setup_market_env() -> (Env, Address, Address, Symbol) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "market_dry");
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            // Create a minimal valid market
+            let oracle_address = Address::generate(&env);
+            let oracle_config = crate::types::OracleConfig {
+                provider: crate::types::OracleProvider::Reflector,
+                oracle_address: oracle_address.clone(),
+                feed_id: String::from_str(&env, "BTC/USD"),
+                threshold: 50000,
+                comparison: String::from_str(&env, "gt"),
+            };
+            let outcomes = vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")];
+            let metadata_commitment = crate::types::Market::compute_metadata_commitment(
+                &env,
+                &String::from_str(&env, "Test market"),
+                &outcomes,
+                &oracle_config,
+            );
+            let market = crate::types::Market {
+                admin: admin.clone(),
+                question: String::from_str(&env, "Test market"),
+                outcomes,
+                end_time: 9999999999u64,
+                oracle_config,
+                metadata_commitment,
+                has_fallback: false,
+                fallback_oracle_config: crate::types::OracleConfig::none_sentinel(&env),
+                resolution_timeout: 86400,
+                oracle_result: None,
+                votes: Map::new(&env),
+                total_staked: 0,
+                dispute_stakes: Map::new(&env),
+                stakes: Map::new(&env),
+                claimed: Map::new(&env),
+                winning_outcomes: None,
+                fee_collected: false,
+                state: MarketState::Active,
+                total_extension_days: 0,
+                max_extension_days: 30,
+                extension_history: Vec::new(&env),
+                category: None,
+                tags: Vec::new(&env),
+                min_pool_size: None,
+                bet_deadline: 0,
+                dispute_window_seconds: 86400,
+                winnings_swept: false,
+            };
+            env.storage().persistent().set(&market_id, &market);
+        });
+        (env, admin, contract_id, market_id)
+    }
+
     fn completed_record_minimal(env: &Env, market_id: &Symbol) -> MarketRecovery {
         MarketRecovery {
             market_id: market_id.clone(),
@@ -1427,428 +1304,147 @@ mod tests {
         assert_eq!(issues.len(), 3);
     }
 
-    // ===== PER-MARKET RECOVERY TIMELOCK TESTS =====
+    // ============ DRY RUN TESTS ============
 
-    /// Use the minimum allowed timelock so tests can execute immediately.
-    const TEST_TIMELOCK_SECONDS: u64 = MIN_RECOVERY_TIMELOCK_SECONDS;
-
-    fn setup_with_market(state: MarketState) -> (Env, Address, Symbol, soroban_sdk::Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let market_id = Symbol::new(&env, "rcv_mkt");
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.as_contract(&contract_id, || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
-            let market = crate::types::Market {
-                admin: admin.clone(),
-                question: String::from_str(&env, "Test?"),
-                outcomes: Vec::new(&env),
-                end_time: 1000,
-                oracle_config: crate::types::OracleConfig::none_sentinel(&env),
-                has_fallback: false,
-                fallback_oracle_config: crate::types::OracleConfig::none_sentinel(&env),
-                resolution_timeout: 3600,
-                oracle_result: None,
-                votes: soroban_sdk::Map::new(&env),
-                stakes: soroban_sdk::Map::new(&env),
-                claimed: soroban_sdk::Map::new(&env),
-                total_staked: 0,
-                dispute_stakes: soroban_sdk::Map::new(&env),
-                winning_outcomes: None,
-                fee_collected: false,
-                state,
-                total_extension_days: 0,
-                max_extension_days: 0,
-                extension_history: Vec::new(&env),
-                category: None,
-                tags: Vec::new(&env),
-                min_pool_size: None,
-                bet_deadline: 0,
-                dispute_window_seconds: 0,
-                winnings_swept: false,
-            };
-            MarketStateManager::update_market(&env, &market_id, &market);
+    #[test]
+    fn test_recovery_dry_run_market_not_found() {
+        let test = RecoveryTest::new();
+        let contract_id = test.env.register(crate::PredictifyHybrid, ());
+        // Dry run on a non-existent market should error
+        let result = test.env.as_contract(&contract_id, || {
+            RecoveryManager::recovery_dry_run(&test.env, &test.market_id)
         });
-        (env, admin, market_id, contract_id)
+        assert!(result.is_err());
     }
 
     #[test]
-    fn initiate_and_execute_force_resolve() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-
-        let req = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: TEST_TIMELOCK_SECONDS,
-                },
-            )
-            .unwrap();
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "stuck market"),
-            )
-            .unwrap()
-        });
-
-        // Advance ledger past timelock.
-        env.ledger().set_timestamp(req.execute_after);
-
+    fn test_recovery_dry_run_valid_market() {
+        let (env, admin, contract_id, market_id) = setup_market_env();
+        // Dry run on a valid, active market should report integrity_ok = true
         let result = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id).unwrap()
+            RecoveryManager::recovery_dry_run(&env, &market_id)
         });
-        assert!(!result);
-
-        let pending = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::get_pending(&env, &market_id)
-        });
-        assert!(pending.is_none());
+        assert!(result.is_ok());
+        let dry_run = result.unwrap();
+        assert!(dry_run.integrity_ok);
+        assert!(!dry_run.can_recover);
+        assert!(dry_run.issues_detected.is_empty());
+        assert!(dry_run
+            .planned_actions
+            .contains(&String::from_str(&env, "no_action_needed")));
+        assert_eq!(dry_run.state_description, String::from_str(&env, "Active"));
     }
 
     #[test]
-    fn timelock_blocks_early_execution() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-
+    fn test_recovery_dry_run_closed_market() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Manually set market to Closed state and break integrity
         env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "too early"),
-            )
-            .unwrap();
-        });
-
-        let result = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id)
-        });
-        assert_eq!(result, Err(Error::RecoveryTimelockActive));
-    }
-
-    #[test]
-    fn cancel_recovery_removes_pending() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-
-        env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "cancel me"),
-            )
-            .unwrap();
-            RecoveryTimelockManager::cancel_recovery(&env, &admin, &market_id).unwrap();
-            assert!(RecoveryTimelockManager::get_pending(&env, &market_id).is_none());
-        });
-    }
-
-    #[test]
-    fn cannot_initiate_twice_without_cancelling() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-
-        env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "first"),
-            )
-            .unwrap();
-
-            let result = RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "second"),
-            );
-            assert_eq!(result, Err(Error::RecoveryAlreadyPending));
-        });
-    }
-
-    #[test]
-    fn active_market_is_not_recoverable() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Active);
-
-        let result = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "nope"),
-            )
-        });
-        assert_eq!(result, Err(Error::MarketNotRecoverable));
-    }
-
-    #[test]
-    fn reconstruct_state_works_for_disputed() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Disputed);
-
-        let req = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: TEST_TIMELOCK_SECONDS,
-                },
-            )
-            .unwrap();
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ReconstructState,
-                &String::from_str(&env, "fix totals"),
-            )
-            .unwrap()
-        });
-
-        env.ledger().set_timestamp(req.execute_after);
-
-        env.as_contract(&contract_id, || {
-            let result =
-                RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id).unwrap();
-            assert!(result);
-            let market = MarketStateManager::get_market(&env, &market_id).unwrap();
-            assert_eq!(market.total_staked, 0);
-        });
-    }
-
-    #[test]
-    fn cancel_market_marks_all_stakes_claimed() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-        let user = Address::generate(&env);
-
-        let req = env.as_contract(&contract_id, || {
             let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
-            market.stakes.set(user.clone(), 500);
-            market.total_staked = 500;
+            market.state = MarketState::Closed;
+            market.total_staked = -1; // break integrity
             MarketStateManager::update_market(&env, &market_id, &market);
 
-            RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: TEST_TIMELOCK_SECONDS,
-                },
-            )
-            .unwrap();
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::CancelMarket,
-                &String::from_str(&env, "emergency cancel"),
-            )
-            .unwrap()
-        });
-
-        env.ledger().set_timestamp(req.execute_after);
-
-        env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id).unwrap();
-
-            let market = MarketStateManager::get_market(&env, &market_id).unwrap();
-            assert_eq!(market.state, MarketState::Cancelled);
-            assert_eq!(market.total_staked, 0);
-            assert!(market.claimed.get(user.clone()).is_some());
-        });
-    }
-
-    #[test]
-    fn config_tighten_only() {
-        let (env, admin, _market_id, contract_id) = setup_with_market(MarketState::Ended);
-
-        env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: 3600,
-                },
-            )
-            .unwrap();
-
-            RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: 7200,
-                },
-            )
-            .unwrap();
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            assert!(!result.integrity_ok);
+            assert!(!result.can_recover);
+            assert!(result
+                .issues_detected
+                .contains(&String::from_str(&env, "negative_total_staked")));
+            assert!(result
+                .planned_actions
+                .contains(&String::from_str(&env, "skip_cannot_reconstruct_closed_or_cancelled")));
             assert_eq!(
-                RecoveryTimelockManager::get_config(&env).timelock_seconds,
-                7200
+                result.state_description,
+                String::from_str(&env, "Closed")
             );
-
-            let result = RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: 1800,
-                },
-            );
-            assert_eq!(result, Err(Error::RecoveryTimelockConfigInvalid));
         });
     }
 
     #[test]
-    fn config_rejects_out_of_bounds() {
-        let (env, admin, _market_id, contract_id) = setup_with_market(MarketState::Ended);
-
+    fn test_recovery_dry_run_cancelled_market() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Manually set market to Cancelled state and break integrity
         env.as_contract(&contract_id, || {
-            let result = RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: 100,
-                },
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.state = MarketState::Cancelled;
+            market.total_staked = -5;
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            assert!(!result.integrity_ok);
+            assert!(!result.can_recover);
+            assert_eq!(
+                result.state_description,
+                String::from_str(&env, "Cancelled")
             );
-            assert_eq!(result, Err(Error::RecoveryTimelockConfigInvalid));
-
-            let result = RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: 8 * 24 * 60 * 60,
-                },
-            );
-            assert_eq!(result, Err(Error::RecoveryTimelockConfigInvalid));
         });
     }
 
     #[test]
-    fn non_admin_cannot_initiate() {
-        let (env, _admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-        let rando = Address::generate(&env);
-
-        let result = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &rando,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "hacker"),
-            )
-        });
-        assert_eq!(result, Err(Error::Unauthorized));
-    }
-
-    #[test]
-    fn cancel_nonexistent_request_fails() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-
-        let result = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::cancel_recovery(&env, &admin, &market_id)
-        });
-        assert_eq!(result, Err(Error::RecoveryRequestNotFound));
-    }
-
-    #[test]
-    fn force_resolve_transitions_disputed_to_ended() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Disputed);
-
-        let req = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: TEST_TIMELOCK_SECONDS,
-                },
-            )
-            .unwrap();
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ForceResolve,
-                &String::from_str(&env, "push to ended"),
-            )
-            .unwrap()
-        });
-
-        env.ledger().set_timestamp(req.execute_after);
-
+    fn test_recovery_dry_run_total_staked_mismatch() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Create a mismatch between total_staked and stakes map
         env.as_contract(&contract_id, || {
-            let changed =
-                RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id).unwrap();
-            assert!(changed);
-            let market = MarketStateManager::get_market(&env, &market_id).unwrap();
-            assert_eq!(market.state, MarketState::Ended);
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.total_staked = 500;
+            // stakes map is empty, so sum is 0 ≠ 500
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            assert!(!result.integrity_ok);
+            assert!(result.can_recover);
+            assert!(result
+                .issues_detected
+                .contains(&String::from_str(&env, "total_staked_mismatch")));
+            assert!(result
+                .planned_actions
+                .contains(&String::from_str(&env, "reconstruct_totals")));
         });
     }
 
     #[test]
-    fn reconstruct_state_rejects_active_market() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Active);
-
-        let result = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::ReconstructState,
-                &String::from_str(&env, "try"),
-            )
-        });
-        assert_eq!(result, Err(Error::MarketNotRecoverable));
-    }
-
-    #[test]
-    fn cancel_market_rejects_ended_without_stakes() {
-        let (env, admin, market_id, contract_id) = setup_with_market(MarketState::Ended);
-
-        let req = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::set_config(
-                &env,
-                &admin,
-                &RecoveryTimelockConfig {
-                    timelock_seconds: TEST_TIMELOCK_SECONDS,
-                },
-            )
-            .unwrap();
-            RecoveryTimelockManager::initiate_recovery(
-                &env,
-                &admin,
-                &market_id,
-                &PerMarketRecoveryAction::CancelMarket,
-                &String::from_str(&env, "cancel empty"),
-            )
-            .unwrap()
-        });
-
-        env.ledger().set_timestamp(req.execute_after);
-
+    fn test_recovery_dry_run_stakes_map_sums_correctly() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // total_staked matches the sum of stakes map → no mismatch detected
         env.as_contract(&contract_id, || {
-            let result =
-                RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id).unwrap();
-            assert!(result);
-            let market = MarketStateManager::get_market(&env, &market_id).unwrap();
-            assert_eq!(market.state, MarketState::Cancelled);
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            let user = Address::generate(&env);
+            market.stakes.set(user.clone(), 300);
+            market.total_staked = 300;
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = RecoveryManager::recovery_dry_run(&env, &market_id).unwrap();
+            // Should still be integrity_ok since stakes sum matches total_staked
+            assert!(result.integrity_ok);
         });
     }
 
     #[test]
-    fn get_config_returns_defaults_when_unset() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let config = env.as_contract(&contract_id, || {
-            RecoveryTimelockManager::get_config(&env)
+    fn test_recovery_dry_run_no_auth_required() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        // Dry run must work without any authentication
+        // (not calling require_auth or assert_is_admin)
+        let result = env.as_contract(&contract_id, || {
+            RecoveryManager::recovery_dry_run(&env, &market_id)
         });
-        assert_eq!(config.timelock_seconds, DEFAULT_RECOVERY_TIMELOCK_SECONDS);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_dry_run_result_struct_fields() {
+        let test = RecoveryTest::new();
+        // Verify DryRunResult struct creation and field access
+        let result = DryRunResult {
+            integrity_ok: true,
+            can_recover: false,
+            issues_detected: Vec::new(&test.env),
+            planned_actions: Vec::new(&test.env),
+            state_description: String::from_str(&test.env, "Active"),
+        };
+        assert!(result.integrity_ok);
+        assert!(!result.can_recover);
+        assert_eq!(result.state_description, String::from_str(&test.env, "Active"));
     }
 }
 

@@ -3,7 +3,7 @@
 use crate::Error;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
 
 // ===== MARKET STATE =====
 
@@ -1031,6 +1031,13 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
+    /// SHA-256 commitment to the canonical public market metadata.
+    ///
+    /// The committed fields are `question`, `outcomes`, and the primary
+    /// `oracle_config`, encoded with Soroban's canonical XDR serializer before
+    /// hashing. Clients can recompute this value off-chain and call
+    /// `verify_market_metadata` to detect tampered storage reads or stale caches.
+    pub metadata_commitment: BytesN<32>,
     /// Whether a fallback oracle is configured.
     ///
     /// When `true`, automatic resolution attempts the primary oracle once and then this market's
@@ -1092,6 +1099,19 @@ pub struct Market {
     /// Whether unclaimed winnings have already been swept for this market.
     /// Set to true after the first successful sweep to prevent double-crediting the treasury.
     pub winnings_swept: bool,
+}
+
+/// Canonical payload committed by `Market::metadata_commitment`.
+///
+/// Keep this type small and purpose-built so commitment review is simple. The
+/// field order is part of the commitment definition; changing it requires a
+/// documented migration/versioning plan for clients.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketMetadataCommitmentPayload {
+    pub question: String,
+    pub outcomes: Vec<String>,
+    pub oracle_config: OracleConfig,
 }
 
 // ===== CLAIM INFO =====
@@ -1411,6 +1431,53 @@ pub struct DashboardStatisticsV1 {
 }
 
 impl Market {
+    /// Computes the SHA-256 commitment for canonical market metadata.
+    ///
+    /// The commitment covers only public creation metadata that off-chain UIs
+    /// display as market identity: `question`, `outcomes`, and primary
+    /// `oracle_config`. The payload is serialized with Soroban's canonical XDR
+    /// representation before hashing, avoiding ambiguous delimiters or host-side
+    /// formatting differences.
+    pub fn compute_metadata_commitment(
+        env: &Env,
+        question: &String,
+        outcomes: &Vec<String>,
+        oracle_config: &OracleConfig,
+    ) -> BytesN<32> {
+        let payload = MarketMetadataCommitmentPayload {
+            question: question.clone(),
+            outcomes: outcomes.clone(),
+            oracle_config: oracle_config.clone(),
+        };
+        env.crypto().sha256(&payload.to_xdr(env)).into()
+    }
+
+    /// Recomputes and stores this market's metadata commitment after an
+    /// authorized metadata update.
+    pub fn refresh_metadata_commitment(&mut self, env: &Env) {
+        self.metadata_commitment = Self::compute_metadata_commitment(
+            env,
+            &self.question,
+            &self.outcomes,
+            &self.oracle_config,
+        );
+    }
+
+    /// Verifies that `expected` matches both the stored commitment and a fresh
+    /// commitment over the currently stored fields.
+    ///
+    /// Comparing against a fresh commitment means the helper returns `false` if
+    /// any committed field was mutated without also updating the commitment.
+    pub fn verify_metadata_commitment(&self, env: &Env, expected: &BytesN<32>) -> bool {
+        let actual = Self::compute_metadata_commitment(
+            env,
+            &self.question,
+            &self.outcomes,
+            &self.oracle_config,
+        );
+        actual.eq(expected) && self.metadata_commitment.eq(expected)
+    }
+
     /// Create a new market
     pub fn new(
         env: &Env,
@@ -1427,12 +1494,19 @@ impl Market {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(env)),
         };
+        let metadata_commitment = Self::compute_metadata_commitment(
+            env,
+            &question,
+            &outcomes,
+            &oracle_config,
+        );
         Self {
             admin,
             question,
             outcomes,
             end_time,
             oracle_config,
+            metadata_commitment,
             has_fallback,
             fallback_oracle_config: fallback_cfg,
             resolution_timeout,
@@ -1856,6 +1930,13 @@ pub struct GlobalOracleValidationConfig {
     /// Maximum allowed price deviation from the last accepted reading, in basis points.
     /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
+    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
+    /// When set, the new price is compared against the rolling median of recent prices.
+    /// None means rolling-median outlier rejection is disabled.
+    pub max_deviation_z_multiple: Option<u32>,
+    /// Number of historical prices to retain in the rolling deviation history ring buffer.
+    /// Defaults to 10 when None.
+    pub history_size: Option<u32>,
 }
 
 /// Per-event oracle validation configuration override.
@@ -1869,6 +1950,13 @@ pub struct EventOracleValidationConfig {
     /// Maximum allowed price deviation from the last accepted reading, in basis points.
     /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
+    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
+    /// When set, the new price is compared against the rolling median of recent prices.
+    /// None means rolling-median outlier rejection is disabled.
+    pub max_deviation_z_multiple: Option<u32>,
+    /// Number of historical prices to retain in the rolling deviation history ring buffer.
+    /// Defaults to 10 when None.
+    pub history_size: Option<u32>,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.
@@ -1917,6 +2005,84 @@ impl MultiOracleResult {
     pub fn has_consensus(&self) -> bool {
         self.consensus_reached && self.agreement_percentage >= self.consensus_threshold
     }
+}
+
+// ── Median Oracle Aggregation Types ─────────────────────────────────────────
+
+/// A single oracle's price quote produced by
+/// `OracleResolutionManager::resolve_with_median`.
+///
+/// One `OracleQuote` is collected from each of Pyth, Reflector, and Band.
+/// The `included` flag is `false` either because the oracle fetch failed
+/// or because the reported price was rejected as an outlier by the
+/// configured `max_deviation_bps` threshold.
+///
+/// # Confidence Weight Derivation
+///
+/// When the oracle reports a confidence interval `c` for a price `p`, the
+/// weight is computed as:
+/// ```text
+/// weight_bps = p × 10 000 / (p + c)
+/// ```
+/// A tighter interval (lower `c`) raises the weight toward 10 000.  When
+/// no interval is reported, a medium weight of 5 000 bps is used.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleQuote {
+    /// Oracle provider (Pyth, Reflector, or Band Protocol).
+    pub provider: OracleProvider,
+    /// Raw price from the oracle feed, in market base units.
+    /// Zero when `included` is `false`.
+    pub price: i128,
+    /// Confidence interval expressed as a fraction of `price` in basis
+    /// points (100 bps = 1 %).  Zero indicates the oracle did not report
+    /// a confidence interval; a larger value means higher price uncertainty.
+    pub confidence_bps: u32,
+    /// Influence weight for the weighted-median computation, in basis
+    /// points (10 000 = full weight).  Derived from the confidence
+    /// interval: tighter intervals yield higher weights.  Zero for
+    /// excluded quotes.
+    pub weight_bps: u32,
+    /// `true` when this quote participates in the final median computation.
+    /// `false` for failed fetches or outliers that exceed
+    /// `MedianOracleConfig::max_deviation_bps`.
+    pub included: bool,
+}
+
+/// Global configuration for the three-oracle median resolver.
+///
+/// Stored once by the contract admin via
+/// `OracleResolutionManager::set_median_config` and referenced by every
+/// subsequent call to `OracleResolutionManager::resolve_with_median`.
+///
+/// # Outlier Detection
+///
+/// After all three feeds are queried, an unweighted simple median is
+/// computed.  Any quote whose price satisfies
+/// ```text
+/// |price − simple_median| × 10 000 / simple_median > max_deviation_bps
+/// ```
+/// is discarded before the final weighted-median computation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MedianOracleConfig {
+    /// Contract address of the Pyth price oracle.
+    /// On Stellar this oracle returns `OracleUnavailable`; the quote will
+    /// be excluded with `included = false`.
+    pub pyth_address: Address,
+    /// Contract address of the Reflector oracle (primary on Stellar).
+    pub reflector_address: Address,
+    /// Contract address of the Band Protocol oracle.
+    pub band_address: Address,
+    /// Maximum price deviation allowed before a quote is rejected as an
+    /// outlier, in basis points (1 bps = 0.01 %).
+    /// Recommended default: 200 (2 %).
+    pub max_deviation_bps: u32,
+    /// Minimum number of non-outlier quotes required for a valid
+    /// resolution.  `resolve_with_median` returns `OracleNoConsensus`
+    /// when fewer quotes survive filtering.  Must be ≥ 1;
+    /// recommended value: 2.
+    pub min_sources: u32,
 }
 
 /// Oracle source configuration for multi-oracle support.
@@ -2183,7 +2349,7 @@ pub enum OracleVerificationStatus {
 /// } else {
 ///     let age = env.ledger().timestamp() - price_data.timestamp;
 ///     println!("Price data is {} seconds old", age);
-///     
+///
 ///     if age > 3600 { // 1 hour
 ///         println!("Data is very stale - reject for resolution");
 ///     }
@@ -2576,7 +2742,7 @@ impl MarketExtension {
 /// for (month, trend_data) in monthly_trends {
 ///     println!("Month {}: {} extensions, {:.1}% approval rate",
 ///         month, trend_data.count, trend_data.approval_rate);
-///     
+///
 ///     if trend_data.count > trend_data.previous_month_count {
 ///         println!("  ↗ Extension requests increasing");
 ///     } else {
@@ -3232,10 +3398,10 @@ impl MarketCreationParams {
 /// if consensus.is_reliable() {
 ///     let resolution_outcome = consensus.outcome.clone();
 ///     let confidence_score = consensus.calculate_confidence();
-///     
+///
 ///     println!("Resolving market to: {}", resolution_outcome);
 ///     println!("Confidence: {:.1}%", confidence_score);
-///     
+///
 ///     // Apply resolution
 ///     apply_market_resolution(resolution_outcome, confidence_score);
 /// } else {

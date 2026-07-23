@@ -5,7 +5,7 @@
 mod circuit_breaker_tests {
     use crate::admin::AdminRoleManager;
     use crate::circuit_breaker::*;
-    use crate::errors::Error;
+    use crate::err::Error;
     use soroban_sdk::{testutils::Address, vec, Env, String, Vec};
 
     #[test]
@@ -457,6 +457,7 @@ mod circuit_breaker_tests {
                 market_id.clone(),
                 String::from_str(&env, "yes"),
                 10_0000000,
+                250,
             );
             assert!(bet_result.is_err());
             assert_eq!(bet_result.unwrap_err(), crate::Error::CBOpen);
@@ -471,6 +472,7 @@ mod circuit_breaker_tests {
                 market_id.clone(),
                 String::from_str(&env, "yes"),
                 10_0000000,
+                250,
             );
             assert!(bet_result2.is_ok());
         });
@@ -649,6 +651,153 @@ mod circuit_breaker_tests {
             // 6. Check events
             let events = CircuitBreaker::get_event_history(&env).unwrap();
             assert!(events.len() >= 2); // At least pause and recovery events
+        });
+    }
+
+    /// Cooldown not elapsed: probe successes before the cooldown window closes
+    /// must not advance the half_open_requests counter.
+    #[test]
+    fn test_half_open_cooldown_not_elapsed() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            // Open the breaker
+            let reason = String::from_str(&env, "pause for cooldown test");
+            CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
+
+            // Admin requests resume → HalfOpen with cooldown timestamp = now (ledger ts = 0)
+            CircuitBreaker::request_resume(&env, &admin).unwrap();
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(state.state, BreakerState::HalfOpen);
+
+            // Record a success immediately (before cooldown has elapsed)
+            // recovery_timeout = 300 s; ledger time is still 0, so 0 < 0 + 300
+            CircuitBreaker::record_success(&env).unwrap();
+
+            // half_open_requests must still be 0 — cooldown not yet elapsed
+            let state_after = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(
+                state_after.half_open_requests, 0,
+                "probe should be ignored while cooldown is active"
+            );
+            assert_eq!(
+                state_after.state,
+                BreakerState::HalfOpen,
+                "breaker must remain HalfOpen during cooldown"
+            );
+        });
+    }
+
+    /// Probe failure: a single failure while in HalfOpen re-opens the breaker.
+    #[test]
+    fn test_half_open_probe_failure_reopens() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            // Pause then request resume
+            let reason = String::from_str(&env, "pause for probe failure test");
+            CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
+            CircuitBreaker::request_resume(&env, &admin).unwrap();
+
+            assert_eq!(
+                CircuitBreaker::get_state(&env).unwrap().state,
+                BreakerState::HalfOpen
+            );
+
+            // A failure during HalfOpen must reopen the breaker
+            CircuitBreaker::record_failure(&env).unwrap();
+
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(
+                state.state,
+                BreakerState::Open,
+                "failure during HalfOpen must reopen the breaker"
+            );
+            assert_eq!(state.half_open_since, 0, "half_open_since must be cleared");
+        });
+    }
+
+    /// Probe success threshold: after the cooldown window passes,
+    /// `half_open_max_requests` consecutive successes must auto-close the breaker.
+    #[test]
+    fn test_half_open_probe_success_threshold_closes() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+
+            // Shorten recovery_timeout to 0 so probes are accepted immediately
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            config.half_open_max_requests = 3;
+            // bypass admin ACL by writing directly to storage (test only)
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // Pause then request resume
+            let reason = String::from_str(&env, "pause for threshold test");
+            CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
+            CircuitBreaker::request_resume(&env, &admin).unwrap();
+
+            assert_eq!(
+                CircuitBreaker::get_state(&env).unwrap().state,
+                BreakerState::HalfOpen
+            );
+
+            // Record half_open_max_requests (3) successes — breaker should close
+            for _ in 0..3 {
+                CircuitBreaker::record_success(&env).unwrap();
+            }
+
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(
+                state.state,
+                BreakerState::Closed,
+                "breaker must close after reaching the probe success threshold"
+            );
+            assert_eq!(state.half_open_since, 0);
+            assert_eq!(state.failure_count, 0);
         });
     }
 }

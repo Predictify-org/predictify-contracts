@@ -28,12 +28,14 @@ pub enum AuditAction {
     FeesWithdrawn,
     FeeConfigUpdated,
 
-    // Oracle & Config Actions
+    // Token & Oracle Actions
     OracleConfigUpdated,
+    TokenVerified,
     BetLimitsUpdated,
 
     // Resolution & Disputes
     MarketResolved,
+    MarketForceResolved,
     DisputeCreated,
     DisputeResolved,
     OracleVerificationOverride,
@@ -59,6 +61,7 @@ pub struct AuditRecord {
     pub timestamp: u64,
     pub details: Map<Symbol, String>,
     pub prev_record_hash: BytesN<32>,
+    pub override_nonce: Option<u64>,
 }
 
 /// Head of the audit trail, tracking the latest state.
@@ -83,6 +86,7 @@ impl AuditTrailManager {
         action: AuditAction,
         actor: Address,
         details: Map<Symbol, String>,
+        override_nonce: Option<u64>,
     ) -> u64 {
         let mut head: AuditTrailHead = env
             .storage()
@@ -102,6 +106,7 @@ impl AuditTrailManager {
             timestamp: env.ledger().timestamp(),
             details,
             prev_record_hash: head.latest_hash.clone(),
+            override_nonce: override_nonce,
         };
 
         // Use a tuple key for distinct storage namespace (Symbol, index)

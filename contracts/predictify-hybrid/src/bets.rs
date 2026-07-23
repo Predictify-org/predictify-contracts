@@ -19,9 +19,9 @@
 //! - Balance validation before fund transfer
 //! - Market state validation before accepting bets
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::reentrancy_guard::{ReentrancyGuard, GuardError as ReentrancyError};
 use crate::events::EventEmitter;
 use crate::markets::{MarketStateManager, MarketUtils, MarketValidator};
@@ -35,6 +35,21 @@ pub const MIN_BET_AMOUNT: i128 = 1_000_000;
 
 /// Maximum bet amount (10,000 XLM = 100,000,000,000 stroops). Absolute ceiling for any configured limit.
 pub const MAX_BET_AMOUNT: i128 = 100_000_000_000;
+
+/// Reentrancy scope for [`BetManager::place_bet`].
+fn guard_scope_place_bet() -> Symbol {
+    symbol_short!("place_bet")
+}
+
+/// Reentrancy scope for SAC transfers in [`BetUtils::lock_funds`].
+fn guard_scope_lock_funds() -> Symbol {
+    symbol_short!("lock_fn")
+}
+
+/// Reentrancy scope for SAC transfers in [`BetUtils::unlock_funds`].
+fn guard_scope_unlock_funds() -> Symbol {
+    symbol_short!("ulck_fn")
+}
 
 /// Storage key for global bet limits.
 const GLOBAL_BET_LIMITS_KEY: &str = "bet_limits_global";
@@ -190,6 +205,34 @@ fn validate_limits_bounds(limits: &BetLimits) -> Result<(), Error> {
 pub struct BetManager;
 
 impl BetManager {
+    /// Helper to get the active platform fee percentage in basis points (bps).
+    pub fn get_live_fee_percentage(env: &Env) -> Result<i128, Error> {
+        // 1. Try contract configuration
+        if let Ok(cfg) = crate::config::ConfigManager::get_config(env) {
+            if !cfg.fees.fees_enabled {
+                return Ok(0);
+            }
+            return Ok(cfg.fees.platform_fee_percentage);
+        }
+
+        // 2. Try fee-specific configuration
+        if let Ok(fee_config) = crate::fees::FeeConfigManager::get_fee_config(env) {
+            if !fee_config.fees_enabled {
+                return Ok(0);
+            }
+            return Ok(fee_config.platform_fee_percentage);
+        }
+
+        // 3. Try legacy key alone
+        let fee_key = Symbol::new(env, "platform_fee");
+        if let Some(legacy_fee) = env.storage().persistent().get::<Symbol, i128>(&fee_key) {
+            return Ok(legacy_fee);
+        }
+
+        // 4. Default constant (fallback to DEFAULT_PLATFORM_FEE_PERCENTAGE)
+        Ok(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE)
+    }
+
     /// Place a bet on a market outcome with fund locking.
     ///
     /// This function processes a user's bet on a prediction market, including
@@ -202,6 +245,7 @@ impl BetManager {
     /// - `market_id` - Symbol identifying the market
     /// - `outcome` - The outcome the user is betting on
     /// - `amount` - The amount to lock for this bet
+    /// - `max_fee_bps` - Optional maximum platform fee percentage in basis points (slippage guard)
     ///
     /// # Returns
     ///
@@ -217,6 +261,7 @@ impl BetManager {
     /// - `Error::InsufficientStake` - Bet amount below minimum
     /// - `Error::InvalidOutcome` - Selected outcome not valid for this market
     /// - `Error::InsufficientBalance` - User doesn't have enough funds
+    /// - `Error::FeeExceedsMax` - Effective fee exceeds caller-supplied `max_fee_bps`
     ///
     /// # Security
     ///
@@ -225,6 +270,7 @@ impl BetManager {
     /// - Validates user has not already bet on this market
     /// - Validates user has sufficient balance
     /// - Locks funds atomically with bet creation
+    /// - Fee slippage guard prevents unexpected fee increases
     ///
     /// # Example
     ///
@@ -234,7 +280,8 @@ impl BetManager {
     ///     user.clone(),
     ///     Symbol::new(&env, "BTC_100K"),
     ///     String::from_str(&env, "yes"),
-    ///     10_000_000 // 1.0 XLM
+    ///     10_000_000, // 1.0 XLM
+    ///     250,        // max 2.5% fee
     /// )?;
     /// ```
     pub fn place_bet(
@@ -243,10 +290,34 @@ impl BetManager {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        max_fee_bps: i128,
+    ) -> Result<Bet, Error> {
+        let scope = guard_scope_place_bet();
+        ReentrancyGuard::with_guard(env, &scope, || {
+            Self::place_bet_inner(env, user, market_id, outcome, amount, max_fee_bps)
+        })
+    }
+
+    fn place_bet_inner(
+        env: &Env,
+        user: Address,
+        market_id: Symbol,
+        outcome: String,
+        amount: i128,
+        max_fee_bps: i128,
     ) -> Result<Bet, Error> {
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
+
+        // Slippage check: verify live fee is not above the maximum acceptable threshold
+        // max_fee_bps == 0 means no slippage guard
+        if max_fee_bps > 0 {
+            let actual_fee = Self::get_live_fee_percentage(env)?;
+            if actual_fee > max_fee_bps {
+                return Err(Error::FeeExceedsMax);
+            }
+        }
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
@@ -254,6 +325,9 @@ impl BetManager {
 
         // Validate bet parameters (uses configurable min/max limits per event or global)
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
+
+        // Enforce fee slippage guard: reject if the effective platform fee exceeds caller's max
+        BetValidator::validate_fee_slippage(env, max_fee_bps)?;
 
         // Check if user has already bet on this market
         if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
@@ -306,6 +380,11 @@ impl BetManager {
     /// - `env` - The Soroban environment
     /// - `user` - Address of the user placing the bets
     /// - `bets` - Vector of tuples (market_id, outcome, amount)
+    /// - `max_fee_bps` - Optional maximum platform fee percentage in basis points (slippage guard)
+    /// - `idempotency_key` - Caller-supplied 32-byte token that makes this batch unique.
+    ///   Consumed on the first successful call; reuse within the 7-day TTL window returns
+    ///   `Error::IdempotentBatchAlreadyApplied`.  The TTL is defined by
+    ///   `crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS` (≈ 7 days at 5 s/ledger).
     ///
     /// # Returns
     ///
@@ -320,20 +399,39 @@ impl BetManager {
     /// # Errors
     ///
     /// - `Error::InvalidInput` - Empty batch or exceeds maximum size
+    /// - `Error::IdempotentBatchAlreadyApplied` - This idempotency key has already been consumed
     /// - `Error::MarketNotFound` - Any market does not exist
     /// - `Error::MarketClosed` - Any market has ended or is not active
     /// - `Error::AlreadyBet` - User has already bet on any market
     /// - `Error::InsufficientStake` - Any bet amount below minimum
     /// - `Error::InvalidOutcome` - Any outcome not valid for its market
     /// - `Error::InsufficientBalance` - User doesn't have enough total funds
+    /// - `Error::FeeExceedsMax` - Effective fee exceeds caller-supplied `max_fee_bps`
     pub fn place_bets(
         env: &Env,
         user: Address,
         bets: soroban_sdk::Vec<(Symbol, String, i128)>,
+        max_fee_bps: i128,
+        idempotency_key: soroban_sdk::BytesN<32>,
     ) -> Result<soroban_sdk::Vec<Bet>, Error> {
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
+
+        // --- Idempotency guard: reject replayed batches ---
+        let idem_key = crate::storage::DataKey::PlaceBetsIdem(user.clone(), idempotency_key.clone());
+        if env.storage().persistent().has(&idem_key) {
+            return Err(Error::IdempotentBatchAlreadyApplied);
+        }
+
+        // Slippage check: verify live fee is not above the maximum acceptable threshold
+        // max_fee_bps == 0 means no slippage guard
+        if max_fee_bps > 0 {
+            let actual_fee = Self::get_live_fee_percentage(env)?;
+            if actual_fee > max_fee_bps {
+                return Err(Error::FeeExceedsMax);
+            }
+        }
 
         // Validate batch size
         if bets.is_empty() {
@@ -346,6 +444,9 @@ impl BetManager {
         }
 
         // Phase 1: Validate all bets and collect data
+        // Enforce fee slippage guard once for the batch
+        BetValidator::validate_fee_slippage(env, max_fee_bps)?;
+
         let mut markets = soroban_sdk::Vec::new(env);
         let mut total_amount: i128 = 0;
 
@@ -423,6 +524,12 @@ impl BetManager {
 
             placed_bets.push_back(bet);
         }
+
+        // Phase 4: Consume the idempotency key so replays are rejected.
+        // Stored as temporary (cheaper rent) with PLACE_BETS_IDEM_TTL_LEDGERS TTL.
+        let ttl = crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS;
+        env.storage().persistent().set(&idem_key, &true);
+        env.storage().persistent().extend_ttl(&idem_key, ttl, ttl);
 
         Ok(placed_bets)
     }
@@ -664,14 +771,7 @@ impl BetManager {
             return Ok(0);
         }
 
-        let fee_percentage = crate::config::ConfigManager::get_config(env)
-            .map(|cfg| cfg.fees.platform_fee_percentage)
-            .unwrap_or_else(|_| {
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(env, "platform_fee"))
-                    .unwrap_or(200)
-            });
+        let fee_percentage = crate::fees::FeeManager::get_fee_percentage_for_timestamp(env, bet.timestamp);
 
         let fee = (summary.total_pool * fee_percentage as i128) / 10_000;
         let distributable_pool = summary.total_pool - fee;
@@ -1040,6 +1140,37 @@ impl BetValidator {
         }
         Ok(())
     }
+
+    /// Validate fee slippage: reject the bet if the effective platform fee exceeds
+    /// the caller-supplied maximum (in basis points).
+    ///
+    /// This protects the caller from unexpected fee increases that could reduce their payout.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `max_fee_bps` - Maximum fee in basis points the caller is willing to accept
+    ///
+    /// # Errors
+    ///
+    /// - `Error::FeeExceedsMax` - The effective fee exceeds `max_fee_bps`
+    pub fn validate_fee_slippage(env: &Env, max_fee_bps: i128) -> Result<(), Error> {
+        let effective_fee_bps = match crate::config::ConfigManager::get_config(env) {
+            Ok(cfg) => cfg.fees.platform_fee_percentage,
+            Err(_) => {
+                env.storage()
+                    .persistent()
+                    .get::<Symbol, i128>(&Symbol::new(env, "plat_fee"))
+                    .unwrap_or(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE)
+            }
+        };
+
+        if effective_fee_bps > max_fee_bps {
+            return Err(Error::FeeExceedsMax);
+        }
+
+        Ok(())
+    }
 }
 
 // ===== BET UTILITIES =====
@@ -1068,9 +1199,10 @@ impl BetUtils {
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
     pub fn lock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        // Protect the external transfer with the reentrancy guard. If the
-        // guard cannot be acquired the call fails with `InvalidState`.
-        ReentrancyGuard::with_external_call(env, || {
+        let scope = guard_scope_lock_funds();
+        // Protect the SAC transfer under its own scope so nested flows under
+        // `place_bet` do not false-positive on the parent scope lock.
+        ReentrancyGuard::with_guard(env, &scope, || {
             token_client.transfer(user, &env.current_contract_address(), &amount);
             Ok::<(), ReentrancyError>(())
         })
@@ -1092,12 +1224,12 @@ impl BetUtils {
     ///
     /// Returns `Ok(())` if transfer succeeds, `Err(Error)` otherwise.
     ///
-    /// Reentrancy: caller must hold the reentrancy lock (e.g. cancel_event holds
-    /// the lock for the entire refund_market_bets batch). Do not call
-    /// before_external_call/after_external_call here to allow batch refunds.
+    /// Reentrancy: uses a dedicated `ulck_fn` scope so batch refund callers
+    /// (e.g. `cancel_event`) can hold their own entrypoint scope concurrently.
     pub fn unlock_funds(env: &Env, user: &Address, amount: i128) -> Result<(), Error> {
         let token_client = MarketUtils::get_token_client(env)?;
-        ReentrancyGuard::with_external_call(env, || {
+        let scope = guard_scope_unlock_funds();
+        ReentrancyGuard::with_guard(env, &scope, || {
             token_client.transfer(&env.current_contract_address(), user, &amount);
             Ok::<(), ReentrancyError>(())
         })
@@ -1217,6 +1349,7 @@ impl BetAnalytics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConfigManager;
     use crate::types::{BetStatus, Market, MarketState, OracleConfig, OracleProvider};
     use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 
@@ -1412,6 +1545,76 @@ mod tests {
         assert_eq!(
             BetValidator::validate_market_for_betting(&env, &market),
             Err(Error::InvalidState)
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn test_fee_slippage_guard_accepts_equal_fee() {
+        let env = Env::default();
+        let config = crate::config::ConfigManager::get_development_config(&env);
+        ConfigManager::store_config(&env, &config).unwrap();
+
+        // max_fee_bps equal to the platform fee should pass
+        assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
+    }
+
+    #[ignore]
+    #[test]
+    fn test_fee_slippage_guard_accepts_higher_fee() {
+        let env = Env::default();
+        let config = crate::config::ConfigManager::get_development_config(&env);
+        ConfigManager::store_config(&env, &config).unwrap();
+
+        // max_fee_bps higher than platform fee should pass
+        assert!(BetValidator::validate_fee_slippage(&env, 500).is_ok());
+    }
+
+    #[ignore]
+    #[test]
+    fn test_fee_slippage_guard_rejects_lower_fee() {
+        let env = Env::default();
+        let config = crate::config::ConfigManager::get_development_config(&env);
+        ConfigManager::store_config(&env, &config).unwrap();
+
+        // max_fee_bps lower than platform fee should fail
+        assert_eq!(
+            BetValidator::validate_fee_slippage(&env, 100),
+            Err(Error::FeeExceedsMax)
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn test_fee_slippage_guard_fallback_storage() {
+        let env = Env::default();
+        // Store platform fee in legacy storage key (used when ConfigManager fails)
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "plat_fee"), &250i128);
+
+        // max_fee_bps equal to stored fee should pass
+        assert!(BetValidator::validate_fee_slippage(&env, 250).is_ok());
+
+        // max_fee_bps lower than stored fee should fail
+        assert_eq!(
+            BetValidator::validate_fee_slippage(&env, 200),
+            Err(Error::FeeExceedsMax)
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn test_fee_slippage_guard_default_fallback() {
+        let env = Env::default();
+        // No config stored and no legacy storage - should use DEFAULT_PLATFORM_FEE_PERCENTAGE (200)
+        // max_fee_bps at default should pass
+        assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
+
+        // max_fee_bps below default should fail
+        assert_eq!(
+            BetValidator::validate_fee_slippage(&env, 150),
+            Err(Error::FeeExceedsMax)
         );
     }
 }

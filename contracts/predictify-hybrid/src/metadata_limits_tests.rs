@@ -567,4 +567,252 @@ mod tests {
         assert!(validate_extension_history_count(0).is_ok());
         assert!(validate_oracle_results_count(0).is_ok());
     }
+
+    const FOUR_BYTE_GLYPH: &str = "\u{1F600}";
+
+    #[test]
+    fn test_question_length_at_limit_with_four_byte_glyphs() {
+        let env = Env::default();
+        let host = FOUR_BYTE_GLYPH.repeat(MAX_QUESTION_LENGTH as usize);
+        let question = String::from_str(&env, &host);
+        assert!(validate_question_length(&question).is_ok());
+        assert_eq!(question.len() as u32, MAX_QUESTION_LENGTH * 4);
+    }
+
+    #[test]
+    fn test_question_length_just_over_limit_with_four_byte_glyphs() {
+        let env = Env::default();
+        let host = FOUR_BYTE_GLYPH.repeat((MAX_QUESTION_LENGTH + 1) as usize);
+        let question = String::from_str(&env, &host);
+        assert_eq!(
+            validate_question_length(&question),
+            Err(Error::QuestionTooLong)
+        );
+    }
+
+    #[test]
+    fn test_outcome_length_at_limit_with_four_byte_glyphs() {
+        let env = Env::default();
+        let host = FOUR_BYTE_GLYPH.repeat(MAX_OUTCOME_LENGTH as usize);
+        assert!(validate_outcome_length(&String::from_str(&env, &host)).is_ok());
+    }
+
+    #[test]
+    fn test_category_metadata_at_limit_with_four_byte_glyphs() {
+        let env = Env::default();
+        let host = FOUR_BYTE_GLYPH.repeat(MAX_CATEGORY_LENGTH as usize);
+        assert!(validate_category_metadata(&String::from_str(&env, &host)).is_ok());
+    }
+
+    #[test]
+    fn test_tag_metadata_at_limit_with_four_byte_glyphs() {
+        let env = Env::default();
+        let host = FOUR_BYTE_GLYPH.repeat(MAX_TAG_LENGTH as usize);
+        assert!(validate_tag_metadata(&String::from_str(&env, &host)).is_ok());
+    }
+
+    #[test]
+    fn test_question_rejects_null_control_character() {
+        let env = Env::default();
+        assert_eq!(
+            validate_question_length(&String::from_str(&env, "valid\u{0000}text")),
+            Err(Error::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn test_outcome_rejects_tab_control_character() {
+        let env = Env::default();
+        assert_eq!(
+            validate_outcome_length(&String::from_str(&env, "yes\u{0009}no")),
+            Err(Error::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn test_category_metadata_rejects_control_character() {
+        let env = Env::default();
+        assert_eq!(
+            validate_category_metadata(&String::from_str(&env, "AB\u{0007}")),
+            Err(Error::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn test_tag_metadata_rejects_control_character() {
+        let env = Env::default();
+        assert_eq!(
+            validate_tag_metadata(&String::from_str(&env, "ab\u{001F}")),
+            Err(Error::InvalidInput)
+        );
+    }
+}
+
+#[cfg(test)]
+mod proptest_fuzz {
+    use crate::metadata_limits::{
+        validate_category_metadata, validate_outcome_length, validate_question_length,
+        validate_tag_metadata, MAX_CATEGORY_LENGTH, MAX_OUTCOME_LENGTH, MAX_QUESTION_LENGTH,
+        MAX_TAG_LENGTH, MIN_CATEGORY_LENGTH, MIN_TAG_LENGTH,
+    };
+    use crate::Error;
+    use alloc::format;
+    use proptest::prelude::*;
+    use proptest::string::string_regex;
+    use soroban_sdk::{Env, String};
+
+    fn printable_ascii() -> impl Strategy<Value = alloc::string::String> {
+        string_regex(r"[\x20-\x7E]*").expect("valid printable ASCII regex")
+    }
+
+    fn utf8_with_symbols() -> impl Strategy<Value = alloc::string::String> {
+        prop_oneof![
+            printable_ascii(),
+            string_regex(r"[\x20-\x7E\u{1F300}-\u{1F5FF}]*").expect("valid symbol regex"),
+        ]
+    }
+
+    fn ascii_with_optional_control() -> impl Strategy<Value = alloc::string::String> {
+        (
+            printable_ascii(),
+            prop::option::of(0x00u8..=0x1Fu8),
+            printable_ascii(),
+        )
+            .prop_map(|(prefix, control, suffix)| {
+                let mut s = prefix;
+                if let Some(code) = control {
+                    s.push(char::from_u32(code as u32).unwrap_or('\0'));
+                }
+                s.push_str(&suffix);
+                s
+            })
+    }
+
+    fn expected_question_result(host: &str) -> Result<(), Error> {
+        if host.chars().any(|c| c.is_control()) {
+            return Err(Error::InvalidInput);
+        }
+        let char_len = host.chars().count() as u32;
+        if char_len > MAX_QUESTION_LENGTH {
+            Err(Error::QuestionTooLong)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn expected_outcome_result(host: &str) -> Result<(), Error> {
+        if host.chars().any(|c| c.is_control()) {
+            return Err(Error::InvalidInput);
+        }
+        let char_len = host.chars().count() as u32;
+        if char_len > MAX_OUTCOME_LENGTH {
+            Err(Error::OutcomeTooLong)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn expected_category_result(host: &str) -> Result<(), Error> {
+        if host.chars().any(|c| c.is_control()) {
+            return Err(Error::InvalidInput);
+        }
+        let char_len = host.chars().count() as u32;
+        if char_len < MIN_CATEGORY_LENGTH {
+            Err(Error::CategoryTooShort)
+        } else if char_len > MAX_CATEGORY_LENGTH {
+            Err(Error::CategoryTooLong)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn expected_tag_result(host: &str) -> Result<(), Error> {
+        if host.chars().any(|c| c.is_control()) {
+            return Err(Error::InvalidInput);
+        }
+        let char_len = host.chars().count() as u32;
+        if char_len == 0 {
+            Err(Error::InvalidInput)
+        } else if char_len < MIN_TAG_LENGTH {
+            Err(Error::TagTooShort)
+        } else if char_len > MAX_TAG_LENGTH {
+            Err(Error::TagTooLong)
+        } else {
+            Ok(())
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn fuzz_validate_question_length(s in utf8_with_symbols()) {
+            let env = Env::default();
+            let question = String::from_str(&env, &s);
+            prop_assert_eq!(validate_question_length(&question), expected_question_result(&s));
+        }
+
+        #[test]
+        fn fuzz_validate_question_length_rejects_controls(s in ascii_with_optional_control()) {
+            let env = Env::default();
+            prop_assert_eq!(
+                validate_question_length(&String::from_str(&env, &s)),
+                expected_question_result(&s)
+            );
+        }
+
+        #[test]
+        fn fuzz_validate_outcome_length(s in utf8_with_symbols()) {
+            let env = Env::default();
+            prop_assert_eq!(
+                validate_outcome_length(&String::from_str(&env, &s)),
+                expected_outcome_result(&s)
+            );
+        }
+
+        #[test]
+        fn fuzz_validate_outcome_length_rejects_controls(s in ascii_with_optional_control()) {
+            let env = Env::default();
+            prop_assert_eq!(
+                validate_outcome_length(&String::from_str(&env, &s)),
+                expected_outcome_result(&s)
+            );
+        }
+
+        #[test]
+        fn fuzz_validate_category_metadata(s in utf8_with_symbols()) {
+            let env = Env::default();
+            prop_assert_eq!(
+                validate_category_metadata(&String::from_str(&env, &s)),
+                expected_category_result(&s)
+            );
+        }
+
+        #[test]
+        fn fuzz_validate_category_metadata_rejects_controls(s in ascii_with_optional_control()) {
+            let env = Env::default();
+            prop_assert_eq!(
+                validate_category_metadata(&String::from_str(&env, &s)),
+                expected_category_result(&s)
+            );
+        }
+
+        #[test]
+        fn fuzz_validate_tag_metadata(s in utf8_with_symbols()) {
+            let env = Env::default();
+            prop_assert_eq!(
+                validate_tag_metadata(&String::from_str(&env, &s)),
+                expected_tag_result(&s)
+            );
+        }
+
+        #[test]
+        fn fuzz_validate_tag_metadata_rejects_controls(s in ascii_with_optional_control()) {
+            let env = Env::default();
+            prop_assert_eq!(
+                validate_tag_metadata(&String::from_str(&env, &s)),
+                expected_tag_result(&s)
+            );
+        }
+    }
 }

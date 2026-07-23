@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use alloc::format;
 
 /// Comprehensive audit checklist system for Predictify contracts
