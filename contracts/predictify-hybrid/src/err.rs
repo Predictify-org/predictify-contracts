@@ -227,6 +227,12 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
+    /// The single-bet amount exceeds the per-market maximum bet cap.
+    ///
+    /// An admin can set a per-market cap via `set_market_max_bet_cap`. Once set,
+    /// any individual bet whose `amount` exceeds the cap will be rejected with this
+    /// error. Use `get_market_max_bet_cap` to query the current cap before placing.
+    BetExceedsCap = 509,
     /// No pending fee config commit was found for reveal or apply.
     NoPendingFeeCommit = 519,
     /// Fee config reveal was attempted too early (before timelock expiry).
@@ -782,6 +788,7 @@ impl ErrorHandler {
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
+            Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
             Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
         }
@@ -1364,6 +1371,11 @@ impl ErrorHandler {
                 ErrorCategory::Financial,
                 RecoveryStrategy::Retry,
             ),
+            Error::BetExceedsCap => (
+                ErrorSeverity::Low,
+                ErrorCategory::Financial,
+                RecoveryStrategy::NoRecovery,
+            ),
             Error::OperationWouldExceedBudget => (
                 ErrorSeverity::Critical,
                 ErrorCategory::System,
@@ -1507,6 +1519,7 @@ impl Error {
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
             Error::FeeExceedsMax => "Fee is above the acceptable threshold",
+            Error::BetExceedsCap => "Bet amount exceeds the per-market maximum bet cap",
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1618,6 +1631,7 @@ impl Error {
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
             Error::FeeExceedsMax => "FEE_ABOVE_ACCEPTABLE",
+            Error::BetExceedsCap => "BET_EXCEEDS_CAP",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
