@@ -27,4 +27,5 @@ pub mod dispute_stake_tests;
 pub mod fee_config_commit_reveal_tests;
 pub mod reflector_twap_cache_tests;
 pub mod dispute_anti_grief_tests;
+pub mod dispute_open_fuzz;
 pub mod oracle_differential_fuzz;
