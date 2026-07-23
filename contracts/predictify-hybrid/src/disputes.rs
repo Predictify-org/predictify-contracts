@@ -2482,7 +2482,7 @@ impl DisputeValidator {
         let votes = DisputeUtils::get_dispute_votes(env, dispute_id)?;
 
         for vote in votes.iter() {
-            if vote.user == *user {
+            if vote.user == user.clone() {
                 return Err(Error::DisputeAlreadyVoted);
             }
         }
@@ -2531,7 +2531,7 @@ impl DisputeValidator {
         let mut has_participated = false;
 
         for vote in votes.iter() {
-            if vote.user == *user {
+            if vote.user == user.clone() {
                 has_participated = true;
                 break;
             }

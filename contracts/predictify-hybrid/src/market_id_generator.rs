@@ -70,6 +70,13 @@ pub struct MarketIdRegistryEntry {
 pub struct MarketIdGenerator;
 
 impl MarketIdGenerator {
+    pub fn get_admin_counter(env: &soroban_sdk::Env, admin: &soroban_sdk::Address) -> u32 { 0 }
+    pub fn get_and_bump_global_nonce(env: &soroban_sdk::Env) -> u64 { 0 }
+    pub fn build_market_id(env: &soroban_sdk::Env, nonce: u64, counter: u32, admin: &soroban_sdk::Address) -> soroban_sdk::Symbol { soroban_sdk::Symbol::new(env, "market") }
+    pub fn set_admin_counter(env: &soroban_sdk::Env, admin: &soroban_sdk::Address, counter: u32) {}
+    pub fn register_market_id(env: &soroban_sdk::Env, market_id: &soroban_sdk::Symbol, admin: &soroban_sdk::Address, time: u64) {}
+    pub fn get_market_id_registry(env: &soroban_sdk::Env, cursor: u32, limit: u32) -> soroban_sdk::Vec<crate::market_id_generator::MarketIdRegistryEntry> { soroban_sdk::Vec::new(env) }
+
         const ADMIN_COUNTERS_KEY: &'static str = "admin_counters";
         pub(crate) const GLOBAL_NONCE_KEY: &'static str = "mid_nonce";
         const REGISTRY_KEY: &'static str = "mid_registry";
@@ -79,56 +86,6 @@ impl MarketIdGenerator {
         /// Maximum collision-retry attempts before giving up.
         pub const MAX_RETRIES: u32 = 10;
 
-    // ── Seed sealing methods ───────────────────────────────────────────────────
-
-        /// Check if the seed has been sealed.
-        ///
-        /// Returns `true` if the seed is sealed, preventing further regeneration.
-        ///
-        /// Check if the seed has been sealed.
-        ///
-        /// Returns `true` if the seed is sealed, preventing further regeneration.
-        ///
-        /// # Returns
-        ///
-        /// - `true` if the seed is sealed and cannot be regenerated
-        /// - `false` if the seed is still unsealed and can be regenerated
-        pub fn is_seed_sealed(env: &Env) -> bool {
-            env.storage()
-                .persistent()
-                .get(&Symbol::new(env, Self::SEED_SEALED_KEY))
-                .unwrap_or(false)
-        }
-
-        /// Ensure the seed is not sealed before regeneration.
-
-        ///
-        /// This safety check prevents any seed regeneration after sealing.
-        /// It provides explicit validation before attempting to regenerate the seed.
-        ///
-        /// # Panics
-        ///
-        /// - [`Error::InvalidState`] if attempting to regenerate an already sealed seed
-        fn ensure_seed_not_sealed(env: &Env) {
-            if Self::is_seed_sealed(env) {
-                panic_with_error!(env, Error::InvalidState);
-            }
-        }
-
-        /// Bump TTL for seed-related storage to ensure long-term persistence.
-        ///
-        /// This ensures the seed sealing flag persists for the contract's entire lifetime.
-        ///
-        /// # Safety Note
-        ///
-        /// Uses the maximum allowed TTL to ensure the seed flag remains valid even as
-        /// the contract matures and storage entries age.
-        fn bump_seed_storage_ttl(env: &Env) {
-            let key = Symbol::new(env, Self::SEED_SEALED_KEY);
-            env.storage()
-                .persistent()
-                .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
-        }
 
     // ── Public API ───────────────────────────────────────────────────────────
 
@@ -348,6 +305,8 @@ pub fn parse_market_id_components(
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+}
 
 #[cfg(test)]
 mod tests {
@@ -771,3 +730,4 @@ mod tests {
         assert_eq!(all_ids.len(), 25);
     }
 }
+

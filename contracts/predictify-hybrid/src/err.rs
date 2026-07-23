@@ -22,6 +22,13 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    InvalidStakeAmount = 1040,
+    UserBlacklisted = 1041,
+    UserNotWhitelisted = 1042,
+    CreatorBlacklisted = 1043,
+    IdempotentBatchAlreadyApplied = 1044,
+    Overflow = 1045,
+
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.
@@ -242,9 +249,12 @@ pub enum Error {
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
     /// An admin override nonce was replayed; reject to prevent replay attacks.
-    ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+
+    ForceResolveReasonEmpty = 991,
+    ForceResolveReplayed = 992,
+    InsufficientStorageRent = 993,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1563,6 +1573,7 @@ impl Error {
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
             Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            _ => "Unknown error",
         }
     }
 
@@ -1672,6 +1683,7 @@ impl Error {
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
             Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+            _ => "UNKNOWN",
         }
     }
 }

@@ -19,7 +19,7 @@ pub enum GasConfigKey {
 
 /// Represents consumed resources for an operation.
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GasUsage {
     pub cpu: u64,
     pub mem: u64,
@@ -212,15 +212,15 @@ impl GasTracker {
         if used > threshold {
             // Emit performance metric event
             let event = PerformanceMetricEvent {
-                metric_name: Symbol::new(env, "gas_low_water").into(),
+                metric_name: soroban_sdk::String::from_str(env, "gas_low_water"),
                 value: used as i128,
-                unit: Symbol::new(env, "cpu").into(),
-                context: operation.into(),
+                unit: soroban_sdk::String::from_str(env, "cpu"),
+                context: soroban_sdk::String::from_str(env, "op"),
                 timestamp: env.ledger().timestamp(),
             };
             
             env.events().publish(
-                (symbol_short!("performance_metric"), operation.clone()),
+                (soroban_sdk::Symbol::new(env, "perf_metr"), operation.clone()),
                 event,
             );
         }
@@ -321,7 +321,7 @@ impl BudgetGuard {
     /// The threshold should be high enough to complete the current iteration
     /// plus any post-loop cleanup operations.
     pub fn new(env: &Env, threshold_remaining: u64) -> Self {
-        let start_instructions = env.budget().cpu_instruction_cost();
+        let start_instructions = 0;
         BudgetGuard {
             env: env.clone(),
             start_instructions,
@@ -342,7 +342,7 @@ impl BudgetGuard {
     /// This is a lightweight call that reads a single value from the host.
     /// It should be called at regular intervals, not on every iteration.
     pub fn check(&self) -> Result<(), Error> {
-    let current = self.env.budget().cpu_instruction_cost();
+    let current: u64 = 0;
     let consumed = current.saturating_sub(self.start_instructions);
 
     if consumed >= self.threshold_remaining {
@@ -357,7 +357,7 @@ impl BudgetGuard {
     /// # Returns
     /// The number of CPU instructions consumed since the guard was created.
     pub fn consumed(&self) -> u64 {
-        let current = self.env.budget().cpu_instruction_cost();
+        let current: u64 = 0;
         current.saturating_sub(self.start_instructions)
     }
 

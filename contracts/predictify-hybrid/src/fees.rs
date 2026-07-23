@@ -1155,7 +1155,7 @@ impl FeeCalculator {
 
         let fee_percentage = PLATFORM_FEE_PERCENTAGE;
         let user_share =
-            Self::checked_bps_floor(user_stake, crate::PERCENTAGE_DENOMINATOR - fee_percentage)?;
+            Self::checked_bps_floor(user_stake, crate::PERCENTAGE_DENOMINATOR - fee_percentage as i128)?;
         let payout = Self::checked_mul_div_floor(user_share, total_pool, winning_total)?;
 
         Ok(payout)

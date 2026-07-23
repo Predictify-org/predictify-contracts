@@ -973,7 +973,7 @@ impl BetStorage {
         // Only add if not already present
         let mut found = false;
         for existing_user in registry.iter() {
-            if existing_user == *user {
+            if existing_user == user.clone() {
                 found = true;
                 break;
             }
