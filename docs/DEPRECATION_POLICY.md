@@ -72,3 +72,62 @@ Deprecation behaviour is covered by tests in `events.rs`:
 
 - `test_emit_deprecated_call` — verifies the event publishes without panic
 - `test_emit_deprecated_call_stores_entrypoint` — verifies the entrypoint symbol is passed through
+
+## Deprecated-Entrypoints Registry
+
+As of the `task/deprecated-registry` feature branch, every deprecated entrypoint is also
+recorded in a **persistent, on-chain registry** (`contracts/predictify-hybrid/src/deprecated.rs`).
+
+### Registry API
+
+All write operations require the contract admin; read operations are permissionless.
+
+| Entrypoint                  | Caller      | Description                                                  |
+|-----------------------------|-------------|--------------------------------------------------------------|
+| `register_deprecated`       | admin-only  | Add an entry (idempotent)                                    |
+| `remove_deprecated`         | admin-only  | Remove an entry (no-op if absent)                            |
+| `get_deprecated_entry`      | anyone      | Look up one entry by name → `Option<DeprecatedEntry>`        |
+| `list_deprecated_entries`   | anyone      | Return the full registry as `Vec<DeprecatedEntry>`           |
+| `deprecated_entry_count`    | anyone      | Return the number of registered entries                      |
+| `is_deprecated`             | anyone      | Boolean check for a single entrypoint                        |
+
+### DeprecatedEntry fields
+
+| Field         | Type              | Description                                           |
+|---------------|-------------------|-------------------------------------------------------|
+| `entrypoint`  | `Symbol`          | Name of the deprecated function                       |
+| `replacement` | `Symbol`          | Name of the recommended replacement                   |
+| `since`       | `u64`             | Ledger timestamp (seconds) when registered            |
+| `note`        | `Option<String>`  | Optional migration hint (max 128 bytes UTF-8)         |
+
+### Capacity
+
+The registry is capped at `MAX_REGISTRY_ENTRIES` = **64** entries to bound gas usage.
+Attempts to exceed this limit return `Error::RegistryFull` (528).
+
+### Events
+
+| Topic           | Payload              | When                                      |
+|-----------------|----------------------|-------------------------------------------|
+| `depr_reg`      | ledger timestamp     | Emitted on successful `register_deprecated` |
+| `depr_rem`      | ledger timestamp     | Emitted on successful `remove_deprecated` when entry was present |
+| `depr_call`     | `DeprecatedCall`     | Emitted by every deprecated entrypoint call (via `record_call`) |
+
+### Usage in deprecated entrypoints
+
+Replace direct `emit_deprecated` calls with `DeprecatedRegistry::record_call`:
+
+```rust
+use crate::deprecated::DeprecatedRegistry;
+
+#[deprecated(note = "Use new_function instead")]
+pub fn legacy_function(env: Env, /* ... */) -> Result<(), Error> {
+    DeprecatedRegistry::record_call(
+        &env,
+        &Symbol::new(&env, "legacy_function"),
+        &Symbol::new(&env, "new_function"),
+    );
+    // ... original logic unchanged ...
+}
+```
+

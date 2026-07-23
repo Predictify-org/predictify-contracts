@@ -40,6 +40,10 @@ mod reporting;
 mod resolution_event_ordering_tests;
 mod resolution;
 mod storage;
+mod deprecated;
+pub use deprecated::{DeprecatedEntry, DeprecatedRegistry, MAX_REGISTRY_ENTRIES};
+#[cfg(test)]
+mod deprecated_tests;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -2590,7 +2594,11 @@ impl PredictifyHybrid {
         caller: Address,
         market_id: Symbol,
     ) -> Result<OracleResult, Error> {
-        emit_deprecated(&env, &Symbol::new(&env, "verify_result"));
+        DeprecatedRegistry::record_call(
+            &env,
+            &Symbol::new(&env, "verify_result"),
+            &Symbol::new(&env, "fetch_oracle_result"),
+        );
 
         // Authenticate the caller
         caller.require_auth();
@@ -2943,7 +2951,11 @@ impl PredictifyHybrid {
     /// deterministic ordering test (see `resolution_event_ordering_tests`).
     #[deprecated(note = "Use resolve_market_manual or fetch_oracle_result + resolve_market_manual instead. This legacy stub will be removed in a future version.")]
     pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
-        emit_deprecated(&env, &Symbol::new(&env, "resolve_market"));
+        DeprecatedRegistry::record_call(
+            &env,
+            &Symbol::new(&env, "resolve_market"),
+            &Symbol::new(&env, "resolve_market_manual"),
+        );
 
         // Use the resolution module to resolve the market
         // Temporarily disabled due to resolution module being disabled
@@ -2956,6 +2968,121 @@ impl PredictifyHybrid {
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
 
         Ok(())
+    }
+
+    // =========================================================================
+    // DEPRECATED-ENTRYPOINTS REGISTRY
+    // =========================================================================
+
+    /// Register a deprecated entrypoint in the on-chain registry.
+    ///
+    /// Adds a new entry to the deprecated-entrypoints registry so that any
+    /// caller can discover which functions have been superseded and what the
+    /// recommended replacement is.  The operation is idempotent: registering
+    /// the same `entrypoint` a second time is a no-op.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`         – Soroban environment.
+    /// * `admin`       – Contract admin address; must satisfy
+    ///                   [`AdminAccessControl::require_admin_auth`].
+    /// * `entrypoint`  – Short symbol of the deprecated function name.
+    /// * `replacement` – Short symbol of the recommended replacement.
+    /// * `note`        – Optional migration hint (max 128 bytes UTF-8).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`] – Caller is not the contract admin.
+    /// * [`Error::AdminNotSet`]  – Contract has not been initialised.
+    /// * [`Error::RegistryFull`] – Registry has reached its capacity limit.
+    ///
+    /// # Events
+    ///
+    /// Emits `("depr_reg", entrypoint)` on success.
+    pub fn register_deprecated(
+        env: Env,
+        admin: Address,
+        entrypoint: Symbol,
+        replacement: Symbol,
+        note: Option<String>,
+    ) -> Result<(), Error> {
+        DeprecatedRegistry::register(&env, &admin, entrypoint, replacement, note)
+    }
+
+    /// Remove a deprecated entrypoint from the on-chain registry.
+    ///
+    /// Intended for correcting mistaken registrations or tidying entries for
+    /// functions that have been fully removed.  If the entry does not exist
+    /// the call is a no-op.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`        – Soroban environment.
+    /// * `admin`      – Contract admin address.
+    /// * `entrypoint` – Name of the entrypoint to remove.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`] – Caller is not the contract admin.
+    /// * [`Error::AdminNotSet`]  – Contract has not been initialised.
+    ///
+    /// # Events
+    ///
+    /// Emits `("depr_rem", entrypoint)` when an entry is actually removed.
+    pub fn remove_deprecated(
+        env: Env,
+        admin: Address,
+        entrypoint: Symbol,
+    ) -> Result<(), Error> {
+        DeprecatedRegistry::remove(&env, &admin, entrypoint)
+    }
+
+    /// Look up a single deprecated-entrypoint entry by name.
+    ///
+    /// Returns `Some(DeprecatedEntry)` if `entrypoint` is registered, or
+    /// `None` if it is not.  This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`        – Soroban environment.
+    /// * `entrypoint` – Name of the entrypoint to look up.
+    pub fn get_deprecated_entry(env: Env, entrypoint: Symbol) -> Option<DeprecatedEntry> {
+        DeprecatedRegistry::get_entry(&env, &entrypoint)
+    }
+
+    /// Return all entries in the deprecated-entrypoints registry.
+    ///
+    /// Returns a `Vec<DeprecatedEntry>` (empty if nothing has been registered
+    /// yet).  This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` – Soroban environment.
+    pub fn list_deprecated_entries(env: Env) -> Vec<DeprecatedEntry> {
+        DeprecatedRegistry::list_entries(&env)
+    }
+
+    /// Return the number of entries in the deprecated-entrypoints registry.
+    ///
+    /// This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` – Soroban environment.
+    pub fn deprecated_entry_count(env: Env) -> u32 {
+        DeprecatedRegistry::entry_count(&env)
+    }
+
+    /// Return `true` if the given entrypoint is listed as deprecated.
+    ///
+    /// This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`        – Soroban environment.
+    /// * `entrypoint` – Name of the entrypoint to check.
+    pub fn is_deprecated(env: Env, entrypoint: Symbol) -> bool {
+        DeprecatedRegistry::is_deprecated(&env, &entrypoint)
     }
 
     /// Retrieves comprehensive analytics about market resolution performance.

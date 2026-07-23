@@ -245,6 +245,10 @@ pub enum Error {
     ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+    /// The deprecated-entrypoints registry has reached its maximum capacity
+    /// ([`MAX_REGISTRY_ENTRIES`](crate::deprecated::MAX_REGISTRY_ENTRIES)).
+    /// Prune stale entries before registering new ones.
+    RegistryFull = 528,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
