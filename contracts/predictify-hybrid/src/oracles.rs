@@ -2840,6 +2840,7 @@ impl OracleIntegrationManager {
         oracle: Address,
         weight: u32,
     ) -> Result<(), Error> {
+        admin.require_auth();
         OracleWhitelist::require_admin(env, &admin)?;
         env.storage()
             .persistent()

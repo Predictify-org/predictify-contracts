@@ -2787,6 +2787,22 @@ impl PredictifyHybrid {
             .unwrap_or(0u32)
     }
 
+    /// Set configurable weight for a specific oracle source
+    pub fn set_oracle_weight(
+        env: Env,
+        admin: Address,
+        oracle: Address,
+        weight: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        crate::oracles::OracleIntegrationManager::set_oracle_weight(&env, admin, oracle, weight)
+    }
+
+    /// Get configured weight for an oracle source, defaults to 1
+    pub fn get_oracle_weight(env: Env, oracle: Address) -> u32 {
+        crate::oracles::OracleIntegrationManager::get_oracle_weight(&env, &oracle)
+    }
+
     pub fn admin_override_verification(
         env: Env,
         admin: Address,
