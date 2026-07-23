@@ -22,6 +22,7 @@ mod err;
 mod force_resolve;
 mod event_archive;
 mod events;
+pub mod gov_registry;
 mod fees;
 mod gas;
 mod governance;

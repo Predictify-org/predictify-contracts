@@ -245,6 +245,22 @@ pub enum Error {
     ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+
+    // ===== GOVERNANCE REGISTRY ERRORS (600-609) =====
+    /// Governance registry has already been initialized.
+    AlreadyInitialized = 600,
+    /// Registry not yet initialized. Call initialize() first.
+    RegistryNotInitialized = 601,
+    /// Parameter key is empty or invalid.
+    InvalidKey = 602,
+    /// A pending update already exists for this parameter.
+    PendingUpdateExists = 603,
+    /// No pending update exists for this parameter.
+    NoPendingUpdate = 604,
+    /// Time-lock delay has not yet expired for this update.
+    TimeLockNotExpired = 605,
+    /// Time-lock delay value is invalid (must be > 0).
+    InvalidTimeLockDelay = 606,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
