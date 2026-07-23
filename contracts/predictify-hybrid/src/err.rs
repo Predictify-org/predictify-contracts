@@ -189,6 +189,23 @@ pub enum Error {
     CBError = 504,
     /// Rate limit exceeded. Too many requests in the time window.
     RateLimitExceeded = 505,
+
+    // ===== MARKET RECOVERY TIMELOCK ERRORS (600-605) =====
+    /// Recovery timelock has not yet expired. Wait for the timelock period to elapse
+    /// before executing the recovery action.
+    RecoveryTimelockActive = 600,
+    /// No pending recovery request was found for the specified market.
+    RecoveryRequestNotFound = 601,
+    /// The specified recovery action is not valid for the market's current state.
+    InvalidRecoveryAction = 602,
+    /// The recovery timelock configuration values are outside acceptable bounds.
+    RecoveryTimelockConfigInvalid = 603,
+    /// A recovery request is already pending for this market. Cancel it before
+    /// initiating a new one.
+    RecoveryAlreadyPending = 604,
+    /// The market is not in a recoverable state (e.g., already Active or already Closed
+    /// without issues).
+    MarketNotRecoverable = 605,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1428,6 +1445,12 @@ impl Error {
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
             Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+            Error::RecoveryTimelockActive => "Recovery timelock has not yet expired",
+            Error::RecoveryRequestNotFound => "No pending recovery request found for this market",
+            Error::InvalidRecoveryAction => "Recovery action is not valid for the current market state",
+            Error::RecoveryTimelockConfigInvalid => "Recovery timelock configuration values are out of bounds",
+            Error::RecoveryAlreadyPending => "A recovery request is already pending for this market",
+            Error::MarketNotRecoverable => "Market is not in a recoverable state",
         }
     }
 
@@ -1522,6 +1545,12 @@ impl Error {
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
             Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Error::RecoveryTimelockActive => "RECOVERY_TIMELOCK_ACTIVE",
+            Error::RecoveryRequestNotFound => "RECOVERY_REQUEST_NOT_FOUND",
+            Error::InvalidRecoveryAction => "INVALID_RECOVERY_ACTION",
+            Error::RecoveryTimelockConfigInvalid => "RECOVERY_TIMELOCK_CONFIG_INVALID",
+            Error::RecoveryAlreadyPending => "RECOVERY_ALREADY_PENDING",
+            Error::MarketNotRecoverable => "MARKET_NOT_RECOVERABLE",
         }
     }
 }
