@@ -26,6 +26,8 @@ mod fees;
 mod gas;
 mod governance;
 mod markets;
+mod market_analytics;
+mod performance_benchmarks;
 mod monitoring;
 mod oracles;
 mod reentrancy_guard;
@@ -47,6 +49,7 @@ mod validation;
 // mod validation_tests; // disabled - API drift
 mod versioning;
 mod voting;
+mod deprecated;
 // #[cfg(any())]
 // mod voting_invariants;
 
@@ -167,6 +170,7 @@ use crate::config::{
     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
     MIN_PLATFORM_FEE_PERCENTAGE,
 };
+use crate::deprecated::DeprecatedRegistry;
 use crate::events::{emit_deprecated, EventEmitter};
 use crate::gas::GasTracker;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
@@ -2590,7 +2594,7 @@ impl PredictifyHybrid {
         caller: Address,
         market_id: Symbol,
     ) -> Result<OracleResult, Error> {
-        emit_deprecated(&env, &Symbol::new(&env, "verify_result"));
+        DeprecatedRegistry::emit_if_deprecated(&env, "verify_result");
 
         // Authenticate the caller
         caller.require_auth();
@@ -2943,7 +2947,7 @@ impl PredictifyHybrid {
     /// deterministic ordering test (see `resolution_event_ordering_tests`).
     #[deprecated(note = "Use resolve_market_manual or fetch_oracle_result + resolve_market_manual instead. This legacy stub will be removed in a future version.")]
     pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
-        emit_deprecated(&env, &Symbol::new(&env, "resolve_market"));
+        DeprecatedRegistry::emit_if_deprecated(&env, "resolve_market");
 
         // Use the resolution module to resolve the market
         // Temporarily disabled due to resolution module being disabled
@@ -2956,6 +2960,31 @@ impl PredictifyHybrid {
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
 
         Ok(())
+    }
+
+    /// Returns the full list of deprecated contract entrypoints.
+    ///
+    /// This is a read-only query that returns every entry in the
+    /// [`DeprecatedRegistry`].  Off-chain tooling can call this to
+    /// discover deprecated functions and their recommended replacements
+    /// without parsing source code.
+    ///
+    /// # Returns
+    ///
+    /// A [`Vec<DeprecatedEntrypoint>`] containing one entry per deprecated
+    /// function.  Each entry includes the function name, replacement,
+    /// deprecation date, and planned removal version.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let deprecated = PredictifyHybrid::list_deprecated(env.clone());
+    /// for entry in deprecated.iter() {
+    ///     log!("Deprecated: {} → use {}", entry.name, entry.replacement);
+    /// }
+    /// ```
+    pub fn list_deprecated(env: Env) -> Vec<crate::deprecated::DeprecatedEntrypoint> {
+        DeprecatedRegistry::all(&env)
     }
 
     /// Retrieves comprehensive analytics about market resolution performance.
