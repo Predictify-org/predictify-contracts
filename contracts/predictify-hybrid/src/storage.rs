@@ -149,12 +149,8 @@ pub enum DataKey {
     GlobalConfig,
     /// Consumed `place_bets` idempotency key, scoped per user.
     PlaceBetsIdem(Address, BytesN<32>),
-    /// Head metadata for a market's per-market audit log (stores total entry count).
-    /// Keyed by `market_id`; written by [`crate::audit::MarketAuditManager`].
-    MarketAuditHead(Symbol),
-    /// A single entry in a market's per-market audit log.
-    /// Keyed by `(market_id, 1-based index)`; written by [`crate::audit::MarketAuditManager`].
-    MarketAuditLog(Symbol, u32),
+    /// Replay protection nonce for events, stored per topic.
+    EventNonce(Symbol),
 }
 
 /// Storage format version for migration tracking

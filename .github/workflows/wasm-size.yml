@@ -1,0 +1,46 @@
+name: WASM Size Budget
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  check-size:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source $HOME/.cargo/env
+        rustup target add wasm32v1-none
+
+    - name: Install Stellar CLI
+      run: |
+        brew update
+        brew install stellar-cli
+
+    - name: Build Contracts
+      run: |
+        source $HOME/.cargo/env
+        stellar contract build
+
+    - name: Check WASM Size
+      run: |
+        MAX_SIZE=102400 # 100 KB budget
+        # stellar contract build usually outputs to target/wasm32v1-none/release/*.wasm
+        for wasm_file in target/wasm32v1-none/release/*.wasm; do
+          if [ -f "$wasm_file" ]; then
+            SIZE=$(stat -f%z "$wasm_file")
+            echo "Checking $wasm_file: $SIZE bytes"
+            if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+              echo "::error::WASM size budget exceeded for $wasm_file ($SIZE bytes > $MAX_SIZE bytes)"
+              exit 1
+            fi
+          fi
+        done
+        echo "All WASM files are within the 100 KB budget."
