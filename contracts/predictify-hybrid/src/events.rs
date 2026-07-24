@@ -2641,7 +2641,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("mkt_res"), &event);
+        env.storage().persistent().set(&symbol_short!("mkt_res"), &event);
         env.events().publish(
             (
                 symbol_short!("mkt_res"),
