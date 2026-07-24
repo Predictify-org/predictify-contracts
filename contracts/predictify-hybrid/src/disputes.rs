@@ -663,6 +663,15 @@ pub struct DisputeTimeoutOutcome {
     pub reason: String,
 }
 
+/// Configuration for dispute collusion detection.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollusionDetectorConfig {
+    pub stake_delta_threshold: i128,
+    pub time_delta_threshold: u64,
+    pub window_size: u32,
+}
+
 /// Aggregate statistics about dispute timeouts across all markets.
 ///
 /// Returned by timeout analytics queries; useful for governance dashboards
@@ -784,6 +793,27 @@ impl DisputeManager {
     pub fn get_anti_grief_floor(env: &Env) -> Option<i128> {
         let key = DataKey::AntiGriefFloor;
         env.storage().persistent().get(&key)
+    }
+
+    /// Sets the collusion detector configuration.
+    pub fn set_collusion_detector_config(env: &Env, admin: Address, config: CollusionDetectorConfig) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        let key = DataKey::CollusionDetectorConfig;
+        env.storage().persistent().set(&key, &config);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Retrieves the collusion detector configuration.
+    pub fn get_collusion_detector_config(env: &Env) -> CollusionDetectorConfig {
+        let key = DataKey::CollusionDetectorConfig;
+        env.storage().persistent().get(&key).unwrap_or(CollusionDetectorConfig {
+            stake_delta_threshold: 1_000_000,
+            time_delta_threshold: 600, // 10 minutes
+            window_size: 8,
+        })
     }
 
     /// Evicts the oldest resolved/expired disputes if history size exceeds the cap.
@@ -989,6 +1019,36 @@ impl DisputeManager {
             Map::new(env),
             None,
         );
+
+        // --- Collusion Detector ---
+        let config = Self::get_collusion_detector_config(env);
+        let window_size = config.window_size;
+        let start_idx = if history.len() > window_size {
+            history.len() - window_size
+        } else {
+            0
+        };
+
+        for i in start_idx..history.len().saturating_sub(1) {
+            if let Some(prev_dispute) = history.get(i) {
+                if prev_dispute.user != user {
+                    let stake_diff = if prev_dispute.stake > stake { prev_dispute.stake - stake } else { stake - prev_dispute.stake };
+                    let time_diff = if prev_dispute.timestamp > dispute.timestamp { prev_dispute.timestamp - dispute.timestamp } else { dispute.timestamp - prev_dispute.timestamp };
+
+                    if stake_diff <= config.stake_delta_threshold && time_diff <= config.time_delta_threshold {
+                        crate::events::EventEmitter::emit_suspected_collusion_flag(
+                            env,
+                            &market_id,
+                            &user,
+                            &prev_dispute.user,
+                            stake_diff,
+                            time_diff,
+                        );
+                    }
+                }
+            }
+        }
+        // --------------------------
 
         Ok(())
     }
