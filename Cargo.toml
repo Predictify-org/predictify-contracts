@@ -6,6 +6,7 @@ members = [
 
 [workspace.dependencies]
 soroban-sdk = "25.0.0"
+ethnum = "=1.4.0"
 
 [patch.crates-io]
 ethnum = { git = "https://github.com/ebfull/ethnum", rev = "8a8c28c" }
