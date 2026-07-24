@@ -18,6 +18,66 @@ pub const MAX_RECOVERY_HISTORY_PER_MARKET: u32 = 10;
 /// Maximum entries removable in a single admin prune call (gas safety).
 pub const MAX_RECOVERY_PRUNE_BATCH: u32 = 30;
 
+// ===== PER-MARKET RECOVERY TIMELOCK =====
+
+/// Default timelock delay before a per-market recovery action can be executed (24 hours).
+pub const DEFAULT_RECOVERY_TIMELOCK_SECONDS: u64 = 24 * 60 * 60;
+
+/// Minimum allowed recovery timelock (1 hour). Prevents setting dangerously short windows.
+pub const MIN_RECOVERY_TIMELOCK_SECONDS: u64 = 60 * 60;
+
+/// Maximum allowed recovery timelock (7 days). Prevents excessively long lockouts.
+pub const MAX_RECOVERY_TIMELOCK_SECONDS: u64 = 7 * 24 * 60 * 60;
+
+/// Specifies the type of recovery action to perform on a market.
+///
+/// Each variant maps to a specific recovery operation that can be
+/// initiated with a timelock and executed after the delay.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PerMarketRecoveryAction {
+    /// Reconstruct market state from stored data (fix total_staked inconsistencies, etc.)
+    ReconstructState,
+    /// Cancel the market and refund all stakes to participants.
+    CancelMarket,
+    /// Force-resolve the market with a specified outcome (for stuck ended markets).
+    ForceResolve,
+}
+
+/// A pending per-market recovery request protected by an admin timelock.
+///
+/// Once initiated, the recovery action cannot be executed until `execute_after`
+/// timestamp has been reached. This gives the admin a window to review and
+/// cancel if the recovery was initiated in error.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingMarketRecovery {
+    /// The market this recovery targets.
+    pub market_id: Symbol,
+    /// The admin who initiated the recovery request.
+    pub initiated_by: Address,
+    /// The recovery action to execute.
+    pub action: PerMarketRecoveryAction,
+    /// Unix timestamp when this request was initiated.
+    pub initiated_at: u64,
+    /// Unix timestamp after which this recovery may be executed.
+    pub execute_after: u64,
+    /// Human-readable reason for the recovery.
+    pub reason: String,
+}
+
+/// Configuration for the per-market recovery timelock.
+///
+/// The timelock delay controls how long after initiation a recovery action
+/// can actually be executed. Admin can tighten (increase) but not loosen
+/// (decrease) this value once set.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryTimelockConfig {
+    /// Minimum number of seconds between initiation and execution.
+    pub timelock_seconds: u64,
+}
+
 // ===== RECOVERY TYPES =====
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -731,6 +791,7 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::Ledger;
 
     struct RecoveryTest {
         env: Env,
