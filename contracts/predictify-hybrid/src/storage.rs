@@ -145,6 +145,14 @@ pub enum DataKey {
     MarketCache(Symbol),
     /// Minimum anti-grief stake floor for disputes.
     AntiGriefFloor,
+    /// Cooldown period in seconds for admin actions on disputes.
+    DisputeCooldownSeconds,
+    /// Last admin action timestamp for a specific dispute admin function.
+    DisputeAdminLastAction(Symbol),
+    /// Cooldown period in seconds for admin actions on resolution.
+    ResolutionCooldownSeconds,
+    /// Last admin action timestamp for a specific resolution admin function.
+    ResolutionAdminLastAction(Symbol),
     /// Global protocol configuration record.
     GlobalConfig,
     /// Consumed `place_bets` idempotency key, scoped per user.
