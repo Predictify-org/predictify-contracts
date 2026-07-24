@@ -12,6 +12,7 @@ mod admin;
 // mod error_code_tests;
 pub mod audit_trail;
 mod analytics;
+mod analytics_snapshot;
 mod balances;
 mod batch_operations;
 mod bets;
@@ -131,6 +132,8 @@ mod force_resolve_tests;
 // #[cfg(any())]
 // mod resolution_delay_dispute_window_tests;
 
+#[cfg(test)]
+mod analytics_snapshot_tests;
 #[cfg(test)]
 mod property_based_tests;
 
@@ -3141,6 +3144,17 @@ impl PredictifyHybrid {
 
         // Slow path: market not found in persistent storage.
         Err(Error::MarketNotFound)
+    }
+
+    /// Returns a deterministic, versioned snapshot for a single market's analytics.
+    ///
+    /// The payload is encoded with Soroban XDR so off-chain analytics services can
+    /// persist a stable byte stream without relying on host-side ordering.
+    pub fn get_market_analytics_snapshot(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<analytics_snapshot::AnalyticsSnapshotEnvelope, Error> {
+        analytics_snapshot::AnalyticsSnapshotManager::get_snapshot(&env, market_id)
     }
 
     /// Dispute a market resolution
