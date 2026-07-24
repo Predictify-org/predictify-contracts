@@ -18,6 +18,7 @@ mod admin;
 // #[cfg(any())]
 // mod error_code_tests;
 pub mod analytics;
+pub mod audit;
 mod balances;
 mod batch_operations;
 mod bets;
@@ -98,6 +99,8 @@ pub mod tokens;
 
 #[cfg(test)]
 mod override_audit_tests;
+#[cfg(test)]
+mod market_audit_tests;
 // #[cfg(any())]
 // mod test_audit_trail;
 // #[cfg(any())]
@@ -216,6 +219,7 @@ pub mod errors {
 }
 // pub use queries::QueryManager;
 pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
+pub use audit::{MarketAuditAction, MarketAuditEntry, MarketAuditHead, MarketAuditManager};
 pub use types::*;
 
 
@@ -701,6 +705,30 @@ impl PredictifyHybrid {
             Map::new(&env),
             None,
         );
+
+        // Per-market audit entry: MarketCreated
+        {
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "question"),
+                question.clone(),
+            );
+            details.set(
+                Symbol::new(&env, "end_time"),
+                String::from_str(&env, &alloc::format!("{}", end_time)),
+            );
+            details.set(
+                Symbol::new(&env, "dur_days"),
+                String::from_str(&env, &alloc::format!("{}", duration_days)),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketCreated,
+                admin.clone(),
+                details,
+            );
+        }
 
         GasTracker::end_tracking(&env, symbol_short!("create"), gas_marker);
         market_id
@@ -2322,6 +2350,26 @@ impl PredictifyHybrid {
         // Invalidate analytics cache — market state and winning_outcomes have changed.
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
 
+        // Per-market audit entry: MarketResolved
+        {
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "outcome"),
+                winning_outcome.clone(),
+            );
+            details.set(
+                Symbol::new(&env, "method"),
+                String::from_str(&env, "Manual"),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketResolved,
+                admin.clone(),
+                details,
+            );
+        }
+
         GasTracker::end_tracking(&env, symbol_short!("res_man"), gas_marker);
     }
 
@@ -2471,6 +2519,26 @@ impl PredictifyHybrid {
 
         // Invalidate analytics cache — market state and winning_outcomes have changed.
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
+        // Per-market audit entry: MarketResolved (with ties)
+        {
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "outcome"),
+                primary_outcome.clone(),
+            );
+            details.set(
+                Symbol::new(&env, "method"),
+                String::from_str(&env, "ManualTie"),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketResolved,
+                admin.clone(),
+                details,
+            );
+        }
     }
 
     /// Force-resolves a market bypassing time/state constraints, with idempotency-key
@@ -2605,10 +2673,30 @@ impl PredictifyHybrid {
         AuditTrailManager::append_record(
             &env,
             AuditAction::MarketForceResolved,
-            admin,
+            admin.clone(),
             details,
             None,
         );
+
+        // Per-market audit entry: MarketForceResolved
+        {
+            let mut per_market_details = Map::new(&env);
+            per_market_details.set(
+                Symbol::new(&env, "outcome"),
+                primary_outcome.clone(),
+            );
+            per_market_details.set(
+                Symbol::new(&env, "method"),
+                String::from_str(&env, "Force"),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketForceResolved,
+                admin.clone(),
+                per_market_details,
+            );
+        }
 
         // Auto-distribute payouts
         let _ = Self::distribute_payouts(env.clone(), market_id);
@@ -3596,10 +3684,20 @@ impl PredictifyHybrid {
             }
         }
 
-        let result = disputes::DisputeManager::process_dispute(&env, user, market_id.clone(), stake, reason);
+        let result = disputes::DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), stake, reason);
         if result.is_ok() {
             // Invalidate analytics cache — dispute stakes have changed.
             analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
+            // Per-market audit entry: DisputeFiled
+            let details = Map::new(&env);
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::DisputeFiled,
+                user,
+                details,
+            );
         }
         result
     }
@@ -3727,7 +3825,19 @@ impl PredictifyHybrid {
     ) -> Result<disputes::DisputeResolution, Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
+        let result = disputes::DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone());
+        if result.is_ok() {
+            // Per-market audit entry: DisputeResolved
+            let details = Map::new(&env);
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::DisputeResolved,
+                admin,
+                details,
+            );
+        }
+        result
     }
 
     /// Sets the maximum capacity of resolved/expired disputes to retain in history (admin only).
@@ -3769,7 +3879,105 @@ impl PredictifyHybrid {
         }
         Self::require_primary_admin(&env, &admin)?;
 
-        fees::FeeManager::collect_fees(&env, admin, market_id)
+        let result = fees::FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
+        if let Ok(amount) = result {
+            // Per-market audit entry: FeesCollected
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "amount"),
+                String::from_str(&env, &alloc::format!("{}", amount)),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::FeesCollected,
+                admin,
+                details,
+            );
+            Ok(amount)
+        } else {
+            result
+        }
+    }
+
+    // ===== PER-MARKET AUDIT LOG READ ENTRYPOINTS =====
+
+    /// Returns a reverse-chronological page of audit entries for `market_id`.
+    ///
+    /// Each entry records a key state change: market creation, resolution,
+    /// dispute filing/resolution, or fee collection. Entries are immutable once
+    /// written and are keyed by market so off-chain clients can efficiently stream
+    /// the history for a single market without scanning the global audit trail.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       - The Soroban environment.
+    /// * `market_id` - The market whose audit log to query.
+    /// * `limit`     - Maximum number of entries to return; capped at 100.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<MarketAuditEntry>` ordered newest-first (index `total_entries` → 1).
+    /// Returns an empty vector when the market has no audit entries.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "btc_50k");
+    /// let entries = PredictifyHybrid::get_market_audit_log(env, market_id, 10);
+    /// for entry in entries.iter() {
+    ///     // entry.index, entry.action, entry.actor, entry.timestamp, entry.details
+    /// }
+    /// ```
+    pub fn get_market_audit_log(
+        env: Env,
+        market_id: Symbol,
+        limit: u32,
+    ) -> Vec<crate::audit::MarketAuditEntry> {
+        crate::audit::MarketAuditManager::get_entries(&env, &market_id, limit)
+    }
+
+    /// Returns a single audit entry for `market_id` by its 1-based `index`.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       - The Soroban environment.
+    /// * `market_id` - The market whose audit log to query.
+    /// * `index`     - 1-based entry index (`1` == oldest, `total_entries` == newest).
+    ///
+    /// # Returns
+    ///
+    /// `Some(MarketAuditEntry)` when found; `None` when `index` is 0, out of range,
+    /// or the market has no entries.
+    pub fn get_market_audit_entry(
+        env: Env,
+        market_id: Symbol,
+        index: u32,
+    ) -> Option<crate::audit::MarketAuditEntry> {
+        crate::audit::MarketAuditManager::get_entry(&env, &market_id, index)
+    }
+
+    /// Returns the head (total entry count) of the per-market audit log.
+    ///
+    /// Clients can read this first to learn valid index bounds before calling
+    /// [`get_market_audit_entry`] for individual entries.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       - The Soroban environment.
+    /// * `market_id` - The market to query.
+    ///
+    /// # Returns
+    ///
+    /// `Some(MarketAuditHead)` when the market has at least one entry; `None` otherwise.
+    pub fn get_market_audit_head(
+        env: Env,
+        market_id: Symbol,
+    ) -> Option<crate::audit::MarketAuditHead> {
+        crate::audit::MarketAuditManager::get_head(&env, &market_id)
     }
 
     /// Automatically distribute payouts to all winners after market resolution.
