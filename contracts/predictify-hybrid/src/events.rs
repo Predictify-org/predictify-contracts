@@ -665,6 +665,32 @@ pub struct DisputeResolvedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted for each disputer whose stake is refunded when a dispute resolves in
+/// their favour (i.e. the final outcome overturns the oracle result).
+///
+/// Emitting a per-disputer refund event provides an auditable on-chain record that
+/// every stake transfer has been executed, which is useful for block explorers and
+/// off-chain monitoring.
+///
+/// # Fields
+///
+/// * `market_id`  - The market whose dispute was resolved
+/// * `disputer`   - Address of the disputer receiving the refund
+/// * `amount`     - Amount of tokens returned (equal to the original dispute stake)
+/// * `timestamp`  - Ledger timestamp at the point of refund
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeStakeRefundedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Disputer whose stake is being returned
+    pub disputer: Address,
+    /// Refund amount in stroops (equals the original dispute stake)
+    pub amount: i128,
+    /// Refund timestamp
+    pub timestamp: u64,
+}
+
 /// Fee collected event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2378,6 +2404,36 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("dispt_res"), &event);
         env.events()
             .publish((symbol_short!("dispt_res"), market_id.clone()), event);
+    }
+
+    /// Emits a `DisputeStakeRefunded` event for a single disputer whose stake has
+    /// been returned because the resolved outcome overturned the oracle result.
+    ///
+    /// One event is emitted per disputer — call once for each address in the
+    /// `dispute_stakes` map that had a positive stake at resolution time.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       - The Soroban environment
+    /// * `market_id` - ID of the disputed market
+    /// * `disputer`  - Address receiving the refund
+    /// * `amount`    - Token amount being refunded (in stroops)
+    pub fn emit_dispute_stake_refunded(
+        env: &Env,
+        market_id: &Symbol,
+        disputer: &Address,
+        amount: i128,
+    ) {
+        let event = DisputeStakeRefundedEvent {
+            market_id: market_id.clone(),
+            disputer: disputer.clone(),
+            amount,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("dispt_rfn"), &event);
+        env.events()
+            .publish((symbol_short!("dispt_rfn"), market_id.clone()), event);
     }
 
     /// Emit fee collected event

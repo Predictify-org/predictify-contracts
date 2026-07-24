@@ -52,14 +52,16 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 /// 1. **Creation**: User stakes tokens and provides reasoning
 /// 2. **Community Voting**: Other users vote on dispute validity
 /// 3. **Resolution**: Dispute is resolved based on community consensus
-/// 4. **Fee Distribution**: Stakes are distributed to winning side
+/// 4. **Stake Refund**: If the dispute overturns the oracle result, every
+///    disputer's locked stake is returned in full (see [`DisputeManager::resolve_dispute`]).
+/// 5. **Fee Distribution**: Any remaining stakes are distributed to the winning side
 ///
 /// # Staking Requirements
 ///
 /// - Minimum stake amount enforced to prevent spam
 /// - Stake is locked during dispute resolution
-/// - Winners receive their stake back plus rewards
-/// - Losers forfeit their stake to the winning side
+/// - If the oracle result is overturned: disputers receive their full stake back
+/// - If the oracle result stands: stakes remain locked and may be distributed as fees
 #[contracttype]
 pub struct Dispute {
     pub user: Address,
@@ -878,6 +880,23 @@ impl DisputeManager {
     /// community votes, calculating weights for oracle vs community input, and
     /// creating a comprehensive resolution record for transparency and auditability.
     ///
+    /// ## Dispute-stake refund
+    ///
+    /// When the resolved `final_outcome` **differs** from the market's original
+    /// `oracle_result` (i.e. the dispute successfully overturned the oracle), every
+    /// address in `market.dispute_stakes` with a positive stake is refunded in full:
+    ///
+    /// 1. The locked tokens are transferred back to the disputer via
+    ///    [`VotingUtils::transfer_winnings`].
+    /// 2. The disputer's entry in `market.dispute_stakes` is set to `0` to ensure
+    ///    idempotency — a re-entry or a repeated call cannot transfer the same stake
+    ///    a second time.
+    /// 3. A [`crate::events::DisputeStakeRefundedEvent`] is emitted for each refund,
+    ///    providing an on-chain audit trail for block explorers and monitoring tools.
+    ///
+    /// When the oracle result is **upheld** (i.e. `final_outcome == oracle_result`)
+    /// no refunds are issued and dispute stakes remain locked.
+    ///
     /// # Parameters
     ///
     /// * `env` - The Soroban environment for blockchain operations
@@ -889,8 +908,8 @@ impl DisputeManager {
     /// Returns a `DisputeResolution` containing the final outcome and resolution
     /// metadata, or an `Error` if:
     /// - Admin lacks proper permissions
-    /// - Market is not ready for resolution (voting still active)
-    /// - Insufficient community participation
+    /// - Market is not ready for resolution (no active dispute stakes)
+    /// - Market is already resolved (`MarketResolved`)
     /// - Resolution calculation fails
     ///
     /// # Example
@@ -926,7 +945,8 @@ impl DisputeManager {
     /// 2. **Calculate Impact**: Measure how much disputes affected the outcome
     /// 3. **Weight Determination**: Balance oracle reliability vs community consensus
     /// 4. **Outcome Synthesis**: Combine weighted inputs for final result
-    /// 5. **Resolution Record**: Create transparent audit trail
+    /// 5. **Stake Refund** *(new)*: Return locked stakes to disputers if oracle was overturned
+    /// 6. **Resolution Record**: Create transparent audit trail
     ///
     /// # Weighting Logic
     ///
@@ -941,6 +961,7 @@ impl DisputeManager {
     /// - Final outcome with clear justification
     /// - Exact weights used in decision process
     /// - Quantified impact of community disputes
+    /// - Per-disputer `DisputeStakeRefunded` events when oracle is overturned
     /// - Timestamp for regulatory compliance
     /// - Immutable record for future reference
     ///
@@ -973,12 +994,25 @@ impl DisputeManager {
         let final_outcome = DisputeUtils::determine_final_outcome_with_disputes(env, &market)?;
 
         // Refund disputers when the dispute overturns the original oracle result.
+        //
+        // We compare the resolved final_outcome against the oracle's original result.
+        // If they differ the dispute was upheld, so every disputer who staked is made
+        // whole: their locked tokens are transferred back and their on-chain stake
+        // entry is zeroed to prevent a double-refund on any future call.
         if let Some(original_oracle_result) = market.oracle_result.as_ref() {
             if final_outcome != *original_oracle_result {
                 for (user, stake) in market.dispute_stakes.iter() {
                     if stake > 0 {
                         VotingUtils::transfer_winnings(env, &user, stake)?;
-                        market.dispute_stakes.set(user, 0);
+                        // Zero the entry before emitting so that any re-entrancy or
+                        // repeated call cannot transfer the same stake twice.
+                        market.dispute_stakes.set(user.clone(), 0);
+                        crate::events::EventEmitter::emit_dispute_stake_refunded(
+                            env,
+                            &market_id,
+                            &user,
+                            stake,
+                        );
                     }
                 }
             }
@@ -3075,5 +3109,394 @@ mod tests {
         assert_eq!(analytics.timeout_hours, 24);
         assert_eq!(analytics.is_expired, false);
         assert_eq!(analytics.status, DisputeTimeoutStatus::Active);
+    }
+
+    // ===== DISPUTE STAKE REFUND FOCUSED TESTS =====
+
+    /// When a dispute is resolved and the final outcome matches the original oracle
+    /// result (i.e. the dispute did NOT overturn the oracle), the disputer must NOT
+    /// receive a refund.
+    #[test]
+    fn test_no_refund_when_oracle_result_stands() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let disputer = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "stands_mkt");
+
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_contract.address();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+        stellar_client.mint(&disputer, &10_000_000_000i128);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
+
+            // Market ended, oracle result = "yes", community consensus will also
+            // be "yes" (no votes in the other direction) → final_outcome == oracle_result.
+            let mut market =
+                create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.state = crate::types::MarketState::Ended;
+            market.total_staked = 1_000;
+
+            // A single voter for "yes" — community consensus = "yes" = oracle result.
+            let voter = Address::generate(&env);
+            market.votes.set(voter.clone(), String::from_str(&env, "yes"));
+            market.stakes.set(voter, 1_000);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let initial_balance = token_client.balance(&disputer);
+            let stake = MIN_DISPUTE_STAKE;
+
+            DisputeManager::process_dispute(
+                &env,
+                disputer.clone(),
+                market_id.clone(),
+                stake,
+                None,
+            )
+            .unwrap();
+
+            let balance_after_dispute = token_client.balance(&disputer);
+            assert_eq!(
+                balance_after_dispute,
+                initial_balance - stake,
+                "stake must be locked after process_dispute"
+            );
+
+            let resolution =
+                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                    .unwrap();
+
+            // The oracle result was NOT overturned.
+            assert_eq!(
+                resolution.final_outcome,
+                String::from_str(&env, "yes"),
+                "final outcome must equal oracle result when community agrees"
+            );
+
+            // Disputer's balance should remain reduced — no refund was issued.
+            let balance_after_resolution = token_client.balance(&disputer);
+            assert_eq!(
+                balance_after_resolution,
+                initial_balance - stake,
+                "disputer must NOT be refunded when oracle result stands"
+            );
+        });
+    }
+
+    /// When multiple disputers stake against an oracle result that is then overturned,
+    /// every disputer must receive their exact stake back.
+    ///
+    /// Token funding is done by minting directly to the contract address (simulating
+    /// what `process_dispute` would have transferred in), avoiding the need for
+    /// user-level `transfer` auth inside `env.as_contract`.
+    #[test]
+    fn test_multiple_disputers_all_refunded_when_oracle_overturned() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let disputer_a = Address::generate(&env);
+        let disputer_b = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "multi_disp");
+
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_contract.address();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+
+        let stake_a = MIN_DISPUTE_STAKE;
+        let stake_b = MIN_DISPUTE_STAKE * 3;
+
+        // Credit both disputers' initial balances (for assertion reference) and
+        // pre-fund the contract with both stakes, simulating what process_dispute
+        // would have transferred in before resolve_dispute is called.
+        stellar_client.mint(&disputer_a, &10_000_000_000i128);
+        stellar_client.mint(&disputer_b, &10_000_000_000i128);
+        stellar_client.mint(&contract_id, &(stake_a + stake_b));
+
+        let initial_a = token_client.balance(&disputer_a);
+        let initial_b = token_client.balance(&disputer_b);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
+
+            // Build a market whose oracle says "yes" but community strongly says "no".
+            //
+            // For the oracle to be overturned, two conditions must hold:
+            //   (1) dispute_impact > 30 → dispute_stakes / total_staked > 0.30
+            //   (2) community_consensus.confidence > 70 → winning-outcome stake / total > 0.70
+            //
+            // With stake_a + stake_b = 4 * MIN_DISPUTE_STAKE we need total_staked < 133 M.
+            // We use 20 M total (all for "no"), giving:
+            //   dispute_impact = 40 M / 20 M = 200 % > 30 ✓
+            //   confidence     = 20 M / 20 M = 100 % > 70 ✓
+            let mut market =
+                create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.state = crate::types::MarketState::Ended;
+
+            let voter1 = Address::generate(&env);
+            let voter2 = Address::generate(&env);
+            let vote_stake: i128 = 10_000_000; // 10 M each, 20 M total
+            market.votes.set(voter1.clone(), String::from_str(&env, "no"));
+            market.stakes.set(voter1, vote_stake);
+            market.votes.set(voter2.clone(), String::from_str(&env, "no"));
+            market.stakes.set(voter2, vote_stake);
+            market.total_staked = vote_stake * 2; // 20 M
+
+            // Inject both dispute stakes directly (simulating two prior process_dispute calls).
+            market.dispute_stakes.set(disputer_a.clone(), stake_a);
+            market.dispute_stakes.set(disputer_b.clone(), stake_b);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let resolution =
+                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                    .unwrap();
+
+            // The oracle result should have been overturned by community consensus.
+            assert_eq!(
+                resolution.final_outcome,
+                String::from_str(&env, "no"),
+                "community consensus must overturn the oracle when confidence > 70 %"
+            );
+
+            // Both disputers must have been refunded in full.
+            assert_eq!(
+                token_client.balance(&disputer_a),
+                initial_a + stake_a,
+                "disputer_a must be fully refunded"
+            );
+            assert_eq!(
+                token_client.balance(&disputer_b),
+                initial_b + stake_b,
+                "disputer_b must be fully refunded"
+            );
+
+            // Contract should hold zero tokens after all refunds.
+            assert_eq!(
+                token_client.balance(&env.current_contract_address()),
+                0,
+                "contract balance must be zero after all refunds"
+            );
+
+            // Stakes must be zeroed in storage to prevent double-refund.
+            let mkt_after =
+                MarketStateManager::get_market(&env, &market_id).unwrap();
+            assert_eq!(
+                mkt_after.dispute_stakes.get(disputer_a.clone()).unwrap_or(1),
+                0,
+                "disputer_a stake must be zeroed after refund"
+            );
+            assert_eq!(
+                mkt_after.dispute_stakes.get(disputer_b.clone()).unwrap_or(1),
+                0,
+                "disputer_b stake must be zeroed after refund"
+            );
+        });
+    }
+
+    /// A disputer entry with zero stake must never trigger a token transfer.
+    /// This guards against a zero-value `transfer` call that could panic some
+    /// token implementations.
+    ///
+    /// The market must also have a positive-stake disputer so that
+    /// `validate_market_for_resolution` can pass its `total_dispute_stakes > 0` check.
+    /// The real disputer's stake is pre-funded via `stellar_client.mint` to the contract.
+    #[test]
+    fn test_zero_stake_entry_does_not_trigger_refund() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let zero_stake_disputer = Address::generate(&env);
+        let real_disputer = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "zero_stk");
+
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_contract.address();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+
+        let real_stake = MIN_DISPUTE_STAKE;
+
+        stellar_client.mint(&zero_stake_disputer, &10_000_000_000i128);
+        stellar_client.mint(&real_disputer, &10_000_000_000i128);
+        // Pre-fund the contract with real_disputer's stake only.
+        stellar_client.mint(&contract_id, &real_stake);
+
+        let initial_zero = token_client.balance(&zero_stake_disputer);
+        let initial_real = token_client.balance(&real_disputer);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
+
+            let mut market =
+                create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.state = crate::types::MarketState::Ended;
+
+            // Community votes 100 % for "no".
+            // real_stake = MIN_DISPUTE_STAKE = 10 M.
+            // total_staked must be < 33.3 M for dispute_impact > 30 %.
+            // Use 5 M → dispute_impact = 10 M / 5 M = 200 % > 30. Confidence = 100 % > 70. ✓
+            let voter = Address::generate(&env);
+            let vote_stake: i128 = 5_000_000;
+            market.votes.set(voter.clone(), String::from_str(&env, "no"));
+            market.stakes.set(voter, vote_stake);
+            market.total_staked = vote_stake;
+
+            // Insert a zero-stake entry — must not trigger a refund.
+            market.dispute_stakes.set(zero_stake_disputer.clone(), 0i128);
+            // Real disputer with a positive stake (so validation passes).
+            market.dispute_stakes.set(real_disputer.clone(), real_stake);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let resolution =
+                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                    .unwrap();
+
+            assert_eq!(
+                resolution.final_outcome,
+                String::from_str(&env, "no"),
+                "final outcome should overturn oracle"
+            );
+
+            // Zero-stake disputer must not have received any tokens.
+            assert_eq!(
+                token_client.balance(&zero_stake_disputer),
+                initial_zero,
+                "zero-stake disputer must not be refunded"
+            );
+
+            // Real disputer must have received their stake back.
+            assert_eq!(
+                token_client.balance(&real_disputer),
+                initial_real + real_stake,
+                "positive-stake disputer must be refunded"
+            );
+        });
+    }
+
+    /// After `resolve_dispute` zeroes the dispute stakes, any subsequent attempt to
+    /// resolve the same market must fail because `validate_market_for_resolution`
+    /// rejects markets that already have a `winning_outcomes` set.
+    ///
+    /// This test verifies the idempotency contract at the storage/validation layer:
+    /// - After successful resolution the disputer's stake entry is 0.
+    /// - `validate_market_for_resolution` immediately returns `MarketResolved`.
+    ///
+    /// Token funding follows the mint-to-contract pattern used throughout this suite
+    /// to avoid cross-contract auth issues inside `env.as_contract`.
+    #[test]
+    fn test_refund_is_idempotent_cannot_claim_twice() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let disputer = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "idem_mkt");
+
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_contract.address();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+
+        let stake = MIN_DISPUTE_STAKE;
+        stellar_client.mint(&disputer, &10_000_000_000i128);
+        // Pre-fund the contract with the dispute stake.
+        stellar_client.mint(&contract_id, &stake);
+
+        let initial_balance = token_client.balance(&disputer);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
+
+            let mut market =
+                create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.state = crate::types::MarketState::Ended;
+
+            // stake = MIN_DISPUTE_STAKE = 10 M.
+            // total_staked must be < 33.3 M for dispute_impact > 30 %.
+            // Use 5 M → dispute_impact = 10 M / 5 M = 200 % > 30. Confidence = 100 % > 70. ✓
+            let voter = Address::generate(&env);
+            let vote_stake: i128 = 5_000_000;
+            market.votes.set(voter.clone(), String::from_str(&env, "no"));
+            market.stakes.set(voter, vote_stake);
+            market.total_staked = vote_stake;
+
+            market.dispute_stakes.set(disputer.clone(), stake);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            // First resolution — should succeed and issue a refund.
+            let resolution =
+                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                    .unwrap();
+            assert_eq!(resolution.final_outcome, String::from_str(&env, "no"));
+
+            // Disputer received their refund.
+            assert_eq!(
+                token_client.balance(&disputer),
+                initial_balance + stake,
+                "disputer must be refunded after first resolution"
+            );
+
+            // After resolution the market is marked as resolved.  Any further call to
+            // resolve_dispute must be rejected at the validation layer.
+            // We verify this directly on the stored market rather than making a second
+            // contract call (which would hit a Soroban mock-auth duplicate-auth guard).
+            let resolved_market =
+                MarketStateManager::get_market(&env, &market_id).unwrap();
+            assert!(
+                resolved_market.winning_outcomes.is_some(),
+                "market must be marked resolved so a second call would be rejected"
+            );
+            assert_eq!(
+                DisputeValidator::validate_market_for_resolution(&env, &resolved_market),
+                Err(crate::errors::Error::MarketResolved),
+                "validate_market_for_resolution must return MarketResolved after first resolve"
+            );
+
+            // The dispute stake entry must also be zeroed so a direct re-entry cannot
+            // transfer tokens a second time.
+            assert_eq!(
+                resolved_market.dispute_stakes.get(disputer.clone()).unwrap_or(1),
+                0,
+                "dispute stake must be zeroed to prevent double-refund"
+            );
+        });
     }
 }
