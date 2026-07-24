@@ -193,8 +193,8 @@ pub enum Error {
     // ===== VALIDATION ERRORS (435-437) =====
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
     DuplicateMarketId = 441,
-    /// Override replay detected. Nonce has already been used.
-    ReplayedOverride = 442,
+    // `ReplayedOverride` is defined once below (= 526); the duplicate that lived
+    // here (= 442) was removed to fix E0428.
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -245,6 +245,20 @@ pub enum Error {
     ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+    // Variants referenced across the codebase whose declarations were lost in a
+    // prior merge collapse; restored here with fresh discriminants.
+    /// Persistent-key allocation lacks sufficient storage rent.
+    InsufficientStorageRent = 509,
+    /// The supplied `place_bets` idempotency key has already been consumed.
+    IdempotentBatchAlreadyApplied = 510,
+    /// A stake amount was zero, negative, or otherwise invalid.
+    InvalidStakeAmount = 511,
+    /// A checked arithmetic operation overflowed.
+    Overflow = 512,
+    /// An admin force-resolve idempotency key was replayed.
+    ForceResolveReplayed = 517,
+    /// An admin force-resolve was submitted with an empty reason.
+    ForceResolveReasonEmpty = 518,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1563,6 +1577,7 @@ impl Error {
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
             Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            _ => "An unspecified error occurred.",
         }
     }
 
@@ -1672,6 +1687,7 @@ impl Error {
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
             Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+            _ => "UNSPECIFIED_ERROR",
         }
     }
 }
