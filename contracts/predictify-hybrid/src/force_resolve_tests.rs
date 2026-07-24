@@ -33,7 +33,7 @@ impl Ctx {
                 .set(&Symbol::new(&env, "platform_fee"), &200i128);
             crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
         });
-        PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+        crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
         Ctx { env, contract_id, admin }
     }
 

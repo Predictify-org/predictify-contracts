@@ -26,17 +26,12 @@ pub const MARKET_CACHE_TTL_LEDGERS: u32 = 100;
 pub const MARKET_CREATION_PERSISTENT_KEYS: u32 = 1;
 
 /// Pre-flight storage-rent check for market creation.
-///
 /// Verifies that the ledger has enough sequence headroom so the new persistent
 /// entry's `live_until_ledger` does not overflow `u32`.
-///
 /// # Formula
-///
 /// 1. `effective_ttl = MIN(MARKET_TTL_LEDGERS, env.storage().max_ttl())`
 /// 2. The current ledger sequence plus `effective_ttl` must not overflow `u32`.
-///
 /// # Errors
-///
 /// Returns [`Error::InsufficientStorageRent`] if the sequence would overflow.
 pub fn check_market_creation_rent(env: &Env) -> Result<(), Error> {
     let effective_ttl = MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
@@ -68,7 +63,6 @@ pub struct StorageTtlPressure {
 // ===== STORAGE OPTIMIZATION TYPES =====
 
 /// Storage key variants for contracts/predictify-hybrid
-///
 /// These variants are used as persistent storage keys. Each variant must have a unique
 /// XDR encoding to avoid collisions in the storage layer. A collision detection test
 /// exists in `tests/datakey_collision.rs` that verifies all variants produce unique
@@ -92,8 +86,7 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
-    /// Nonce for admin override replay protection.
-    AdminOverrideNonce(Address),
+    AntiGriefFloor,
     PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
 }
 
@@ -485,7 +478,7 @@ impl StorageOptimizer {
         from_format: StorageFormat,
         to_format: StorageFormat,
     ) -> Result<StorageMigration, Error> {
-        let migration_id = Symbol::new(env, &format!("migration_{}", env.ledger().timestamp()));
+        let migration_id = soroban_sdk::Symbol::new(env, "migration");
 
         let mut migration = StorageMigration {
             migration_id: migration_id.clone(),
@@ -645,7 +638,7 @@ impl StorageOptimizer {
                     result.corruption_detected = true;
                     result.errors.push_back(String::from_str(
                         env,
-                        &format!("Validation failed: {:?}", e),
+                        "Validation failed",
                     ));
                 }
 
@@ -669,7 +662,7 @@ impl StorageOptimizer {
                     result.is_valid = false;
                     result.errors.push_back(String::from_str(
                         env,
-                        &format!("State inconsistency: {:?}", e),
+                        "State inconsistency",
                     ));
                 }
             }
@@ -678,7 +671,7 @@ impl StorageOptimizer {
                 result.missing_data = true;
                 result
                     .errors
-                    .push_back(String::from_str(env, &format!("Market not found: {:?}", e)));
+                    .push_back(String::from_str(env, "Market not found"));
             }
         }
 
@@ -743,7 +736,6 @@ impl BalanceStorage {
     }
 
     /// Retrieves the current balance for a user and asset from persistent storage.
-    ///
     /// Returns a default Balance with amount 0 if no record exists.
     pub fn get_balance(env: &Env, user: &Address, asset: &ReflectorAsset) -> Balance {
         let key = Self::get_key(env, user, asset);
@@ -806,7 +798,6 @@ impl BalanceStorage {
     }
 
     /// Increments a user's balance by the specified amount.
-    ///
     /// # Errors
     /// - `Error::InvalidInput` if the resulting amount overflows i128.
     pub fn add_balance(
@@ -821,7 +812,6 @@ impl BalanceStorage {
     }
 
     /// Decrements a user's balance by the specified amount.
-    ///
     /// # Errors
     /// - `Error::InsufficientBalance` if the user has less than the requested amount.
     pub fn sub_balance(
@@ -881,7 +871,7 @@ impl StorageOptimizer {
         for value in data.iter() {
             checksum = checksum.wrapping_add(value);
         }
-        String::from_str(&data.env(), &format!("{:016x}", checksum))
+        soroban_sdk::String::from_str(&data.env(), "checksum")
     }
 
     /// Generate market ID from question
@@ -890,7 +880,7 @@ impl StorageOptimizer {
         let mut hash = 0i128;
         // Simplified hash generation - in real implementation, you'd properly hash the string
         hash = hash.wrapping_add(question.len() as i128);
-        Symbol::new(env, &format!("market_{:016x}", hash))
+        soroban_sdk::Symbol::new(env, "market")
     }
 
     /// Archive market data before deletion

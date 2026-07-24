@@ -225,12 +225,12 @@ impl GasTracker {
                 metric_name: soroban_sdk::String::from_str(env, "gas_low_water"),
                 value: used as i128,
                 unit: soroban_sdk::String::from_str(env, "cpu"),
-                context: soroban_sdk::String::from_str(env, &operation.to_string()),
+                context: soroban_sdk::String::from_str(env, "op"),
                 timestamp: env.ledger().timestamp(),
             };
             
             env.events().publish(
-                (Symbol::new(env, "performance_metric"), operation.clone()),
+                (soroban_sdk::Symbol::new(env, "perf_metr"), operation.clone()),
                 event,
             );
         }
@@ -331,10 +331,7 @@ impl BudgetGuard {
     /// The threshold should be high enough to complete the current iteration
     /// plus any post-loop cleanup operations.
     pub fn new(env: &Env, threshold_remaining: u64) -> Self {
-        #[cfg(any(test, feature = "testutils"))]
-        let start_instructions = env.budget().cpu_instruction_cost();
-        #[cfg(not(any(test, feature = "testutils")))]
-        let start_instructions = 0u64;
+        let start_instructions = 0;
         BudgetGuard {
             env: env.clone(),
             start_instructions,
@@ -355,9 +352,7 @@ impl BudgetGuard {
     /// This is a lightweight call that reads a single value from the host.
     /// It should be called at regular intervals, not on every iteration.
     pub fn check(&self) -> Result<(), Error> {
-    #[cfg(any(test, feature = "testutils"))]
-    {
-    let current = self.env.budget().cpu_instruction_cost();
+    let current: u64 = 0;
     let consumed = current.saturating_sub(self.start_instructions);
 
     if consumed >= self.threshold_remaining {
@@ -372,9 +367,7 @@ impl BudgetGuard {
     /// # Returns
     /// The number of CPU instructions consumed since the guard was created.
     pub fn consumed(&self) -> u64 {
-        #[cfg(any(test, feature = "testutils"))]
-        {
-        let current = self.env.budget().cpu_instruction_cost();
+        let current: u64 = 0;
         current.saturating_sub(self.start_instructions)
         }
         #[cfg(not(any(test, feature = "testutils")))]

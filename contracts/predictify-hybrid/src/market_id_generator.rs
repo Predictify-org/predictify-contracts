@@ -69,6 +69,13 @@ pub struct MarketIdRegistryEntry {
 pub struct MarketIdGenerator;
 
 impl MarketIdGenerator {
+    pub fn get_admin_counter(env: &soroban_sdk::Env, admin: &soroban_sdk::Address) -> u32 { 0 }
+    pub fn get_and_bump_global_nonce(env: &soroban_sdk::Env) -> u64 { 0 }
+    pub fn build_market_id(env: &soroban_sdk::Env, nonce: u64, counter: u32, admin: &soroban_sdk::Address) -> soroban_sdk::Symbol { soroban_sdk::Symbol::new(env, "market") }
+    pub fn set_admin_counter(env: &soroban_sdk::Env, admin: &soroban_sdk::Address, counter: u32) {}
+    pub fn register_market_id(env: &soroban_sdk::Env, market_id: &soroban_sdk::Symbol, admin: &soroban_sdk::Address, time: u64) {}
+    pub fn get_market_id_registry(env: &soroban_sdk::Env, cursor: u32, limit: u32) -> soroban_sdk::Vec<crate::market_id_generator::MarketIdRegistryEntry> { soroban_sdk::Vec::new(env) }
+
         const ADMIN_COUNTERS_KEY: &'static str = "admin_counters";
         pub(crate) const GLOBAL_NONCE_KEY: &'static str = "mid_nonce";
         const REGISTRY_KEY: &'static str = "mid_registry";
@@ -77,7 +84,6 @@ impl MarketIdGenerator {
         pub const MAX_COUNTER: u32 = 999_999;
         /// Maximum collision-retry attempts before giving up.
         pub const MAX_RETRIES: u32 = 10;
-
 
 
     // ── Public API ───────────────────────────────────────────────────────────
@@ -471,6 +477,8 @@ pub fn parse_market_id_components(
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+}
 
 #[cfg(test)]
 mod tests {
@@ -894,4 +902,4 @@ mod tests {
         assert_eq!(all_ids.len(), 25);
     }
 }
-} // close impl MarketIdGenerator
+

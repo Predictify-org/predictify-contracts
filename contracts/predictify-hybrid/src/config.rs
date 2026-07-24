@@ -42,7 +42,7 @@ use crate::err::Error;
 ///
 /// Rationale: Used as denominator for fee percentage calculations.
 /// Represented as basis points * 100 for precision (e.g., 250 = 2.5%).
-pub const PERCENTAGE_DENOMINATOR: i128 = 10_000;
+pub const PERCENTAGE_DENOMINATOR: i128 = 10000;
 
 /// Maximum market duration in days (365)
 ///

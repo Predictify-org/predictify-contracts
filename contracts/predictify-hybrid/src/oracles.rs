@@ -2460,6 +2460,8 @@ pub enum OracleIntegrationKey {
     VerificationStatus(Symbol),
     /// Retry count for market verification
     RetryCount(Symbol),
+    /// Configurable per-source weight
+    OracleWeight(Address),
 }
 
 /// Storage keys for oracle validation configuration.
@@ -2843,6 +2845,62 @@ impl OracleValidationConfigManager {
 pub struct OracleIntegrationManager;
 
 impl OracleIntegrationManager {
+    /// Set configurable weight for a specific oracle source
+    pub fn set_oracle_weight(
+        env: &Env,
+        admin: Address,
+        oracle: Address,
+        weight: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        OracleWhitelist::require_admin(env, &admin)?;
+        env.storage()
+            .persistent()
+            .set(&OracleIntegrationKey::OracleWeight(oracle), &weight);
+        Ok(())
+    }
+
+    /// Get configured weight for an oracle source, defaults to 1
+    pub fn get_oracle_weight(env: &Env, oracle: &Address) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&OracleIntegrationKey::OracleWeight(oracle.clone()))
+            .unwrap_or(1)
+    }
+
+    /// Calculate the weighted median price safely
+    fn calculate_weighted_median(
+        _env: &Env,
+        readings: &alloc::vec::Vec<(i128, u32)>,
+        total_weight: u32,
+    ) -> i128 {
+        if readings.is_empty() {
+            return 0;
+        }
+
+        let mut sorted: alloc::vec::Vec<(i128, u32)> =
+            alloc::vec::Vec::with_capacity(readings.len());
+        for r in readings.iter() {
+            sorted.push(r.clone());
+        }
+        sorted.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+        let target = total_weight / 2;
+        let mut accumulated: u32 = 0;
+
+        for (price, weight) in sorted.iter() {
+            accumulated = accumulated.saturating_add(*weight);
+            if accumulated > target {
+                return *price;
+            }
+        }
+
+        if let Some(last) = sorted.last() {
+            last.0
+        } else {
+            0
+        }
+    }
     /// Legacy defaults (actual validation uses OracleValidationConfigManager)
     const MAX_DATA_AGE_SECONDS: u64 = 60;
     /// Minimum confidence score required (not currently enforced here)
@@ -2950,8 +3008,8 @@ impl OracleIntegrationManager {
         use crate::events::EventEmitter;
 
         let oracle_config = &market.oracle_config;
-        let mut successful_results: Vec<(i128, String)> = Vec::new(env);
-        let mut total_price: i128 = 0;
+        let mut successful_readings: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        let mut total_weight: u32 = 0;
         let mut sources_count: u32 = 0;
         let mut last_error: Option<Error> = None;
 
@@ -2967,17 +3025,12 @@ impl OracleIntegrationManager {
                 Ok(price) => {
                     // Validate price is within acceptable range
                     if Self::validate_price_range(price) {
-                        // Determine outcome for this source
-                        let outcome = OracleUtils::determine_outcome(
-                            price,
-                            oracle_config.threshold,
-                            &oracle_config.comparison,
-                            env,
-                        )?;
-
-                        successful_results.push_back((price, outcome));
-                        total_price += price;
-                        sources_count += 1;
+                        let weight = Self::get_oracle_weight(env, &oracle_address);
+                        if weight > 0 {
+                            successful_readings.push((price, weight));
+                            total_weight = total_weight.saturating_add(weight);
+                            sources_count += 1;
+                        }
                     }
                 }
                 Err(e) => {
@@ -3000,29 +3053,55 @@ impl OracleIntegrationManager {
             return Err(Error::OracleUnavailable);
         }
 
-        // Calculate average price
-        let average_price = total_price / (sources_count as i128);
+        // Calculate weighted median price
+        let median_price = Self::calculate_weighted_median(env, &successful_readings, total_weight);
 
-        // Calculate price variance (simplified - max deviation from average)
+        // Determine final outcome directly from the weighted median price
+        let final_outcome = OracleUtils::determine_outcome(
+            median_price,
+            oracle_config.threshold,
+            &oracle_config.comparison,
+            env,
+        )?;
+
+        // Calculate agreement count for confidence score and legacy events
+        let mut agreement_count: u32 = 0;
+        let mut agreement_weight: u32 = 0;
+        for (price, weight) in successful_readings.iter() {
+            let outcome = OracleUtils::determine_outcome(
+                *price,
+                oracle_config.threshold,
+                &oracle_config.comparison,
+                env,
+            )?;
+            if outcome == final_outcome {
+                agreement_count += 1;
+                agreement_weight = agreement_weight.saturating_add(*weight);
+            }
+        }
+
+        // Calculate price variance (simplified - max deviation from median)
         let mut max_deviation: i128 = 0;
-        for (price, _) in successful_results.iter() {
-            let deviation = if price > average_price {
-                price - average_price
+        for (price, _) in successful_readings.iter() {
+            let deviation = if *price > median_price {
+                *price - median_price
             } else {
-                average_price - price
+                median_price - *price
             };
             if deviation > max_deviation {
                 max_deviation = deviation;
             }
         }
 
-        // Determine consensus outcome
-        let (final_outcome, consensus_reached, agreement_count) =
-            Self::determine_consensus_outcome(env, &successful_results)?;
+        let agreement_percentage = if total_weight > 0 {
+            (agreement_weight * 100) / total_weight
+        } else {
+            0
+        };
 
-        let agreement_percentage = (agreement_count * 100) / sources_count;
+        // Check consensus threshold based on weight agreement
+        let consensus_reached = agreement_percentage >= Self::DEFAULT_CONSENSUS_THRESHOLD;
 
-        // Check consensus threshold
         if !consensus_reached {
             EventEmitter::emit_oracle_verification_failed(
                 env,
@@ -3042,7 +3121,7 @@ impl OracleIntegrationManager {
             &final_outcome,
             agreement_count,
             sources_count,
-            average_price,
+            median_price,
             max_deviation,
         );
 
@@ -3050,7 +3129,7 @@ impl OracleIntegrationManager {
         let confidence_score = Self::calculate_confidence_score(
             agreement_percentage,
             max_deviation,
-            average_price,
+            median_price,
             sources_count,
         );
 
@@ -3058,7 +3137,7 @@ impl OracleIntegrationManager {
         Ok(crate::types::OracleResult {
             market_id: market_id.clone(),
             outcome: final_outcome,
-            price: average_price,
+            price: median_price,
             threshold: oracle_config.threshold,
             comparison: oracle_config.comparison.clone(),
             provider: oracle_config.provider.clone(),
@@ -3113,39 +3192,7 @@ impl OracleIntegrationManager {
         Ok(price_data.price)
     }
 
-    /// Determine consensus outcome from multiple oracle results.
-    fn determine_consensus_outcome(
-        env: &Env,
-        results: &Vec<(i128, String)>,
-    ) -> Result<(String, bool, u32), Error> {
-        if results.is_empty() {
-            return Err(Error::OracleUnavailable);
-        }
 
-        // Count outcomes
-        let mut yes_count: u32 = 0;
-        let mut no_count: u32 = 0;
-
-        for (_, outcome) in results.iter() {
-            if outcome == String::from_str(env, "yes") {
-                yes_count += 1;
-            } else {
-                no_count += 1;
-            }
-        }
-
-        let total = results.len() as u32;
-        let (final_outcome, agreement_count) = if yes_count >= no_count {
-            (String::from_str(env, "yes"), yes_count)
-        } else {
-            (String::from_str(env, "no"), no_count)
-        };
-
-        let agreement_percentage = (agreement_count * 100) / total;
-        let consensus_reached = agreement_percentage >= Self::DEFAULT_CONSENSUS_THRESHOLD;
-
-        Ok((final_outcome, consensus_reached, agreement_count))
-    }
 
     /// Calculate confidence score based on multiple factors.
     fn calculate_confidence_score(
@@ -3410,32 +3457,38 @@ mod oracle_integration_tests {
     }
 
     #[test]
-    fn test_determine_consensus_outcome() {
+    fn test_calculate_weighted_median() {
         let env = Env::default();
 
-        // All agree on "yes"
-        let mut results: Vec<(i128, String)> = Vec::new(&env);
-        results.push_back((50_000_00, String::from_str(&env, "yes")));
-        results.push_back((50_100_00, String::from_str(&env, "yes")));
-        results.push_back((49_900_00, String::from_str(&env, "yes")));
+        // 1. Single reading
+        let mut readings_single: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        readings_single.push((100, 5));
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_single, 5), 100);
 
-        let (outcome, consensus, count) =
-            OracleIntegrationManager::determine_consensus_outcome(&env, &results).unwrap();
-        assert_eq!(outcome, String::from_str(&env, "yes"));
-        assert!(consensus);
-        assert_eq!(count, 3);
+        // 2. Even total weight, typical scenario
+        // weights: 10, 20, 30. Total weight = 60. Target = 30.
+        // prices: 100, 200, 300
+        // accumulated weights: 10 (at 100), 30 (at 200), 60 (at 300)
+        // target = 30. The first where accumulated > 30 is the last one (60).
+        let mut readings_even: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        readings_even.push((200, 20));
+        readings_even.push((100, 10));
+        readings_even.push((300, 30));
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_even, 60), 300);
 
-        // Mixed results - 2 yes, 1 no (67% agreement)
-        let mut mixed_results: Vec<(i128, String)> = Vec::new(&env);
-        mixed_results.push_back((50_000_00, String::from_str(&env, "yes")));
-        mixed_results.push_back((50_100_00, String::from_str(&env, "yes")));
-        mixed_results.push_back((49_000_00, String::from_str(&env, "no")));
-
-        let (outcome, consensus, count) =
-            OracleIntegrationManager::determine_consensus_outcome(&env, &mixed_results).unwrap();
-        assert_eq!(outcome, String::from_str(&env, "yes"));
-        assert!(consensus); // 67% meets 66% threshold
-        assert_eq!(count, 2);
+        // 3. Odd total weight
+        // weights: 10, 10, 10. Total = 30. Target = 15.
+        // prices: 100, 200, 300
+        // accumulated: 10, 20 (takes 200)
+        let mut readings_odd: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        readings_odd.push((300, 10));
+        readings_odd.push((100, 10));
+        readings_odd.push((200, 10));
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_odd, 30), 200);
+        
+        // 4. Empty readings
+        let readings_empty: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_empty, 0), 0);
     }
 
     #[test]
