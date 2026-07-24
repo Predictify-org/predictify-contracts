@@ -27,8 +27,8 @@ name = "err_stability"
 path = "tests/err_stability.rs"
 
 [[test]]
-name = "auth_snapshot"
-path = "tests/auth_snapshot.rs"
+name = "stateful"
+path = "tests/stateful.rs"
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
