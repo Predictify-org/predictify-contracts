@@ -725,6 +725,11 @@ pub struct MarketReadCache<'a> {
 }
 
 impl<'a> MarketReadCache<'a> {
+    /// Creates a market read cache bound to the current contract environment.
+    ///
+    /// The cache uses instance storage for read-only market lookups, so callers
+    /// should create it per operation and continue to treat persistent storage as
+    /// the source of truth for mutations.
     pub fn new(env: &'a Env) -> Self {
         Self { env }
     }
