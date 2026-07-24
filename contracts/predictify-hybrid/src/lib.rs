@@ -8,27 +8,10 @@ extern crate alloc;
 // ===== MODULE DECLARATIONS =====
 // These must be declared here so Rust knows to compile them as part of this crate.
 
-mod audit;
-mod audit_trail;
-mod capabilities;
-mod dispute_multisig;
-mod disputes;
-mod edge_cases;
-mod event_topic_catalog;
-mod extensions;
-mod graceful_degradation;
-mod lists;
-mod market_analytics;
-mod market_id_generator;
-mod metadata_limits;
-mod performance_benchmarks;
-mod queries;
-mod rate_limiter;
-mod recovery;
-mod statistics;
-mod storage_tier_audit;
-mod tokens;
-mod leaderboard;
+
+const SYM_ADMIN: &str = "Admin";
+const SYM_PLATFORM_FEE: &str = "platform_fee";
+pub use config::PERCENTAGE_DENOMINATOR;
 mod admin;
 // #[cfg(any())]
 // mod admin_auth_audit_tests;
@@ -106,13 +89,19 @@ mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
 }
 
+mod performance_benchmarks;
+mod market_analytics;
+pub mod timelock;
+
 // #[cfg(any())]
 // mod circuit_breaker_tests;
 // #[cfg(test)]
 // mod oracle_fallback_timeout_tests;
 
+use types::BetStatus;
 use bets::BetStorage;
 use circuit_breaker::CircuitBreaker;
+
 use events::EventEmitter;
 use gas::BudgetGuard;
 use resolution::ResolutionOutcomeCache;
@@ -133,9 +122,11 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Env, S
 // #[cfg(any())]
 // mod upgrade_manager_tests;
 #[cfg(test)]
-// mod capability_bitmap_tests;
+
 #[cfg(test)]
 mod market_state_matrix_tests;
+#[cfg(test)]
+mod timelock_tests;
 
 // #[cfg(any())]
 // mod query_tests;
@@ -208,18 +199,19 @@ pub mod errors {
 pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
-use soroban_sdk::{Address, BytesN, Map, String, Vec};
-use crate::gas::GasTracker;
-use crate::graceful_degradation::{OracleBackup, OracleHealth};
-use crate::market_id_generator::MarketIdGenerator;
-use crate::events::emit_deprecated;
+
 use crate::config::{
     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
     MIN_PLATFORM_FEE_PERCENTAGE,
 };
-
-
-
+use crate::events::emit_deprecated;
+use crate::gas::GasTracker;
+use crate::graceful_degradation::{OracleBackup, OracleHealth};
+use crate::market_id_generator::MarketIdGenerator;
+use alloc::format;
+use soroban_sdk::{
+    Address, BytesN, Map, String, Vec,
+};
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
     fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
@@ -286,120 +278,31 @@ pub struct PredictifyHybrid;
 
 #[contractimpl]
 impl PredictifyHybrid {
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        platform_fee_percentage: Option<i128>,
-        allowed_assets: Option<Vec<Address>>,
-    ) -> Result<(), Error> {
-        // Check for re-initialization attempt (critical security check)
-        if env
-            .storage()
-            .persistent()
-            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
-        {
+    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>, _allowed_assets: Option<soroban_sdk::Vec<Address>>) -> Result<(), Error> {
+        if env.storage().persistent().has(&Symbol::new(&env, SYM_PLATFORM_FEE)) {
             return Err(Error::InvalidState);
         }
-
-        // Determine platform fee (default 2% if not specified)
-        let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
-
-        // Validate fee percentage bounds (0-10%)
-        if fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
-            || fee_percentage > MAX_PLATFORM_FEE_PERCENTAGE
-        {
-            return Err(Error::InvalidFeeConfig);
+        let fee_percentage = platform_fee_percentage.unwrap_or(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE);
+        if fee_percentage < crate::config::MIN_PLATFORM_FEE_PERCENTAGE || fee_percentage > crate::config::MAX_PLATFORM_FEE_PERCENTAGE {
+            panic_with_error!(env, Error::InvalidFeeConfig);
         }
-
-        // Initialize admin (includes re-initialization check)
-        admin::AdminInitializer::initialize(&env, &admin)?;
-
-        // Initialize circuit breaker defaults required by write-gated entrypoints.
-        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
-            Ok(_) => (),
-            Err(e) => panic_with_error!(env, e),
-        }
-
-        // Store platform fee configuration in persistent storage
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
-
-        // Initialize rate limiter config
-        let rate_limit_config = crate::rate_limiter::RateLimitConfig {
-            voting_limit: 10_000,
-            dispute_limit: 1_000,
-            oracle_call_limit: 1_000,
-            bet_limit: 10_000,
-            events_per_admin_limit: 1_000,
-            time_window_seconds: 3_600,
-        };
-        env.storage().persistent().set(
-            &crate::rate_limiter::RateLimiterData::Config,
-            &rate_limit_config,
-        );
-
-        // Store default contract configuration so validators have deterministic bounds
-        let mut default_config = crate::config::ConfigManager::get_development_config(&env);
-        default_config.fees.platform_fee_percentage = fee_percentage;
-        if let Err(e) = crate::config::ConfigManager::store_config(&env, &default_config) {
-            panic_with_error!(env, e);
-        }
-
-        // Initialize allowed assets
-        if let Some(assets) = allowed_assets {
-            // Store custom allowed assets
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
-        } else {
-            // Initialize with defaults
-            crate::tokens::TokenRegistry::initialize_with_defaults(&env);
-        }
-
-        // Emit contract initialized event
-        EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
-
-        // Emit platform fee set event
-        EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
-
+        env.storage().persistent().set(&Symbol::new(&env, SYM_ADMIN), &admin);
+        env.storage().persistent().set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
         Ok(())
     }
 
-    pub fn deposit(
-        env: Env,
-        user: Address,
-        asset: ReflectorAsset,
-        amount: i128,
-    ) -> Result<Balance, Error> {
-        if let Err(e) =
-            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "deposit")
-        {
-            return Err(e);
-        }
-        balances::BalanceManager::deposit(&env, user, asset, amount)
+    pub fn deposit(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
+        crate::balances::BalanceManager::deposit(&env, user, asset, amount)
     }
 
-    pub fn withdraw(
-        env: Env,
-        user: Address,
-        asset: ReflectorAsset,
-        amount: i128,
-    ) -> Result<Balance, Error> {
-        if let Err(e) =
-            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "withdraw")
-        {
-            return Err(e);
-        }
-        if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
-            return Err(crate::err::Error::CBOpen);
-        }
-        balances::BalanceManager::withdraw(&env, user, asset, amount)
+    pub fn withdraw(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
+        crate::balances::BalanceManager::withdraw(&env, user, asset, amount)
     }
 
-    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
-        storage::BalanceStorage::get_balance(&env, &user, &asset)
+    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> types::Balance {
+        crate::balances::BalanceManager::get_balance(&env, user, asset)
     }
+
     /// Distribute payouts to winning voters and bettors for a resolved market.
     ///
     /// This function iterates over all voters and bettors, calculates each winner's
@@ -2671,7 +2574,7 @@ impl PredictifyHybrid {
                         EventEmitter::emit_manual_resolution_required(
                             &env,
                             &market_id,
-                            &String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON),
+                            &String::from_str(&env, "primary_and_fallback_failed"),
                         );
                         Err(Error::FallbackOracleUnavailable)
                     }
@@ -2681,7 +2584,7 @@ impl PredictifyHybrid {
                 EventEmitter::emit_manual_resolution_required(
                     &env,
                     &market_id,
-                    &String::from_str(&env, "primary_failed"),
+                    &String::from_str(&env, "primary_failed_no_fallback"),
                 );
                 Err(err)
             }
@@ -3384,7 +3287,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
+    pub fn get_resolution_analytics(env: Env) -> Result<resolution::MarketResolutionAnalytics, Error> {
         resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
     }
 
@@ -6631,7 +6534,7 @@ impl PredictifyHybrid {
             }
             Err(_) => {
                 // Both oracles failed
-                let reason = String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON);
+                let reason = String::from_str(&env, "primary_and_fallback_failed");
                 events::EventEmitter::emit_manual_resolution_required(&env, &market_id, &reason);
                 Err(Error::FallbackOracleUnavailable)
             }
@@ -8451,5 +8354,102 @@ mod tests {
             let guard = BudgetGuard::new(&env, 100_000);
             assert!(guard.consumed() == 0); // No instructions consumed yet in test host
         });
+
+    pub fn get_fee_withdrawal_schedule(env: Env) -> crate::fees::FeeWithdrawalSchedule {
+        crate::fees::FeeWithdrawalManager::get_schedule(&env)
     }
-}
+
+    pub fn set_fee_withdrawal_schedule(
+        env: Env,
+        admin: Address,
+        timelock_seconds: u64,
+        max_withdrawal_bps: u32,
+    ) -> Result<(), Error> {
+        crate::admin::AdminManager::assert_is_admin(&env, &admin)?;
+        let schedule = crate::fees::FeeWithdrawalSchedule {
+            timelock_seconds,
+            max_withdrawal_bps,
+        };
+        crate::fees::FeeWithdrawalManager::set_schedule(&env, &schedule)
+    }
+
+    pub fn pause(env: Env, admin: Address) -> Result<(), Error> {
+        crate::admin::ContractPauseManager::pause(&env, &admin)
+    }
+
+    pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
+        crate::admin::ContractPauseManager::unpause(&env, &admin)
+    }
+
+
+}}mod dispute_multisig;
+mod disputes;
+mod edge_cases;
+mod extensions;
+mod graceful_degradation;
+mod queries;
+mod recovery;
+mod statistics;
+
+mod audit;
+
+#[cfg(test)]
+mod audit_tests;
+
+#[cfg(test)]
+mod batch_operations_tests;
+
+#[cfg(test)]
+mod custom_token_tests;
+
+mod event_topic_catalog;
+
+#[cfg(test)]
+mod event_visibility_test;
+
+#[cfg(test)]
+mod extensions_cumulative_cap_tests;
+
+mod leaderboard;
+
+mod lists;
+
+#[cfg(test)]
+mod market_creation_validation_tests;
+
+mod market_id_generator;
+
+#[cfg(test)]
+mod metadata_commitment_tests;
+
+mod metadata_limits;
+
+#[cfg(test)]
+mod metadata_limits_tests;
+
+#[cfg(test)]
+mod metadata_validation_tests;
+
+#[cfg(test)]
+mod multi_admin_multisig_tests;
+
+#[cfg(test)]
+mod place_bets_idempotency_tests;
+
+mod rate_limiter;
+
+#[cfg(test)]
+mod storage_layout_tests;
+
+mod storage_tier_audit;
+
+#[cfg(test)]
+mod test;
+
+mod tokens;
+
+#[cfg(test)]
+mod unclaimed_winnings_timeout_tests;
+
+#[cfg(test)]
+mod voting_tests;

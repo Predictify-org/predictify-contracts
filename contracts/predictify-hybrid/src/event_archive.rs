@@ -1111,6 +1111,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
             let res =
@@ -1161,6 +1162,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
             let res1 =
@@ -1441,6 +1443,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
             let res =

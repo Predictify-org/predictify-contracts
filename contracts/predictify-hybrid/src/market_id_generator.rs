@@ -85,7 +85,6 @@ impl MarketIdGenerator {
         /// Maximum collision-retry attempts before giving up.
         pub const MAX_RETRIES: u32 = 10;
 
-
     // ── Public API ───────────────────────────────────────────────────────────
 
     /// Check if the seed has been sealed.
@@ -475,6 +474,8 @@ pub fn parse_market_id_components(
         env.storage().persistent().set(&registry_key, &registry);
     }
 }
+}
+
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

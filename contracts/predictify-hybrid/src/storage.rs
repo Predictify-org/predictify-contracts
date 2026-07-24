@@ -71,6 +71,7 @@ pub struct StorageTtlPressure {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
+    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),

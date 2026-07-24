@@ -230,7 +230,7 @@ impl GasTracker {
             };
             
             env.events().publish(
-                (soroban_sdk::Symbol::new(env, "perf_metr"), operation.clone()),
+                (symbol_short!("perf_metr"), operation.clone()),
                 event,
             );
         }

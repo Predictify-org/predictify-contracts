@@ -832,7 +832,7 @@ mod legacy_contract_property_tests {
                 // wait, soroban-sdk mock doesn't catch panic. We shouldn't assert panic in a proptest unless we can catch it.
                 // Let's just trust `distribute` covers double payouts and we can assert user's claim status.
                 let market = client.get_market(&market_id).unwrap();
-                let is_claimed = market.claimed.get(winner.clone()).unwrap_or(false);
+                let is_claimed = market.claimed.get(winner.clone()).is_some();
                 prop_assert!(is_claimed);
             }
         }

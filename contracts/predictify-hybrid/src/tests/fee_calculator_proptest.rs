@@ -23,9 +23,50 @@ use proptest::prelude::*;
 use soroban_sdk::testutils::{Address as _, EnvTestConfig};
 use soroban_sdk::{Env, String, Vec};
 
-use crate::fees::{FeeCalculator, PLATFORM_FEE_PERCENTAGE};
-use crate::types::Market;
-use crate::validation::ValidationTestingUtils;
+    /// Test utility to create a market with realistic Soroban parameters
+    fn create_test_market(env: &Env, admin_address: Address, total_staked: i128) -> Symbol {
+        let market_id = Symbol::new(env, "test_market");
+        let mut market = Market {
+            admin: admin_address,
+            question: String::from_str(env, "Test question?"),
+            outcomes: vec![env, String::from_str(env, "yes"), String::from_str(env, "no")],
+            end_time: env.ledger().timestamp() + 86_400,
+            oracle_config: OracleConfig::new(
+                OracleProvider::Reflector,
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                String::from_str(env, "BTC/USD"),
+                10_000_000, // $100
+                String::from_str(env, "gt"),
+            ),
+            has_fallback: false,
+            fallback_oracle_config: OracleConfig::new(
+                OracleProvider::Reflector,
+                Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                String::from_str(env, "BTC/USD"),
+                10_000_000, // $100
+                String::from_str(env, "gt"),
+            ),
+            resolution_timeout: 86400,
+            oracle_result: None,
+            votes: Map::new(env),
+            total_staked,
+            dispute_stakes: Map::new(env),
+            stakes: Map::new(env),
+            claimed: Map::new(env),
+            winning_outcomes: None,
+            fee_collected: false,
+            state: MarketState::Active,
+            total_extension_days: 0,
+            max_extension_days: 30,
+            extension_history: vec![env],
+            category: None,
+            tags: vec![env],
+            min_pool_size: None,
+            bet_deadline: 0,
+            dispute_window_seconds: 86400,
+            winnings_swept: false,
+            timelock_config: crate::timelock::MarketTimelockConfig::default(),
+        };
 
 /// Basis-point denominator used by `FeeCalculator::checked_bps_floor`.
 const BPS_DENOMINATOR: i128 = 10_000;
