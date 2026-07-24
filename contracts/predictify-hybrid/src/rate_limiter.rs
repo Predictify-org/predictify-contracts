@@ -116,8 +116,11 @@ impl RateLimiter {
         user: Address,
         market_id: Symbol,
     ) -> Result<(), RateLimiterError> {
-        user.require_auth();
-
+        // NOTE: no `user.require_auth()` here. The calling entrypoint (`vote`)
+        // already authorizes `user` in this same frame, and Soroban rejects a
+        // second authorization of an already-authorized frame with
+        // `Error(Auth, ExistingValue)`. This matches `rate_limit_bets` and
+        // `rate_limit_admin_events`, which likewise rely on their caller.
         let config = self.get_config()?;
         let key = RateLimiterData::UserVoting(user.clone(), market_id.clone());
         let limit = self.get_or_create_limit(&key);
@@ -134,8 +137,8 @@ impl RateLimiter {
         user: Address,
         market_id: Symbol,
     ) -> Result<(), RateLimiterError> {
-        user.require_auth();
-
+        // NOTE: no `user.require_auth()` here — see `rate_limit_voting`. The
+        // dispute entrypoints authorize `user` before calling this helper.
         let config = self.get_config()?;
         let key = RateLimiterData::UserDisputes(user.clone(), market_id.clone());
         let limit = self.get_or_create_limit(&key);
