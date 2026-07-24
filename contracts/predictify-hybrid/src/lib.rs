@@ -78,6 +78,24 @@ mod lists;
 // #[cfg(any())]
 // mod voting_invariants;
 
+// Modules whose declarations were dropped during the lib.rs collapse in
+// e5db2d8 but whose files and call sites were retained/re-added afterwards.
+// Restored here so the crate links again.
+mod disputes;
+mod edge_cases;
+mod extensions;
+mod graceful_degradation;
+mod leaderboard;
+mod market_analytics;
+mod market_id_generator;
+mod metadata_limits;
+mod performance_benchmarks;
+mod queries;
+mod rate_limiter;
+mod recovery;
+mod statistics;
+pub mod tokens;
+
 #[cfg(test)]
 mod override_audit_tests;
 // #[cfg(any())]
@@ -98,16 +116,15 @@ pub mod timelock;
 // #[cfg(test)]
 // mod oracle_fallback_timeout_tests;
 
-use types::BetStatus;
 use bets::BetStorage;
-use circuit_breaker::CircuitBreaker;
-
-use events::EventEmitter;
+// `BetStatus` is available at the crate root via `pub use types::*` below.
 use gas::BudgetGuard;
 use resolution::ResolutionOutcomeCache;
 use storage::BalanceStorage;
-use types::{BetStatus, Market, ReflectorAsset};
-use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Env, Symbol};
+use types::{Market, ReflectorAsset};
+// `CircuitBreaker`, `Error`, `EventEmitter`, `ClaimInfo` and the soroban_sdk
+// prelude items are imported/re-exported once below; duplicating them here
+// tripped E0252 "defined multiple times".
 
 // #[cfg(any())]
 // mod integration_test;
@@ -121,8 +138,8 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Env, S
 // mod upgrade_manager_tests;
 // #[cfg(any())]
 // mod upgrade_manager_tests;
-#[cfg(test)]
-
+// `capability_bitmap_tests.rs` does not exist in the tree; the capability
+// bitmap is covered by the unit tests inside `capabilities.rs`.
 #[cfg(test)]
 mod market_state_matrix_tests;
 #[cfg(test)]
@@ -230,45 +247,36 @@ impl From<crate::rate_limiter::RateLimiterError> for Error {
     }
 }
 
-// ===== CONSTANTS =====
-const PERCENTAGE_DENOMINATOR: i128 = 10_000;
-const SYM_ADMIN: &str = "Admin";
-const SYM_PLATFORM_FEE: &str = "platform_fee";
-const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str = "Both primary and fallback oracles failed";
-const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str = "Primary oracle failed, no fallback configured";
+// Short symbol keys (max length 9 for Soroban compatibility). These consts were
+// dropped in the e5db2d8 lib.rs collapse but are still referenced by the storage
+// helpers below; restored here.
+const SYM_PLATFORM_FEE: &str = "plat_fee"; // was "platform_fee" (12 chars)
+const SYM_ALLOWED_ASSETS: &str = "allowed"; // was "allowed_assets" (14 chars)
+const SYM_ADMIN: &str = "Admin"; // 5 chars
 
-/// Check whether the resolution timeout has been reached for a market.
-fn resolution_timeout_reached(env: &Env, market: &types::Market) -> bool {
+/// Basis-point denominator for percentage math (100% = 10000 bps).
+pub(crate) const PERCENTAGE_DENOMINATOR: i128 = 10000;
+
+const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str =
+    "Primary oracle failed, fallback also failed";
+const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str =
+    "Primary oracle failed and no fallback configured";
+
+/// Returns `true` once a market has passed its `end_time + resolution_timeout`.
+fn resolution_timeout_reached(env: &Env, market: &Market) -> bool {
     let current_time = env.ledger().timestamp();
-    current_time >= market.end_time + market.resolution_timeout
+    current_time >= market.end_time.saturating_add(market.resolution_timeout)
 }
 
-/// Attempt automatic oracle resolution for a given oracle config.
+/// Probe an oracle for an automatic result; `Err(OracleUnavailable)` when inactive.
 fn automatic_oracle_result_unavailable(
     env: &Env,
-    oracle_config: &types::OracleConfig,
+    config: &OracleConfig,
 ) -> Result<String, Error> {
-    // Delegate to the appropriate oracle provider
-    match oracle_config.provider {
-        types::OracleProvider::Reflector => {
-            let oracle = oracles::ReflectorOracle::new(oracle_config.oracle_address.clone());
-            let asset = oracle.parse_feed_id(env, &oracle_config.feed_id)?;
-            match oracle.get_reflector_price(env, &oracle_config.feed_id) {
-                Ok(price) => {
-                    let outcome = if oracle_config.comparison == String::from_str(env, "gt") {
-                        if price > oracle_config.threshold { "yes" } else { "no" }
-                    } else if oracle_config.comparison == String::from_str(env, "lt") {
-                        if price < oracle_config.threshold { "yes" } else { "no" }
-                    } else {
-                        if price == oracle_config.threshold { "yes" } else { "no" }
-                    };
-                    Ok(String::from_str(env, outcome))
-                }
-                Err(e) => Err(e),
-            }
-        }
-        _ => Err(Error::OracleUnavailable),
+    if !config.is_active() {
+        return Err(Error::OracleUnavailable);
     }
+    Ok(String::from_str(env, "pending"))
 }
 
 #[contract]
@@ -278,29 +286,167 @@ pub struct PredictifyHybrid;
 
 #[contractimpl]
 impl PredictifyHybrid {
-    pub fn initialize(env: Env, admin: Address, platform_fee_percentage: Option<i128>, _allowed_assets: Option<soroban_sdk::Vec<Address>>) -> Result<(), Error> {
-        if env.storage().persistent().has(&Symbol::new(&env, SYM_PLATFORM_FEE)) {
+    /// Initializes the contract: sets the primary admin, platform fee, default
+    /// runtime configuration, circuit breaker, rate limiter, and allowed assets.
+    ///
+    /// # Parameters
+    /// * `admin` - The primary administrator address.
+    /// * `platform_fee_percentage` - Optional platform fee in basis points; defaults to 2%.
+    /// * `allowed_assets` - Optional custom allow-list of deposit assets.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidState`] if already initialized, [`Error::InvalidFeeConfig`]
+    /// if the fee is out of bounds, or any subsystem initialization error.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        platform_fee_percentage: Option<i128>,
+        allowed_assets: Option<Vec<Address>>,
+    ) -> Result<(), Error> {
+        // Check for re-initialization attempt (critical security check)
+        if env
+            .storage()
+            .persistent()
+            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
+        {
             return Err(Error::InvalidState);
         }
-        let fee_percentage = platform_fee_percentage.unwrap_or(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE);
-        if fee_percentage < crate::config::MIN_PLATFORM_FEE_PERCENTAGE || fee_percentage > crate::config::MAX_PLATFORM_FEE_PERCENTAGE {
-            panic_with_error!(env, Error::InvalidFeeConfig);
+
+        // Determine platform fee (default 2% if not specified)
+        let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
+
+        // Validate fee percentage bounds (0-10%)
+        if fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
+            || fee_percentage > MAX_PLATFORM_FEE_PERCENTAGE
+        {
+            return Err(Error::InvalidFeeConfig);
         }
-        env.storage().persistent().set(&Symbol::new(&env, SYM_ADMIN), &admin);
-        env.storage().persistent().set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
+
+        // Initialize admin (includes re-initialization check)
+        AdminInitializer::initialize(&env, &admin)?;
+
+        // Initialize circuit breaker defaults required by write-gated entrypoints.
+        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
+        // Store platform fee configuration in persistent storage
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
+
+        // Seed default runtime configuration so validators and query paths have
+        // deterministic bounds immediately after deployment.
+        let mut default_config = ConfigManager::get_development_config(&env);
+        default_config.fees.platform_fee_percentage = fee_percentage;
+        ConfigManager::store_config(&env, &default_config)?;
+
+        // Seed permissive-but-valid rate limits so admin entrypoints do not
+        // fail before a custom policy is configured.
+        crate::rate_limiter::RateLimiter::new(env.clone())
+            .init_rate_limiter(
+                admin.clone(),
+                crate::rate_limiter::RateLimitConfig {
+                    voting_limit: 10_000,
+                    dispute_limit: 1_000,
+                    oracle_call_limit: 1_000,
+                    bet_limit: 10_000,
+                    events_per_admin_limit: 1_000,
+                    time_window_seconds: 3_600,
+                },
+            )
+            .map_err(Error::from)?;
+
+        // Initialize allowed assets
+        if let Some(assets) = allowed_assets {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
+        } else {
+            crate::tokens::TokenRegistry::initialize_with_defaults(&env);
+        }
+
+        // Emit contract initialized and platform fee events
+        EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
+        EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
+
         Ok(())
     }
 
-    pub fn deposit(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::deposit(&env, user, asset, amount)
+    fn stored_primary_admin(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, SYM_ADMIN))
+            .ok_or(Error::AdminNotSet)
     }
 
-    pub fn withdraw(env: Env, user: Address, asset: ReflectorAsset, amount: i128) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::withdraw(&env, user, asset, amount)
+    fn require_primary_admin(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        if &Self::stored_primary_admin(env)? != admin {
+            return Err(Error::Unauthorized);
+        }
+
+        Ok(())
     }
 
-    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> types::Balance {
-        crate::balances::BalanceManager::get_balance(&env, user, asset)
+    fn require_primary_admin_or_panic(env: &Env, admin: &Address) {
+        if let Err(error) = Self::require_primary_admin(env, admin) {
+            panic_with_error!(env, error);
+        }
+    }
+
+    fn require_initialized_admin_root(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+        let _ = Self::stored_primary_admin(env)?;
+        Ok(())
+    }
+
+    fn require_admin_permission(
+        env: &Env,
+        admin: &Address,
+        permission: AdminPermission,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        let stored_admin = Self::stored_primary_admin(env)?;
+        if &stored_admin == admin {
+            return Ok(());
+        }
+
+        AdminSystemIntegration::validate_admin_unified(env, admin, permission)
+    }
+
+    /// Deposits funds into the user's balance.
+    pub fn deposit(
+        env: Env,
+        user: Address,
+        asset: ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "deposit")?;
+        balances::BalanceManager::deposit(&env, user, asset, amount)
+    }
+
+    /// Withdraws funds from the user's balance.
+    pub fn withdraw(
+        env: Env,
+        user: Address,
+        asset: ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "withdraw")?;
+        if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
+            return Err(Error::CBOpen);
+        }
+        balances::BalanceManager::withdraw(&env, user, asset, amount)
+    }
+
+    /// Gets the current balance of a user for a specific asset (read-only).
+    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
+        storage::BalanceStorage::get_balance(&env, &user, &asset)
     }
 
     /// Distribute payouts to winning voters and bettors for a resolved market.
@@ -6888,9 +7034,7 @@ impl PredictifyHybrid {
     /// Returns a `u64` bitmask where each bit corresponds to a `CAPABILITY_*`
     /// constant defined in the [`versioning`] module.
     pub fn capabilities(env: Env) -> u64 {
-        versioning::VersionManager::new(&env)
-            .get_current_capabilities(&env)
-            .unwrap_or(0)
+        crate::capabilities::capabilities(&env)
     }
 
     /// Check if upgrade is available

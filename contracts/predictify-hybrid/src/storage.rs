@@ -87,14 +87,10 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
-    /// Nonce for admin override replay protection.
-    AdminOverrideNonce(Address),
-    /// Per-user cumulative stake on a specific market (Symbol market_id, Address user) -> i128 cumulative_amount
-    /// Tracks the total amount a user has bet on a market across all bets, enforcing per-user max bet cap.
-    UserStake(Symbol, Address),
-    /// Global per-user max bet cap across all markets (i128).
-    /// When set, no single user can have cumulative bets exceeding this amount on any given market.
-    MaxBetCap,
+    /// Idempotency marker for a caller-supplied `place_bets` batch key.
+    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
+    /// Minimum dispute-stake floor used for anti-grief protection.
+    AntiGriefFloor,
 }
 
 /// Storage format version for migration tracking
