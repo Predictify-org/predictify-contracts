@@ -149,6 +149,8 @@ pub enum DataKey {
     GlobalConfig,
     /// Consumed `place_bets` idempotency key, scoped per user.
     PlaceBetsIdem(Address, BytesN<32>),
+    /// Replay protection nonce for events, stored per topic.
+    EventNonce(Symbol),
 }
 
 /// Storage format version for migration tracking
