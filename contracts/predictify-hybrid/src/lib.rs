@@ -8516,8 +8516,11 @@ mod tests {
             let guard = BudgetGuard::new(&env, 100_000);
             assert!(guard.consumed() == 0); // No instructions consumed yet in test host
         });
+    }
 
     pub fn get_fee_withdrawal_schedule(env: Env) -> crate::fees::FeeWithdrawalSchedule {
         crate::fees::FeeWithdrawalManager::get_schedule(&env)
     }
-}mod dispute_multisig;
+}
+
+mod dispute_multisig;

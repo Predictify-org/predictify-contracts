@@ -1963,6 +1963,27 @@ impl OracleUtils {
         }
     }
 
+    /// Resolve conflicting oracle outcomes by preferring the fallback source.
+    ///
+    /// When the primary and fallback sources disagree, the fallback outcome is
+    /// treated as the authoritative choice to avoid acting on conflicting data.
+    /// If both outcomes agree, the primary outcome is preserved.
+    pub fn resolve_outcome_with_fallback(
+        primary_outcome: &String,
+        fallback_outcome: &String,
+        env: &Env,
+    ) -> Result<String, Error> {
+        if primary_outcome.is_empty() || fallback_outcome.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if primary_outcome == fallback_outcome {
+            Ok(primary_outcome.clone())
+        } else {
+            Ok(fallback_outcome.clone())
+        }
+    }
+
     /// Validate oracle response
     pub fn validate_oracle_response(price: i128) -> Result<(), Error> {
         if price <= 0 {
@@ -3828,6 +3849,30 @@ mod oracle_integration_tests {
         // 4. Empty readings
         let readings_empty: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
         assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_empty, 0), 0);
+    }
+
+    #[test]
+    fn test_resolve_outcome_with_fallback_prefers_fallback_on_disagreement() {
+        let env = Env::default();
+        let primary = String::from_str(&env, "yes");
+        let fallback = String::from_str(&env, "no");
+
+        let resolved = OracleUtils::resolve_outcome_with_fallback(&primary, &fallback, &env)
+            .unwrap();
+
+        assert_eq!(resolved, fallback);
+    }
+
+    #[test]
+    fn test_resolve_outcome_with_fallback_keeps_agreed_outcome() {
+        let env = Env::default();
+        let primary = String::from_str(&env, "yes");
+        let fallback = String::from_str(&env, "yes");
+
+        let resolved = OracleUtils::resolve_outcome_with_fallback(&primary, &fallback, &env)
+            .unwrap();
+
+        assert_eq!(resolved, primary);
     }
 
     #[test]
