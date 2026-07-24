@@ -222,7 +222,7 @@ help: the trait `TryFromVal<Env, soroban_sdk::Val>` is not implemented for `Mark
                `(T0, T1, T2)` implements `TryFromVal<E, soroban_sdk::Val>`
                `(T0, T1, T2, T3)` implements `TryFromVal<E, [soroban_sdk::Val; N]>`
              and 1485 others
-     = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-5040803381722901880.txt'
+     = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-11881604826757946786.txt'
      = note: consider using `--verbose` to print the full type name to the console
      = note: this error originates in the attribute macro `soroban_sdk::contractclient` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -1042,78 +1042,28 @@ error[E0599]: no method named `budget` found for struct `Env` in the current sco
 360 |         let current = self.env.budget().cpu_instruction_cost();
     |                                ^^^^^^ method not found in `Env`
 
-error[E0061]: this function takes 7 arguments but 6 arguments were supplied
-    --> contracts/predictify-hybrid/src/markets.rs:2492:9
-     |
-2492 |           MarketCreationParams::new(
-     |  _________^^^^^^^^^^^^^^^^^^^^^^^^^-
-2493 | |             Address::from_str(
-2494 | |                 _env,
-2495 | |                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-...    |
-2514 | |             1_000_000, // Creation fee: 1 XLM
-2515 | |         )
-     | |_________- argument #7 of type `core::option::Option<i128>` is missing
-     |
-note: associated function defined here
-    --> contracts/predictify-hybrid/src/types.rs:3174:12
-     |
-3174 |     pub fn new(
-     |            ^^^
-...
-3181 |         dispute_stake_floor: Option<i128>,
-     |         ---------------------------------
-help: provide the argument
-     |
-2492 ~         MarketCreationParams::new(
-2493 +             Address::from_str(
-2494 +                 _env,
-2495 +                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-2496 +             ),
-2497 +             String::from_str(_env, "Will BTC go above $25,000 by December 31?"),
-2498 +             vec![
-2499 +                 _env,
-2500 +                 String::from_str(_env, "yes"),
-2501 +                 String::from_str(_env, "no"),
-2502 +             ],
-2503 +             30,
-2504 +             OracleConfig::new(
-2505 +                 OracleProvider::pyth(),
-2506 +                 Address::from_str(
-2507 +                     _env,
-2508 +                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-2509 +                 ),
-2510 +                 String::from_str(_env, "BTC/USD"),
-2511 +                 2_500_000,
-2512 +                 String::from_str(_env, "gt"),
-2513 +             ),
-2514 +             1_000_000,
-2515 +             /* core::option::Option<i128> */,
-2516 +         )
-     |
-
 warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
-    --> contracts/predictify-hybrid/src/markets.rs:2964:14
+    --> contracts/predictify-hybrid/src/markets.rs:2965:14
      |
-2964 |             .publish(("market_state_change", market_id), (old_state, new_state));
+2965 |             .publish(("market_state_change", market_id), (old_state, new_state));
      |              ^^^^^^^
 
 warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
-    --> contracts/predictify-hybrid/src/markets.rs:3526:26
+    --> contracts/predictify-hybrid/src/markets.rs:3527:26
      |
-3526 |                         .publish(("market_auto_resumed", market_id), current_time);
+3527 |                         .publish(("market_auto_resumed", market_id), current_time);
      |                          ^^^^^^^
 
 warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
-    --> contracts/predictify-hybrid/src/markets.rs:3600:22
+    --> contracts/predictify-hybrid/src/markets.rs:3601:22
      |
-3600 |         env.events().publish(
+3601 |         env.events().publish(
      |                      ^^^^^^^
 
 warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
-    --> contracts/predictify-hybrid/src/markets.rs:3607:22
+    --> contracts/predictify-hybrid/src/markets.rs:3608:22
      |
-3607 |         env.events().publish(
+3608 |         env.events().publish(
      |                      ^^^^^^^
 
 warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
@@ -1139,12 +1089,6 @@ warning: use of deprecated method `soroban_sdk::events::Events::publish`: use th
     |
 510 |         env.events().publish(
     |                      ^^^^^^^
-
-error[E0063]: missing field `dispute_stake_floor` in initializer of `types::Market`
-   --> contracts/predictify-hybrid/src/monitoring.rs:578:12
-    |
-578 |         Ok(Market {
-    |            ^^^^^^ missing `dispute_stake_floor`
 
 warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
    --> contracts/predictify-hybrid/src/oracles.rs:474:22
@@ -1821,7 +1765,7 @@ note: required by a bound in `Env::invoke_contract`
 ...
  394 |         T: TryFromVal<Env, Val>,
      |            ^^^^^^^^^^^^^^^^^^^^ required by this bound in `Env::invoke_contract`
-     = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-5040803381722901880.txt'
+     = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-11881604826757946786.txt'
      = note: consider using `--verbose` to print the full type name to the console
      = note: this error originates in the attribute macro `soroban_sdk::contractclient` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -1845,7 +1789,7 @@ error[E0277]: the trait bound `soroban_sdk::Val: TryFromVal<Env, MarketResolutio
     = note: required for `soroban_sdk::Val` to implement `FromVal<Env, core::result::Result<MarketResolutionAnalytics, err::Error>>`
     = note: required for `core::result::Result<MarketResolutionAnalytics, err::Error>` to implement `IntoVal<Env, soroban_sdk::Val>`
     = note: required for `core::result::Result<MarketResolutionAnalytics, err::Error>` to implement `soroban_sdk::IntoValForContractFn`
-    = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-5040803381722901880.txt'
+    = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-11881604826757946786.txt'
     = note: consider using `--verbose` to print the full type name to the console
     = note: this error originates in the attribute macro `contractimpl` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -2211,7 +2155,7 @@ warning: variable does not need to be mutable
     |
     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
 
-Some errors have detailed explanations: E0004, E0061, E0063, E0119, E0277, E0308, E0425, E0433, E0560...
+Some errors have detailed explanations: E0004, E0119, E0277, E0308, E0425, E0433, E0560, E0599, E0614.
 For more information about an error, try `rustc --explain E0004`.
 warning: `predictify-hybrid` (lib) generated 181 warnings
-error: could not compile `predictify-hybrid` (lib) due to 98 previous errors; 181 warnings emitted
+error: could not compile `predictify-hybrid` (lib) due to 96 previous errors; 181 warnings emitted

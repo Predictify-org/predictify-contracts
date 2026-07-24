@@ -1102,6 +1102,8 @@ pub struct Market {
     pub winnings_swept: bool,
     /// Per-market timelock configuration for admin actions.
     pub timelock_config: MarketTimelockConfig,
+    /// Per-market dispute stake floor (None = use global/default minimum)
+    pub dispute_stake_floor: Option<i128>,
 }
 
 /// Canonical payload committed by `Market::metadata_commitment`.
@@ -1534,6 +1536,7 @@ impl Market {
             dispute_window_seconds: 86400, // 24h default
             winnings_swept: false,
             timelock_config: MarketTimelockConfig::default(),
+            dispute_stake_floor: None,
         }
     }
 
@@ -3162,6 +3165,8 @@ pub struct MarketCreationParams {
     pub oracle_config: OracleConfig,
     /// Creation fee amount
     pub creation_fee: i128,
+    /// Per-market dispute stake floor (None = use global/default minimum)
+    pub dispute_stake_floor: Option<i128>,
 }
 
 impl MarketCreationParams {
@@ -3173,6 +3178,7 @@ impl MarketCreationParams {
         duration_days: u32,
         oracle_config: OracleConfig,
         creation_fee: i128,
+        dispute_stake_floor: Option<i128>,
     ) -> Self {
         Self {
             admin,
@@ -3181,6 +3187,7 @@ impl MarketCreationParams {
             duration_days,
             oracle_config,
             creation_fee,
+            dispute_stake_floor,
         }
     }
 }
