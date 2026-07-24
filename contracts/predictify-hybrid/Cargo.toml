@@ -26,6 +26,10 @@ wee_alloc = "0.4.5"
 name = "err_stability"
 path = "tests/err_stability.rs"
 
+[[test]]
+name = "stateful"
+path = "tests/stateful.rs"
+
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 proptest = "1.4"
