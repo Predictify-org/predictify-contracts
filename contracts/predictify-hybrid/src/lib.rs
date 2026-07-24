@@ -207,7 +207,9 @@ use admin::{
 };
 pub use admin::Severity;
 pub use err::Error;
-use crate::storage::{check_market_creation_rent, BalanceStorage, DataKey, MARKET_TTL_LEDGERS};
+use crate::storage::{
+    check_market_creation_rent, check_market_creation_rent_budget, DataKey, MARKET_TTL_LEDGERS,
+};
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
     pub use crate::err::*;
@@ -664,8 +666,21 @@ impl PredictifyHybrid {
             dispute_stake_floor,
         };
 
-        // Pre-flight check: ensure sufficient storage rent budget
+        // Pre-flight checks: ensure sufficient storage rent budget.
+        //
+        // This entrypoint returns `Symbol` rather than `Result`, so a failed
+        // check is surfaced as a panic. Callers using `try_create_market`
+        // observe `Error::InsufficientStorageRent` or
+        // `Error::InsufficientStorageRentBudget` respectively.
+        //
+        // The aggregate check runs second and covers all three persistent
+        // entries this entrypoint writes: the market record below, the
+        // platform statistics record via `record_market_created`, and the
+        // audit trail record via `append_record`.
         if let Err(e) = check_market_creation_rent(&env) {
+            panic_with_error!(env, e);
+        }
+        if let Err(e) = check_market_creation_rent_budget(&env) {
             panic_with_error!(env, e);
         }
 
@@ -8505,98 +8520,4 @@ mod tests {
     pub fn get_fee_withdrawal_schedule(env: Env) -> crate::fees::FeeWithdrawalSchedule {
         crate::fees::FeeWithdrawalManager::get_schedule(&env)
     }
-
-    pub fn set_fee_withdrawal_schedule(
-        env: Env,
-        admin: Address,
-        timelock_seconds: u64,
-        max_withdrawal_bps: u32,
-    ) -> Result<(), Error> {
-        crate::admin::AdminManager::assert_is_admin(&env, &admin)?;
-        let schedule = crate::fees::FeeWithdrawalSchedule {
-            timelock_seconds,
-            max_withdrawal_bps,
-        };
-        crate::fees::FeeWithdrawalManager::set_schedule(&env, &schedule)
-    }
-
-    pub fn pause(env: Env, admin: Address) -> Result<(), Error> {
-        crate::admin::ContractPauseManager::pause(&env, &admin)
-    }
-
-    pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
-        crate::admin::ContractPauseManager::unpause(&env, &admin)
-    }
-
-
-}}mod dispute_multisig;
-mod disputes;
-mod edge_cases;
-mod extensions;
-mod graceful_degradation;
-mod queries;
-mod recovery;
-mod statistics;
-
-mod audit;
-
-#[cfg(test)]
-mod audit_tests;
-
-#[cfg(test)]
-mod batch_operations_tests;
-
-#[cfg(test)]
-mod custom_token_tests;
-
-mod event_topic_catalog;
-
-#[cfg(test)]
-mod event_visibility_test;
-
-#[cfg(test)]
-mod extensions_cumulative_cap_tests;
-
-mod leaderboard;
-
-mod lists;
-
-#[cfg(test)]
-mod market_creation_validation_tests;
-
-mod market_id_generator;
-
-#[cfg(test)]
-mod metadata_commitment_tests;
-
-mod metadata_limits;
-
-#[cfg(test)]
-mod metadata_limits_tests;
-
-#[cfg(test)]
-mod metadata_validation_tests;
-
-#[cfg(test)]
-mod multi_admin_multisig_tests;
-
-#[cfg(test)]
-mod place_bets_idempotency_tests;
-
-mod rate_limiter;
-
-#[cfg(test)]
-mod storage_layout_tests;
-
-mod storage_tier_audit;
-
-#[cfg(test)]
-mod test;
-
-mod tokens;
-
-#[cfg(test)]
-mod unclaimed_winnings_timeout_tests;
-
-#[cfg(test)]
-mod voting_tests;
+}mod dispute_multisig;

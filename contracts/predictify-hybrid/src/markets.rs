@@ -4,7 +4,10 @@ use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, V
 
 // use crate::config; // Unused import
 use crate::err::Error;
-use crate::storage::{check_market_creation_rent, DataKey, MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS};
+use crate::storage::{
+    check_market_creation_rent, check_market_creation_rent_budget, DataKey,
+    MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS,
+};
 use crate::types::*;
 // Oracle imports removed - not currently used
 
@@ -128,8 +131,13 @@ impl MarketCreator {
         // Use the generated id after creation in higher-level flows when event metadata is required.
        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
-        // Pre-flight check: ensure sufficient storage rent budget
+        // Pre-flight checks: ensure sufficient storage rent budget.
+        // The single-key check guards the market record itself; the aggregate
+        // check additionally covers every persistent entry a full creation
+        // flow writes, so a caller cannot get partway through and strand a
+        // market record whose companion entries could not be given a TTL.
         check_market_creation_rent(env)?;
+        check_market_creation_rent_budget(env)?;
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
