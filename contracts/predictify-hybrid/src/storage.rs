@@ -3,7 +3,7 @@
 use super::*;
 use crate::markets::{MarketStateLogic, MarketStateManager};
 use crate::types::{Balance, ReflectorAsset, Market, MarketState, OracleConfig};
-use soroban_sdk::{contracttype, Address, Env, IntoVal, Map, Symbol, Val, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, IntoVal, Map, Symbol, Val, Vec};
 
 const STORAGE_CONFIG_KEY: &str = "storage_config";
 const LEDGERS_PER_DAY: u32 = 17_280;
@@ -22,8 +22,22 @@ pub const PLACE_BETS_IDEM_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 /// Increase for longer-lived deployments; decrease to reduce ledger rent costs.
 pub const MARKET_CACHE_TTL_LEDGERS: u32 = 100;
 
-/// Number of persistent storage keys allocated during a single `create_market` call.
-pub const MARKET_CREATION_PERSISTENT_KEYS: u32 = 1;
+/// Number of persistent storage keys allocated during a single `create_market`
+/// call on the contract entrypoint path.
+///
+/// The entrypoint writes three persistent entries per creation:
+///
+/// 1. the market record itself, keyed by `market_id`;
+/// 2. the platform statistics record, via
+///    [`crate::statistics::StatisticsManager::record_market_created`];
+/// 3. the audit trail record, via
+///    [`crate::audit_trail::AuditTrailManager::append_record`].
+///
+/// The internal `MarketCreator::create_market` helper writes only entry 1.
+/// The aggregate preflight uses this constant as an upper bound so that a
+/// creation which succeeds on the helper path cannot fail partway through the
+/// entrypoint path.
+pub const MARKET_CREATION_PERSISTENT_KEYS: u32 = 3;
 
 /// Pre-flight storage-rent check for market creation.
 ///
@@ -45,6 +59,48 @@ pub fn check_market_creation_rent(env: &Env) -> Result<(), Error> {
     if current_seq.checked_add(effective_ttl).is_none() {
         return Err(Error::InsufficientStorageRent);
     }
+
+    Ok(())
+}
+
+/// Pre-flight aggregate storage-rent budget check for market creation.
+///
+/// Where [`check_market_creation_rent`] validates headroom for a single
+/// persistent entry, this check validates headroom for *every* persistent entry
+/// written during one `create_market` call, as counted by
+/// [`MARKET_CREATION_PERSISTENT_KEYS`].
+///
+/// This is the stricter of the two checks: any ledger state rejected by
+/// [`check_market_creation_rent`] is also rejected here, but not the reverse.
+/// Calling it before the first persistent write prevents a partially-written
+/// market, where the market record is stored but the statistics or audit entry
+/// cannot be given its full TTL.
+///
+/// # Formula
+///
+/// 1. `effective_ttl = MIN(MARKET_TTL_LEDGERS, env.storage().max_ttl())`
+/// 2. `required = effective_ttl * MARKET_CREATION_PERSISTENT_KEYS`
+/// 3. The current ledger sequence plus `required` must not overflow `u32`.
+///
+/// Step 2 is itself checked: `MARKET_CREATION_PERSISTENT_KEYS` is public, so a
+/// future value large enough to overflow the multiplication is treated as an
+/// exhausted budget rather than wrapping.
+///
+/// # Errors
+///
+/// Returns [`Error::InsufficientStorageRentBudget`] if the aggregate budget
+/// would overflow `u32`.
+pub fn check_market_creation_rent_budget(env: &Env) -> Result<(), Error> {
+    let effective_ttl = MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
+
+    let required = effective_ttl
+        .checked_mul(MARKET_CREATION_PERSISTENT_KEYS)
+        .ok_or(Error::InsufficientStorageRentBudget)?;
+
+    env.ledger()
+        .sequence()
+        .checked_add(required)
+        .ok_or(Error::InsufficientStorageRentBudget)?;
 
     Ok(())
 }
@@ -85,8 +141,12 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
-    /// Nonce for admin override replay protection.
-    AdminOverrideNonce(Address),
+    /// Minimum anti-grief stake floor for disputes.
+    AntiGriefFloor,
+    /// Global protocol configuration record.
+    GlobalConfig,
+    /// Consumed `place_bets` idempotency key, scoped per user.
+    PlaceBetsIdem(Address, BytesN<32>),
 }
 
 /// Storage format version for migration tracking
@@ -719,8 +779,16 @@ impl BalanceStorage {
 
         let key = Self::get_key(env, &balance.user, &balance.asset);
         env.storage().persistent().set(&key, balance);
-        // Extend TTL to ensure balance persists (approx 30 days)
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        // Extend TTL via the Balance tier so the write honours any
+        // `StorageConfig` override and the `max_ttl()` clamp.
+        StorageOptimizer::extend_persistent_ttl(
+            env,
+            &key,
+            StorageOptimizer::ttl_for_tier(
+                &StorageOptimizer::get_storage_config(env),
+                StorageTtlTier::Balance,
+            ),
+        );
         Ok(())
     }
 
@@ -1316,6 +1384,113 @@ mod tests {
 
             assert!(refreshed_ttl > near_expiry_ttl);
             assert_eq!(refreshed_ttl, initial_ttl);
+        });
+    }
+
+    // ── Storage Rent Aggregate Budget Pre-flight Tests ───────────────────────
+
+    #[test]
+    fn test_budget_check_accepts_normal_ledger_sequence() {
+        let (env, contract_id) = create_contract_env();
+        env.ledger().with_mut(|li| {
+            li.sequence_number = 1_000_000;
+        });
+
+        env.as_contract(&contract_id, || {
+            assert_eq!(check_market_creation_rent_budget(&env), Ok(()));
+        });
+    }
+
+    #[test]
+    fn test_budget_check_rejects_aggregate_overflow() {
+        let (env, contract_id) = create_contract_env();
+
+        env.as_contract(&contract_id, || {
+            let effective_ttl = MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
+            let required = effective_ttl * MARKET_CREATION_PERSISTENT_KEYS;
+
+            // Sequence chosen so a single key still fits but the aggregate does not.
+            let sequence = u32::MAX - required + 1;
+            env.ledger().with_mut(|li| {
+                li.sequence_number = sequence;
+            });
+
+            assert_eq!(
+                check_market_creation_rent_budget(&env),
+                Err(Error::InsufficientStorageRentBudget)
+            );
+        });
+    }
+
+    /// The aggregate check must be strictly stronger than the single-key check.
+    ///
+    /// At a sequence where one key fits but three do not, the original preflight
+    /// returns `Ok` while the budget check rejects — this is the behaviour the
+    /// single-key check could not provide.
+    #[test]
+    fn test_budget_check_is_stricter_than_single_key_check() {
+        let (env, contract_id) = create_contract_env();
+
+        env.as_contract(&contract_id, || {
+            let effective_ttl = MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
+            assert!(
+                MARKET_CREATION_PERSISTENT_KEYS > 1,
+                "test is meaningless if creation writes a single key"
+            );
+
+            // Fits one key with room to spare, but not the full aggregate.
+            let sequence = u32::MAX - effective_ttl - 1;
+            env.ledger().with_mut(|li| {
+                li.sequence_number = sequence;
+            });
+
+            assert_eq!(check_market_creation_rent(&env), Ok(()));
+            assert_eq!(
+                check_market_creation_rent_budget(&env),
+                Err(Error::InsufficientStorageRentBudget)
+            );
+        });
+    }
+
+    #[test]
+    fn test_budget_check_rejects_at_u32_max_sequence() {
+        let (env, contract_id) = create_contract_env();
+        env.ledger().with_mut(|li| {
+            li.sequence_number = u32::MAX;
+        });
+
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                check_market_creation_rent_budget(&env),
+                Err(Error::InsufficientStorageRentBudget)
+            );
+        });
+    }
+
+    #[test]
+    fn test_balance_ttl_honours_storage_config_override() {
+        let (env, contract_id) = create_contract_env();
+        let user = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(&env);
+        let asset = ReflectorAsset::BTC;
+
+        env.as_contract(&contract_id, || {
+            let mut config = StorageOptimizer::get_storage_config(&env);
+            config.balance_ttl_ledgers = 10_000;
+            StorageOptimizer::update_storage_config(&env, &config).unwrap();
+
+            BalanceStorage::set_balance(
+                &env,
+                &Balance {
+                    user: user.clone(),
+                    asset: asset.clone(),
+                    amount: 10,
+                },
+            )
+            .unwrap();
+
+            let key = BalanceStorage::get_key(&env, &user, &asset);
+            let expected = StorageOptimizer::clamp_persistent_ttl(&env, 10_000);
+            assert_eq!(env.storage().persistent().get_ttl(&key), expected);
         });
     }
 

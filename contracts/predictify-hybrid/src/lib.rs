@@ -153,7 +153,9 @@ use admin::{
 };
 pub use admin::Severity;
 pub use err::Error;
-use crate::storage::{check_market_creation_rent, DataKey, MARKET_TTL_LEDGERS};
+use crate::storage::{
+    check_market_creation_rent, check_market_creation_rent_budget, DataKey, MARKET_TTL_LEDGERS,
+};
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
     pub use crate::err::*;
@@ -409,8 +411,21 @@ impl PredictifyHybrid {
             winnings_swept: false,
         };
 
-        // Pre-flight check: ensure sufficient storage rent budget
+        // Pre-flight checks: ensure sufficient storage rent budget.
+        //
+        // This entrypoint returns `Symbol` rather than `Result`, so a failed
+        // check is surfaced as a panic. Callers using `try_create_market`
+        // observe `Error::InsufficientStorageRent` or
+        // `Error::InsufficientStorageRentBudget` respectively.
+        //
+        // The aggregate check runs second and covers all three persistent
+        // entries this entrypoint writes: the market record below, the
+        // platform statistics record via `record_market_created`, and the
+        // audit trail record via `append_record`.
         if let Err(e) = check_market_creation_rent(&env) {
+            panic_with_error!(env, e);
+        }
+        if let Err(e) = check_market_creation_rent_budget(&env) {
             panic_with_error!(env, e);
         }
 
