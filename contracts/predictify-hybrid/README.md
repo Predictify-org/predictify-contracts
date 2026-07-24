@@ -289,7 +289,8 @@ The contract now makes **actual calls** to the Reflector oracle contract:
 1. **Contract-to-Contract Calls**: Uses `env.invoke_contract()` to call Reflector functions
 2. **Price Fetching**: Calls `lastprice()` and `twap()` functions from Reflector
 3. **Fallback Mechanism**: If `lastprice()` fails, tries `twap()` with 1 record
-4. **Error Handling**: Returns `OracleUnavailable` if both methods fail
+4. **Disagreement Handling**: If the primary and fallback oracle sources return different outcomes, the fallback outcome is preferred to avoid acting on conflicting data
+5. **Error Handling**: Returns `OracleUnavailable` if both methods fail
 
 ### Reflector Contract Functions Used
 

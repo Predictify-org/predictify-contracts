@@ -5273,10 +5273,9 @@ mod focused_dispute_tests {
                 let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
                 let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
 
-                    if topic0 == symbol_short!("dispt_opn") {
-                        assert_eq!(topic1, market_id, "Market ID must be topic1");
-                        found = true;
-                    }
+                if topic0 == symbol_short!("dispt_opn") {
+                    assert_eq!(topic1, market_id, "Market ID must be topic1");
+                    found = true;
                 }
             }
         }

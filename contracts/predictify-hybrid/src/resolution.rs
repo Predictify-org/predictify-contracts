@@ -281,7 +281,8 @@ impl OracleResolutionManager {
     /// Fetch oracle result for a market with deterministic fallback ordering and timeout handling.
     ///
     /// The resolver attempts the primary oracle once. When `has_fallback` is `true`, it attempts the
-    /// fallback oracle once only after that primary failure. No oracle calls are made once
+    /// fallback oracle once after a primary failure and also re-checks the fallback outcome when the
+    /// primary and fallback sources disagree. No oracle calls are made once
     /// `ledger.timestamp() >= end_time + resolution_timeout`.
     pub fn fetch_oracle_result(env: &Env, market_id: &Symbol) -> Result<OracleResolution, Error> {
         // Get the market from storage
@@ -308,7 +309,41 @@ impl OracleResolutionManager {
         let primary_result = Self::try_fetch_from_config(env, market_id, &used_config);
 
         let (price, outcome) = match primary_result {
-            Ok(res) => res,
+            Ok(primary_res) => {
+                if market.has_fallback {
+                    let fallback_config = &market.fallback_oracle_config;
+                    if fallback_config.oracle_address != market.oracle_config.oracle_address {
+                        match Self::try_fetch_from_config(env, market_id, fallback_config) {
+                            Ok(fallback_res) => {
+                                let fallback_outcome = fallback_res.1.clone();
+                                let resolved_outcome = OracleUtils::resolve_outcome_with_fallback(
+                                    &primary_res.1,
+                                    &fallback_outcome,
+                                    env,
+                                )?;
+
+                                if resolved_outcome == fallback_outcome {
+                                    used_config = fallback_config.clone();
+                                    crate::events::EventEmitter::emit_fallback_used(
+                                        env,
+                                        market_id,
+                                        &market.oracle_config.oracle_address,
+                                        &fallback_config.oracle_address,
+                                    );
+                                    (fallback_res.0, resolved_outcome)
+                                } else {
+                                    (primary_res.0, primary_res.1)
+                                }
+                            }
+                            Err(_) => primary_res,
+                        }
+                    } else {
+                        primary_res
+                    }
+                } else {
+                    primary_res
+                }
+            }
             Err(_) => {
                 // 3. Try fallback oracle if primary fails
                 if market.has_fallback {
