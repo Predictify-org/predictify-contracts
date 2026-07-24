@@ -98,6 +98,8 @@ pub mod tokens;
 
 #[cfg(test)]
 mod override_audit_tests;
+#[cfg(test)]
+mod market_audit_tests;
 // #[cfg(any())]
 // mod test_audit_trail;
 // #[cfg(any())]
@@ -694,8 +696,9 @@ impl PredictifyHybrid {
         // Record statistics
         statistics::StatisticsManager::record_market_created(&env);
 
-        crate::audit_trail::AuditTrailManager::append_record(
+        crate::audit_trail::AuditTrailManager::append_market_record(
             &env,
+            &market_id,
             crate::audit_trail::AuditAction::MarketCreated,
             admin.clone(),
             Map::new(&env),
@@ -2165,6 +2168,21 @@ impl PredictifyHybrid {
     /// This helper returns `false` when the market is missing, when `expected` does not
     /// match the commitment stored at creation/update time, or when any committed field
     /// in storage was changed without refreshing the stored commitment.
+    /// Returns a specific persistent audit record for a market, keyed by its per-market index.
+    pub fn get_market_audit_record(env: Env, market_id: Symbol, index: u64) -> Option<AuditRecord> {
+        AuditTrailManager::get_market_record(&env, &market_id, index)
+    }
+
+    /// Returns the most recent audit records for a market, bounded by the requested limit.
+    pub fn get_market_audit_records(env: Env, market_id: Symbol, limit: u64) -> Vec<AuditRecord> {
+        AuditTrailManager::get_market_latest_records(&env, &market_id, limit)
+    }
+
+    /// Returns the current head for a market-specific audit trail.
+    pub fn get_market_audit_head(env: Env, market_id: Symbol) -> Option<AuditTrailHead> {
+        AuditTrailManager::get_market_head(&env, &market_id)
+    }
+
     pub fn verify_market_metadata(env: Env, market_id: Symbol, expected: BytesN<32>) -> bool {
         let market: Option<Market> = env.storage().persistent().get(&market_id);
         match market {
@@ -2602,8 +2620,9 @@ impl PredictifyHybrid {
             };
             String::from_str(&env, s)
         });
-        AuditTrailManager::append_record(
+        AuditTrailManager::append_market_record(
             &env,
+            &market_id,
             AuditAction::MarketForceResolved,
             admin,
             details,
@@ -4888,8 +4907,9 @@ impl PredictifyHybrid {
             Symbol::new(&env, "update"),
             String::from_str(&env, "description"),
         );
-        crate::audit_trail::AuditTrailManager::append_record(
+        crate::audit_trail::AuditTrailManager::append_market_record(
             &env,
+            &market_id,
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
@@ -5040,8 +5060,9 @@ impl PredictifyHybrid {
             Symbol::new(&env, "update"),
             String::from_str(&env, "outcomes"),
         );
-        crate::audit_trail::AuditTrailManager::append_record(
+        crate::audit_trail::AuditTrailManager::append_market_record(
             &env,
+            &market_id,
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
@@ -5154,8 +5175,9 @@ impl PredictifyHybrid {
             Symbol::new(&env, "update"),
             String::from_str(&env, "category"),
         );
-        crate::audit_trail::AuditTrailManager::append_record(
+        crate::audit_trail::AuditTrailManager::append_market_record(
             &env,
+            &market_id,
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
@@ -5273,8 +5295,9 @@ impl PredictifyHybrid {
 
         let mut details = Map::new(&env);
         details.set(Symbol::new(&env, "update"), String::from_str(&env, "tags"));
-        crate::audit_trail::AuditTrailManager::append_record(
+        crate::audit_trail::AuditTrailManager::append_market_record(
             &env,
+            &market_id,
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,

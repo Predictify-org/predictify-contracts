@@ -75,14 +75,47 @@ pub struct AuditTrailHead {
 pub struct AuditTrailManager;
 
 impl AuditTrailManager {
-    /// Storage key for the audit trail head
+    /// Storage key for the global audit trail head.
     fn head_key(env: &Env) -> Symbol {
         Symbol::new(env, "AUDIT_HEAD")
+    }
+
+    /// Storage key for a per-market audit trail head.
+    fn market_head_key(env: &Env, market_id: &Symbol) -> (Symbol, Symbol) {
+        (Symbol::new(env, "AUDIT_M_HEAD"), market_id.clone())
+    }
+
+    /// Storage key for a per-market audit record.
+    fn market_record_key(env: &Env, market_id: &Symbol, index: u64) -> (Symbol, Symbol, u64) {
+        (Symbol::new(env, "AUDIT_M_REC"), market_id.clone(), index)
     }
 
     /// Appends a new record to the audit trail.
     pub fn append_record(
         env: &Env,
+        action: AuditAction,
+        actor: Address,
+        details: Map<Symbol, String>,
+        override_nonce: Option<u64>,
+    ) -> u64 {
+        Self::append_record_with_market(env, &None, action, actor, details, override_nonce)
+    }
+
+    /// Appends a new per-market record to the audit trail when a market identifier is supplied.
+    pub fn append_market_record(
+        env: &Env,
+        market_id: &Symbol,
+        action: AuditAction,
+        actor: Address,
+        details: Map<Symbol, String>,
+        override_nonce: Option<u64>,
+    ) -> u64 {
+        Self::append_record_with_market(env, &Some(market_id.clone()), action, actor, details, override_nonce)
+    }
+
+    fn append_record_with_market(
+        env: &Env,
+        market_id: &Option<Symbol>,
         action: AuditAction,
         actor: Address,
         details: Map<Symbol, String>,
@@ -101,20 +134,50 @@ impl AuditTrailManager {
 
         let record = AuditRecord {
             index: new_index,
-            action,
-            actor,
+            action: action.clone(),
+            actor: actor.clone(),
             timestamp: env.ledger().timestamp(),
-            details,
+            details: details.clone(),
             prev_record_hash: head.latest_hash.clone(),
-            override_nonce: override_nonce,
+            override_nonce,
         };
 
-        // Use a tuple key for distinct storage namespace (Symbol, index)
         let record_key = (Symbol::new(env, "AUDIT_REC"), new_index);
         env.storage().persistent().set(&record_key, &record);
 
-        // Instead of xdr, let's just use the Soroban bytes macro or hash a simple representation
-        // Since we want tamper evidence of the payload, we use ToXdr implemented by the SDK.
+        if let Some(market_id) = market_id {
+            let mut market_head: AuditTrailHead = env
+                .storage()
+                .persistent()
+                .get(&Self::market_head_key(env, market_id))
+                .unwrap_or(AuditTrailHead {
+                    latest_index: 0,
+                    latest_hash: BytesN::from_array(env, &[0u8; 32]),
+                });
+
+            let market_index = market_head.latest_index + 1;
+            let market_record = AuditRecord {
+                index: market_index,
+                action,
+                actor,
+                timestamp: env.ledger().timestamp(),
+                details,
+                prev_record_hash: market_head.latest_hash.clone(),
+                override_nonce: None,
+            };
+
+            let market_record_key = Self::market_record_key(env, market_id, market_index);
+            env.storage().persistent().set(&market_record_key, &market_record);
+
+            use soroban_sdk::xdr::ToXdr;
+            let market_record_bytes = market_record.clone().to_xdr(env);
+            let market_new_hash: BytesN<32> = env.crypto().sha256(&market_record_bytes).into();
+
+            market_head.latest_index = market_index;
+            market_head.latest_hash = market_new_hash;
+            env.storage().persistent().set(&Self::market_head_key(env, market_id), &market_head);
+        }
+
         use soroban_sdk::xdr::ToXdr;
         let record_bytes = record.clone().to_xdr(env);
         let new_hash: BytesN<32> = env.crypto().sha256(&record_bytes).into();
@@ -129,6 +192,12 @@ impl AuditTrailManager {
     /// Retrieves a specific audit record by index.
     pub fn get_record(env: &Env, index: u64) -> Option<AuditRecord> {
         let record_key = (Symbol::new(env, "AUDIT_REC"), index);
+        env.storage().persistent().get(&record_key)
+    }
+
+    /// Retrieves a specific per-market audit record by index.
+    pub fn get_market_record(env: &Env, market_id: &Symbol, index: u64) -> Option<AuditRecord> {
+        let record_key = Self::market_record_key(env, market_id, index);
         env.storage().persistent().get(&record_key)
     }
 
@@ -155,9 +224,37 @@ impl AuditTrailManager {
         records
     }
 
+    /// Retrieves the latest records from a per-market audit trail.
+    pub fn get_market_latest_records(env: &Env, market_id: &Symbol, limit: u64) -> Vec<AuditRecord> {
+        let head_opt = Self::get_market_head(env, market_id);
+        if head_opt.is_none() {
+            return Vec::new(env);
+        }
+
+        let head = head_opt.unwrap();
+        let mut records = Vec::new(env);
+        let mut current_index = head.latest_index;
+        let mut count = 0;
+
+        while current_index > 0 && count < limit {
+            if let Some(record) = Self::get_market_record(env, market_id, current_index) {
+                records.push_back(record);
+            }
+            current_index -= 1;
+            count += 1;
+        }
+
+        records
+    }
+
     /// Retrieves the head of the audit trail.
     pub fn get_head(env: &Env) -> Option<AuditTrailHead> {
         env.storage().persistent().get(&Self::head_key(env))
+    }
+
+    /// Retrieves the head of a per-market audit trail.
+    pub fn get_market_head(env: &Env, market_id: &Symbol) -> Option<AuditTrailHead> {
+        env.storage().persistent().get(&Self::market_head_key(env, market_id))
     }
 
     /// Verifies the integrity of the trail from the current head back to a certain depth.
