@@ -731,6 +731,7 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::vec;
 
     struct RecoveryTest {
         env: Env,

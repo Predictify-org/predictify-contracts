@@ -71,7 +71,6 @@ enum StorageTtlTier {
 pub enum DataKey {
     Whitelisted(Address),
     Blacklisted(Address),
-    AdminOverrideNonce(Address),
     ArchivedMarket(Symbol, u64),
     /// Cumulative days extended for a given market (u32).
     MarketExtensionTotal(Symbol),
@@ -87,6 +86,10 @@ pub enum DataKey {
     MarketCache(Symbol),
     /// Nonce for admin override replay protection.
     AdminOverrideNonce(Address),
+    /// Anti-grief floor for dispute stakes.
+    AntiGriefFloor,
+    /// Idempotency key for place bets.
+    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
 }
 
 /// Storage format version for migration tracking

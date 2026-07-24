@@ -1130,7 +1130,7 @@ impl DisputeManager {
             env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
         }
 
-        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market);
+        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id);
         crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
             env,
             &market_id,

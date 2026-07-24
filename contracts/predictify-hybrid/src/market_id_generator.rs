@@ -37,8 +37,7 @@ use crate::types::Market;
 use alloc::format;
 #[cfg(not(target_family = "wasm"))]
 use alloc::string::ToString;
-use soroban_sdk::xdr::ToXdr;
-use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Map, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, BytesN, Env, Map, Symbol, Vec};
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -79,63 +78,8 @@ impl MarketIdGenerator {
         /// Maximum collision-retry attempts before giving up.
         pub const MAX_RETRIES: u32 = 10;
 
-    // ── Seed sealing methods ───────────────────────────────────────────────────
-
-        /// Check if the seed has been sealed.
-        ///
-        /// Returns `true` if the seed is sealed, preventing further regeneration.
-        ///
-        /// Check if the seed has been sealed.
-        ///
-        /// Returns `true` if the seed is sealed, preventing further regeneration.
-        ///
-        /// # Returns
-        ///
-        /// - `true` if the seed is sealed and cannot be regenerated
-        /// - `false` if the seed is still unsealed and can be regenerated
-        pub fn is_seed_sealed(env: &Env) -> bool {
-            env.storage()
-                .persistent()
-                .get(&Symbol::new(env, Self::SEED_SEALED_KEY))
-                .unwrap_or(false)
-        }
-
-        /// Ensure the seed is not sealed before regeneration.
-
-        ///
-        /// This safety check prevents any seed regeneration after sealing.
-        /// It provides explicit validation before attempting to regenerate the seed.
-        ///
-        /// # Panics
-        ///
-        /// - [`Error::InvalidState`] if attempting to regenerate an already sealed seed
-        fn ensure_seed_not_sealed(env: &Env) {
-            if Self::is_seed_sealed(env) {
-                panic_with_error!(env, Error::InvalidState);
-            }
-        }
-
-        /// Bump TTL for seed-related storage to ensure long-term persistence.
-        ///
-        /// This ensures the seed sealing flag persists for the contract's entire lifetime.
-        ///
-        /// # Safety Note
-        ///
-        /// Uses the maximum allowed TTL to ensure the seed flag remains valid even as
-        /// the contract matures and storage entries age.
-        fn bump_seed_storage_ttl(env: &Env) {
-            let key = Symbol::new(env, Self::SEED_SEALED_KEY);
-            env.storage()
-                .persistent()
-                .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
-        }
-
     // ── Public API ───────────────────────────────────────────────────────────
 
-    /// Generate a unique, collision-resistant market ID for `admin`.
-    ///
-    /// Returns `true` if the seed is sealed, preventing further regeneration.
-    ///
     /// Check if the seed has been sealed.
     ///
     /// Returns `true` if the seed is sealed, preventing further regeneration.
@@ -229,6 +173,142 @@ impl MarketIdGenerator {
         env.storage()
             .persistent()
             .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
+    }
+
+    /// Get the per-admin counter from storage.
+    pub fn get_admin_counter(env: &Env, admin: &Address) -> u32 {
+        let admin_key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
+        let counters: Map<Address, u32> = env
+            .storage()
+            .persistent()
+            .get(&admin_key)
+            .unwrap_or_else(|| Map::new(env));
+        counters.get(admin.clone()).unwrap_or(0)
+    }
+
+    /// Set the per-admin counter in storage.
+    pub fn set_admin_counter(env: &Env, admin: &Address, counter: u32) {
+        let admin_key = Symbol::new(env, Self::ADMIN_COUNTERS_KEY);
+        let mut counters: Map<Address, u32> = env
+            .storage()
+            .persistent()
+            .get(&admin_key)
+            .unwrap_or_else(|| Map::new(env));
+        counters.set(admin.clone(), counter);
+        env.storage().persistent().set(&admin_key, &counters);
+    }
+
+    /// Get and bump the global nonce.
+    pub fn get_and_bump_global_nonce(env: &Env) -> u64 {
+        let key = Symbol::new(env, Self::GLOBAL_NONCE_KEY);
+        let current: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().set(&key, &(current + 1));
+        current
+    }
+
+    /// Build a market ID from nonce, counter, and admin address.
+    ///
+    /// Uses `env.crypto().sha256()` over the serialised nonce and counter
+    /// bytes. The admin address is mixed into the result via FNV-1a so that
+    /// two admins calling with the same nonce/counter still produce
+    /// different IDs.
+    pub fn build_market_id(env: &Env, nonce: u64, counter: u32, admin: &Address) -> Symbol {
+        // Serialize nonce and counter as big-endian bytes.
+        let input: [u8; 12] = [
+            ((nonce >> 56) & 0xFF) as u8,
+            ((nonce >> 48) & 0xFF) as u8,
+            ((nonce >> 40) & 0xFF) as u8,
+            ((nonce >> 32) & 0xFF) as u8,
+            ((nonce >> 24) & 0xFF) as u8,
+            ((nonce >> 16) & 0xFF) as u8,
+            ((nonce >> 8) & 0xFF) as u8,
+            (nonce & 0xFF) as u8,
+            ((counter >> 24) & 0xFF) as u8,
+            ((counter >> 16) & 0xFF) as u8,
+            ((counter >> 8) & 0xFF) as u8,
+            (counter & 0xFF) as u8,
+        ];
+        let input_bytes = Bytes::from_array(env, &input);
+
+        // SHA-256 digest of nonce ‖ counter.
+        let sha: BytesN<32> = env.crypto().sha256(&input_bytes).into();
+
+        // Mix in admin address: FNV-1a over the admin's XDR-representation.
+        // Address::to_xdr() is available via the ToXdr trait on all builds.
+        use soroban_sdk::xdr::ToXdr;
+        let admin_xdr: Bytes = admin.to_xdr(env);
+        let mut h: u32 = 0x811c_9dc5;
+        for byte in admin_xdr.iter() {
+            h ^= byte as u32;
+            h = h.wrapping_mul(0x0100_0193);
+        }
+
+        // XOR the first 4 bytes of the SHA digest with the admin hash so
+        // different admins always produce different prefixes.
+        let sha_arr: [u8; 32] = sha.to_array();
+        let hex_val: u32 = (((sha_arr[0] ^ ((h >> 24) as u8)) as u32) << 24)
+            | (((sha_arr[1] ^ ((h >> 16) as u8)) as u32) << 16)
+            | (((sha_arr[2] ^ ((h >> 8) as u8)) as u32) << 8)
+            | ((sha_arr[3] ^ (h as u8)) as u32);
+
+        let hex_part = alloc::format!("{:08x}", hex_val);
+        let id_str = alloc::format!("mkt_{}_{:06}", hex_part, counter);
+        Symbol::new(env, &id_str)
+    }
+
+    /// Register a market ID in the registry.
+    pub fn register_market_id(env: &Env, market_id: &Symbol, admin: &Address, timestamp: u64) {
+        let entry = MarketIdRegistryEntry {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            timestamp,
+        };
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
+        let mut registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env));
+        registry.push_back(entry);
+        env.storage().persistent().set(&key, &registry);
+    }
+
+    /// Get a paginated view of the market ID registry.
+    pub fn get_market_id_registry(
+        env: &Env,
+        cursor: u32,
+        limit: u32,
+    ) -> Vec<MarketIdRegistryEntry> {
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
+        let registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env));
+        let mut result = Vec::new(env);
+        for (i, entry) in registry.iter().enumerate() {
+            if (i as u32) >= cursor && (i as u32) < cursor + limit {
+                result.push_back(entry);
+            }
+        }
+        result
+    }
+
+    /// Return all market IDs created by `admin`.
+    pub fn get_admin_markets(env: &Env, admin: &Address) -> Vec<Symbol> {
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
+        let registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env));
+        let mut result = Vec::new(env);
+        for entry in registry.iter() {
+            if entry.admin == *admin {
+                result.push_back(entry.market_id.clone());
+            }
+        }
+        result
     }
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -345,6 +425,8 @@ pub fn parse_market_id_components(
         let counter = parts[2].parse::<u32>().map_err(|_| Error::InvalidInput)?;
         return Ok(MarketIdComponents { counter, is_legacy: false });
     }
+    }
+
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
