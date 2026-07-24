@@ -654,6 +654,63 @@ fn test_validation_helpers() {
 
 ## Type Reference
 
+### Statistics Types
+
+The contract maintains comprehensive statistics for platform usage, user activity, and market performance. All statistics use safe arithmetic operations to prevent overflow/underflow.
+
+#### Platform Statistics
+
+**PlatformStatistics Struct**
+```rust
+#[contracttype]
+pub struct PlatformStatistics {
+    pub total_events_created: u64,      // Total markets created (saturates at u64::MAX)
+    pub total_bets_placed: u64,         // Total bets across all markets (saturates at u64::MAX)
+    pub total_volume: i128,             // Total wagered amount (saturates at i128::MAX)
+    pub total_fees_collected: i128,     // Total fees collected (saturates at i128::MAX)
+    pub active_events_count: u32,       // Currently active markets (saturates at 0 on underflow)
+}
+```
+
+**Safety Features:**
+- **Checked Arithmetic**: All increments use `checked_add()` with saturation
+- **Underflow Protection**: Decrements use `checked_sub()` with floor at 0
+- **No Silent Wrapping**: Counters saturate instead of wrapping around
+- **Thread-Safe**: Operations are atomic within Soroban environment
+
+**Usage Example:**
+```rust
+// Platform stats are automatically updated by contract operations
+let stats = StatisticsManager::get_platform_stats(&env);
+assert!(stats.total_events_created <= u64::MAX);
+```
+
+#### User Statistics
+
+**UserStatistics Struct**
+```rust
+#[contracttype]
+pub struct UserStatistics {
+    pub total_bets_placed: u64,         // User's total bets (saturates at u64::MAX)
+    pub total_amount_wagered: i128,     // Total amount wagered (saturates at i128::MAX)
+    pub total_winnings: i128,           // Total winnings claimed (saturates at i128::MAX)
+    pub total_bets_won: u64,            // Bets won by user (saturates at u64::MAX)
+    pub win_rate: u32,                  // Win rate in basis points (0-10000, clamped)
+    pub last_activity_ts: u64,          // Last activity timestamp
+}
+```
+
+**Win Rate Calculation:**
+- Formula: `(bets_won * 10000) / bets_placed`
+- Range: 0 to 10000 basis points (0.00% to 100.00%)
+- Clamped: Never exceeds 10000 even in edge cases
+- Type: u32 for efficient storage and comparison
+
+**Safety Features:**
+- **Overflow Protection**: All monetary values use i128 with saturation
+- **Rate Clamping**: Win rate is clamped to valid range
+- **Timestamp Tracking**: Last activity for user engagement metrics
+
 ### Oracle Types
 
 | Type | Purpose | Key Methods |

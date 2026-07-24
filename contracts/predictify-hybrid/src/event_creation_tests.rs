@@ -33,7 +33,7 @@ impl TestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&admin, &None, &None);
 
         // Configure token used for creation fee collection and fund admin balance.
         env.as_contract(&contract_id, || {
@@ -111,7 +111,7 @@ fn test_create_event_without_token_configuration_fails() {
     let admin = Address::generate(&env);
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None);
+    client.initialize(&admin, &None, &None);
 
     // Intentionally do NOT configure TokenID so creation fee processing fails
     let description = String::from_str(&env, "Fee test event");

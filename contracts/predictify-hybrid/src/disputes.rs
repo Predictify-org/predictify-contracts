@@ -972,6 +972,18 @@ impl DisputeManager {
         // Determine final outcome with dispute consideration
         let final_outcome = DisputeUtils::determine_final_outcome_with_disputes(env, &market)?;
 
+        // Refund disputers when the dispute overturns the original oracle result.
+        if let Some(original_oracle_result) = market.oracle_result.as_ref() {
+            if final_outcome != *original_oracle_result {
+                for (user, stake) in market.dispute_stakes.iter() {
+                    if stake > 0 {
+                        VotingUtils::transfer_winnings(env, &user, stake)?;
+                        market.dispute_stakes.set(user, 0);
+                    }
+                }
+            }
+        }
+
         // Calculate weights
         let oracle_weight = DisputeAnalytics::calculate_oracle_weight(&market);
         let community_weight = DisputeAnalytics::calculate_community_weight(&market);
@@ -2933,6 +2945,59 @@ mod tests {
         assert_eq!(stats.total_dispute_stakes, 1000);
         assert_eq!(stats.unique_disputers, 1);
         assert_eq!(stats.active_disputes, 1);
+    }
+
+    #[test]
+    fn test_dispute_stake_is_refunded_when_resolution_favors_disputer() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "refund_market");
+
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_contract.address();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+        stellar_client.mint(&user, &10_000_000_000i128);
+
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
+
+            let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.state = crate::types::MarketState::Ended;
+            market.total_staked = 1_000;
+
+            let voter = Address::generate(&env);
+            market.votes.set(voter.clone(), String::from_str(&env, "no"));
+            market.stakes.set(voter, 1_000);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let initial_balance = token_client.balance(&user);
+            let stake = MIN_DISPUTE_STAKE;
+            DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), stake, None)
+                .unwrap();
+
+            let balance_after_dispute = token_client.balance(&user);
+            assert_eq!(balance_after_dispute, initial_balance - stake);
+
+            let contract_balance_before_refund = token_client.balance(&env.current_contract_address());
+            let resolution = DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                .unwrap();
+
+            assert_eq!(resolution.final_outcome, String::from_str(&env, "no"));
+            let balance_after_refund = token_client.balance(&user);
+            assert_eq!(balance_after_refund, initial_balance);
+            assert_eq!(token_client.balance(&env.current_contract_address()), 0);
+            assert_eq!(contract_balance_before_refund, stake);
+        });
     }
 
     #[test]

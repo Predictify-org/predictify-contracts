@@ -28,7 +28,7 @@ fn setup_contract() -> (Env, Address, Address) {
     let admin = Address::generate(&env);
     
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None);
+    client.initialize(&admin, &None, &None);
     
     (env, contract_id, admin)
 }

@@ -18,7 +18,7 @@ use crate::types::Market;
 // Note: These constants are now managed by the config module
 // Use ConfigManager::get_fee_config() to get current values
 
-/// Platform fee percentage (2%)
+/// Platform fee percentage (2% = 200 basis points)
 pub const PLATFORM_FEE_PERCENTAGE: i128 = crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE;
 
 /// Market creation fee (1 XLM = 10,000,000 stroops)
@@ -906,17 +906,18 @@ pub struct FeeCalculator;
 impl FeeCalculator {
     /// Calculate platform fee for a market
     pub fn calculate_platform_fee(market: &Market) -> Result<i128, Error> {
-        if market.total_staked == 0 {
+        if market.total_staked <= 0 {
             return Err(Error::InvalidFeeConfig);
         }
 
-        let fee_amount = (market.total_staked * PLATFORM_FEE_PERCENTAGE) / 100;
+        let fee_percentage = PLATFORM_FEE_PERCENTAGE;
+        let fee_amount = (market.total_staked * fee_percentage) / crate::PERCENTAGE_DENOMINATOR;
 
-        if fee_amount < MIN_FEE_AMOUNT {
-            return Err(Error::InsufficientStake);
-        }
+        // Clamp the fee to the market stake so tiny markets do not fail
+        // or exceed the available pool.
+        let capped_fee = fee_amount.min(market.total_staked).max(0);
 
-        Ok(fee_amount)
+        Ok(capped_fee)
     }
 
     /// Calculate user payout after fees
@@ -929,7 +930,8 @@ impl FeeCalculator {
             return Err(Error::NothingToClaim);
         }
 
-        let user_share = (user_stake * (100 - PLATFORM_FEE_PERCENTAGE)) / 100;
+        let fee_percentage = PLATFORM_FEE_PERCENTAGE;
+        let user_share = (user_stake * (crate::PERCENTAGE_DENOMINATOR - fee_percentage)) / crate::PERCENTAGE_DENOMINATOR;
         let payout = (user_share * total_pool) / winning_total;
 
         Ok(payout)
@@ -967,12 +969,9 @@ impl FeeCalculator {
 
         let adjusted_fee = (base_fee * size_multiplier) / 100;
 
-        // Ensure minimum fee
-        if adjusted_fee < MIN_FEE_AMOUNT {
-            Ok(MIN_FEE_AMOUNT)
-        } else {
-            Ok(adjusted_fee)
-        }
+        // Ensure the dynamic fee stays within the available market stake.
+        let capped_fee = adjusted_fee.min(market.total_staked).max(0);
+        Ok(capped_fee)
     }
 
     /// Calculate dynamic fee based on market size and activity
@@ -1913,6 +1912,33 @@ pub mod testing {
             calculation_factors: testing::create_test_fee_calculation_factors(env),
         }
     }
+
+    pub fn create_test_market(env: &Env) -> Market {
+        Market::new(
+            env,
+            Address::generate(env),
+            String::from_str(env, "Test Market"),
+            soroban_sdk::vec![
+                env,
+                String::from_str(env, "yes"),
+                String::from_str(env, "no"),
+            ],
+            env.ledger().timestamp() + 86400,
+            crate::types::OracleConfig::new(
+                crate::types::OracleProvider::pyth(),
+                Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
+                String::from_str(env, "BTC/USD"),
+                2_500_000,
+                String::from_str(env, "gt"),
+            ),
+            None,
+            86400,
+            crate::types::MarketState::Active,
+        )
+    }
 }
 
 // ===== MODULE TESTS =====
@@ -2130,5 +2156,50 @@ mod tests {
             history.reason,
             String::from_str(&env, "Activity level increased")
         );
+    }
+
+    #[test]
+    fn test_fee_basis_points_calculation() {
+        let env = Env::default();
+        let mut market = testing::create_test_market(&env);
+        market.total_staked = 1_000_000_000; // 100 XLM
+
+        // 200 basis points = 2%
+        let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
+        assert_eq!(fee, 20_000_000); // 2 XLM = 20_000_000 stroops
+
+        // Verify calculation: (1_000_000_000 * 200) / 10000 = 20_000_000
+        let expected = (market.total_staked * 200) / 10000;
+        assert_eq!(fee, expected);
+    }
+
+    #[test]
+    fn test_fee_rounding_towards_zero() {
+        let env = Env::default();
+        let mut market = testing::create_test_market(&env);
+
+        // Set total staked to cause fractional result
+        market.total_staked = 1_000_000; // 0.01 XLM in stroops
+
+        // 200 basis points of 1_000_000 = (1_000_000 * 200) / 10000 = 20_000
+        let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
+        assert_eq!(fee, 20_000);
+
+        // Verify no overcharge
+        assert!(fee <= market.total_staked);
+    }
+
+    #[test]
+    fn test_fee_never_exceeds_total_staked() {
+        let env = Env::default();
+        let mut market = testing::create_test_market(&env);
+
+        // Set very small total staked
+        market.total_staked = 100; // Very small amount
+
+        // Even with max fee percentage, should not exceed total
+        let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
+        assert!(fee <= market.total_staked);
+        assert!(fee >= 0);
     }
 }

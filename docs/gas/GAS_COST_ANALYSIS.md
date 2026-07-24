@@ -129,3 +129,39 @@ Fill per method after running benchmarks (see ../gas/GAS_BENCHMARKING.md):
 
 Record CLI `--cost` outputs and RPC simulation breakdowns in a CSV under `benchmarks/results/` for each function and typical scenarios (small/medium/large markets).
 
+## Platform Fee Calculation and Rounding Semantics
+
+### Fee Basis Points
+
+Platform fees are calculated using basis points (1/100th of 1%) for precision:
+
+- **Denominator**: `PERCENTAGE_DENOMINATOR = 10000`
+- **Example**: 2% fee = 200 basis points
+- **Calculation**: `fee_amount = (total_staked * fee_basis_points) / 10000`
+
+### Rounding Direction
+
+All fee calculations use integer division which **truncates towards zero**:
+
+- **Conservative**: Never overcharges users
+- **Deterministic**: Same result across all environments
+- **Safe**: Fee never exceeds calculated amount
+
+### Fee Bounds
+
+- **Minimum**: 0 basis points (0%)
+- **Maximum**: 1000 basis points (10%)
+- **Validation**: Fee amount never exceeds total staked pool
+- **Safety**: `fee_amount <= total_staked` always enforced
+
+### Payout Calculation
+
+User payouts are calculated as:
+
+```
+user_share = (user_stake * (10000 - fee_basis_points)) / 10000
+payout = (user_share * total_pool) / winning_total
+```
+
+This ensures proportional distribution after fee deduction with precise basis point arithmetic.
+

@@ -32,7 +32,7 @@ fn setup_test(env: &Env) -> TestContext {
         .persistent()
         .set(&Symbol::new(env, "TokenID"), &token_id);
 
-    client.initialize(&admin, &None);
+    client.initialize(&admin, &None, &None);
 
     TestContext {
         env: env.clone(),
