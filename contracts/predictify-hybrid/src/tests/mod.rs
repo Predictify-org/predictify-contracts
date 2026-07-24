@@ -30,3 +30,4 @@ pub mod reflector_twap_cache_tests;
 pub mod dispute_anti_grief_tests;
 pub mod oracle_differential_fuzz;
 pub mod monitoring_mttr_tests;
+pub mod snapshot_diffing_tests;
