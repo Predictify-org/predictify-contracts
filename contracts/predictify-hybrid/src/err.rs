@@ -267,6 +267,8 @@ pub enum Error {
     ForceResolveReplayed = 517,
     /// An admin force-resolve was submitted with an empty reason.
     ForceResolveReasonEmpty = 518,
+    /// Oracle admin action was attempted while the cooldown is active.
+    OracleAdminCooldownActive = 528,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

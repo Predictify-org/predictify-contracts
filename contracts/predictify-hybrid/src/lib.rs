@@ -4679,6 +4679,17 @@ impl PredictifyHybrid {
         Ok(())
     }
 
+    /// Set the cooldown for oracle admin actions.
+    ///
+    /// Requires ConfigAdmin permissions.
+    pub fn set_oracle_admin_cooldown(
+        env: Env,
+        admin: Address,
+        cooldown_seconds: u64,
+    ) -> Result<(), Error> {
+        crate::admin::OracleAdminCooldownManager::set_cooldown(&env, &admin, cooldown_seconds)
+    }
+
     /// Set global oracle validation config (admin only).
     ///
     /// - `max_staleness_secs`: maximum allowed age in seconds.
@@ -4700,6 +4711,7 @@ impl PredictifyHybrid {
         max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(&env, &admin)?;
 
         let config = GlobalOracleValidationConfig {
             max_staleness_secs,
@@ -4741,6 +4753,7 @@ impl PredictifyHybrid {
         max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(&env, &admin)?;
 
         let config = EventOracleValidationConfig {
             max_staleness_secs,

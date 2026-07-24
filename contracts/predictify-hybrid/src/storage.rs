@@ -149,8 +149,8 @@ pub enum DataKey {
     GlobalConfig,
     /// Consumed `place_bets` idempotency key, scoped per user.
     PlaceBetsIdem(Address, BytesN<32>),
-    /// Replay protection nonce for events, stored per topic.
-    EventNonce(Symbol),
+    /// State for oracle admin cooldowns
+    OracleAdminCooldownState,
 }
 
 /// Storage format version for migration tracking

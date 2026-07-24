@@ -2469,6 +2469,7 @@ impl OracleWhitelist {
         metadata: OracleMetadata,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         if env
             .storage()
@@ -2529,6 +2530,7 @@ impl OracleWhitelist {
         oracle_address: Address,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         // Check if oracle exists in whitelist
         if !env
@@ -2700,6 +2702,7 @@ impl OracleWhitelist {
         oracle_address: Address,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         // Get and update metadata
         let mut metadata: OracleMetadata = env
@@ -2738,6 +2741,7 @@ impl OracleWhitelist {
         oracle_address: Address,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         let mut metadata: OracleMetadata = env
             .storage()
@@ -3214,6 +3218,7 @@ impl OracleIntegrationManager {
     ) -> Result<(), Error> {
         admin.require_auth();
         OracleWhitelist::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
         env.storage()
             .persistent()
             .set(&OracleIntegrationKey::OracleWeight(oracle), &weight);
