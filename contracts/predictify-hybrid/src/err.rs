@@ -255,22 +255,10 @@ pub enum Error {
     /// An admin override nonce was replayed; reject to prevent replay attacks.
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
-
-    // ===== GOVERNANCE REGISTRY ERRORS (600-609) =====
-    /// Governance registry has already been initialized.
-    AlreadyInitialized = 600,
-    /// Registry not yet initialized. Call initialize() first.
-    RegistryNotInitialized = 601,
-    /// Parameter key is empty or invalid.
-    InvalidKey = 602,
-    /// A pending update already exists for this parameter.
-    PendingUpdateExists = 603,
-    /// No pending update exists for this parameter.
-    NoPendingUpdate = 604,
-    /// Time-lock delay has not yet expired for this update.
-    TimeLockNotExpired = 605,
-    /// Time-lock delay value is invalid (must be > 0).
-    InvalidTimeLockDelay = 606,
+    /// The deprecated-entrypoints registry has reached its maximum capacity
+    /// ([`MAX_REGISTRY_ENTRIES`](crate::deprecated::MAX_REGISTRY_ENTRIES)).
+    /// Prune stale entries before registering new ones.
+    RegistryFull = 528,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

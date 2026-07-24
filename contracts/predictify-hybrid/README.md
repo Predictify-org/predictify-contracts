@@ -869,3 +869,48 @@ The contract is now ready for production use with **real oracle data** from both
 5. **Monitor Performance**: Track oracle response times and reliability
 
 **The mock implementation has been completely replaced with a production-ready Pyth Network integration!** 🚀
+
+## Deprecated-Entrypoints Registry
+
+The contract maintains a **persistent, on-chain registry** (`src/deprecated.rs`) that tracks
+every entrypoint scheduled for removal.  This gives any caller a single, authoritative
+source of truth for discovering which functions are deprecated and what to use instead.
+
+### Read API (permissionless)
+
+| Entrypoint                 | Returns                     | Description                                   |
+|----------------------------|-----------------------------|-----------------------------------------------|
+| `get_deprecated_entry`     | `Option<DeprecatedEntry>`   | Look up a single entry by name                |
+| `list_deprecated_entries`  | `Vec<DeprecatedEntry>`      | Return every registered entry                 |
+| `deprecated_entry_count`   | `u32`                       | Number of registered entries                  |
+| `is_deprecated`            | `bool`                      | Check whether an entrypoint is deprecated     |
+
+### Write API (admin-only)
+
+| Entrypoint            | Description                                              |
+|-----------------------|----------------------------------------------------------|
+| `register_deprecated` | Register a new entry (idempotent)                        |
+| `remove_deprecated`   | Remove an entry (no-op if absent)                        |
+
+### DeprecatedEntry
+
+```rust
+pub struct DeprecatedEntry {
+    pub entrypoint:  Symbol,         // deprecated function name
+    pub replacement: Symbol,         // recommended successor
+    pub since:       u64,            // ledger timestamp of registration
+    pub note:        Option<String>, // optional migration hint
+}
+```
+
+### Capacity limit
+
+`MAX_REGISTRY_ENTRIES = 64`.  Exceeding this returns `Error::RegistryFull` (528).
+
+### Events
+
+* `depr_reg` – emitted when an entry is registered.
+* `depr_rem` – emitted when an entry is removed.
+* `depr_call` – emitted on every call to a deprecated entrypoint (via `DeprecatedRegistry::record_call`).
+
+For the full deprecation lifecycle and migration guides see [`docs/DEPRECATION_POLICY.md`](../../docs/DEPRECATION_POLICY.md).
