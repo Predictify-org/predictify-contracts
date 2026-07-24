@@ -1731,7 +1731,7 @@ impl MarketResolutionManager {
         }
         included.sort_by(|a, b| a.price.cmp(&b.price));
         let total_weight: u64 = included.iter().map(|q| q.weight_bps as u64).sum();
-        let half = total_weight / 2;
+        let half = (total_weight + 1) / 2;
         let mut cumulative: u64 = 0;
         for q in included.iter() {
             cumulative += q.weight_bps as u64;
@@ -2706,6 +2706,7 @@ mod median_resolution_tests {
     #[test]
     fn test_set_and_get_median_config_round_trips() {
         let env = make_env();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let pyth_addr = Address::generate(&env);
         let refl_addr = Address::generate(&env);
         let band_addr = Address::generate(&env);
@@ -2717,30 +2718,36 @@ mod median_resolution_tests {
             max_deviation_bps: 200,
             min_sources: 2,
         };
-        MarketResolutionManager::set_median_config(&env, &config);
+        env.as_contract(&contract_id, || {
+            MarketResolutionManager::set_median_config(&env, &config);
 
-        let loaded = MarketResolutionManager::get_median_config(&env)
-            .expect("config should be present after set");
-        assert_eq!(loaded.max_deviation_bps, 200);
-        assert_eq!(loaded.min_sources, 2);
-        assert_eq!(loaded.pyth_address, pyth_addr);
-        assert_eq!(loaded.reflector_address, refl_addr);
-        assert_eq!(loaded.band_address, band_addr);
+            let loaded = MarketResolutionManager::get_median_config(&env)
+                .expect("config should be present after set");
+            assert_eq!(loaded.max_deviation_bps, 200);
+            assert_eq!(loaded.min_sources, 2);
+            assert_eq!(loaded.pyth_address, pyth_addr);
+            assert_eq!(loaded.reflector_address, refl_addr);
+            assert_eq!(loaded.band_address, band_addr);
+        });
     }
 
     #[test]
     fn test_get_median_config_returns_error_when_not_set() {
         // Fresh environment has no stored config.
         let env = make_env();
-        assert!(
-            MarketResolutionManager::get_median_config(&env).is_err(),
-            "missing config must return ConfigNotFound"
-        );
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            assert!(
+                MarketResolutionManager::get_median_config(&env).is_err(),
+                "missing config must return ConfigNotFound"
+            );
+        });
     }
 
     #[test]
     fn test_set_median_config_overwrites_previous() {
         let env = make_env();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let first = MedianOracleConfig {
             pyth_address: Address::generate(&env),
             reflector_address: Address::generate(&env),
@@ -2748,20 +2755,22 @@ mod median_resolution_tests {
             max_deviation_bps: 100,
             min_sources: 1,
         };
-        MarketResolutionManager::set_median_config(&env, &first);
+        env.as_contract(&contract_id, || {
+            MarketResolutionManager::set_median_config(&env, &first);
 
-        let updated_band = Address::generate(&env);
-        let second = MedianOracleConfig {
-            band_address: updated_band.clone(),
-            max_deviation_bps: 300,
-            min_sources: 2,
-            ..first.clone()
-        };
-        MarketResolutionManager::set_median_config(&env, &second);
+            let updated_band = Address::generate(&env);
+            let second = MedianOracleConfig {
+                band_address: updated_band.clone(),
+                max_deviation_bps: 300,
+                min_sources: 2,
+                ..first.clone()
+            };
+            MarketResolutionManager::set_median_config(&env, &second);
 
-        let loaded = MarketResolutionManager::get_median_config(&env).unwrap();
-        assert_eq!(loaded.max_deviation_bps, 300, "config should be overwritten");
-        assert_eq!(loaded.band_address, updated_band);
+            let loaded = MarketResolutionManager::get_median_config(&env).unwrap();
+            assert_eq!(loaded.max_deviation_bps, 300, "config should be overwritten");
+            assert_eq!(loaded.band_address, updated_band);
+        });
     }
 
     // ── fetch_quote ────────────────────────────────────────────────────────
@@ -2825,10 +2834,9 @@ mod median_resolution_tests {
         // Weighted median of [100, 102] with equal weights = 100 (first whose
         // cumulative weight ≥ half).
         let wm = MarketResolutionManager::weighted_median(&filtered).unwrap();
-        // total weight = 5000+5000=10000, half=5001.
-        // After price 100: cumulative=5000 < 5001 → continue.
-        // After price 102: cumulative=10000 ≥ 5001 → result=102.
-        assert_eq!(wm, 102);
+        // total weight = 5000+5000=10000, half=5000.
+        // After price 100: cumulative=5000 ≥ 5000 → result=100.
+        assert_eq!(wm, 100);
     }
 
     #[test]

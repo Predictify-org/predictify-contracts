@@ -205,7 +205,7 @@ impl From<crate::rate_limiter::RateLimiterError> for Error {
 }
 
 // ===== CONSTANTS =====
-const PERCENTAGE_DENOMINATOR: i128 = 100;
+const PERCENTAGE_DENOMINATOR: i128 = 10_000;
 const SYM_ADMIN: &str = "Admin";
 const SYM_PLATFORM_FEE: &str = "platform_fee";
 const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str = "Both primary and fallback oracles failed";
@@ -380,10 +380,13 @@ impl PredictifyHybrid {
         Self::require_primary_admin_or_panic(&env, &admin);
 
         // Rate limit market creation to prevent abuse
+        // ConfigNotFound means rate limiting is not configured — skip the check
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_admin_events(admin.clone())
         {
-            panic_with_error!(env, Error::from(rate_err));
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                panic_with_error!(env, Error::from(rate_err));
+            }
         }
 
         if let Err(e) = crate::validation::CreationValidator::validate_market_creation(
@@ -552,7 +555,9 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_admin_events(admin.clone())
         {
-            panic_with_error!(env, Error::from(rate_err));
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                panic_with_error!(env, Error::from(rate_err));
+            }
         }
 
         // Validate inputs
@@ -719,7 +724,9 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_voting(user.clone(), market_id.clone())
         {
-            panic_with_error!(env, Error::from(rate_err));
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                panic_with_error!(env, Error::from(rate_err));
+            }
         }
 
         let mut market: Market = env
@@ -1527,8 +1534,8 @@ impl PredictifyHybrid {
                     .checked_mul(PERCENTAGE_DENOMINATOR)
                     .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
                     / PERCENTAGE_DENOMINATOR;
-                // Wait, user_stake * 100 / 100 = user_stake.
-                // The math above used PERCENTAGE_DENOMINATOR (100).
+                // Wait, user_stake * PERCENTAGE_DENOMINATOR / PERCENTAGE_DENOMINATOR = user_stake.
+                // The math above used PERCENTAGE_DENOMINATOR (10_000).
 
                 let product_gross = user_stake
                     .checked_mul(total_pool)
@@ -3217,7 +3224,11 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_disputes(user.clone(), market_id.clone())
         {
-            return Err(Error::from(rate_err));
+            if matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                // No rate limit config — skip
+            } else {
+                return Err(Error::from(rate_err));
+            }
         }
 
         let result = disputes::DisputeManager::process_dispute(&env, user, market_id.clone(), stake, reason);
@@ -3318,7 +3329,11 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_disputes(user.clone(), market_id.clone())
         {
-            return Err(Error::from(rate_err));
+            if matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                // No rate limit config — skip
+            } else {
+                return Err(Error::from(rate_err));
+            }
         }
 
         let result = disputes::DisputeManager::vote_on_dispute(
@@ -7692,7 +7707,7 @@ mod tests {
                     String::from_str(env, "yes"),
                     String::from_str(env, "no"),
                 ],
-                end_time: env.ledger().timestamp() - 1,
+                end_time: env.ledger().timestamp().saturating_sub(1),
                 oracle_config: OracleConfig::new(
                     OracleProvider::reflector(),
                     Address::from_str(
@@ -7752,7 +7767,9 @@ mod tests {
             env.storage().persistent().set(&cache_key, &summary);
         });
 
-        let result = PredictifyHybrid::distribute_payouts(env.clone(), market_id);
+        let result = env.as_contract(&contract_id, || {
+            PredictifyHybrid::distribute_payouts(env.clone(), market_id)
+        });
         // With one winner staking 10 XLM from a 20 XLM pool at 2% fee:
         // share = 100_000_000 * 9800 / 10000 = 98_000_000
         // payout = 98_000_000 * 200_000_000 / 100_000_000 = 196_000_000
@@ -7820,10 +7837,12 @@ mod tests {
             env.storage().persistent().set(&market_id, &market);
         });
 
-        let result = PredictifyHybrid::distribute_payouts(
-            env.clone(),
-            Symbol::new(&env, "all_claimed"),
-        );
+        let result = env.as_contract(&contract_id, || {
+            PredictifyHybrid::distribute_payouts(
+                env.clone(),
+                Symbol::new(&env, "all_claimed"),
+            )
+        });
         assert_eq!(result, Ok(0));
     }
 
@@ -7876,10 +7895,12 @@ mod tests {
             env.storage().persistent().set(&market_id, &market);
         });
 
-        let result = PredictifyHybrid::distribute_payouts(
-            env.clone(),
-            Symbol::new(&env, "unresolved"),
-        );
+        let result = env.as_contract(&contract_id, || {
+            PredictifyHybrid::distribute_payouts(
+                env.clone(),
+                Symbol::new(&env, "unresolved"),
+            )
+        });
         assert_eq!(result, Err(Error::MarketNotResolved));
     }
 

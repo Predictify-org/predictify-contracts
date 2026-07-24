@@ -420,6 +420,15 @@ impl RecoveryValidator {
             return Err(Error::InvalidState);
         }
 
+        // Check total_staked matches sum of stakes map
+        let mut recomputed: i128 = 0;
+        for (_, stake) in market.stakes.iter() {
+            recomputed = recomputed.checked_add(stake).ok_or(Error::InvalidState)?;
+        }
+        if recomputed != market.total_staked {
+            return Err(Error::InvalidState);
+        }
+
         Ok(())
     }
 

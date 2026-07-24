@@ -392,6 +392,15 @@ impl GovernanceContract {
     ) -> Result<(), GovernanceError> {
         voter.require_auth();
 
+        // Guard: already counted via direct vote or prior reveal — check before commitment lookup
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::AlreadyVoted);
+        }
+
         let stored: BytesN<32> = env
             .storage()
             .persistent()
@@ -422,15 +431,6 @@ impl GovernanceContract {
         }
         if now >= p.end_time {
             return Err(GovernanceError::VotingEnded);
-        }
-
-        // Guard: already counted via direct vote or prior reveal
-        if env
-            .storage()
-            .persistent()
-            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
-        {
-            return Err(GovernanceError::AlreadyVoted);
         }
 
         // Tally with delegation weight

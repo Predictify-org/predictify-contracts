@@ -2332,7 +2332,7 @@ mod checked_arithmetic_tests {
     #[test]
     fn test_checked_bps_floor_rounds_down_for_one_basis_point() {
         let result = FeeCalculator::checked_bps_floor(10_001, 1).unwrap();
-
+        // PERCENTAGE_DENOMINATOR is 10_000, so 10_001 * 1 / 10_000 = 1
         assert_eq!(result, 1);
     }
 
@@ -2353,6 +2353,7 @@ mod checked_arithmetic_tests {
 
         let breakdown = FeeCalculator::calculate_fee_breakdown(&market).unwrap();
 
+        // PERCENTAGE_DENOMINATOR=10_000, fee=200 bps → 50_000_001 * 200 / 10_000 = 1_000_000
         assert_eq!(breakdown.fee_amount, 1_000_000);
         assert_eq!(
             breakdown.platform_fee + breakdown.user_payout_amount,

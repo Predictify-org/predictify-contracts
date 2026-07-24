@@ -21,7 +21,7 @@ use soroban_sdk::{
 };
 
 // Use lib.rs PERCENTAGE_DENOMINATOR to avoid ambiguity
-const PERCENTAGE_DENOM: i128 = 100;
+const PERCENTAGE_DENOM: i128 = 10_000;
 
 // ===== ISSUE #553: DISPUTE OUTCOME TALLY (Stellar property-testing guide) =====
 // Ref: https://developers.stellar.org/docs/build/guides/testing/fuzzing

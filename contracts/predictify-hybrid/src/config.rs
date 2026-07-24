@@ -42,7 +42,7 @@ use crate::err::Error;
 ///
 /// Rationale: Used as denominator for fee percentage calculations.
 /// Represented as basis points * 100 for precision (e.g., 250 = 2.5%).
-pub const PERCENTAGE_DENOMINATOR: i128 = 100;
+pub const PERCENTAGE_DENOMINATOR: i128 = 10_000;
 
 /// Maximum market duration in days (365)
 ///
@@ -379,7 +379,7 @@ pub const ORACLE_TIMEOUT_SECONDS: u64 = 30;
 ///
 /// Safe range: 10–1000.  Values below 10 risk dropping legitimate alerts under
 /// normal load; values above 1000 increase per-call storage I/O noticeably.
-pub const MONITOR_QUEUE_CAP: u32 = 100;
+pub const MONITOR_QUEUE_CAP: u32 = 10;
 
 // ===== STORAGE CONSTANTS =====
 

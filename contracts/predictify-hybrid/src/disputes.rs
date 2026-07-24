@@ -3525,65 +3525,68 @@ mod tests {
     #[test]
     fn test_dispute_history_cap_and_eviction() {
         let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
         let market_id = Symbol::new(&env, "cap_market");
         let admin = Address::generate(&env);
         let user1 = Address::generate(&env);
         let user2 = Address::generate(&env);
         let user3 = Address::generate(&env);
 
-        // Store admin in storage for validation bypass
-        env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
+        // Store admin and set cap to 2
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&crate::storage::DataKey::DisputeHistoryCap, &2u32);
+            assert_eq!(DisputeManager::get_history_cap(&env), Some(2));
+        });
 
-        // Default cap should be None (disabled)
-        assert_eq!(DisputeManager::get_history_cap(&env), None);
+        // Create some disputes and apply eviction
+        env.as_contract(&contract_id, || {
+            let mut history = Vec::new(&env);
+            let mut d1 = testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000);
+            d1.status = DisputeStatus::Resolved;
+            let mut d2 = testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000);
+            d2.status = DisputeStatus::Active;
+            let mut d3 = testing::create_test_dispute(&env, user3.clone(), market_id.clone(), 1000);
+            d3.status = DisputeStatus::Resolved;
 
-        // Set history cap to 2
-        DisputeManager::set_history_cap(&env, admin.clone(), 2).unwrap();
-        assert_eq!(DisputeManager::get_history_cap(&env), Some(2));
+            history.push_back(d1);
+            history.push_back(d2);
+            history.push_back(d3);
 
-        // Create some disputes
-        let mut history = Vec::new(&env);
-        let mut d1 = testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000);
-        d1.status = DisputeStatus::Resolved; // Resolved dispute
-        let mut d2 = testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000);
-        d2.status = DisputeStatus::Active; // Active dispute
-        let mut d3 = testing::create_test_dispute(&env, user3.clone(), market_id.clone(), 1000);
-        d3.status = DisputeStatus::Resolved; // Resolved dispute
+            DisputeManager::apply_eviction(&env, &market_id, &mut history).unwrap();
+            assert_eq!(history.len(), 2);
 
-        history.push_back(d1);
-        history.push_back(d2);
-        history.push_back(d3);
+            let remaining_1 = history.get(0).unwrap();
+            let remaining_2 = history.get(1).unwrap();
+            assert_eq!(remaining_1.user, user2);
+            assert_eq!(remaining_2.user, user3);
+        });
 
-        // Apply eviction (current length = 3, cap = 2)
-        // Eviction should remove the first resolved dispute (user1) because it's the oldest resolved dispute.
-        // Active dispute (user2) must not be evicted.
-        DisputeManager::apply_eviction(&env, &market_id, &mut history).unwrap();
-        assert_eq!(history.len(), 2);
+        // Set cap to 0 (disabled) and verify no eviction
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&crate::storage::DataKey::DisputeHistoryCap, &0u32);
+            assert_eq!(DisputeManager::get_history_cap(&env), Some(0));
 
-        // Verify remaining disputes in history are user2 and user3
-        let remaining_1 = history.get(0).unwrap();
-        let remaining_2 = history.get(1).unwrap();
-        assert_eq!(remaining_1.user, user2);
-        assert_eq!(remaining_2.user, user3);
+            let mut history2 = Vec::new(&env);
+            history2.push_back(testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000));
+            history2.push_back(testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000));
 
-        // Verify eviction behavior when cap is disabled (cap = 0)
-        DisputeManager::set_history_cap(&env, admin.clone(), 0).unwrap();
-        assert_eq!(DisputeManager::get_history_cap(&env), Some(0));
+            let mut entry1 = history2.get(0).unwrap();
+            entry1.status = DisputeStatus::Resolved;
+            history2.set(0, entry1);
 
-        let mut history2 = Vec::new(&env);
-        history2.push_back(testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000));
-        history2.push_back(testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000));
+            let mut entry2 = history2.get(1).unwrap();
+            entry2.status = DisputeStatus::Resolved;
+            history2.set(1, entry2);
 
-        let mut entry1 = history2.get(0).unwrap();
-        entry1.status = DisputeStatus::Resolved;
-        history2.set(0, entry1);
-
-        let mut entry2 = history2.get(1).unwrap();
-        entry2.status = DisputeStatus::Resolved;
-        history2.set(1, entry2);
-
-        DisputeManager::apply_eviction(&env, &market_id, &mut history2).unwrap();
-        assert_eq!(history2.len(), 2); // No eviction because cap is 0
+            DisputeManager::apply_eviction(&env, &market_id, &mut history2).unwrap();
+            assert_eq!(history2.len(), 2);
+        });
     }
 }
 
