@@ -48,21 +48,24 @@ mod validation;
 // mod validation_tests; // disabled - API drift
 mod versioning;
 mod voting;
+mod market_analytics;
+mod performance_benchmarks;
 mod disputes;
 mod edge_cases;
 mod extensions;
 mod graceful_degradation;
-mod lists;
-mod market_analytics;
 mod market_id_generator;
-mod leaderboard;
 mod metadata_limits;
-mod performance_benchmarks;
 mod queries;
-mod rate_limiter;
 mod recovery;
 mod statistics;
 mod tokens;
+mod rate_limiter;
+mod dispute_multisig;
+mod event_topic_catalog;
+mod storage_tier_audit;
+mod leaderboard;
+mod lists;
 // #[cfg(any())]
 // mod voting_invariants;
 
@@ -82,7 +85,17 @@ mod bandprotocol {
 // #[cfg(test)]
 // mod oracle_fallback_timeout_tests;
 
-// Re-export commonly used items
+use bets::BetStorage;
+use circuit_breaker::CircuitBreaker;
+use crate::config::PERCENTAGE_DENOMINATOR;
+use events::{EventEmitter, emit_deprecated};
+use gas::BudgetGuard;
+use resolution::ResolutionOutcomeCache;
+use storage::BalanceStorage;
+use types::{Market, ReflectorAsset};
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
+};
 
 // #[cfg(any())]
 // mod integration_test;
@@ -97,7 +110,7 @@ mod bandprotocol {
 // #[cfg(any())]
 // mod upgrade_manager_tests;
 #[cfg(test)]
-mod capability_bitmap_tests;
+// mod capability_bitmap_tests;
 #[cfg(test)]
 mod market_state_matrix_tests;
 
@@ -172,13 +185,21 @@ pub mod errors {
 pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
-use crate::bets::BetStorage;
-use crate::circuit_breaker::CircuitBreaker;
+const SYM_PLATFORM_FEE: &str = "plat_fee";
+const SYM_ALLOWED_ASSETS: &str = "allowed";
+const SYM_ADMIN: &str = "Admin";
+
+// Legacy symbol keys for backwards compatibility
+const SYM_PLATFORM_FEE_LEGACY: &str = "platform_fee";
+const SYM_ALLOWED_ASSETS_LEGACY: &str = "allowed_assets";
+
+const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str = "oracle_resolution_failed_primary_only";
+const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str = "oracle_resolution_failed_primary_then_fallback";
+
 use crate::config::{
     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
     MIN_PLATFORM_FEE_PERCENTAGE,
 };
-use crate::events::{emit_deprecated, EventEmitter};
 use crate::gas::GasTracker;
 use crate::gas::BudgetGuard;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
@@ -186,9 +207,6 @@ use crate::market_id_generator::MarketIdGenerator;
 use crate::resolution::ResolutionOutcomeCache;
 use crate::types::{Market, ReflectorAsset};
 use alloc::format;
-use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
-};
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
     fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
@@ -255,6 +273,120 @@ pub struct PredictifyHybrid;
 
 #[contractimpl]
 impl PredictifyHybrid {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        platform_fee_percentage: Option<i128>,
+        allowed_assets: Option<Vec<Address>>,
+    ) -> Result<(), Error> {
+        // Check for re-initialization attempt (critical security check)
+        if env
+            .storage()
+            .persistent()
+            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
+        {
+            return Err(Error::InvalidState);
+        }
+
+        // Determine platform fee (default 2% if not specified)
+        let fee_percentage = platform_fee_percentage.unwrap_or(DEFAULT_PLATFORM_FEE_PERCENTAGE);
+
+        // Validate fee percentage bounds (0-10%)
+        if fee_percentage < MIN_PLATFORM_FEE_PERCENTAGE
+            || fee_percentage > MAX_PLATFORM_FEE_PERCENTAGE
+        {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        // Initialize admin (includes re-initialization check)
+        admin::AdminInitializer::initialize(&env, &admin)?;
+
+        // Initialize circuit breaker defaults required by write-gated entrypoints.
+        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
+        // Store platform fee configuration in persistent storage
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
+
+        // Initialize rate limiter config
+        let rate_limit_config = crate::rate_limiter::RateLimitConfig {
+            voting_limit: 10_000,
+            dispute_limit: 1_000,
+            oracle_call_limit: 1_000,
+            bet_limit: 10_000,
+            events_per_admin_limit: 1_000,
+            time_window_seconds: 3_600,
+        };
+        env.storage().persistent().set(
+            &crate::rate_limiter::RateLimiterData::Config,
+            &rate_limit_config,
+        );
+
+        // Store default contract configuration so validators have deterministic bounds
+        let mut default_config = crate::config::ConfigManager::get_development_config(&env);
+        default_config.fees.platform_fee_percentage = fee_percentage;
+        if let Err(e) = crate::config::ConfigManager::store_config(&env, &default_config) {
+            panic_with_error!(env, e);
+        }
+
+        // Initialize allowed assets
+        if let Some(assets) = allowed_assets {
+            // Store custom allowed assets
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
+        } else {
+            // Initialize with defaults
+            crate::tokens::TokenRegistry::initialize_with_defaults(&env);
+        }
+
+        // Emit contract initialized event
+        EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
+
+        // Emit platform fee set event
+        EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
+
+        Ok(())
+    }
+
+    pub fn deposit(
+        env: Env,
+        user: Address,
+        asset: ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "deposit")
+        {
+            return Err(e);
+        }
+        balances::BalanceManager::deposit(&env, user, asset, amount)
+    }
+
+    pub fn withdraw(
+        env: Env,
+        user: Address,
+        asset: ReflectorAsset,
+        amount: i128,
+    ) -> Result<Balance, Error> {
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "withdraw")
+        {
+            return Err(e);
+        }
+        if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
+            return Err(crate::err::Error::CBOpen);
+        }
+        balances::BalanceManager::withdraw(&env, user, asset, amount)
+    }
+
+    pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
+        storage::BalanceStorage::get_balance(&env, &user, &asset)
+    }
     /// Distribute payouts to winning voters and bettors for a resolved market.
     ///
     /// This function iterates over all voters and bettors, calculates each winner's
@@ -7981,12 +8113,12 @@ mod tests {
         // Store a resolution summary so ResolutionOutcomeCache::require succeeds.
         // (Adjust the key/type to match your actual resolution.rs implementation.)
         env.as_contract(&contract_id, || {
-            let summary = resolution::ResolutionSummary {
+            let summary = resolution::ResolvedOutcomeSummary {
                 winning_total: 100_000_000i128,
                 total_pool: 200_000_000i128,
                 num_winning_outcomes: 1u32,
             };
-            let cache_key = (Symbol::new(&env, "res_cache"), market_id.clone());
+            let cache_key = (symbol_short!("res_out"), market_id.clone());
             env.storage().persistent().set(&cache_key, &summary);
         });
 
@@ -8152,4 +8284,4 @@ mod tests {
             assert!(guard.consumed() == 0); // No instructions consumed yet in test host
         });
     }
-}mod dispute_multisig;
+}

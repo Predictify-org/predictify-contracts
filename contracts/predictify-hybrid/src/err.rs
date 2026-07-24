@@ -193,10 +193,6 @@ pub enum Error {
     // ===== VALIDATION ERRORS (435-437) =====
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
     DuplicateMarketId = 441,
-    /// Override replay detected. Nonce has already been used.
-    ReplayedOverride = 442,
-    /// Signer rotation cooldown has not yet expired.
-    SignerRotationCooldown = 443,
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -229,12 +225,12 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
-    /// The single-bet amount exceeds the per-market maximum bet cap.
-    ///
-    /// An admin can set a per-market cap via `set_market_max_bet_cap`. Once set,
-    /// any individual bet whose `amount` exceeds the cap will be rejected with this
-    /// error. Use `get_market_max_bet_cap` to query the current cap before placing.
-    BetExceedsCap = 509,
+    /// A place_bets batch with this idempotency key has already been successfully applied.
+    IdempotentBatchAlreadyApplied = 509,
+    /// Force-resolve idempotency key has already been used. Use a new unique key.
+    ForceResolveReplayed = 517,
+    /// Force-resolve reason is empty. Every force-resolve must be justified.
+    ForceResolveReasonEmpty = 518,
     /// No pending fee config commit was found for reveal or apply.
     NoPendingFeeCommit = 519,
     /// Fee config reveal was attempted too early (before timelock expiry).
@@ -1510,7 +1506,7 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
-            Error::InsufficientStorageRent => "Insufficient storage rent for persistent key allocation",
+            Error::InsufficientStorageRentBudget => "Insufficient storage rent for persistent key allocation",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::GasBudgetExceeded => "Gas budget exceeded",

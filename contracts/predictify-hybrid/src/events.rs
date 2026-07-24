@@ -5216,15 +5216,10 @@ mod focused_dispute_tests {
         // topic2 = 1 (schema version)
 
         let mut found = false;
-        // ContractEvents implements PartialEq with (Address, Vec<Val>, Val) tuples
-        // Use the `filter_by_contract` and check raw XDR for topic matching
-        let xdr_events = events.events();
-        for xdr_event in xdr_events.iter() {
-            if let soroban_sdk::xdr::ContractEventBody::V0(ref body) = xdr_event.body {
-                let topics: soroban_sdk::Vec<Val> = soroban_sdk::IntoVal::into_val(&body.topics, &env);
-                if topics.len() == 3 {
-                    let topic0: Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
-                    let topic1: Symbol = topics.get(1).unwrap().try_into_val(&env).unwrap();
+        for event in events.events().iter() {
+            if event.2.len() == 3 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
 
                     if topic0 == symbol_short!("dispt_opn") {
                         assert_eq!(topic1, market_id, "Market ID must be topic1");

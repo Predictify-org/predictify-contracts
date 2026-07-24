@@ -43,7 +43,7 @@ pub fn check_market_creation_rent(env: &Env) -> Result<(), Error> {
     let current_seq = env.ledger().sequence();
 
     if current_seq.checked_add(effective_ttl).is_none() {
-        return Err(Error::InsufficientStorageRent);
+        return Err(Error::InsufficientStorageRentBudget);
     }
 
     Ok(())
@@ -94,12 +94,7 @@ pub enum DataKey {
     MarketCache(Symbol),
     /// Nonce for admin override replay protection.
     AdminOverrideNonce(Address),
-    /// Anti-grief floor for dispute stakes.
-    AntiGriefFloor,
-    /// Idempotency key for place bets.
     PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
-    /// Stores the state for multisig signer rotation cooldowns
-    MultisigRotationState,
 }
 
 /// Storage format version for migration tracking

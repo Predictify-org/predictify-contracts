@@ -78,6 +78,8 @@ impl MarketIdGenerator {
         /// Maximum collision-retry attempts before giving up.
         pub const MAX_RETRIES: u32 = 10;
 
+
+
     // ── Public API ───────────────────────────────────────────────────────────
 
     /// Check if the seed has been sealed.
@@ -427,6 +429,45 @@ pub fn parse_market_id_components(
     }
     }
 
+}
+
+    /// Get market ID registry with pagination
+    pub fn get_market_id_registry(env: &Env, start: u32, limit: u32) -> Vec<MarketIdRegistryEntry> {
+        let registry_key = Symbol::new(env, Self::REGISTRY_KEY);
+        let registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&registry_key)
+            .unwrap_or(Vec::new(env));
+
+        let mut result = Vec::new(env);
+        let end = core::cmp::min(start + limit, registry.len());
+
+        for i in start..end {
+            if let Some(entry) = registry.get(i) {
+                result.push_back(entry);
+            }
+        }
+        result
+    }
+
+    /// Register a newly created market ID
+    fn register_market_id(env: &Env, market_id: &Symbol, admin: &Address, timestamp: u64) {
+        let registry_key = Symbol::new(env, Self::REGISTRY_KEY);
+        let mut registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&registry_key)
+            .unwrap_or(Vec::new(env));
+
+        registry.push_back(MarketIdRegistryEntry {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            timestamp,
+        });
+
+        env.storage().persistent().set(&registry_key, &registry);
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
