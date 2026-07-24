@@ -3897,6 +3897,90 @@ impl PredictifyHybrid {
         crate::bets::get_effective_bet_limits(&env, &market_id)
     }
 
+    /// Set the per-market maximum single-bet cap (admin only).
+    ///
+    /// Once set, any individual bet whose `amount` exceeds `cap` is rejected with
+    /// [`Error::BetExceedsCap`].  The cap is checked after, and in addition to, the
+    /// global/per-event `max_bet` in [`BetLimits`].
+    ///
+    /// Pass `cap = 0` to remove the cap (equivalent to calling
+    /// [`remove_market_max_bet_cap`]).  Any other value must satisfy
+    /// `0 < cap <= MAX_BET_AMOUNT`.
+    ///
+    /// # Parameters
+    ///
+    /// - `admin`     – Must be the primary admin address
+    /// - `market_id` – Identifies the target market
+    /// - `cap`       – Maximum single-bet amount in base token units (stroops)
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`] when `admin` is not the primary admin
+    /// - [`Error::InvalidInput`] when `cap` is negative or exceeds [`MAX_BET_AMOUNT`]
+    ///
+    /// # Events
+    ///
+    /// Emits a `bet_limits_updated` event scoped to `market_id` so that indexers
+    /// can track cap changes.
+    pub fn set_market_max_bet_cap(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        cap: i128,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        // cap == 0 is treated as "remove the cap"
+        if cap == 0 {
+            crate::bets::remove_market_max_bet_cap(&env, &market_id);
+        } else {
+            crate::bets::set_market_max_bet_cap(&env, &market_id, cap)?;
+        }
+        // Emit so indexers can observe
+        EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, 0, cap);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::BetLimitsUpdated,
+            admin.clone(),
+            Map::new(&env),
+            None,
+        );
+
+        Ok(())
+    }
+
+    /// Get the per-market max single-bet cap, or `None` if no cap is configured.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn get_market_max_bet_cap(env: Env, market_id: Symbol) -> Option<i128> {
+        crate::bets::get_market_max_bet_cap(&env, &market_id)
+    }
+
+    /// Remove the per-market max single-bet cap (admin only).
+    ///
+    /// After removal, bets on this market are bounded only by the global/per-event
+    /// [`BetLimits`] `max_bet` (or [`MAX_BET_AMOUNT`] when no limits are configured).
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`] when `admin` is not the primary admin
+    ///
+    /// # Events
+    ///
+    /// Emits a `bet_limits_updated` event with `max_bet = 0` to signal removal.
+    pub fn remove_market_max_bet_cap(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        crate::bets::remove_market_max_bet_cap(&env, &market_id);
+        EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, 0, 0);
+        Ok(())
+    }
+
     /// Set global oracle validation config (admin only).
     ///
     /// - `max_staleness_secs`: maximum allowed age in seconds.

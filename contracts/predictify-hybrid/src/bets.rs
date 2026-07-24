@@ -55,6 +55,8 @@ fn guard_scope_unlock_funds() -> Symbol {
 const GLOBAL_BET_LIMITS_KEY: &str = "bet_limits_global";
 /// Storage key for per-event bet limits map (Symbol -> BetLimits).
 const PER_EVENT_BET_LIMITS_KEY: &str = "bet_limits_evt";
+/// Storage key for per-market max single-bet cap map (Symbol -> i128).
+const PER_MARKET_MAX_BET_CAP_KEY: &str = "max_bet_cap_mkt";
 
 // ===== STORAGE KEY TYPES =====
 
@@ -128,6 +130,64 @@ pub fn set_event_bet_limits(
     per_event.set(market_id.clone(), limits.clone());
     env.storage().persistent().set(&key, &per_event);
     Ok(())
+}
+
+/// Set a per-market max single-bet cap (admin only).
+///
+/// Once set, any individual bet whose `amount` exceeds `cap` will be rejected
+/// with [`Error::BetExceedsCap`].  The cap is independent of (and checked in
+/// addition to) the global/per-event `max_bet` in [`BetLimits`].
+///
+/// # Parameters
+///
+/// - `env`       – Soroban environment
+/// - `market_id` – Identifies the market
+/// - `cap`       – Maximum single-bet amount in base token units
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidInput`] when:
+/// - `cap` is zero or negative
+/// - `cap` exceeds [`MAX_BET_AMOUNT`]
+pub fn set_market_max_bet_cap(env: &Env, market_id: &Symbol, cap: i128) -> Result<(), Error> {
+    if cap <= 0 || cap > MAX_BET_AMOUNT {
+        return Err(Error::InvalidInput);
+    }
+    let key = Symbol::new(env, PER_MARKET_MAX_BET_CAP_KEY);
+    let mut caps: soroban_sdk::Map<Symbol, i128> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(soroban_sdk::Map::new(env));
+    caps.set(market_id.clone(), cap);
+    env.storage().persistent().set(&key, &caps);
+    Ok(())
+}
+
+/// Remove the per-market max bet cap for a market (admin only).
+///
+/// After removal, bets on this market are bounded only by the global/per-event
+/// [`BetLimits`] max (or [`MAX_BET_AMOUNT`] when no limits are configured).
+pub fn remove_market_max_bet_cap(env: &Env, market_id: &Symbol) {
+    let key = Symbol::new(env, PER_MARKET_MAX_BET_CAP_KEY);
+    let mut caps: soroban_sdk::Map<Symbol, i128> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(soroban_sdk::Map::new(env));
+    caps.remove(market_id.clone());
+    env.storage().persistent().set(&key, &caps);
+}
+
+/// Get the per-market max bet cap, or `None` if no cap has been set.
+pub fn get_market_max_bet_cap(env: &Env, market_id: &Symbol) -> Option<i128> {
+    let key = Symbol::new(env, PER_MARKET_MAX_BET_CAP_KEY);
+    let caps: soroban_sdk::Map<Symbol, i128> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(soroban_sdk::Map::new(env));
+    caps.get(market_id.clone())
 }
 
 /// Validate that min <= max and both are within absolute bounds.
@@ -1107,6 +1167,7 @@ impl BetValidator {
     ///
     /// Uses effective bet limits (per-event if set, else global, else default min/max).
     /// Rejects bets below min with InsufficientStake, above max with InvalidInput.
+    /// Rejects bets exceeding the per-market cap with BetExceedsCap (when set).
     pub fn validate_bet_parameters(
         env: &Env,
         market_id: &Symbol,
@@ -1118,22 +1179,30 @@ impl BetValidator {
         Self::validate_bet_amount_against_limits(env, market_id, amount)
     }
 
-    /// Validate bet amount against effective limits (per-event or global or defaults).
+    /// Validate bet amount against effective limits (per-event or global or defaults)
+    /// and the per-market max bet cap (when set).
+    ///
+    /// Checks in order:
+    /// 1. Amount >= effective `min_bet` (→ `InsufficientStake`)
+    /// 2. Amount <= effective `max_bet` (→ `InvalidInput`)
+    /// 3. Amount <= per-market cap when configured (→ `BetExceedsCap`)
     pub fn validate_bet_amount_against_limits(
         env: &Env,
         market_id: &Symbol,
         amount: i128,
     ) -> Result<(), Error> {
         let limits = get_effective_bet_limits(env, market_id);
-        // Temporarily disabled due to validation module being disabled
-        // validation::validate_bet_amount_against_limits(amount, &limits)
-
-        // Simple validation for now
         if amount < limits.min_bet {
             return Err(Error::InsufficientStake);
         }
         if amount > limits.max_bet {
             return Err(Error::InvalidInput);
+        }
+        // Check the per-market single-bet cap (most specific check, own error code).
+        if let Some(cap) = get_market_max_bet_cap(env, market_id) {
+            if amount > cap {
+                return Err(Error::BetExceedsCap);
+            }
         }
         Ok(())
     }
