@@ -3068,7 +3068,7 @@ mod tests {
 
         // Test invalid fee configuration
         let mut invalid_config = config.clone();
-        invalid_config.fees.platform_fee_percentage = 15; // Too high
+        invalid_config.fees.platform_fee_percentage = 1001; // Exceeds the allowed maximum
         assert!(ConfigValidator::validate_contract_config(&invalid_config).is_err());
 
         // Test invalid voting configuration

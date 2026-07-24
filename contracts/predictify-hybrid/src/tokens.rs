@@ -2,22 +2,27 @@
 //! Handles multi-asset support for bets and payouts using Soroban token interface.
 //! Allows admin to configure allowed tokens per event or globally.
 
-use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
+use alloc::{format, string::ToString};
+use soroban_sdk::{contracttype, token, Address, Env, String, Symbol, Vec};
 use crate::err::Error;
 
 /// Represents a Stellar asset/token (contract address + symbol).
-#[soroban_sdk::contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[contracttype]
 pub struct Asset {
     /// The address of the token contract
     pub contract: Address,
     /// The symbol of the token (e.g., XLM, USDC)
     pub symbol: Symbol,
     /// The number of decimals for the token
-    pub decimals: u8,
+    pub decimals: u32,
 }
 
 impl Asset {
+    fn valid_contract_address(env: &Env) -> Address {
+        Address::from_string(&String::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"))
+    }
+
     /// Create a new Asset instance.
     ///
     /// # Parameters
@@ -28,7 +33,7 @@ impl Asset {
         Self {
             contract,
             symbol,
-            decimals,
+            decimals: decimals as u32,
         }
     }
 
@@ -43,10 +48,9 @@ impl Asset {
     /// * `true` if valid, `false` otherwise.
     pub fn validate(&self, env: &Env) -> bool {
         // Validate contract address (must be non-empty and valid)
-        if self.contract == Address::from_string(&String::from_str(env, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")) {
-             // In Soroban, Address::default() might not be what we think. 
-             // Usually we check if it's a specific "zero" address or just let the contract call fail.
-             // But for validation purposes, let's check decimals.
+        if self.contract == Self::valid_contract_address(env) {
+            // In Soroban, Address::default() might not be what we think.
+            // The placeholder is only used in tests; validation is kept permissive here.
         }
         
         // Validate decimals (Soroban tokens typically use 7-18 decimals)
@@ -66,7 +70,7 @@ impl Asset {
         Self {
             contract: contract_address,
             symbol: Symbol::new(env, &reflector_asset.symbol().to_string()),
-            decimals: reflector_asset.decimals(),
+            decimals: reflector_asset.decimals() as u32,
         }
     }
 
@@ -76,8 +80,8 @@ impl Asset {
     /// * `env` - Soroban environment.
     /// * `reflector_asset` - The ReflectorAsset to compare against.
     pub fn matches_reflector_asset(&self, env: &Env, reflector_asset: &crate::types::ReflectorAsset) -> bool {
-        self.symbol == Symbol::new(env, &reflector_asset.symbol().to_string()) 
-            && self.decimals == reflector_asset.decimals()
+        self.symbol == Symbol::new(env, &reflector_asset.symbol().to_string())
+            && self.decimals == reflector_asset.decimals() as u32
     }
 
     /// Get human-readable asset name.
@@ -86,19 +90,16 @@ impl Asset {
     /// * `env` - Soroban environment.
     pub fn name(&self, env: &Env) -> String {
         let symbol_str = self.symbol.to_string();
-        if symbol_str == String::from_str(env, "XLM") {
+        if symbol_str == "XLM" {
             String::from_str(env, "Stellar Lumens")
-        } else if symbol_str == String::from_str(env, "BTC") {
+        } else if symbol_str == "BTC" {
             String::from_str(env, "Bitcoin")
-        } else if symbol_str == String::from_str(env, "ETH") {
+        } else if symbol_str == "ETH" {
             String::from_str(env, "Ethereum")
-        } else if symbol_str == String::from_str(env, "USDC") {
+        } else if symbol_str == "USDC" {
             String::from_str(env, "USD Coin")
         } else {
-            let mut name = String::from_str(env, "Token (");
-            name.append(&symbol_str);
-            name.append(&String::from_str(env, ")"));
-            name
+            String::from_str(env, &format!("Token ({})", symbol_str))
         }
     }
 
@@ -181,9 +182,9 @@ impl TokenRegistry {
         let reflector_assets = crate::types::ReflectorAsset::all_supported();
         for reflector_asset in reflector_assets.iter() {
             // Placeholder: in production these would be the actual SAC contract addresses
-            let contract_address = Address::generate(env);
+            let contract_address = Asset::valid_contract_address(env);
             
-            let asset = Asset::from_reflector_asset(env, reflector_asset, contract_address);
+            let asset = Asset::from_reflector_asset(env, &reflector_asset, contract_address);
             if !global_assets.iter().any(|a| a == asset) {
                 global_assets.push_back(asset);
             }
@@ -214,10 +215,15 @@ impl TokenRegistry {
         let mut global_assets: Vec<Asset> = env.storage().persistent().get(&global_key).unwrap_or(Vec::new(env));
         
         let initial_len = global_assets.len();
-        global_assets.retain(|a| a != *asset);
+        let mut filtered_assets = Vec::new(env);
+        for existing_asset in global_assets.iter() {
+            if existing_asset != *asset {
+                filtered_assets.push_back(existing_asset);
+            }
+        }
         
-        if global_assets.len() < initial_len {
-            env.storage().persistent().set(&global_key, &global_assets);
+        if filtered_assets.len() < initial_len {
+            env.storage().persistent().set(&global_key, &filtered_assets);
             Ok(())
         } else {
             Err(Error::ConfigNotFound)

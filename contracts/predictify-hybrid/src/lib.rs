@@ -52,6 +52,7 @@ mod reentrancy_guard;
 mod resolution;
 mod statistics;
 mod storage;
+mod tokens;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -237,6 +238,9 @@ impl PredictifyHybrid {
         // Initialize admin (includes re-initialization check)
         AdminInitializer::initialize(&env, &admin)?;
 
+        // Initialize the circuit breaker so write operations are allowed by default.
+        crate::circuit_breaker::CircuitBreaker::initialize(&env)?;
+
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
@@ -249,7 +253,7 @@ impl PredictifyHybrid {
                 .persistent()
                 .set(&Symbol::new(&env, "allowed_assets"), &assets);
         } else {
-            // Initialize with defaults
+            // Initialize the token registry with default supported assets.
             crate::tokens::TokenRegistry::initialize_with_defaults(&env);
         }
 

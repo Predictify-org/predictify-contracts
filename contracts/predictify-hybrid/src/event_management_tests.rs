@@ -37,7 +37,7 @@ impl TestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&admin, &None, &None);
 
         Self {
             env,
