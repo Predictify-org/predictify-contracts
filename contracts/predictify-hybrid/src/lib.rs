@@ -5897,6 +5897,131 @@ impl PredictifyHybrid {
         crate::recovery::RecoveryManager::prune_recovery_history(&env, &admin, &market_id, count)
     }
 
+    // ===== PER-MARKET RECOVERY TIMELOCK ENTRYPOINTS =====
+
+    /// Initiate a per-market recovery request with an admin timelock.
+    ///
+    /// Creates a pending recovery request for the specified market. The recovery
+    /// action cannot be executed until the timelock period (default 24 hours) has
+    /// elapsed. Only contract admins may call this function.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin initiating the recovery (must be authenticated)
+    /// * `market_id` - The target market
+    /// * `action` - The recovery action (ReconstructState, CancelMarket, or ForceResolve)
+    /// * `reason` - Human-readable explanation for the recovery
+    ///
+    /// # Errors
+    /// * `RecoveryAlreadyPending` - A recovery is already pending for this market
+    /// * `MarketNotRecoverable` - Market is in a non-recoverable state
+    /// * `InvalidRecoveryAction` - Action is invalid for the market's current state
+    pub fn initiate_market_recovery(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        action: crate::recovery::PerMarketRecoveryAction,
+        reason: String,
+    ) -> crate::recovery::PendingMarketRecovery {
+        Self::require_primary_admin_or_panic(&env, &admin);
+
+        match crate::recovery::RecoveryTimelockManager::initiate_recovery(
+            &env,
+            &admin,
+            &market_id,
+            &action,
+            &reason,
+        ) {
+            Ok(request) => {
+                crate::audit_trail::AuditTrailManager::append_record(
+                    &env,
+                    crate::audit_trail::AuditAction::ErrorRecovered,
+                    admin.clone(),
+                    Map::new(&env),
+                );
+                request
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Execute a pending per-market recovery request after the timelock has expired.
+    ///
+    /// This can only be called after the timelock period initiated by
+    /// `initiate_market_recovery` has elapsed. Only contract admins may call this.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin executing the recovery (must be authenticated)
+    /// * `market_id` - The target market
+    ///
+    /// # Errors
+    /// * `RecoveryRequestNotFound` - No pending request for this market
+    /// * `RecoveryTimelockActive` - The timelock has not yet expired
+    pub fn execute_market_recovery(env: Env, admin: Address, market_id: Symbol) -> bool {
+        Self::require_primary_admin_or_panic(&env, &admin);
+
+        match crate::recovery::RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id)
+        {
+            Ok(success) => {
+                crate::audit_trail::AuditTrailManager::append_record(
+                    &env,
+                    crate::audit_trail::AuditAction::ErrorRecovered,
+                    admin.clone(),
+                    Map::new(&env),
+                );
+                success
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Cancel a pending per-market recovery request.
+    ///
+    /// Removes the pending request so the recovery action will not be executed.
+    /// Only contract admins may call this.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin cancelling the recovery (must be authenticated)
+    /// * `market_id` - The target market
+    ///
+    /// # Errors
+    /// * `RecoveryRequestNotFound` - No pending request for this market
+    pub fn cancel_market_recovery(env: Env, admin: Address, market_id: Symbol) {
+        Self::require_primary_admin_or_panic(&env, &admin);
+
+        match crate::recovery::RecoveryTimelockManager::cancel_recovery(
+            &env,
+            &admin,
+            &market_id,
+        ) {
+            Ok(()) => {
+                crate::audit_trail::AuditTrailManager::append_record(
+                    &env,
+                    crate::audit_trail::AuditAction::ErrorRecovered,
+                    admin.clone(),
+                    Map::new(&env),
+                );
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Returns the pending recovery request for a market, if any.
+    ///
+    /// Read-only query; no authentication required.
+    pub fn get_pending_market_recovery(
+        env: Env,
+        market_id: Symbol,
+    ) -> Option<crate::recovery::PendingMarketRecovery> {
+        crate::recovery::RecoveryTimelockManager::get_pending(&env, &market_id)
+    }
+
+    /// Returns the current recovery timelock configuration.
+    ///
+    /// Read-only query; no authentication required.
+    pub fn get_recovery_timelock_config(env: Env) -> crate::recovery::RecoveryTimelockConfig {
+        crate::recovery::RecoveryTimelockManager::get_config(&env)
+    }
+
     // ===== VERSIONING FUNCTIONS =====
 
     /// Track contract version for versioning system

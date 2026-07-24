@@ -4062,6 +4062,35 @@ impl EventEmitter {
             (addresses.clone(), admin.clone(), env.ledger().timestamp()),
         );
     }
+
+    /// Emit a monitor queue overflow event when the bounded queue evicts the oldest entry.
+    ///
+    /// This event signals that the queue was at capacity and a new event caused an
+    /// eviction. Off-chain indexers should consume this to track data loss and adjust
+    /// their polling cadence accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `overflow_count` - Cumulative number of overflow evictions since initialization.
+    /// * `evicted_event_id` - The `event_id` of the evicted `MonitorEvent`, if available.
+    /// * `capacity` - The configured capacity of the bounded queue.
+    pub fn emit_monitor_queue_overflow(
+        env: &Env,
+        overflow_count: u64,
+        evicted_event_id: Option<Symbol>,
+        capacity: u32,
+    ) {
+        env.events().publish(
+            (symbol_short!("mon_ovf"),),
+            (
+                overflow_count,
+                evicted_event_id,
+                capacity,
+                env.ledger().timestamp(),
+            ),
+        );
+    }
 }
 
 // ===== EVENT LOGGING AND MONITORING =====
