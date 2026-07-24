@@ -1,5 +1,6 @@
 # Contract Capabilities
 
+
 The Predictify Hybrid contract exposes a **u64 capabilities bitmap** that allows
 clients to discover which features are available without inspecting the Wasm
 binary or relying on version-number heuristics.
