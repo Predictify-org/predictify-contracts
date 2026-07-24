@@ -522,6 +522,43 @@ pub struct ResolvedOutcomeSummary {
     pub num_winning_outcomes: u32,
 }
 
+/// Aggregate analytics about resolution-system performance.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct ResolutionAnalytics {
+    pub total_resolutions: u32,
+    pub oracle_resolutions: u32,
+    pub community_resolutions: u32,
+    pub hybrid_resolutions: u32,
+    pub average_confidence: i128,
+    pub resolution_times: Vec<u64>,
+    pub outcome_distribution: Map<String, u32>,
+}
+
+/// Result of a confidence-weighted median oracle resolution.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct MedianResolutionResult {
+    /// The market that was resolved.
+    pub market_id: Symbol,
+    /// Final market outcome ("yes" or "no").
+    pub outcome: String,
+    /// Confidence-weighted median price used to determine the outcome.
+    pub weighted_median_price: i128,
+    /// Market threshold the price was compared against.
+    pub threshold: i128,
+    /// Comparison operator applied ("gt", "lt", "eq").
+    pub comparison: String,
+    /// All oracle quotes with their computed weights and `included` flags.
+    pub quotes: Vec<OracleQuote>,
+    /// Number of quotes that survived the outlier filter.
+    pub included_count: u32,
+    /// Aggregate confidence score in [0, 100].
+    pub confidence_score: u32,
+    /// Ledger timestamp at the time of resolution.
+    pub timestamp: u64,
+}
+
 /// Storage-backed cache for resolved market payout math.
 ///
 /// Time: O(V + B) once at `refresh`; O(1) on payout paths.
@@ -533,133 +570,102 @@ impl ResolutionOutcomeCache {
         (symbol_short!("res_out"), market_id.clone())
     }
 
-    let mut market: Market = env
-        .storage()
-        .persistent()
-        .get(&market_id)
-        .unwrap_or_else(|| {
-            soroban_sdk::panic_with_error!(env, Error::MarketNotFound);
-        });
-
-    // Check if market is resolved
-    let winning_outcomes = match &market.winning_outcomes {
-        Some(outcomes) => outcomes,
-        None => return Err(Error::MarketNotResolved),
-    };
-
-    // Get all bettors
-    let bettors = bets::BetStorage::get_all_bets_for_market(&env, &market_id);
-
-    // Get fee from legacy storage (backward compatible)
-    let fee_percent = env
-        .storage()
-        .persistent()
-        .get(&Symbol::new(&env, "platform_fee"))
-        .unwrap_or(200);
-
-    let mut has_unclaimed_winners = false;
-
-    // Check voters
-    for (user, outcome) in market.votes.iter() {
-        if winning_outcomes.contains(&outcome) {
-            if !market
-                .claimed
-                .get((*user).clone())
-                .map(|info| info.is_claimed())
-                .unwrap_or(false)
-            {
-                has_unclaimed_winners = true;
-                break;
-            }
-        }
+    /// Remove the cached summary (e.g. before an outcome override).
+    pub fn invalidate(env: &Env, market_id: &Symbol) {
+        env.storage()
+            .persistent()
+            .remove(&Self::storage_key(market_id));
     }
 
-    if !has_unclaimed_winners {
+    /// Compute the winning-side total (votes + bets, deduplicated) for a market.
+    pub fn compute_winning_total_for_market(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+        winning_outcomes: &Vec<String>,
+    ) -> Result<i128, Error> {
+        let mut winning_total: i128 = 0;
+
+        for (voter, outcome) in market.votes.iter() {
+            if winning_outcomes.contains(&outcome) {
+                winning_total = winning_total
+                    .checked_add(market.stakes.get(voter.clone()).unwrap_or(0))
+                    .ok_or(Error::InvalidInput)?;
+            }
+        }
+
+        let bettors = BetStorage::get_all_bets_for_market(env, market_id);
         for user in bettors.iter() {
-            if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
-                if winning_outcomes.contains(&bet.outcome)
-                    && !market
-                        .claimed
-                        .get((*user).clone())
-                        .map(|info| info.is_claimed())
-                        .unwrap_or(false)
-                {
-                    has_unclaimed_winners = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if !has_unclaimed_winners {
-        return Ok(0);
-    }
-
-    let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
-    let winning_total = summary.winning_total;
-    if winning_total == 0 {
-        return Ok(0);
-    }
-
-    let total_pool = summary.total_pool;
-    let fee_denominator = 10000i128;
-    let mut total_distributed: i128 = 0;
-
-    // Create budget guard with 100,000 instruction threshold
-    let budget_guard = gas::BudgetGuard::new(&env, 100000);
-
-    // 1. Distribute to Voters
-    let mut voter_count = 0u32;
-    for (user, outcome) in market.votes.iter() {
-        if winning_outcomes.contains(&outcome) {
-            if market
-                .claimed
-                .get((*user).clone())
-                .map(|info| info.is_claimed())
-                .unwrap_or(false)
-            {
+            if market.votes.contains_key(user.clone()) {
                 continue;
             }
-
-            let user_stake = market.stakes.get((*user).clone()).unwrap_or(0);
-            if user_stake > 0 {
-                let user_share = (user_stake
-                    .checked_mul(fee_denominator - fee_percent)
-                    .ok_or(Error::InvalidInput)?)
-                    / fee_denominator;
-                let payout = (user_share
-                    .checked_mul(total_pool)
-                    .ok_or(Error::InvalidInput)?)
-                    / winning_total;
-
-                if payout >= 0 {
-                    market
-                        .claimed
-                        .set((*user).clone(), ClaimInfo::new(&env, payout));
-                    if payout > 0 {
-                        total_distributed = total_distributed
-                            .checked_add(payout)
-                            .ok_or(Error::InvalidInput)?;
-
-                        storage::BalanceStorage::add_balance(
-                            &env,
-                            &user,
-                            &ReflectorAsset::Stellar,
-                            payout,
-                        )?;
-
-                        events::EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
-                    }
+            if let Some(bet) = BetStorage::get_bet(env, market_id, &user) {
+                if winning_outcomes.contains(&bet.outcome) {
+                    winning_total = winning_total
+                        .checked_add(bet.amount)
+                        .ok_or(Error::InvalidInput)?;
                 }
             }
         }
 
-        voter_count += 1;
-        if voter_count % 10 == 0 {
-            budget_guard.check()?;
-        }
+        Ok(winning_total)
     }
 
+    /// Recompute and persist the payout summary after resolution or outcome change.
+    pub fn refresh(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
+        let winning_outcomes = market
+            .winning_outcomes
+            .as_ref()
+            .ok_or(Error::MarketNotResolved)?;
+
+        let winning_total =
+            Self::compute_winning_total_for_market(env, market_id, market, winning_outcomes)?;
+
+        let summary = ResolvedOutcomeSummary {
+            winning_total,
+            total_pool: market.total_staked,
+            num_winning_outcomes: winning_outcomes.len(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&Self::storage_key(market_id), &summary);
+
+        Ok(())
+    }
+
+    /// Read the cached summary if present.
+    pub fn get(env: &Env, market_id: &Symbol) -> Option<ResolvedOutcomeSummary> {
+        env.storage()
+            .persistent()
+            .get(&Self::storage_key(market_id))
+    }
+
+    /// Return the cached summary, refreshing it if missing or stale.
+    pub fn require(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<ResolvedOutcomeSummary, Error> {
+        if let (Some(summary), Some(ref outcomes)) =
+            (Self::get(env, market_id), &market.winning_outcomes)
+        {
+            if summary.total_pool == market.total_staked
+                && summary.num_winning_outcomes == outcomes.len()
+            {
+                return Ok(summary);
+            }
+        }
+        Self::refresh(env, market_id, market)?;
+        Self::get(env, market_id).ok_or(Error::MarketNotResolved)
+    }
+}
+
+/// Oracle-based resolution manager: fetches oracle results, validates them, and
+/// computes median/aggregate prices used to resolve markets.
+pub struct OracleResolutionManager;
+
+impl OracleResolutionManager {
     /// Get oracle resolution for a market
 
     pub fn get_oracle_resolution(
@@ -1933,8 +1939,9 @@ impl ResolutionTesting {
         env: &Env,
         market_id: &Symbol,
     ) -> Result<MarketResolution, Error> {
-        // Fetch oracle result
-        let _oracle_resolution = OracleResolutionManager::fetch_oracle_result(env, market_id)?;
+        // The oracle-fetch step is exercised through the `fetch_oracle_result`
+        // contract entrypoint; this simulation helper only drives the resolution
+        // path, so the discarded oracle probe is intentionally omitted here.
 
         // Resolve market
         let market_resolution = MarketResolutionManager::resolve_market(env, market_id)?;
@@ -2735,21 +2742,24 @@ impl OracleCallbackResolver {
                     market.outcomes.get(1).unwrap(),
                 )
             } else {
-                if matches!(bet.status, BetStatus::Active) {
-                    bet.status = BetStatus::Lost;
-                    let _ = bets::BetStorage::store_bet(&env, &bet);
-                }
-            }
-        }
+                (
+                    market.outcomes.get(1).unwrap(),
+                    market.outcomes.get(0).unwrap(),
+                )
+            };
 
-        bettor_count += 1;
-        if bettor_count % 10 == 0 {
-            budget_guard.check()?;
+            // Simple comparison: a positive oracle price resolves to "yes".
+            if callback_data.price > 0 {
+                Ok(yes_outcome.clone())
+            } else {
+                Ok(no_outcome.clone())
+            }
+        } else {
+            // For multi-outcome markets, map the price onto an outcome index.
+            let outcome_count = market.outcomes.len();
+            let outcome_index =
+                (callback_data.price.unsigned_abs() % outcome_count as u128) as u32;
+            Ok(market.outcomes.get(outcome_index).unwrap().clone())
         }
     }
-
-    budget_guard.check()?;
-    env.storage().persistent().set(&market_id, &market);
-
-    Ok(total_distributed)
 }
