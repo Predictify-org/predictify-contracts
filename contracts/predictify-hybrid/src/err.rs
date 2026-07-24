@@ -245,6 +245,8 @@ pub enum Error {
     ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+    /// Global per-ledger bet cap has been exceeded to dampen flash-trading bursts.
+    PerLedgerBetCapExceeded = 528,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
