@@ -1,5 +1,167 @@
 #![allow(dead_code)]
 
+//! # Oracle Management System for Predictify Hybrid
+//!
+//! This module provides a comprehensive and production-ready oracle management system
+//! for the Predictify Hybrid prediction market platform on Stellar blockchain.
+//!
+//! ## Module Overview
+//!
+//! The oracle system is designed to provide secure, reliable, and flexible price feed
+//! integration for prediction markets. It supports multiple oracle providers with a
+//! unified interface, comprehensive validation, and security features.
+//!
+//! ## Core Components
+//!
+//! ### Oracle Interface
+//! - **OracleInterface**: Unified trait for all oracle implementations
+//! - Provides consistent API across different oracle providers
+//! - Supports price retrieval, health checking, and metadata access
+//!
+//! ### Oracle Implementations
+//! - **ReflectorOracle**: Primary oracle for Stellar (production-ready)
+//! - **PythOracle**: Future-ready placeholder (not yet on Stellar)
+//! - **BandProtocolOracle**: Band Protocol integration
+//!
+//! ### Factory and Management
+//! - **OracleFactory**: Factory pattern for creating oracle instances
+//! - **OracleWhitelist**: Security system for oracle approval and management
+//! - **OracleIntegrationManager**: Automated oracle result verification
+//! - **OracleValidationConfigManager**: Configurable validation rules
+//!
+//! ### Utilities
+//! - **OracleUtils**: Price comparison and outcome determination utilities
+//! - **OracleCallbackAuth**: Secure authentication for oracle callbacks
+//!
+//! ## Security Features
+//!
+//! - **Whitelist-based Access Control**: Only approved oracles can provide data
+//! - **Signature Verification**: Cryptographic authentication of oracle data
+//! - **Replay Attack Protection**: Nonce-based protection against replay attacks
+//! - **Rate Limiting**: Protection against oracle flooding attacks
+//! - **Staleness Validation**: Rejection of outdated price data
+//! - **Confidence Interval Checks**: Quality assurance for price feeds
+//! - **Deviation Guards**: Detection of price anomalies and outliers
+//!
+//! ## Usage Examples
+//!
+//! ### Basic Oracle Usage
+//!
+//! ```rust,no_run
+//! use soroban_sdk::{Env, Address, String};
+//! use predictify_hybrid::oracles::{OracleFactory, OracleInterface};
+//! use predictify_hybrid::types::OracleProvider;
+//!
+//! # fn example(env: &Env, oracle_address: Address) -> Result<(), predictify_hybrid::err::Error> {
+//! // Create oracle instance
+//! let oracle = OracleFactory::create_oracle(
+//!     OracleProvider::reflector(),
+//!     oracle_address
+//! )?;
+//!
+//! // Check oracle health
+//! if oracle.is_healthy(env)? {
+//!     // Get BTC price
+//!     let price = oracle.get_price(
+//!         env,
+//!         &String::from_str(env, "BTC/USD")
+//!     )?;
+//!     // Use price for market resolution
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Oracle Whitelist Management
+//!
+//! ```rust,no_run
+//! use soroban_sdk::{Env, Address, String};
+//! use predictify_hybrid::oracles::{OracleWhitelist, OracleMetadata};
+//! use predictify_hybrid::types::OracleProvider;
+//!
+//! # fn example(env: &Env, admin: Address, oracle_addr: Address) -> Result<(), predictify_hybrid::err::Error> {
+//! // Initialize whitelist
+//! OracleWhitelist::initialize(env, admin.clone())?;
+//!
+//! // Add oracle to whitelist
+//! let metadata = OracleMetadata {
+//!     provider: OracleProvider::reflector(),
+//!     contract_address: oracle_addr.clone(),
+//!     added_at: env.ledger().timestamp(),
+//!     added_by: admin.clone(),
+//!     last_health_check: env.ledger().timestamp(),
+//!     is_active: true,
+//!     description: String::from_str(env, "Primary Oracle"),
+//! };
+//!
+//! OracleWhitelist::add_oracle_to_whitelist(
+//!     env,
+//!     admin,
+//!     oracle_addr,
+//!     metadata
+//! )?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Oracle Providers
+//!
+//! ### Supported on Stellar
+//! - **Reflector**: Primary, production-ready oracle for Stellar Network
+//! - **Band Protocol**: Alternative oracle provider
+//!
+//! ### Future Support
+//! - **Pyth Network**: Planned when Stellar support is available
+//!
+//! ## Validation and Quality Control
+//!
+//! The module provides comprehensive data validation:
+//! - **Staleness Checks**: Configurable maximum data age
+//! - **Confidence Intervals**: Pyth-specific confidence validation
+//! - **Price Deviation Guards**: Detection of anomalous price movements
+//! - **Rolling Median Outlier Detection**: Statistical outlier rejection
+//!
+//! ## Best Practices
+//!
+//! 1. **Always Check Health**: Verify oracle health before requesting prices
+//! 2. **Use Whitelist**: Only accept data from whitelisted oracles
+//! 3. **Configure Validation**: Set appropriate staleness and confidence thresholds
+//! 4. **Handle Errors**: Implement fallback mechanisms for oracle failures
+//! 5. **Monitor Performance**: Track oracle response times and reliability
+//!
+//! ## Module Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────┐
+//! │           OracleInterface (Trait)                   │
+//! └─────────────────────────────────────────────────────┘
+//!                         ▲
+//!                         │
+//!         ┌───────────────┼───────────────┐
+//!         │               │               │
+//! ┌───────────────┐ ┌──────────┐ ┌──────────────┐
+//! │ Reflector     │ │  Pyth    │ │    Band      │
+//! │ Oracle        │ │  Oracle  │ │    Protocol  │
+//! └───────────────┘ └──────────┘ └──────────────┘
+//!         │               │               │
+//!         └───────────────┼───────────────┘
+//!                         │
+//!                         ▼
+//!              ┌────────────────────┐
+//!              │  OracleFactory     │
+//!              └────────────────────┘
+//!                         │
+//!                         ▼
+//!              ┌────────────────────┐
+//!              │ OracleWhitelist    │
+//!              └────────────────────┘
+//!                         │
+//!                         ▼
+//!              ┌────────────────────┐
+//!              │ Integration Mgr    │
+//!              └────────────────────┘
+//! ```
+
 use alloc::format;
 use alloc::string::ToString;
 use crate::bandprotocol;
@@ -7,18 +169,7 @@ use crate::err::Error;
 use soroban_sdk::{
     contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Val, Vec,
 };
-// use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::types::*;
-
-/// Oracle management system for Predictify Hybrid contract
-///
-/// This module provides a comprehensive oracle management system with:
-/// - OracleInterface trait for standardized oracle interactions
-/// - Reflector oracle implementation (primary oracle for Stellar Network)
-/// - Oracle factory pattern for creating oracle instances
-/// - Oracle utilities for price comparison and outcome determination
-///
-/// Note: Pyth Network is not available on Stellar, so Reflector is the primary oracle provider.
 
 // ===== ORACLE INTERFACE =====
 
@@ -94,12 +245,53 @@ use crate::types::*;
 /// - **Rate Limiting**: Too many requests to oracle service
 /// - **Data Quality**: Oracle returned invalid or stale price data
 pub trait OracleInterface {
-    /// Get the current price for a given feed ID
+    /// Get the current price for a given feed ID.
+    ///
+    /// # Arguments
+    /// * `env` - Reference to the current Soroban environment.
+    /// * `feed_id` - Identifier string for the requested price feed (e.g., "BTC/USD").
+    ///
+    /// # Returns
+    /// * `Ok(i128)` - The latest price value as a signed 128-bit integer scaled according to precision.
+    /// * `Err(Error)` - An error indicating failure to fetch the price, invalid feed configuration, or oracle downtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` in the following cases:
+    /// - `Error::OracleUnavailable`: Oracle service is unreachable or down
+    /// - `Error::InvalidOracleFeed`: Feed ID is not supported or invalid
+    /// - `Error::OracleStale`: Price data is too old
+    /// - `Error::OracleConfidenceTooWide`: Price confidence interval exceeds threshold (Pyth only)
+    ///
+    /// # Safety
+    ///
+    /// This function performs external contract calls which may fail. Callers should
+    /// always check the health status before requesting prices and implement appropriate
+    /// error handling and fallback mechanisms.
     fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
 
     /// Get the current price plus validation metadata for a given feed ID.
     ///
     /// Default implementation uses `get_price()` and the current ledger timestamp.
+    ///
+    /// # Arguments
+    /// * `env` - Reference to the current Soroban environment.
+    /// * `feed_id` - Identifier string for the requested price feed (e.g., "BTC/USD").
+    ///
+    /// # Returns
+    /// * `Ok(OraclePriceData)` - Detailed price metadata including publish timestamp, confidence interval, and exponent.
+    /// * `Err(Error)` - An error if price or metadata retrieval fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from `get_price()` implementation. See `get_price()` documentation
+    /// for specific error conditions.
+    ///
+    /// # Implementation Notes
+    ///
+    /// The default implementation provides basic price data without confidence intervals.
+    /// Oracle providers that support additional metadata (e.g., Pyth with confidence intervals)
+    /// should override this method to provide enhanced data quality information.
     fn get_price_data(&self, env: &Env, feed_id: &String) -> Result<OraclePriceData, Error> {
         let price = self.get_price(env, feed_id)?;
         Ok(OraclePriceData {
@@ -110,13 +302,47 @@ pub trait OracleInterface {
         })
     }
 
-    /// Get the oracle provider type
+    /// Get the oracle provider type.
+    ///
+    /// # Returns
+    /// An `OracleProvider` instance indicating the provider (e.g., Reflector, Pyth, Band Protocol).
     fn provider(&self) -> OracleProvider;
 
-    /// Get the oracle contract ID
+    /// Get the oracle contract ID.
+    ///
+    /// # Returns
+    /// The Soroban `Address` of the underlying oracle contract.
     fn contract_id(&self) -> Address;
 
-    /// Check if the oracle is healthy and available
+    /// Check if the oracle is healthy and available.
+    ///
+    /// # Arguments
+    /// * `env` - Reference to the current Soroban environment.
+    ///
+    /// # Returns
+    /// * `Ok(true)` - If the oracle is active, responsive, and returning valid data.
+    /// * `Ok(false)` - If the oracle fails health checks or is unsupported on the current network.
+    /// * `Err(Error)` - If checking health fails due to contract invocation errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when the health check itself cannot be performed, typically due to:
+    /// - Contract invocation failure
+    /// - Network connectivity issues
+    /// - Invalid oracle contract address
+    ///
+    /// # Implementation Notes
+    ///
+    /// Health checks should be lightweight and fast. Implementations typically verify:
+    /// - Oracle contract is responsive
+    /// - Latest price data is available
+    /// - Price data is not stale
+    /// - No critical errors in oracle state
+    ///
+    /// # Best Practices
+    ///
+    /// Always check health before requesting prices to avoid unnecessary gas costs
+    /// and implement appropriate fallback mechanisms when health checks fail.
     fn is_healthy(&self, env: &Env) -> Result<bool, Error>;
 }
 
@@ -201,7 +427,9 @@ pub trait OracleInterface {
 /// - Feed configurations are stored but not used for price fetching
 #[derive(Debug, Clone)]
 pub struct PythOracle {
+    /// Contract address of the Pyth oracle contract
     contract_id: Address,
+    /// Vector of pre-configured Pyth price feed configurations
     feed_configurations: Vec<PythFeedConfig>,
 }
 
@@ -284,9 +512,13 @@ pub struct PythOracle {
 #[contracttype]
 #[derive(Debug, Clone)]
 pub struct PythFeedConfig {
+    /// Hexadecimal or string identifier for the Pyth price feed
     pub feed_id: String,
+    /// Human-readable asset pair symbol (e.g., "BTC/USD")
     pub asset_symbol: String,
+    /// Decimal precision for scaling raw price quotes
     pub decimals: u32,
+    /// Active flag indicating whether price quotes are currently accepted
     pub is_active: bool,
 }
 
@@ -614,12 +846,25 @@ pub struct ReflectorOracleClient<'a> {
 }
 
 impl<'a> ReflectorOracleClient<'a> {
-    /// Create a new Reflector oracle client
+    /// Create a new Reflector oracle client for a given contract address.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for contract invocation.
+    /// * `contract_id` - Address of the Reflector oracle contract.
+    ///
+    /// # Returns
+    /// A configured client that can query price data from the target oracle contract.
     pub fn new(env: &'a Env, contract_id: Address) -> Self {
         Self { env, contract_id }
     }
 
-    /// Get the latest price for an asset
+    /// Fetch the latest available price for the supplied reflector asset.
+    ///
+    /// # Arguments
+    /// * `asset` - Reflector asset identifier to query.
+    ///
+    /// # Returns
+    /// `Some(ReflectorPriceData)` when the contract responds successfully, otherwise `None`.
     pub fn lastprice(&self, asset: ReflectorAsset) -> Option<ReflectorPriceData> {
         let args = vec![self.env, asset.into_val(self.env)];
         // Reentrancy guard removed - external call protection no longer needed
@@ -629,7 +874,14 @@ impl<'a> ReflectorOracleClient<'a> {
         res
     }
 
-    /// Get price for an asset at a specific timestamp
+    /// Fetch a historical price for the supplied asset and ledger timestamp.
+    ///
+    /// # Arguments
+    /// * `asset` - Reflector asset identifier to query.
+    /// * `timestamp` - Ledger timestamp to retrieve the historical quote for.
+    ///
+    /// # Returns
+    /// `Some(ReflectorPriceData)` when a historical record exists, otherwise `None`.
     pub fn price(&self, asset: ReflectorAsset, timestamp: u64) -> Option<ReflectorPriceData> {
         let args = vec![
             self.env,
@@ -643,16 +895,15 @@ impl<'a> ReflectorOracleClient<'a> {
         res
     }
 
-    /// Get TWAP (Time-Weighted Average Price) for an asset.
+    /// Get a time-weighted average price for an asset over the requested window.
     ///
-    /// Uses an intra-transaction cache keyed by (asset, records) to avoid
-    /// duplicate oracle calls within the same transaction.  The cache lives
-    /// in temporary storage and is automatically discarded when the
-    /// transaction ends.
+    /// # Arguments
+    /// * `asset` - Reflector asset identifier to query.
+    /// * `records` - Number of records to include in the TWAP calculation.
+    /// * `force_refresh` - Reserved for future cache-busting behavior.
     ///
-    /// When `force_refresh` is `true` the cache is bypassed and a fresh
-    /// oracle call is made; the result still updates the cache so subsequent
-    /// calls in the same transaction benefit from it.
+    /// # Returns
+    /// `Some(i128)` when a TWAP value is available, otherwise `None`.
     pub fn twap(&self, asset: ReflectorAsset, records: u32, force_refresh: bool) -> Option<i128> {
         // Build a cache key unique to this transaction
         let cache_key: (Symbol, Val, Val) = (
@@ -680,7 +931,10 @@ impl<'a> ReflectorOracleClient<'a> {
         self.env.storage().temporary().set(&cache_key, &res);
         res
     }
-    /// Check if the Reflector oracle is healthy
+    /// Check whether the Reflector oracle contract responds to a basic price query.
+    ///
+    /// # Returns
+    /// `true` when the oracle responds successfully to a lightweight health probe, otherwise `false`.
     pub fn is_healthy(&self) -> bool {
         // Try to get a simple price to check if oracle is responsive
         let test_asset = ReflectorAsset::Other(Symbol::new(self.env, "XLM"));
@@ -804,19 +1058,30 @@ pub struct ReflectorOracle {
 }
 
 impl ReflectorOracle {
-    /// Create a new Reflector oracle instance
+    /// Create a new Reflector oracle instance.
+    ///
+    /// # Arguments
+    /// * `contract_id` - Address of the Reflector oracle contract.
+    ///
+    /// # Returns
+    /// A Reflector oracle wrapper that can be used through the common oracle interface.
     pub fn new(contract_id: Address) -> Self {
         Self { contract_id }
     }
 
-    /// Get the Reflector oracle contract ID
+    /// Return the contract address backing this Reflector oracle wrapper.
     pub fn contract_id(&self) -> Address {
         self.contract_id.clone()
     }
 
-    /// Parse feed ID to extract asset information
+    /// Parse a feed identifier into a reflector asset representation.
     ///
-    /// Converts feed IDs like "BTC/USD", "ETH/USD", "XLM/USD" to Reflector asset types
+    /// # Arguments
+    /// * `env` - Soroban environment used to construct fallback symbols.
+    /// * `feed_id` - Human-readable price feed identifier such as "BTC/USD".
+    ///
+    /// # Returns
+    /// `Ok(ReflectorAsset)` for supported feed identifiers, otherwise an `Error`.
     pub fn parse_feed_id(&self, env: &Env, feed_id: &String) -> Result<ReflectorAsset, Error> {
         if feed_id.is_empty() {
             // Return a default asset for empty feed IDs
@@ -853,7 +1118,14 @@ impl ReflectorOracle {
         }
     }
 
-    /// Get price from Reflector oracle with fallback mechanisms
+    /// Fetch a price from the Reflector oracle using the configured fallback behavior.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for fallback parsing.
+    /// * `feed_id` - Feed identifier to resolve into a price.
+    ///
+    /// # Returns
+    /// `Ok(price)` when a price can be resolved, otherwise an `Error`.
     pub fn get_reflector_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         // Parse the feed_id to extract asset information
         let _base_asset = self.parse_feed_id(env, feed_id)?;
@@ -864,10 +1136,10 @@ impl ReflectorOracle {
         self.get_mock_price_for_testing(env, feed_id)
     }
 
-    /// Get mock price data for testing purposes
+    /// Return deterministic mock prices for testing and local development environments.
     ///
-    /// This is called when the real oracle contract is not available,
-    /// typically in testing environments with mock contracts
+    /// This fallback is used when the real oracle contract is not available, such as
+    /// during contract tests with mocked oracle interactions.
     fn get_mock_price_for_testing(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         // Return mock prices for testing
         // These prices are designed to work with the test threshold of 2500000 (25k)
@@ -888,7 +1160,13 @@ impl ReflectorOracle {
         }
     }
 
-    /// Check if the Reflector oracle is healthy
+    /// Perform a lightweight health probe for the Reflector oracle wrapper.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used to execute the probe.
+    ///
+    /// # Returns
+    /// `Ok(true)` when the oracle responds successfully, otherwise `Ok(false)`.
     pub fn check_health(&self, env: &Env) -> Result<bool, Error> {
         let reflector_client = ReflectorOracleClient::new(env, self.contract_id.clone());
         Ok(reflector_client.is_healthy())
@@ -1106,13 +1384,21 @@ impl OracleFactory {
         Self::create_oracle(oracle_config.provider.clone(), contract_id)
     }
 
-    /// Check if a provider is supported on Stellar
-
+    /// Check whether a provider can be instantiated for the current Stellar deployment.
+    ///
+    /// # Arguments
+    /// * `provider` - Oracle provider to evaluate.
+    ///
+    /// # Returns
+    /// `true` when the provider is supported by the current configuration, otherwise `false`.
     pub fn is_provider_supported(provider: &OracleProvider) -> bool {
         provider.is_supported()
     }
 
-    /// Get the recommended oracle provider for Stellar
+    /// Get the preferred oracle provider for Stellar deployments.
+    ///
+    /// # Returns
+    /// The recommended provider for production use on the Stellar network.
     pub fn get_recommended_provider() -> OracleProvider {
         OracleProvider::reflector()
     }
@@ -1699,17 +1985,34 @@ pub struct BandProtocolClient<'a> {
     contract_id: Address,
 }
 
+/// Storage keys used by the Band Protocol client for contract-backed configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub(crate) enum BandDataKey {
+    /// Standard reference contract address used by the Band integration.
     StdReferenceAddress,
 }
 
 impl<'a> BandProtocolClient<'a> {
+    /// Create a Band Protocol client bound to a specific contract address.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for invoking the Band contract.
+    /// * `contract_id` - Address of the Band reference contract.
+    ///
+    /// # Returns
+    /// A configured Band Protocol client wrapper.
     pub fn new(env: &'a Env, contract_id: Address) -> Self {
         Self { env, contract_id }
     }
 
+    /// Fetch the latest price for a symbol pair from the Band reference contract.
+    ///
+    /// # Arguments
+    /// * `symbol_pair` - The base and quote symbols to query, for example `(BTC, USD)`.
+    ///
+    /// # Returns
+    /// The latest price rate reported by the Band contract, or `0` if the response is empty.
     pub fn get_price_of(&self, symbol_pair: (Symbol, Symbol)) -> u128 {
         let client = bandprotocol::Client::new(&self.env, &self.contract_id);
         // Call into the imported Band std_reference and defensively handle unexpected
@@ -1735,6 +2038,13 @@ pub struct BandProtocolOracle {
 }
 
 impl BandProtocolOracle {
+    /// Create a new Band Protocol oracle wrapper for the supplied contract address.
+    ///
+    /// # Arguments
+    /// * `contract_id` - Address of the Band Protocol reference contract.
+    ///
+    /// # Returns
+    /// A Band Protocol oracle wrapper implementing the common oracle interface.
     pub fn new(contract_id: Address) -> Self {
         Self { contract_id }
     }
@@ -1743,6 +2053,14 @@ impl BandProtocolOracle {
         self.contract_id.clone()
     }
 
+    /// Parse a human-readable feed identifier into Band symbol pairs.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used to create symbols.
+    /// * `feed_id` - Feed identifier such as "BTC/USD" or "ETH".
+    ///
+    /// # Returns
+    /// `Ok((base_symbol, quote_symbol))` when the feed is recognized, otherwise an `Error`.
     pub fn parse_feed_id(&self, env: &Env, feed_id: &String) -> Result<(Symbol, Symbol), Error> {
         if feed_id.is_empty() {
             return Err(Error::InvalidOracleConfig);
@@ -1768,7 +2086,14 @@ impl BandProtocolOracle {
         }
     }
 
-    /// Fetch price from Band client
+    /// Fetch a price from the Band client and normalize it to the contract's price type.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for feed parsing.
+    /// * `feed_id` - Feed identifier to resolve through Band.
+    ///
+    /// # Returns
+    /// `Ok(price)` when Band returns a usable rate, otherwise an `Error`.
     fn get_band_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         let pair = self
             .parse_feed_id(env, feed_id)
@@ -1807,7 +2132,7 @@ impl OracleInterface for BandProtocolOracle {
 
 // ===== MODULE TESTS =====
 
-#[cfg(any())]
+#[cfg(test)]
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
@@ -1891,25 +2216,37 @@ mod tests {
 // ===== ORACLE WHITELIST AND VALIDATION =====
 
 /// Storage keys for oracle whitelist management
+/// Storage keys used by the oracle whitelist subsystem.
 #[derive(Clone)]
 #[contracttype]
 pub enum OracleWhitelistKey {
+    /// Marker that a specific oracle address is approved for use.
     WhitelistedOracle(Address),
+    /// Marker that a specific address is authorized to manage the whitelist.
     WhitelistAdmin(Address),
+    /// Metadata entry for a whitelisted oracle contract.
     OracleMetadata(Address),
+    /// List of all approved oracle addresses.
     OracleList,
 }
 
-/// Metadata stored for each whitelisted oracle
+/// Metadata stored for each whitelisted oracle.
 #[derive(Clone, Debug)]
 #[contracttype]
 pub struct OracleMetadata {
+    /// Oracle provider type associated with the contract.
     pub provider: OracleProvider,
+    /// Contract address that the metadata describes.
     pub contract_address: Address,
+    /// Ledger timestamp at which the oracle was added.
     pub added_at: u64,
+    /// Admin address that approved the oracle.
     pub added_by: Address,
+    /// Last ledger timestamp at which the oracle health was evaluated.
     pub last_health_check: u64,
+    /// Whether the oracle is currently active and allowed to participate.
     pub is_active: bool,
+    /// Human-readable description of the oracle deployment.
     pub description: String,
 }
 
@@ -2446,19 +2783,19 @@ impl OracleWhitelist {
 
 // ===== ORACLE INTEGRATION MANAGER =====
 
-/// Storage keys for oracle integration
+/// Storage keys for oracle integration records.
 #[derive(Clone)]
 #[contracttype]
 pub enum OracleIntegrationKey {
-    /// Stored oracle result for a market
+    /// Stored oracle result for a market.
     OracleResult(Symbol),
-    /// Multi-oracle configuration
+    /// Multi-oracle configuration payload.
     MultiOracleConfig,
-    /// Oracle source list
+    /// Oracle source list used for consensus verification.
     OracleSources,
-    /// Market verification status
+    /// Market verification status flag.
     VerificationStatus(Symbol),
-    /// Retry count for market verification
+    /// Retry count for market verification.
     RetryCount(Symbol),
     /// Configurable per-source weight
     OracleWeight(Address),
@@ -2468,7 +2805,9 @@ pub enum OracleIntegrationKey {
 #[derive(Clone)]
 #[contracttype]
 pub enum OracleValidationKey {
+    /// Global validation settings that apply to every market.
     GlobalConfig,
+    /// Market-specific validation overrides.
     EventConfig,
 }
 
@@ -3418,7 +3757,7 @@ impl OracleIntegrationManager {
 
 // ===== ORACLE INTEGRATION TESTS =====
 
-#[cfg(any())]
+#[cfg(test)]
 mod oracle_integration_tests {
     use super::*;
     use crate::events::OracleValidationFailedEvent;
@@ -3551,6 +3890,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3593,6 +3934,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3635,6 +3978,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3671,6 +4016,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -3678,6 +4025,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 5,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 
@@ -3707,6 +4056,7 @@ mod oracle_integration_tests {
         let client = crate::PredictifyHybridClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let non_admin = Address::generate(&env);
+        let default_fee_pct: u32 = 200; // 2%
 
         env.mock_all_auths();
         client.initialize(&admin, &default_fee_pct, &None);
@@ -3730,6 +4080,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3767,6 +4119,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3808,6 +4162,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3848,6 +4204,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3899,6 +4257,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: None, // disabled
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3940,6 +4300,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -3948,6 +4310,8 @@ mod oracle_integration_tests {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(200),
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 
@@ -3980,7 +4344,7 @@ mod oracle_integration_tests {
 
 // ===== WHITELIST TESTS =====
 
-#[cfg(any())]
+#[cfg(test)]
 mod whitelist_tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
@@ -4627,15 +4991,15 @@ pub struct OracleCallbackData {
     pub signature: Bytes,
 }
 
-/// Storage keys for oracle callback authentication
+/// Storage keys for oracle callback authentication.
 #[derive(Clone)]
 #[contracttype]
 pub enum StorageKey {
-    /// Oracle nonce tracking (caller_address, nonce) -> bool
+    /// Oracle nonce tracking for replay protection keyed by caller and nonce.
     OracleNonce(Address, u64),
-    /// Oracle rate limiting (caller_address) -> timestamp
+    /// Oracle rate-limiting timestamp keyed by caller address.
     OracleRateLimit(Address),
-    /// Oracle data storage (feed_id) -> OraclePriceData
+    /// Oracle callback payload storage keyed by feed identifier.
     OracleData(String),
 }
 
