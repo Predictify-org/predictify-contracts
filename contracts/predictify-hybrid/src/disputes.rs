@@ -898,8 +898,10 @@ impl DisputeManager {
         stake: i128,
         reason: Option<String>,
     ) -> Result<(), Error> {
-        // Require authentication from the user
-        user.require_auth();
+        // Authorization is enforced by the `dispute_market` entrypoint, which
+        // calls `user.require_auth()` before delegating here. Re-authorizing the
+        // same address in the same frame made the host abort with
+        // `Error(Auth, ExistingValue)` ("frame is already authorized").
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
