@@ -1,5 +1,23 @@
 #![allow(dead_code)]
-use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, String, Symbol, Vec};
+
+/// Read the host's consumed CPU-instruction count.
+///
+/// `Env::budget()` is only available under the soroban `testutils`/test build,
+/// so in a production (non-test) build this returns 0, turning [`BudgetGuard`]
+/// into a graceful no-op that defers to the host's own metering limits.
+#[inline]
+fn cpu_instruction_cost(env: &Env) -> u64 {
+    #[cfg(test)]
+    {
+        env.budget().cpu_instruction_cost()
+    }
+    #[cfg(not(test))]
+    {
+        let _ = env;
+        0
+    }
+}
 use crate::config::GAS_TRACKING_WINDOW_SIZE;
 use crate::events::PerformanceMetricEvent;
 
@@ -19,7 +37,7 @@ pub enum GasConfigKey {
 
 /// Represents consumed resources for an operation.
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GasUsage {
     pub cpu: u64,
     pub mem: u64,
@@ -212,15 +230,15 @@ impl GasTracker {
         if used > threshold {
             // Emit performance metric event
             let event = PerformanceMetricEvent {
-                metric_name: Symbol::new(env, "gas_low_water").into(),
+                metric_name: String::from_str(env, "gas_low_water"),
                 value: used as i128,
-                unit: Symbol::new(env, "cpu").into(),
-                context: operation.into(),
+                unit: String::from_str(env, "cpu"),
+                context: String::from_str(env, "gas_alert"),
                 timestamp: env.ledger().timestamp(),
             };
             
             env.events().publish(
-                (symbol_short!("performance_metric"), operation.clone()),
+                (Symbol::new(env, "perf_metric"), operation.clone()),
                 event,
             );
         }
@@ -321,7 +339,7 @@ impl BudgetGuard {
     /// The threshold should be high enough to complete the current iteration
     /// plus any post-loop cleanup operations.
     pub fn new(env: &Env, threshold_remaining: u64) -> Self {
-        let start_instructions = env.budget().cpu_instruction_cost();
+        let start_instructions = cpu_instruction_cost(env);
         BudgetGuard {
             env: env.clone(),
             start_instructions,
@@ -342,7 +360,7 @@ impl BudgetGuard {
     /// This is a lightweight call that reads a single value from the host.
     /// It should be called at regular intervals, not on every iteration.
     pub fn check(&self) -> Result<(), Error> {
-    let current = self.env.budget().cpu_instruction_cost();
+    let current = cpu_instruction_cost(&self.env);
     let consumed = current.saturating_sub(self.start_instructions);
 
     if consumed >= self.threshold_remaining {
@@ -357,7 +375,7 @@ impl BudgetGuard {
     /// # Returns
     /// The number of CPU instructions consumed since the guard was created.
     pub fn consumed(&self) -> u64 {
-        let current = self.env.budget().cpu_instruction_cost();
+        let current = cpu_instruction_cost(&self.env);
         current.saturating_sub(self.start_instructions)
     }
 
