@@ -644,7 +644,7 @@ impl UpgradeManager {
         let verify_count = if depth == 0 || depth > chain_len {
             chain_len
         } else {
-            depth as u32
+            depth
         };
 
         let zero_hash = BytesN::from_array(env, &[0u8; 32]);
