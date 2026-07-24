@@ -324,6 +324,42 @@ pub struct BetStatusUpdatedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when the per-user max bet cap is set by an admin.
+///
+/// This event provides transparency about bet cap enforcement rules. The cap applies
+/// to the cumulative amount any single user can bet on a given market, not globally
+/// across all markets.
+///
+/// # Cap Semantics
+///
+/// - Cap is per-user, per-market (e.g., user A and user B each have their own limit on market X)
+/// - Different users on the same market are tracked independently
+/// - A user hitting the cap on market A does not affect their betting on market B
+/// - When a cap is not set, betting is uncapped
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol};
+/// # use predictify_hybrid::events::MaxBetCapSetEvent;
+/// # let env = Env::default();
+///
+/// // Max bet cap set to 100 XLM (100,000,000,000 stroops)
+/// let event = MaxBetCapSetEvent {
+///     cap: 100_000_000_000,
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaxBetCapSetEvent {
+    /// The per-user max bet cap (in stroops).
+    /// Applies to cumulative stake per user per market.
+    pub cap: i128,
+    /// Event timestamp
+    pub timestamp: u64,
+}
+
 /// Event emitted when oracle data is successfully fetched for market resolution.
 ///
 /// This event captures comprehensive oracle data retrieval information, including
@@ -2900,6 +2936,22 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("bet_lim"), &event);
         env.events()
             .publish((symbol_short!("bet_lim"), scope.clone()), event);
+    }
+
+    /// Emit max bet cap set event.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `cap` - The per-user max bet cap in stroops
+    pub fn emit_max_bet_cap_set(env: &Env, cap: i128) {
+        let event = MaxBetCapSetEvent {
+            cap,
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("max_bet_cap"), &event);
+        env.events()
+            .publish((symbol_short!("max_bet_cap"),), event);
     }
 
     /// Emit error logged event

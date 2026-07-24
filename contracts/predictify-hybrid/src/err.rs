@@ -255,10 +255,12 @@ pub enum Error {
     /// An admin override nonce was replayed; reject to prevent replay attacks.
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
-    /// The deprecated-entrypoints registry has reached its maximum capacity
-    /// ([`MAX_REGISTRY_ENTRIES`](crate::deprecated::MAX_REGISTRY_ENTRIES)).
-    /// Prune stale entries before registering new ones.
-    RegistryFull = 528,
+    /// User's cumulative stake on this market would exceed the per-user max bet cap.
+    MaxBetCapExceeded = 528,
+    /// The max bet cap value is invalid (must be positive).
+    InvalidCap = 529,
+    /// Arithmetic overflow occurred during checked operation (e.g., checked_add on i128).
+    Overflow = 530,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

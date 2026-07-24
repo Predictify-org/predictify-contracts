@@ -400,6 +400,10 @@ impl BetManager {
             }
         }
 
+        // ===== PER-USER MAX BET CAP CHECK (BEFORE funds are locked) =====
+        // Load current user stake and validate it won't exceed the cap
+        BetValidator::validate_user_stake_under_cap(env, &market_id, &user, amount)?;
+
         // Lock funds (transfer from user to contract)
         BetUtils::lock_funds(env, &user, amount)?;
 
@@ -414,6 +418,9 @@ impl BetManager {
 
         // Store bet
         BetStorage::store_bet(env, &bet)?;
+
+        // Update user stake for per-user max bet cap tracking
+        BetValidator::update_user_stake(env, &market_id, &user, amount)?;
 
         // Update market betting stats
         Self::update_market_bet_stats(env, &market_id, &outcome, amount)?;
@@ -1244,6 +1251,153 @@ impl BetValidator {
 
         if effective_fee_bps > max_fee_bps {
             return Err(Error::FeeExceedsMax);
+        }
+
+        Ok(())
+    }
+
+    /// Get the global per-user max bet cap across all markets.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(cap)` if a cap is set, `None` if uncapped (no limit).
+    pub fn get_max_bet_cap(env: &Env) -> Option<i128> {
+        let key = crate::storage::DataKey::MaxBetCap;
+        env.storage().persistent().get::<_, i128>(&key)
+    }
+
+    /// Set the global per-user max bet cap (admin only).
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `caller` - Address of the caller (must be admin)
+    /// - `cap` - The new cap value (must be positive)
+    ///
+    /// # Errors
+    ///
+    /// - `Error::Unauthorized` - Caller is not the admin
+    /// - `Error::InvalidCap` - Cap is zero or negative
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    pub fn set_max_bet_cap(env: &Env, caller: &Address, cap: i128) -> Result<(), Error> {
+        // Require admin authentication
+        caller.require_auth();
+
+        // Verify caller is admin
+        let admin = crate::admin::AdminManager::get_admin(env)?;
+        if *caller != admin {
+            return Err(Error::Unauthorized);
+        }
+
+        // Validate cap is positive
+        if cap <= 0 {
+            return Err(Error::InvalidCap);
+        }
+
+        // Store the cap in persistent storage
+        let key = crate::storage::DataKey::MaxBetCap;
+        env.storage().persistent().set(&key, &cap);
+        env.storage().persistent().extend_ttl(&key, crate::storage::MARKET_TTL_LEDGERS, crate::storage::MARKET_TTL_LEDGERS);
+
+        // Emit event
+        crate::events::EventEmitter::emit_max_bet_cap_set(env, cap);
+
+        Ok(())
+    }
+
+    /// Get the current cumulative stake for a user on a specific market.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `market_id` - The market ID
+    /// - `user` - The user address
+    ///
+    /// # Returns
+    ///
+    /// Returns the cumulative amount the user has bet on this market (0 if no prior bets).
+    pub fn get_user_stake(env: &Env, market_id: &Symbol, user: &Address) -> i128 {
+        let key = crate::storage::DataKey::UserStake(market_id.clone(), user.clone());
+        env.storage()
+            .persistent()
+            .get::<_, i128>(&key)
+            .unwrap_or(0)
+    }
+
+    /// Update the cumulative stake for a user on a specific market.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `market_id` - The market ID
+    /// - `user` - The user address
+    /// - `amount` - The amount to add to the cumulative stake
+    ///
+    /// # Errors
+    ///
+    /// - `Error::Overflow` - The new stake would overflow i128
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    pub fn update_user_stake(env: &Env, market_id: &Symbol, user: &Address, amount: i128) -> Result<(), Error> {
+        let current_stake = Self::get_user_stake(env, market_id, user);
+        let new_stake = current_stake
+            .checked_add(amount)
+            .ok_or(Error::Overflow)?;
+
+        let key = crate::storage::DataKey::UserStake(market_id.clone(), user.clone());
+        env.storage().persistent().set(&key, &new_stake);
+        // Extend TTL to match market (365 days)
+        env.storage().persistent().extend_ttl(&key, crate::storage::MARKET_TTL_LEDGERS, crate::storage::MARKET_TTL_LEDGERS);
+
+        Ok(())
+    }
+
+    /// Validate that a user's new bet would not exceed the per-user max bet cap.
+    ///
+    /// This function checks if the user's cumulative stake on a market (including the new bet)
+    /// would exceed the global per-user max bet cap. If a cap is not set, this always succeeds (uncapped).
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `market_id` - The market ID
+    /// - `user` - The user address
+    /// - `amount` - The amount of the new bet
+    ///
+    /// # Errors
+    ///
+    /// - `Error::MaxBetCapExceeded` - The new cumulative stake would exceed the cap
+    /// - `Error::Overflow` - Arithmetic overflow during checked_add
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the bet is allowed, `Err(Error)` otherwise.
+    /// Cap check applies to cumulative stake per market, not globally across markets.
+    pub fn validate_user_stake_under_cap(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        // Check if a cap is set; if not, no validation needed (uncapped)
+        if let Some(cap) = Self::get_max_bet_cap(env) {
+            let current_stake = Self::get_user_stake(env, market_id, user);
+            let new_total = current_stake
+                .checked_add(amount)
+                .ok_or(Error::Overflow)?;
+
+            if new_total > cap {
+                return Err(Error::MaxBetCapExceeded);
+            }
         }
 
         Ok(())
