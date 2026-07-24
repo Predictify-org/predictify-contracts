@@ -3024,29 +3024,33 @@ impl DisputeUtils {
 
     pub fn emit_dispute_vote_event(
         env: &Env,
-        _dispute_id: &Symbol,
+        dispute_id: &Symbol,
         user: &Address,
         vote: bool,
         stake: i128,
     ) {
-        // In a real implementation, this would emit an event
-        // For now, we'll just store it in persistent storage
-        let event_key = symbol_short!("vote_evt");
-        let event_data = (user.clone(), vote, stake, env.ledger().timestamp());
-        env.storage().persistent().set(&event_key, &event_data);
+        crate::events::EventEmitter::emit_dispute_vote_cast(
+            env,
+            dispute_id,
+            user,
+            vote,
+            stake,
+        );
     }
 
     /// Emit fee distribution event
 
     pub fn emit_fee_distribution_event(
         env: &Env,
-        _dispute_id: &Symbol,
+        dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) {
-        // In a real implementation, this would emit an event
-        // For now, we'll just store it in persistent storage
-        let event_key = symbol_short!("fee_event");
-        env.storage().persistent().set(&event_key, distribution);
+        crate::events::EventEmitter::emit_dispute_fee_distributed(
+            env,
+            dispute_id,
+            distribution.total_fees,
+            distribution.fees_distributed,
+        );
     }
 
     /// Emit dispute escalation event
