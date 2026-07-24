@@ -576,6 +576,18 @@ pub struct DisputeOpenedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when suspected collusion is detected among disputers.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SuspectedCollusionFlagEvent {
+    pub market_id: Symbol,
+    pub user1: Address,
+    pub user2: Address,
+    pub stake_delta: i128,
+    pub time_delta: u64,
+    pub timestamp: u64,
+}
+
 /// Event emitted when a dispute is successfully resolved with final outcome and rewards.
 ///
 /// This event captures the complete dispute resolution process, including the final
@@ -2629,7 +2641,7 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("mkt_res"), &event);
+        env.storage().persistent().set(&symbol_short!("mkt_res"), &event);
         env.events().publish(
             (
                 symbol_short!("mkt_res"),
@@ -2684,6 +2696,29 @@ impl EventEmitter {
         Self::store_event(env, &schema.topic, &event);
         env.events()
             .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+    }
+
+    /// Emit suspected collusion flag event.
+    pub fn emit_suspected_collusion_flag(
+        env: &Env,
+        market_id: &Symbol,
+        user1: &Address,
+        user2: &Address,
+        stake_delta: i128,
+        time_delta: u64,
+    ) {
+        let event = SuspectedCollusionFlagEvent {
+            market_id: market_id.clone(),
+            user1: user1.clone(),
+            user2: user2.clone(),
+            stake_delta,
+            time_delta,
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("sus_col"), &event);
+        env.events()
+            .publish((symbol_short!("sus_col"), market_id.clone()), event);
     }
 
     /// Emit dispute resolved event
@@ -3091,6 +3126,16 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("adm_deact"), &event);
         env.events()
             .publish((symbol_short!("adm_deact"), admin.clone()), event);
+    }
+
+    /// Emit signer rotation cooldown hit event
+    pub fn emit_signer_rotation_cooldown_hit(env: &Env, admin: &Address, last_rotation: u64, cooldown: u64) {
+        let topics = (Symbol::new(env, "Admin"), Symbol::new(env, "SignerRotationCooldownHit"));
+        let mut data = Map::new(env);
+        data.set(String::from_str(env, "admin"), admin.to_val());
+        data.set(String::from_str(env, "last_rotation"), last_rotation);
+        data.set(String::from_str(env, "cooldown"), cooldown);
+        env.events().publish(topics, data);
     }
 
     /// Emit market closed event

@@ -72,6 +72,13 @@ pub struct Dispute {
     pub status: DisputeStatus,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeDecayConfig {
+    pub half_life_seconds: u64,
+    pub floor_bps: u32,
+}
+
 /// Represents the current lifecycle status of a dispute.
 ///
 /// Disputes progress through various states from creation to final resolution.
@@ -663,6 +670,15 @@ pub struct DisputeTimeoutOutcome {
     pub reason: String,
 }
 
+/// Configuration for dispute collusion detection.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollusionDetectorConfig {
+    pub stake_delta_threshold: i128,
+    pub time_delta_threshold: u64,
+    pub window_size: u32,
+}
+
 /// Aggregate statistics about dispute timeouts across all markets.
 ///
 /// Returned by timeout analytics queries; useful for governance dashboards
@@ -784,6 +800,27 @@ impl DisputeManager {
     pub fn get_anti_grief_floor(env: &Env) -> Option<i128> {
         let key = DataKey::AntiGriefFloor;
         env.storage().persistent().get(&key)
+    }
+
+    /// Sets the collusion detector configuration.
+    pub fn set_collusion_detector_config(env: &Env, admin: Address, config: CollusionDetectorConfig) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        let key = DataKey::CollusionDetectorConfig;
+        env.storage().persistent().set(&key, &config);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Retrieves the collusion detector configuration.
+    pub fn get_collusion_detector_config(env: &Env) -> CollusionDetectorConfig {
+        let key = DataKey::CollusionDetectorConfig;
+        env.storage().persistent().get(&key).unwrap_or(CollusionDetectorConfig {
+            stake_delta_threshold: 1_000_000,
+            time_delta_threshold: 600, // 10 minutes
+            window_size: 8,
+        })
     }
 
     /// Evicts the oldest resolved/expired disputes if history size exceeds the cap.
@@ -989,6 +1026,36 @@ impl DisputeManager {
             Map::new(env),
             None,
         );
+
+        // --- Collusion Detector ---
+        let config = Self::get_collusion_detector_config(env);
+        let window_size = config.window_size;
+        let start_idx = if history.len() > window_size {
+            history.len() - window_size
+        } else {
+            0
+        };
+
+        for i in start_idx..history.len().saturating_sub(1) {
+            if let Some(prev_dispute) = history.get(i) {
+                if prev_dispute.user != user {
+                    let stake_diff = if prev_dispute.stake > stake { prev_dispute.stake - stake } else { stake - prev_dispute.stake };
+                    let time_diff = if prev_dispute.timestamp > dispute.timestamp { prev_dispute.timestamp - dispute.timestamp } else { dispute.timestamp - prev_dispute.timestamp };
+
+                    if stake_diff <= config.stake_delta_threshold && time_diff <= config.time_delta_threshold {
+                        crate::events::EventEmitter::emit_suspected_collusion_flag(
+                            env,
+                            &market_id,
+                            &user,
+                            &prev_dispute.user,
+                            stake_diff,
+                            time_diff,
+                        );
+                    }
+                }
+            }
+        }
+        // --------------------------
 
         Ok(())
     }
@@ -2723,12 +2790,16 @@ impl DisputeUtils {
 
         // Update voting statistics
         voting_data.total_votes += 1;
+        
+        // Calculate the decayed stake using tally_votes
+        let decayed_stake = Self::tally_votes(env, vote.stake, vote.timestamp, voting_data.voting_start);
+
         if vote.vote {
             voting_data.support_votes += 1;
-            voting_data.total_support_stake += vote.stake;
+            voting_data.total_support_stake += decayed_stake;
         } else {
             voting_data.against_votes += 1;
-            voting_data.total_against_stake += vote.stake;
+            voting_data.total_against_stake += decayed_stake;
         }
 
         // Store updated voting data
@@ -2737,6 +2808,46 @@ impl DisputeUtils {
         // Store the vote
         Self::store_dispute_vote(env, dispute_id, &vote)?;
 
+        Ok(())
+    }
+
+    /// Calculate the stake weight using exponential decay approximation
+    /// so late votes count less than early votes.
+    pub fn tally_votes(env: &Env, raw_stake: i128, vote_time: u64, window_start: u64) -> i128 {
+        let config_key = symbol_short!("decaycfg");
+        let config: Option<DisputeDecayConfig> = env.storage().persistent().get(&config_key);
+        
+        let cfg = match config {
+            Some(c) => c,
+            None => return raw_stake,
+        };
+
+        if cfg.half_life_seconds == 0 {
+            return raw_stake;
+        }
+
+        let elapsed = vote_time.saturating_sub(window_start);
+        let num_half_lives = elapsed / cfg.half_life_seconds;
+        let rem = elapsed % cfg.half_life_seconds;
+
+        let shift = num_half_lives.min(16) as u32;
+        let weight_at_n = 10000u32.checked_shr(shift).unwrap_or(0);
+        let weight_at_n_plus_1 = 10000u32.checked_shr(shift + 1).unwrap_or(0);
+        
+        let diff = weight_at_n.saturating_sub(weight_at_n_plus_1);
+        let exact_weight = weight_at_n.saturating_sub((diff as u64 * rem / cfg.half_life_seconds) as u32);
+        
+        let final_weight = exact_weight.max(cfg.floor_bps);
+        
+        (raw_stake * final_weight as i128) / 10000
+    }
+
+    pub fn set_dispute_decay_config(env: &Env, admin: Address, config: DisputeDecayConfig) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+        let key = symbol_short!("decaycfg");
+        env.storage().persistent().set(&key, &config);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
         Ok(())
     }
 

@@ -1,5 +1,7 @@
 # Deprecation Policy
 
+
+
 ## Overview
 
 This document describes the deprecation policy for the Predictify Hybrid contract. As the platform evolves, certain entrypoints become obsolete and need to be phased out. A structured deprecation process ensures that callers have adequate notice and can migrate smoothly.

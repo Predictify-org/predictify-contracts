@@ -111,6 +111,19 @@ This is a hybrid prediction market contract built on Stellar using Soroban that 
 - **Batch Bet Placement**: Place multiple bets in a single atomic transaction for gas efficiency
 - **Admin Fee Withdrawal Schedule**: Timelock + optional cap for fee withdrawals to reduce abuse risk
 
+## Deterministic Per-Market Analytics Snapshots
+
+The contract now exposes `PredictifyHybrid::get_market_analytics_snapshot(env, market_id)` for off-chain analytics and indexers. The returned envelope is versioned and XDR-encoded so consumers can persist a deterministic byte stream for downstream processing without relying on host-side map iteration order.
+
+### What the snapshot includes
+- Market identifier and question
+- Current market state
+- Vote and stake totals
+- Outcome counts in a stable sorted order
+- Participant count
+
+This is intended for read-only analytics and reporting workflows that need a canonical per-market view.
+
 ## Admin Fee Vault & Withdrawal Schedule
 
 Collected platform fees accumulate inside the contract and are withdrawn by the admin through a
