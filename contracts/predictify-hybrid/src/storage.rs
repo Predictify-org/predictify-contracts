@@ -85,8 +85,10 @@ pub enum DataKey {
     /// Instance storage cache key for Market structs, keyed by market_id.
     /// Used by MarketReadCache in markets.rs.
     MarketCache(Symbol),
-    /// Nonce for admin override replay protection.
-    AdminOverrideNonce(Address),
+    /// Idempotency marker for a caller-supplied `place_bets` batch key.
+    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
+    /// Minimum dispute-stake floor used for anti-grief protection.
+    AntiGriefFloor,
 }
 
 /// Storage format version for migration tracking
