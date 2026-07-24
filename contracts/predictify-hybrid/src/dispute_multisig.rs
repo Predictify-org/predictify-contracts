@@ -59,43 +59,63 @@ impl DisputeMultiSig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PredictifyHybrid;
     use soroban_sdk::{testutils::Address as _, Env};
+
+    fn setup() -> (Env, soroban_sdk::Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, PredictifyHybrid);
+        (env, contract_id)
+    }
 
     #[test]
     fn test_threshold_one_resolves_on_single_approval() {
-        let env = Env::default(); env.mock_all_auths();
+        let (env, contract_id) = setup();
         let admin = Address::generate(&env);
         let s = Address::generate(&env);
         let mid = Symbol::new(&env, "mkt1");
-        DisputeMultiSig::configure(&env, admin, mid.clone(), soroban_sdk::vec![&env, s.clone()], 1, String::from_str(&env, "YES")).unwrap();
-        assert!(DisputeMultiSig::approve(&env, s, mid.clone()).unwrap());
-        assert!(DisputeMultiSig::get_state(&env, &mid).is_none());
+        env.as_contract(&contract_id, || {
+            DisputeMultiSig::configure(&env, admin, mid.clone(), soroban_sdk::vec![&env, s.clone()], 1, String::from_str(&env, "YES")).unwrap();
+            assert!(DisputeMultiSig::approve(&env, s, mid.clone()).unwrap());
+            assert!(DisputeMultiSig::get_state(&env, &mid).is_none());
+        });
     }
 
     #[test]
     fn test_two_of_two_requires_both() {
-        let env = Env::default(); env.mock_all_auths();
+        let (env, contract_id) = setup();
         let admin = Address::generate(&env);
-        let s1 = Address::generate(&env); let s2 = Address::generate(&env);
+        let s1 = Address::generate(&env);
+        let s2 = Address::generate(&env);
         let mid = Symbol::new(&env, "mkt2");
-        DisputeMultiSig::configure(&env, admin, mid.clone(), soroban_sdk::vec![&env, s1.clone(), s2.clone()], 2, String::from_str(&env, "NO")).unwrap();
-        assert!(!DisputeMultiSig::approve(&env, s1, mid.clone()).unwrap());
-        assert!(DisputeMultiSig::approve(&env, s2, mid.clone()).unwrap());
+        env.as_contract(&contract_id, || {
+            DisputeMultiSig::configure(&env, admin, mid.clone(), soroban_sdk::vec![&env, s1.clone(), s2.clone()], 2, String::from_str(&env, "NO")).unwrap();
+            assert!(!DisputeMultiSig::approve(&env, s1, mid.clone()).unwrap());
+            assert!(DisputeMultiSig::approve(&env, s2, mid.clone()).unwrap());
+        });
     }
 
     #[test]
     fn test_threshold_zero_rejected() {
-        let env = Env::default(); env.mock_all_auths();
-        let admin = Address::generate(&env); let s = Address::generate(&env);
-        assert!(DisputeMultiSig::configure(&env, admin, Symbol::new(&env, "m"), soroban_sdk::vec![&env, s], 0, String::from_str(&env, "X")).is_err());
+        let (env, contract_id) = setup();
+        let admin = Address::generate(&env);
+        let s = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            assert!(DisputeMultiSig::configure(&env, admin, Symbol::new(&env, "m"), soroban_sdk::vec![&env, s], 0, String::from_str(&env, "X")).is_err());
+        });
     }
 
     #[test]
     fn test_unauthorised_signer_rejected() {
-        let env = Env::default(); env.mock_all_auths();
-        let admin = Address::generate(&env); let auth = Address::generate(&env); let intruder = Address::generate(&env);
+        let (env, contract_id) = setup();
+        let admin = Address::generate(&env);
+        let auth = Address::generate(&env);
+        let intruder = Address::generate(&env);
         let mid = Symbol::new(&env, "mkt3");
-        DisputeMultiSig::configure(&env, admin, mid.clone(), soroban_sdk::vec![&env, auth], 1, String::from_str(&env, "YES")).unwrap();
-        assert!(DisputeMultiSig::approve(&env, intruder, mid).is_err());
+        env.as_contract(&contract_id, || {
+            DisputeMultiSig::configure(&env, admin, mid.clone(), soroban_sdk::vec![&env, auth], 1, String::from_str(&env, "YES")).unwrap();
+            assert!(DisputeMultiSig::approve(&env, intruder, mid).is_err());
+        });
     }
 }

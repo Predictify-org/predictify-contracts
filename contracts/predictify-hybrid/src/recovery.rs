@@ -480,6 +480,15 @@ impl RecoveryValidator {
             return Err(Error::InvalidState);
         }
 
+        // Check total_staked matches sum of stakes map
+        let mut recomputed: i128 = 0;
+        for (_, stake) in market.stakes.iter() {
+            recomputed = recomputed.checked_add(stake).ok_or(Error::InvalidState)?;
+        }
+        if recomputed != market.total_staked {
+            return Err(Error::InvalidState);
+        }
+
         Ok(())
     }
 
@@ -791,6 +800,7 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::vec;
     use soroban_sdk::testutils::Ledger;
 
     struct RecoveryTest {

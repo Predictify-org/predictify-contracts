@@ -249,10 +249,26 @@ pub enum Error {
     ExtensionCapExceeded = 524,
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
-    /// An admin override nonce was replayed; reject to prevent replay attacks.
-    ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+    /// Force-resolve was replayed.
+    ForceResolveReplayed = 528,
+    /// Force-resolve reason is empty.
+    ForceResolveReasonEmpty = 529,
+    /// Arithmetic overflow occurred.
+    Overflow = 530,
+    /// Insufficient storage rent budget.
+    InsufficientStorageRent = 531,
+    /// User is not whitelisted.
+    UserNotWhitelisted = 532,
+    /// User is blacklisted.
+    UserBlacklisted = 533,
+    /// Invalid stake amount.
+    InvalidStakeAmount = 534,
+    /// Idempotent batch already applied.
+    IdempotentBatchAlreadyApplied = 535,
+    /// Creator is blacklisted.
+    CreatorBlacklisted = 536,
     /// Global per-ledger bet cap has been exceeded to dampen flash-trading bursts.
     PerLedgerBetCapExceeded = 528,
 }
@@ -1580,6 +1596,7 @@ impl Error {
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
             Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            _ => "Unknown error",
         }
     }
 
@@ -1690,6 +1707,17 @@ impl Error {
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
             Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+            Error::OperationWouldExceedBudget => "OPERATION_WOULD_EXCEED_BUDGET",
+            Error::ForceResolveAlreadyUsed => "FORCE_RESOLVE_ALREADY_USED",
+            Error::ForceResolveReplayed => "FORCE_RESOLVE_REPLAYED",
+            Error::ForceResolveReasonEmpty => "FORCE_RESOLVE_REASON_EMPTY",
+            Error::Overflow => "OVERFLOW",
+            Error::InsufficientStorageRent => "INSUFFICIENT_STORAGE_RENT",
+            Error::UserNotWhitelisted => "USER_NOT_WHITELISTED",
+            Error::UserBlacklisted => "USER_BLACKLISTED",
+            Error::InvalidStakeAmount => "INVALID_STAKE_AMOUNT",
+            Error::IdempotentBatchAlreadyApplied => "IDEMPOTENT_BATCH_ALREADY_APPLIED",
+            Error::CreatorBlacklisted => "CREATOR_BLACKLISTED",
         }
     }
 }

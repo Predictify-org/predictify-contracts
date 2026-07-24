@@ -1965,6 +1965,7 @@ mod bounded_queue_tests {
         use crate::config::MONITOR_QUEUE_CAP;
         let (env, contract_id, _admin) = setup();
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             // Fill to cap.
             for i in 0..MONITOR_QUEUE_CAP {
                 let id = alloc::format!("a{}", i);
@@ -1992,6 +1993,7 @@ mod bounded_queue_tests {
     fn test_fifo_eviction_cap_one() {
         let (env, contract_id, _admin) = setup();
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             // Manually test the cap-1 edge case by storing two alerts.
             // We cannot change MONITOR_QUEUE_CAP at runtime, so we just verify
             // the eviction loop path works when queue.len() reaches cap on the
@@ -2022,6 +2024,7 @@ mod bounded_queue_tests {
         use crate::config::MONITOR_QUEUE_CAP;
         let (env, contract_id, _admin) = setup();
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             // Fill to cap then add 10 more.
             for i in 0..(MONITOR_QUEUE_CAP + 10) {
                 let id = alloc::format!("r{}", i);
@@ -2056,6 +2059,7 @@ mod bounded_queue_tests {
         let (env, contract_id, _admin) = setup();
         let not_admin = Address::generate(&env);
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             for i in 0..(MONITOR_QUEUE_CAP + 1) {
                 let id = alloc::format!("u{}", i);
                 ContractMonitor::store_alert(&env, &make_alert(&env, &id)).unwrap();

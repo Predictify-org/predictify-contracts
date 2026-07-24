@@ -5123,12 +5123,10 @@ impl CreationValidator {
 
     /// Validate the market question used during market creation.
     pub fn validate_market_question(env: &Env, question: &String) -> Result<(), Error> {
-        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
-        Self::validate_non_empty_text(
-            question,
-            config::MIN_QUESTION_LENGTH,
-            cfg.market.max_question_length,
-        )
+        let max_len = config::ConfigManager::get_config(env)
+            .map(|cfg| cfg.market.max_question_length)
+            .unwrap_or(config::MAX_QUESTION_LENGTH);
+        Self::validate_non_empty_text(question, config::MIN_QUESTION_LENGTH, max_len)
     }
 
     /// Validate the event description used during event creation.
@@ -5136,12 +5134,10 @@ impl CreationValidator {
     /// Event descriptions reuse the same non-empty and length policy as market
     /// questions so integrators can rely on one documented text rule.
     pub fn validate_event_description(env: &Env, description: &String) -> Result<(), Error> {
-        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
-        Self::validate_non_empty_text(
-            description,
-            config::MIN_QUESTION_LENGTH,
-            cfg.market.max_question_length,
-        )
+        let max_len = config::ConfigManager::get_config(env)
+            .map(|cfg| cfg.market.max_question_length)
+            .unwrap_or(config::MAX_QUESTION_LENGTH);
+        Self::validate_non_empty_text(description, config::MIN_QUESTION_LENGTH, max_len)
     }
 
     /// Validate creation outcomes for market and event creation.
@@ -5149,9 +5145,13 @@ impl CreationValidator {
     /// This enforces the configured outcome count bounds, rejects empty or
     /// whitespace-only outcomes, and rejects duplicate or ambiguous outcomes.
     pub fn validate_creation_outcomes(env: &Env, outcomes: &Vec<String>) -> Result<(), Error> {
-        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
+        let cfg_result = config::ConfigManager::get_config(env);
+        let (min_outcomes, max_outcomes, max_outcome_length) = match cfg_result {
+            Ok(cfg) => (cfg.market.min_outcomes, cfg.market.max_outcomes, cfg.market.max_outcome_length),
+            Err(_) => (config::MIN_MARKET_OUTCOMES, config::MAX_MARKET_OUTCOMES, config::MAX_OUTCOME_LENGTH),
+        };
         let outcome_count = outcomes.len() as u32;
-        if outcome_count < cfg.market.min_outcomes || outcome_count > cfg.market.max_outcomes {
+        if outcome_count < min_outcomes || outcome_count > max_outcomes {
             return Err(Error::InvalidOutcomes);
         }
 
@@ -5163,7 +5163,7 @@ impl CreationValidator {
             }
 
             let length = trimmed.chars().count() as u32;
-            if length < config::MIN_OUTCOME_LENGTH || length > cfg.market.max_outcome_length {
+            if length < config::MIN_OUTCOME_LENGTH || length > max_outcome_length {
                 return Err(Error::InvalidOutcomes);
             }
         }
@@ -5174,13 +5174,12 @@ impl CreationValidator {
 
     /// Validate market duration bounds during market creation.
     pub fn validate_market_duration(env: &Env, duration_days: &u32) -> Result<(), Error> {
-        let cfg = config::ConfigManager::get_config(env).map_err(|_| Error::ConfigNotFound)?;
-        if *duration_days < cfg.market.min_duration_days
-            || *duration_days > cfg.market.max_duration_days
-        {
+        let (min_dur, max_dur) = config::ConfigManager::get_config(env)
+            .map(|cfg| (cfg.market.min_duration_days, cfg.market.max_duration_days))
+            .unwrap_or((config::MIN_MARKET_DURATION_DAYS, config::MAX_MARKET_DURATION_DAYS));
+        if *duration_days < min_dur || *duration_days > max_dur {
             return Err(Error::InvalidDuration);
         }
-
         Ok(())
     }
 
