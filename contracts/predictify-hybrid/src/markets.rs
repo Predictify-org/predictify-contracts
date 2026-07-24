@@ -2512,6 +2512,7 @@ impl MarketTestHelpers {
                 String::from_str(_env, "gt"),
             ),
             1_000_000, // Creation fee: 1 XLM
+            None,
         )
     }
 

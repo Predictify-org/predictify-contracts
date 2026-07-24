@@ -567,6 +567,7 @@ impl PredictifyHybrid {
         min_pool_size: Option<i128>,
         bet_deadline_mins_before_end: Option<u64>,
         dispute_window_seconds: Option<u64>,
+        dispute_stake_floor: Option<i128>,
     ) -> Symbol {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market")
@@ -659,6 +660,8 @@ impl PredictifyHybrid {
             bet_deadline,
             dispute_window_seconds: dispute_window_seconds.unwrap_or(86400),
             winnings_swept: false,
+            timelock_config: timelock::MarketTimelockConfig::default(),
+            dispute_stake_floor,
         };
 
         // Pre-flight check: ensure sufficient storage rent budget
