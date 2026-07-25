@@ -585,7 +585,7 @@ All functions below live on `QueryManager` in `queries.rs` unless a different ca
 - `get_oracle_result(env, market_id)` - Retrieve verified result
 - `verify_result_with_retry(env, market_id, retries)` - Verify with retries
 - `verify_oracle_authority(env, oracle_address)` - Verify oracle legitimacy
-- `admin_override_result(env, admin, market_id, result)` - Manual override
+- `admin_override_result(env, admin, market_id, result, provided_nonce)` - Manual override with per-admin nonce replay protection
 
 ---
 

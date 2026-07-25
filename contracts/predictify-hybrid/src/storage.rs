@@ -155,6 +155,10 @@ pub enum DataKey {
     ResolutionAdminLastAction(Symbol),
     /// Global protocol configuration record.
     GlobalConfig,
+    /// Per-admin monotonic nonce for override replay protection.
+    AdminOverrideNonce(Address),
+    /// Per-topic replay protection nonce for event emissions.
+    EventNonce(Symbol),
 }
 
 /// Storage format version for migration tracking

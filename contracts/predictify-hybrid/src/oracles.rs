@@ -3724,18 +3724,33 @@ impl OracleIntegrationManager {
     ///
     /// Allows admin to manually set verification result when automatic
     /// verification fails or produces incorrect results.
+    ///
+    /// # Nonce replay protection
+    ///
+    /// A per-admin monotonic nonce prevents replay attacks. The caller must
+    /// supply a `provided_nonce` that is strictly greater than the last stored
+    /// nonce for `admin`. See
+    /// [`AdminAccessControl::validate_and_consume_admin_override_nonce`].
     pub fn admin_override_result(
         env: &Env,
         admin: &Address,
         market_id: &Symbol,
         outcome: &String,
         reason: &String,
+        provided_nonce: u64,
     ) -> Result<(), Error> {
         use crate::events::EventEmitter;
         use crate::markets::MarketStateManager;
 
         // Verify admin authority
         OracleWhitelist::require_admin(env, admin)?;
+
+        // Per-admin nonce replay protection
+        crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+            env,
+            admin,
+            provided_nonce,
+        )?;
 
         // Get market to validate
         let market = MarketStateManager::get_market(env, market_id)?;
