@@ -2484,6 +2484,7 @@ impl OracleValidationConfigManager {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             })
     }
 
@@ -2497,6 +2498,7 @@ impl OracleValidationConfigManager {
             config.max_confidence_bps,
             config.max_deviation_bps,
             config.max_deviation_z_multiple,
+            config.auto_pause_duration_secs,
         )?;
         env.storage()
             .persistent()
@@ -2525,6 +2527,7 @@ impl OracleValidationConfigManager {
             config.max_confidence_bps,
             config.max_deviation_bps,
             config.max_deviation_z_multiple,
+            config.auto_pause_duration_secs,
         )?;
         let mut per_event: soroban_sdk::Map<Symbol, EventOracleValidationConfig> = env
             .storage()
@@ -2547,6 +2550,7 @@ impl OracleValidationConfigManager {
                 max_deviation_bps: event_cfg.max_deviation_bps,
                 max_deviation_z_multiple: event_cfg.max_deviation_z_multiple,
                 history_size: event_cfg.history_size,
+                auto_pause_duration_secs: event_cfg.auto_pause_duration_secs,
             }
         } else {
             Self::get_global_config(env)
@@ -2622,6 +2626,11 @@ impl OracleValidationConfigManager {
                 None,
                 config.max_confidence_bps,
             );
+            if let Some(dur) = config.auto_pause_duration_secs {
+                let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                    env, market_id, dur,
+                );
+            }
             return Err(Error::OracleStale);
         }
 
@@ -2656,6 +2665,11 @@ impl OracleValidationConfigManager {
                         Some(confidence_bps_u32),
                         config.max_confidence_bps,
                     );
+                    if let Some(dur) = config.auto_pause_duration_secs {
+                        let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                            env, market_id, dur,
+                        );
+                    }
                     return Err(Error::OracleConfidenceTooWide);
                 }
             }
@@ -2700,6 +2714,11 @@ impl OracleValidationConfigManager {
                                 Some(deviation_bps),
                                 z_multiple_bps,
                             );
+                            if let Some(dur) = config.auto_pause_duration_secs {
+                                let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                                    env, market_id, dur,
+                                );
+                            }
                             return Err(Error::OracleQuoteOutlier);
                         }
                     }
@@ -2735,6 +2754,11 @@ impl OracleValidationConfigManager {
                             Some(deviation_bps),
                             config.max_confidence_bps,
                         );
+                        if let Some(dur) = config.auto_pause_duration_secs {
+                            let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                                env, market_id, dur,
+                            );
+                        }
                         return Err(Error::OracleNoConsensus);
                     }
                 }
@@ -2769,6 +2793,7 @@ impl OracleValidationConfigManager {
         max_confidence_bps: u32,
         max_deviation_bps: Option<u32>,
         max_deviation_z_multiple: Option<u32>,
+        auto_pause_duration_secs: Option<u64>,
     ) -> Result<(), Error> {
         if max_staleness_secs == 0 || max_confidence_bps == 0 {
             return Err(Error::InvalidInput);
@@ -2783,6 +2808,12 @@ impl OracleValidationConfigManager {
         }
         if let Some(z) = max_deviation_z_multiple {
             if z == 0 || z > 10_000 {
+                return Err(Error::InvalidInput);
+            }
+        }
+        if let Some(pause) = auto_pause_duration_secs {
+            if pause == 0 || pause > 604_800 {
+                // max 7 days
                 return Err(Error::InvalidInput);
             }
         }

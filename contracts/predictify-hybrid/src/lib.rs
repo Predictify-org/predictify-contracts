@@ -38,6 +38,10 @@ mod reporting;
 // mod require_auth_coverage_tests;
 #[cfg(test)]
 mod resolution_event_ordering_tests;
+
+#[cfg(test)]
+#[path = "tests/oracle_validation_tests.rs"]
+mod oracle_validation_tests;
 mod resolution;
 mod storage;
 mod types;
