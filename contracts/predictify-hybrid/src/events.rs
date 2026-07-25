@@ -366,6 +366,52 @@ pub struct MaxBetCapSetEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when the per-market minimum bet threshold is set or cleared.
+///
+/// Emitted by [`set_min_bet`] and [`remove_market_min_bet`] to let indexers
+/// track per-market minimum bet changes without reading full market state.
+///
+/// # Fields
+///
+/// - `admin`      – Address of the administrator who made the change
+/// - `market_id`  – The market this threshold applies to
+/// - `min_amount` – The new minimum in base token units (stroops);
+///   `0` means the threshold was removed
+/// - `nonce`      – Monotonically increasing event sequence number
+/// - `timestamp`  – Ledger timestamp when the event was emitted
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol};
+/// # use predictify_hybrid::events::MinBetSetEvent;
+/// # let env = Env::default();
+/// # let admin = Address::generate(&env);
+/// # let market_id = Symbol::new(&env, "BTC_100K");
+/// let event = MinBetSetEvent {
+///     admin: admin.clone(),
+///     market_id: market_id.clone(),
+///     min_amount: 5_000_000, // 0.5 XLM
+///     nonce: 1,
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MinBetSetEvent {
+    /// Administrator who set the threshold.
+    pub admin: Address,
+    /// The market this minimum applies to.
+    pub market_id: Symbol,
+    /// New minimum bet amount in base token units (stroops).
+    /// A value of `0` indicates the threshold was removed.
+    pub min_amount: i128,
+    /// Monotonically increasing event nonce.
+    pub nonce: u64,
+    /// Ledger timestamp when the event was emitted.
+    pub timestamp: u64,
+}
+
 /// Event emitted when oracle data is successfully fetched for market resolution.
 ///
 /// This event captures comprehensive oracle data retrieval information, including
@@ -3156,6 +3202,27 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("max_bet_cap"), &event);
         env.events()
             .publish((symbol_short!("max_bet_cap"),), event);
+    }
+
+    /// Emit an event when the per-market minimum bet threshold is set or removed.
+    ///
+    /// # Parameters
+    ///
+    /// - `env`       – Soroban environment
+    /// - `admin`     – Administrator address that triggered the change
+    /// - `market_id` – Market this minimum applies to
+    /// - `min_amount` – New minimum in stroops; `0` means the threshold was removed
+    pub fn emit_min_bet_set(env: &Env, admin: &Address, market_id: &Symbol, min_amount: i128) {
+        let event = MinBetSetEvent {
+            admin: admin.clone(),
+            market_id: market_id.clone(),
+            min_amount,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("min_bet").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("min_bet"), &event);
+        env.events()
+            .publish((symbol_short!("min_bet"), market_id.clone()), event);
     }
 
     /// Emit error logged event

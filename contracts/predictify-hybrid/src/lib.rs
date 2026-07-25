@@ -178,6 +178,9 @@ mod analytics_snapshot;
 #[cfg(test)]
 mod max_participants_tests;
 
+#[cfg(test)]
+mod min_bet_tests;
+
 // dispute_stake_tests.rs extended for #553; enable when legacy setup is updated:
 // #[cfg(test)]
 // #[path = "tests/dispute_stake_tests.rs"]
@@ -650,6 +653,7 @@ impl PredictifyHybrid {
             timelock_config: timelock::MarketTimelockConfig::default(),
             dispute_stake_floor,
             max_participants,
+            min_bet_amount: None,
         };
 
         // Pre-flight checks: ensure sufficient storage rent budget.
@@ -4704,6 +4708,105 @@ impl PredictifyHybrid {
         Ok(())
     }
 
+    // ===== PER-MARKET MIN BET THRESHOLD (#843) =====
+
+    /// Set the per-market minimum bet amount (admin only).
+    ///
+    /// Once set, any bet on `market_id` whose amount is below `min_amount` is
+    /// rejected with [`Error::BetBelowMarketMin`].  The check is applied **in
+    /// addition to** the global/per-event [`BetLimits`] minimum — the effective
+    /// floor is `max(global_min, min_amount)`.
+    ///
+    /// Pass `min_amount = 0` to remove the per-market override (equivalent to
+    /// calling [`Self::remove_market_min_bet`]).  Any other value must satisfy
+    /// `0 < min_amount <= MAX_BET_AMOUNT`.
+    ///
+    /// # Parameters
+    ///
+    /// - `admin`      – Must be the primary admin address
+    /// - `market_id`  – Identifies the target market
+    /// - `min_amount` – Per-market minimum bet in base token units (stroops)
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`]    when `admin` is not the primary admin
+    /// - [`Error::MarketNotFound`]  when `market_id` does not exist
+    /// - [`Error::InvalidInput`]    when `min_amount` is negative or exceeds
+    ///   [`crate::bets::MAX_BET_AMOUNT`]
+    ///
+    /// # Events
+    ///
+    /// Emits a `min_bet_set` event carrying `market_id` and `min_amount` so that
+    /// indexers can track threshold changes without reading full market state.
+    ///
+    /// # Security
+    ///
+    /// `require_auth` is enforced on `admin` and the caller is verified against
+    /// the stored primary admin before any state change.
+    pub fn set_min_bet(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        min_amount: i128,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        if min_amount == 0 {
+            crate::bets::remove_market_min_bet(&env, &market_id)?;
+        } else {
+            crate::bets::set_market_min_bet(&env, &market_id, min_amount)?;
+        }
+        // Emit a dedicated event so indexers can track per-market min-bet changes.
+        EventEmitter::emit_min_bet_set(&env, &admin, &market_id, min_amount);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::BetLimitsUpdated,
+            admin.clone(),
+            Map::new(&env),
+            None,
+        );
+
+        Ok(())
+    }
+
+    /// Get the per-market minimum bet amount, or `None` if not set.
+    ///
+    /// Returns the value previously stored by [`Self::set_min_bet`], or `None` if no
+    /// per-market threshold has been configured.  `None` means the market uses the
+    /// global/per-event [`BetLimits`] minimum.
+    ///
+    /// # Parameters
+    ///
+    /// - `market_id` – Identifies the target market
+    ///
+    /// # Returns
+    ///
+    /// `Some(amount)` in base token units (stroops) when a per-market minimum is set,
+    /// `None` otherwise.
+    pub fn get_min_bet(env: Env, market_id: Symbol) -> Option<i128> {
+        crate::bets::get_market_min_bet(&env, &market_id)
+    }
+
+    /// Remove the per-market minimum bet threshold (admin only).
+    ///
+    /// After removal, bets are bounded only by the global/per-event minimum.
+    /// Equivalent to calling [`Self::set_min_bet`] with `min_amount = 0`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`]   when `admin` is not the primary admin
+    /// - [`Error::MarketNotFound`] when `market_id` does not exist
+    pub fn remove_market_min_bet(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        crate::bets::remove_market_min_bet(&env, &market_id)?;
+        EventEmitter::emit_min_bet_set(&env, &admin, &market_id, 0);
+        Ok(())
+    }
+
     pub fn set_max_participants(
         env: Env,
         admin: Address,
@@ -8583,6 +8686,7 @@ mod tests {
                 timelock_config: timelock::MarketTimelockConfig::default(),
                 dispute_stake_floor: None,
                 max_participants: None,
+                min_bet_amount: None,
             };
 
             env.storage().persistent().set(&market_id, &market);
@@ -8678,6 +8782,7 @@ mod tests {
                 timelock_config: timelock::MarketTimelockConfig::default(),
                 dispute_stake_floor: None,
                 max_participants: None,
+                min_bet_amount: None,
             };
 
             env.storage().persistent().set(&market_id, &market);
@@ -8740,6 +8845,7 @@ mod tests {
                 timelock_config: timelock::MarketTimelockConfig::default(),
                 dispute_stake_floor: None,
                 max_participants: None,
+                min_bet_amount: None,
             };
             env.storage().persistent().set(&market_id, &market);
         });
