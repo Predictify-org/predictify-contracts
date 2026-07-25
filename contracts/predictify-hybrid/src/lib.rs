@@ -32,7 +32,7 @@ mod disputes;
 mod edge_cases;
 mod err;
 mod event_archive;
-mod events;
+pub mod events;
 mod extensions;
 mod fees;
 mod gas;
@@ -100,6 +100,8 @@ mod circuit_breaker_tests;
 // mod upgrade_manager_tests;
 #[cfg(test)]
 mod upgrade_manager_tests;
+#[cfg(test)]
+mod oracle_lifecycle_events_tests;
 
 // #[cfg(any())]
 // mod query_tests;

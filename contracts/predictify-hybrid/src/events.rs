@@ -408,6 +408,64 @@ pub struct OracleResultEvent {
     pub timestamp: u64,
 }
 
+/// Structured lifecycle stage for oracle-driven resolution workflows.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OracleLifecycleStage {
+    /// Oracle lifecycle has been initialized.
+    Initialized,
+    /// Oracle data was requested from the provider.
+    Requested,
+    /// Oracle data arrived and was recorded.
+    Received,
+    /// Oracle data was successfully verified.
+    Verified,
+    /// Oracle lifecycle transitioned into a failure state.
+    Failed,
+    /// Oracle service degraded but remained partially available.
+    Degraded,
+    /// Oracle service recovered and is healthy again.
+    Recovered,
+    /// Oracle result was finalized for resolution.
+    Resolved,
+    /// Oracle resolution time window expired.
+    TimedOut,
+}
+
+/// Structured status for oracle lifecycle transitions.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OracleLifecycleStatus {
+    /// The lifecycle transition is pending.
+    Pending,
+    /// The lifecycle transition succeeded.
+    Success,
+    /// The lifecycle transition failed.
+    Failure,
+    /// The lifecycle transition reported a degraded or warning state.
+    Warning,
+}
+
+/// Structured lifecycle event emitted when an oracle moves through its resolution workflow.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleLifecycleEvent {
+    /// Market ID associated with the lifecycle transition.
+    pub market_id: Symbol,
+    /// Oracle address that produced or processed the lifecycle update.
+    pub oracle_address: Address,
+    /// Lifecycle stage reached by the oracle workflow.
+    pub stage: OracleLifecycleStage,
+    /// Lifecycle status for the transition.
+    pub status: OracleLifecycleStatus,
+    /// Human-readable reason for the transition.
+    pub reason: String,
+    /// Additional metadata describing the transition context.
+    pub metadata: String,
+    /// Event timestamp.
+    pub timestamp: u64,
+}
+
 /// Event emitted when a prediction market is successfully resolved with final outcome.
 ///
 /// This event captures the complete resolution process, including the final outcome,
@@ -2072,7 +2130,44 @@ impl EventEmitter {
 
         Self::store_event(env, &symbol_short!("oracle_rs"), &event);
         env.events()
-            .publish((symbol_short!("oracle_rs"), market_id.clone()), event);
+            .publish((symbol_short!("oracle_rs"), market_id.clone()), event.clone());
+
+        Self::emit_oracle_lifecycle_event(
+            env,
+            market_id,
+            &Address::from_str(env, ""),
+            &OracleLifecycleStage::Received,
+            &OracleLifecycleStatus::Success,
+            &String::from_str(env, "oracle_result_received"),
+            &String::from_str(env, "price_fetched"),
+        );
+    }
+
+    /// Emit a structured lifecycle event describing the current oracle workflow stage.
+    pub fn emit_oracle_lifecycle_event(
+        env: &Env,
+        market_id: &Symbol,
+        oracle_address: &Address,
+        stage: &OracleLifecycleStage,
+        status: &OracleLifecycleStatus,
+        reason: &String,
+        metadata: &String,
+    ) {
+        let event = OracleLifecycleEvent {
+            market_id: market_id.clone(),
+            oracle_address: oracle_address.clone(),
+            stage: stage.clone(),
+            status: status.clone(),
+            reason: reason.clone(),
+            metadata: metadata.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("ora_lfcy"), &event);
+        env.events().publish(
+            (symbol_short!("ora_lfcy"), market_id.clone(), oracle_address.clone()),
+            event,
+        );
     }
 
     // ===== ORACLE RESULT VERIFICATION EVENT EMISSION METHODS =====
@@ -2193,7 +2288,17 @@ impl EventEmitter {
 
         Self::store_event(env, &symbol_short!("orc_fail"), &event);
         env.events()
-            .publish((symbol_short!("orc_fail"), market_id.clone()), event);
+            .publish((symbol_short!("orc_fail"), market_id.clone()), event.clone());
+
+        Self::emit_oracle_lifecycle_event(
+            env,
+            market_id,
+            &Address::from_str(env, ""),
+            &OracleLifecycleStage::Failed,
+            &OracleLifecycleStatus::Failure,
+            error_message,
+            &String::from_str(env, "verification_failed"),
+        );
     }
 
     /// Emit oracle validation failed event.
@@ -2222,7 +2327,17 @@ impl EventEmitter {
 
         Self::store_event(env, &symbol_short!("orc_val"), &event);
         env.events()
-            .publish((symbol_short!("orc_val"), market_id.clone()), event);
+            .publish((symbol_short!("orc_val"), market_id.clone()), event.clone());
+
+        Self::emit_oracle_lifecycle_event(
+            env,
+            market_id,
+            &Address::from_str(env, ""),
+            &OracleLifecycleStage::Failed,
+            &OracleLifecycleStatus::Failure,
+            reason,
+            &String::from_str(env, "validation_failed"),
+        );
     }
 
     /// Emit oracle consensus reached event
@@ -2929,7 +3044,17 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ora_deg"), &event);
-        env.events().publish((symbol_short!("ora_deg"),), event);
+        env.events().publish((symbol_short!("ora_deg"),), event.clone());
+
+        Self::emit_oracle_lifecycle_event(
+            env,
+            &Symbol::new(env, "oracle_degradation"),
+            &Address::from_str(env, ""),
+            &OracleLifecycleStage::Degraded,
+            &OracleLifecycleStatus::Warning,
+            reason,
+            &String::from_str(env, "oracle_service_degraded"),
+        );
     }
 
     /// Emit oracle recovery event when oracle service recovers
@@ -2940,7 +3065,17 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ora_rec"), &event);
-        env.events().publish((symbol_short!("ora_rec"),), event);
+        env.events().publish((symbol_short!("ora_rec"),), event.clone());
+
+        Self::emit_oracle_lifecycle_event(
+            env,
+            &Symbol::new(env, "oracle_recovery"),
+            &Address::from_str(env, ""),
+            &OracleLifecycleStage::Recovered,
+            &OracleLifecycleStatus::Success,
+            message,
+            &String::from_str(env, "oracle_service_recovered"),
+        );
     }
 
     /// Emit manual resolution required event when automatic resolution fails
@@ -2952,7 +3087,17 @@ impl EventEmitter {
         };
         Self::store_event(env, &symbol_short!("man_res"), &event);
         env.events()
-            .publish((symbol_short!("man_res"), market_id.clone()), event);
+            .publish((symbol_short!("man_res"), market_id.clone()), event.clone());
+
+        Self::emit_oracle_lifecycle_event(
+            env,
+            market_id,
+            &Address::from_str(env, ""),
+            &OracleLifecycleStage::Failed,
+            &OracleLifecycleStatus::Failure,
+            reason,
+            &String::from_str(env, "manual_resolution_required"),
+        );
     }
 
     /// Emit state change event when market state transitions
@@ -3643,6 +3788,21 @@ impl EventLogger {
             }
         }
 
+        // Get oracle lifecycle events
+        if let Some(event) = env
+            .storage()
+            .persistent()
+            .get::<Symbol, OracleLifecycleEvent>(&symbol_short!("ora_lfcy"))
+        {
+            if event.market_id == *market_id {
+                events.push_back(MarketEventSummary {
+                    event_type: String::from_str(env, "OracleLifecycle"),
+                    timestamp: event.timestamp,
+                    details: String::from_str(env, "Oracle lifecycle transition"),
+                });
+            }
+        }
+
         // Get market resolved events
         if let Some(event) = env
             .storage()
@@ -3672,6 +3832,7 @@ impl EventLogger {
             symbol_short!("mkt_crt"),
             symbol_short!("vote"),
             symbol_short!("oracle_rs"),
+            symbol_short!("ora_lfcy"),
             symbol_short!("mkt_res"),
             symbol_short!("dispt_crt"),
             symbol_short!("dispt_res"),
@@ -3719,6 +3880,7 @@ impl EventLogger {
             symbol_short!("mkt_crt"),
             symbol_short!("vote"),
             symbol_short!("oracle_rs"),
+            symbol_short!("ora_lfcy"),
             symbol_short!("mkt_res"),
             symbol_short!("dispt_crt"),
             symbol_short!("dispt_res"),
@@ -3776,6 +3938,15 @@ impl EventValidator {
     pub fn validate_oracle_result_event(_event: &OracleResultEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
+        Ok(())
+    }
+
+    /// Validate structured oracle lifecycle events.
+    pub fn validate_oracle_lifecycle_event(event: &OracleLifecycleEvent) -> Result<(), Error> {
+        if event.timestamp == 0 {
+            return Err(Error::InvalidInput);
+        }
+
         Ok(())
     }
 
@@ -3970,6 +4141,23 @@ impl EventTestingUtils {
         }
     }
 
+    /// Create test oracle lifecycle event.
+    pub fn create_test_oracle_lifecycle_event(
+        env: &Env,
+        market_id: &Symbol,
+        oracle_address: &Address,
+    ) -> OracleLifecycleEvent {
+        OracleLifecycleEvent {
+            market_id: market_id.clone(),
+            oracle_address: oracle_address.clone(),
+            stage: OracleLifecycleStage::Requested,
+            status: OracleLifecycleStatus::Pending,
+            reason: String::from_str(env, "test_lifecycle"),
+            metadata: String::from_str(env, "feed=BTC/USD"),
+            timestamp: env.ledger().timestamp(),
+        }
+    }
+
     /// Create test market resolved event
     pub fn create_test_market_resolved_event(env: &Env, market_id: &Symbol) -> MarketResolvedEvent {
         MarketResolvedEvent {
@@ -4151,6 +4339,10 @@ impl EventDocumentation {
             String::from_str(env, "PerformanceMetric"),
             String::from_str(env, "Emitted when performance metrics are recorded"),
         );
+        docs.set(
+            String::from_str(env, "OracleLifecycle"),
+            String::from_str(env, "Emitted for structured oracle lifecycle transitions such as request, verification, failure, degradation, recovery, and resolution"),
+        );
 
         docs
     }
@@ -4179,6 +4371,13 @@ impl EventDocumentation {
             String::from_str(
                 &env,
                 "EventValidator::validate_market_created_event(&event)",
+            ),
+        );
+        examples.set(
+            String::from_str(env, "EmitOracleLifecycleEvent"),
+            String::from_str(
+                env,
+                "EventEmitter::emit_oracle_lifecycle_event(env, market_id, oracle_address, OracleLifecycleStage::Requested, OracleLifecycleStatus::Pending, reason, metadata)",
             ),
         );
 
