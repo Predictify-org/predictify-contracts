@@ -772,6 +772,7 @@ impl DisputeManager {
     pub fn set_history_cap(env: &Env, admin: Address, cap: u32) -> Result<(), Error> {
         admin.require_auth();
         DisputeValidator::validate_admin_permissions(env, &admin)?;
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_history_cap"))?;
 
         let key = DataKey::DisputeHistoryCap;
         env.storage().persistent().set(&key, &cap);
@@ -789,6 +790,7 @@ impl DisputeManager {
     pub fn set_anti_grief_floor(env: &Env, admin: Address, floor: i128) -> Result<(), Error> {
         admin.require_auth();
         DisputeValidator::validate_admin_permissions(env, &admin)?;
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_anti_grief_floor"))?;
 
         let key = DataKey::AntiGriefFloor;
         env.storage().persistent().set(&key, &floor);
@@ -806,6 +808,7 @@ impl DisputeManager {
     pub fn set_collusion_detector_config(env: &Env, admin: Address, config: CollusionDetectorConfig) -> Result<(), Error> {
         admin.require_auth();
         DisputeValidator::validate_admin_permissions(env, &admin)?;
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_collusion_detector_config"))?;
 
         let key = DataKey::CollusionDetectorConfig;
         env.storage().persistent().set(&key, &config);
@@ -1154,6 +1157,9 @@ impl DisputeManager {
 
         // Validate admin permissions
         DisputeValidator::validate_admin_permissions(env, &admin)?;
+
+        // Enforce admin action cooldown
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "resolve_dispute"))?;
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
@@ -2067,6 +2073,12 @@ impl DisputeManager {
         // Validate admin permissions
         DisputeValidator::validate_admin_permissions(env, &admin)?;
 
+        // Enforce admin action cooldown
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_dispute_timeout"))?;
+
+        // Enforce admin action cooldown
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_dispute_timeout"))?;
+
         // Validate timeout hours
         if timeout_hours == 0 || timeout_hours > 720 {
             // Max 30 days
@@ -2277,6 +2289,12 @@ impl DisputeManager {
         // Validate admin permissions
         DisputeValidator::validate_admin_permissions(env, &admin)?;
 
+        // Enforce admin action cooldown
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "extend_dispute_timeout"))?;
+
+        // Enforce admin action cooldown
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "extend_dispute_timeout"))?;
+
         // Validate additional hours
         if additional_hours == 0 || additional_hours > 168 {
             // Max 7 days extension
@@ -2362,6 +2380,57 @@ impl DisputeManager {
     pub fn get_dispute_cumulative_stake_cap(env: &Env, user: &Address) -> i128 {
         let cap_key = crate::storage::DataKey::DisputeCumulativeStakeCap(user.clone());
         env.storage().persistent().get(&cap_key).unwrap_or(0)
+    }
+
+    // ── Admin Cooldown ───────────────────────────────────────────────────────
+
+    /// Sets the cooldown period (in seconds) between admin actions on disputes.
+    ///
+    /// A zero value disables the cooldown entirely.  Only the contract admin
+    /// may call this.
+    pub fn set_admin_cooldown(env: &Env, admin: &Address, seconds: u64) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, admin)?;
+        let key = DataKey::DisputeCooldownSeconds;
+        env.storage().persistent().set(&key, &seconds);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Retrieves the configured dispute admin cooldown period in seconds.
+    /// Returns 0 (no cooldown) when not configured.
+    pub fn get_admin_cooldown(env: &Env) -> u64 {
+        let key = DataKey::DisputeCooldownSeconds;
+        env.storage().persistent().get(&key).unwrap_or(0)
+    }
+
+    /// Enforces the per-function admin cooldown for a named dispute operation.
+    ///
+    /// * `function_name` – a short identifier (`"set_history_cap"`, `"resolve_dispute"`, …).
+    ///
+    /// # Errors
+    /// Returns `Error::AdminActionTimelocked` if the cooldown has not yet elapsed
+    /// since the last invocation of *this specific* function.
+    pub fn check_admin_cooldown(
+        env: &Env,
+        admin: &Address,
+        function_name: &Symbol,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, admin)?;
+        let cooldown = Self::get_admin_cooldown(env);
+        if cooldown == 0 {
+            return Ok(());
+        }
+        let now = env.ledger().timestamp();
+        let last_key = DataKey::DisputeAdminLastAction(function_name.clone());
+        let last_action: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
+        if last_action > 0 && now < last_action.saturating_add(cooldown) {
+            return Err(Error::AdminActionTimelocked);
+        }
+        env.storage().persistent().set(&last_key, &now);
+        env.storage().persistent().extend_ttl(&last_key, 535680, 535680);
+        Ok(())
     }
 }
 
