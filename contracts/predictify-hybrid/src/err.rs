@@ -100,7 +100,15 @@ pub enum Error {
 
     // ===== GENERAL ERRORS =====
     /// Contract is in an invalid or unexpected state. Manual intervention may be required.
-    InvalidState = 400,
+    InvalidState = 494,
+
+    /// Overflow occurred during arithmetic operation.
+    Overflow = 495,
+    /// No disputes found for the market.
+    NoDisputesFound = 496,
+    /// Oracle result not available when required.
+    OracleResultNotAvailable = 497,
+
     /// General input validation failed. Check parameters and try again.
     InvalidInput = 401,
     /// Platform fee configuration is invalid. Fee must be between 0% and 10%.
