@@ -2318,6 +2318,128 @@ pub struct DeprecatedCall {
     pub timestamp: u64,
 }
 
+/// Event emitted when a market transitions to the Ended state (voting closed).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketEndedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Time when market ended
+    pub ended_at: u64,
+    /// Total amount staked in market
+    pub total_staked: i128,
+    /// Number of participants
+    pub participant_count: u32,
+    /// Event emission timestamp
+    pub timestamp: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+}
+
+/// Event emitted when a market begins dispute period.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketDisputeStartedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Initial dispute initiator
+    pub dispute_initiator: Address,
+    /// Initial dispute stake amount
+    pub dispute_stake: i128,
+    /// Disputed outcome
+    pub disputed_outcome: String,
+    /// End time of dispute window
+    pub dispute_end_time: u64,
+    /// Event emission timestamp
+    pub timestamp: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+}
+
+/// Event emitted when a market is activated (transitions to Active state).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketActivatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Market admin
+    pub admin: Address,
+    /// Activation timestamp
+    pub timestamp: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+}
+
+/// Event emitted when a market is cancelled by admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketCancelledEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Admin who cancelled
+    pub admin: Address,
+    /// Cancellation reason
+    pub reason: String,
+    /// Total refunds issued
+    pub total_refunded: i128,
+    /// Event emission timestamp
+    pub timestamp: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+}
+
+/// Event emitted when market reaches resolution with outcome determination.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketOutcomeSetEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Winning outcome(s)
+    pub winning_outcomes: Vec<String>,
+    /// Total pool available for winners
+    pub payout_pool: i128,
+    /// Number of winners
+    pub winner_count: u32,
+    /// Event emission timestamp
+    pub timestamp: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+}
+
+/// Event emitted when market enters a paused state due to circuit breaker or admin action.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketPausedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Pause reason
+    pub reason: String,
+    /// Is this a circuit breaker pause
+    pub is_circuit_breaker: bool,
+    /// Pause initiator (admin or system)
+    pub paused_by: Address,
+    /// Event emission timestamp
+    pub timestamp: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+}
+
+/// Event emitted when a paused market resumes normal operation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketResumedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Who initiated resume
+    pub resumed_by: Address,
+    /// Resume reason
+    pub reason: String,
+    /// Event emission timestamp
+    pub timestamp: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+}
+
 /// Event emission utilities
 pub struct EventEmitter;
 
@@ -2362,6 +2484,155 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("mkt_crt"), &event);
         env.events()
             .publish((symbol_short!("mkt_crt"), market_id.clone()), event);
+    }
+
+    /// Emit market activated event when market transitions to Active state
+    pub fn emit_market_activated(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+    ) {
+        let event = MarketActivatedEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_act").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_act"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_act"), market_id.clone()), event);
+    }
+
+    /// Emit market ended event when market transitions to Ended state
+    pub fn emit_market_ended(
+        env: &Env,
+        market_id: &Symbol,
+        total_staked: i128,
+        participant_count: u32,
+    ) {
+        let event = MarketEndedEvent {
+            market_id: market_id.clone(),
+            ended_at: env.ledger().timestamp(),
+            total_staked,
+            participant_count,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_end").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_end"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_end"), market_id.clone()), event);
+    }
+
+    /// Emit market dispute started event
+    pub fn emit_market_dispute_started(
+        env: &Env,
+        market_id: &Symbol,
+        dispute_initiator: &Address,
+        dispute_stake: i128,
+        disputed_outcome: &String,
+        dispute_end_time: u64,
+    ) {
+        let event = MarketDisputeStartedEvent {
+            market_id: market_id.clone(),
+            dispute_initiator: dispute_initiator.clone(),
+            dispute_stake,
+            disputed_outcome: disputed_outcome.clone(),
+            dispute_end_time,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_disp").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_disp"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_disp"), market_id.clone()), event);
+    }
+
+    /// Emit market cancelled event
+    pub fn emit_market_cancelled(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        reason: &String,
+        total_refunded: i128,
+    ) {
+        let event = MarketCancelledEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            reason: reason.clone(),
+            total_refunded,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_canc").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_canc"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_canc"), market_id.clone()), event);
+    }
+
+    /// Emit market outcome set event
+    pub fn emit_market_outcome_set(
+        env: &Env,
+        market_id: &Symbol,
+        winning_outcomes: &Vec<String>,
+        payout_pool: i128,
+        winner_count: u32,
+    ) {
+        let event = MarketOutcomeSetEvent {
+            market_id: market_id.clone(),
+            winning_outcomes: winning_outcomes.clone(),
+            payout_pool,
+            winner_count,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_outc").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_outc"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_outc"), market_id.clone()), event);
+    }
+
+    /// Emit market paused event
+    pub fn emit_market_paused(
+        env: &Env,
+        market_id: &Symbol,
+        reason: &String,
+        is_circuit_breaker: bool,
+        paused_by: &Address,
+    ) {
+        let event = MarketPausedEvent {
+            market_id: market_id.clone(),
+            reason: reason.clone(),
+            is_circuit_breaker,
+            paused_by: paused_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_paus").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_paus"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_paus"), market_id.clone()), event);
+    }
+
+    /// Emit market resumed event
+    pub fn emit_market_resumed(
+        env: &Env,
+        market_id: &Symbol,
+        resumed_by: &Address,
+        reason: &String,
+    ) {
+        let event = MarketResumedEvent {
+            market_id: market_id.clone(),
+            resumed_by: resumed_by.clone(),
+            reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_res").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_res"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_res"), market_id.clone()), event);
     }
 
     /// Emit fallback used event
