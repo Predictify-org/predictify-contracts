@@ -155,10 +155,6 @@ pub enum DataKey {
     ResolutionAdminLastAction(Symbol),
     /// Global protocol configuration record.
     GlobalConfig,
-    /// Consumed `place_bets` idempotency key, scoped per user.
-    PlaceBetsIdem(Address, BytesN<32>),
-    /// State for oracle admin cooldowns
-    OracleAdminCooldownState,
 }
 
 /// Storage format version for migration tracking

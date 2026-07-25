@@ -706,6 +706,15 @@ impl MarketValidator {
 
         Ok(())
     }
+
+    pub fn validate_participant_cap(market: &Market) -> Result<(), Error> {
+        if let Some(max) = market.max_participants {
+            if market.votes.len() >= max {
+                return Err(Error::MaxParticipantsReached);
+            }
+        }
+        Ok(())
+    }
 }
 
 // ===== MARKET READ CACHE =====
@@ -1028,6 +1037,7 @@ impl MarketStateManager {
         _market_id: Option<&Symbol>,
     ) {
         MarketStateLogic::check_function_access_for_state("vote", market.state).unwrap();
+        MarketValidator::validate_participant_cap(market).unwrap();
         market.votes.set(user.clone(), outcome);
         market.stakes.set(user.clone(), stake);
         market.total_staked += stake;

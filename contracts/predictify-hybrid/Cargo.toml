@@ -11,6 +11,7 @@ doctest = false
 [dependencies]
 wee_alloc = "0.4.5"
 ethnum = "1.5.3"
+soroban-sdk = { workspace = true }
 
 
 # Disabled: pre-existing SDK incompatibilities

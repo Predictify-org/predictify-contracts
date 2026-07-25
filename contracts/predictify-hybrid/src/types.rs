@@ -1104,6 +1104,8 @@ pub struct Market {
     pub timelock_config: MarketTimelockConfig,
     /// Per-market dispute stake floor (None = use global/default minimum)
     pub dispute_stake_floor: Option<i128>,
+    /// Maximum number of unique participants allowed (None = no limit).
+    pub max_participants: Option<u32>,
 }
 
 /// Canonical payload committed by `Market::metadata_commitment`.
