@@ -31,6 +31,10 @@ path = "tests/err_stability.rs"
 name = "stateful"
 path = "tests/stateful.rs"
 
+[[test]]
+name = "vote_conserve"
+path = "tests/vote_conserve.rs"
+
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 proptest = "1.4"
