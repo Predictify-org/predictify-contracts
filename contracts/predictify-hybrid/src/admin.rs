@@ -606,6 +606,14 @@ impl AdminAccessControl {
 
         Ok(())
     }
+
+    /// Gets the primary admin address from persistent storage.
+    pub fn get_admin(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)
+    }
 }
 
 // ===== CONTRACT PAUSE AND ADMIN TRANSFER =====

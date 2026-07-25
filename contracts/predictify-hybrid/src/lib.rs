@@ -82,8 +82,8 @@ mod lists;
 mod override_audit_tests;
 #[cfg(test)]
 mod market_audit_tests;
-// #[cfg(any())]
-// mod test_audit_trail;
+#[cfg(test)]
+mod test_audit_trail;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm

@@ -155,6 +155,10 @@ pub enum DataKey {
     ResolutionAdminLastAction(Symbol),
     /// Global protocol configuration record.
     GlobalConfig,
+    /// Global max bet cap per user.
+    MaxBetCap,
+    /// Per-user total stake in a market.
+    UserStake(Address, Symbol),
 }
 
 /// Storage format version for migration tracking
