@@ -147,8 +147,6 @@ pub enum DataKey {
     AntiGriefFloor,
     /// Global protocol configuration record.
     GlobalConfig,
-    /// Consumed `place_bets` idempotency key, scoped per user.
-    PlaceBetsIdem(Address, BytesN<32>),
 }
 
 /// Storage format version for migration tracking

@@ -253,20 +253,8 @@ pub enum Error {
     /// An admin override nonce was replayed; reject to prevent replay attacks.
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
-    // Variants referenced across the codebase whose declarations were lost in a
-    // prior merge collapse; restored here with fresh discriminants.
-    /// Persistent-key allocation lacks sufficient storage rent.
-    InsufficientStorageRent = 509,
-    /// The supplied `place_bets` idempotency key has already been consumed.
-    IdempotentBatchAlreadyApplied = 510,
-    /// A stake amount was zero, negative, or otherwise invalid.
-    InvalidStakeAmount = 511,
-    /// A checked arithmetic operation overflowed.
-    Overflow = 512,
-    /// An admin force-resolve idempotency key was replayed.
-    ForceResolveReplayed = 517,
-    /// An admin force-resolve was submitted with an empty reason.
-    ForceResolveReasonEmpty = 518,
+    /// Maximum number of unique participants has been reached for this market.
+    MaxParticipantsReached = 528,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

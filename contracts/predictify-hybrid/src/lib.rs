@@ -75,26 +75,6 @@ mod event_topic_catalog;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
-// #[cfg(any())]
-// mod voting_invariants;
-
-// Modules whose declarations were dropped during the lib.rs collapse in
-// e5db2d8 but whose files and call sites were retained/re-added afterwards.
-// Restored here so the crate links again.
-mod disputes;
-mod edge_cases;
-mod extensions;
-mod graceful_degradation;
-mod leaderboard;
-mod market_analytics;
-mod market_id_generator;
-mod metadata_limits;
-mod performance_benchmarks;
-mod queries;
-mod rate_limiter;
-mod recovery;
-mod statistics;
-pub mod tokens;
 
 #[cfg(test)]
 mod override_audit_tests;
@@ -107,8 +87,6 @@ mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
 }
 
-mod performance_benchmarks;
-mod market_analytics;
 pub mod timelock;
 
 // #[cfg(any())]
@@ -188,6 +166,9 @@ mod analytics_snapshot_tests;
 #[cfg(test)]
 mod property_based_tests;
 
+#[cfg(test)]
+mod max_participants_tests;
+
 // dispute_stake_tests.rs extended for #553; enable when legacy setup is updated:
 // #[cfg(test)]
 // #[path = "tests/dispute_stake_tests.rs"]
@@ -215,7 +196,7 @@ pub mod errors {
     pub use crate::err::*;
 }
 // pub use queries::QueryManager;
-pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
+// pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
 
@@ -252,12 +233,7 @@ impl From<crate::rate_limiter::RateLimiterError> for Error {
 // Short symbol keys (max length 9 for Soroban compatibility). These consts were
 // dropped in the e5db2d8 lib.rs collapse but are still referenced by the storage
 // helpers below; restored here.
-const SYM_PLATFORM_FEE: &str = "plat_fee"; // was "platform_fee" (12 chars)
 const SYM_ALLOWED_ASSETS: &str = "allowed"; // was "allowed_assets" (14 chars)
-const SYM_ADMIN: &str = "Admin"; // 5 chars
-
-/// Basis-point denominator for percentage math (100% = 10000 bps).
-pub(crate) const PERCENTAGE_DENOMINATOR: i128 = 10000;
 
 const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str =
     "Primary oracle failed, fallback also failed";
@@ -570,6 +546,7 @@ impl PredictifyHybrid {
         bet_deadline_mins_before_end: Option<u64>,
         dispute_window_seconds: Option<u64>,
         dispute_stake_floor: Option<i128>,
+        max_participants: Option<u32>,
     ) -> Symbol {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market")
@@ -664,6 +641,7 @@ impl PredictifyHybrid {
             winnings_swept: false,
             timelock_config: timelock::MarketTimelockConfig::default(),
             dispute_stake_floor,
+            max_participants,
         };
 
         // Pre-flight checks: ensure sufficient storage rent budget.
@@ -976,6 +954,13 @@ impl PredictifyHybrid {
         // Check if user already voted
         if market.votes.get(user.clone()).is_some() {
             panic_with_error!(env, Error::AlreadyVoted);
+        }
+
+        // Check participant cap
+        if let Some(max) = market.max_participants {
+            if market.votes.len() >= max {
+                panic_with_error!(env, Error::MaxParticipantsReached);
+            }
         }
 
         // Lock funds (transfer from user to contract)
@@ -4468,6 +4453,23 @@ impl PredictifyHybrid {
         Self::require_primary_admin(&env, &admin)?;
         crate::bets::remove_market_max_bet_cap(&env, &market_id);
         EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, 0, 0);
+        Ok(())
+    }
+
+    pub fn set_max_participants(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        max_participants: Option<u32>,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::MarketNotFound));
+        market.max_participants = max_participants;
+        env.storage().persistent().set(&market_id, &market);
         Ok(())
     }
 
@@ -8328,6 +8330,9 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 86400,
                 winnings_swept: false,
+                timelock_config: timelock::MarketTimelockConfig::default(),
+                dispute_stake_floor: None,
+                max_participants: None,
             };
 
             env.storage().persistent().set(&market_id, &market);
@@ -8420,6 +8425,9 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 86400,
                 winnings_swept: false,
+                timelock_config: timelock::MarketTimelockConfig::default(),
+                dispute_stake_floor: None,
+                max_participants: None,
             };
 
             env.storage().persistent().set(&market_id, &market);
@@ -8479,6 +8487,9 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 86400,
                 winnings_swept: false,
+                timelock_config: timelock::MarketTimelockConfig::default(),
+                dispute_stake_floor: None,
+                max_participants: None,
             };
             env.storage().persistent().set(&market_id, &market);
         });

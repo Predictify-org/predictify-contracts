@@ -221,7 +221,6 @@ pub enum ResolutionState {
 /// - **Dispute Evidence**: Data available for dispute proceedings
 /// - **Analytics**: Historical analysis of oracle performance
 /// - **Transparency**: Public verification of resolution logic
-#[derive(Clone, Debug)]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MedianResolutionResult {
