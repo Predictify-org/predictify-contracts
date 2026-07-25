@@ -31,7 +31,7 @@
 //! - Rounding dust (odd-stroop pools) never causes an over-payment.
 //! - Recorded payouts match [`PayoutData`] / `MarketUtils::calculate_payout`.
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::markets::{MarketAnalytics, MarketUtils, WinningStats};
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 use crate::voting::PayoutData;
@@ -77,7 +77,7 @@ impl TieSetup {
             crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
         });
 
-        PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+        crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
         // `initialize` stores DEFAULT_PLATFORM_FEE_PERCENTAGE (200 bps = 2 %)
         // under "platform_fee".  `distribute_payouts` reads that key directly,
@@ -136,6 +136,7 @@ impl TieSetup {
             market_id,
             &String::from_str(&self.env, outcome),
             &amount,
+            &250,
         );
     }
 
@@ -730,7 +731,7 @@ fn test_calculate_winning_stats_two_way_tie_each_outcome() {
     });
 
     let admin = Address::generate(&env);
-    PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+    crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
     // Build a market in memory (no storage write needed for this unit test).
     let mut market = Market::new(

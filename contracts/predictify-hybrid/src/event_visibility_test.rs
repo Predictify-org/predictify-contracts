@@ -25,7 +25,7 @@ mod event_visibility_tests {
         let contract_id = env.register(PredictifyHybrid, ());
 
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
+        client.initialize(&admin, &None, &None);
 
         // Configure token used for fees and staking
         env.as_contract(&contract_id, || {
@@ -213,6 +213,7 @@ mod event_visibility_tests {
             &event_id,
             &String::from_str(&env, "yes"),
             &1_000_000,
+            &250,
         );
     }
 }

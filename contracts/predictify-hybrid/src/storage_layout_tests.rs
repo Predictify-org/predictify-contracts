@@ -11,13 +11,14 @@
 
 use alloc::format;
 use soroban_sdk::{
-    testutils::{Address as _, EnvTestConfig},
+    testutils::{Address as _, EnvTestConfig, storage::Persistent, Ledger},
     vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
 };
 use crate::markets::MarketStateManager;
 use crate::storage::{
     BalanceStorage, CreatorLimitsManager, EventManager, StorageFormat, StorageOptimizer,
 };
+use crate::err::Error;
 use crate::types::*;
 
 // ===== TEST UTILITIES =====
@@ -55,12 +56,20 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         comparison: String::from_str(env, "gt"),
     };
 
+    let metadata_commitment = Market::compute_metadata_commitment(
+        env,
+        &question,
+        &outcomes,
+        &oracle_config,
+    );
+
     let market = Market {
         admin: admin.clone(),
         question,
         outcomes,
         end_time,
         oracle_config,
+        metadata_commitment,
         has_fallback: false,
         fallback_oracle_config: OracleConfig::none_sentinel(env),
         resolution_timeout: 86400,
@@ -82,6 +91,7 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         bet_deadline: 0,
         dispute_window_seconds: 0,
         winnings_swept: false,
+        timelock_config: crate::timelock::MarketTimelockConfig::default(),
     };
 
     (market_id, market)
@@ -762,4 +772,160 @@ fn test_tuple_key_generation_performance() {
 
     // Tuple key generation should be fast
     assert!(duration < 1000, "Tuple key generation took too long");
+}
+
+#[ignore]
+#[test]
+fn test_promote_market_to_persistent_and_demote_scratch() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let (market_id, market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        // Setup config with known TTL constants
+        let mut config = StorageOptimizer::get_storage_config(&env);
+        config.market_ttl_ledgers = 5000;
+        config.balance_ttl_ledgers = 100;
+        StorageOptimizer::update_storage_config(&env, &config).unwrap();
+
+        // 1. Missing market metadata (error case)
+        let err_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+        assert_eq!(err_result, Err(Error::MarketNotFound));
+
+        // 2. Put market metadata in temporary storage
+        let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        env.storage().temporary().set(&temp_key, &market);
+        env.storage().temporary().extend_ttl(&temp_key, 100, 100);
+
+        // 3. Test require_auth gating - if we invoke as contract, auth must succeed.
+        // We mock auths to verify the happy path.
+        env.mock_all_auths();
+
+        let success_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+        assert!(success_result.is_ok());
+
+        // Check it has been promoted to persistent
+        let persistent_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        assert!(env.storage().persistent().has(&persistent_key));
+        assert!(!env.storage().temporary().has(&temp_key));
+
+        // Verify the persistent entry's TTL matches what's configured
+        let persistent_ttl = env.storage().persistent().get_ttl(&persistent_key);
+        assert_eq!(persistent_ttl, 5000.min(env.storage().max_ttl()));
+
+        // 4. Idempotency test: calling it again succeeds and extends/refreshes TTL
+        env.ledger().with_mut(|li| {
+            li.sequence_number += 100;
+        });
+        assert!(env.storage().persistent().get_ttl(&persistent_key) < 5000.min(env.storage().max_ttl()));
+
+        let idempotent_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+        assert!(idempotent_result.is_ok());
+        assert_eq!(env.storage().persistent().get_ttl(&persistent_key), 5000.min(env.storage().max_ttl()));
+
+        // 5. Test demote_scratch_keys
+        let scratch_persistent_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+        let scratch_temp_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+        
+        let scratch_data: SorobanVec<i128> = vec![&env, 12, 34, 56];
+        env.storage().persistent().set(&scratch_persistent_key, &scratch_data);
+        StorageOptimizer::extend_persistent_ttl(&env, &scratch_persistent_key, 5000);
+
+        let demote_result = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
+        assert!(demote_result.is_ok());
+
+        // Check scratch keys are moved to temporary
+        assert!(!env.storage().persistent().has(&scratch_persistent_key));
+        assert!(env.storage().temporary().has(&scratch_temp_key));
+
+        let retrieved_scratch: SorobanVec<i128> = env.storage().temporary().get(&scratch_temp_key).unwrap();
+        assert_eq!(retrieved_scratch.get(0).unwrap(), 12);
+        assert_eq!(retrieved_scratch.get(1).unwrap(), 34);
+        assert_eq!(retrieved_scratch.get(2).unwrap(), 56);
+
+        // Idempotency: call again
+        let demote_idempotent = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
+        assert!(demote_idempotent.is_ok());
+        assert!(env.storage().temporary().has(&scratch_temp_key));
+    });
+}
+
+#[test]
+#[should_panic]
+fn test_promote_market_to_persistent_auth_failure() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let (market_id, market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        env.storage().temporary().set(&temp_key, &market);
+        
+        // This should panic due to missing authentication from market.admin (since mock_all_auths is not called)
+        let _ = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
+    });
+}
+
+#[test]
+#[should_panic]
+fn test_demote_scratch_keys_auth_failure() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let (market_id, market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        env.storage().temporary().set(&temp_key, &market);
+        
+        let scratch_persistent_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+        let scratch_data: SorobanVec<i128> = vec![&env, 12, 34, 56];
+        env.storage().persistent().set(&scratch_persistent_key, &scratch_data);
+
+        // This should panic due to missing authentication from market.admin
+        let _ = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
+    });
+}
+
+#[test]
+fn test_check_ttl_pressure() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+
+    env.as_contract(&contract_id, || {
+        use soroban_sdk::IntoVal;
+        
+        let key1 = Symbol::new(&env, "TestKey1");
+        let value1 = String::from_str(&env, "TestValue1");
+
+        let key2 = Symbol::new(&env, "TestKey2");
+        let value2 = String::from_str(&env, "TestValue2");
+
+        env.storage().persistent().set(&key1, &value1);
+        env.storage().persistent().extend_ttl(&key1, 200, 200);
+
+        env.storage().persistent().set(&key2, &value2);
+        env.storage().persistent().extend_ttl(&key2, 100, 100);
+        
+        let keys = vec![&env, key1.into_val(&env), key2.into_val(&env)];
+        let pressures = StorageOptimizer::check_ttl_pressure(&env, keys);
+        
+        assert_eq!(pressures.len(), 2);
+        
+        let pressure0 = pressures.get(0).unwrap();
+        let pressure1 = pressures.get(1).unwrap();
+        
+        assert_eq!(pressure0.key, key2.into_val(&env));
+        assert!(pressure0.remaining_ledgers <= 100);
+        
+        assert_eq!(pressure1.key, key1.into_val(&env));
+        assert!(pressure1.remaining_ledgers <= 200);
+        assert!(pressure0.remaining_ledgers < pressure1.remaining_ledgers);
+        
+        let expected_bump = crate::storage::MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
+        assert_eq!(pressure0.recommended_bump, expected_bump);
+        assert_eq!(pressure1.recommended_bump, expected_bump);
+    });
 }

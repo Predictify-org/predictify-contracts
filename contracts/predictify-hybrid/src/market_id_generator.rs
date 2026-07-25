@@ -491,7 +491,7 @@ mod tests {
             MarketIdGenerator::generate_market_id(&env, &admin2);
             // Nonce should be 2 after two generations.
             let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
-            let nonce: u32 = env.storage().persistent().get(&nonce_key).unwrap_or(0);
+            let nonce: u64 = env.storage().persistent().get(&nonce_key).unwrap_or(0);
             assert_eq!(nonce, 2);
         });
     }
@@ -532,11 +532,11 @@ mod tests {
             let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
 
             // Generate for admin1 at nonce=0.
-            env.storage().persistent().set(&nonce_key, &0u32);
+            env.storage().persistent().set(&nonce_key, &0u64);
             let a = MarketIdGenerator::generate_market_id(&env, &admin1);
 
             // Reset nonce back to 0 to force the same nonce for admin2.
-            env.storage().persistent().set(&nonce_key, &0u32);
+            env.storage().persistent().set(&nonce_key, &0u64);
             let b = MarketIdGenerator::generate_market_id(&env, &admin2);
 
             (a, b)
@@ -559,7 +559,7 @@ mod tests {
         with_contract(&env, &contract_id, || {
             // Peek at what the first ID would be without consuming the nonce.
             let nonce_key = Symbol::new(&env, MarketIdGenerator::GLOBAL_NONCE_KEY);
-            let current_nonce: u32 = env
+            let current_nonce: u64 = env
                 .storage()
                 .persistent()
                 .get(&nonce_key)
@@ -733,3 +733,4 @@ mod tests {
         assert_eq!(all_ids.len(), 25);
     }
 }
+

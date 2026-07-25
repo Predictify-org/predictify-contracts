@@ -2,7 +2,7 @@
 
 use crate::config::{ConfigManager, DISPUTE_EXTENSION_HOURS};
 use crate::disputes::DisputeManager;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::markets::MarketStateManager;
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 use crate::voting::VotingManager;

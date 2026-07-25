@@ -111,6 +111,19 @@ This is a hybrid prediction market contract built on Stellar using Soroban that 
 - **Batch Bet Placement**: Place multiple bets in a single atomic transaction for gas efficiency
 - **Admin Fee Withdrawal Schedule**: Timelock + optional cap for fee withdrawals to reduce abuse risk
 
+## Deterministic Per-Market Analytics Snapshots
+
+The contract now exposes `PredictifyHybrid::get_market_analytics_snapshot(env, market_id)` for off-chain analytics and indexers. The returned envelope is versioned and XDR-encoded so consumers can persist a deterministic byte stream for downstream processing without relying on host-side map iteration order.
+
+### What the snapshot includes
+- Market identifier and question
+- Current market state
+- Vote and stake totals
+- Outcome counts in a stable sorted order
+- Participant count
+
+This is intended for read-only analytics and reporting workflows that need a canonical per-market view.
+
 ## Admin Fee Vault & Withdrawal Schedule
 
 Collected platform fees accumulate inside the contract and are withdrawn by the admin through a
@@ -276,7 +289,8 @@ The contract now makes **actual calls** to the Reflector oracle contract:
 1. **Contract-to-Contract Calls**: Uses `env.invoke_contract()` to call Reflector functions
 2. **Price Fetching**: Calls `lastprice()` and `twap()` functions from Reflector
 3. **Fallback Mechanism**: If `lastprice()` fails, tries `twap()` with 1 record
-4. **Error Handling**: Returns `OracleUnavailable` if both methods fail
+4. **Disagreement Handling**: If the primary and fallback oracle sources return different outcomes, the fallback outcome is preferred to avoid acting on conflicting data
+5. **Error Handling**: Returns `OracleUnavailable` if both methods fail
 
 ### Reflector Contract Functions Used
 
@@ -712,13 +726,40 @@ soroban contract invoke --id <contract_id> -- set_token_contract --token_contrac
 - **Fallback**: TWAP used as fallback if latest price unavailable
 - **Caching**: Consider caching oracle results for efficiency
 
+## Governance
+
+The contract includes a full on-chain governance module (`src/governance.rs`) supporting:
+
+- **Proposals**: Any address can create a proposal with an optional contract execution target.
+- **Direct voting**: Cast a FOR/AGAINST vote within the open voting window.
+- **Commit-reveal voting (vote salt)**: Submit a salted commitment hash first, reveal later — prevents front-running and precomputation of results before the window closes.
+- **Quorum decay**: The required quorum decreases linearly from the base quorum toward a configurable floor over the proposal lifetime, preventing stale proposals from lingering forever.
+- **Delegation**: Delegate vote weight (up to 50 incoming delegations per address).
+
+See [`docs/contracts/GOVERNANCE.md`](../../docs/contracts/GOVERNANCE.md) for the full API reference.
+
+### Vote Salt Quick Reference
+
+```text
+commit_vote(voter, proposal_id, sha256(salt ++ support_byte))  // hide preference
+reveal_vote(voter, proposal_id, salt, support)                  // tally vote
+```
+
+`support_byte = 0x01` (FOR) · `0x00` (AGAINST)
+
+### Quorum Decay Quick Reference
+
+```rust
+QuorumDecay { floor_bps: 2000, halving_seconds: 86400 }
+// floor = 20 % of base quorum; full decay after 2 days
+```
+
 ## Future Enhancements
 
 1. **Multiple Oracle Support**: Add more oracle providers
 2. **Oracle Aggregation**: Combine multiple oracle results
 3. **Dynamic Asset Support**: Parse feed_id for different asset pairs
 4. **Price Validation**: Add confidence intervals and staleness checks
-5. **Governance**: Add DAO-style governance for parameter updates
 
 ## Troubleshooting
 
@@ -833,3 +874,48 @@ The contract is now ready for production use with **real oracle data** from both
 5. **Monitor Performance**: Track oracle response times and reliability
 
 **The mock implementation has been completely replaced with a production-ready Pyth Network integration!** 🚀
+
+## Deprecated-Entrypoints Registry
+
+The contract maintains a **persistent, on-chain registry** (`src/deprecated.rs`) that tracks
+every entrypoint scheduled for removal.  This gives any caller a single, authoritative
+source of truth for discovering which functions are deprecated and what to use instead.
+
+### Read API (permissionless)
+
+| Entrypoint                 | Returns                     | Description                                   |
+|----------------------------|-----------------------------|-----------------------------------------------|
+| `get_deprecated_entry`     | `Option<DeprecatedEntry>`   | Look up a single entry by name                |
+| `list_deprecated_entries`  | `Vec<DeprecatedEntry>`      | Return every registered entry                 |
+| `deprecated_entry_count`   | `u32`                       | Number of registered entries                  |
+| `is_deprecated`            | `bool`                      | Check whether an entrypoint is deprecated     |
+
+### Write API (admin-only)
+
+| Entrypoint            | Description                                              |
+|-----------------------|----------------------------------------------------------|
+| `register_deprecated` | Register a new entry (idempotent)                        |
+| `remove_deprecated`   | Remove an entry (no-op if absent)                        |
+
+### DeprecatedEntry
+
+```rust
+pub struct DeprecatedEntry {
+    pub entrypoint:  Symbol,         // deprecated function name
+    pub replacement: Symbol,         // recommended successor
+    pub since:       u64,            // ledger timestamp of registration
+    pub note:        Option<String>, // optional migration hint
+}
+```
+
+### Capacity limit
+
+`MAX_REGISTRY_ENTRIES = 64`.  Exceeding this returns `Error::RegistryFull` (528).
+
+### Events
+
+* `depr_reg` – emitted when an entry is registered.
+* `depr_rem` – emitted when an entry is removed.
+* `depr_call` – emitted on every call to a deprecated entrypoint (via `DeprecatedRegistry::record_call`).
+
+For the full deprecation lifecycle and migration guides see [`docs/DEPRECATION_POLICY.md`](../../docs/DEPRECATION_POLICY.md).
