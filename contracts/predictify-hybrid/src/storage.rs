@@ -16,6 +16,16 @@ const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 /// can be reused in a fresh batch after expiry.
 pub const PLACE_BETS_IDEM_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 
+/// Minimum number of ledgers a market storage entry must remain live.
+/// Approximately 30 days at ~5 seconds per ledger on Soroban mainnet.
+/// Used as the bump amount when extending market TTLs.
+pub const MARKETS_BUMP_AMOUNT: u32 = 518_400; // ~30 days
+
+/// Threshold below which a market's TTL is extended to keep it alive.
+/// Set to half of MARKETS_BUMP_AMOUNT (~15 days) so we don't bump on every call.
+/// When a market's remaining TTL falls below this, it will be bumped by MARKETS_BUMP_AMOUNT.
+pub const MARKETS_LIFETIME_THRESHOLD: u32 = 259_200; // ~15 days
+
 /// TTL for instance storage cache entries, in ledgers.
 /// At ~5 seconds per ledger on Soroban mainnet, 100 ledgers ≈ 8 minutes.
 /// Instance TTL is shared - bumping extends all instance storage keys.
@@ -38,6 +48,25 @@ pub const MARKET_CACHE_TTL_LEDGERS: u32 = 100;
 /// creation which succeeds on the helper path cannot fail partway through the
 /// entrypoint path.
 pub const MARKET_CREATION_PERSISTENT_KEYS: u32 = 3;
+
+/// Extends the TTL of a market's persistent storage entry if it is below
+/// [`MARKETS_LIFETIME_THRESHOLD`].
+///
+/// Uses `extend_ttl()` which only extends — it never shortens.
+/// Safe to call on every hot path without risk of over-bumping.
+///
+/// # Arguments
+/// * `env` - The Soroban environment
+/// * `key` - The storage key for the market entry to bump (typically a market ID Symbol)
+///
+/// # Remarks
+/// This function is designed to be called after reading or writing market storage
+/// to keep persistent market records alive for the expected market lifetime.
+pub(crate) fn bump_market_ttl(env: &Env, key: &impl IntoVal<Env, Val>) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, MARKETS_LIFETIME_THRESHOLD, MARKETS_BUMP_AMOUNT);
+}
 
 /// Pre-flight storage-rent check for market creation.
 /// Verifies that the ledger has enough sequence headroom so the new persistent

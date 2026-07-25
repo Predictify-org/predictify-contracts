@@ -858,6 +858,8 @@ impl MarketStateManager {
 
         match market {
             Some(m) => {
+                // Extend the TTL of this market to ensure it remains accessible
+                crate::storage::bump_market_ttl(_env, market_id);
                 // Populate cache for subsequent reads
                 cache.set(market_id.clone(), &m);
                 Ok(m)
@@ -897,6 +899,8 @@ impl MarketStateManager {
     /// ```
     pub fn update_market(_env: &Env, market_id: &Symbol, market: &Market) {
         _env.storage().persistent().set(market_id, market);
+        // Extend the TTL of this market after updating to keep it alive
+        crate::storage::bump_market_ttl(_env, market_id);
         // CACHE INVALIDATION: remove cache entry after persistent write
         MarketReadCache::new(_env).invalidate(market_id);
     }
