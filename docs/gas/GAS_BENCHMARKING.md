@@ -2,6 +2,18 @@
 
 Goal: produce reproducible cost metrics per entrypoint across typical scenarios and catch regressions.
 
+### Markets gas snapshot (v7)
+
+Focused per-entrypoint CPU/mem baselines for the `markets` package:
+
+```bash
+cargo test -p markets --test gas_snap -- --nocapture
+```
+
+See [`contracts/markets/README.md`](../../contracts/markets/README.md) and
+[`contracts/markets/tests/gas_snap.rs`](../../contracts/markets/tests/gas_snap.rs).
+Snapshot schema version is `GAS_SNAP_VERSION = 7`.
+
 ### Tools
 
 - Stellar CLI (`stellar`) with `--cost`
