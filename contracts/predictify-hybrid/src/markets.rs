@@ -30,8 +30,6 @@ use crate::types::*;
 pub struct MarketCreator;
 
 impl MarketCreator {
-    /// Create a new market with full configuration
-
     /// Creates a new prediction market with comprehensive configuration options.
     ///
     /// This is the primary market creation function that supports all oracle types
@@ -92,7 +90,6 @@ impl MarketCreator {
     ///     oracle_config
     /// ).expect("Market creation should succeed");
     /// ```
-
     pub fn create_market(
         env: &Env,
         admin: Address,
@@ -204,7 +201,6 @@ impl MarketCreator {
     ///     String::from_str(&env, "gt")
     /// ).expect("Reflector market creation should succeed");
     /// ```
-
     pub fn create_reflector_market(
         _env: &Env,
         admin: Address,
@@ -640,7 +636,57 @@ impl MarketValidator {
         Ok(())
     }
 
-    /// Validate outcome for a market
+    /// Validates that a user-supplied outcome string is a valid choice for a market.
+    ///
+    /// This function checks the given `outcome` against the list of outcomes
+    /// defined at market creation time.  The comparison is exact (byte-for-byte),
+    /// so casing and whitespace must match the stored outcome strings precisely.
+    ///
+    /// # Parameters
+    ///
+    /// * `_env` - The Soroban environment (reserved for future use).
+    /// * `outcome` - The outcome string supplied by the caller (e.g. `"yes"`,
+    ///   `"no"`, `"draw"`).
+    /// * `market_outcomes` - The ordered vector of valid outcome strings that
+    ///   were recorded when the market was created.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - The outcome is present in `market_outcomes`.
+    /// * `Err(Error::InvalidOutcome)` - The outcome is not recognised for this
+    ///   market.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::InvalidOutcome`] — Returned when `outcome` does not match any
+    ///   entry in `market_outcomes`.  Callers should surface this to the user as
+    ///   an invalid selection rather than retrying automatically.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::{Env, String, Vec};
+    /// use predictify_hybrid::markets::MarketValidator;
+    ///
+    /// let env = Env::default();
+    /// let mut valid_outcomes = Vec::new(&env);
+    /// valid_outcomes.push_back(String::from_str(&env, "yes"));
+    /// valid_outcomes.push_back(String::from_str(&env, "no"));
+    ///
+    /// // Valid outcome — should succeed.
+    /// assert!(MarketValidator::validate_outcome(
+    ///     &env,
+    ///     &String::from_str(&env, "yes"),
+    ///     &valid_outcomes,
+    /// ).is_ok());
+    ///
+    /// // Unrecognised outcome — should fail.
+    /// assert!(MarketValidator::validate_outcome(
+    ///     &env,
+    ///     &String::from_str(&env, "maybe"),
+    ///     &valid_outcomes,
+    /// ).is_err());
+    /// ```
     pub fn validate_outcome(
         _env: &Env,
         outcome: &String,
@@ -707,6 +753,44 @@ impl MarketValidator {
         Ok(())
     }
 
+    /// Validates that the market has not yet reached its maximum participant cap.
+    ///
+    /// When a market is created with an optional `max_participants` limit, this
+    /// function enforces that cap before a new vote or bet is recorded.  Markets
+    /// without a configured cap always pass this check.
+    ///
+    /// # Parameters
+    ///
+    /// * `market` - Immutable reference to the market whose participant count
+    ///   should be checked.  The check is performed against `market.votes.len()`
+    ///   because every participant casts exactly one vote.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - The market has room for at least one more participant.
+    /// * `Err(Error::MaxParticipantsReached)` - The market is at capacity; no
+    ///   additional participants are accepted.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::MaxParticipantsReached`] — Returned when `market.votes.len() >= max`.
+    ///   Callers should present this to the user as a "market is full" message and
+    ///   should not retry; the condition will only resolve if existing participants
+    ///   cancel their votes (which is not currently supported).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use predictify_hybrid::markets::MarketValidator;
+    /// // markets without a cap always pass:
+    /// // assert!(MarketValidator::validate_participant_cap(&uncapped_market).is_ok());
+    ///
+    /// // markets at capacity return MaxParticipantsReached:
+    /// // assert_eq!(
+    /// //     MarketValidator::validate_participant_cap(&full_market),
+    /// //     Err(Error::MaxParticipantsReached)
+    /// // );
+    /// ```
     pub fn validate_participant_cap(market: &Market) -> Result<(), Error> {
         if let Some(max) = market.max_participants {
             if market.votes.len() >= max {
@@ -742,6 +826,32 @@ pub struct MarketReadCache<'a> {
 }
 
 impl<'a> MarketReadCache<'a> {
+    /// Creates a new `MarketReadCache` bound to the given Soroban environment.
+    ///
+    /// The returned cache borrows `env` for its entire lifetime.  All reads and
+    /// writes go through `env.storage().instance()`, which is fast but shared
+    /// across all keys in the contract instance.  Call `invalidate` after every
+    /// persistent write to keep the cache coherent.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Reference to the Soroban environment.  Must outlive the cache.
+    ///
+    /// # Returns
+    ///
+    /// A freshly initialised (empty) `MarketReadCache`.  No storage reads are
+    /// performed during construction.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::Env;
+    /// use predictify_hybrid::markets::MarketReadCache;
+    ///
+    /// let env = Env::default();
+    /// let cache = MarketReadCache::new(&env);
+    /// // cache is ready; all lookups miss until a market is populated via `set`.
+    /// ```
     pub fn new(env: &'a Env) -> Self {
         Self { env }
     }
@@ -791,7 +901,33 @@ impl<'a> MarketReadCache<'a> {
 pub struct MarketStateManager;
 
 impl MarketStateManager {
-    /// Create MarketStateManager instance from environment
+    /// Creates a `MarketStateManager` instance bound to the given Soroban environment.
+    ///
+    /// `MarketStateManager` is a zero-sized utility struct — all methods are
+    /// associated functions that receive `env` as an explicit argument.  This
+    /// constructor exists for API consistency and for callers that prefer an
+    /// OOP-style call chain (`MarketStateManager::from_env(env).get_market(…)`)
+    /// over the free-function form.
+    ///
+    /// # Parameters
+    ///
+    /// * `_env` - The Soroban environment.  Accepted but not stored; every method
+    ///   receives `env` directly.
+    ///
+    /// # Returns
+    ///
+    /// A new `MarketStateManager`.  Construction is infallible and performs no
+    /// I/O.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::Env;
+    /// use predictify_hybrid::markets::MarketStateManager;
+    ///
+    /// let env = Env::default();
+    /// let _mgr = MarketStateManager::from_env(&env);
+    /// ```
     pub fn from_env(_env: &Env) -> Self {
         Self
     }
@@ -1044,8 +1180,6 @@ impl MarketStateManager {
         // No state change for voting
     }
 
-    /// Add dispute stake to market
-
     /// Adds a user's dispute stake to challenge the market's oracle result.
     ///
     /// This function allows users to stake tokens to dispute the oracle's
@@ -1104,7 +1238,6 @@ impl MarketStateManager {
     ///
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-
     pub fn add_dispute_stake(
         market: &mut Market,
         user: Address,
@@ -2864,8 +2997,6 @@ impl MarketStateLogic {
         }
     }
 
-    /// Check if a function is allowed in the given state
-
     /// Validates that a specific function can be executed in the given market state.
     ///
     /// This function enforces access control based on market state, ensuring
@@ -2913,7 +3044,6 @@ impl MarketStateLogic {
     ///     MarketState::Resolved
     /// ).is_ok());
     /// ```
-
     pub fn check_function_access_for_state(
         function: &str,
         state: MarketState,
