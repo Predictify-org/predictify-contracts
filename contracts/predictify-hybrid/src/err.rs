@@ -23,6 +23,11 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol
 #[repr(u32)]
 pub enum Error {
     IdempotentBatchAlreadyApplied = 660,
+    /// Reason table has reached its maximum capacity of 256 entries.
+    ReasonTableFull = 670,
+    Overflow = 672,
+    MaxBetCapExceeded = 673,
+    InvalidCap = 674,
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.

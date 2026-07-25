@@ -1497,28 +1497,6 @@ pub struct DisputeFeeDistributedEvent {
     pub timestamp: u64,
 }
 
-/// Event emitted when a community member successfully casts a vote on an active dispute.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DisputeVoteCastEvent {
-    pub dispute_id: Symbol,
-    pub voter: Address,
-    pub vote: bool,
-    pub stake: i128,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
-
-/// Event emitted when dispute resolution fees are distributed to winners.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DisputeFeeDistributedEvent {
-    pub dispute_id: Symbol,
-    pub total_fees: i128,
-    pub fees_distributed: bool,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
 
 /// Dispute auto-resolved event
 #[contracttype]

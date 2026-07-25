@@ -791,42 +791,6 @@ pub struct ResolvedOutcomeSummary {
     pub num_winning_outcomes: u32,
 }
 
-/// Aggregate analytics about resolution-system performance.
-#[derive(Clone, Debug)]
-#[contracttype]
-pub struct ResolutionAnalytics {
-    pub total_resolutions: u32,
-    pub oracle_resolutions: u32,
-    pub community_resolutions: u32,
-    pub hybrid_resolutions: u32,
-    pub average_confidence: i128,
-    pub resolution_times: Vec<u64>,
-    pub outcome_distribution: Map<String, u32>,
-}
-
-/// Result of a confidence-weighted median oracle resolution.
-#[derive(Clone, Debug)]
-#[contracttype]
-pub struct MedianResolutionResult {
-    /// The market that was resolved.
-    pub market_id: Symbol,
-    /// Final market outcome ("yes" or "no").
-    pub outcome: String,
-    /// Confidence-weighted median price used to determine the outcome.
-    pub weighted_median_price: i128,
-    /// Market threshold the price was compared against.
-    pub threshold: i128,
-    /// Comparison operator applied ("gt", "lt", "eq").
-    pub comparison: String,
-    /// All oracle quotes with their computed weights and `included` flags.
-    pub quotes: Vec<OracleQuote>,
-    /// Number of quotes that survived the outlier filter.
-    pub included_count: u32,
-    /// Aggregate confidence score in [0, 100].
-    pub confidence_score: u32,
-    /// Ledger timestamp at the time of resolution.
-    pub timestamp: u64,
-}
 
 /// Storage-backed cache for resolved market payout math.
 ///
