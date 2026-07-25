@@ -36,6 +36,7 @@ mod markets;
 mod monitoring;
 mod oracles;
 mod reentrancy_guard;
+mod oracle_health;
 mod reporting;
 // #[cfg(any())]
 // mod reporting_tests;
@@ -168,6 +169,7 @@ mod force_resolve_tests;
 mod analytics_snapshot_tests;
 #[cfg(test)]
 mod property_based_tests;
+mod analytics_snapshot;
 
 #[cfg(test)]
 mod max_participants_tests;
