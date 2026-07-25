@@ -1459,6 +1459,67 @@ pub struct DisputeVoteRejectedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a community member successfully casts a vote on an active dispute.
+///
+/// Part of the structured dispute lifecycle events, emitted alongside
+/// [] and [] for complete lifecycle tracking.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeVoteCastEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Voter address
+    pub voter: Address,
+    /// Vote direction (true = support, false = reject)
+    pub vote: bool,
+    /// Stake amount backing the vote
+    pub stake: i128,
+    /// Event timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when dispute resolution fees are distributed to winning participants.
+///
+/// Marks the final stage of the dispute lifecycle: after this event,
+/// all stakes have been settled and winners have been compensated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeFeeDistributedEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Total fees distributed to winners
+    pub total_fees: i128,
+    /// Whether distribution completed successfully
+    pub fees_distributed: bool,
+    /// Event timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a community member successfully casts a vote on an active dispute.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeVoteCastEvent {
+    pub dispute_id: Symbol,
+    pub voter: Address,
+    pub vote: bool,
+    pub stake: i128,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when dispute resolution fees are distributed to winners.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeFeeDistributedEvent {
+    pub dispute_id: Symbol,
+    pub total_fees: i128,
+    pub fees_distributed: bool,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
 /// Dispute auto-resolved event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
