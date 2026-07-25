@@ -133,6 +133,61 @@ fn asset_decimals() {
     assert_eq!(Error::AssetDecimalsMismatch as u32, 439);
 }
 
+// ===== Limit Errors (600-611) =====
+//
+// Semantic bound-violation codes introduced to replace generic `InvalidInput`
+// returns and one bare `panic!`. Off-chain clients switch on these numbers, so
+// they are frozen here alongside the rest of the taxonomy.
+
+#[test]
+fn limit_errors() {
+    assert_eq!(Error::BetAboveMaximum as u32, 600);
+    assert_eq!(Error::BetLimitsInverted as u32, 601);
+    assert_eq!(Error::BetLimitAboveMaximum as u32, 602);
+    assert_eq!(Error::BetCapOutOfRange as u32, 603);
+    assert_eq!(Error::BatchEmpty as u32, 604);
+    assert_eq!(Error::BatchSizeExceeded as u32, 605);
+    assert_eq!(Error::FeePercentageOutOfRange as u32, 606);
+    assert_eq!(Error::FeeAmountAboveMaximum as u32, 607);
+    assert_eq!(Error::CreationFeeOutOfRange as u32, 608);
+    assert_eq!(Error::FeeLimitsInverted as u32, 609);
+    assert_eq!(Error::QueueCapacityOutOfRange as u32, 610);
+    assert_eq!(Error::QueueAlreadyInitialized as u32, 611);
+}
+
+/// The limit range must stay clear of the generic codes it replaced, otherwise a
+/// client mapping table built against 401 would silently keep matching.
+#[test]
+fn limit_errors_do_not_collide_with_generic_codes() {
+    let limits = [
+        Error::BetAboveMaximum as u32,
+        Error::BetLimitsInverted as u32,
+        Error::BetLimitAboveMaximum as u32,
+        Error::BetCapOutOfRange as u32,
+        Error::BatchEmpty as u32,
+        Error::BatchSizeExceeded as u32,
+        Error::FeePercentageOutOfRange as u32,
+        Error::FeeAmountAboveMaximum as u32,
+        Error::CreationFeeOutOfRange as u32,
+        Error::FeeLimitsInverted as u32,
+        Error::QueueCapacityOutOfRange as u32,
+        Error::QueueAlreadyInitialized as u32,
+    ];
+    for code in limits {
+        assert_ne!(code, Error::InvalidInput as u32);
+        assert_ne!(code, Error::InvalidState as u32);
+    }
+}
+
+// ===== Codes restored after a bad merge dropped their variants =====
+
+#[test]
+fn restored_variants() {
+    assert_eq!(Error::BetExceedsCap as u32, 509);
+    assert_eq!(Error::ReplayedOverride as u32, 526);
+    assert_eq!(Error::IdempotentBatchAlreadyApplied as u32, 660);
+}
+
 // ===== op-count test ensuring we noticed all variants =====
 
 #[test]
