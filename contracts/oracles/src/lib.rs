@@ -50,10 +50,7 @@
 //! client.remove_oracle(&admin, &oracle);
 //! ```
 
-use soroban_sdk::{
-    contract, contractimpl, contracterror, contracttype,
-    Address, Env, String, Vec,
-};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
 
 // ---------------------------------------------------------------------------
 // Storage key
@@ -236,9 +233,7 @@ impl OraclesContract {
         }
 
         list.push_back(oracle);
-        env.storage()
-            .persistent()
-            .set(&DataKey::OracleList, &list);
+        env.storage().persistent().set(&DataKey::OracleList, &list);
 
         Ok(())
     }

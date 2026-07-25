@@ -33,8 +33,7 @@ fn oracle_error_codes_are_stable() {
 
     for (error, expected_code) in oracle_errors {
         assert_eq!(
-            error as u32,
-            expected_code,
+            error as u32, expected_code,
             "oracle error code changed for {error:?}; this is a client-facing API change"
         );
     }
