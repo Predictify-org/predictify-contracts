@@ -48,6 +48,9 @@ mod reporting;
 mod resolution_event_ordering_tests;
 
 #[cfg(test)]
+mod resolution_state_property_tests;
+
+#[cfg(test)]
 #[path = "tests/oracle_validation_tests.rs"]
 mod oracle_validation_tests;
 mod resolution;
