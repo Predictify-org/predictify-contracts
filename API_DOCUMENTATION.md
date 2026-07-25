@@ -577,6 +577,14 @@ All functions below live on `QueryManager` in `queries.rs` unless a different ca
 - `get_effective_config(env, market_id)` - Get applicable config
 - `validate_oracle_data(env, market_id, data)` - Validate oracle data
 
+**Oracle Validation Config Fields** (both `GlobalOracleValidationConfig` and `EventOracleValidationConfig`):
+- `max_staleness_secs: u64` — Maximum age of oracle data in seconds before rejection
+- `max_confidence_bps: u32` — Maximum allowed confidence interval in basis points
+- `max_deviation_bps: Option<u32>` — Max allowed price deviation from last reference (bps)
+- `max_deviation_z_multiple: Option<u32>` — Max z-multiple for rolling-median outlier rejection (bps)
+- `history_size: Option<u32>` — Number of historical prices for rolling median (default 10)
+- `auto_pause_duration_secs: Option<u64>` — If set, auto-pause the market for this many seconds when oracle validation fails (max 604800). When `None` (default), no auto-pause occurs.
+
 ### Oracle Integration Manager
 
 **OracleIntegrationManager**

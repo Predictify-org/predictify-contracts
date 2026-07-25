@@ -607,40 +607,12 @@ impl AdminAccessControl {
         Ok(())
     }
 
-    /// Validates and consumes a per-admin override nonce for replay protection.
-    ///
-    /// Each admin has a monotonic nonce stored in persistent storage under
-    /// `DataKey::AdminOverrideNonce(admin)`. A caller-provided nonce must be
-    /// strictly greater than the stored value; otherwise the call is rejected
-    /// as a replay. On success the provided nonce replaces the stored value.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` – The Soroban environment.
-    /// * `admin` – The admin address whose nonce is being checked.
-    /// * `provided_nonce` – The nonce supplied by the caller.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::ReplayedOverride` if `provided_nonce <= stored_nonce`.
-    pub fn validate_and_consume_admin_override_nonce(
-        env: &Env,
-        admin: &Address,
-        provided_nonce: u64,
-    ) -> Result<(), Error> {
-        let key = crate::storage::DataKey::AdminOverrideNonce(admin.clone());
-        let stored_nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
-
-        if provided_nonce <= stored_nonce {
-            return Err(Error::ReplayedOverride);
-        }
-
-        env.storage().persistent().set(&key, &provided_nonce);
+    /// Gets the primary admin address from persistent storage.
+    pub fn get_admin(env: &Env) -> Result<Address, Error> {
         env.storage()
             .persistent()
-            .extend_ttl(&key, env.storage().max_ttl(), env.storage().max_ttl());
-
-        Ok(())
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)
     }
 }
 

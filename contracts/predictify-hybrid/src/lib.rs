@@ -46,6 +46,10 @@ mod reporting;
 // mod require_auth_coverage_tests;
 #[cfg(test)]
 mod resolution_event_ordering_tests;
+
+#[cfg(test)]
+#[path = "tests/oracle_validation_tests.rs"]
+mod oracle_validation_tests;
 mod resolution;
 mod storage;
 mod deprecated;
@@ -82,8 +86,8 @@ mod lists;
 mod override_audit_tests;
 #[cfg(test)]
 mod market_audit_tests;
-// #[cfg(any())]
-// mod test_audit_trail;
+#[cfg(test)]
+mod test_audit_trail;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
