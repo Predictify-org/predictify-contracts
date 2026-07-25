@@ -209,7 +209,6 @@ use crate::config::{
     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
     MIN_PLATFORM_FEE_PERCENTAGE,
 };
-use crate::events::emit_deprecated;
 use crate::gas::GasTracker;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
@@ -2969,14 +2968,15 @@ impl PredictifyHybrid {
         caller: Address,
         market_id: Symbol,
     ) -> Result<OracleResult, Error> {
+        // Authenticate the caller
+        caller.require_auth();
+
         DeprecatedRegistry::record_call(
             &env,
+            &caller,
             &Symbol::new(&env, "verify_result"),
             &Symbol::new(&env, "fetch_oracle_result"),
         );
-
-        // Authenticate the caller
-        caller.require_auth();
 
         // Use the OracleIntegrationManager to perform verification
         // Temporarily disabled due to oracles module being disabled
@@ -3341,9 +3341,13 @@ impl PredictifyHybrid {
     /// `MarketResolutionManager::resolve_market` and is covered by a
     /// deterministic ordering test (see `resolution_event_ordering_tests`).
     #[deprecated(note = "Use resolve_market_manual or fetch_oracle_result + resolve_market_manual instead. This legacy stub will be removed in a future version.")]
-    pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
+    pub fn resolve_market(env: Env, caller: Address, market_id: Symbol) -> Result<(), Error> {
+        // Authenticate the caller
+        caller.require_auth();
+
         DeprecatedRegistry::record_call(
             &env,
+            &caller,
             &Symbol::new(&env, "resolve_market"),
             &Symbol::new(&env, "resolve_market_manual"),
         );

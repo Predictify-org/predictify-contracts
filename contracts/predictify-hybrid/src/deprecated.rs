@@ -295,6 +295,7 @@ impl DeprecatedRegistry {
     /// ```rust,ignore
     /// DeprecatedRegistry::record_call(
     ///     &env,
+    ///     &caller,
     ///     &Symbol::new(&env, "verify_result"),
     ///     &Symbol::new(&env, "fetch_oracle_result"),
     /// );
@@ -308,9 +309,10 @@ impl DeprecatedRegistry {
     /// # Arguments
     ///
     /// * `env`         – Soroban environment.
+    /// * `caller`      – Address of the caller invoking the deprecated entrypoint.
     /// * `entrypoint`  – Name of the deprecated function being called.
     /// * `replacement` – Name of the recommended replacement (for the event).
-    pub fn record_call(env: &Env, entrypoint: &Symbol, _replacement: &Symbol) {
-        emit_deprecated(env, entrypoint);
+    pub fn record_call(env: &Env, caller: &soroban_sdk::Address, entrypoint: &Symbol, _replacement: &Symbol) {
+        emit_deprecated(env, caller, entrypoint);
     }
 }
