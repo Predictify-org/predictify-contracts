@@ -366,6 +366,9 @@ impl BetManager {
         amount: i128,
         max_fee_bps: i128,
     ) -> Result<Bet, Error> {
+        // Snapshot CPU instructions at entry for regression baseline.
+        let _cpu_before = crate::gas::bet_snapshot_cpu_before(env);
+
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
@@ -437,6 +440,10 @@ impl BetManager {
 
         // Emit bet placed event
         EventEmitter::emit_bet_placed(env, &market_id, &user, &outcome, amount);
+
+        // Record resource snapshot for regression baseline.
+        // write_count: BetKey + BetRegistryKey + MarketBetsKey + UserStake + Market = 5 writes
+        crate::gas::BetSnapshotManager::record(env, _cpu_before, 5, &market_id);
 
         Ok(bet)
     }

@@ -159,6 +159,11 @@ pub enum DataKey {
     MaxBetCap,
     /// Per-user total stake in a market.
     UserStake(Address, Symbol),
+    /// Most-recent per-call resource snapshot for betting operations.
+    ///
+    /// Only the latest snapshot is retained (one entry, overwritten on each
+    /// `place_bet` / `place_bets` call). Used for regression baseline queries.
+    BetSnapshot,
 }
 
 /// Storage format version for migration tracking

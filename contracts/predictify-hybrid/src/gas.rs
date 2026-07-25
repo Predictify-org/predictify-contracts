@@ -23,6 +23,17 @@ use crate::events::PerformanceMetricEvent;
 
 use crate::err::Error;
 
+/// Capture the CPU instruction counter at the start of a betting operation.
+///
+/// This thin wrapper around [`cpu_instruction_cost`] is provided so that
+/// callers in `bets.rs` can obtain the start marker without coupling directly
+/// to the private `cpu_instruction_cost` helper.  The returned value is passed
+/// later to [`BetSnapshotManager::record`] to compute the delta.
+#[inline]
+pub fn bet_snapshot_cpu_before(env: &Env) -> u64 {
+    cpu_instruction_cost(env)
+}
+
 /// Stores the gas limit configured by an admin for a specific operation.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -393,5 +404,88 @@ impl BudgetGuard {
         self.threshold_remaining
     }
 }
+/// Per-call resource snapshot for betting operations.
+///
+/// Captures the CPU instruction delta and a memory proxy (persistent-storage
+/// write count) for a single `place_bet` or `place_bets` invocation.  The
+/// snapshot is written to persistent storage after each successful bet so that
+/// it can be retrieved later as a regression baseline.
+///
+/// # Production behaviour
+///
+/// `cpu_delta` uses `env.budget().cpu_instruction_cost()` which is only
+/// available in the Soroban test runtime.  On-chain that call returns `0`
+/// (via the `cpu_instruction_cost` helper above), so the snapshot is still
+/// persisted but with `cpu_delta = 0`.  This keeps the storage footprint
+/// constant and lets callers distinguish "not-yet-measured" (`None`) from
+/// "measured on-chain" (`cpu_delta = 0`).
+///
+/// `write_count` is incremented manually by [`BetSnapshotManager::record`]
+/// and represents the number of persistent-storage writes that the bet call
+/// performed.  Off-chain tooling can compare this to a `simulateTransaction`
+/// write-entry count as a lightweight memory proxy.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BetResourceSnapshot {
+    /// CPU instructions consumed by the call (0 on-chain; real delta in tests).
+    pub cpu_delta: u64,
+    /// Number of persistent-storage writes performed by the call.
+    pub write_count: u32,
+    /// Market that was bet on (first market for `place_bets` batches).
+    pub market_id: soroban_sdk::Symbol,
+    /// Ledger timestamp at the time the snapshot was captured.
+    pub captured_at: u64,
+    /// Ledger sequence number at capture time.
+    pub ledger_sequence: u32,
+}
+
+/// Storage and retrieval of per-call [`BetResourceSnapshot`] values.
+///
+/// Each successful `place_bet` / `place_bets` call writes one snapshot under
+/// the key [`crate::storage::DataKey::BetSnapshot`].  Only the most-recent
+/// snapshot is retained; historical values are discarded to bound storage cost.
+pub struct BetSnapshotManager;
+
+impl BetSnapshotManager {
+    /// Record a new snapshot, overwriting the previous one.
+    ///
+    /// # Parameters
+    /// - `env`         – Soroban environment
+    /// - `cpu_before`  – `cpu_instruction_cost` reading taken *before* the call
+    /// - `write_count` – number of persistent-storage writes performed
+    /// - `market_id`   – market that was bet on (first market for batches)
+    pub fn record(
+        env: &Env,
+        cpu_before: u64,
+        write_count: u32,
+        market_id: &soroban_sdk::Symbol,
+    ) {
+        let cpu_after = cpu_instruction_cost(env);
+        let snapshot = BetResourceSnapshot {
+            cpu_delta: cpu_after.saturating_sub(cpu_before),
+            write_count,
+            market_id: market_id.clone(),
+            captured_at: env.ledger().timestamp(),
+            ledger_sequence: env.ledger().sequence(),
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::storage::DataKey::BetSnapshot, &snapshot);
+        env.storage().persistent().extend_ttl(
+            &crate::storage::DataKey::BetSnapshot,
+            crate::storage::MARKET_TTL_LEDGERS,
+            crate::storage::MARKET_TTL_LEDGERS,
+        );
+    }
+
+    /// Retrieve the most-recently recorded snapshot, or `None` if no bet has
+    /// been placed yet.
+    pub fn latest(env: &Env) -> Option<BetResourceSnapshot> {
+        env.storage()
+            .persistent()
+            .get::<_, BetResourceSnapshot>(&crate::storage::DataKey::BetSnapshot)
+    }
+}
+
 #[cfg(any())]
 mod gas_test;
