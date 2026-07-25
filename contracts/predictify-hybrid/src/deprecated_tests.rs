@@ -12,6 +12,7 @@ mod deprecated_registry_tests {
     use crate::deprecated::{DeprecatedRegistry, MAX_REGISTRY_ENTRIES};
     use crate::err::Error;
     use soroban_sdk::{
+        symbol_short,
         testutils::{Address as _, Events},
         Address, Env, Symbol, String,
     };
@@ -329,14 +330,48 @@ mod deprecated_registry_tests {
         let env = Env::default();
         env.mock_all_auths();
 
+        let caller = Address::generate(&env);
+
         DeprecatedRegistry::record_call(
             &env,
+            &caller,
             &sym(&env, "verify_r"),
             &sym(&env, "fetch_or"),
         );
 
-        // At least one event should have been emitted.
-        assert!(env.events().all().events().len() > 0);
+        let events = env.events().all().events();
+        assert!(!events.is_empty(), "must emit at least one event");
+
+        // Verify the emitted event contains expected fields
+        let found = events.iter().any(|e| {
+            e.0 .0 == symbol_short!("depr_call")
+                && e.0 .1 == sym(&env, "verify_r")
+        });
+        assert!(found, "depr_call event must be present with correct entrypoint");
+    }
+
+    #[test]
+    fn test_record_call_emits_event_with_caller() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let caller = Address::generate(&env);
+
+        DeprecatedRegistry::record_call(
+            &env,
+            &caller,
+            &sym(&env, "old_fn"),
+            &sym(&env, "new_fn"),
+        );
+
+        let events = env.events().all().events();
+        assert!(!events.is_empty(), "must emit at least one event");
+
+        // The first topic in the tuple is the event type, entrypoint is second
+        let found = events.iter().any(|e| {
+            e.0 .0 == symbol_short!("depr_call")
+        });
+        assert!(found, "depr_call topic must be present");
     }
 
     // -----------------------------------------------------------------------

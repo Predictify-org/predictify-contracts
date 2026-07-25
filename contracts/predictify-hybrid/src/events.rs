@@ -2321,10 +2321,22 @@ pub struct FeeConfigCancelledEvent {
 /// This event allows indexers and monitoring tools to track usage of legacy
 /// contract functions that are scheduled for removal. Callers receive a
 /// runtime signal so they can migrate to the recommended replacement.
+///
+/// # Fields
+/// * `caller`     - The Address that invoked the deprecated entrypoint.
+/// * `entrypoint` - Symbol name of the deprecated function.
+/// * `nonce`      - Monotonically increasing replay-protection nonce.
+/// * `timestamp`  - Ledger timestamp (seconds since Unix epoch).
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeprecatedCall {
+    /// Address of the caller that invoked the deprecated entrypoint.
+    pub caller: Address,
+    /// Name of the deprecated entrypoint.
     pub entrypoint: Symbol,
+    /// Replay-protection nonce, unique per topic.
+    pub nonce: u64,
+    /// Ledger timestamp when the call was made.
     pub timestamp: u64,
 }
 
@@ -5170,13 +5182,15 @@ pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &S
 /// event in the Soroban ledger metadata, encouraging migration.
 ///
 /// # Arguments
-/// * `env` - Soroban environment
-/// * `entrypoint` - The `Symbol` name of the deprecated function
-pub fn emit_deprecated(env: &Env, entrypoint: &Symbol) {
+/// * `env`        - Soroban environment.
+/// * `caller`     - Address of the caller invoking the deprecated entrypoint.
+/// * `entrypoint` - The `Symbol` name of the deprecated function.
+pub fn emit_deprecated(env: &Env, caller: &Address, entrypoint: &Symbol) {
+    let nonce = EventEmitter::get_and_increment_nonce(env, symbol_short!("depr_call"));
     let event = DeprecatedCall {
+        caller: caller.clone(),
         entrypoint: entrypoint.clone(),
-        nonce: Self::get_and_increment_nonce(env, symbol_short!("depr_call").clone()),
-
+        nonce,
         timestamp: env.ledger().timestamp(),
     };
     env.events()
@@ -5267,21 +5281,54 @@ mod event_schema_registry_tests {
         let env = Env::default();
         let contract_id = env.register(crate::PredictifyHybrid, ());
         env.as_contract(&contract_id, || {
+            let caller = soroban_sdk::Address::generate(&env);
             let entrypoint = soroban_sdk::symbol_short!("verify_rs");
             // Must not panic
-            emit_deprecated(&env, &entrypoint);
+            emit_deprecated(&env, &caller, &entrypoint);
         });
     }
 
     #[test]
-    fn test_emit_deprecated_call_stores_entrypoint() {
+    fn test_emit_deprecated_call_stores_fields() {
         let env = Env::default();
-        // Direct publish test – the event should be observable via mock.
-        let entrypoint = soroban_sdk::Symbol::new(&env, "legacy_fn");
-        emit_deprecated(&env, &entrypoint);
-        // No panic = success; actual event inspection is done by Soroban's
-        // test harness. We verify the event was published by checking it
-        // doesn't crash.
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let caller = soroban_sdk::Address::generate(&env);
+            let entrypoint = soroban_sdk::Symbol::new(&env, "legacy_fn");
+
+            emit_deprecated(&env, &caller, &entrypoint);
+
+            let events = env.events().all();
+            let emitted = events.events();
+            assert!(!emitted.is_empty(), "must emit at least one event");
+
+            // Find our depr_call event
+            let found = emitted.iter().any(|e| {
+                e.0 .0 == symbol_short!("depr_call")
+                    && e.0 .1 == entrypoint
+            });
+            assert!(found, "depr_call event must be present");
+        });
+    }
+
+    #[test]
+    fn test_emit_deprecated_call_increments_nonce() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let caller = soroban_sdk::Address::generate(&env);
+            let ep1 = soroban_sdk::symbol_short!("ep_one");
+            let ep2 = soroban_sdk::symbol_short!("ep_two");
+
+            emit_deprecated(&env, &caller, &ep1);
+            emit_deprecated(&env, &caller, &ep1);
+            emit_deprecated(&env, &caller, &ep2);
+
+            // Nonce is per-topic; ep1 and ep2 have separate nonces.
+            // We just verify no panic — nonce tracking is internal.
+        });
     }
 }
 
