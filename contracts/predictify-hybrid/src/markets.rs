@@ -3615,6 +3615,50 @@ impl MarketPauseManager {
         Ok(())
     }
 
+    /// Auto-pause a market due to oracle validation failure (internal, no admin auth).
+    ///
+    /// Called by `OracleValidationConfigManager::validate_oracle_data` when the
+    /// effective config has `auto_pause_duration_secs` set and oracle data is
+    /// rejected.  This path bypasses the normal admin auth check because it
+    /// executes as a contract-internal action.
+    ///
+    /// If the market is already paused this is a safe no-op.
+    pub fn auto_pause_market(
+        env: &Env,
+        market_id: &Symbol,
+        duration_secs: u64,
+    ) -> Result<(), Error> {
+        if Self::is_market_paused(env, market_id)? {
+            return Ok(());
+        }
+        let market = MarketStateManager::get_market(env, market_id)?;
+        match market.state {
+            MarketState::Active | MarketState::Ended | MarketState::Disputed => {}
+            _ => return Err(Error::InvalidState),
+        }
+        let paused_by: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .unwrap_or(market.admin);
+        let current_time = env.ledger().timestamp();
+        let pause_end_time = current_time.saturating_add(duration_secs);
+        let duration_hours = ((duration_secs + 3599) / 3600) as u32;
+        let pause_info = MarketPauseInfo {
+            is_paused: true,
+            paused_at: current_time,
+            pause_duration_hours: duration_hours.max(1),
+            paused_by: paused_by,
+            pause_end_time,
+            original_state: market.state,
+        };
+        env.storage()
+            .persistent()
+            .set(market_id, &pause_info);
+        Self::emit_pause_event(env, market_id, duration_hours, &pause_info.paused_by);
+        Ok(())
+    }
+
     fn emit_pause_event(env: &Env, market_id: &Symbol, duration: u32, admin: &Address) {
         env.events().publish(
             ("market_paused", market_id),
