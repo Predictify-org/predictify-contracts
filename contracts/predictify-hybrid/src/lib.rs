@@ -2267,6 +2267,34 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+
+    /// Check and enforce admin action cooldown for resolution functions.
+    fn check_resolution_cooldown(env: &Env, admin: &Address, fn_name: &Symbol) -> Result<(), Error> {
+        let cooldown_key = DataKey::ResolutionCooldownSeconds;
+        let cooldown: u64 = env.storage().persistent().get(&cooldown_key).unwrap_or(0);
+        if cooldown == 0 {
+            return Ok(());
+        }
+        let now = env.ledger().timestamp();
+        let last_key = DataKey::ResolutionAdminLastAction(fn_name.clone());
+        let last_action: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
+        if last_action > 0 && now < last_action.saturating_add(cooldown) {
+            return Err(Error::AdminActionTimelocked);
+        }
+        env.storage().persistent().set(&last_key, &now);
+        env.storage().persistent().extend_ttl(&last_key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Sets the cooldown period for resolution admin actions.
+    pub fn set_resolution_cooldown(env: Env, admin: Address, seconds: u64) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let key = DataKey::ResolutionCooldownSeconds;
+        env.storage().persistent().set(&key, &seconds);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
     pub fn resolve_market_manual(
         env: Env,
         admin: Address,
@@ -2275,6 +2303,7 @@ impl PredictifyHybrid {
     ) {
         let gas_marker = GasTracker::start_tracking(&env);
         Self::require_primary_admin_or_panic(&env, &admin);
+        Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "resolve_market_manual")).unwrap_or_else(|e| panic_with_error!(env, e));
 
         let mut market: Market = env
             .storage()
@@ -2440,6 +2469,7 @@ impl PredictifyHybrid {
         winning_outcomes: Vec<String>,
     ) {
         Self::require_primary_admin_or_panic(&env, &admin);
+        Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "resolve_market_with_ties")).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Validate outcomes vector is not empty
         if winning_outcomes.len() == 0 {
@@ -2580,6 +2610,7 @@ impl PredictifyHybrid {
         idempotency_key: String,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "force_resolve_market"))?;
 
         if reason.is_empty() {
             return Err(Error::ForceResolveReasonEmpty);

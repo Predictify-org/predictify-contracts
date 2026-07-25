@@ -149,10 +149,6 @@ pub enum DataKey {
     DisputeCooldownSeconds,
     /// Last admin action timestamp for a specific dispute admin function.
     DisputeAdminLastAction(Symbol),
-    /// Cooldown period in seconds for admin actions on disputes.
-    DisputeCooldownSeconds,
-    /// Last admin action timestamp for a specific dispute admin function.
-    DisputeAdminLastAction(Symbol),
     /// Cooldown period in seconds for admin actions on resolution.
     ResolutionCooldownSeconds,
     /// Last admin action timestamp for a specific resolution admin function.
