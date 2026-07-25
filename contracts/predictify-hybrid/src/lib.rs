@@ -173,6 +173,9 @@ mod force_resolve_tests;
 mod analytics_snapshot_tests;
 #[cfg(test)]
 mod property_based_tests;
+#[cfg(test)]
+#[path = "tests/disputes_proptest.rs"]
+mod disputes_proptest;
 mod analytics_snapshot;
 
 #[cfg(test)]

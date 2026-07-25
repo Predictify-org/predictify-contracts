@@ -2863,17 +2863,32 @@ impl DisputeUtils {
         let mut voting_data = Self::get_dispute_voting(env, dispute_id)?;
 
         // Update voting statistics
-        voting_data.total_votes += 1;
+        voting_data.total_votes = voting_data
+            .total_votes
+            .checked_add(1)
+            .ok_or(Error::Overflow)?;
         
         // Calculate the decayed stake using tally_votes
         let decayed_stake = Self::tally_votes(env, vote.stake, vote.timestamp, voting_data.voting_start);
 
         if vote.vote {
-            voting_data.support_votes += 1;
-            voting_data.total_support_stake += decayed_stake;
+            voting_data.support_votes = voting_data
+                .support_votes
+                .checked_add(1)
+                .ok_or(Error::Overflow)?;
+            voting_data.total_support_stake = voting_data
+                .total_support_stake
+                .checked_add(decayed_stake)
+                .ok_or(Error::Overflow)?;
         } else {
-            voting_data.against_votes += 1;
-            voting_data.total_against_stake += decayed_stake;
+            voting_data.against_votes = voting_data
+                .against_votes
+                .checked_add(1)
+                .ok_or(Error::Overflow)?;
+            voting_data.total_against_stake = voting_data
+                .total_against_stake
+                .checked_add(decayed_stake)
+                .ok_or(Error::Overflow)?;
         }
 
         // Store updated voting data
@@ -2911,9 +2926,13 @@ impl DisputeUtils {
         let diff = weight_at_n.saturating_sub(weight_at_n_plus_1);
         let exact_weight = weight_at_n.saturating_sub((diff as u64 * rem / cfg.half_life_seconds) as u32);
         
-        let final_weight = exact_weight.max(cfg.floor_bps);
-        
-        (raw_stake * final_weight as i128) / 10000
+        // A misconfigured floor must never amplify a vote above its raw stake.
+        let final_weight = exact_weight.max(cfg.floor_bps).min(10_000) as i128;
+
+        // Split before multiplying so every i128 input remains overflow-safe.
+        let whole = raw_stake / 10_000;
+        let remainder = raw_stake % 10_000;
+        whole * final_weight + (remainder * final_weight) / 10_000
     }
 
     pub fn set_dispute_decay_config(env: &Env, admin: Address, config: DisputeDecayConfig) -> Result<(), Error> {
