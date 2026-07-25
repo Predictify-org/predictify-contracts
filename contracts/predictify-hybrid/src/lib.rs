@@ -167,6 +167,8 @@ mod force_resolve_tests;
 #[cfg(test)]
 mod analytics_snapshot_tests;
 #[cfg(test)]
+mod betting_invariant_proptest;
+#[cfg(test)]
 mod property_based_tests;
 
 #[cfg(test)]
@@ -2914,7 +2916,7 @@ impl PredictifyHybrid {
     ///         println!("Price: ${}", result.price / 100);
     ///         println!("Confidence: {}%", result.confidence_score);
     ///         println!("Sources consulted: {}", result.sources_count);
-    ///         
+    ///
     ///         if result.is_verified {
     ///             println!("Result is verified and authoritative");
     ///         }
@@ -3518,7 +3520,7 @@ impl PredictifyHybrid {
     ///         let total_resolved = analytics.total_markets_resolved;
     ///         let oracle_accuracy = analytics.oracle_accuracy_rate;
     ///         let avg_resolution_time = analytics.average_resolution_time;
-    ///         
+    ///
     ///         println!("Resolved markets: {}", total_resolved);
     ///         println!("Oracle accuracy: {}%", oracle_accuracy);
     ///     },
@@ -3602,7 +3604,7 @@ impl PredictifyHybrid {
     ///         let total_participants = stats.total_participants;
     ///         let total_stake = stats.total_stake;
     ///         let leading_outcome = stats.leading_outcome;
-    ///         
+    ///
     ///         println!("Participants: {}", total_participants);
     ///         println!("Total stake: {}", total_stake);
     ///         println!("Leading outcome: {:?}", leading_outcome);
