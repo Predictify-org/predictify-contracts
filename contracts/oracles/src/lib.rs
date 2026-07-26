@@ -33,7 +33,8 @@
 //! read-only entrypoints [`list_oracles`][Self::list_oracles],
 //! [`get_price`][Self::get_price], [`get_price_data`][Self::get_price_data],
 //! and [`is_oracle_healthy`][Self::is_oracle_healthy].  Write entrypoints
-//! (`add_oracle`, `remove_oracle`) extend TTL implicitly via `.set()`.
+//! (`add_oracle`, `remove_oracle`) extend TTL via `.set()` followed by an
+//! explicit [`extend_ttl`] call.
 //!
 //! ## Example – full lifecycle
 //!
@@ -630,7 +631,7 @@ impl OraclesContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+    use soroban_sdk::testutils::{Address as _, Ledger, storage::Persistent};
 
     /// `add_oracle` writes the `OracleList` entry and the TTL reflects
     /// `ORACLE_LIST_TTL_LEDGERS` (or `max_ttl()` when the environment ceiling
@@ -645,6 +646,7 @@ mod tests {
         let key = DataKey::OracleList;
 
         env.as_contract(&contract_id, || {
+            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle).unwrap();
 
             let ttl = env.storage().persistent().get_ttl(&key);
@@ -666,6 +668,7 @@ mod tests {
         let key = DataKey::OracleList;
 
         env.as_contract(&contract_id, || {
+            env.mock_all_auths();
             // Populate the list.
             OraclesContract::add_oracle(env.clone(), admin, oracle).unwrap();
 
@@ -704,6 +707,7 @@ mod tests {
         let key = DataKey::OracleList;
 
         env.as_contract(&contract_id, || {
+            env.mock_all_auths();
             // Add two oracles.
             OraclesContract::add_oracle(env.clone(), admin.clone(), oracle_a.clone()).unwrap();
             OraclesContract::add_oracle(env.clone(), admin.clone(), oracle_b.clone()).unwrap();
@@ -740,6 +744,7 @@ mod tests {
         let key = DataKey::OracleList;
 
         env.as_contract(&contract_id, || {
+            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
 
             // Advance ledgers.
@@ -777,6 +782,7 @@ mod tests {
         let key = DataKey::OracleList;
 
         env.as_contract(&contract_id, || {
+            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
 
             env.ledger().with_mut(|li| {
@@ -809,6 +815,7 @@ mod tests {
         let key = DataKey::OracleList;
 
         env.as_contract(&contract_id, || {
+            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
 
             env.ledger().with_mut(|li| {
