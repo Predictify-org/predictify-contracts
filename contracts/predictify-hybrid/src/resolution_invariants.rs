@@ -286,7 +286,7 @@ proptest! {
     /// When none of the above conditions hold (no oracle result, no winning
     /// outcomes, zero dispute stakes) the state is `Active`.
     #[test]
-    fn prop_empty_market_is_active() {
+    fn prop_empty_market_is_active(_seed in 0u8..=255u8) {
         let (env, market) = make_ended_market();
         let state = ResolutionUtils::get_resolution_state(&env, &market);
         prop_assert_eq!(
