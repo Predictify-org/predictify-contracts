@@ -1854,12 +1854,22 @@ impl PredictifyHybrid {
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
     }
 
-    /// Set the global claim period for resolved markets (admin only).
+    /// Set the governance-controlled minimum bet size in basis points (admin only).
     ///
-    /// Claims are allowed until `market.end_time + claim_period_seconds` unless overridden
-    /// per market. After expiry, claims revert with `Error::ResolutionTimeoutReached`.
-    /// Set governance-controlled minimum bet size in basis points of the market token.
-    /// admin-only. 1 bps = 0.01%. Stored as a u32 (0..=10000).
+    /// 1 bps = 0.01% of the market token. For example, `500` bps = 5%. The value
+    /// is stored globally and applies to every market unless overridden. Stored as
+    /// a `u32` in the range `0..=10_000`.
+    ///
+    /// # Parameters
+    ///
+    /// * `admin` - Must be the primary admin address
+    /// * `min_bet_bps` - Minimum bet size in basis points (0–10 000)
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::InvalidInput`] - `min_bet_bps` exceeds 10 000
+    /// * [`Error::AdminNotSet`] - Contract has not been initialized
+    /// * [`Error::Unauthorized`] - Caller is not the primary admin
     pub fn set_governance_min_bet_bps(env: Env, admin: Address, min_bet_bps: u32) {
         admin.require_auth();
         if min_bet_bps > 10_000 {
@@ -1878,7 +1888,10 @@ impl PredictifyHybrid {
             .set(&Symbol::new(&env, "gov_min_bps"), &min_bet_bps);
     }
 
-    /// Get the governance-set minimum bet bps (0 = not set).
+    /// Get the governance-set minimum bet in basis points (read-only).
+    ///
+    /// Returns the minimum bet size configured by `set_governance_min_bet_bps`.
+    /// A return value of `0` means no governance minimum has been configured.
     pub fn get_governance_min_bet_bps(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -1886,6 +1899,23 @@ impl PredictifyHybrid {
             .unwrap_or(0u32)
     }
 
+    /// Set the global claim period for all resolved markets (admin only).
+    ///
+    /// Defines the duration (in seconds) after a market's `end_time` during which
+    /// winners can call `claim_winnings`. After this window closes, claims revert
+    /// with [`Error::ResolutionTimeoutReached`]. Per-market overrides set via
+    /// `set_market_claim_period` take precedence over this global value.
+    ///
+    /// # Parameters
+    ///
+    /// * `admin` - Must be the primary admin address
+    /// * `claim_period_seconds` - Claim window length in seconds (must be > 0)
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::InvalidInput`] - `claim_period_seconds` is zero
+    /// * [`Error::AdminNotSet`] - Contract has not been initialized
+    /// * [`Error::Unauthorized`] - Caller is not the primary admin
     pub fn set_global_claim_period(env: Env, admin: Address, claim_period_seconds: u64) {
         admin.require_auth();
 
@@ -1909,7 +1939,22 @@ impl PredictifyHybrid {
 
     /// Set a market-specific claim period override (admin only).
     ///
-    /// The market-specific value overrides the global claim period for the given market.
+    /// Overrides the global claim period for the given market. The market must
+    /// already exist. After the market is resolved, winners have until
+    /// `market.end_time + claim_period_seconds` to call `claim_winnings`.
+    ///
+    /// # Parameters
+    ///
+    /// * `admin` - Must be the primary admin address
+    /// * `market_id` - Identifies the target market
+    /// * `claim_period_seconds` - Claim window length in seconds (must be > 0)
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::InvalidInput`] - `claim_period_seconds` is zero
+    /// * [`Error::MarketNotFound`] - Market does not exist
+    /// * [`Error::AdminNotSet`] - Contract has not been initialized
+    /// * [`Error::Unauthorized`] - Caller is not the primary admin
     pub fn set_market_claim_period(
         env: Env,
         admin: Address,
@@ -1949,7 +1994,17 @@ impl PredictifyHybrid {
         );
     }
 
-    /// Set treasury recipient for unclaimed winnings sweeps (admin only).
+    /// Set the treasury recipient for unclaimed winnings sweeps (admin only).
+    ///
+    /// When `sweep_unclaimed_winnings` is called on a market whose claim window
+    /// has expired, the swept funds are credited to the treasury address set here.
+    /// Updating the treasury only affects future sweeps; in-flight sweeps are
+    /// not affected.
+    ///
+    /// # Parameters
+    ///
+    /// * `admin` - Must be the primary admin address
+    /// * `treasury` - Address that receives swept unclaimed winnings
     pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
         admin.require_auth();
 
