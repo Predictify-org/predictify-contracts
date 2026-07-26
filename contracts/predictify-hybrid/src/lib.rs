@@ -184,7 +184,7 @@ mod analytics_snapshot;
 mod max_participants_tests;
 
 #[cfg(test)]
-mod min_bet_tests;
+mod bet_resource_snapshot_tests;
 
 // dispute_stake_tests.rs extended for #553; enable when legacy setup is updated:
 // #[cfg(test)]
@@ -1402,6 +1402,32 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market_bet_stats(env: Env, market_id: Symbol) -> crate::types::BetStats {
         bets::BetManager::get_market_bet_stats(&env, &market_id)
+    }
+
+    /// Returns the most-recently recorded per-call resource snapshot for betting
+    /// operations, or `None` if no bet has been placed yet.
+    ///
+    /// The snapshot captures the CPU instruction delta and a write-count proxy
+    /// measured during the last successful `place_bet` or `place_bets` call.
+    /// It is intended as a regression baseline: compare successive values to
+    /// detect unexpected gas cost increases across contract upgrades.
+    ///
+    /// # Returns
+    ///
+    /// `Some(BetResourceSnapshot)` – fields:
+    /// - `cpu_delta`      – CPU instructions consumed (real in test runtime; 0 on-chain).
+    /// - `write_count`    – number of persistent-storage writes performed.
+    /// - `market_id`      – first (or only) market that was bet on.
+    /// - `captured_at`    – ledger timestamp at capture.
+    /// - `ledger_sequence`– ledger sequence number at capture.
+    ///
+    /// `None` – no betting call has been made on this contract instance yet.
+    ///
+    /// # State
+    ///
+    /// Read-only.  No events emitted.
+    pub fn get_bet_resource_snapshot(env: Env) -> Option<crate::gas::BetResourceSnapshot> {
+        crate::gas::BetSnapshotManager::latest(&env)
     }
 
     /// Cancels an active bet and refunds the user.
