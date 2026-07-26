@@ -28,6 +28,12 @@ pub enum Error {
     Overflow = 672,
     MaxBetCapExceeded = 673,
     InvalidCap = 674,
+    /// Bet amount is below the per-market minimum threshold set by `set_min_bet`.
+    ///
+    /// Returned when the bet amount is less than the `min_bet_amount` configured for
+    /// a specific market via the `set_min_bet` entrypoint.  This is distinct from
+    /// [`Error::InsufficientStake`] (which covers the global/per-event minimum).
+    BetBelowMarketMin = 675,
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.
@@ -268,6 +274,10 @@ pub enum Error {
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
     MaxParticipantsReached = 528,
+    /// Bet amount exceeds the per-market maximum single-bet cap set by `set_market_max_bet_cap`.
+    ///
+    /// Returned when the bet amount exceeds the cap configured for a specific market.
+    BetExceedsCap = 529,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -806,6 +816,7 @@ impl ErrorHandler {
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
             Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
+            Error::BetBelowMarketMin => RecoveryStrategy::NoRecovery,
             Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
         }
@@ -1393,6 +1404,11 @@ impl ErrorHandler {
                 ErrorCategory::Financial,
                 RecoveryStrategy::NoRecovery,
             ),
+            Error::BetBelowMarketMin => (
+                ErrorSeverity::Low,
+                ErrorCategory::Financial,
+                RecoveryStrategy::NoRecovery,
+            ),
             Error::OperationWouldExceedBudget => (
                 ErrorSeverity::Critical,
                 ErrorCategory::System,
@@ -1537,6 +1553,7 @@ impl Error {
             Error::AdminNotSet => "Admin address not set",
             Error::FeeExceedsMax => "Fee is above the acceptable threshold",
             Error::BetExceedsCap => "Bet amount exceeds the per-market maximum bet cap",
+            Error::BetBelowMarketMin => "Bet amount is below the per-market minimum threshold",
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1650,6 +1667,7 @@ impl Error {
             Error::AdminNotSet => "ADMIN_NOT_SET",
             Error::FeeExceedsMax => "FEE_ABOVE_ACCEPTABLE",
             Error::BetExceedsCap => "BET_EXCEEDS_CAP",
+            Error::BetBelowMarketMin => "BET_BELOW_MARKET_MIN",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",

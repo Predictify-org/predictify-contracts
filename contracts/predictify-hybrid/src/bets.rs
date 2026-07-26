@@ -190,6 +190,66 @@ pub fn get_market_max_bet_cap(env: &Env, market_id: &Symbol) -> Option<i128> {
     caps.get(market_id.clone())
 }
 
+// ===== PER-MARKET MIN BET AMOUNT =====
+
+/// Set the per-market minimum bet amount on a market stored in the market struct.
+///
+/// # Parameters
+///
+/// - `env`       – Soroban environment
+/// - `market_id` – Identifies the market to configure
+/// - `min_amount` – Minimum allowed bet in base token units (stroops).
+///   Must be `> 0` and `<= MAX_BET_AMOUNT`.
+///
+/// # Errors
+///
+/// - [`Error::MarketNotFound`] if `market_id` does not correspond to an existing market
+/// - [`Error::InvalidInput`] if `min_amount` is zero, negative, or exceeds [`MAX_BET_AMOUNT`]
+pub fn set_market_min_bet(
+    env: &Env,
+    market_id: &Symbol,
+    min_amount: i128,
+) -> Result<(), Error> {
+    if min_amount <= 0 || min_amount > MAX_BET_AMOUNT {
+        return Err(Error::InvalidInput);
+    }
+    let mut market = crate::markets::MarketStateManager::get_market(env, market_id)?;
+    market.min_bet_amount = Some(min_amount);
+    crate::markets::MarketStateManager::update_market(env, market_id, &market);
+    Ok(())
+}
+
+/// Remove the per-market minimum bet threshold for a market (admin only).
+///
+/// After removal, bets are bounded only by the global/per-event minimum.
+///
+/// # Errors
+///
+/// - [`Error::MarketNotFound`] if `market_id` does not correspond to an existing market
+pub fn remove_market_min_bet(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+    let mut market = crate::markets::MarketStateManager::get_market(env, market_id)?;
+    market.min_bet_amount = None;
+    crate::markets::MarketStateManager::update_market(env, market_id, &market);
+    Ok(())
+}
+
+/// Get the per-market minimum bet amount, or `None` if no per-market minimum is set.
+///
+/// # Parameters
+///
+/// - `env`       – Soroban environment
+/// - `market_id` – Identifies the market to query
+///
+/// # Returns
+///
+/// `Some(amount)` if a per-market minimum has been configured via [`set_market_min_bet`],
+/// or `None` if the market has no override (global/per-event minimum applies).
+pub fn get_market_min_bet(env: &Env, market_id: &Symbol) -> Option<i128> {
+    crate::markets::MarketStateManager::get_market(env, market_id)
+        .ok()
+        .and_then(|m| m.min_bet_amount)
+}
+
 /// Validate that min <= max and both are within absolute bounds.
 fn validate_limits_bounds(limits: &BetLimits) -> Result<(), Error> {
     if limits.min_bet > limits.max_bet {
@@ -390,6 +450,9 @@ impl BetManager {
         // Validate bet parameters (uses configurable min/max limits per event or global)
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
 
+        // Enforce per-market minimum bet threshold (set via set_min_bet entrypoint)
+        BetValidator::validate_market_min_bet(&market, amount)?;
+
         // Enforce fee slippage guard: reject if the effective platform fee exceeds caller's max
         BetValidator::validate_fee_slippage(env, max_fee_bps)?;
 
@@ -540,6 +603,9 @@ impl BetManager {
                 &market.outcomes,
                 amount,
             )?;
+
+            // Enforce per-market minimum bet threshold (set via set_min_bet entrypoint)
+            BetValidator::validate_market_min_bet(&market, amount)?;
 
             // Check if user has already bet on this market
             if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
@@ -1175,6 +1241,7 @@ impl BetValidator {
     /// Uses effective bet limits (per-event if set, else global, else default min/max).
     /// Rejects bets below min with InsufficientStake, above max with InvalidInput.
     /// Rejects bets exceeding the per-market cap with BetExceedsCap (when set).
+    /// Also enforces the per-market minimum set via `set_min_bet` (BetBelowMarketMin).
     pub fn validate_bet_parameters(
         env: &Env,
         market_id: &Symbol,
@@ -1184,6 +1251,28 @@ impl BetValidator {
     ) -> Result<(), Error> {
         MarketValidator::validate_outcome(env, outcome, valid_outcomes)?;
         Self::validate_bet_amount_against_limits(env, market_id, amount)
+    }
+
+    /// Validate bet amount against the per-market `min_bet_amount` field.
+    ///
+    /// This is checked **in addition to** the global/per-event [`BetLimits`] minimum.
+    /// The effective floor is `max(global_min, market.min_bet_amount)`.
+    ///
+    /// # Parameters
+    ///
+    /// - `market` – The market whose `min_bet_amount` is checked
+    /// - `amount` – The proposed bet amount in base token units
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::BetBelowMarketMin`] when `amount < market.min_bet_amount`
+    pub fn validate_market_min_bet(market: &crate::types::Market, amount: i128) -> Result<(), Error> {
+        if let Some(min) = market.min_bet_amount {
+            if amount < min {
+                return Err(Error::BetBelowMarketMin);
+            }
+        }
+        Ok(())
     }
 
     /// Validate bet amount against effective limits (per-event or global or defaults)
