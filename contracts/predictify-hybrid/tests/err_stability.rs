@@ -74,13 +74,6 @@ fn general_errors() {
     assert_eq!(Error::InvalidInput as u32, 401);
     assert_eq!(Error::InvalidFeeConfig as u32, 402);
     assert_eq!(Error::ConfigNotFound as u32, 403);
-    assert_eq!(Error::AlreadyDisputed as u32, 404);
-    assert_eq!(Error::DisputeVoteExpired as u32, 405);
-    assert_eq!(Error::DisputeVoteDenied as u32, 406);
-    assert_eq!(Error::DisputeAlreadyVoted as u32, 407);
-    assert_eq!(Error::DisputeCondNotMet as u32, 408);
-    assert_eq!(Error::DisputeFeeFailed as u32, 409);
-    assert_eq!(Error::DisputeError as u32, 410);
     assert_eq!(Error::SweepAlreadyDone as u32, 411);
     assert_eq!(Error::FeeArithmeticOverflow as u32, 412);
     assert_eq!(Error::FeeAlreadyCollected as u32, 413);
@@ -106,10 +99,25 @@ fn general_errors() {
     assert_eq!(Error::TooManyWinningOutcomes as u32, 434);
     assert_eq!(Error::CategoryTooShort as u32, 436);
     assert_eq!(Error::TagTooShort as u32, 437);
-    assert_eq!(Error::DisputerCannotVote as u32, 438);
     assert_eq!(Error::ArchiveFull as u32, 440);
     assert_eq!(Error::DuplicateMarketId as u32, 441);
 }
+
+// ===== Dispute Errors (404-410, 438, 522) =====
+
+#[test]
+fn dispute_errors() {
+    assert_eq!(Error::AlreadyDisputed as u32, 404);
+    assert_eq!(Error::DisputeVoteExpired as u32, 405);
+    assert_eq!(Error::DisputeVoteDenied as u32, 406);
+    assert_eq!(Error::DisputeAlreadyVoted as u32, 407);
+    assert_eq!(Error::DisputeCondNotMet as u32, 408);
+    assert_eq!(Error::DisputeFeeFailed as u32, 409);
+    assert_eq!(Error::DisputeError as u32, 410);
+    assert_eq!(Error::DisputerCannotVote as u32, 438);
+    assert_eq!(Error::DisputeStakeCapExceeded as u32, 522);
+}
+
 
 // ===== Circuit Breaker Errors (500-508) =====
 
