@@ -264,14 +264,86 @@ impl DisputeUtils {
         (total_dispute_stakes as f64) / (market.total_staked as f64)
     }
 
-    pub fn emit_dispute_submitted_event(env: &Env, dispute: &Dispute) {
-        let event_key = symbol_short!("disp_sub");
-        env.storage().persistent().set(&event_key, dispute);
+    /// Add vote to dispute
+    pub fn add_vote_to_dispute(
+        env: &Env,
+        dispute_id: &Symbol,
+        vote: DisputeVote,
+    ) -> Result<(), Error> {
+        // Get current voting data
+        let mut voting_data = Self::get_dispute_voting(env, dispute_id)?;
+
+        // Update voting statistics
+        voting_data.total_votes = voting_data
+            .total_votes
+            .checked_add(1)
+            .ok_or(Error::Overflow)?;
+        
+        // Calculate the decayed stake using tally_votes
+        let decayed_stake = Self::tally_votes(env, vote.stake, vote.timestamp, voting_data.voting_start);
+
+        if vote.vote {
+            voting_data.support_votes = voting_data
+                .support_votes
+                .checked_add(1)
+                .ok_or(Error::Overflow)?;
+            voting_data.total_support_stake = voting_data
+                .total_support_stake
+                .checked_add(decayed_stake)
+                .ok_or(Error::Overflow)?;
+        } else {
+            voting_data.against_votes = voting_data
+                .against_votes
+                .checked_add(1)
+                .ok_or(Error::Overflow)?;
+            voting_data.total_against_stake = voting_data
+                .total_against_stake
+                .checked_add(decayed_stake)
+                .ok_or(Error::Overflow)?;
+        }
+
+        // Store updated voting data
+        Self::store_dispute_voting(env, dispute_id, &voting_data)?;
+
+        // Store the vote
+        Self::store_dispute_vote(env, dispute_id, &vote)?;
+
+        Ok(())
     }
 
-    pub fn emit_dispute_resolved_event(env: &Env, resolution: &DisputeResolution) {
-        let event_key = symbol_short!("disp_res");
-        env.storage().persistent().set(&event_key, resolution);
+    /// Calculate the stake weight using exponential decay approximation
+    /// so late votes count less than early votes.
+    pub fn tally_votes(env: &Env, raw_stake: i128, vote_time: u64, window_start: u64) -> i128 {
+        let config_key = symbol_short!("decaycfg");
+        let config: Option<DisputeDecayConfig> = env.storage().persistent().get(&config_key);
+        
+        let cfg = match config {
+            Some(c) => c,
+            None => return raw_stake,
+        };
+
+        if cfg.half_life_seconds == 0 {
+            return raw_stake;
+        }
+
+        let elapsed = vote_time.saturating_sub(window_start);
+        let num_half_lives = elapsed / cfg.half_life_seconds;
+        let rem = elapsed % cfg.half_life_seconds;
+
+        let shift = num_half_lives.min(16) as u32;
+        let weight_at_n = 10000u32.checked_shr(shift).unwrap_or(0);
+        let weight_at_n_plus_1 = 10000u32.checked_shr(shift + 1).unwrap_or(0);
+        
+        let diff = weight_at_n.saturating_sub(weight_at_n_plus_1);
+        let exact_weight = weight_at_n.saturating_sub((diff as u64 * rem / cfg.half_life_seconds) as u32);
+        
+        // A misconfigured floor must never amplify a vote above its raw stake.
+        let final_weight = exact_weight.max(cfg.floor_bps).min(10_000) as i128;
+
+        // Split before multiplying so every i128 input remains overflow-safe.
+        let whole = raw_stake / 10_000;
+        let remainder = raw_stake % 10_000;
+        whole * final_weight + (remainder * final_weight) / 10_000
     }
 
     pub fn emit_dispute_vote_event(
