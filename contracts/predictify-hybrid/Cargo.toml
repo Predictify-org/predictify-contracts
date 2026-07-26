@@ -28,6 +28,10 @@ name = "err_stability"
 path = "tests/err_stability.rs"
 
 [[test]]
+name = "auth_snapshot_betting"
+path = "tests/auth_snapshot_betting.rs"
+
+[[test]]
 name = "stateful"
 path = "tests/stateful.rs"
 
