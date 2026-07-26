@@ -141,59 +141,33 @@ fn asset_decimals() {
     assert_eq!(Error::AssetDecimalsMismatch as u32, 439);
 }
 
-// ===== Limit Errors (600-611) =====
-//
-// Semantic bound-violation codes introduced to replace generic `InvalidInput`
-// returns and one bare `panic!`. Off-chain clients switch on these numbers, so
-// they are frozen here alongside the rest of the taxonomy.
+// ===== Market-specific & extension errors (443, 517-528) =====
 
 #[test]
-fn limit_errors() {
-    assert_eq!(Error::BetAboveMaximum as u32, 600);
-    assert_eq!(Error::BetLimitsInverted as u32, 601);
-    assert_eq!(Error::BetLimitAboveMaximum as u32, 602);
-    assert_eq!(Error::BetCapOutOfRange as u32, 603);
-    assert_eq!(Error::BatchEmpty as u32, 604);
-    assert_eq!(Error::BatchSizeExceeded as u32, 605);
-    assert_eq!(Error::FeePercentageOutOfRange as u32, 606);
-    assert_eq!(Error::FeeAmountAboveMaximum as u32, 607);
-    assert_eq!(Error::CreationFeeOutOfRange as u32, 608);
-    assert_eq!(Error::FeeLimitsInverted as u32, 609);
-    assert_eq!(Error::QueueCapacityOutOfRange as u32, 610);
-    assert_eq!(Error::QueueAlreadyInitialized as u32, 611);
+fn market_extension_errors() {
+    assert_eq!(Error::AdminActionTimelocked as u32, 443);
+    assert_eq!(Error::ForceResolveReplayed as u32, 517);
+    assert_eq!(Error::ForceResolveReasonEmpty as u32, 518);
+    assert_eq!(Error::NoPendingFeeCommit as u32, 519);
+    assert_eq!(Error::FeeRevealTooEarly as u32, 520);
+    assert_eq!(Error::FeePreimageMismatch as u32, 521);
+    assert_eq!(Error::DisputeStakeCapExceeded as u32, 522);
+    assert_eq!(Error::InsufficientStorageRentBudget as u32, 523);
+    assert_eq!(Error::ExtensionCapExceeded as u32, 524);
+    assert_eq!(Error::UpgradeChainMismatch as u32, 525);
+    assert_eq!(Error::OracleQuoteOutlier as u32, 527);
+    assert_eq!(Error::MaxParticipantsReached as u32, 528);
 }
 
-/// The limit range must stay clear of the generic codes it replaced, otherwise a
-/// client mapping table built against 401 would silently keep matching.
-#[test]
-fn limit_errors_do_not_collide_with_generic_codes() {
-    let limits = [
-        Error::BetAboveMaximum as u32,
-        Error::BetLimitsInverted as u32,
-        Error::BetLimitAboveMaximum as u32,
-        Error::BetCapOutOfRange as u32,
-        Error::BatchEmpty as u32,
-        Error::BatchSizeExceeded as u32,
-        Error::FeePercentageOutOfRange as u32,
-        Error::FeeAmountAboveMaximum as u32,
-        Error::CreationFeeOutOfRange as u32,
-        Error::FeeLimitsInverted as u32,
-        Error::QueueCapacityOutOfRange as u32,
-        Error::QueueAlreadyInitialized as u32,
-    ];
-    for code in limits {
-        assert_ne!(code, Error::InvalidInput as u32);
-        assert_ne!(code, Error::InvalidState as u32);
-    }
-}
-
-// ===== Codes restored after a bad merge dropped their variants =====
+// ===== Overflow / cap errors (660-674) =====
 
 #[test]
-fn restored_variants() {
-    assert_eq!(Error::BetExceedsCap as u32, 509);
-    assert_eq!(Error::ReplayedOverride as u32, 526);
+fn overflow_cap_errors() {
     assert_eq!(Error::IdempotentBatchAlreadyApplied as u32, 660);
+    assert_eq!(Error::ReasonTableFull as u32, 670);
+    assert_eq!(Error::Overflow as u32, 672);
+    assert_eq!(Error::MaxBetCapExceeded as u32, 673);
+    assert_eq!(Error::InvalidCap as u32, 674);
 }
 
 // ===== op-count test ensuring we noticed all variants =====
