@@ -1883,6 +1883,8 @@ impl PredictifyHybrid {
         if admin != stored_admin {
             panic_with_error!(env, Error::Unauthorized);
         }
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "gov_min_bps"), &min_bet_bps);
@@ -1933,6 +1935,9 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
+
         recovery::UnclaimedWinningsPolicy::set_global_claim_period(&env, claim_period_seconds);
         EventEmitter::emit_claim_period_updated(&env, &admin, claim_period_seconds);
     }
@@ -1977,6 +1982,9 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
+
         if markets::MarketStateManager::get_market(&env, &market_id).is_err() {
             panic_with_error!(env, Error::MarketNotFound);
         }
@@ -2018,6 +2026,9 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
+
         recovery::UnclaimedWinningsPolicy::set_treasury(&env, &treasury);
         EventEmitter::emit_treasury_updated(&env, &admin, &treasury);
     }
@@ -2043,6 +2054,8 @@ impl PredictifyHybrid {
         if admin != stored_admin {
             return Err(Error::Unauthorized);
         }
+
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)?;
 
         let mut market: Market = env
             .storage()
@@ -2379,6 +2392,20 @@ impl PredictifyHybrid {
         let key = DataKey::ResolutionCooldownSeconds;
         env.storage().persistent().set(&key, &seconds);
         env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Sets the cooldown period for oracle admin actions.
+    pub fn set_oracle_admin_cooldown(env: Env, admin: Address, seconds: u64) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::set_cooldown(&env, &admin, seconds)?;
+        Ok(())
+    }
+
+    /// Sets the cooldown period for betting admin actions.
+    pub fn set_betting_admin_cooldown(env: Env, admin: Address, seconds: u64) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        crate::admin::BettingAdminCooldownManager::set_cooldown(&env, &admin, seconds)?;
         Ok(())
     }
 
@@ -4651,6 +4678,7 @@ impl PredictifyHybrid {
         max_bet: i128,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)?;
         let limits = crate::types::BetLimits { min_bet, max_bet };
         crate::bets::set_global_bet_limits(&env, &limits)?;
         let scope = Symbol::new(&env, "global");
@@ -4685,6 +4713,7 @@ impl PredictifyHybrid {
         max_bet: i128,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)?;
         let limits = BetLimits { min_bet, max_bet };
         crate::bets::set_event_bet_limits(&env, &market_id, &limits)?;
         EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, min_bet, max_bet);
@@ -4736,6 +4765,7 @@ impl PredictifyHybrid {
         cap: i128,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)?;
         // cap == 0 is treated as "remove the cap"
         if cap == 0 {
             crate::bets::remove_market_max_bet_cap(&env, &market_id);
@@ -4783,6 +4813,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::BettingAdminCooldownManager::enforce_cooldown(&env, &admin)?;
         crate::bets::remove_market_max_bet_cap(&env, &market_id);
         EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, 0, 0);
         Ok(())

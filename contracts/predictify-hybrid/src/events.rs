@@ -3917,6 +3917,16 @@ impl EventEmitter {
         env.events().publish(topics, data);
     }
 
+    /// Emit betting admin cooldown hit event
+    pub fn emit_betting_admin_cooldown_hit(env: &Env, admin: &Address, last_action: u64, cooldown: u64) {
+        let topics = (Symbol::new(env, "BettingAdmin"), Symbol::new(env, "CooldownHit"));
+        let mut data = Map::new(env);
+        data.set(String::from_str(env, "admin"), admin.to_val());
+        data.set(String::from_str(env, "last_action"), last_action);
+        data.set(String::from_str(env, "cooldown"), cooldown);
+        env.events().publish(topics, data);
+    }
+
     /// Emit market closed event
     pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
         let event = MarketClosedEvent {

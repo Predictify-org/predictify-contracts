@@ -276,62 +276,10 @@ pub enum Error {
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
     MaxParticipantsReached = 528,
-
-    // ===== LIMIT ERRORS (600-611) =====
-    //
-    // Semantic bound-violation codes. Every one of these replaces a site that
-    // previously reported a bound violation as a generic `InvalidInput` (or, for
-    // [`Error::QueueAlreadyInitialized`], as an unrecoverable host panic), so
-    // off-chain clients can tell *which* limit was hit without string matching.
-    //
-    // Naming convention:
-    // * `*AboveMaximum`   — a value exceeded an upper bound.
-    // * `*OutOfRange`     — a value fell outside an inclusive `[min, max]` window.
-    // * `*LimitsInverted` — an admin-supplied `min`/`max` pair is contradictory.
-    /// Bet amount exceeds the effective maximum bet for the market.
-    ///
-    /// Raised by [`crate::bets::BetValidator::validate_bet_amount_against_limits`] and
-    /// [`crate::bets::BetValidator::validate_bet_amount`]. The effective maximum is the
-    /// per-event limit if configured, otherwise the global limit, otherwise
-    /// [`crate::bets::MAX_BET_AMOUNT`].
-    ///
-    /// Distinct from [`Error::BetExceedsCap`], which is the *per-market single-bet* cap.
-    BetAboveMaximum = 600,
-    /// Admin-supplied bet limits are contradictory: `min_bet > max_bet`.
-    BetLimitsInverted = 601,
-    /// Admin-supplied `max_bet` exceeds the absolute ceiling [`crate::bets::MAX_BET_AMOUNT`].
-    BetLimitAboveMaximum = 602,
-    /// Per-market single-bet cap is outside the permitted range: it must be strictly
-    /// positive and at most [`crate::bets::MAX_BET_AMOUNT`].
-    ///
-    /// Raised when setting the cap, not when checking a bet against it — a bet that
-    /// exceeds an already-configured cap yields [`Error::BetExceedsCap`].
-    BetCapOutOfRange = 603,
-    /// A batch operation was submitted with zero entries.
-    BatchEmpty = 604,
-    /// A batch operation exceeds the maximum number of entries allowed per call.
-    BatchSizeExceeded = 605,
-    /// Fee percentage (basis points) is outside the inclusive range bounded by
-    /// [`crate::fees::MIN_FEE_PERCENTAGE`] and [`crate::fees::MAX_FEE_PERCENTAGE`].
-    FeePercentageOutOfRange = 606,
-    /// Fee amount exceeds [`crate::fees::MAX_FEE_AMOUNT`].
-    ///
-    /// A fee amount *below* [`crate::fees::MIN_FEE_AMOUNT`] keeps reporting
-    /// [`Error::InsufficientStake`], which is already semantic.
-    FeeAmountAboveMaximum = 607,
-    /// Market creation fee is outside the inclusive range bounded by
-    /// [`crate::fees::MIN_FEE_AMOUNT`] and [`crate::fees::MAX_FEE_AMOUNT`].
-    CreationFeeOutOfRange = 608,
-    /// Admin-supplied fee bounds are contradictory: `max_fee_amount < min_fee_amount`.
-    FeeLimitsInverted = 609,
-    /// Monitor queue capacity is outside the inclusive range bounded by
-    /// `MIN_QUEUE_CAPACITY` and `MAX_QUEUE_CAPACITY` in `crate::monitor`.
-    QueueCapacityOutOfRange = 610,
-    /// The monitor queue has already been initialized; re-initialization is rejected.
-    ///
-    /// Previously a bare `panic!`, which aborted the host frame with no client-readable
-    /// code. Callers that treat re-initialization as a no-op can now match on this.
-    QueueAlreadyInitialized = 611,
+    /// Oracle admin action was attempted while the cooldown is active.
+    OracleAdminCooldownActive = 529,
+    /// Betting admin action was attempted while the cooldown is active.
+    BettingAdminCooldownActive = 530,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
