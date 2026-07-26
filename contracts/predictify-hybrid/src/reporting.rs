@@ -59,6 +59,89 @@ pub struct EventSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Snapshot Diffing
+// ---------------------------------------------------------------------------
+
+/// A snapshot containing multiple event states for offline comparison.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateSnapshot {
+    pub stats: PlatformStats,
+    pub events: Map<Symbol, EventSnapshot>,
+}
+
+/// A symmetric diff of two `StateSnapshot`s.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotDiff {
+    pub added: Vec<Symbol>,
+    pub removed: Vec<Symbol>,
+    pub changed: Vec<Symbol>,
+    pub fee_delta: i128,
+    pub total_pool_delta: i128,
+}
+
+impl SnapshotDiff {
+    /// Inverts the diff such that `diff(a, b).invert(env) == diff(b, a)`
+    pub fn invert(&self, env: &Env) -> Self {
+        Self {
+            added: self.removed.clone(),
+            removed: self.added.clone(),
+            changed: self.changed.clone(),
+            fee_delta: -self.fee_delta,
+            total_pool_delta: -self.total_pool_delta,
+        }
+    }
+}
+
+impl StateSnapshot {
+    /// Computes a typed difference between `prev` and `next` `StateSnapshot`s.
+    /// Returns a deterministic, ordered list of market IDs that were added, removed, or changed.
+    /// Also includes the fee and total-pool deltas.
+    pub fn diff(env: &Env, prev: &Self, next: &Self) -> SnapshotDiff {
+        let mut added = Vec::new(env);
+        let mut removed = Vec::new(env);
+        let mut changed = Vec::new(env);
+        
+        let mut unique_keys: Map<Symbol, ()> = Map::new(env);
+        for key in prev.events.keys().into_iter() {
+            unique_keys.set(key.clone(), ());
+        }
+        for key in next.events.keys().into_iter() {
+            unique_keys.set(key.clone(), ());
+        }
+        
+        for key in unique_keys.keys().into_iter() {
+            let val_prev = prev.events.get(key.clone());
+            let val_next = next.events.get(key.clone());
+            
+            match (val_prev, val_next) {
+                (Some(_), None) => removed.push_back(key),
+                (None, Some(_)) => added.push_back(key),
+                (Some(p), Some(n)) => {
+                    if p != n {
+                        changed.push_back(key);
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+        
+        let fee_delta = next.stats.total_fees_collected.saturating_sub(prev.stats.total_fees_collected);
+        let pool_delta = next.stats.total_pool_all_events.saturating_sub(prev.stats.total_pool_all_events);
+        
+        SnapshotDiff {
+            added,
+            removed,
+            changed,
+            fee_delta,
+            total_pool_delta: pool_delta,
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
 // SnapshotEnvelope
 // ---------------------------------------------------------------------------
 

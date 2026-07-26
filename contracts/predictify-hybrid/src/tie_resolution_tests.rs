@@ -77,7 +77,7 @@ impl TieSetup {
             crate::circuit_breaker::CircuitBreaker::initialize(&env).unwrap();
         });
 
-        PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+        crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
         // `initialize` stores DEFAULT_PLATFORM_FEE_PERCENTAGE (200 bps = 2 %)
         // under "platform_fee".  `distribute_payouts` reads that key directly,
@@ -731,7 +731,7 @@ fn test_calculate_winning_stats_two_way_tie_each_outcome() {
     });
 
     let admin = Address::generate(&env);
-    PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+    crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
     // Build a market in memory (no storage write needed for this unit test).
     let mut market = Market::new(

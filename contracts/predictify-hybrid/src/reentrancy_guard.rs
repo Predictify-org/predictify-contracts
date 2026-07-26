@@ -83,6 +83,9 @@
 
 use soroban_sdk::{contracterror, symbol_short, Env, Map, Symbol};
 
+#[cfg(test)]
+use soroban_sdk::Vec;
+
 /// Errors surfaced by the reentrancy guard.
 ///
 /// These are deliberately narrow and module-local so callers can map them
@@ -290,6 +293,31 @@ impl ReentrancyGuard {
     pub fn restore_state_on_failure<F: FnOnce()>(_env: &Env, restore_fn: F) {
         restore_fn();
     }
+
+    /// Returns the list of entrypoint scopes whose lock is currently held.
+    ///
+    /// Only available in test builds. Intended for integration tests that need
+    /// to assert correct nesting and detect accidental cross-scope leakage.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use soroban_sdk::symbol_short;
+    ///
+    /// let stack = ReentrancyGuard::current_scope_stack(&env);
+    /// assert!(stack.contains(&symbol_short!("place_bet")));
+    /// assert!(!stack.contains(&symbol_short!("lock_fn")));
+    /// ```
+    #[cfg(test)]
+    pub fn current_scope_stack(env: &Env) -> Vec<Symbol> {
+        let mut stack: Vec<Symbol> = Vec::new(env);
+        for (scope, locked) in Self::load_locks(env).iter() {
+            if locked {
+                stack.push_back(scope);
+            }
+        }
+        stack
+    }
 }
 
 #[cfg(test)]
@@ -373,24 +401,27 @@ mod tests {
         with_contract(&env, || {
             let outer: Result<(), GuardError> =
                 ReentrancyGuard::with_guard(&env, &scope_a, || {
-                    assert!(ReentrancyGuard::is_locked(&env, &scope_a));
-                    assert!(!ReentrancyGuard::is_locked(&env, &scope_b));
+                    let stack = ReentrancyGuard::current_scope_stack(&env);
+                    assert_eq!(stack.len(), 1);
+                    assert!(stack.contains(&scope_a));
 
                     let inner: Result<(), GuardError> =
                         ReentrancyGuard::with_guard(&env, &scope_b, || {
-                            assert!(ReentrancyGuard::is_locked(&env, &scope_a));
-                            assert!(ReentrancyGuard::is_locked(&env, &scope_b));
+                            let stack = ReentrancyGuard::current_scope_stack(&env);
+                            assert_eq!(stack.len(), 2);
+                            assert!(stack.contains(&scope_a));
+                            assert!(stack.contains(&scope_b));
                             Ok(())
                         });
                     assert!(inner.is_ok());
 
-                    assert!(ReentrancyGuard::is_locked(&env, &scope_a));
-                    assert!(!ReentrancyGuard::is_locked(&env, &scope_b));
+                    let stack = ReentrancyGuard::current_scope_stack(&env);
+                    assert_eq!(stack.len(), 1);
+                    assert!(stack.contains(&scope_a));
                     Ok(())
                 });
             assert!(outer.is_ok());
-            assert!(!ReentrancyGuard::is_locked(&env, &scope_a));
-            assert!(!ReentrancyGuard::is_locked(&env, &scope_b));
+            assert!(ReentrancyGuard::current_scope_stack(&env).is_empty());
         });
     }
 
@@ -488,11 +519,13 @@ mod tests {
                 let inner: Result<(), GuardError> =
                     ReentrancyGuard::with_guard(&env, &scope, || Ok(()));
                 assert_eq!(inner, Err(GuardError::ReentrancyGuardActive));
-                assert!(ReentrancyGuard::is_locked(&env, &scope));
+                let stack = ReentrancyGuard::current_scope_stack(&env);
+                assert_eq!(stack.len(), 1);
+                assert!(stack.contains(&scope));
                 Ok(())
             });
             assert!(outer.is_ok());
-            assert!(!ReentrancyGuard::is_locked(&env, &scope));
+            assert!(ReentrancyGuard::current_scope_stack(&env).is_empty());
         });
     }
 

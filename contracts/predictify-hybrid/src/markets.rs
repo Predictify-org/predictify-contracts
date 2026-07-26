@@ -4,7 +4,10 @@ use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, V
 
 // use crate::config; // Unused import
 use crate::err::Error;
-use crate::storage::{check_market_creation_rent, DataKey, MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS};
+use crate::storage::{
+    check_market_creation_rent, check_market_creation_rent_budget, DataKey,
+    MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS,
+};
 use crate::types::*;
 // Oracle imports removed - not currently used
 
@@ -128,8 +131,13 @@ impl MarketCreator {
         // Use the generated id after creation in higher-level flows when event metadata is required.
        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
-        // Pre-flight check: ensure sufficient storage rent budget
+        // Pre-flight checks: ensure sufficient storage rent budget.
+        // The single-key check guards the market record itself; the aggregate
+        // check additionally covers every persistent entry a full creation
+        // flow writes, so a caller cannot get partway through and strand a
+        // market record whose companion entries could not be given a TTL.
         check_market_creation_rent(env)?;
+        check_market_creation_rent_budget(env)?;
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
@@ -698,6 +706,15 @@ impl MarketValidator {
 
         Ok(())
     }
+
+    pub fn validate_participant_cap(market: &Market) -> Result<(), Error> {
+        if let Some(max) = market.max_participants {
+            if market.votes.len() >= max {
+                return Err(Error::MaxParticipantsReached);
+            }
+        }
+        Ok(())
+    }
 }
 
 // ===== MARKET READ CACHE =====
@@ -1020,6 +1037,7 @@ impl MarketStateManager {
         _market_id: Option<&Symbol>,
     ) {
         MarketStateLogic::check_function_access_for_state("vote", market.state).unwrap();
+        MarketValidator::validate_participant_cap(market).unwrap();
         market.votes.set(user.clone(), outcome);
         market.stakes.set(user.clone(), stake);
         market.total_staked += stake;
@@ -2512,6 +2530,7 @@ impl MarketTestHelpers {
                 String::from_str(_env, "gt"),
             ),
             1_000_000, // Creation fee: 1 XLM
+            None,
         )
     }
 
@@ -3593,6 +3612,50 @@ impl MarketPauseManager {
             return Err(Error::Unauthorized);
         }
 
+        Ok(())
+    }
+
+    /// Auto-pause a market due to oracle validation failure (internal, no admin auth).
+    ///
+    /// Called by `OracleValidationConfigManager::validate_oracle_data` when the
+    /// effective config has `auto_pause_duration_secs` set and oracle data is
+    /// rejected.  This path bypasses the normal admin auth check because it
+    /// executes as a contract-internal action.
+    ///
+    /// If the market is already paused this is a safe no-op.
+    pub fn auto_pause_market(
+        env: &Env,
+        market_id: &Symbol,
+        duration_secs: u64,
+    ) -> Result<(), Error> {
+        if Self::is_market_paused(env, market_id)? {
+            return Ok(());
+        }
+        let market = MarketStateManager::get_market(env, market_id)?;
+        match market.state {
+            MarketState::Active | MarketState::Ended | MarketState::Disputed => {}
+            _ => return Err(Error::InvalidState),
+        }
+        let paused_by: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .unwrap_or(market.admin);
+        let current_time = env.ledger().timestamp();
+        let pause_end_time = current_time.saturating_add(duration_secs);
+        let duration_hours = ((duration_secs + 3599) / 3600) as u32;
+        let pause_info = MarketPauseInfo {
+            is_paused: true,
+            paused_at: current_time,
+            pause_duration_hours: duration_hours.max(1),
+            paused_by: paused_by,
+            pause_end_time,
+            original_state: market.state,
+        };
+        env.storage()
+            .persistent()
+            .set(market_id, &pause_info);
+        Self::emit_pause_event(env, market_id, duration_hours, &pause_info.paused_by);
         Ok(())
     }
 

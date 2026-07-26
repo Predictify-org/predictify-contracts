@@ -1,5 +1,7 @@
 # Predictify Hybrid Contract - API Documentation
 
+
+
 ## Overview
 
 This document provides a complete API reference for the Predictify Hybrid smart contract. It details all public modules, their purposes, and available functions organized by functional domain.
@@ -23,6 +25,7 @@ This document provides a complete API reference for the Predictify Hybrid smart 
 13. [Fee Management](#fee-management)
 14. [Market Extensions](#market-extensions)
 15. [Monitoring System](#monitoring-system)
+16. [Per-Market Audit Log](#per-market-audit-log)
 
 ---
 
@@ -573,6 +576,14 @@ All functions below live on `QueryManager` in `queries.rs` unless a different ca
 - `set_event_config(env, admin, market_id, config)` - Set market config
 - `get_effective_config(env, market_id)` - Get applicable config
 - `validate_oracle_data(env, market_id, data)` - Validate oracle data
+
+**Oracle Validation Config Fields** (both `GlobalOracleValidationConfig` and `EventOracleValidationConfig`):
+- `max_staleness_secs: u64` — Maximum age of oracle data in seconds before rejection
+- `max_confidence_bps: u32` — Maximum allowed confidence interval in basis points
+- `max_deviation_bps: Option<u32>` — Max allowed price deviation from last reference (bps)
+- `max_deviation_z_multiple: Option<u32>` — Max z-multiple for rolling-median outlier rejection (bps)
+- `history_size: Option<u32>` — Number of historical prices for rolling median (default 10)
+- `auto_pause_duration_secs: Option<u64>` — If set, auto-pause the market for this many seconds when oracle validation fails (max 604800). When `None` (default), no auto-pause occurs.
 
 ### Oracle Integration Manager
 
@@ -1188,3 +1199,104 @@ All functions return `Result<T, Error>` with comprehensive error types covering:
 ## Version
 
 This documentation covers the current implementation of Predictify Hybrid. Version information and change logs can be found in the contract configuration and governance modules.
+
+---
+
+## Per-Market Audit Log
+
+**Module**: `audit.rs`
+
+**Purpose**: Persistent, append-only, per-market audit trail for off-chain reads. Every significant state change on a market is recorded as an immutable `MarketAuditEntry` keyed by `market_id`, enabling off-chain clients to stream the full history of any individual market without scanning the global audit trail.
+
+### Core Structures
+
+- `MarketAuditAction` (enum) — Action type recorded in each entry:
+  - `MarketCreated` — Market was created via `create_market`
+  - `MarketResolved` — Market was manually resolved via `resolve_market_manual` or `resolve_market_with_ties`
+  - `MarketForceResolved` — Market was force-resolved via `force_resolve_market`
+  - `DisputeFiled` — A dispute was filed via `dispute_market`
+  - `DisputeResolved` — A dispute was resolved via `resolve_dispute`
+  - `FeesCollected` — Platform fees were collected via `collect_fees`
+
+- `MarketAuditEntry` (struct) — A single log entry:
+  - `index: u32` — 1-based position within the market's log (oldest = 1)
+  - `action: MarketAuditAction` — What occurred
+  - `actor: Address` — Who triggered the action
+  - `timestamp: u64` — Ledger timestamp (Unix seconds)
+  - `details: Map<Symbol, String>` — Action-specific metadata
+
+- `MarketAuditHead` (struct) — Log head metadata:
+  - `total_entries: u32` — Total number of entries written; valid index range is `[1, total_entries]`
+
+### Storage Keys
+
+Two new `DataKey` variants (in `storage.rs`) scope storage to the market:
+
+| Key | Value | TTL |
+|-----|-------|-----|
+| `DataKey::MarketAuditHead(market_id)` | `MarketAuditHead` | Same as market (`MARKET_TTL_LEDGERS`) |
+| `DataKey::MarketAuditLog(market_id, index)` | `MarketAuditEntry` | Same as market (`MARKET_TTL_LEDGERS`) |
+
+### Public Read Entrypoints
+
+**`get_market_audit_head(env, market_id) → Option<MarketAuditHead>`**
+
+Returns the log head for `market_id`. Use this to learn the valid index range before paginating.
+Returns `None` if the market has no audit entries.
+
+**`get_market_audit_entry(env, market_id, index) → Option<MarketAuditEntry>`**
+
+Returns a single entry by its 1-based index.
+Returns `None` when `index` is 0, out of range, or the market has no entries.
+
+**`get_market_audit_log(env, market_id, limit) → Vec<MarketAuditEntry>`**
+
+Returns a reverse-chronological page (newest first) of at most `limit` entries.
+`limit` is capped at 100 to bound ledger computation. Returns an empty vec for markets with no entries.
+
+### Off-Chain Pagination Example
+
+```typescript
+// 1. Fetch head to learn total count
+const head = await contract.get_market_audit_head({ market_id });
+if (!head) { console.log("no audit entries yet"); return; }
+
+const total = head.total_entries;
+
+// 2. Page backwards in chunks of 10
+let idx = total;
+while (idx >= 1) {
+  const entries = await contract.get_market_audit_log({ market_id, limit: 10 });
+  for (const entry of entries) {
+    console.log(`[${entry.index}] ${entry.action} by ${entry.actor} at ${entry.timestamp}`);
+  }
+  idx -= 10;
+}
+
+// 3. Or fetch a specific entry directly
+const entry = await contract.get_market_audit_entry({ market_id, index: 1 });
+```
+
+### Details Map Keys Per Action
+
+| Action | Key | Value |
+|--------|-----|-------|
+| `MarketCreated` | `question` | Market question text |
+| `MarketCreated` | `end_time` | Unix timestamp string |
+| `MarketCreated` | `dur_days` | Duration in days string |
+| `MarketResolved` | `outcome` | Winning outcome string |
+| `MarketResolved` | `method` | `"Manual"` or `"ManualTie"` |
+| `MarketForceResolved` | `outcome` | Primary winning outcome |
+| `MarketForceResolved` | `method` | `"Force"` |
+| `FeesCollected` | `amount` | Fee amount in stroops string |
+| `DisputeFiled` | *(empty)* | — |
+| `DisputeResolved` | *(empty)* | — |
+
+### Internal API (for contributors)
+
+`MarketAuditManager::append(env, market_id, action, actor, details) → u32`
+
+Appends a new entry. Returns the 1-based index of the new entry.
+Only callable from contract-internal code that has already verified caller authentication.
+Overflow-safe: stops silently at `u32::MAX` (unreachable in practice).
+

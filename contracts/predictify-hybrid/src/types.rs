@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::Error;
+use crate::timelock::MarketTimelockConfig;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
@@ -1099,6 +1100,12 @@ pub struct Market {
     /// Whether unclaimed winnings have already been swept for this market.
     /// Set to true after the first successful sweep to prevent double-crediting the treasury.
     pub winnings_swept: bool,
+    /// Per-market timelock configuration for admin actions.
+    pub timelock_config: MarketTimelockConfig,
+    /// Per-market dispute stake floor (None = use global/default minimum)
+    pub dispute_stake_floor: Option<i128>,
+    /// Maximum number of unique participants allowed (None = no limit).
+    pub max_participants: Option<u32>,
 }
 
 /// Canonical payload committed by `Market::metadata_commitment`.
@@ -1530,6 +1537,8 @@ impl Market {
             bet_deadline: 0,
             dispute_window_seconds: 86400, // 24h default
             winnings_swept: false,
+            timelock_config: MarketTimelockConfig::default(),
+            dispute_stake_floor: None,
         }
     }
 
@@ -1925,44 +1934,24 @@ pub struct OraclePriceData {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GlobalOracleValidationConfig {
-    /// Maximum age of oracle data in seconds before it is rejected
     pub max_staleness_secs: u64,
-    /// Maximum age of oracle data in ledgers before it is rejected
-    pub max_age_ledgers: u32,
-    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
-    /// Maximum allowed price deviation from the last accepted reading, in basis points.
-    /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
-    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
-    /// When set, the new price is compared against the rolling median of recent prices.
-    /// None means rolling-median outlier rejection is disabled.
     pub max_deviation_z_multiple: Option<u32>,
-    /// Number of historical prices to retain in the rolling deviation history ring buffer.
-    /// Defaults to 10 when None.
     pub history_size: Option<u32>,
+    pub auto_pause_duration_secs: Option<u64>,
 }
 
 /// Per-event oracle validation configuration override.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EventOracleValidationConfig {
-    /// Maximum age of oracle data in seconds before it is rejected
     pub max_staleness_secs: u64,
-    /// Maximum age of oracle data in ledgers before it is rejected
-    pub max_age_ledgers: u32,
-    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
-    /// Maximum allowed price deviation from the last accepted reading, in basis points.
-    /// None means deviation checking is disabled.
     pub max_deviation_bps: Option<u32>,
-    /// Maximum allowed z-multiple deviation from the rolling median, in basis points.
-    /// When set, the new price is compared against the rolling median of recent prices.
-    /// None means rolling-median outlier rejection is disabled.
     pub max_deviation_z_multiple: Option<u32>,
-    /// Number of historical prices to retain in the rolling deviation history ring buffer.
-    /// Defaults to 10 when None.
     pub history_size: Option<u32>,
+    pub auto_pause_duration_secs: Option<u64>,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.
@@ -3164,6 +3153,8 @@ pub struct MarketCreationParams {
     pub oracle_config: OracleConfig,
     /// Creation fee amount
     pub creation_fee: i128,
+    /// Per-market dispute stake floor (None = use global/default minimum)
+    pub dispute_stake_floor: Option<i128>,
 }
 
 impl MarketCreationParams {
@@ -3175,6 +3166,7 @@ impl MarketCreationParams {
         duration_days: u32,
         oracle_config: OracleConfig,
         creation_fee: i128,
+        dispute_stake_floor: Option<i128>,
     ) -> Self {
         Self {
             admin,
@@ -3183,6 +3175,7 @@ impl MarketCreationParams {
             duration_days,
             oracle_config,
             creation_fee,
+            dispute_stake_floor,
         }
     }
 }

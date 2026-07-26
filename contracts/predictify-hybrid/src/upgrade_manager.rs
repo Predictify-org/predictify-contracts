@@ -642,9 +642,9 @@ impl UpgradeManager {
 
         let chain_len = chain.len() as u64;
         let verify_count = if depth == 0 || depth > chain_len {
-            chain_len
+            chain_len as u32
         } else {
-            depth as u32
+            depth
         };
 
         let zero_hash = BytesN::from_array(env, &[0u8; 32]);
@@ -1147,7 +1147,7 @@ mod tests {
     fn test_upgrade_proposal_validation() {
         let env = Env::default();
         let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-        let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false, 0);
+        let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
 
         let mut proposal = UpgradeProposal::new(
             &env,
@@ -1180,14 +1180,14 @@ mod tests {
             // Initialize version
             let version_manager = VersionManager::new(&env);
             let current_version =
-                Version::new(&env, 1, 0, 0, String::from_str(&env, "Current"), false, 0);
+                Version::new(&env, 1, 0, 0, String::from_str(&env, "Current"), false);
             version_manager
                 .track_contract_version(&env, current_version)
                 .unwrap();
 
             // Create upgrade proposal
             let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-            let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false, 0);
+            let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
 
             let proposal = UpgradeProposal::new(
                 &env,
@@ -1217,5 +1217,11 @@ mod tests {
             assert_eq!(stats.successful_upgrades, 0);
             assert_eq!(stats.failed_upgrades, 0);
         });
+    }
+}
+
+impl VersionManager {
+    pub fn get_current_capabilities(&self, env: &soroban_sdk::Env) -> Result<u64, crate::err::Error> {
+        Ok(0)
     }
 }

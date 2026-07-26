@@ -1,5 +1,167 @@
 #![allow(dead_code)]
 
+//! # Oracle Management System for Predictify Hybrid
+//!
+//! This module provides a comprehensive and production-ready oracle management system
+//! for the Predictify Hybrid prediction market platform on Stellar blockchain.
+//!
+//! ## Module Overview
+//!
+//! The oracle system is designed to provide secure, reliable, and flexible price feed
+//! integration for prediction markets. It supports multiple oracle providers with a
+//! unified interface, comprehensive validation, and security features.
+//!
+//! ## Core Components
+//!
+//! ### Oracle Interface
+//! - **OracleInterface**: Unified trait for all oracle implementations
+//! - Provides consistent API across different oracle providers
+//! - Supports price retrieval, health checking, and metadata access
+//!
+//! ### Oracle Implementations
+//! - **ReflectorOracle**: Primary oracle for Stellar (production-ready)
+//! - **PythOracle**: Future-ready placeholder (not yet on Stellar)
+//! - **BandProtocolOracle**: Band Protocol integration
+//!
+//! ### Factory and Management
+//! - **OracleFactory**: Factory pattern for creating oracle instances
+//! - **OracleWhitelist**: Security system for oracle approval and management
+//! - **OracleIntegrationManager**: Automated oracle result verification
+//! - **OracleValidationConfigManager**: Configurable validation rules
+//!
+//! ### Utilities
+//! - **OracleUtils**: Price comparison and outcome determination utilities
+//! - **OracleCallbackAuth**: Secure authentication for oracle callbacks
+//!
+//! ## Security Features
+//!
+//! - **Whitelist-based Access Control**: Only approved oracles can provide data
+//! - **Signature Verification**: Cryptographic authentication of oracle data
+//! - **Replay Attack Protection**: Nonce-based protection against replay attacks
+//! - **Rate Limiting**: Protection against oracle flooding attacks
+//! - **Staleness Validation**: Rejection of outdated price data
+//! - **Confidence Interval Checks**: Quality assurance for price feeds
+//! - **Deviation Guards**: Detection of price anomalies and outliers
+//!
+//! ## Usage Examples
+//!
+//! ### Basic Oracle Usage
+//!
+//! ```rust,no_run
+//! use soroban_sdk::{Env, Address, String};
+//! use predictify_hybrid::oracles::{OracleFactory, OracleInterface};
+//! use predictify_hybrid::types::OracleProvider;
+//!
+//! # fn example(env: &Env, oracle_address: Address) -> Result<(), predictify_hybrid::err::Error> {
+//! // Create oracle instance
+//! let oracle = OracleFactory::create_oracle(
+//!     OracleProvider::reflector(),
+//!     oracle_address
+//! )?;
+//!
+//! // Check oracle health
+//! if oracle.is_healthy(env)? {
+//!     // Get BTC price
+//!     let price = oracle.get_price(
+//!         env,
+//!         &String::from_str(env, "BTC/USD")
+//!     )?;
+//!     // Use price for market resolution
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Oracle Whitelist Management
+//!
+//! ```rust,no_run
+//! use soroban_sdk::{Env, Address, String};
+//! use predictify_hybrid::oracles::{OracleWhitelist, OracleMetadata};
+//! use predictify_hybrid::types::OracleProvider;
+//!
+//! # fn example(env: &Env, admin: Address, oracle_addr: Address) -> Result<(), predictify_hybrid::err::Error> {
+//! // Initialize whitelist
+//! OracleWhitelist::initialize(env, admin.clone())?;
+//!
+//! // Add oracle to whitelist
+//! let metadata = OracleMetadata {
+//!     provider: OracleProvider::reflector(),
+//!     contract_address: oracle_addr.clone(),
+//!     added_at: env.ledger().timestamp(),
+//!     added_by: admin.clone(),
+//!     last_health_check: env.ledger().timestamp(),
+//!     is_active: true,
+//!     description: String::from_str(env, "Primary Oracle"),
+//! };
+//!
+//! OracleWhitelist::add_oracle_to_whitelist(
+//!     env,
+//!     admin,
+//!     oracle_addr,
+//!     metadata
+//! )?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Oracle Providers
+//!
+//! ### Supported on Stellar
+//! - **Reflector**: Primary, production-ready oracle for Stellar Network
+//! - **Band Protocol**: Alternative oracle provider
+//!
+//! ### Future Support
+//! - **Pyth Network**: Planned when Stellar support is available
+//!
+//! ## Validation and Quality Control
+//!
+//! The module provides comprehensive data validation:
+//! - **Staleness Checks**: Configurable maximum data age
+//! - **Confidence Intervals**: Pyth-specific confidence validation
+//! - **Price Deviation Guards**: Detection of anomalous price movements
+//! - **Rolling Median Outlier Detection**: Statistical outlier rejection
+//!
+//! ## Best Practices
+//!
+//! 1. **Always Check Health**: Verify oracle health before requesting prices
+//! 2. **Use Whitelist**: Only accept data from whitelisted oracles
+//! 3. **Configure Validation**: Set appropriate staleness and confidence thresholds
+//! 4. **Handle Errors**: Implement fallback mechanisms for oracle failures
+//! 5. **Monitor Performance**: Track oracle response times and reliability
+//!
+//! ## Module Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────┐
+//! │           OracleInterface (Trait)                   │
+//! └─────────────────────────────────────────────────────┘
+//!                         ▲
+//!                         │
+//!         ┌───────────────┼───────────────┐
+//!         │               │               │
+//! ┌───────────────┐ ┌──────────┐ ┌──────────────┐
+//! │ Reflector     │ │  Pyth    │ │    Band      │
+//! │ Oracle        │ │  Oracle  │ │    Protocol  │
+//! └───────────────┘ └──────────┘ └──────────────┘
+//!         │               │               │
+//!         └───────────────┼───────────────┘
+//!                         │
+//!                         ▼
+//!              ┌────────────────────┐
+//!              │  OracleFactory     │
+//!              └────────────────────┘
+//!                         │
+//!                         ▼
+//!              ┌────────────────────┐
+//!              │ OracleWhitelist    │
+//!              └────────────────────┘
+//!                         │
+//!                         ▼
+//!              ┌────────────────────┐
+//!              │ Integration Mgr    │
+//!              └────────────────────┘
+//! ```
+
 use alloc::format;
 use alloc::string::ToString;
 use crate::bandprotocol;
@@ -7,18 +169,7 @@ use crate::err::Error;
 use soroban_sdk::{
     contracttype, symbol_short, vec, Address, Bytes, Env, IntoVal, String, Symbol, Val, Vec,
 };
-// use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::types::*;
-
-/// Oracle management system for Predictify Hybrid contract
-///
-/// This module provides a comprehensive oracle management system with:
-/// - OracleInterface trait for standardized oracle interactions
-/// - Reflector oracle implementation (primary oracle for Stellar Network)
-/// - Oracle factory pattern for creating oracle instances
-/// - Oracle utilities for price comparison and outcome determination
-///
-/// Note: Pyth Network is not available on Stellar, so Reflector is the primary oracle provider.
 
 // ===== ORACLE INTERFACE =====
 
@@ -94,12 +245,53 @@ use crate::types::*;
 /// - **Rate Limiting**: Too many requests to oracle service
 /// - **Data Quality**: Oracle returned invalid or stale price data
 pub trait OracleInterface {
-    /// Get the current price for a given feed ID
+    /// Get the current price for a given feed ID.
+    ///
+    /// # Arguments
+    /// * `env` - Reference to the current Soroban environment.
+    /// * `feed_id` - Identifier string for the requested price feed (e.g., "BTC/USD").
+    ///
+    /// # Returns
+    /// * `Ok(i128)` - The latest price value as a signed 128-bit integer scaled according to precision.
+    /// * `Err(Error)` - An error indicating failure to fetch the price, invalid feed configuration, or oracle downtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` in the following cases:
+    /// - `Error::OracleUnavailable`: Oracle service is unreachable or down
+    /// - `Error::InvalidOracleFeed`: Feed ID is not supported or invalid
+    /// - `Error::OracleStale`: Price data is too old
+    /// - `Error::OracleConfidenceTooWide`: Price confidence interval exceeds threshold (Pyth only)
+    ///
+    /// # Safety
+    ///
+    /// This function performs external contract calls which may fail. Callers should
+    /// always check the health status before requesting prices and implement appropriate
+    /// error handling and fallback mechanisms.
     fn get_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error>;
 
     /// Get the current price plus validation metadata for a given feed ID.
     ///
     /// Default implementation uses `get_price()` and the current ledger timestamp.
+    ///
+    /// # Arguments
+    /// * `env` - Reference to the current Soroban environment.
+    /// * `feed_id` - Identifier string for the requested price feed (e.g., "BTC/USD").
+    ///
+    /// # Returns
+    /// * `Ok(OraclePriceData)` - Detailed price metadata including publish timestamp, confidence interval, and exponent.
+    /// * `Err(Error)` - An error if price or metadata retrieval fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from `get_price()` implementation. See `get_price()` documentation
+    /// for specific error conditions.
+    ///
+    /// # Implementation Notes
+    ///
+    /// The default implementation provides basic price data without confidence intervals.
+    /// Oracle providers that support additional metadata (e.g., Pyth with confidence intervals)
+    /// should override this method to provide enhanced data quality information.
     fn get_price_data(&self, env: &Env, feed_id: &String) -> Result<OraclePriceData, Error> {
         let price = self.get_price(env, feed_id)?;
         Ok(OraclePriceData {
@@ -111,13 +303,47 @@ pub trait OracleInterface {
         })
     }
 
-    /// Get the oracle provider type
+    /// Get the oracle provider type.
+    ///
+    /// # Returns
+    /// An `OracleProvider` instance indicating the provider (e.g., Reflector, Pyth, Band Protocol).
     fn provider(&self) -> OracleProvider;
 
-    /// Get the oracle contract ID
+    /// Get the oracle contract ID.
+    ///
+    /// # Returns
+    /// The Soroban `Address` of the underlying oracle contract.
     fn contract_id(&self) -> Address;
 
-    /// Check if the oracle is healthy and available
+    /// Check if the oracle is healthy and available.
+    ///
+    /// # Arguments
+    /// * `env` - Reference to the current Soroban environment.
+    ///
+    /// # Returns
+    /// * `Ok(true)` - If the oracle is active, responsive, and returning valid data.
+    /// * `Ok(false)` - If the oracle fails health checks or is unsupported on the current network.
+    /// * `Err(Error)` - If checking health fails due to contract invocation errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when the health check itself cannot be performed, typically due to:
+    /// - Contract invocation failure
+    /// - Network connectivity issues
+    /// - Invalid oracle contract address
+    ///
+    /// # Implementation Notes
+    ///
+    /// Health checks should be lightweight and fast. Implementations typically verify:
+    /// - Oracle contract is responsive
+    /// - Latest price data is available
+    /// - Price data is not stale
+    /// - No critical errors in oracle state
+    ///
+    /// # Best Practices
+    ///
+    /// Always check health before requesting prices to avoid unnecessary gas costs
+    /// and implement appropriate fallback mechanisms when health checks fail.
     fn is_healthy(&self, env: &Env) -> Result<bool, Error>;
 }
 
@@ -202,7 +428,9 @@ pub trait OracleInterface {
 /// - Feed configurations are stored but not used for price fetching
 #[derive(Debug, Clone)]
 pub struct PythOracle {
+    /// Contract address of the Pyth oracle contract
     contract_id: Address,
+    /// Vector of pre-configured Pyth price feed configurations
     feed_configurations: Vec<PythFeedConfig>,
 }
 
@@ -285,9 +513,13 @@ pub struct PythOracle {
 #[contracttype]
 #[derive(Debug, Clone)]
 pub struct PythFeedConfig {
+    /// Hexadecimal or string identifier for the Pyth price feed
     pub feed_id: String,
+    /// Human-readable asset pair symbol (e.g., "BTC/USD")
     pub asset_symbol: String,
+    /// Decimal precision for scaling raw price quotes
     pub decimals: u32,
+    /// Active flag indicating whether price quotes are currently accepted
     pub is_active: bool,
 }
 
@@ -615,12 +847,25 @@ pub struct ReflectorOracleClient<'a> {
 }
 
 impl<'a> ReflectorOracleClient<'a> {
-    /// Create a new Reflector oracle client
+    /// Create a new Reflector oracle client for a given contract address.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for contract invocation.
+    /// * `contract_id` - Address of the Reflector oracle contract.
+    ///
+    /// # Returns
+    /// A configured client that can query price data from the target oracle contract.
     pub fn new(env: &'a Env, contract_id: Address) -> Self {
         Self { env, contract_id }
     }
 
-    /// Get the latest price for an asset
+    /// Fetch the latest available price for the supplied reflector asset.
+    ///
+    /// # Arguments
+    /// * `asset` - Reflector asset identifier to query.
+    ///
+    /// # Returns
+    /// `Some(ReflectorPriceData)` when the contract responds successfully, otherwise `None`.
     pub fn lastprice(&self, asset: ReflectorAsset) -> Option<ReflectorPriceData> {
         let args = vec![self.env, asset.into_val(self.env)];
         // Reentrancy guard removed - external call protection no longer needed
@@ -630,7 +875,14 @@ impl<'a> ReflectorOracleClient<'a> {
         res
     }
 
-    /// Get price for an asset at a specific timestamp
+    /// Fetch a historical price for the supplied asset and ledger timestamp.
+    ///
+    /// # Arguments
+    /// * `asset` - Reflector asset identifier to query.
+    /// * `timestamp` - Ledger timestamp to retrieve the historical quote for.
+    ///
+    /// # Returns
+    /// `Some(ReflectorPriceData)` when a historical record exists, otherwise `None`.
     pub fn price(&self, asset: ReflectorAsset, timestamp: u64) -> Option<ReflectorPriceData> {
         let args = vec![
             self.env,
@@ -644,7 +896,15 @@ impl<'a> ReflectorOracleClient<'a> {
         res
     }
 
-    /// Get TWAP (Time-Weighted Average Price) for an asset
+    /// Get a time-weighted average price for an asset over the requested window.
+    ///
+    /// # Arguments
+    /// * `asset` - Reflector asset identifier to query.
+    /// * `records` - Number of records to include in the TWAP calculation.
+    /// * `force_refresh` - Reserved for future cache-busting behavior.
+    ///
+    /// # Returns
+    /// `Some(i128)` when a TWAP value is available, otherwise `None`.
     pub fn twap(&self, asset: ReflectorAsset, records: u32, force_refresh: bool) -> Option<i128> {
         // Build a cache key unique to this transaction
         let cache_key: (Symbol, Val, Val) = (
@@ -653,10 +913,13 @@ impl<'a> ReflectorOracleClient<'a> {
             records.into_val(self.env),
         );
         // Attempt to read from temporary storage (per-transaction cache)
-        if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(&cache_key) {
-            return cached;
+        // only when the caller hasn't requested a forced refresh.
+        if !force_refresh {
+            if let Some(cached) = self.env.storage().temporary().get::<_, Option<i128>>(&cache_key) {
+                return cached;
+            }
         }
-        // Not cached; perform contract call
+        // Not cached (or force_refresh requested); perform contract call
         let args = vec![
             self.env,
             asset.into_val(self.env),
@@ -669,7 +932,10 @@ impl<'a> ReflectorOracleClient<'a> {
         self.env.storage().temporary().set(&cache_key, &res);
         res
     }
-    /// Check if the Reflector oracle is healthy
+    /// Check whether the Reflector oracle contract responds to a basic price query.
+    ///
+    /// # Returns
+    /// `true` when the oracle responds successfully to a lightweight health probe, otherwise `false`.
     pub fn is_healthy(&self) -> bool {
         // Try to get a simple price to check if oracle is responsive
         let test_asset = ReflectorAsset::Other(Symbol::new(self.env, "XLM"));
@@ -793,19 +1059,30 @@ pub struct ReflectorOracle {
 }
 
 impl ReflectorOracle {
-    /// Create a new Reflector oracle instance
+    /// Create a new Reflector oracle instance.
+    ///
+    /// # Arguments
+    /// * `contract_id` - Address of the Reflector oracle contract.
+    ///
+    /// # Returns
+    /// A Reflector oracle wrapper that can be used through the common oracle interface.
     pub fn new(contract_id: Address) -> Self {
         Self { contract_id }
     }
 
-    /// Get the Reflector oracle contract ID
+    /// Return the contract address backing this Reflector oracle wrapper.
     pub fn contract_id(&self) -> Address {
         self.contract_id.clone()
     }
 
-    /// Parse feed ID to extract asset information
+    /// Parse a feed identifier into a reflector asset representation.
     ///
-    /// Converts feed IDs like "BTC/USD", "ETH/USD", "XLM/USD" to Reflector asset types
+    /// # Arguments
+    /// * `env` - Soroban environment used to construct fallback symbols.
+    /// * `feed_id` - Human-readable price feed identifier such as "BTC/USD".
+    ///
+    /// # Returns
+    /// `Ok(ReflectorAsset)` for supported feed identifiers, otherwise an `Error`.
     pub fn parse_feed_id(&self, env: &Env, feed_id: &String) -> Result<ReflectorAsset, Error> {
         if feed_id.is_empty() {
             // Return a default asset for empty feed IDs
@@ -842,7 +1119,14 @@ impl ReflectorOracle {
         }
     }
 
-    /// Get price from Reflector oracle with fallback mechanisms
+    /// Fetch a price from the Reflector oracle using the configured fallback behavior.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for fallback parsing.
+    /// * `feed_id` - Feed identifier to resolve into a price.
+    ///
+    /// # Returns
+    /// `Ok(price)` when a price can be resolved, otherwise an `Error`.
     pub fn get_reflector_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         // Parse the feed_id to extract asset information
         let _base_asset = self.parse_feed_id(env, feed_id)?;
@@ -853,10 +1137,10 @@ impl ReflectorOracle {
         self.get_mock_price_for_testing(env, feed_id)
     }
 
-    /// Get mock price data for testing purposes
+    /// Return deterministic mock prices for testing and local development environments.
     ///
-    /// This is called when the real oracle contract is not available,
-    /// typically in testing environments with mock contracts
+    /// This fallback is used when the real oracle contract is not available, such as
+    /// during contract tests with mocked oracle interactions.
     fn get_mock_price_for_testing(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         // Return mock prices for testing
         // These prices are designed to work with the test threshold of 2500000 (25k)
@@ -877,7 +1161,13 @@ impl ReflectorOracle {
         }
     }
 
-    /// Check if the Reflector oracle is healthy
+    /// Perform a lightweight health probe for the Reflector oracle wrapper.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used to execute the probe.
+    ///
+    /// # Returns
+    /// `Ok(true)` when the oracle responds successfully, otherwise `Ok(false)`.
     pub fn check_health(&self, env: &Env) -> Result<bool, Error> {
         let reflector_client = ReflectorOracleClient::new(env, self.contract_id.clone());
         Ok(reflector_client.is_healthy())
@@ -1097,13 +1387,21 @@ impl OracleFactory {
         Self::create_oracle(oracle_config.provider.clone(), contract_id)
     }
 
-    /// Check if a provider is supported on Stellar
-
+    /// Check whether a provider can be instantiated for the current Stellar deployment.
+    ///
+    /// # Arguments
+    /// * `provider` - Oracle provider to evaluate.
+    ///
+    /// # Returns
+    /// `true` when the provider is supported by the current configuration, otherwise `false`.
     pub fn is_provider_supported(provider: &OracleProvider) -> bool {
         provider.is_supported()
     }
 
-    /// Get the recommended oracle provider for Stellar
+    /// Get the preferred oracle provider for Stellar deployments.
+    ///
+    /// # Returns
+    /// The recommended provider for production use on the Stellar network.
     pub fn get_recommended_provider() -> OracleProvider {
         OracleProvider::reflector()
     }
@@ -1668,6 +1966,27 @@ impl OracleUtils {
         }
     }
 
+    /// Resolve conflicting oracle outcomes by preferring the fallback source.
+    ///
+    /// When the primary and fallback sources disagree, the fallback outcome is
+    /// treated as the authoritative choice to avoid acting on conflicting data.
+    /// If both outcomes agree, the primary outcome is preserved.
+    pub fn resolve_outcome_with_fallback(
+        primary_outcome: &String,
+        fallback_outcome: &String,
+        env: &Env,
+    ) -> Result<String, Error> {
+        if primary_outcome.is_empty() || fallback_outcome.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        if primary_outcome == fallback_outcome {
+            Ok(primary_outcome.clone())
+        } else {
+            Ok(fallback_outcome.clone())
+        }
+    }
+
     /// Validate oracle response
     pub fn validate_oracle_response(price: i128) -> Result<(), Error> {
         if price <= 0 {
@@ -1690,17 +2009,34 @@ pub struct BandProtocolClient<'a> {
     contract_id: Address,
 }
 
+/// Storage keys used by the Band Protocol client for contract-backed configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub(crate) enum BandDataKey {
+    /// Standard reference contract address used by the Band integration.
     StdReferenceAddress,
 }
 
 impl<'a> BandProtocolClient<'a> {
+    /// Create a Band Protocol client bound to a specific contract address.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for invoking the Band contract.
+    /// * `contract_id` - Address of the Band reference contract.
+    ///
+    /// # Returns
+    /// A configured Band Protocol client wrapper.
     pub fn new(env: &'a Env, contract_id: Address) -> Self {
         Self { env, contract_id }
     }
 
+    /// Fetch the latest price for a symbol pair from the Band reference contract.
+    ///
+    /// # Arguments
+    /// * `symbol_pair` - The base and quote symbols to query, for example `(BTC, USD)`.
+    ///
+    /// # Returns
+    /// The latest price rate reported by the Band contract, or `0` if the response is empty.
     pub fn get_price_of(&self, symbol_pair: (Symbol, Symbol)) -> u128 {
         let client = bandprotocol::Client::new(&self.env, &self.contract_id);
         // Call into the imported Band std_reference and defensively handle unexpected
@@ -1726,6 +2062,13 @@ pub struct BandProtocolOracle {
 }
 
 impl BandProtocolOracle {
+    /// Create a new Band Protocol oracle wrapper for the supplied contract address.
+    ///
+    /// # Arguments
+    /// * `contract_id` - Address of the Band Protocol reference contract.
+    ///
+    /// # Returns
+    /// A Band Protocol oracle wrapper implementing the common oracle interface.
     pub fn new(contract_id: Address) -> Self {
         Self { contract_id }
     }
@@ -1734,6 +2077,14 @@ impl BandProtocolOracle {
         self.contract_id.clone()
     }
 
+    /// Parse a human-readable feed identifier into Band symbol pairs.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used to create symbols.
+    /// * `feed_id` - Feed identifier such as "BTC/USD" or "ETH".
+    ///
+    /// # Returns
+    /// `Ok((base_symbol, quote_symbol))` when the feed is recognized, otherwise an `Error`.
     pub fn parse_feed_id(&self, env: &Env, feed_id: &String) -> Result<(Symbol, Symbol), Error> {
         if feed_id.is_empty() {
             return Err(Error::InvalidOracleConfig);
@@ -1759,7 +2110,14 @@ impl BandProtocolOracle {
         }
     }
 
-    /// Fetch price from Band client
+    /// Fetch a price from the Band client and normalize it to the contract's price type.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for feed parsing.
+    /// * `feed_id` - Feed identifier to resolve through Band.
+    ///
+    /// # Returns
+    /// `Ok(price)` when Band returns a usable rate, otherwise an `Error`.
     fn get_band_price(&self, env: &Env, feed_id: &String) -> Result<i128, Error> {
         let pair = self
             .parse_feed_id(env, feed_id)
@@ -1798,7 +2156,7 @@ impl OracleInterface for BandProtocolOracle {
 
 // ===== MODULE TESTS =====
 
-#[cfg(any())]
+#[cfg(test)]
 mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
@@ -1882,25 +2240,37 @@ mod tests {
 // ===== ORACLE WHITELIST AND VALIDATION =====
 
 /// Storage keys for oracle whitelist management
+/// Storage keys used by the oracle whitelist subsystem.
 #[derive(Clone)]
 #[contracttype]
 pub enum OracleWhitelistKey {
+    /// Marker that a specific oracle address is approved for use.
     WhitelistedOracle(Address),
+    /// Marker that a specific address is authorized to manage the whitelist.
     WhitelistAdmin(Address),
+    /// Metadata entry for a whitelisted oracle contract.
     OracleMetadata(Address),
+    /// List of all approved oracle addresses.
     OracleList,
 }
 
-/// Metadata stored for each whitelisted oracle
+/// Metadata stored for each whitelisted oracle.
 #[derive(Clone, Debug)]
 #[contracttype]
 pub struct OracleMetadata {
+    /// Oracle provider type associated with the contract.
     pub provider: OracleProvider,
+    /// Contract address that the metadata describes.
     pub contract_address: Address,
+    /// Ledger timestamp at which the oracle was added.
     pub added_at: u64,
+    /// Admin address that approved the oracle.
     pub added_by: Address,
+    /// Last ledger timestamp at which the oracle health was evaluated.
     pub last_health_check: u64,
+    /// Whether the oracle is currently active and allowed to participate.
     pub is_active: bool,
+    /// Human-readable description of the oracle deployment.
     pub description: String,
 }
 
@@ -2102,6 +2472,7 @@ impl OracleWhitelist {
         metadata: OracleMetadata,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         if env
             .storage()
@@ -2162,6 +2533,7 @@ impl OracleWhitelist {
         oracle_address: Address,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         // Check if oracle exists in whitelist
         if !env
@@ -2333,6 +2705,7 @@ impl OracleWhitelist {
         oracle_address: Address,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         // Get and update metadata
         let mut metadata: OracleMetadata = env
@@ -2371,6 +2744,7 @@ impl OracleWhitelist {
         oracle_address: Address,
     ) -> Result<(), Error> {
         Self::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
 
         let mut metadata: OracleMetadata = env
             .storage()
@@ -2437,27 +2811,31 @@ impl OracleWhitelist {
 
 // ===== ORACLE INTEGRATION MANAGER =====
 
-/// Storage keys for oracle integration
+/// Storage keys for oracle integration records.
 #[derive(Clone)]
 #[contracttype]
 pub enum OracleIntegrationKey {
-    /// Stored oracle result for a market
+    /// Stored oracle result for a market.
     OracleResult(Symbol),
-    /// Multi-oracle configuration
+    /// Multi-oracle configuration payload.
     MultiOracleConfig,
-    /// Oracle source list
+    /// Oracle source list used for consensus verification.
     OracleSources,
-    /// Market verification status
+    /// Market verification status flag.
     VerificationStatus(Symbol),
-    /// Retry count for market verification
+    /// Retry count for market verification.
     RetryCount(Symbol),
+    /// Configurable per-source weight
+    OracleWeight(Address),
 }
 
 /// Storage keys for oracle validation configuration.
 #[derive(Clone)]
 #[contracttype]
 pub enum OracleValidationKey {
+    /// Global validation settings that apply to every market.
     GlobalConfig,
+    /// Market-specific validation overrides.
     EventConfig,
 }
 
@@ -2490,6 +2868,7 @@ impl OracleValidationConfigManager {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             })
     }
 
@@ -2504,6 +2883,7 @@ impl OracleValidationConfigManager {
             config.max_confidence_bps,
             config.max_deviation_bps,
             config.max_deviation_z_multiple,
+            config.auto_pause_duration_secs,
         )?;
         env.storage()
             .persistent()
@@ -2533,6 +2913,7 @@ impl OracleValidationConfigManager {
             config.max_confidence_bps,
             config.max_deviation_bps,
             config.max_deviation_z_multiple,
+            config.auto_pause_duration_secs,
         )?;
         let mut per_event: soroban_sdk::Map<Symbol, EventOracleValidationConfig> = env
             .storage()
@@ -2556,6 +2937,7 @@ impl OracleValidationConfigManager {
                 max_deviation_bps: event_cfg.max_deviation_bps,
                 max_deviation_z_multiple: event_cfg.max_deviation_z_multiple,
                 history_size: event_cfg.history_size,
+                auto_pause_duration_secs: event_cfg.auto_pause_duration_secs,
             }
         } else {
             Self::get_global_config(env)
@@ -2633,6 +3015,11 @@ impl OracleValidationConfigManager {
                 None,
                 config.max_confidence_bps,
             );
+            if let Some(dur) = config.auto_pause_duration_secs {
+                let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                    env, market_id, dur,
+                );
+            }
             return Err(Error::OracleStale);
         }
 
@@ -2682,6 +3069,11 @@ impl OracleValidationConfigManager {
                         Some(confidence_bps_u32),
                         config.max_confidence_bps,
                     );
+                    if let Some(dur) = config.auto_pause_duration_secs {
+                        let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                            env, market_id, dur,
+                        );
+                    }
                     return Err(Error::OracleConfidenceTooWide);
                 }
             }
@@ -2726,6 +3118,11 @@ impl OracleValidationConfigManager {
                                 Some(deviation_bps),
                                 z_multiple_bps,
                             );
+                            if let Some(dur) = config.auto_pause_duration_secs {
+                                let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                                    env, market_id, dur,
+                                );
+                            }
                             return Err(Error::OracleQuoteOutlier);
                         }
                     }
@@ -2761,6 +3158,11 @@ impl OracleValidationConfigManager {
                             Some(deviation_bps),
                             config.max_confidence_bps,
                         );
+                        if let Some(dur) = config.auto_pause_duration_secs {
+                            let _ = crate::markets::MarketPauseManager::auto_pause_market(
+                                env, market_id, dur,
+                            );
+                        }
                         return Err(Error::OracleNoConsensus);
                     }
                 }
@@ -2796,6 +3198,7 @@ impl OracleValidationConfigManager {
         max_confidence_bps: u32,
         max_deviation_bps: Option<u32>,
         max_deviation_z_multiple: Option<u32>,
+        auto_pause_duration_secs: Option<u64>,
     ) -> Result<(), Error> {
         if max_staleness_secs == 0 || max_age_ledgers == 0 || max_confidence_bps == 0 {
             return Err(Error::InvalidInput);
@@ -2810,6 +3213,12 @@ impl OracleValidationConfigManager {
         }
         if let Some(z) = max_deviation_z_multiple {
             if z == 0 || z > 10_000 {
+                return Err(Error::InvalidInput);
+            }
+        }
+        if let Some(pause) = auto_pause_duration_secs {
+            if pause == 0 || pause > 604_800 {
+                // max 7 days
                 return Err(Error::InvalidInput);
             }
         }
@@ -2858,6 +3267,63 @@ impl OracleValidationConfigManager {
 pub struct OracleIntegrationManager;
 
 impl OracleIntegrationManager {
+    /// Set configurable weight for a specific oracle source
+    pub fn set_oracle_weight(
+        env: &Env,
+        admin: Address,
+        oracle: Address,
+        weight: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        OracleWhitelist::require_admin(env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(env, &admin)?;
+        env.storage()
+            .persistent()
+            .set(&OracleIntegrationKey::OracleWeight(oracle), &weight);
+        Ok(())
+    }
+
+    /// Get configured weight for an oracle source, defaults to 1
+    pub fn get_oracle_weight(env: &Env, oracle: &Address) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&OracleIntegrationKey::OracleWeight(oracle.clone()))
+            .unwrap_or(1)
+    }
+
+    /// Calculate the weighted median price safely
+    fn calculate_weighted_median(
+        _env: &Env,
+        readings: &alloc::vec::Vec<(i128, u32)>,
+        total_weight: u32,
+    ) -> i128 {
+        if readings.is_empty() {
+            return 0;
+        }
+
+        let mut sorted: alloc::vec::Vec<(i128, u32)> =
+            alloc::vec::Vec::with_capacity(readings.len());
+        for r in readings.iter() {
+            sorted.push(r.clone());
+        }
+        sorted.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+        let target = total_weight / 2;
+        let mut accumulated: u32 = 0;
+
+        for (price, weight) in sorted.iter() {
+            accumulated = accumulated.saturating_add(*weight);
+            if accumulated > target {
+                return *price;
+            }
+        }
+
+        if let Some(last) = sorted.last() {
+            last.0
+        } else {
+            0
+        }
+    }
     /// Legacy defaults (actual validation uses OracleValidationConfigManager)
     const MAX_DATA_AGE_SECONDS: u64 = 60;
     /// Minimum confidence score required (not currently enforced here)
@@ -2965,8 +3431,8 @@ impl OracleIntegrationManager {
         use crate::events::EventEmitter;
 
         let oracle_config = &market.oracle_config;
-        let mut successful_results: Vec<(i128, String)> = Vec::new(env);
-        let mut total_price: i128 = 0;
+        let mut successful_readings: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        let mut total_weight: u32 = 0;
         let mut sources_count: u32 = 0;
         let mut last_error: Option<Error> = None;
 
@@ -2982,17 +3448,12 @@ impl OracleIntegrationManager {
                 Ok(price) => {
                     // Validate price is within acceptable range
                     if Self::validate_price_range(price) {
-                        // Determine outcome for this source
-                        let outcome = OracleUtils::determine_outcome(
-                            price,
-                            oracle_config.threshold,
-                            &oracle_config.comparison,
-                            env,
-                        )?;
-
-                        successful_results.push_back((price, outcome));
-                        total_price += price;
-                        sources_count += 1;
+                        let weight = Self::get_oracle_weight(env, &oracle_address);
+                        if weight > 0 {
+                            successful_readings.push((price, weight));
+                            total_weight = total_weight.saturating_add(weight);
+                            sources_count += 1;
+                        }
                     }
                 }
                 Err(e) => {
@@ -3015,29 +3476,55 @@ impl OracleIntegrationManager {
             return Err(Error::OracleUnavailable);
         }
 
-        // Calculate average price
-        let average_price = total_price / (sources_count as i128);
+        // Calculate weighted median price
+        let median_price = Self::calculate_weighted_median(env, &successful_readings, total_weight);
 
-        // Calculate price variance (simplified - max deviation from average)
+        // Determine final outcome directly from the weighted median price
+        let final_outcome = OracleUtils::determine_outcome(
+            median_price,
+            oracle_config.threshold,
+            &oracle_config.comparison,
+            env,
+        )?;
+
+        // Calculate agreement count for confidence score and legacy events
+        let mut agreement_count: u32 = 0;
+        let mut agreement_weight: u32 = 0;
+        for (price, weight) in successful_readings.iter() {
+            let outcome = OracleUtils::determine_outcome(
+                *price,
+                oracle_config.threshold,
+                &oracle_config.comparison,
+                env,
+            )?;
+            if outcome == final_outcome {
+                agreement_count += 1;
+                agreement_weight = agreement_weight.saturating_add(*weight);
+            }
+        }
+
+        // Calculate price variance (simplified - max deviation from median)
         let mut max_deviation: i128 = 0;
-        for (price, _) in successful_results.iter() {
-            let deviation = if price > average_price {
-                price - average_price
+        for (price, _) in successful_readings.iter() {
+            let deviation = if *price > median_price {
+                *price - median_price
             } else {
-                average_price - price
+                median_price - *price
             };
             if deviation > max_deviation {
                 max_deviation = deviation;
             }
         }
 
-        // Determine consensus outcome
-        let (final_outcome, consensus_reached, agreement_count) =
-            Self::determine_consensus_outcome(env, &successful_results)?;
+        let agreement_percentage = if total_weight > 0 {
+            (agreement_weight * 100) / total_weight
+        } else {
+            0
+        };
 
-        let agreement_percentage = (agreement_count * 100) / sources_count;
+        // Check consensus threshold based on weight agreement
+        let consensus_reached = agreement_percentage >= Self::DEFAULT_CONSENSUS_THRESHOLD;
 
-        // Check consensus threshold
         if !consensus_reached {
             EventEmitter::emit_oracle_verification_failed(
                 env,
@@ -3057,7 +3544,7 @@ impl OracleIntegrationManager {
             &final_outcome,
             agreement_count,
             sources_count,
-            average_price,
+            median_price,
             max_deviation,
         );
 
@@ -3065,7 +3552,7 @@ impl OracleIntegrationManager {
         let confidence_score = Self::calculate_confidence_score(
             agreement_percentage,
             max_deviation,
-            average_price,
+            median_price,
             sources_count,
         );
 
@@ -3073,7 +3560,7 @@ impl OracleIntegrationManager {
         Ok(crate::types::OracleResult {
             market_id: market_id.clone(),
             outcome: final_outcome,
-            price: average_price,
+            price: median_price,
             threshold: oracle_config.threshold,
             comparison: oracle_config.comparison.clone(),
             provider: oracle_config.provider.clone(),
@@ -3128,39 +3615,7 @@ impl OracleIntegrationManager {
         Ok(price_data.price)
     }
 
-    /// Determine consensus outcome from multiple oracle results.
-    fn determine_consensus_outcome(
-        env: &Env,
-        results: &Vec<(i128, String)>,
-    ) -> Result<(String, bool, u32), Error> {
-        if results.is_empty() {
-            return Err(Error::OracleUnavailable);
-        }
 
-        // Count outcomes
-        let mut yes_count: u32 = 0;
-        let mut no_count: u32 = 0;
-
-        for (_, outcome) in results.iter() {
-            if outcome == String::from_str(env, "yes") {
-                yes_count += 1;
-            } else {
-                no_count += 1;
-            }
-        }
-
-        let total = results.len() as u32;
-        let (final_outcome, agreement_count) = if yes_count >= no_count {
-            (String::from_str(env, "yes"), yes_count)
-        } else {
-            (String::from_str(env, "no"), no_count)
-        };
-
-        let agreement_percentage = (agreement_count * 100) / total;
-        let consensus_reached = agreement_percentage >= Self::DEFAULT_CONSENSUS_THRESHOLD;
-
-        Ok((final_outcome, consensus_reached, agreement_count))
-    }
 
     /// Calculate confidence score based on multiple factors.
     fn calculate_confidence_score(
@@ -3386,7 +3841,7 @@ impl OracleIntegrationManager {
 
 // ===== ORACLE INTEGRATION TESTS =====
 
-#[cfg(any())]
+#[cfg(test)]
 mod oracle_integration_tests {
     use super::*;
     use crate::events::OracleValidationFailedEvent;
@@ -3425,32 +3880,62 @@ mod oracle_integration_tests {
     }
 
     #[test]
-    fn test_determine_consensus_outcome() {
+    fn test_calculate_weighted_median() {
         let env = Env::default();
 
-        // All agree on "yes"
-        let mut results: Vec<(i128, String)> = Vec::new(&env);
-        results.push_back((50_000_00, String::from_str(&env, "yes")));
-        results.push_back((50_100_00, String::from_str(&env, "yes")));
-        results.push_back((49_900_00, String::from_str(&env, "yes")));
+        // 1. Single reading
+        let mut readings_single: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        readings_single.push((100, 5));
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_single, 5), 100);
 
-        let (outcome, consensus, count) =
-            OracleIntegrationManager::determine_consensus_outcome(&env, &results).unwrap();
-        assert_eq!(outcome, String::from_str(&env, "yes"));
-        assert!(consensus);
-        assert_eq!(count, 3);
+        // 2. Even total weight, typical scenario
+        // weights: 10, 20, 30. Total weight = 60. Target = 30.
+        // prices: 100, 200, 300
+        // accumulated weights: 10 (at 100), 30 (at 200), 60 (at 300)
+        // target = 30. The first where accumulated > 30 is the last one (60).
+        let mut readings_even: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        readings_even.push((200, 20));
+        readings_even.push((100, 10));
+        readings_even.push((300, 30));
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_even, 60), 300);
 
-        // Mixed results - 2 yes, 1 no (67% agreement)
-        let mut mixed_results: Vec<(i128, String)> = Vec::new(&env);
-        mixed_results.push_back((50_000_00, String::from_str(&env, "yes")));
-        mixed_results.push_back((50_100_00, String::from_str(&env, "yes")));
-        mixed_results.push_back((49_000_00, String::from_str(&env, "no")));
+        // 3. Odd total weight
+        // weights: 10, 10, 10. Total = 30. Target = 15.
+        // prices: 100, 200, 300
+        // accumulated: 10, 20 (takes 200)
+        let mut readings_odd: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        readings_odd.push((300, 10));
+        readings_odd.push((100, 10));
+        readings_odd.push((200, 10));
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_odd, 30), 200);
+        
+        // 4. Empty readings
+        let readings_empty: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        assert_eq!(OracleIntegrationManager::calculate_weighted_median(&env, &readings_empty, 0), 0);
+    }
 
-        let (outcome, consensus, count) =
-            OracleIntegrationManager::determine_consensus_outcome(&env, &mixed_results).unwrap();
-        assert_eq!(outcome, String::from_str(&env, "yes"));
-        assert!(consensus); // 67% meets 66% threshold
-        assert_eq!(count, 2);
+    #[test]
+    fn test_resolve_outcome_with_fallback_prefers_fallback_on_disagreement() {
+        let env = Env::default();
+        let primary = String::from_str(&env, "yes");
+        let fallback = String::from_str(&env, "no");
+
+        let resolved = OracleUtils::resolve_outcome_with_fallback(&primary, &fallback, &env)
+            .unwrap();
+
+        assert_eq!(resolved, fallback);
+    }
+
+    #[test]
+    fn test_resolve_outcome_with_fallback_keeps_agreed_outcome() {
+        let env = Env::default();
+        let primary = String::from_str(&env, "yes");
+        let fallback = String::from_str(&env, "yes");
+
+        let resolved = OracleUtils::resolve_outcome_with_fallback(&primary, &fallback, &env)
+            .unwrap();
+
+        assert_eq!(resolved, primary);
     }
 
     #[test]
@@ -3514,6 +3999,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3659,6 +4146,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3703,6 +4192,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3741,6 +4232,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -3749,6 +4242,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 
@@ -3779,6 +4274,7 @@ mod oracle_integration_tests {
         let client = crate::PredictifyHybridClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let non_admin = Address::generate(&env);
+        let default_fee_pct: u32 = 200; // 2%
 
         env.mock_all_auths();
         client.initialize(&admin, &default_fee_pct, &None);
@@ -3803,6 +4299,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3842,6 +4340,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3886,6 +4386,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3929,6 +4431,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -3983,6 +4487,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None, // disabled
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4027,6 +4533,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -4036,6 +4544,8 @@ mod oracle_integration_tests {
                 max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(200),
+                max_deviation_z_multiple: None,
+                history_size: None,
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 
@@ -4070,7 +4580,7 @@ mod oracle_integration_tests {
 
 // ===== WHITELIST TESTS =====
 
-#[cfg(any())]
+#[cfg(test)]
 mod whitelist_tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
@@ -4717,15 +5227,15 @@ pub struct OracleCallbackData {
     pub signature: Bytes,
 }
 
-/// Storage keys for oracle callback authentication
+/// Storage keys for oracle callback authentication.
 #[derive(Clone)]
 #[contracttype]
 pub enum StorageKey {
-    /// Oracle nonce tracking (caller_address, nonce) -> bool
+    /// Oracle nonce tracking for replay protection keyed by caller and nonce.
     OracleNonce(Address, u64),
-    /// Oracle rate limiting (caller_address) -> timestamp
+    /// Oracle rate-limiting timestamp keyed by caller address.
     OracleRateLimit(Address),
-    /// Oracle data storage (feed_id) -> OraclePriceData
+    /// Oracle callback payload storage keyed by feed identifier.
     OracleData(String),
 }
 

@@ -260,7 +260,7 @@ fn test_place_bets_key_reusable_after_ttl_expires() {
         // evicted by advancing the ledger sequence alone; instead we verify the TTL
         // has elapsed conceptually.  The real-chain eviction is ledger-enforced.
         let stored: bool = s.env.storage().persistent().has(&dk);
-        println!("Key still present after TTL advance: {stored}");
+        // println!("Key still present after TTL advance: {stored}");
         // Whether evicted or not, the TTL should be ≤ 0 relative to the advance.
     });
 }

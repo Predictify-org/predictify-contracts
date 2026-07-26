@@ -42,7 +42,7 @@ use crate::err::Error;
 ///
 /// Rationale: Used as denominator for fee percentage calculations.
 /// Represented as basis points * 100 for precision (e.g., 250 = 2.5%).
-pub const PERCENTAGE_DENOMINATOR: i128 = 100;
+pub const PERCENTAGE_DENOMINATOR: i128 = 10000;
 
 /// Maximum market duration in days (365)
 ///
@@ -370,6 +370,18 @@ pub const ORACLE_TIMEOUT_SECONDS: u64 = 30;
 
 // ===== MONITORING CONSTANTS =====
 
+/// Oracle health degradation threshold — consecutive bad samples needed to flip from Working to Degraded.
+///
+/// Higher values reduce flapping but delay detection of real issues.
+/// Safe range: 2–10.  Defaults trade off promptness vs stability.
+pub const ORACLE_HEALTH_DEGRADED_THRESHOLD: u32 = 3;
+
+/// Oracle health recovery threshold — consecutive good samples needed to flip from Degraded back to Working.
+///
+/// Higher values prevent premature recovery after a transient blip.
+/// Safe range: 2–10.  Should be >= the degraded threshold for stability.
+pub const ORACLE_HEALTH_RECOVERY_THRESHOLD: u32 = 3;
+
 /// Maximum number of alerts retained in the monitoring queue (FIFO, oldest dropped first).
 ///
 /// When the queue is full and a new alert arrives, the oldest entry is evicted and
@@ -379,7 +391,7 @@ pub const ORACLE_TIMEOUT_SECONDS: u64 = 30;
 ///
 /// Safe range: 10–1000.  Values below 10 risk dropping legitimate alerts under
 /// normal load; values above 1000 increase per-call storage I/O noticeably.
-pub const MONITOR_QUEUE_CAP: u32 = 100;
+pub const MONITOR_QUEUE_CAP: u32 = 10;
 
 // ===== STORAGE CONSTANTS =====
 

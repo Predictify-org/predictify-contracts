@@ -22,6 +22,12 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    IdempotentBatchAlreadyApplied = 660,
+    /// Reason table has reached its maximum capacity of 256 entries.
+    ReasonTableFull = 670,
+    Overflow = 672,
+    MaxBetCapExceeded = 673,
+    InvalidCap = 674,
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.
@@ -145,6 +151,8 @@ pub enum Error {
     /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
     /// This prevents silently inflated or deflated stakes via normalize_amount.
     AssetDecimalsMismatch = 439,
+    /// A per-market admin action was attempted before the configured timelock period elapsed.
+    AdminActionTimelocked = 443,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.
@@ -193,8 +201,8 @@ pub enum Error {
     // ===== VALIDATION ERRORS (435-437) =====
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
     DuplicateMarketId = 441,
-    /// Override replay detected. Nonce has already been used.
-    ReplayedOverride = 442,
+    // `ReplayedOverride` is defined once below (= 526); the duplicate that lived
+    // here (= 442) was removed to fix E0428.
 
     // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
@@ -227,6 +235,12 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
+    /// A place_bets batch with this idempotency key has already been successfully applied.
+    IdempotentBatchAlreadyApplied = 509,
+    /// Force-resolve idempotency key has already been used. Use a new unique key.
+    ForceResolveReplayed = 517,
+    /// Force-resolve reason is empty. Every force-resolve must be justified.
+    ForceResolveReasonEmpty = 518,
     /// No pending fee config commit was found for reveal or apply.
     NoPendingFeeCommit = 519,
     /// Fee config reveal was attempted too early (before timelock expiry).
@@ -242,9 +256,10 @@ pub enum Error {
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
     /// An admin override nonce was replayed; reject to prevent replay attacks.
-    ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
+    /// Maximum number of unique participants has been reached for this market.
+    MaxParticipantsReached = 528,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -782,6 +797,7 @@ impl ErrorHandler {
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
+            Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
             Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
         }
@@ -1364,6 +1380,11 @@ impl ErrorHandler {
                 ErrorCategory::Financial,
                 RecoveryStrategy::Retry,
             ),
+            Error::BetExceedsCap => (
+                ErrorSeverity::Low,
+                ErrorCategory::Financial,
+                RecoveryStrategy::NoRecovery,
+            ),
             Error::OperationWouldExceedBudget => (
                 ErrorSeverity::Critical,
                 ErrorCategory::System,
@@ -1478,7 +1499,7 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
-            Error::InsufficientStorageRent => "Insufficient storage rent for persistent key allocation",
+            Error::InsufficientStorageRentBudget => "Insufficient storage rent for persistent key allocation",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::GasBudgetExceeded => "Gas budget exceeded",
@@ -1507,6 +1528,7 @@ impl Error {
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
             Error::FeeExceedsMax => "Fee is above the acceptable threshold",
+            Error::BetExceedsCap => "Bet amount exceeds the per-market maximum bet cap",
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1563,6 +1585,7 @@ impl Error {
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
             Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            _ => "An unspecified error occurred.",
         }
     }
 
@@ -1618,6 +1641,7 @@ impl Error {
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
             Error::FeeExceedsMax => "FEE_ABOVE_ACCEPTABLE",
+            Error::BetExceedsCap => "BET_EXCEEDS_CAP",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
@@ -1672,6 +1696,7 @@ impl Error {
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
             Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+            _ => "UNSPECIFIED_ERROR",
         }
     }
 }
