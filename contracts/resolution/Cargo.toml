@@ -13,3 +13,8 @@ soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+predictify-hybrid = { path = "../predictify-hybrid" }
+
+[[test]]
+name = "gas_snap"
+path = "tests/gas_snap.rs"
