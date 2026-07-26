@@ -1230,6 +1230,81 @@ pub struct OracleHealthStatusEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a staleness divergence is detected across multiple oracle sources
+/// during cross-oracle consensus verification.
+///
+/// When fetching prices from several oracles for the same market, the contract compares
+/// each source's `publish_time` against the most-recent timestamp observed.  If the gap
+/// exceeds the configured threshold the event is emitted **before** deciding whether to
+/// include the stale source in the consensus calculation.
+///
+/// # Staleness Semantics
+///
+/// * `freshest_timestamp` – the largest `publish_time` seen among all sources polled
+///   in this verification round.
+/// * `stale_timestamp`    – the `publish_time` of the source that lagged behind.
+/// * `staleness_gap_secs` – `freshest_timestamp - stale_timestamp`.
+/// * `max_staleness_secs` – the threshold configured via
+///   [`OracleValidationConfigManager`] at the time of detection.
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String, Address};
+/// # use predictify_hybrid::events::CrossOracleStalenessEvent;
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+/// # let oracle_addr = Address::generate(&env);
+///
+/// let event = CrossOracleStalenessEvent {
+///     market_id: Symbol::new(&env, "btc_50k"),
+///     stale_oracle: oracle_addr.clone(),
+///     stale_provider: String::from_str(&env, "Reflector"),
+///     feed_id: String::from_str(&env, "BTC/USD"),
+///     freshest_timestamp: 1_700_000_120,
+///     stale_timestamp: 1_700_000_000,
+///     staleness_gap_secs: 120,
+///     max_staleness_secs: 60,
+///     sources_total: 3,
+///     nonce: 1,
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+///
+/// # Integration Points
+///
+/// * **Monitoring**: Alert on repeated staleness across the same oracle address.
+/// * **Analytics**: Track which oracle sources lag most often.
+/// * **Dispute Evidence**: Provide concrete data when a resolution is contested.
+/// * **Auto-pause**: Combine with [`OracleValidationConfigManager`]'s
+///   `auto_pause_duration_secs` to pause affected markets automatically.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CrossOracleStalenessEvent {
+    /// Market being resolved when the divergence was detected.
+    pub market_id: Symbol,
+    /// Contract address of the oracle that returned stale data.
+    pub stale_oracle: Address,
+    /// Human-readable provider name of the stale oracle (e.g. "Reflector").
+    pub stale_provider: String,
+    /// Feed identifier that was queried (e.g. "BTC/USD").
+    pub feed_id: String,
+    /// Most-recent `publish_time` observed across all sources in this round.
+    pub freshest_timestamp: u64,
+    /// `publish_time` returned by the lagging oracle.
+    pub stale_timestamp: u64,
+    /// `freshest_timestamp - stale_timestamp` in seconds.
+    pub staleness_gap_secs: u64,
+    /// Configured maximum allowed cross-oracle staleness gap in seconds.
+    pub max_staleness_secs: u64,
+    /// Total number of oracle sources polled in this verification round.
+    pub sources_total: u32,
+    /// Replay-protection nonce for this topic.
+    pub nonce: u64,
+    /// Ledger timestamp when the event was emitted.
+    pub timestamp: u64,
+}
+
 /// Extension requested event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3374,6 +3449,56 @@ impl EventEmitter {
             reason,
             &String::from_str(env, "validation_failed"),
         );
+    }
+
+    /// Emit cross-oracle staleness event.
+    ///
+    /// Called during multi-oracle consensus verification when one oracle's
+    /// `publish_time` lags behind the freshest timestamp by more than the
+    /// configured threshold.  The event is purely informational — the caller
+    /// decides whether to discard the stale source from the consensus set.
+    ///
+    /// # Parameters
+    ///
+    /// - `env`                  – Soroban environment.
+    /// - `market_id`            – Market being resolved.
+    /// - `stale_oracle`         – Contract address of the lagging oracle.
+    /// - `stale_provider`       – Human-readable provider name.
+    /// - `feed_id`              – Feed identifier that was queried.
+    /// - `freshest_timestamp`   – Largest `publish_time` seen in this round.
+    /// - `stale_timestamp`      – `publish_time` from the lagging oracle.
+    /// - `staleness_gap_secs`   – `freshest_timestamp − stale_timestamp`.
+    /// - `max_staleness_secs`   – Configured maximum cross-oracle gap.
+    /// - `sources_total`        – Total oracles polled in this round.
+    pub fn emit_cross_oracle_staleness(
+        env: &Env,
+        market_id: &Symbol,
+        stale_oracle: &Address,
+        stale_provider: &String,
+        feed_id: &String,
+        freshest_timestamp: u64,
+        stale_timestamp: u64,
+        staleness_gap_secs: u64,
+        max_staleness_secs: u64,
+        sources_total: u32,
+    ) {
+        let event = CrossOracleStalenessEvent {
+            market_id: market_id.clone(),
+            stale_oracle: stale_oracle.clone(),
+            stale_provider: stale_provider.clone(),
+            feed_id: feed_id.clone(),
+            freshest_timestamp,
+            stale_timestamp,
+            staleness_gap_secs,
+            max_staleness_secs,
+            sources_total,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("x_stale").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("x_stale"), &event);
+        env.events()
+            .publish((symbol_short!("x_stale"), market_id.clone()), event);
     }
 
     /// Emit oracle consensus reached event
