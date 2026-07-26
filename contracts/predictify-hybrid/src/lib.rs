@@ -173,6 +173,8 @@ mod force_resolve_tests;
 mod analytics_snapshot_tests;
 #[cfg(test)]
 mod property_based_tests;
+#[cfg(test)]
+mod betting_invariants;
 mod analytics_snapshot;
 
 #[cfg(test)]
