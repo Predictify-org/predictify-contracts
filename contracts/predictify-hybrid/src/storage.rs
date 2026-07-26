@@ -159,6 +159,12 @@ pub enum DataKey {
     MaxBetCap,
     /// Per-user total stake in a market.
     UserStake(Address, Symbol),
+    /// State for oracle admin cooldowns
+    OracleAdminCooldownState,
+    /// State for multisig rotation cooldowns
+    MultisigRotationState,
+    /// State for betting admin cooldowns
+    BettingAdminCooldownState,
 }
 
 /// Storage format version for migration tracking

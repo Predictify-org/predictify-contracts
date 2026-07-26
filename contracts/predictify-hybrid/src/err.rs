@@ -260,6 +260,10 @@ pub enum Error {
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
     MaxParticipantsReached = 528,
+    /// Oracle admin action was attempted while the cooldown is active.
+    OracleAdminCooldownActive = 529,
+    /// Betting admin action was attempted while the cooldown is active.
+    BettingAdminCooldownActive = 530,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

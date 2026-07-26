@@ -1749,6 +1749,56 @@ impl OracleAdminCooldownManager {
     }
 }
 
+/// State for betting admin cooldowns
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct BettingAdminCooldownState {
+    pub cooldown_seconds: u64,
+    pub last_action_timestamp: u64,
+}
+
+pub struct BettingAdminCooldownManager;
+
+impl BettingAdminCooldownManager {
+    pub fn get_state(env: &Env) -> BettingAdminCooldownState {
+        env.storage().persistent().get(&crate::storage::DataKey::BettingAdminCooldownState)
+            .unwrap_or(BettingAdminCooldownState {
+                cooldown_seconds: 0,
+                last_action_timestamp: 0,
+            })
+    }
+
+    pub fn set_cooldown(env: &Env, admin: &Address, cooldown_seconds: u64) -> Result<(), Error> {
+        admin.require_auth();
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::ConfigAdmin)?;
+        let mut state = Self::get_state(env);
+        state.cooldown_seconds = cooldown_seconds;
+        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
+        Ok(())
+    }
+
+    pub fn enforce_cooldown(env: &Env, admin: &Address) -> Result<(), Error> {
+        let mut state = Self::get_state(env);
+        if state.cooldown_seconds == 0 {
+            return Ok(());
+        }
+        let current_time = env.ledger().timestamp();
+        
+        let cooldown_end = state.last_action_timestamp.checked_add(state.cooldown_seconds)
+            .ok_or(Error::Overflow)?;
+            
+        if current_time < cooldown_end {
+            EventEmitter::emit_betting_admin_cooldown_hit(env, admin, state.last_action_timestamp, state.cooldown_seconds);
+            return Err(Error::BettingAdminCooldownActive);
+        }
+        
+        state.last_action_timestamp = current_time;
+        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
+        
+        Ok(())
+    }
+}
+
 pub struct MultisigManager;
 
 impl MultisigManager {
