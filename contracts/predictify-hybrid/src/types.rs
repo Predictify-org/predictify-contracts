@@ -1935,6 +1935,8 @@ pub struct OraclePriceData {
     pub price: i128,
     /// Publish time of the oracle data (unix timestamp seconds)
     pub publish_time: u64,
+    /// Publish ledger sequence of the oracle data
+    pub publish_ledger: u32,
     /// Confidence interval (absolute) in the same base units as `price`
     pub confidence: Option<i128>,
     /// Exponent/decimals scale used by the oracle (e.g., Pyth exponent)
