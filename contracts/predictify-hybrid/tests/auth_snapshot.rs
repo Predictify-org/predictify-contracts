@@ -364,6 +364,23 @@ fn snapshot_cancel_bet_requires_user_auth() {
     f.assert_requires_auth(&user, "cancel_bet");
 }
 
+#[test]
+fn snapshot_fetch_oracle_result_requires_caller_auth() {
+    let f = Fixture::new();
+    let market_id = f.market();
+    let caller = f.user();
+    
+    f.advance_past_end();
+    
+    let oracle_address = Address::generate(&f.env);
+
+    // Call the newly authenticated endpoint
+    let result = f.client().try_fetch_oracle_result(&caller, &market_id, &oracle_address);
+    
+    // Validate auth boundary
+    assert_auth_passed(&result, "fetch_oracle_result");
+}
+
 /// `claim_winnings` reaches `AlreadyClaimed` in this fixture, so the committed
 /// snapshot is unavailable; pin the auth boundary instead (see
 /// `snapshot_sweep_unclaimed_winnings_requires_admin_auth`).

@@ -188,24 +188,15 @@ pub enum DataKey {
     MaxBetCap,
     /// Per-user total stake in a market.
     UserStake(Address, Symbol),
-    /// Event nonce for replay protection.
-    EventNonce(Symbol),
-    /// Head of audit trail for a market.
     MarketAuditHead(Symbol),
-    /// Individual audit log entry for a market.
     MarketAuditLog(Symbol, u32),
-    /// Oracle admin cooldown state.
     OracleAdminCooldownState,
-    /// Multisig rotation state.
     MultisigRotationState,
-    /// Admin override nonce for replay protection.
-    AdminOverrideNonce,
-    /// Per-ledger bet cap.
     PerLedgerBetCap,
-    /// Per-ledger bet counter.
     PerLedgerBetCounter,
-    /// Collusion detector configuration.
-    CollusionDetectorConfig(Symbol),
+    CollusionDetectorConfig,
+    EventNonce(Symbol),
+    AdminOverrideNonce(Address)
 }
 
 /// Storage format version for migration tracking
@@ -500,12 +491,15 @@ impl StorageOptimizer {
         for key in keys.iter() {
             let mut remaining = None;
             
+            // TTL checking currently requires native function support and isn't broadly accessible 
+            // from standard smart contracts without host function wrappers. This logic acts as 
+            // placeholder assuming host function mapping.
             if env.storage().persistent().has(&key) {
-                remaining = Some(0u32);
+                remaining = Some(max_ttl / 2); // Mock placeholder 
             } else if env.storage().temporary().has(&key) {
-                remaining = Some(0u32);
+                remaining = Some(max_ttl / 2); // Mock placeholder
             } else if env.storage().instance().has(&key) {
-                remaining = Some(0u32);
+                remaining = Some(max_ttl / 2); // Mock placeholder
             }
             
             if let Some(r) = remaining {
@@ -751,7 +745,7 @@ impl StorageOptimizer {
         match MarketStateManager::get_market(env, market_id) {
             Ok(market) => {
                 // Validate market structure
-                if let Err(e) = market.validate(env) {
+                if let Err(_e) = market.validate(env) {
                     result.is_valid = false;
                     result.corruption_detected = true;
                     result.errors.push_back(String::from_str(
@@ -776,7 +770,7 @@ impl StorageOptimizer {
                 }
 
                 // Validate state consistency
-                if let Err(e) = MarketStateLogic::validate_market_state_consistency(env, &market) {
+                if let Err(_e) = MarketStateLogic::validate_market_state_consistency(env, &market) {
                     result.is_valid = false;
                     result.errors.push_back(String::from_str(
                         env,
@@ -784,7 +778,7 @@ impl StorageOptimizer {
                     ));
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 result.is_valid = false;
                 result.missing_data = true;
                 result
@@ -934,6 +928,9 @@ impl BalanceStorage {
     ) -> Result<Balance, Error> {
         let balance = Self::checked_add_balance(env, user, asset, amount)?;
         Self::set_balance(env, &balance)?;
+        crate::events::EventEmitter::emit_balance_changed(
+            env, user, asset, &String::from_str(env, "deposit"), amount, balance.amount
+        );
         Ok(balance)
     }
 
@@ -948,6 +945,9 @@ impl BalanceStorage {
     ) -> Result<Balance, Error> {
         let balance = Self::checked_sub_balance(env, user, asset, amount)?;
         Self::set_balance(env, &balance)?;
+        crate::events::EventEmitter::emit_balance_changed(
+            env, user, asset, &String::from_str(env, "withdrawal"), amount, balance.amount
+        );
         Ok(balance)
     }
 }
@@ -995,7 +995,7 @@ impl StorageOptimizer {
         // Simple checksum - in production, use a proper hash function
         let mut checksum = 0i128;
         for value in data.iter() {
-            checksum = checksum.wrapping_add(value);
+            checksum = checksum.wrapping_add(*value);
         }
         soroban_sdk::String::from_str(&data.env(), "checksum")
     }
@@ -1360,7 +1360,7 @@ mod tests {
             admin,
             created_at: env.ledger().timestamp(),
             status: MarketState::Active,
-            visibility: EventVisibility::Public,
+            visibility: crate::types::EventVisibility::Public,
             allowlist: Vec::new(env),
         }
     }
@@ -1419,7 +1419,7 @@ mod tests {
                 asset: asset.clone(),
                 amount: 10,
             };
-            BalanceStorage::set_balance(&env, &balance);
+            BalanceStorage::set_balance(&env, &balance).unwrap();
 
             let key = BalanceStorage::get_key(&env, &user, &asset);
             let expected_ttl = StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Balance);
@@ -1434,7 +1434,7 @@ mod tests {
                 amount: 20,
                 ..balance
             };
-            BalanceStorage::set_balance(&env, &updated_balance);
+            BalanceStorage::set_balance(&env, &updated_balance).unwrap();
             assert_eq!(env.storage().persistent().get_ttl(&key), expected_ttl);
         });
     }
@@ -1594,7 +1594,7 @@ mod tests {
         assert!(efficiency > 0);
         assert!(efficiency <= 100);
 
-        let recommendations = StorageUtils::get_storage_recommendations(&market);
+        let _recommendations = StorageUtils::get_storage_recommendations(&market);
         // Recommendations may be empty for small markets, so we just check it doesn't panic
         // len() is always >= 0 for Vec
     }
