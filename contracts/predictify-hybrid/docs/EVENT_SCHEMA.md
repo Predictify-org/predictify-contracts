@@ -44,6 +44,13 @@ contract-events RPC topic filters without decoding the payload.
 | Event | Topic | Stability |
 |---|---|---|
 | `MarketCreatedEvent` | `("mkt_crt", market_id)` | 🟢 |
+| `MarketActivatedEvent` | `("mkt_act", market_id)` | 🟢 |
+| `MarketEndedEvent` | `("mkt_end", market_id)` | 🟢 |
+| `MarketDisputeStartedEvent` | `("mkt_disp", market_id)` | 🟢 |
+| `MarketCancelledEvent` | `("mkt_canc", market_id)` | 🟢 |
+| `MarketOutcomeSetEvent` | `("mkt_outc", market_id)` | 🟢 |
+| `MarketPausedEvent` | `("mkt_paus", market_id)` | 🟢 |
+| `MarketResumedEvent` | `("mkt_res", market_id)` | 🟢 |
 | `EventCreatedEvent` | `("evt_crt", event_id)` | 🟢 |
 | `MarketClosedEvent` | `("mkt_close", market_id)` | 🟢 |
 | `MarketFinalizedEvent` | `("mkt_final", market_id)` | 🟢 |
@@ -67,6 +74,81 @@ Emitted immediately after a new prediction market is created.
 | `outcomes` | `Vec<String>` | Available outcomes (≥ 2) |
 | `admin` | `Address` | Market admin |
 | `end_time` | `u64` | Unix timestamp, market close |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketActivatedEvent`
+**NEW** — Emitted when a market transitions to the `Active` state, indicating it is ready for participation.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `admin` | `Address` | Market administrator |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketEndedEvent`
+**NEW** — Emitted when a market transitions to the `Ended` state after the voting deadline passes.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `ended_at` | `u64` | Unix timestamp when market ended |
+| `total_staked` | `i128` | Total amount staked in market |
+| `participant_count` | `u32` | Number of unique participants |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketDisputeStartedEvent`
+**NEW** — Emitted when a market enters the `Disputed` state after a participant challenges the result.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `dispute_initiator` | `Address` | Address initiating the dispute |
+| `dispute_stake` | `i128` | Amount staked to initiate dispute |
+| `disputed_outcome` | `String` | Outcome being disputed |
+| `dispute_end_time` | `u64` | Unix timestamp when dispute window closes |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketCancelledEvent`
+**NEW** — Emitted when a market is cancelled by an administrator or due to unforeseen circumstances.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `admin` | `Address` | Admin who initiated cancellation |
+| `reason` | `String` | Reason for cancellation |
+| `total_refunded` | `i128` | Total amount refunded to participants |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketOutcomeSetEvent`
+**NEW** — Emitted when a market outcome is determined and winner pool is calculated.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `winning_outcomes` | `Vec<String>` | Outcome(s) that won (may be multiple if tied) |
+| `payout_pool` | `i128` | Total amount available for winners |
+| `winner_count` | `u32` | Number of winning participants |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketPausedEvent`
+**NEW** — Emitted when a market is paused, either by circuit breaker or admin action.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `reason` | `String` | Reason for pause (e.g., "Circuit breaker triggered", "Maintenance") |
+| `is_circuit_breaker` | `bool` | Whether pause was triggered automatically |
+| `paused_by` | `Address` | Address that initiated or triggered the pause |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketResumedEvent`
+**NEW** — Emitted when a paused market resumes normal operation.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `resumed_by` | `Address` | Address that resumed the market |
+| `reason` | `String` | Reason for resumption |
 | `timestamp` | `u64` | Emission timestamp |
 
 ### `EventCreatedEvent`
