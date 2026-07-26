@@ -52,10 +52,7 @@ mod resolution_event_ordering_tests;
 mod oracle_validation_tests;
 mod resolution;
 mod storage;
-mod deprecated;
-pub use deprecated::{DeprecatedEntry, DeprecatedRegistry, MAX_REGISTRY_ENTRIES};
-#[cfg(test)]
-mod deprecated_tests;
+mod tokens;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -312,11 +309,8 @@ impl PredictifyHybrid {
         // Initialize admin (includes re-initialization check)
         AdminInitializer::initialize(&env, &admin)?;
 
-        // Initialize circuit breaker defaults required by write-gated entrypoints.
-        match crate::circuit_breaker::CircuitBreaker::initialize(&env) {
-            Ok(_) => (),
-            Err(e) => panic_with_error!(env, e),
-        }
+        // Initialize the circuit breaker so write operations are allowed by default.
+        crate::circuit_breaker::CircuitBreaker::initialize(&env)?;
 
         // Store platform fee configuration in persistent storage
         env.storage()
@@ -351,6 +345,7 @@ impl PredictifyHybrid {
                 .persistent()
                 .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
         } else {
+            // Initialize the token registry with default supported assets.
             crate::tokens::TokenRegistry::initialize_with_defaults(&env);
         }
 

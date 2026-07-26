@@ -99,7 +99,7 @@ impl GasTestContext {
 
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
+        client.initialize(&admin, &None, &None);
 
         // Initialize configuration
         env.as_contract(&contract_id, || {
@@ -180,7 +180,7 @@ fn test_gas_initialize_baseline() {
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
-    client.initialize(&\1, &None, &None);
+    client.initialize(&admin, &None, &None);
 
     // Verify: Admin stored correctly
     let stored_admin = env.as_contract(&contract_id, || {

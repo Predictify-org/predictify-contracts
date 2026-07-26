@@ -35,22 +35,46 @@ mod dispute_outcome_tally_properties {
     use soroban_sdk::{Env, Symbol};
     use alloc::format;
 
-    fn completed_voting(
-        env: &Env,
-        dispute_id: Symbol,
-        support: i128,
-        against: i128,
-    ) -> DisputeVoting {
-        DisputeVoting {
-            dispute_id,
-            voting_start: 0,
-            voting_end: 1,
-            total_votes: u32::from(support > 0) + u32::from(against > 0),
-            support_votes: u32::from(support > 0),
-            against_votes: u32::from(against > 0),
-            total_support_stake: support,
-            total_against_stake: against,
-            status: DisputeVotingStatus::Completed,
+impl PropertyBasedTestSuite {
+    /// Initialize the test suite with contract and test accounts
+    pub fn new() -> Self {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let contract_id = env.register(PredictifyHybrid, ());
+        let client = PredictifyHybridClient::new(&env, &contract_id);
+        client.initialize(&admin, &None, &None);
+
+        // Setup Token
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_id = token_contract.address();
+
+        // Store TokenID
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_id);
+        });
+
+        // Generate multiple test users for comprehensive testing
+        let users: StdVec<Address> = (0..10).map(|_| Address::generate(&env)).collect();
+
+        // Mint tokens to admin and users
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+        stellar_client.mint(&admin, &1_000_000_000_000); // Mint ample funds
+
+        for user in &users {
+            stellar_client.mint(user, &1_000_000_000_000);
+        }
+
+        Self {
+            env,
+            contract_id,
+            admin,
+            users,
+            token_id,
         }
     }
 
