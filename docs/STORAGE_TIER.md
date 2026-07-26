@@ -114,12 +114,9 @@ picks up both the `StorageConfig` override and the `max_ttl()` clamp.
 These are accurate as of this document and are recorded rather than corrected,
 since this change is documentation-only.
 
-1. **`DataKey` does not compile.** `AdminOverrideNonce(Address)` is declared
-   twice in `storage.rs` (lines 74 and 89), which is `E0428`. Additionally
-   `AntiGriefFloor`, `GlobalConfig`, and `PlaceBetsIdem` are constructed in
-   `disputes.rs`, governance tests, and `bets.rs` respectively but are absent
-   from the enum. The tiers recorded above for those four keys reflect the
-   call sites that use them, not a declaration that currently exists.
+1. **~~`DataKey` does not compile.~~ Resolved.** `AdminOverrideNonce(Address)`,
+   `EventNonce(Symbol)`, `AntiGriefFloor`, `GlobalConfig`, and `PlaceBetsIdem`
+   are now declared in the `DataKey` enum and compile cleanly.
 
 2. **`BalanceStorage::update_balance` bypasses the tier helpers.** It calls
    `extend_ttl(&key, 535680, 535680)` with hardcoded literals rather than

@@ -3219,26 +3219,12 @@ impl PredictifyHybrid {
         market.state = crate::types::MarketState::Resolved;
         markets::MarketStateManager::update_market(&env, &market_id, &market);
 
-        // Append an immutable audit record
-        // Validate and store the admin override nonce for replay protection
-        let key = DataKey::AdminOverrideNonce(admin.clone());
-        let mut stored_nonce: u64 = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(0);
-
-        if provided_nonce <= stored_nonce {
-            return Err(Error::ReplayedOverride);
-        }
-
-        // Update the nonce for this admin
-        env.storage().persistent().set(&key, &provided_nonce);
-        env.storage().persistent().extend_ttl(
-            &key,
-            env.storage().max_ttl(),
-            env.storage().max_ttl(),
-        );
+        // Validate and consume the per-admin nonce for replay protection
+        crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+            &env,
+            &admin,
+            provided_nonce,
+        )?;
 
         // Append an immutable audit record with the nonce for replay protection
         let mut details = Map::new(&env);
