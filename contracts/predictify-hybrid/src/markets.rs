@@ -3591,6 +3591,8 @@ mod tests {
 pub struct MarketPauseManager;
 
 impl MarketPauseManager {
+    const MIN_UNPAUSE_COOLOFF_SECONDS: u64 = 3600;
+
     /// Maximum allowed pause duration in hours (7 days)
     const MAX_PAUSE_DURATION_HOURS: u32 = 168;
 
@@ -3698,6 +3700,13 @@ impl MarketPauseManager {
     /// * `Error::Unauthorized` - Caller is not an authorized administrator
     /// * `Error::MarketNotFound` - Market doesn't exist
     /// * `Error::InvalidState` - Market is not currently paused
+    /// * `Error::CooloffActive` - The minimum cool-off period has not elapsed yet
+    ///
+    /// # Cool-off Period
+    ///
+    /// The manager enforces a minimum cool-off period before a manually paused market
+    /// can be resumed. If `resume_market` is called before this period elapses, it will
+    /// return `Error::CooloffActive`.
     ///
     /// # Example
     ///
@@ -3725,11 +3734,14 @@ impl MarketPauseManager {
             return Err(Error::InvalidState);
         }
 
-        // Enforce 7-day cool-off period before manual unpausing/resuming
-        let current_time = env.ledger().timestamp();
-        let cool_off_seconds = 7 * 24 * 3600; // 7 days in seconds
-        if current_time < pause_info.paused_at.saturating_add(cool_off_seconds) {
-            return Err(Error::CoolOffPeriodActive);
+        let elapsed = env
+            .ledger()
+            .timestamp()
+            .checked_sub(pause_info.paused_at)
+            .ok_or(Error::InvalidState)?;
+
+        if elapsed < Self::MIN_UNPAUSE_COOLOFF_SECONDS {
+            return Err(Error::CooloffActive);
         }
 
         env.storage().persistent().remove(&market_id);
