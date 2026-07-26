@@ -148,6 +148,8 @@ pub enum Error {
     OperationWouldExceedBudget = 418,
     /// Admin address has not been set. Contract initialization is incomplete.
     AdminNotSet = 419,
+    /// The minimum cool-off period has not elapsed yet.
+    CooloffActive = 444,
     /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
     /// This prevents silently inflated or deflated stakes via normalize_amount.
     AssetDecimalsMismatch = 439,

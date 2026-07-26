@@ -88,6 +88,8 @@ mod override_audit_tests;
 mod market_audit_tests;
 #[cfg(test)]
 mod test_audit_trail;
+#[cfg(test)]
+mod pause_cooloff_tests;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
