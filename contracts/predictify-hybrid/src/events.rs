@@ -7,7 +7,6 @@ use crate::config::Environment;
 use crate::err::Error;
 use crate::types::OracleProvider;
 
-// Define AdminRole locally since it's not available in the crate root
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdminRole {
     Owner,
@@ -15,7 +14,6 @@ pub enum AdminRole {
     Moderator,
 }
 
-/// Comprehensive event system for Predictify Hybrid contract
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketCreatedEvent {
@@ -968,76 +966,6 @@ impl EventSchemaRegistry {
     }
 }
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminOverrideEvent {
-    pub market_id: Symbol,
-    pub admin: Address,
-    pub old_result: String,
-    pub new_result: String,
-    pub reason: String,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ForceResolvedEvent {
-    pub market_id: Symbol,
-    pub admin: Address,
-    pub outcome: String,
-    pub reason: String,
-    pub idempotency_key: String,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeConfigQueuedEvent {
-    pub admin: Address,
-    pub eta: u64,
-    pub platform_fee_percentage: i128,
-    pub creation_fee: i128,
-    pub min_fee_amount: i128,
-    pub max_fee_amount: i128,
-    pub collection_threshold: i128,
-    pub fees_enabled: bool,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeConfigAppliedEvent {
-    pub admin: Address,
-    pub platform_fee_percentage: i128,
-    pub creation_fee: i128,
-    pub min_fee_amount: i128,
-    pub max_fee_amount: i128,
-    pub collection_threshold: i128,
-    pub fees_enabled: bool,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeConfigCancelledEvent {
-    pub admin: Address,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeprecatedCall {
-    pub caller: Address,
-    pub entrypoint: Symbol,
-    pub nonce: u64,
-    pub timestamp: u64,
-}
-
 pub struct EventEmitter;
 
 impl EventEmitter {
@@ -1065,9 +993,7 @@ impl EventEmitter {
         env.events().publish((symbol_short!("mkt_crt"), market_id.clone()), event);
     }
 
-    pub fn emit_fallback_used(
-        env: &Env, market_id: &Symbol, primary_oracle: &Address, fallback_oracle: &Address,
-    ) {
+    pub fn emit_fallback_used(env: &Env, market_id: &Symbol, primary_oracle: &Address, fallback_oracle: &Address) {
         let event = FallbackUsedEvent {
             market_id: market_id.clone(),
             primary_oracle: primary_oracle.clone(),
@@ -1080,10 +1006,7 @@ impl EventEmitter {
     }
 
     pub fn emit_resolution_timeout(env: &Env, market_id: &Symbol, timeout_timestamp: u64) {
-        let event = ResolutionTimeoutEvent {
-            market_id: market_id.clone(),
-            timeout_timestamp,
-        };
+        let event = ResolutionTimeoutEvent { market_id: market_id.clone(), timeout_timestamp };
         Self::store_event(env, &symbol_short!("res_tmo"), &event);
         env.events().publish((symbol_short!("res_tmo"), market_id.clone()), event);
     }
@@ -1107,10 +1030,7 @@ impl EventEmitter {
 
     pub fn emit_vote_cast(env: &Env, market_id: &Symbol, voter: &Address, outcome: &String, stake: i128) {
         let event = VoteCastEvent {
-            market_id: market_id.clone(),
-            voter: voter.clone(),
-            outcome: outcome.clone(),
-            stake,
+            market_id: market_id.clone(), voter: voter.clone(), outcome: outcome.clone(), stake,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("vote")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1118,24 +1038,9 @@ impl EventEmitter {
         env.events().publish((symbol_short!("vote"), market_id.clone()), event);
     }
 
-    pub fn emit_statistics_updated(env: &Env, total_volume: i128, total_bets: u64, active_markets: u32) {
-        let event = StatisticsUpdatedEvent {
-            total_volume,
-            total_bets,
-            active_markets,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("stats_upd")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("stats_upd"), &event);
-        env.events().publish((symbol_short!("stats_upd"),), event);
-    }
-
     pub fn emit_bet_placed(env: &Env, market_id: &Symbol, bettor: &Address, outcome: &String, amount: i128) {
         let event = BetPlacedEvent {
-            market_id: market_id.clone(),
-            bettor: bettor.clone(),
-            outcome: outcome.clone(),
-            amount,
+            market_id: market_id.clone(), bettor: bettor.clone(), outcome: outcome.clone(), amount,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("bet_plc")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1147,11 +1052,7 @@ impl EventEmitter {
         env: &Env, market_id: &Symbol, bettor: &Address, old_status: &String, new_status: &String, payout_amount: Option<i128>,
     ) {
         let event = BetStatusUpdatedEvent {
-            market_id: market_id.clone(),
-            bettor: bettor.clone(),
-            old_status: old_status.clone(),
-            new_status: new_status.clone(),
-            payout_amount,
+            market_id: market_id.clone(), bettor: bettor.clone(), old_status: old_status.clone(), new_status: new_status.clone(), payout_amount,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("bet_upd")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1159,22 +1060,24 @@ impl EventEmitter {
         env.events().publish((symbol_short!("bet_upd"), market_id.clone()), event);
     }
 
+    pub fn emit_max_bet_cap_set(env: &Env, cap: i128) {
+        let event_sym = Symbol::new(env, "max_bet_cap");
+        let event = MaxBetCapSetEvent {
+            cap,
+            nonce: Self::get_and_increment_nonce(env, event_sym.clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &event_sym, &event);
+        env.events().publish((event_sym,), event);
+    }
+
     pub fn emit_oracle_result(
         env: &Env, market_id: &Symbol, result: &String, provider: &String, feed_id: &String, price: i128, threshold: i128, comparison: &String,
     ) {
         let schema = EventSchemaRegistry::get_schema(env, "oracle_result")
-            .unwrap_or(EventSchemaEntry {
-                topic: symbol_short!("oracle_rs"),
-                schema_version: 1,
-            });
+            .unwrap_or(EventSchemaEntry { topic: symbol_short!("oracle_rs"), schema_version: 1 });
         let event = OracleResultEvent {
-            market_id: market_id.clone(),
-            result: result.clone(),
-            provider: provider.clone(),
-            feed_id: feed_id.clone(),
-            price,
-            threshold,
-            comparison: comparison.clone(),
+            market_id: market_id.clone(), result: result.clone(), provider: provider.clone(), feed_id: feed_id.clone(), price, threshold, comparison: comparison.clone(),
             nonce: Self::get_and_increment_nonce(env, schema.topic),
             timestamp: env.ledger().timestamp(),
         };
@@ -1182,32 +1085,11 @@ impl EventEmitter {
         env.events().publish((schema.topic, market_id.clone(), schema.schema_version), event);
     }
 
-    pub fn emit_oracle_verification_initiated(env: &Env, market_id: &Symbol, initiator: &Address, feed_id: &String, oracle_count: u32) {
-        let event = OracleVerifInitiatedEvent {
-            market_id: market_id.clone(),
-            initiator: initiator.clone(),
-            feed_id: feed_id.clone(),
-            oracle_count,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_init")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("orc_init"), &event);
-        env.events().publish((symbol_short!("orc_init"), market_id.clone()), event);
-    }
-
     pub fn emit_oracle_result_verified(
         env: &Env, market_id: &Symbol, outcome: &String, price: i128, threshold: i128, comparison: &String, provider: &String, feed_id: &String, confidence_score: u32, sources_consulted: u32, is_final: bool,
     ) {
         let event = OracleResultVerifiedEvent {
-            market_id: market_id.clone(),
-            outcome: outcome.clone(),
-            price,
-            threshold,
-            comparison: comparison.clone(),
-            provider: provider.clone(),
-            feed_id: feed_id.clone(),
-            confidence_score,
-            sources_consulted,
+            market_id: market_id.clone(), outcome: outcome.clone(), price, threshold, comparison: comparison.clone(), provider: provider.clone(), feed_id: feed_id.clone(), confidence_score, sources_consulted,
             verification_status: String::from_str(env, "Verified"),
             is_final,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_ver")),
@@ -1218,51 +1100,12 @@ impl EventEmitter {
         env.events().publish((symbol_short!("orc_ver"), market_id.clone()), event);
     }
 
-    pub fn emit_oracle_verification_failed(env: &Env, market_id: &Symbol, error_code: u32, error_message: &String, attempted_providers: u32, fallback_available: bool) {
-        let event = OracleVerificationFailedEvent {
-            market_id: market_id.clone(),
-            error_code,
-            error_message: error_message.clone(),
-            attempted_providers,
-            fallback_available,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_fail")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("orc_fail"), &event);
-        env.events().publish((symbol_short!("orc_fail"), market_id.clone()), event);
-    }
-
-    pub fn emit_oracle_validation_failed(
-        env: &Env, market_id: &Symbol, provider: &String, feed_id: &String, reason: &String, observed_age_secs: u64, max_age_secs: u64, observed_confidence_bps: Option<u32>, max_confidence_bps: u32,
-    ) {
-        let event = OracleValidationFailedEvent {
-            market_id: market_id.clone(),
-            provider: provider.clone(),
-            feed_id: feed_id.clone(),
-            reason: reason.clone(),
-            observed_age_secs,
-            max_age_secs,
-            observed_confidence_bps,
-            max_confidence_bps,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_val")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("orc_val"), &event);
-        env.events().publish((symbol_short!("orc_val"), market_id.clone()), event);
-    }
-
     pub fn emit_oracle_consensus_reached(
         env: &Env, market_id: &Symbol, consensus_outcome: &String, agreeing_sources: u32, total_sources: u32, average_price: i128, price_variance: i128,
     ) {
         let agreement_percentage = if total_sources > 0 { (agreeing_sources * 100) / total_sources } else { 0 };
         let event = OracleConsensusReachedEvent {
-            market_id: market_id.clone(),
-            consensus_outcome: consensus_outcome.clone(),
-            agreeing_sources,
-            total_sources,
-            agreement_percentage,
-            average_price,
-            price_variance,
+            market_id: market_id.clone(), consensus_outcome: consensus_outcome.clone(), agreeing_sources, total_sources, agreement_percentage, average_price, price_variance,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_cons")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1270,30 +1113,15 @@ impl EventEmitter {
         env.events().publish((symbol_short!("orc_cons"), market_id.clone()), event);
     }
 
-    pub fn emit_oracle_health_status(env: &Env, oracle_address: &Address, provider: &String, previous_status: bool, current_status: bool, consecutive_failures: u32) {
-        let event = OracleHealthStatusEvent {
-            oracle_address: oracle_address.clone(),
-            provider: provider.clone(),
-            previous_status,
-            current_status,
-            consecutive_failures,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_hlth")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("orc_hlth"), &event);
-        env.events().publish((symbol_short!("orc_hlth"), oracle_address.clone()), event);
+    pub fn emit_oracle_median_quotes(env: &Env, market_id: &Symbol, quotes: &Vec<crate::types::OracleQuote>) {
+        env.events().publish((symbol_short!("orc_med_q"), market_id.clone()), quotes.clone());
     }
 
     pub fn emit_market_resolved(
         env: &Env, market_id: &Symbol, final_outcome: &String, oracle_result: &String, community_consensus: &String, resolution_method: &String, confidence_score: i128,
     ) {
         let event = MarketResolvedEvent {
-            market_id: market_id.clone(),
-            final_outcome: final_outcome.clone(),
-            oracle_result: oracle_result.clone(),
-            community_consensus: community_consensus.clone(),
-            resolution_method: resolution_method.clone(),
-            confidence_score,
+            market_id: market_id.clone(), final_outcome: final_outcome.clone(), oracle_result: oracle_result.clone(), community_consensus: community_consensus.clone(), resolution_method: resolution_method.clone(), confidence_score,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_res")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1303,9 +1131,7 @@ impl EventEmitter {
 
     pub fn emit_min_pool_size_not_met(env: &Env, market_id: &Symbol, current_pool: i128, required_min: i128) {
         let event = MinPoolSizeNotMetEvent {
-            market_id: market_id.clone(),
-            current_pool,
-            required_min,
+            market_id: market_id.clone(), current_pool, required_min,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("pool_lo")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1315,15 +1141,9 @@ impl EventEmitter {
 
     pub fn emit_dispute_opened(env: &Env, market_id: &Symbol, disputer: &Address, stake: i128, reason: Option<String>) {
         let schema = EventSchemaRegistry::get_schema(env, "dispute_opened")
-            .unwrap_or(EventSchemaEntry {
-                topic: symbol_short!("dispt_opn"),
-                schema_version: 1,
-            });
+            .unwrap_or(EventSchemaEntry { topic: symbol_short!("dispt_opn"), schema_version: 1 });
         let event = DisputeOpenedEvent {
-            market_id: market_id.clone(),
-            disputer: disputer.clone(),
-            stake,
-            reason,
+            market_id: market_id.clone(), disputer: disputer.clone(), stake, reason,
             nonce: Self::get_and_increment_nonce(env, schema.topic),
             timestamp: env.ledger().timestamp(),
         };
@@ -1331,51 +1151,9 @@ impl EventEmitter {
         env.events().publish((schema.topic, market_id.clone(), schema.schema_version), event);
     }
 
-    pub fn emit_suspected_collusion_flag(env: &Env, market_id: &Symbol, user1: &Address, user2: &Address, stake_delta: i128, time_delta: u64) {
-        let event = SuspectedCollusionFlagEvent {
-            market_id: market_id.clone(),
-            user1: user1.clone(),
-            user2: user2.clone(),
-            stake_delta,
-            time_delta,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("sus_col")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("sus_col"), &event);
-        env.events().publish((symbol_short!("sus_col"), market_id.clone()), event);
-    }
-
-    pub fn emit_dispute_resolved(env: &Env, market_id: &Symbol, outcome: &String, winners: &Vec<Address>, losers: &Vec<Address>, fee_distribution: i128) {
-        let event = DisputeResolvedEvent {
-            market_id: market_id.clone(),
-            outcome: outcome.clone(),
-            winners: winners.clone(),
-            losers: losers.clone(),
-            fee_distribution,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("dispt_res")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("dispt_res"), &event);
-        env.events().publish((symbol_short!("dispt_res"), market_id.clone()), event);
-    }
-
-    pub fn emit_dispute_history_evicted(env: &Env, market_id: &Symbol, user: &Address) {
-        let event = DisputeHistoryEvictedEvent {
-            market_id: market_id.clone(),
-            user: user.clone(),
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("dh_evct")),
-            timestamp: env.ledger().timestamp(),
-        };
-        Self::store_event(env, &symbol_short!("dh_evct"), &event);
-        env.events().publish((symbol_short!("dh_evct"), market_id.clone()), event);
-    }
-
     pub fn emit_fee_collected(env: &Env, market_id: &Symbol, collector: &Address, amount: i128, fee_type: &String) {
         let event = FeeCollectedEvent {
-            market_id: market_id.clone(),
-            collector: collector.clone(),
-            amount,
-            fee_type: fee_type.clone(),
+            market_id: market_id.clone(), collector: collector.clone(), amount, fee_type: fee_type.clone(),
             nonce: Self::get_and_increment_nonce(env, symbol_short!("fee_col")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1385,9 +1163,7 @@ impl EventEmitter {
 
     pub fn emit_fee_withdrawn(env: &Env, admin: &Address, amount: i128, remaining_fees: i128, timestamp: u64) {
         let event = FeeWithdrawnEvent {
-            admin: admin.clone(),
-            amount,
-            remaining_fees,
+            admin: admin.clone(), amount, remaining_fees,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("fwd_ok")),
             timestamp,
         };
@@ -1397,8 +1173,7 @@ impl EventEmitter {
 
     pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
         let event = MarketClosedEvent {
-            market_id: market_id.clone(),
-            admin: admin.clone(),
+            market_id: market_id.clone(), admin: admin.clone(),
             nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_close")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1408,8 +1183,7 @@ impl EventEmitter {
 
     pub fn emit_refund_on_oracle_failure(env: &Env, market_id: &Symbol, total_refunded: i128) {
         let event = RefundOnOracleFailureEvent {
-            market_id: market_id.clone(),
-            total_refunded,
+            market_id: market_id.clone(), total_refunded,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("ref_oracl")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1419,10 +1193,7 @@ impl EventEmitter {
 
     pub fn emit_state_change_event(env: &Env, market_id: &Symbol, old_state: &crate::types::MarketState, new_state: &crate::types::MarketState, reason: &String) {
         let event = StateChangeEvent {
-            market_id: market_id.clone(),
-            old_state: old_state.clone(),
-            new_state: new_state.clone(),
-            reason: reason.clone(),
+            market_id: market_id.clone(), old_state: old_state.clone(), new_state: new_state.clone(), reason: reason.clone(),
             nonce: Self::get_and_increment_nonce(env, symbol_short!("st_chng")),
             timestamp: env.ledger().timestamp(),
         };
@@ -1432,13 +1203,211 @@ impl EventEmitter {
 
     pub fn emit_winnings_claimed(env: &Env, market_id: &Symbol, user: &Address, amount: i128) {
         let event = WinningsClaimedEvent {
-            market_id: market_id.clone(),
-            user: user.clone(),
-            amount,
+            market_id: market_id.clone(), user: user.clone(), amount,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("win_clm")),
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_clm"), &event);
         env.events().publish((symbol_short!("win_clm"), market_id.clone()), event);
+    }
+
+    pub fn emit_admin_initialized(env: &Env, admin: &Address) {
+        let event = AdminInitializedEvent {
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_init")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("adm_init"), &event);
+        env.events().publish((symbol_short!("adm_init"), admin.clone()), event);
+    }
+
+    pub fn emit_config_initialized(env: &Env, admin: &Address, environment: &Environment) {
+        let event = ConfigInitializedEvent {
+            admin: admin.clone(),
+            environment: String::from_str(env, match environment {
+                Environment::Development => "Development",
+                Environment::Testnet => "Testnet",
+                Environment::Mainnet => "Mainnet",
+                Environment::Custom => "Custom",
+            }),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cfg_init")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cfg_init"), &event);
+        env.events().publish((symbol_short!("cfg_init"), admin.clone()), event);
+    }
+
+    pub fn emit_contract_paused(env: &Env, admin: &Address) {
+        let event = ContractPausedEvent {
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ctr_pause")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ctr_pause"), &event);
+        env.events().publish((symbol_short!("ctr_pause"), admin.clone()), event);
+    }
+
+    pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
+        let event = ContractUnpausedEvent {
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ctr_unp")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("ctr_unp"), &event);
+        env.events().publish((symbol_short!("ctr_unp"), admin.clone()), event);
+    }
+
+    pub fn emit_admin_transferred(env: &Env, previous_admin: &Address, new_admin: &Address) {
+        let event = AdminTransferredEvent {
+            previous_admin: previous_admin.clone(),
+            new_admin: new_admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_xfer")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("adm_xfer"), &event);
+        env.events().publish((symbol_short!("adm_xfer"), new_admin.clone()), event);
+    }
+
+    pub fn emit_admin_role_assigned(env: &Env, admin: &Address, role: &AdminRole, assigned_by: &Address) {
+        let event = AdminRoleEvent {
+            admin: admin.clone(),
+            role: String::from_str(env, match role {
+                AdminRole::Owner => "Owner",
+                AdminRole::Admin => "Admin",
+                AdminRole::Moderator => "Moderator",
+            }),
+            assigned_by: assigned_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_role")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("adm_role"), &event);
+        env.events().publish((symbol_short!("adm_role"), admin.clone()), event);
+    }
+
+    pub fn emit_admin_role_deactivated(env: &Env, admin: &Address, deactivated_by: &Address) {
+        let event = AdminRoleEvent {
+            admin: admin.clone(),
+            role: String::from_str(env, "deactivated"),
+            assigned_by: deactivated_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_deact")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("adm_deact"), &event);
+        env.events().publish((symbol_short!("adm_deact"), admin.clone()), event);
+    }
+
+    pub fn emit_admin_action_logged(env: &Env, admin: &Address, action: &str, success: &bool) {
+        let event = AdminActionEvent {
+            admin: admin.clone(),
+            action: String::from_str(env, action),
+            target: None,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_act")),
+            timestamp: env.ledger().timestamp(),
+            success: *success,
+        };
+        Self::store_event(env, &symbol_short!("adm_act"), &event);
+        env.events().publish((symbol_short!("adm_act"), admin.clone()), event);
+    }
+
+    pub fn emit_oracle_admin_cooldown_hit(env: &Env, admin: &Address, last_action: u64, cooldown: u64) {
+        let topics = (Symbol::new(env, "OracleAdmin"), Symbol::new(env, "CooldownHit"));
+        let mut data = Map::new(env);
+        data.set(String::from_str(env, "admin"), admin.to_val());
+        data.set(String::from_str(env, "last_action"), last_action);
+        data.set(String::from_str(env, "cooldown"), cooldown);
+        env.events().publish(topics, data);
+    }
+
+    pub fn emit_threshold_proposed(env: &Env, admin: &Address, old_threshold: u32, new_threshold: u32, confirm_after: u64) {
+        let event = MultisigThresholdProposedEvent {
+            admin: admin.clone(), old_threshold, new_threshold, confirm_after,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("thld_prop")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("thld_prop"), &event);
+        env.events().publish((symbol_short!("thld_prop"), admin.clone()), event);
+    }
+
+    pub fn emit_threshold_confirmed(env: &Env, admin: &Address, old_threshold: u32, new_threshold: u32) {
+        let event = MultisigThresholdConfirmedEvent {
+            admin: admin.clone(), old_threshold, new_threshold,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("thld_conf")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("thld_conf"), &event);
+        env.events().publish((symbol_short!("thld_conf"), admin.clone()), event);
+    }
+
+    pub fn emit_signer_rotation_cooldown_hit(env: &Env, admin: &Address, last_rotation: u64, cooldown: u64) {
+        let topics = (Symbol::new(env, "Admin"), Symbol::new(env, "SignerRotationCooldownHit"));
+        let mut data = Map::new(env);
+        data.set(String::from_str(env, "admin"), admin.to_val());
+        data.set(String::from_str(env, "last_rotation"), last_rotation);
+        data.set(String::from_str(env, "cooldown"), cooldown);
+        env.events().publish(topics, data);
+    }
+
+    pub fn emit_market_finalized(env: &Env, market_id: &Symbol, admin: &Address, outcome: &String) {
+        let event = MarketFinalizedEvent {
+            market_id: market_id.clone(), admin: admin.clone(), outcome: outcome.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_final")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mkt_final"), &event);
+        env.events().publish((symbol_short!("mkt_final"), market_id.clone()), event);
+    }
+
+    pub fn emit_admin_broadcast(env: &Env, severity: Severity, message_hash: BytesN<32>, reason: String) {
+        let event = AdminBroadcastEvent {
+            severity, message_hash, reason,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_cast")),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events().publish((Symbol::new(env, "admin_broadcast"),), event);
+    }
+
+    pub fn emit_monitor_queue_overflow(env: &Env, overflow_count: u64, evicted_event_id: Option<Symbol>, capacity: u32) {
+        env.events().publish((symbol_short!("mon_ovf"),), (overflow_count, evicted_event_id, capacity, env.ledger().timestamp()));
+    }
+
+    pub fn emit_balance_changed(env: &Env, user: &Address, asset: &crate::types::ReflectorAsset, operation: &String, amount: i128, new_balance: i128) {
+        env.events().publish(
+            (symbol_short!("bal_chg"), user, asset.clone()),
+            (operation.clone(), amount, new_balance, env.ledger().timestamp()),
+        );
+    }
+
+    pub fn emit_circuit_breaker_event(env: &Env, event: &CircuitBreakerEvent) {
+        Self::store_event(env, &symbol_short!("cb_event"), event);
+    }
+
+    pub fn emit_config_updated(env: &Env, updated_by: &Address, config_type: &String, old_value: &String, new_value: &String) {
+        let event = ConfigUpdatedEvent {
+            updated_by: updated_by.clone(), config_type: config_type.clone(), old_value: old_value.clone(), new_value: new_value.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cfg_upd")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cfg_upd"), &event);
+        env.events().publish((symbol_short!("cfg_upd"), updated_by.clone()), event);
+    }
+
+    pub fn emit_error_logged(env: &Env, error_code: u32, message: &String, context: &String, user: Option<Address>, market_id: Option<Symbol>) {
+        let event = ErrorLoggedEvent {
+            error_code, message: message.clone(), context: context.clone(), user, market_id,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("err_log")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("err_log"), &event);
+        env.events().publish((symbol_short!("err_log"),), event);
+    }
+
+    pub fn emit_error_recovery_event(env: &Env, error_code: u32, recovery_strategy: &String, recovery_status: String, recovery_attempts: u32, user: Option<Address>, market_id: Option<Symbol>) {
+        let event = ErrorRecoveryEvent {
+            error_code, recovery_strategy: recovery_strategy.clone(), recovery_status, recovery_attempts, user, market_id,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("err_rec")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("err_rec"), &event);
+        env.events().publish((symbol_short!("err_rec"),), event);
     }
 }
