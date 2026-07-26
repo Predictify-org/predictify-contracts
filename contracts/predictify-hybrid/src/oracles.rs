@@ -3405,25 +3405,34 @@ impl OracleIntegrationManager {
 
         let oracle_config = &market.oracle_config;
         let mut successful_readings: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        // (oracle_address, provider_name, publish_time) per successful source for
+        // cross-oracle staleness detection.
+        let mut source_publish_times: alloc::vec::Vec<(Address, alloc::string::String, u64)> =
+            alloc::vec::Vec::new();
         let mut total_weight: u32 = 0;
         let mut sources_count: u32 = 0;
         let mut last_error: Option<Error> = None;
 
         // Try each oracle source
         for oracle_address in oracle_sources.iter() {
-            match Self::fetch_single_oracle_result(
+            match Self::fetch_single_oracle_result_with_timestamp(
                 env,
                 market_id,
                 &oracle_address,
                 &oracle_config.feed_id,
                 &oracle_config.provider,
             ) {
-                Ok(price) => {
+                Ok((price, publish_time)) => {
                     // Validate price is within acceptable range
                     if Self::validate_price_range(price) {
                         let weight = Self::get_oracle_weight(env, &oracle_address);
                         if weight > 0 {
                             successful_readings.push((price, weight));
+                            source_publish_times.push((
+                                oracle_address.clone(),
+                                oracle_config.provider.name().to_string(),
+                                publish_time,
+                            ));
                             total_weight = total_weight.saturating_add(weight);
                             sources_count += 1;
                         }
@@ -3451,6 +3460,41 @@ impl OracleIntegrationManager {
 
         // Calculate weighted median price
         let median_price = Self::calculate_weighted_median(env, &successful_readings, total_weight);
+
+        // === CROSS-ORACLE STALENESS DETECTION ===
+        // Find the freshest publish_time across all successful sources. If any source's
+        // publish_time lags more than the configured staleness threshold behind the
+        // freshest one, emit CrossOracleStalenessEvent. The stale source is still
+        // included in the consensus set (staleness is treated as informational), but
+        // operators can monitor for repeated offenders.
+        if source_publish_times.len() > 1 {
+            let freshest_ts = source_publish_times
+                .iter()
+                .map(|(_, _, ts)| *ts)
+                .fold(0u64, |acc, ts| if ts > acc { ts } else { acc });
+
+            let validation_config =
+                OracleValidationConfigManager::get_effective_config(env, market_id);
+            let max_cross_staleness = validation_config.max_staleness_secs;
+
+            for (oracle_addr, provider_name, publish_time) in source_publish_times.iter() {
+                let gap = freshest_ts.saturating_sub(*publish_time);
+                if gap > max_cross_staleness {
+                    EventEmitter::emit_cross_oracle_staleness(
+                        env,
+                        market_id,
+                        oracle_addr,
+                        &String::from_str(env, provider_name.as_str()),
+                        &oracle_config.feed_id,
+                        freshest_ts,
+                        *publish_time,
+                        gap,
+                        max_cross_staleness,
+                        sources_count,
+                    );
+                }
+            }
+        }
 
         // Determine final outcome directly from the weighted median price
         let final_outcome = OracleUtils::determine_outcome(
@@ -3556,6 +3600,24 @@ impl OracleIntegrationManager {
         feed_id: &String,
         provider: &crate::types::OracleProvider,
     ) -> Result<i128, Error> {
+        Self::fetch_single_oracle_result_with_timestamp(
+            env, market_id, oracle_address, feed_id, provider,
+        )
+        .map(|(price, _)| price)
+    }
+
+    /// Fetch result from a single oracle source, returning `(price, publish_time)`.
+    ///
+    /// The `publish_time` is the ledger timestamp at which the oracle last updated
+    /// its price feed.  It is used by `fetch_and_verify_oracle_result` to detect
+    /// cross-oracle staleness divergence.
+    fn fetch_single_oracle_result_with_timestamp(
+        env: &Env,
+        market_id: &Symbol,
+        oracle_address: &Address,
+        feed_id: &String,
+        provider: &crate::types::OracleProvider,
+    ) -> Result<(i128, u64), Error> {
         // Validate oracle is whitelisted
         if !OracleWhitelist::validate_oracle_contract(env, oracle_address)? {
             return Err(Error::InvalidOracleConfig);
@@ -3570,10 +3632,10 @@ impl OracleIntegrationManager {
             return Err(Error::OracleUnavailable);
         }
 
-        // Get price data with metadata
+        // Get price data with metadata (includes publish_time)
         let price_data = oracle_instance.get_price_data(env, feed_id)?;
 
-        // Validate staleness/confidence
+        // Validate per-source staleness/confidence
         OracleValidationConfigManager::validate_oracle_data(
             env,
             market_id,
@@ -3585,7 +3647,7 @@ impl OracleIntegrationManager {
         // Validate price
         OracleUtils::validate_oracle_response(price_data.price)?;
 
-        Ok(price_data.price)
+        Ok((price_data.price, price_data.publish_time))
     }
 
 
