@@ -1913,6 +1913,8 @@ pub struct OraclePriceData {
     pub price: i128,
     /// Publish time of the oracle data (unix timestamp seconds)
     pub publish_time: u64,
+    /// Publish ledger sequence of the oracle data
+    pub publish_ledger: u32,
     /// Confidence interval (absolute) in the same base units as `price`
     pub confidence: Option<i128>,
     /// Exponent/decimals scale used by the oracle (e.g., Pyth exponent)
@@ -1925,6 +1927,8 @@ pub struct OraclePriceData {
 pub struct GlobalOracleValidationConfig {
     /// Maximum age of oracle data in seconds before it is rejected
     pub max_staleness_secs: u64,
+    /// Maximum age of oracle data in ledgers before it is rejected
+    pub max_age_ledgers: u32,
     /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
     /// Maximum allowed price deviation from the last accepted reading, in basis points.
@@ -1945,6 +1949,8 @@ pub struct GlobalOracleValidationConfig {
 pub struct EventOracleValidationConfig {
     /// Maximum age of oracle data in seconds before it is rejected
     pub max_staleness_secs: u64,
+    /// Maximum age of oracle data in ledgers before it is rejected
+    pub max_age_ledgers: u32,
     /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
     /// Maximum allowed price deviation from the last accepted reading, in basis points.

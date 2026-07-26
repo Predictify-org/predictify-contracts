@@ -3886,6 +3886,7 @@ impl PredictifyHybrid {
     /// Set global oracle validation config (admin only).
     ///
     /// - `max_staleness_secs`: maximum allowed age in seconds.
+    /// - `max_age_ledgers`: maximum allowed age in ledgers.
     /// - `max_confidence_bps`: maximum confidence interval in basis points.
     /// Per-event overrides, if set, take precedence over this global config.
     ///
@@ -3900,6 +3901,7 @@ impl PredictifyHybrid {
         env: Env,
         admin: Address,
         max_staleness_secs: u64,
+        max_age_ledgers: u32,
         max_confidence_bps: u32,
         max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
@@ -3907,6 +3909,7 @@ impl PredictifyHybrid {
 
         let config = GlobalOracleValidationConfig {
             max_staleness_secs,
+            max_age_ledgers,
             max_confidence_bps,
             max_deviation_bps,
             max_deviation_z_multiple: None,
@@ -3941,6 +3944,7 @@ impl PredictifyHybrid {
         admin: Address,
         market_id: Symbol,
         max_staleness_secs: u64,
+        max_age_ledgers: u32,
         max_confidence_bps: u32,
         max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
@@ -3948,6 +3952,7 @@ impl PredictifyHybrid {
 
         let config = EventOracleValidationConfig {
             max_staleness_secs,
+            max_age_ledgers,
             max_confidence_bps,
             max_deviation_bps,
             max_deviation_z_multiple: None,
