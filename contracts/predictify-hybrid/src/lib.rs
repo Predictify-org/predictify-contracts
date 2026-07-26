@@ -103,6 +103,8 @@ use storage::BalanceStorage;
 use types::{Market, ReflectorAsset};
 
 #[cfg(test)]
+mod resolution_invariants;
+#[cfg(test)]
 mod market_state_matrix_tests;
 #[cfg(test)]
 mod upgrade_manager_tests;
