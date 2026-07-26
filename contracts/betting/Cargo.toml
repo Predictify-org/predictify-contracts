@@ -10,6 +10,11 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+predictify-hybrid = { path = "../predictify-hybrid" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[[test]]
+name = "betting_tests"
+path = "tests/betting_tests.rs"
