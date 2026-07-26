@@ -29,12 +29,8 @@ pub enum Error {
     Overflow = 672,
     MaxBetCapExceeded = 673,
     InvalidCap = 674,
-    /// Bet amount is below the per-market minimum threshold set by `set_min_bet`.
-    ///
-    /// Returned when the bet amount is less than the `min_bet_amount` configured for
-    /// a specific market via the `set_min_bet` entrypoint.  This is distinct from
-    /// [`Error::InsufficientStake`] (which covers the global/per-event minimum).
-    BetBelowMarketMin = 675,
+    /// The cool-off period is still active. Cannot unpause/resume the market.
+    CoolOffPeriodActive = 675,
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.

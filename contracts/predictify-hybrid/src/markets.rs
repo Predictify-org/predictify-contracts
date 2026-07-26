@@ -3725,6 +3725,13 @@ impl MarketPauseManager {
             return Err(Error::InvalidState);
         }
 
+        // Enforce 7-day cool-off period before manual unpausing/resuming
+        let current_time = env.ledger().timestamp();
+        let cool_off_seconds = 7 * 24 * 3600; // 7 days in seconds
+        if current_time < pause_info.paused_at.saturating_add(cool_off_seconds) {
+            return Err(Error::CoolOffPeriodActive);
+        }
+
         env.storage().persistent().remove(&market_id);
         Self::emit_resume_event(env, market_id, &admin);
 
