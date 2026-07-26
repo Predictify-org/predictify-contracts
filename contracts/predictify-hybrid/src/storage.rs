@@ -159,6 +159,39 @@ pub enum DataKey {
     MaxBetCap,
     /// Per-user total stake in a market.
     UserStake(Address, Symbol),
+
+    // ── Additional keys used by subsystems outside storage.rs ────────────────
+
+    /// Oracle admin cooldown state (admin.rs).
+    /// Persistent — must survive across ledgers to enforce the cooldown window.
+    OracleAdminCooldownState,
+    /// Multisig admin rotation state (admin.rs).
+    /// Persistent — rotation approval state must survive until executed.
+    MultisigRotationState,
+    /// Collusion-detector configuration (disputes.rs).
+    /// Persistent — governance-level config; changed infrequently by admin.
+    CollusionDetectorConfig,
+    /// Admin override replay-protection nonce (lib.rs).
+    /// Persistent — nonce must survive contract upgrades to prevent replay.
+    AdminOverrideNonce(Address),
+    /// Per-ledger bet rate-limit cap (rate_limiter.rs).
+    /// Persistent — admin-set cap; must survive ledger boundaries.
+    PerLedgerBetCap,
+    /// Per-ledger bet rate-limit rolling counter (rate_limiter.rs).
+    /// Persistent — counter carries over between calls in the same ledger.
+    PerLedgerBetCounter,
+    /// Monotonic nonce for event replay protection, keyed by topic (events.rs).
+    /// Persistent — nonce must survive indefinitely to prevent replay.
+    EventNonce(Symbol),
+    /// Audit log head record for a market (audit.rs).
+    /// Persistent — audit trail is immutable and never pruned.
+    MarketAuditHead(Symbol),
+    /// One entry in the per-market audit log, keyed by (market_id, index) (audit.rs).
+    /// Persistent — audit trail entries are immutable.
+    MarketAuditLog(Symbol, u32),
+    /// Deprecated-entrypoint registry (deprecated.rs).
+    /// Persistent — registry must survive upgrades so clients can detect removed APIs.
+    DeprecatedRegistry,
 }
 
 /// Storage format version for migration tracking
