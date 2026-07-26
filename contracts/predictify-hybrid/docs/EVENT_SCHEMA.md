@@ -23,6 +23,37 @@ Two patterns exist in the codebase today:
    notice. They are called out explicitly in [Stability Legend](#stability-legend)
    and in their own table.
 
+## Delivery guarantees under cross-contract failure
+
+Several emitters sit next to a cross-contract call — `GovernanceManager::execute_proposal`
+invokes an arbitrary proposal target before emitting its execution event, and the
+oracle resolution path calls out to `ReflectorOracleClient` before emitting its
+result events. Soroban gives each invocation its own rollback frame, which fixes
+what an indexer can observe when the callee fails:
+
+| Scenario | What the indexer observes |
+|---|---|
+| Callee reverts (`panic_with_error!`) and the caller lets it propagate | **Nothing.** The caller's frame failed too, so events it published *before* the call are rolled back with it. |
+| Callee aborts (untyped `panic!`) and the caller lets it propagate | **Nothing.** Identical rollback to a revert; only the error code surfaced to the caller differs. |
+| Failure at any depth (caller → middle → callee) | **Nothing** from any frame in the failed chain. |
+| Caller recovers via `env.try_invoke_contract` | The **caller's** events (both those published before the call and any failure-path event such as `fbk_used`) are observable. The **callee's** events, and its storage writes, are discarded. |
+
+Two consequences worth designing around:
+
+- **Events are atomic with the state change they describe.** There is no window in
+  which an event is visible but its transaction's writes are not, so a consumer
+  never has to compensate for a "phantom" emission.
+- **The per-topic replay nonce is restored, not burned.** `EventEmitter` keeps a
+  monotonic nonce per topic in persistent storage (`DataKey::EventNonce(topic)`).
+  A failed call rolls that write back to its previous value, so failed attempts
+  leave no gaps in the nonce sequence: consumers can still treat a gap as
+  genuine data loss rather than as a reverted transaction.
+
+These properties are pinned by `tests/xcontract.rs`. Note that a single logical
+emission produces **two** published events for emitters that call `store_event`:
+one from the archive helper (topics `(topic,)`) and one from the typed emission
+(topics `(topic, id)`). Both carry the same event-name symbol as their first topic.
+
 ## Stability legend
 
 | Badge | Meaning |
