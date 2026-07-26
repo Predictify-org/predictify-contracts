@@ -2795,10 +2795,15 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn fetch_oracle_result(
         env: Env,
+        caller: Address, 
         market_id: Symbol,
         oracle_contract: Address,
     ) -> Result<String, Error> {
-        let _ = oracle_contract;
+        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "fetch_oracle") {
+            panic_with_error!(env, e);
+        }
+        
+        caller.require_auth(); 
 
         // Get the market from storage
         let mut market = env
