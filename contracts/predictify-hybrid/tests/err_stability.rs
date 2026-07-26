@@ -133,6 +133,35 @@ fn asset_decimals() {
     assert_eq!(Error::AssetDecimalsMismatch as u32, 439);
 }
 
+// ===== Market-specific & extension errors (443, 517-528) =====
+
+#[test]
+fn market_extension_errors() {
+    assert_eq!(Error::AdminActionTimelocked as u32, 443);
+    assert_eq!(Error::ForceResolveReplayed as u32, 517);
+    assert_eq!(Error::ForceResolveReasonEmpty as u32, 518);
+    assert_eq!(Error::NoPendingFeeCommit as u32, 519);
+    assert_eq!(Error::FeeRevealTooEarly as u32, 520);
+    assert_eq!(Error::FeePreimageMismatch as u32, 521);
+    assert_eq!(Error::DisputeStakeCapExceeded as u32, 522);
+    assert_eq!(Error::InsufficientStorageRentBudget as u32, 523);
+    assert_eq!(Error::ExtensionCapExceeded as u32, 524);
+    assert_eq!(Error::UpgradeChainMismatch as u32, 525);
+    assert_eq!(Error::OracleQuoteOutlier as u32, 527);
+    assert_eq!(Error::MaxParticipantsReached as u32, 528);
+}
+
+// ===== Overflow / cap errors (660-674) =====
+
+#[test]
+fn overflow_cap_errors() {
+    assert_eq!(Error::IdempotentBatchAlreadyApplied as u32, 660);
+    assert_eq!(Error::ReasonTableFull as u32, 670);
+    assert_eq!(Error::Overflow as u32, 672);
+    assert_eq!(Error::MaxBetCapExceeded as u32, 673);
+    assert_eq!(Error::InvalidCap as u32, 674);
+}
+
 // ===== op-count test ensuring we noticed all variants =====
 
 #[test]
