@@ -1552,7 +1552,6 @@ impl Market {
             timelock_config: MarketTimelockConfig::default(),
             dispute_stake_floor: None,
             max_participants: None,
-            min_bet_amount: None,
         }
     }
 

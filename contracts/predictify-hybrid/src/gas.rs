@@ -255,6 +255,7 @@ impl GasTracker {
                 value: used as i128,
                 unit: String::from_str(env, "cpu"),
                 context: String::from_str(env, "gas_alert"),
+                nonce: crate::events::EventEmitter::get_and_increment_nonce(env, symbol_short!("perf_met")),
                 timestamp: env.ledger().timestamp(),
             };
             

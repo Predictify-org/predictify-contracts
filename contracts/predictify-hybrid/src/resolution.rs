@@ -736,34 +736,6 @@ pub enum ResolutionMethod {
     ForceResolve,
 }
 
-/// Result of a median-based oracle resolution.
-///
-/// Returned by [`OracleResolutionManager::resolve_with_median`] after
-/// collecting quotes from configured oracle providers, computing the
-/// weighted median, and comparing it against the market threshold.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct MedianResolutionResult {
-    /// Market that was resolved.
-    pub market_id: Symbol,
-    /// Resolved outcome ("yes" / "no" or custom).
-    pub outcome: String,
-    /// Weighted-median price across included oracle quotes.
-    pub weighted_median_price: i128,
-    /// Market-defined price threshold for comparison.
-    pub threshold: i128,
-    /// Comparison operator string ("gt", "lt", "eq").
-    pub comparison: String,
-    /// All collected oracle quotes (included and excluded).
-    pub quotes: Vec<OracleQuote>,
-    /// Number of quotes that participated in the median.
-    pub included_count: u32,
-    /// Aggregate confidence score in [0, 100].
-    pub confidence_score: u32,
-    /// Timestamp of the resolution.
-    pub timestamp: u64,
-}
-
 /// Aggregated resolution analytics across all markets.
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -894,51 +866,7 @@ impl ResolutionOutcomeCache {
     }
 }
 
-/// Oracle-based resolution manager: fetches oracle results, validates them, and
-/// computes median/aggregate prices used to resolve markets.
-pub struct OracleResolutionManager;
-
 impl OracleResolutionManager {
-    /// Get oracle resolution for a market
-
-    pub fn get_oracle_resolution(
-        _env: &Env,
-        _market_id: &Symbol,
-    ) -> Result<Option<OracleResolution>, Error> {
-        // For now, return None since we don't store complex types in storage
-        // In a real implementation, you would store this in a more sophisticated way
-
-        Ok(None)
-    }
-
-    /// Validate oracle resolution
-    pub fn validate_oracle_resolution(
-        _env: &Env,
-        resolution: &OracleResolution,
-    ) -> Result<(), Error> {
-        // Validate price is positive
-        if resolution.price <= 0 {
-            return Err(Error::InvalidInput);
-        }
-
-        // Validate threshold is positive
-        if resolution.threshold <= 0 {
-            return Err(Error::InvalidInput);
-        }
-
-        // Validate outcome is not empty
-        if resolution.oracle_result.is_empty() {
-            return Err(Error::InvalidInput);
-        }
-
-        Ok(())
-    }
-
-    /// Calculate oracle confidence score
-    pub fn calculate_oracle_confidence(resolution: &OracleResolution) -> u32 {
-        OracleResolutionAnalytics::calculate_confidence_score(resolution)
-    }
-
     // ── Median Config Management ───────────────────────────────────────────────────
 
     /// Persist the three-oracle median configuration to contract storage.
@@ -1699,7 +1627,7 @@ impl MarketResolutionManager {
             Some(market_id),
         );
         MarketStateManager::update_market(env, market_id, &market);
-        ResolutionOutcomeCache::refresh(env, market_id)?;
+        ResolutionOutcomeCache::refresh(env, market_id, &market)?;
 
         // Decrement active event count since the event is resolved
         crate::storage::CreatorLimitsManager::decrement_active_events(env, &market.admin);
@@ -1784,7 +1712,7 @@ impl MarketResolutionManager {
         winning_outcomes.push_back(outcome.clone());
         MarketStateManager::set_winning_outcomes(&mut market, winning_outcomes, Some(market_id));
         MarketStateManager::update_market(env, market_id, &market);
-        ResolutionOutcomeCache::refresh(env, market_id)?;
+        ResolutionOutcomeCache::refresh(env, market_id, &market)?;
 
         // Decrement active event count since the event is manually finalized
         crate::storage::CreatorLimitsManager::decrement_active_events(env, &market.admin);
@@ -2183,7 +2111,17 @@ impl OracleResolutionAnalytics {
 }
 
 /// Market resolution analytics
-pub struct MarketResolutionAnalytics;
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct MarketResolutionAnalytics {
+    pub total_resolutions: u32,
+    pub oracle_resolutions: u32,
+    pub community_resolutions: u32,
+    pub hybrid_resolutions: u32,
+    pub average_confidence: u32,
+    pub resolution_times: Vec<u64>,
+    pub outcome_distribution: Map<String, u32>,
+}
 
 impl MarketResolutionAnalytics {
     /// Determine resolution method
@@ -2223,7 +2161,7 @@ impl MarketResolutionAnalytics {
 
     /// Calculate resolution analytics
     pub fn calculate_resolution_analytics(_env: &Env) -> Result<MarketResolutionAnalytics, Error> {
-        Ok(ResolutionAnalytics::default())
+        Ok(MarketResolutionAnalytics::default())
     }
 
     /// Update resolution analytics
@@ -3068,8 +3006,8 @@ impl OracleCallbackResolver {
     }
 
     fn determine_outcome_from_oracle_data(
-        _callback_data: &crate::oracles::OracleCallbackData,
-        _market: &Market,
+        callback_data: &crate::oracles::OracleCallbackData,
+        market: &Market,
     ) -> Result<String, Error> {
         // For binary markets (yes/no), determine outcome based on price comparison
         if market.outcomes.len() == 2 {

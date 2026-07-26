@@ -78,6 +78,8 @@ pub enum AdminPermission {
     ViewAnalytic,
     /// Emergency actions
     Emergency,
+    /// Configure system settings
+    ConfigAdmin,
 }
 
 /// Admin action record
@@ -3598,6 +3600,9 @@ impl AdminUtils {
             }
             AdminPermission::Emergency => {
                 String::from_str(&soroban_sdk::Env::default(), "Emergency")
+            }
+            AdminPermission::ConfigAdmin => {
+                String::from_str(&soroban_sdk::Env::default(), "ConfigAdmin")
             }
         }
     }

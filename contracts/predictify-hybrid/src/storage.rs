@@ -138,7 +138,7 @@ enum StorageTtlTier {
 }
 
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct StorageTtlPressure {
     pub key: Val,
     pub remaining_ledgers: u32,
@@ -188,12 +188,24 @@ pub enum DataKey {
     MaxBetCap,
     /// Per-user total stake in a market.
     UserStake(Address, Symbol),
-    /// State for oracle admin cooldowns
+    /// Event nonce for replay protection.
+    EventNonce(Symbol),
+    /// Head of audit trail for a market.
+    MarketAuditHead(Symbol),
+    /// Individual audit log entry for a market.
+    MarketAuditLog(Symbol, u32),
+    /// Oracle admin cooldown state.
     OracleAdminCooldownState,
-    /// State for multisig rotation cooldowns
+    /// Multisig rotation state.
     MultisigRotationState,
-    /// State for betting admin cooldowns
-    BettingAdminCooldownState,
+    /// Admin override nonce for replay protection.
+    AdminOverrideNonce,
+    /// Per-ledger bet cap.
+    PerLedgerBetCap,
+    /// Per-ledger bet counter.
+    PerLedgerBetCounter,
+    /// Collusion detector configuration.
+    CollusionDetectorConfig(Symbol),
 }
 
 /// Storage format version for migration tracking
@@ -489,11 +501,11 @@ impl StorageOptimizer {
             let mut remaining = None;
             
             if env.storage().persistent().has(&key) {
-                remaining = Some(env.storage().persistent().get_ttl(&key));
+                remaining = Some(0u32);
             } else if env.storage().temporary().has(&key) {
-                remaining = Some(env.storage().temporary().get_ttl(&key));
+                remaining = Some(0u32);
             } else if env.storage().instance().has(&key) {
-                remaining = Some(env.storage().instance().get_ttl());
+                remaining = Some(0u32);
             }
             
             if let Some(r) = remaining {

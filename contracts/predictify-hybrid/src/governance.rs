@@ -100,6 +100,8 @@ pub enum GovernanceError {
     InvalidReveal,
     /// A commitment already exists for this (proposal, voter) pair.
     CommitmentExists,
+    /// The revealed salt does not match the committed salt.
+    SaltMismatch,
 }
 
 /// ---------- CONTRACT ----------

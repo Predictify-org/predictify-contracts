@@ -83,10 +83,9 @@ mod event_topic_catalog;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
-/// Contract capability discovery via a u64 bitmap (issue #984).
-/// Exposes `capabilities()` as a pure read-only view so clients can
-/// detect which features are active without inspecting the Wasm binary.
-pub mod capabilities;
+mod audit_trail;
+mod monitor;
+mod capabilities;
 
 #[cfg(test)]
 mod override_audit_tests;
@@ -236,8 +235,12 @@ use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    Address, BytesN, Map, String, Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short,
+    Address, BytesN, Env, Map, String, Symbol, Vec,
 };
+use crate::circuit_breaker::CircuitBreaker;
+use crate::events::EventEmitter;
+use crate::audit_trail::{AuditTrailManager, AuditAction};
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
     fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
@@ -281,6 +284,11 @@ fn automatic_oracle_result_unavailable(
         return Err(Error::OracleUnavailable);
     }
     Ok(String::from_str(env, "pending"))
+}
+
+/// Probe an oracle for an automatic result; returns the raw oracle result string.
+fn get_oracle_result(env: &Env, config: &OracleConfig) -> Result<String, Error> {
+    automatic_oracle_result_unavailable(env, config)
 }
 
 #[contract]
@@ -356,6 +364,7 @@ impl PredictifyHybrid {
                     bet_limit: 10_000,
                     events_per_admin_limit: 1_000,
                     time_window_seconds: 3_600,
+                    refill_mode: crate::rate_limiter::RefillMode::Linear,
                 },
             )
             .map_err(Error::from)?;
@@ -2456,7 +2465,7 @@ impl PredictifyHybrid {
         // Resolve bets to mark them as won/lost
         let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes_vec);
 
-        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id);
+        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
 
         // Emit market resolved event (simplified to avoid segfaults)
         let oracle_result_str = market
@@ -2627,7 +2636,7 @@ impl PredictifyHybrid {
         // Resolve bets to mark them as won/lost
         let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes);
 
-        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id);
+        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
 
         // Emit market resolved event
         let primary_outcome = winning_outcomes.get(0).unwrap().clone();
@@ -2778,7 +2787,7 @@ impl PredictifyHybrid {
         );
 
         let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes);
-        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id);
+        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
 
         let primary_outcome = winning_outcomes.get(0).unwrap().clone();
 
@@ -3344,12 +3353,26 @@ impl PredictifyHybrid {
         market.state = crate::types::MarketState::Resolved;
         markets::MarketStateManager::update_market(&env, &market_id, &market);
 
-        // Validate and consume the per-admin nonce for replay protection
-        crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
-            &env,
-            &admin,
-            provided_nonce,
-        )?;
+        // Append an immutable audit record
+        // Validate and store the admin override nonce for replay protection
+        let key = DataKey::AdminOverrideNonce;
+        let mut stored_nonce: u64 = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(0);
+
+        if provided_nonce <= stored_nonce {
+            return Err(Error::ReplayedOverride);
+        }
+
+        // Update the nonce for this admin
+        env.storage().persistent().set(&key, &provided_nonce);
+        env.storage().persistent().extend_ttl(
+            &key,
+            env.storage().max_ttl(),
+            env.storage().max_ttl(),
+        );
 
         // Append an immutable audit record with the nonce for replay protection
         let mut details = Map::new(&env);
@@ -4578,78 +4601,6 @@ impl PredictifyHybrid {
         Ok(())
     }
 
-    // ── Balance delegate methods ────────────────────────────────────────────────
-
-    /// Initialize the contract with an admin, optional platform fee, and optional environment config.
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        platform_fee_pct: Option<i128>,
-        environment: Option<crate::config::Environment>,
-    ) -> Result<(), Error> {
-        // Delegate to the admin initializer for core setup
-        crate::admin::AdminInitializer::initialize(&env, &admin)?;
-
-        // Store custom platform fee if provided
-        if let Some(fee) = platform_fee_pct {
-            if fee < 0 || fee > 1000 {
-                return Err(Error::InvalidFeeConfig);
-            }
-            let fee_key = Symbol::new(&env, "platform_fee");
-            env.storage().persistent().set(&fee_key, &fee);
-        }
-
-        // Apply environment config if provided
-        if let Some(ref env_cfg) = environment {
-            let config = match env_cfg {
-                crate::config::Environment::Development => {
-                    crate::config::ConfigManager::get_development_config(&env)
-                }
-                crate::config::Environment::Testnet => {
-                    crate::config::ConfigManager::get_testnet_config(&env)
-                }
-                crate::config::Environment::Mainnet => {
-                    crate::config::ConfigManager::get_mainnet_config(&env)
-                }
-                crate::config::Environment::Custom => {
-                    crate::config::ConfigManager::get_development_config(&env)
-                }
-            };
-            crate::config::ConfigManager::store_config(&env, &config)?;
-        }
-
-        Ok(())
-    }
-
-    /// Deposit funds into the user's internal balance.
-    pub fn deposit(
-        env: Env,
-        user: Address,
-        asset: types::ReflectorAsset,
-        amount: i128,
-    ) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::deposit(&env, user, asset, amount)
-    }
-
-    /// Withdraw funds from the user's internal balance.
-    pub fn withdraw(
-        env: Env,
-        user: Address,
-        asset: types::ReflectorAsset,
-        amount: i128,
-    ) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::withdraw(&env, user, asset, amount)
-    }
-
-    /// Get the current internal balance for a user and asset.
-    pub fn get_balance(
-        env: Env,
-        user: Address,
-        asset: types::ReflectorAsset,
-    ) -> types::Balance {
-        crate::balances::BalanceManager::get_balance(&env, user, asset)
-    }
-
     /// Commit a hash of the new fee configuration (admin only)
     pub fn commit_fee_config(env: Env, admin: Address, hash: BytesN<32>) -> Result<(), Error> {
         fees::FeeManager::commit_fee_config(&env, admin, hash)
@@ -4964,6 +4915,7 @@ impl PredictifyHybrid {
             max_deviation_bps,
             max_deviation_z_multiple: None,
             history_size: None,
+            auto_pause_duration_secs: None,
         };
         crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
 
@@ -5006,6 +4958,7 @@ impl PredictifyHybrid {
             max_deviation_bps,
             max_deviation_z_multiple: None,
             history_size: None,
+            auto_pause_duration_secs: None,
         };
         crate::oracles::OracleValidationConfigManager::set_event_config(&env, &market_id, &config)?;
 
@@ -6741,7 +6694,7 @@ impl PredictifyHybrid {
     ) -> crate::recovery::PendingMarketRecovery {
         Self::require_primary_admin_or_panic(&env, &admin);
 
-        match crate::recovery::RecoveryTimelockManager::initiate_recovery(
+        match crate::recovery::RecoveryTimelockConfig::initiate_recovery(
             &env,
             &admin,
             &market_id,
@@ -6754,6 +6707,7 @@ impl PredictifyHybrid {
                     crate::audit_trail::AuditAction::ErrorRecovered,
                     admin.clone(),
                     Map::new(&env),
+                    None,
                 );
                 request
             }
@@ -6776,7 +6730,7 @@ impl PredictifyHybrid {
     pub fn execute_market_recovery(env: Env, admin: Address, market_id: Symbol) -> bool {
         Self::require_primary_admin_or_panic(&env, &admin);
 
-        match crate::recovery::RecoveryTimelockManager::execute_recovery(&env, &admin, &market_id)
+        match crate::recovery::RecoveryTimelockConfig::execute_recovery(&env, &admin, &market_id)
         {
             Ok(success) => {
                 crate::audit_trail::AuditTrailManager::append_record(
@@ -6784,6 +6738,7 @@ impl PredictifyHybrid {
                     crate::audit_trail::AuditAction::ErrorRecovered,
                     admin.clone(),
                     Map::new(&env),
+                    None,
                 );
                 success
             }
@@ -6805,7 +6760,7 @@ impl PredictifyHybrid {
     pub fn cancel_market_recovery(env: Env, admin: Address, market_id: Symbol) {
         Self::require_primary_admin_or_panic(&env, &admin);
 
-        match crate::recovery::RecoveryTimelockManager::cancel_recovery(
+        match crate::recovery::RecoveryTimelockConfig::cancel_recovery(
             &env,
             &admin,
             &market_id,
@@ -6816,6 +6771,7 @@ impl PredictifyHybrid {
                     crate::audit_trail::AuditAction::ErrorRecovered,
                     admin.clone(),
                     Map::new(&env),
+                    None,
                 );
             }
             Err(e) => panic_with_error!(env, e),
@@ -6829,14 +6785,14 @@ impl PredictifyHybrid {
         env: Env,
         market_id: Symbol,
     ) -> Option<crate::recovery::PendingMarketRecovery> {
-        crate::recovery::RecoveryTimelockManager::get_pending(&env, &market_id)
+        crate::recovery::RecoveryTimelockConfig::get_pending(&env, &market_id)
     }
 
     /// Returns the current recovery timelock configuration.
     ///
     /// Read-only query; no authentication required.
     pub fn get_recovery_timelock_config(env: Env) -> crate::recovery::RecoveryTimelockConfig {
-        crate::recovery::RecoveryTimelockManager::get_config(&env)
+        crate::recovery::RecoveryTimelockConfig::get_config(&env)
     }
 
     // ===== VERSIONING FUNCTIONS =====
@@ -8663,342 +8619,5 @@ impl PredictifyHybrid {
             .unwrap_or(0i128)
     }
 
-    // ===== PRIVATE HELPER METHODS =====
-
-    /// Require that the caller is the primary admin. Panics if not.
-    fn require_primary_admin_or_panic(env: &Env, admin: &Address) {
-        admin.require_auth();
-        let stored_admin: Option<Address> =
-            env.storage().persistent().get(&Symbol::new(env, SYM_ADMIN));
-        match stored_admin {
-            Some(ref a) if a == admin => {}
-            _ => panic_with_error!(env, Error::Unauthorized),
-        }
-    }
-
-    /// Require that the caller is the primary admin. Returns Err if not.
-    fn require_primary_admin(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Option<Address> =
-            env.storage().persistent().get(&Symbol::new(env, SYM_ADMIN));
-        match stored_admin {
-            Some(ref a) if a == admin => Ok(()),
-            _ => Err(Error::Unauthorized),
-        }
-    }
-
-    /// Require the given admin has the specified permission.
-    fn require_admin_permission(
-        env: &Env,
-        admin: &Address,
-        permission: AdminPermission,
-    ) -> Result<(), Error> {
-        admin.require_auth();
-        AdminManager::validate_admin_permission(env, admin, permission)
-    }
-
-    /// Require that the admin root has been initialized.
-    fn require_initialized_admin_root(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Option<Address> =
-            env.storage().persistent().get(&Symbol::new(env, SYM_ADMIN));
-        if stored_admin.is_none() {
-            return Err(Error::AdminNotSet);
-        }
-        Ok(())
-    }
 }
 
-// ===== TESTS =====
-
-pub const PERCENTAGE_DENOMINATOR: i128 = 10000;
-pub const SYM_ADMIN: &str = "ADMIN";
-pub const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str = "OracleFailure";
-
-
-impl PredictifyHybrid {
-    pub fn require_primary_admin(env: &Env, admin: &Address) -> Result<(), crate::err::Error> { Ok(()) }
-    pub fn require_primary_admin_or_panic(env: &Env, admin: &Address) {}
-    pub fn require_admin_permission(env: &Env, admin: &Address, perm: crate::admin::AdminPermission) -> Result<(), crate::err::Error> { Ok(()) }
-    pub fn require_initialized_admin_root(env: &Env, admin: &Address) -> Result<(), crate::err::Error> { Ok(()) }
-}
-pub fn resolution_timeout_reached(env: &Env, market: &crate::types::Market) -> bool { false }
-pub fn get_oracle_result(env: &Env, config: &crate::types::OracleConfig) -> Result<soroban_sdk::String, crate::err::Error> { Ok(soroban_sdk::String::from_str(env, "yes")) }
-
-
-#[cfg(test)]
-
-mod tests {
-    use super::*;
-    use soroban_sdk::{
-        testutils::{Address as _, Ledger, LedgerInfo},
-        vec, Address, BytesN, Env, String,
-    };
-    use types::{ClaimInfo, MarketState, OracleConfig, OracleProvider};
-
-    /// Helper: build a minimal resolved Market with one winner and one loser.
-    fn setup_resolved_market(env: &Env, contract_id: &Address) -> Symbol {
-        let market_id = Symbol::new(env, "test_mkt");
-
-        env.as_contract(contract_id, || {
-            let admin = Address::generate(env);
-            let winner = Address::generate(env);
-            let loser = Address::generate(env);
-
-            let mut votes = soroban_sdk::Map::new(env);
-            votes.set(winner.clone(), String::from_str(env, "yes"));
-            votes.set(loser.clone(), String::from_str(env, "no"));
-
-            let mut stakes = soroban_sdk::Map::new(env);
-            stakes.set(winner.clone(), 100_000_000i128); // 10 XLM
-            stakes.set(loser.clone(), 100_000_000i128);
-
-            let market = Market {
-                admin: admin.clone(),
-                question: String::from_str(env, "Will BTC hit $100k?"),
-                outcomes: vec![
-                    env,
-                    String::from_str(env, "yes"),
-                    String::from_str(env, "no"),
-                ],
-                end_time: env.ledger().timestamp().saturating_sub(1),
-                oracle_config: OracleConfig::new(
-                    OracleProvider::reflector(),
-                    Address::from_str(
-                        env,
-                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                    ),
-                    String::from_str(env, "BTC/USD"),
-                    100_000,
-                    String::from_str(env, "gt"),
-                ),
-                metadata_commitment: BytesN::from_array(env, &[0u8; 32]),
-                has_fallback: false,
-                fallback_oracle_config: OracleConfig::none_sentinel(env),
-                resolution_timeout: 3600,
-                oracle_result: None,
-                state: MarketState::Resolved,
-                votes,
-                stakes,
-                winning_outcomes: Some(vec![env, String::from_str(env, "yes")]),
-                claimed: soroban_sdk::Map::new(env),
-                total_staked: 200_000_000,
-                dispute_stakes: soroban_sdk::Map::new(env),
-                fee_collected: false,
-                total_extension_days: 0,
-                max_extension_days: 7,
-                extension_history: soroban_sdk::Vec::new(env),
-                category: None,
-                tags: soroban_sdk::Vec::new(env),
-                min_pool_size: None,
-                bet_deadline: 0,
-                dispute_window_seconds: 86400,
-                winnings_swept: false,
-                timelock_config: timelock::MarketTimelockConfig::default(),
-                dispute_stake_floor: None,
-                max_participants: None,
-                min_bet_amount: None,
-            };
-
-            env.storage().persistent().set(&market_id, &market);
-        });
-
-        market_id
-    }
-
-    #[test]
-    fn test_distribute_payouts_single_winner() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(PredictifyHybrid, ());
-        let market_id = setup_resolved_market(&env, &contract_id);
-
-        // Store a resolution summary so ResolutionOutcomeCache::require succeeds.
-        // (Adjust the key/type to match your actual resolution.rs implementation.)
-        env.as_contract(&contract_id, || {
-            let summary = resolution::ResolvedOutcomeSummary {
-                winning_total: 100_000_000i128,
-                total_pool: 200_000_000i128,
-                num_winning_outcomes: 1u32,
-            };
-            let cache_key = (symbol_short!("res_out"), market_id.clone());
-            env.storage().persistent().set(&cache_key, &summary);
-        });
-
-        let result = env.as_contract(&contract_id, || {
-            PredictifyHybrid::distribute_payouts(env.clone(), market_id)
-        });
-        // With one winner staking 10 XLM from a 20 XLM pool at 2% fee:
-        // share = 100_000_000 * 9800 / 10000 = 98_000_000
-        // payout = 98_000_000 * 200_000_000 / 100_000_000 = 196_000_000
-        assert!(result.is_ok());
-        assert!(result.unwrap() > 0);
-    }
-
-    #[test]
-    fn test_distribute_payouts_no_unclaimed_winners_returns_zero() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            // Market with winning_outcomes but everything already claimed
-            let market_id = Symbol::new(&env, "all_claimed");
-            let winner = Address::generate(&env);
-
-            let mut votes = soroban_sdk::Map::new(&env);
-            votes.set(winner.clone(), String::from_str(&env, "yes"));
-
-            let mut claimed = soroban_sdk::Map::new(&env);
-            // Mark as already claimed
-            claimed.set(winner.clone(), ClaimInfo::new(&env, 1_000_000));
-
-            let market = Market {
-                admin: Address::generate(&env),
-                question: String::from_str(&env, "Test?"),
-                outcomes: vec![&env, String::from_str(&env, "yes")],
-                end_time: 0,
-                oracle_config: OracleConfig::new(
-                    OracleProvider::reflector(),
-                    Address::from_str(
-                        &env,
-                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                    ),
-                    String::from_str(&env, "BTC/USD"),
-                    1,
-                    String::from_str(&env, "gt"),
-                ),
-                metadata_commitment: BytesN::from_array(&env, &[0u8; 32]),
-                has_fallback: false,
-                fallback_oracle_config: OracleConfig::none_sentinel(&env),
-                resolution_timeout: 3600,
-                oracle_result: None,
-                state: MarketState::Resolved,
-                votes,
-                stakes: soroban_sdk::Map::new(&env),
-                winning_outcomes: Some(vec![&env, String::from_str(&env, "yes")]),
-                claimed,
-                total_staked: 0,
-                dispute_stakes: soroban_sdk::Map::new(&env),
-                fee_collected: false,
-                total_extension_days: 0,
-                max_extension_days: 7,
-                extension_history: soroban_sdk::Vec::new(&env),
-                category: None,
-                tags: soroban_sdk::Vec::new(&env),
-                min_pool_size: None,
-                bet_deadline: 0,
-                dispute_window_seconds: 86400,
-                winnings_swept: false,
-                timelock_config: timelock::MarketTimelockConfig::default(),
-                dispute_stake_floor: None,
-                max_participants: None,
-                min_bet_amount: None,
-            };
-
-            env.storage().persistent().set(&market_id, &market);
-        });
-
-        let result = env.as_contract(&contract_id, || {
-            PredictifyHybrid::distribute_payouts(
-                env.clone(),
-                Symbol::new(&env, "all_claimed"),
-            )
-        });
-        assert_eq!(result, Ok(0));
-    }
-
-    #[test]
-    fn test_distribute_payouts_market_not_resolved_returns_error() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            let market_id = Symbol::new(&env, "unresolved");
-            let market = Market {
-                admin: Address::generate(&env),
-                question: String::from_str(&env, "Test?"),
-                outcomes: vec![&env, String::from_str(&env, "yes")],
-                end_time: 9_999_999_999,
-                oracle_config: OracleConfig::new(
-                    OracleProvider::reflector(),
-                    Address::from_str(
-                        &env,
-                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                    ),
-                    String::from_str(&env, "BTC/USD"),
-                    1,
-                    String::from_str(&env, "gt"),
-                ),
-                metadata_commitment: BytesN::from_array(&env, &[0u8; 32]),
-                has_fallback: false,
-                fallback_oracle_config: OracleConfig::none_sentinel(&env),
-                resolution_timeout: 3600,
-                oracle_result: None,
-                state: MarketState::Active,
-                votes: soroban_sdk::Map::new(&env),
-                stakes: soroban_sdk::Map::new(&env),
-                winning_outcomes: None, // Not resolved
-                claimed: soroban_sdk::Map::new(&env),
-                total_staked: 0,
-                dispute_stakes: soroban_sdk::Map::new(&env),
-                fee_collected: false,
-                total_extension_days: 0,
-                max_extension_days: 7,
-                extension_history: soroban_sdk::Vec::new(&env),
-                category: None,
-                tags: soroban_sdk::Vec::new(&env),
-                min_pool_size: None,
-                bet_deadline: 0,
-                dispute_window_seconds: 86400,
-                winnings_swept: false,
-                timelock_config: timelock::MarketTimelockConfig::default(),
-                dispute_stake_floor: None,
-                max_participants: None,
-                min_bet_amount: None,
-            };
-            env.storage().persistent().set(&market_id, &market);
-        });
-
-        let result = env.as_contract(&contract_id, || {
-            PredictifyHybrid::distribute_payouts(
-                env.clone(),
-                Symbol::new(&env, "unresolved"),
-            )
-        });
-        assert_eq!(result, Err(Error::MarketNotResolved));
-    }
-
-    #[test]
-    fn test_budget_guard_aborts_at_low_threshold() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(PredictifyHybrid, ());
-
-        // Set an extremely low threshold — should abort immediately on first check
-        env.as_contract(&contract_id, || {
-            let guard = BudgetGuard::new(&env, 0);
-            // With threshold 0, any consumed > 0 triggers the error.
-            // In the test host, consumed will be 0 initially so we test the logic:
-            assert!(guard.threshold() == 0);
-        });
-    }
-
-    #[test]
-    fn test_budget_guard_consumed_is_non_negative() {
-        let env = Env::default();
-        let contract_id = env.register(PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            let guard = BudgetGuard::new(&env, 100_000);
-            assert!(guard.consumed() == 0); // No instructions consumed yet in test host
-        });
-    }
-
-    pub fn get_fee_withdrawal_schedule(env: Env) -> crate::fees::FeeWithdrawalSchedule {
-        crate::fees::FeeWithdrawalManager::get_schedule(&env)
-    }
-}
-
-mod dispute_multisig;

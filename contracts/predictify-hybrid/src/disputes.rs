@@ -26,11 +26,57 @@ impl DisputeValidator {
         Ok(())
     }
 
-    pub fn validate_dispute_parameters(
-        _env: &Env,
-        _user: &Address,
-        _market: &Market,
-        stake: i128,
+    /// Retrieves the configured dispute history capacity.
+    pub fn get_history_cap(env: &Env) -> Option<u32> {
+        let key = DataKey::DisputeHistoryCap;
+        env.storage().persistent().get(&key)
+    }
+
+    /// Sets the anti-grief minimum stake floor.
+    pub fn set_anti_grief_floor(env: &Env, admin: Address, floor: i128) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_anti_grief_floor"))?;
+
+        let key = DataKey::AntiGriefFloor;
+        env.storage().persistent().set(&key, &floor);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Retrieves the anti-grief minimum stake floor.
+    pub fn get_anti_grief_floor(env: &Env) -> Option<i128> {
+        let key = DataKey::AntiGriefFloor;
+        env.storage().persistent().get(&key)
+    }
+
+    /// Sets the collusion detector configuration.
+    pub fn set_collusion_detector_config(env: &Env, admin: Address, config: CollusionDetectorConfig) -> Result<(), Error> {
+        admin.require_auth();
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_collusion_detector_config"))?;
+
+        let key = DataKey::CollusionDetectorConfig(Symbol::new(env, "collusion_config"));
+        env.storage().persistent().set(&key, &config);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Retrieves the collusion detector configuration.
+    pub fn get_collusion_detector_config(env: &Env) -> CollusionDetectorConfig {
+        let key = DataKey::CollusionDetectorConfig(Symbol::new(env, "collusion_config"));
+        env.storage().persistent().get(&key).unwrap_or(CollusionDetectorConfig {
+            stake_delta_threshold: 1_000_000,
+            time_delta_threshold: 600, // 10 minutes
+            window_size: 8,
+        })
+    }
+
+    /// Evicts the oldest resolved/expired disputes if history size exceeds the cap.
+    pub fn apply_eviction(
+        env: &Env,
+        market_id: &Symbol,
+        history: &mut Vec<Dispute>,
     ) -> Result<(), Error> {
         if stake < MIN_DISPUTE_STAKE {
             return Err(Error::InsufficientStake);
@@ -247,7 +293,45 @@ impl DisputeManager {
             resolution_timestamp: env.ledger().timestamp(),
         };
 
-        DisputeUtils::emit_dispute_resolved_event(env, &resolution);
+        // Update market with final outcome
+        DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
+        MarketStateManager::update_market(env, &market_id, &market);
+
+        // Update history status to Resolved
+        let mut history = env.storage().persistent()
+            .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(market_id.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+        let mut updated = false;
+        for i in 0..history.len() {
+            let mut disp = history.get(i).ok_or(Error::InvalidState)?;
+            if matches!(disp.status, DisputeStatus::Active) {
+                disp.status = DisputeStatus::Resolved;
+                history.set(i, disp);
+                updated = true;
+            }
+        }
+        if updated {
+            Self::apply_eviction(env, &market_id, &mut history)?;
+            env.storage().persistent().set(&DataKey::DisputeHistory(market_id.clone()), &history);
+            env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
+        }
+
+        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market);
+        crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
+            env,
+            &market_id,
+            &soroban_sdk::String::from_str(env, "resolved"),
+            &admin,
+            &soroban_sdk::String::from_str(env, "dispute_resolved"),
+        );
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env,
+            crate::audit_trail::AuditAction::DisputeResolved,
+            admin.clone(),
+            Map::new(env),
+            None,
+        );
 
         Ok(resolution)
     }
@@ -353,9 +437,7 @@ impl DisputeUtils {
         vote: &String,
         stake: i128,
     ) {
-        let event_key = symbol_short!("vote_evt");
-        let event_data = (user.clone(), vote.clone(), stake, env.ledger().timestamp());
-        env.storage().persistent().set(&event_key, &event_data);
+        // NOTE: emit_dispute_vote_cast not yet implemented in EventEmitter
     }
 
     pub fn emit_fee_distribution_event(
@@ -363,8 +445,7 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) {
-        let event_key = symbol_short!("fee_event");
-        env.storage().persistent().set(&event_key, distribution);
+        // NOTE: emit_dispute_fee_distributed not yet implemented in EventEmitter
     }
 
     pub fn emit_dispute_escalation_event(
