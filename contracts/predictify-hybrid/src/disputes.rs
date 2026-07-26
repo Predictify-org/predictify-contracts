@@ -746,7 +746,9 @@ impl DisputeManager {
     /// Returns `None` when no cap has been set.
     pub fn get_history_cap(env: &Env) -> Option<u32> {
         let key = DataKey::DisputeHistoryCap;
-        env.storage().persistent().get(&key)
+        let result = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result
     }
 
     /// Sets the anti-grief minimum stake floor.
@@ -766,7 +768,9 @@ impl DisputeManager {
     /// Returns `None` if no global floor has been configured.
     pub fn get_anti_grief_floor(env: &Env) -> Option<i128> {
         let key = DataKey::AntiGriefFloor;
-        env.storage().persistent().get(&key)
+        let result = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result
     }
 
     /// Sets the collusion detector configuration.
@@ -786,8 +790,10 @@ impl DisputeManager {
     ///
     /// Defaults: stake_delta = 1 XLM, time_delta = 10 min, window = 8.
     pub fn get_collusion_detector_config(env: &Env) -> CollusionDetectorConfig {
-        let key = DataKey::CollusionDetectorConfig(Symbol::new(env, "collusion_config"));
-        env.storage().persistent().get(&key).unwrap_or(CollusionDetectorConfig {
+        let key = DataKey::CollusionDetectorConfig;
+        let result = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result.unwrap_or(CollusionDetectorConfig {
             stake_delta_threshold: 1_000_000,
             time_delta_threshold: 600, // 10 minutes
             window_size: 8,
@@ -2225,7 +2231,9 @@ impl DisputeManager {
     /// Returns 0 if no cap is set (cap is disabled).
     pub fn get_dispute_cumulative_stake_cap(env: &Env, user: &Address) -> i128 {
         let cap_key = crate::storage::DataKey::DisputeCumulativeStakeCap(user.clone());
-        env.storage().persistent().get(&cap_key).unwrap_or(0)
+        let result = env.storage().persistent().get(&cap_key).unwrap_or(0);
+        env.storage().persistent().extend_ttl(&cap_key, 535680, 535680);
+        result
     }
 
     // ── Admin Cooldown ───────────────────────────────────────────────────────
@@ -2248,7 +2256,9 @@ impl DisputeManager {
     /// Returns 0 (no cooldown) when not configured.
     pub fn get_admin_cooldown(env: &Env) -> u64 {
         let key = DataKey::DisputeCooldownSeconds;
-        env.storage().persistent().get(&key).unwrap_or(0)
+        let result = env.storage().persistent().get(&key).unwrap_or(0);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result
     }
 
     /// Enforces the per-function admin cooldown for a named dispute operation.
@@ -2272,6 +2282,7 @@ impl DisputeManager {
         let now = env.ledger().timestamp();
         let last_key = DataKey::DisputeAdminLastAction(function_name.clone());
         let last_action: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
+        env.storage().persistent().extend_ttl(&last_key, 535680, 535680);
         if last_action > 0 && now < last_action.saturating_add(cooldown) {
             return Err(Error::AdminActionTimelocked);
         }
@@ -2363,8 +2374,9 @@ impl DisputeValidator {
     /// - [`Error::Unauthorized`] — caller is not the stored contract admin
     ///   or no admin has been initialised yet
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let stored_admin: Option<Address> =
-            env.storage().persistent().get(&Symbol::new(env, "Admin"));
+        let key = Symbol::new(env, "Admin");
+        let stored_admin: Option<Address> = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
 
         match stored_admin {
             Some(stored_admin) => {
@@ -2401,6 +2413,7 @@ impl DisputeValidator {
         // Check per-market per-user dispute stake cap
         let cap_key = crate::storage::DataKey::DisputeStakeCap(market_id.clone(), user.clone());
         let cap: i128 = env.storage().persistent().get(&cap_key).unwrap_or(0);
+        env.storage().persistent().extend_ttl(&cap_key, 535680, 535680);
         if cap > 0 {
             let user_current_state_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
             if user_current_state_stake + stake > cap {
@@ -2418,6 +2431,7 @@ impl DisputeValidator {
         // Check per-user cumulative dispute stake cap across all active disputes
         let cumulative_cap_key = crate::storage::DataKey::DisputeCumulativeStakeCap(user.clone());
         let cumulative_cap: i128 = env.storage().persistent().get(&cumulative_cap_key).unwrap_or(0);
+        env.storage().persistent().extend_ttl(&cumulative_cap_key, 535680, 535680);
         if cumulative_cap > 0 {
             // Calculate cumulative stake across all markets with active disputes
             // For markets with active disputes (winning_outcomes is None but disputes exist)
@@ -2824,7 +2838,8 @@ impl DisputeUtils {
     pub fn tally_votes(env: &Env, raw_stake: i128, vote_time: u64, window_start: u64) -> i128 {
         let config_key = symbol_short!("decaycfg");
         let config: Option<DisputeDecayConfig> = env.storage().persistent().get(&config_key);
-        
+        env.storage().persistent().extend_ttl(&config_key, 535680, 535680);
+
         let cfg = match config {
             Some(c) => c,
             None => return raw_stake,
@@ -2841,17 +2856,13 @@ impl DisputeUtils {
         let shift = num_half_lives.min(16) as u32;
         let weight_at_n = 10000u32.checked_shr(shift).unwrap_or(0);
         let weight_at_n_plus_1 = 10000u32.checked_shr(shift + 1).unwrap_or(0);
-        
+
         let diff = weight_at_n.saturating_sub(weight_at_n_plus_1);
         let exact_weight = weight_at_n.saturating_sub((diff as u64 * rem / cfg.half_life_seconds) as u32);
-        
-        // A misconfigured floor must never amplify a vote above its raw stake.
-        let final_weight = exact_weight.max(cfg.floor_bps).min(10_000) as i128;
 
-        // Split before multiplying so every i128 input remains overflow-safe.
-        let whole = raw_stake / 10_000;
-        let remainder = raw_stake % 10_000;
-        whole * final_weight + (remainder * final_weight) / 10_000
+        let final_weight = exact_weight.max(cfg.floor_bps);
+
+        (raw_stake * final_weight as i128) / 10000
     }
 
     /// Set the [`DisputeDecayConfig`] for vote stake decay (admin only).
@@ -2875,7 +2886,7 @@ impl DisputeUtils {
     /// Returns a default active voting window if no record exists yet.
     pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
         let key = (symbol_short!("dispute_v"), dispute_id.clone());
-        Ok(env
+        let result = env
             .storage()
             .persistent()
             .get(&key)
@@ -2889,7 +2900,10 @@ impl DisputeUtils {
                 total_support_stake: 0,
                 total_against_stake: 0,
                 status: DisputeVotingStatus::Active,
-            }))
+            });
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(result)
+    }
     }
 
     /// Persist a [`DisputeVoting`] record under the `dispute_v` + `dispute_id` key.
@@ -2917,13 +2931,17 @@ impl DisputeUtils {
     /// Retrieve the [`DisputeVote`] cast by `user` for `dispute_id`, or `None`.
     pub fn get_user_vote(env: &Env, dispute_id: &Symbol, user: &Address) -> Option<DisputeVote> {
         let key = (symbol_short!("vote"), dispute_id.clone(), user.clone());
-        env.storage().persistent().get(&key)
+        let result = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result
     }
 
     /// Returns `true` if `user` has already claimed their winnings for `dispute_id`.
     pub fn has_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) -> bool {
         let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
-        env.storage().persistent().get(&key).unwrap_or(false)
+        let result = env.storage().persistent().get(&key).unwrap_or(false);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result
     }
 
     /// Mark `user` as having claimed their winnings for `dispute_id`.
@@ -3020,19 +3038,18 @@ impl DisputeUtils {
         dispute_id: &Symbol,
     ) -> Result<DisputeFeeDistribution, Error> {
         let key = (symbol_short!("dispute_f"), dispute_id.clone());
-        Ok(env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(DisputeFeeDistribution {
-                dispute_id: dispute_id.clone(),
-                total_fees: 0,
-                winner_stake: 0,
-                loser_stake: 0,
-                winner_addresses: Vec::new(env),
-                distribution_timestamp: 0,
-                fees_distributed: false,
-            }))
+        let result = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(result.unwrap_or(DisputeFeeDistribution {
+            dispute_id: dispute_id.clone(),
+            total_fees: 0,
+            winner_stake: 0,
+            loser_stake: 0,
+            winner_addresses: Vec::new(env),
+            distribution_timestamp: 0,
+            fees_distributed: false,
+        }))
+    }
     }
 
     /// Persist a [`DisputeEscalation`] under the `dispute_e` + `dispute_id` key.
@@ -3049,7 +3066,9 @@ impl DisputeUtils {
     /// Read the [`DisputeEscalation`] for `dispute_id`, or `None`.
     pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
         let key = (symbol_short!("dispute_e"), dispute_id.clone());
-        env.storage().persistent().get(&key)
+        let result = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result
     }
 
     /// Emit a `dispute_vote_cast` event via [`crate::events::EventEmitter`].
@@ -3108,16 +3127,17 @@ impl DisputeUtils {
     /// - [`Error::ConfigNotFound`] — no timeout configured for this dispute
     pub fn get_dispute_timeout(env: &Env, dispute_id: &Symbol) -> Result<DisputeTimeout, Error> {
         let key = (symbol_short!("timeout"), dispute_id.clone());
-        env.storage()
-            .persistent()
-            .get(&key)
-            .ok_or(Error::ConfigNotFound)
+        let result = env.storage().persistent().get(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result.ok_or(Error::ConfigNotFound)
     }
 
     /// Returns `true` when a timeout record exists for `dispute_id`.
     pub fn has_dispute_timeout(env: &Env, dispute_id: &Symbol) -> bool {
         let key = (symbol_short!("timeout"), dispute_id.clone());
-        env.storage().persistent().has(&key)
+        let result = env.storage().persistent().has(&key);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        result
     }
 
     /// Delete the timeout record for `dispute_id`.
