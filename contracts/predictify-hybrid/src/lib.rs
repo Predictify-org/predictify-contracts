@@ -212,6 +212,7 @@ pub use admin::Severity;
 pub use err::Error;
 use crate::storage::{
     check_market_creation_rent, check_market_creation_rent_budget, DataKey, MARKET_TTL_LEDGERS,
+    MARKETS_BUMP_AMOUNT, MARKETS_LIFETIME_THRESHOLD,
 };
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
