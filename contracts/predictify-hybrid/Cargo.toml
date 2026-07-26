@@ -40,6 +40,10 @@ name = "auth_snap"
 path = "tests/auth_snap.rs"
 
 [[test]]
+name = "auth_snapshot_betting"
+path = "tests/auth_snapshot_betting.rs"
+
+[[test]]
 name = "stateful"
 path = "tests/stateful.rs"
 
