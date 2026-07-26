@@ -22,6 +22,7 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    /// A `place_bets` batch with this idempotency key has already been successfully applied.
     IdempotentBatchAlreadyApplied = 660,
     /// Reason table has reached its maximum capacity of 256 entries.
     ReasonTableFull = 670,
@@ -249,8 +250,8 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
-    /// A place_bets batch with this idempotency key has already been successfully applied.
-    IdempotentBatchAlreadyApplied = 509,
+    /// A single bet exceeded the per-market maximum single-bet cap configured by an admin.
+    BetExceedsCap = 509,
     /// Force-resolve idempotency key has already been used. Use a new unique key.
     ForceResolveReplayed = 517,
     /// Force-resolve reason is empty. Every force-resolve must be justified.
@@ -270,14 +271,67 @@ pub enum Error {
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
     /// An admin override nonce was replayed; reject to prevent replay attacks.
+    ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
     MaxParticipantsReached = 528,
-    /// Bet amount exceeds the per-market maximum single-bet cap set by `set_market_max_bet_cap`.
+
+    // ===== LIMIT ERRORS (600-611) =====
+    //
+    // Semantic bound-violation codes. Every one of these replaces a site that
+    // previously reported a bound violation as a generic `InvalidInput` (or, for
+    // [`Error::QueueAlreadyInitialized`], as an unrecoverable host panic), so
+    // off-chain clients can tell *which* limit was hit without string matching.
+    //
+    // Naming convention:
+    // * `*AboveMaximum`   — a value exceeded an upper bound.
+    // * `*OutOfRange`     — a value fell outside an inclusive `[min, max]` window.
+    // * `*LimitsInverted` — an admin-supplied `min`/`max` pair is contradictory.
+    /// Bet amount exceeds the effective maximum bet for the market.
     ///
-    /// Returned when the bet amount exceeds the cap configured for a specific market.
-    BetExceedsCap = 529,
+    /// Raised by [`crate::bets::BetValidator::validate_bet_amount_against_limits`] and
+    /// [`crate::bets::BetValidator::validate_bet_amount`]. The effective maximum is the
+    /// per-event limit if configured, otherwise the global limit, otherwise
+    /// [`crate::bets::MAX_BET_AMOUNT`].
+    ///
+    /// Distinct from [`Error::BetExceedsCap`], which is the *per-market single-bet* cap.
+    BetAboveMaximum = 600,
+    /// Admin-supplied bet limits are contradictory: `min_bet > max_bet`.
+    BetLimitsInverted = 601,
+    /// Admin-supplied `max_bet` exceeds the absolute ceiling [`crate::bets::MAX_BET_AMOUNT`].
+    BetLimitAboveMaximum = 602,
+    /// Per-market single-bet cap is outside the permitted range: it must be strictly
+    /// positive and at most [`crate::bets::MAX_BET_AMOUNT`].
+    ///
+    /// Raised when setting the cap, not when checking a bet against it — a bet that
+    /// exceeds an already-configured cap yields [`Error::BetExceedsCap`].
+    BetCapOutOfRange = 603,
+    /// A batch operation was submitted with zero entries.
+    BatchEmpty = 604,
+    /// A batch operation exceeds the maximum number of entries allowed per call.
+    BatchSizeExceeded = 605,
+    /// Fee percentage (basis points) is outside the inclusive range bounded by
+    /// [`crate::fees::MIN_FEE_PERCENTAGE`] and [`crate::fees::MAX_FEE_PERCENTAGE`].
+    FeePercentageOutOfRange = 606,
+    /// Fee amount exceeds [`crate::fees::MAX_FEE_AMOUNT`].
+    ///
+    /// A fee amount *below* [`crate::fees::MIN_FEE_AMOUNT`] keeps reporting
+    /// [`Error::InsufficientStake`], which is already semantic.
+    FeeAmountAboveMaximum = 607,
+    /// Market creation fee is outside the inclusive range bounded by
+    /// [`crate::fees::MIN_FEE_AMOUNT`] and [`crate::fees::MAX_FEE_AMOUNT`].
+    CreationFeeOutOfRange = 608,
+    /// Admin-supplied fee bounds are contradictory: `max_fee_amount < min_fee_amount`.
+    FeeLimitsInverted = 609,
+    /// Monitor queue capacity is outside the inclusive range bounded by
+    /// `MIN_QUEUE_CAPACITY` and `MAX_QUEUE_CAPACITY` in `crate::monitor`.
+    QueueCapacityOutOfRange = 610,
+    /// The monitor queue has already been initialized; re-initialization is rejected.
+    ///
+    /// Previously a bare `panic!`, which aborted the host frame with no client-readable
+    /// code. Callers that treat re-initialization as a no-op can now match on this.
+    QueueAlreadyInitialized = 611,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -818,6 +872,21 @@ impl ErrorHandler {
             Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
             Error::BetBelowMarketMin => RecoveryStrategy::NoRecovery,
             Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
+            // Limit errors driven by caller input: retrying with a smaller value works.
+            Error::BetAboveMaximum | Error::BatchEmpty | Error::BatchSizeExceeded => {
+                RecoveryStrategy::Retry
+            }
+            // Limit errors driven by admin configuration: an operator must fix the config.
+            Error::BetLimitsInverted
+            | Error::BetLimitAboveMaximum
+            | Error::BetCapOutOfRange
+            | Error::FeePercentageOutOfRange
+            | Error::FeeAmountAboveMaximum
+            | Error::CreationFeeOutOfRange
+            | Error::FeeLimitsInverted
+            | Error::QueueCapacityOutOfRange => RecoveryStrategy::Abort,
+            // Re-initialization is a benign no-op for the caller.
+            Error::QueueAlreadyInitialized => RecoveryStrategy::Skip,
             _ => RecoveryStrategy::Abort,
         }
     }
@@ -1414,6 +1483,35 @@ impl ErrorHandler {
                 ErrorCategory::System,
                 RecoveryStrategy::NoRecovery,
             ),
+            // ===== Limit errors (600-611) =====
+            // Caller-supplied value out of bounds — the caller can resubmit a smaller value.
+            Error::BetAboveMaximum | Error::BatchEmpty | Error::BatchSizeExceeded => (
+                ErrorSeverity::Low,
+                ErrorCategory::Validation,
+                RecoveryStrategy::Retry,
+            ),
+            // Admin-supplied bound is itself invalid — the configuration must be corrected.
+            Error::BetLimitsInverted
+            | Error::BetLimitAboveMaximum
+            | Error::BetCapOutOfRange
+            | Error::QueueCapacityOutOfRange => (
+                ErrorSeverity::Medium,
+                ErrorCategory::Validation,
+                RecoveryStrategy::Abort,
+            ),
+            Error::FeePercentageOutOfRange
+            | Error::FeeAmountAboveMaximum
+            | Error::CreationFeeOutOfRange
+            | Error::FeeLimitsInverted => (
+                ErrorSeverity::Medium,
+                ErrorCategory::Financial,
+                RecoveryStrategy::Abort,
+            ),
+            Error::QueueAlreadyInitialized => (
+                ErrorSeverity::Low,
+                ErrorCategory::System,
+                RecoveryStrategy::Skip,
+            ),
             _ => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Unknown,
@@ -1599,9 +1697,6 @@ impl Error {
             Error::FeeRevealTooEarly => "Fee config reveal attempted too early",
             Error::FeePreimageMismatch => "Preimage does not match the committed hash",
             Error::DisputeStakeCapExceeded => "Dispute stake cap exceeded for this address",
-            Error::InsufficientStorageRentBudget => {
-                "Insufficient storage rent budget for operation"
-            }
             Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
             Error::UpgradeChainMismatch => "Upgrade chain predecessor hash mismatch",
             Error::ReplayedOverride => "Admin override nonce replayed; rejected",
@@ -1610,6 +1705,32 @@ impl Error {
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
             Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            Error::MaxParticipantsReached => "Maximum number of unique participants reached",
+            Error::IdempotentBatchAlreadyApplied => {
+                "Batch with this idempotency key has already been applied"
+            }
+
+            // Limit errors
+            Error::BetAboveMaximum => "Bet amount exceeds the maximum bet allowed for this market",
+            Error::BetLimitsInverted => "Configured bet limits are inverted (min_bet > max_bet)",
+            Error::BetLimitAboveMaximum => {
+                "Configured max_bet exceeds the absolute maximum bet amount"
+            }
+            Error::BetCapOutOfRange => {
+                "Per-market bet cap must be positive and at most the absolute maximum bet amount"
+            }
+            Error::BatchEmpty => "Batch operation requires at least one entry",
+            Error::BatchSizeExceeded => "Batch operation exceeds the maximum number of entries",
+            Error::FeePercentageOutOfRange => {
+                "Fee percentage is outside the allowed basis-point range"
+            }
+            Error::FeeAmountAboveMaximum => "Fee amount exceeds the maximum allowed fee amount",
+            Error::CreationFeeOutOfRange => "Creation fee is outside the allowed range",
+            Error::FeeLimitsInverted => {
+                "Configured fee limits are inverted (max_fee_amount < min_fee_amount)"
+            }
+            Error::QueueCapacityOutOfRange => "Monitor queue capacity is outside the allowed range",
+            Error::QueueAlreadyInitialized => "Monitor queue has already been initialized",
             _ => "An unspecified error occurred.",
         }
     }
@@ -1722,6 +1843,22 @@ impl Error {
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
             Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+            Error::MaxParticipantsReached => "MAX_PARTICIPANTS_REACHED",
+            Error::IdempotentBatchAlreadyApplied => "IDEMPOTENT_BATCH_ALREADY_APPLIED",
+
+            // Limit errors
+            Error::BetAboveMaximum => "BET_ABOVE_MAXIMUM",
+            Error::BetLimitsInverted => "BET_LIMITS_INVERTED",
+            Error::BetLimitAboveMaximum => "BET_LIMIT_ABOVE_MAXIMUM",
+            Error::BetCapOutOfRange => "BET_CAP_OUT_OF_RANGE",
+            Error::BatchEmpty => "BATCH_EMPTY",
+            Error::BatchSizeExceeded => "BATCH_SIZE_EXCEEDED",
+            Error::FeePercentageOutOfRange => "FEE_PERCENTAGE_OUT_OF_RANGE",
+            Error::FeeAmountAboveMaximum => "FEE_AMOUNT_ABOVE_MAXIMUM",
+            Error::CreationFeeOutOfRange => "CREATION_FEE_OUT_OF_RANGE",
+            Error::FeeLimitsInverted => "FEE_LIMITS_INVERTED",
+            Error::QueueCapacityOutOfRange => "QUEUE_CAPACITY_OUT_OF_RANGE",
+            Error::QueueAlreadyInitialized => "QUEUE_ALREADY_INITIALIZED",
             _ => "UNSPECIFIED_ERROR",
         }
     }
@@ -1840,6 +1977,22 @@ mod tests {
             Error::UpgradeChainMismatch,
             Error::ReplayedOverride,
             Error::OracleQuoteOutlier,
+            Error::BetExceedsCap,
+            Error::MaxParticipantsReached,
+            Error::IdempotentBatchAlreadyApplied,
+            // Limit errors
+            Error::BetAboveMaximum,
+            Error::BetLimitsInverted,
+            Error::BetLimitAboveMaximum,
+            Error::BetCapOutOfRange,
+            Error::BatchEmpty,
+            Error::BatchSizeExceeded,
+            Error::FeePercentageOutOfRange,
+            Error::FeeAmountAboveMaximum,
+            Error::CreationFeeOutOfRange,
+            Error::FeeLimitsInverted,
+            Error::QueueCapacityOutOfRange,
+            Error::QueueAlreadyInitialized,
         ]
     }
 

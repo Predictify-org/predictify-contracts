@@ -556,6 +556,28 @@ pub fn validate_token_operation(env: &Env, asset: &Asset, user: &Address, amount
 - **202**: `OracleTimeout` - Oracle response timeout
 - **203**: `OracleDataInvalid` - Oracle data format invalid
 
+### Limit Errors (600-619)
+
+Semantic bound-violation codes. These replaced generic `InvalidInput` (401)
+returns so clients can tell which limit was breached. See
+[`contracts/predictify-hybrid/LIMIT_ERRORS.md`](../../contracts/predictify-hybrid/LIMIT_ERRORS.md)
+for the full mapping, precedence rules, and migration notes.
+
+- **600**: `BetAboveMaximum` - Bet exceeds the market's effective maximum
+- **601**: `BetLimitsInverted` - Configured `min_bet > max_bet`
+- **602**: `BetLimitAboveMaximum` - Configured `max_bet` above the absolute ceiling
+- **603**: `BetCapOutOfRange` - Per-market bet cap outside `(0, MAX_BET_AMOUNT]`
+- **604**: `BatchEmpty` - Batch operation submitted with no entries
+- **605**: `BatchSizeExceeded` - Batch operation exceeds 50 entries
+- **606**: `FeePercentageOutOfRange` - Fee basis points outside the allowed range
+- **607**: `FeeAmountAboveMaximum` - Fee amount above the maximum
+- **608**: `CreationFeeOutOfRange` - Creation fee outside the allowed range
+- **609**: `FeeLimitsInverted` - Configured `max_fee_amount < min_fee_amount`
+- **610**: `QueueCapacityOutOfRange` - Monitor queue capacity outside the allowed range
+- **611**: `QueueAlreadyInitialized` - Monitor queue re-initialization rejected
+
+Codes 612-619 are reserved for future limit variants.
+
 ---
 
 ## 💡 Integration Examples

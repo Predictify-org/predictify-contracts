@@ -978,7 +978,7 @@ impl FeeManager {
         // Validate fee tiers
         for (_tier_id, fee_percentage) in new_fee_tiers.iter() {
             if fee_percentage < MIN_FEE_PERCENTAGE || fee_percentage > MAX_FEE_PERCENTAGE {
-                return Err(Error::InvalidInput);
+                return Err(Error::FeePercentageOutOfRange);
             }
         }
 
@@ -1287,14 +1287,20 @@ impl FeeCalculator {
         }
     }
 
-    /// Validate fee percentage
+    /// Validate a fee percentage (basis points) against both the absolute range and
+    /// the tolerance band around the market's size-derived tier fee.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::FeePercentageOutOfRange`] when `fee` falls outside
+    /// `[MIN_FEE_PERCENTAGE, MAX_FEE_PERCENTAGE]` or outside ±20% of the tier fee.
     pub fn validate_fee_percentage(env: &Env, fee: i128, market_id: Symbol) -> Result<bool, Error> {
         if fee < MIN_FEE_PERCENTAGE {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         if fee > MAX_FEE_PERCENTAGE {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         // Check if fee is reasonable for the market size
@@ -1306,7 +1312,7 @@ impl FeeCalculator {
         let max_allowed = Self::checked_mul_div_floor(tier.fee_percentage, 120, 100)?; // 20% above tier
 
         if fee < min_allowed || fee > max_allowed {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         Ok(true)
@@ -1432,32 +1438,49 @@ impl FeeValidator {
         Ok(())
     }
 
-    /// Validate fee amount
+    /// Validate a fee amount against the absolute `[MIN_FEE_AMOUNT, MAX_FEE_AMOUNT]` range.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InsufficientStake`] when below [`MIN_FEE_AMOUNT`]
+    /// - [`Error::FeeAmountAboveMaximum`] when above [`MAX_FEE_AMOUNT`]
     pub fn validate_fee_amount(fee_amount: i128) -> Result<(), Error> {
         if fee_amount < MIN_FEE_AMOUNT {
             return Err(Error::InsufficientStake);
         }
 
         if fee_amount > MAX_FEE_AMOUNT {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeeAmountAboveMaximum);
         }
 
         Ok(())
     }
 
-    /// Validate creation fee
+    /// Validate a market creation fee.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::CreationFeeOutOfRange`] when `fee_amount` falls outside
+    /// `[MIN_FEE_AMOUNT, MAX_FEE_AMOUNT]`.
     pub fn validate_creation_fee(fee_amount: i128) -> Result<(), Error> {
         if fee_amount < MIN_FEE_AMOUNT || fee_amount > MAX_FEE_AMOUNT {
-            return Err(Error::InvalidInput);
+            return Err(Error::CreationFeeOutOfRange);
         }
 
         Ok(())
     }
 
-    /// Validate fee configuration
+    /// Validate a fee configuration.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::FeePercentageOutOfRange`] when `platform_fee_percentage` is negative
+    ///   or above [`MAX_FEE_PERCENTAGE`]
+    /// - [`Error::FeeLimitsInverted`] when `max_fee_amount < min_fee_amount`
+    /// - [`Error::InvalidInput`] when any amount field is negative
     pub fn validate_fee_config(config: &FeeConfig) -> Result<(), Error> {
         if config.platform_fee_percentage < 0 || config.platform_fee_percentage > MAX_FEE_PERCENTAGE {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         if config.creation_fee < 0 {
@@ -1469,7 +1492,7 @@ impl FeeValidator {
         }
 
         if config.max_fee_amount < config.min_fee_amount {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeeLimitsInverted);
         }
 
         if config.collection_threshold < 0 {

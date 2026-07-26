@@ -189,7 +189,7 @@ mod analytics_snapshot;
 mod max_participants_tests;
 
 #[cfg(test)]
-mod bet_resource_snapshot_tests;
+mod limit_errors_tests;
 
 // dispute_stake_tests.rs extended for #553; enable when legacy setup is updated:
 // #[cfg(test)]
@@ -4664,7 +4664,7 @@ impl PredictifyHybrid {
     /// # Errors
     ///
     /// - [`Error::Unauthorized`] when `admin` is not the primary admin
-    /// - [`Error::InvalidInput`] when `cap` is negative or exceeds [`MAX_BET_AMOUNT`]
+    /// - [`Error::BetCapOutOfRange`] when `cap` is negative or exceeds `MAX_BET_AMOUNT`
     ///
     /// # Events
     ///

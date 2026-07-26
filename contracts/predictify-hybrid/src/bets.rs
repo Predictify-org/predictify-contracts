@@ -36,6 +36,13 @@ pub const MIN_BET_AMOUNT: i128 = 1_000_000;
 /// Maximum bet amount (10,000 XLM = 100,000,000,000 stroops). Absolute ceiling for any configured limit.
 pub const MAX_BET_AMOUNT: i128 = 100_000_000_000;
 
+/// Maximum number of bets accepted by a single [`BetManager::place_bets`] call.
+///
+/// Bounds the per-transaction CPU and storage footprint of a batch. Batches larger
+/// than this are rejected with [`Error::BatchSizeExceeded`]; empty batches are
+/// rejected with [`Error::BatchEmpty`].
+pub const MAX_BATCH_SIZE: u32 = 50;
+
 /// Reentrancy scope for [`BetManager::place_bet`].
 fn guard_scope_place_bet() -> Symbol {
     symbol_short!("place_bet")
@@ -146,12 +153,12 @@ pub fn set_event_bet_limits(
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidInput`] when:
+/// Returns [`Error::BetCapOutOfRange`] when:
 /// - `cap` is zero or negative
 /// - `cap` exceeds [`MAX_BET_AMOUNT`]
 pub fn set_market_max_bet_cap(env: &Env, market_id: &Symbol, cap: i128) -> Result<(), Error> {
     if cap <= 0 || cap > MAX_BET_AMOUNT {
-        return Err(Error::InvalidInput);
+        return Err(Error::BetCapOutOfRange);
     }
     let key = Symbol::new(env, PER_MARKET_MAX_BET_CAP_KEY);
     let mut caps: soroban_sdk::Map<Symbol, i128> = env
@@ -251,15 +258,21 @@ pub fn get_market_min_bet(env: &Env, market_id: &Symbol) -> Option<i128> {
 }
 
 /// Validate that min <= max and both are within absolute bounds.
+///
+/// # Errors
+///
+/// - [`Error::BetLimitsInverted`] when `min_bet > max_bet`
+/// - [`Error::InsufficientStake`] when `min_bet` is below [`MIN_BET_AMOUNT`]
+/// - [`Error::BetLimitAboveMaximum`] when `max_bet` exceeds [`MAX_BET_AMOUNT`]
 fn validate_limits_bounds(limits: &BetLimits) -> Result<(), Error> {
     if limits.min_bet > limits.max_bet {
-        return Err(Error::InvalidInput);
+        return Err(Error::BetLimitsInverted);
     }
     if limits.min_bet < MIN_BET_AMOUNT {
         return Err(Error::InsufficientStake);
     }
     if limits.max_bet > MAX_BET_AMOUNT {
-        return Err(Error::InvalidInput);
+        return Err(Error::BetLimitAboveMaximum);
     }
     Ok(())
 }
@@ -539,7 +552,8 @@ impl BetManager {
     ///
     /// # Errors
     ///
-    /// - `Error::InvalidInput` - Empty batch or exceeds maximum size
+    /// - `Error::BatchEmpty` - Batch contains no entries
+    /// - `Error::BatchSizeExceeded` - Batch exceeds [`MAX_BATCH_SIZE`] entries
     /// - `Error::IdempotentBatchAlreadyApplied` - This idempotency key has already been consumed
     /// - `Error::MarketNotFound` - Any market does not exist
     /// - `Error::MarketClosed` - Any market has ended or is not active
@@ -576,12 +590,11 @@ impl BetManager {
 
         // Validate batch size
         if bets.is_empty() {
-            return Err(Error::InvalidInput);
+            return Err(Error::BatchEmpty);
         }
 
-        const MAX_BATCH_SIZE: u32 = 50;
         if bets.len() > MAX_BATCH_SIZE {
-            return Err(Error::InvalidInput);
+            return Err(Error::BatchSizeExceeded);
         }
 
         // Phase 1: Validate all bets and collect data
@@ -1246,9 +1259,9 @@ impl BetValidator {
     /// Validate bet parameters.
     ///
     /// Uses effective bet limits (per-event if set, else global, else default min/max).
-    /// Rejects bets below min with InsufficientStake, above max with InvalidInput.
-    /// Rejects bets exceeding the per-market cap with BetExceedsCap (when set).
-    /// Also enforces the per-market minimum set via `set_min_bet` (BetBelowMarketMin).
+    /// Rejects bets below min with [`Error::InsufficientStake`], above max with
+    /// [`Error::BetAboveMaximum`], and bets exceeding the per-market cap with
+    /// [`Error::BetExceedsCap`] (when set).
     pub fn validate_bet_parameters(
         env: &Env,
         market_id: &Symbol,
@@ -1286,9 +1299,12 @@ impl BetValidator {
     /// and the per-market max bet cap (when set).
     ///
     /// Checks in order:
-    /// 1. Amount >= effective `min_bet` (→ `InsufficientStake`)
-    /// 2. Amount <= effective `max_bet` (→ `InvalidInput`)
-    /// 3. Amount <= per-market cap when configured (→ `BetExceedsCap`)
+    /// 1. Amount >= effective `min_bet` (→ [`Error::InsufficientStake`])
+    /// 2. Amount <= effective `max_bet` (→ [`Error::BetAboveMaximum`])
+    /// 3. Amount <= per-market cap when configured (→ [`Error::BetExceedsCap`])
+    ///
+    /// Steps 2 and 3 are distinct on purpose: the former is the market's ordinary
+    /// maximum, the latter an admin-imposed per-market cap layered on top of it.
     pub fn validate_bet_amount_against_limits(
         env: &Env,
         market_id: &Symbol,
@@ -1299,7 +1315,7 @@ impl BetValidator {
             return Err(Error::InsufficientStake);
         }
         if amount > limits.max_bet {
-            return Err(Error::InvalidInput);
+            return Err(Error::BetAboveMaximum);
         }
         // Check the per-market single-bet cap (most specific check, own error code).
         if let Some(cap) = get_market_max_bet_cap(env, market_id) {
@@ -1311,12 +1327,17 @@ impl BetValidator {
     }
 
     /// Validate bet amount using default constants (for tests / backward compatibility).
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InsufficientStake`] when `amount` is below [`MIN_BET_AMOUNT`]
+    /// - [`Error::BetAboveMaximum`] when `amount` exceeds [`MAX_BET_AMOUNT`]
     pub fn validate_bet_amount(amount: i128) -> Result<(), Error> {
         if amount < MIN_BET_AMOUNT {
             return Err(Error::InsufficientStake);
         }
         if amount > MAX_BET_AMOUNT {
-            return Err(Error::InvalidInput);
+            return Err(Error::BetAboveMaximum);
         }
         Ok(())
     }
