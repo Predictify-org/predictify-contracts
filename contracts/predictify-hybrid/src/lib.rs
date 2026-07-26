@@ -27,6 +27,8 @@ mod config;
 mod err;
 mod force_resolve;
 mod event_archive;
+pub mod events;
+mod extensions;
 mod events;
 pub mod gov_registry;
 mod fees;
@@ -129,6 +131,9 @@ use types::{Market, ReflectorAsset};
 #[cfg(test)]
 mod market_state_matrix_tests;
 #[cfg(test)]
+mod upgrade_manager_tests;
+#[cfg(test)]
+mod oracle_lifecycle_events_tests;
 mod timelock_tests;
 
 // #[cfg(any())]

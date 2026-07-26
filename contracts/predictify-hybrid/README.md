@@ -474,6 +474,10 @@ fetch_oracle_result(
 ) -> String
 ```
 
+### Oracle lifecycle events
+
+The event system now emits structured lifecycle transitions for oracle workflows. Consumers can subscribe to `OracleLifecycleEvent` updates via the `ora_lfcy` topic and inspect the stage, status, reason, and metadata for request, verification, degradation, recovery, or resolution transitions.
+
 ## Oracle Provider Comparison
 
 | Feature                  | Pyth Network                             | Reflector Oracle        |
