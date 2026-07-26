@@ -1,6 +1,5 @@
 # Contract Capabilities
 
-
 The Predictify Hybrid contract exposes a **u64 capabilities bitmap** that allows
 clients to discover which features are available without inspecting the Wasm
 binary or relying on version-number heuristics.
@@ -23,18 +22,32 @@ constants defined in the [`capability`] module.
 ### Client-side example (Rust/Soroban SDK)
 
 ```rust
+use predictify_hybrid::capabilities::capability;
+
 let caps = client.capabilities();
-if caps & 0x0001 != 0 {
-    // versioning is supported
+
+// Detect the recovery subsystem before calling recovery entrypoints.
+if caps & capability::RECOVERY != 0 {
+    let ok = client.validate_market_state_integrity(&market_id);
+    if !ok {
+        client.recover_market_state(&admin, &market_id);
+    }
+}
+
+// Generic single-bit check.
+if caps & capability::BETTING != 0 {
+    // the betting subsystem is available
 }
 ```
 
 ### Client-side example (TypeScript/Stellar SDK)
 
 ```typescript
-const caps: bigint = contract.capabilities();
-if ((caps & 0x0001n) !== 0n) {
-    // versioning is supported
+const caps: bigint = await contract.capabilities();
+
+const RECOVERY = 1n << 17n;
+if ((caps & RECOVERY) !== 0n) {
+    // recovery subsystem is available
 }
 ```
 
@@ -71,6 +84,52 @@ if ((caps & 0x0001n) !== 0n) {
 
 Bits 26 through 63 are reserved for future capabilities and will read as 0.
 
+## Recovery Capability (Bit 17)
+
+The `RECOVERY` bit (bit 17, mask `0x0000_0002_0000`) indicates that the contract
+supports the following entrypoints:
+
+| Entrypoint | Type | Description |
+|---|---|---|
+| `validate_market_state_integrity(market_id)` | pure read | Returns `true` if the market's on-chain state is internally consistent |
+| `recover_market_state(admin, market_id)` | admin write | Reconstructs inconsistent market state; returns `true` if reconstruction was performed |
+| `partial_refund_mechanism(admin, market_id, users)` | admin write | Refunds listed users from a failed/corrupted market; returns total refunded |
+| `get_recovery_status(market_id)` | pure read | Returns the current recovery status string for a market |
+| `prune_recovery_history(admin, market_id, count)` | admin write | Removes oldest completed recovery records to bound storage growth |
+
+### Recovery workflow
+
+```
+client detects RECOVERY bit is set
+       │
+       ▼
+validate_market_state_integrity(market_id)
+       │
+       ├── true  → market is healthy; no action needed
+       │
+       └── false → market state is inconsistent
+                      │
+                      ▼
+               recover_market_state(admin, market_id)
+                      │
+                      ├── returns true  → state reconstructed
+                      └── returns false → no reconstruction possible
+                                           (manual intervention needed)
+```
+
+### Security properties
+
+- `validate_market_state_integrity` and `get_recovery_status` are **pure
+  reads**: they perform no storage writes and emit no events. They are safe
+  to call at any frequency on any network.
+- `recover_market_state` and `partial_refund_mechanism` require **admin
+  authorization** (`require_auth`). They write to persistent storage and emit
+  audit trail records.
+- The recovery subsystem is **bounded**: completed recovery records per market
+  are capped at `MAX_RECOVERY_HISTORY_PER_MARKET = 10`. Pruning is provided
+  via `prune_recovery_history` with a batch cap of `MAX_RECOVERY_PRUNE_BATCH
+  = 30` per call.
+
 ## Compatibility
 
 - **Adding a capability** sets a previously-zero bit to 1. This is a
@@ -85,6 +144,14 @@ Bits 26 through 63 are reserved for future capabilities and will read as 0.
 ```rust
 let caps = client.capabilities();
 assert!(caps > 0);
-assert!(caps & 0x0010 != 0); // betting
+assert!(caps & 0x0002_0000 != 0);  // RECOVERY is set
+assert!(caps & 0x0000_0010 != 0);  // BETTING is set
 assert_eq!(caps & !((1u64 << 26) - 1), 0); // no reserved bits set
 ```
+
+For the full test suite see:
+- `src/capability_bitmap_tests.rs` — contract-entrypoint tests for
+  `capabilities()`, including the RECOVERY bit and side-effect-free property.
+- `src/recovery_tests.rs` — end-to-end tests for recovery entrypoints that
+  also verify `capabilities()` advertises RECOVERY.
+- `src/capabilities.rs` — unit tests for the `capability` module constants.

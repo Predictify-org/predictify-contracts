@@ -83,6 +83,10 @@ mod event_topic_catalog;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
+/// Contract capability discovery via a u64 bitmap (issue #984).
+/// Exposes `capabilities()` as a pure read-only view so clients can
+/// detect which features are active without inspecting the Wasm binary.
+pub mod capabilities;
 
 #[cfg(test)]
 mod override_audit_tests;
@@ -117,8 +121,8 @@ use types::{Market, ReflectorAsset};
 // #[cfg(any())]
 // mod integration_test;
 
-// #[cfg(any())]
-// mod recovery_tests;
+#[cfg(test)]
+mod recovery_tests;
 
 // property_based_tests disabled: broader API drift; see dispute_outcome_tally_property_tests
 
@@ -126,8 +130,9 @@ use types::{Market, ReflectorAsset};
 // mod upgrade_manager_tests;
 // #[cfg(any())]
 // mod upgrade_manager_tests;
-// `capability_bitmap_tests.rs` does not exist in the tree; the capability
-// bitmap is covered by the unit tests inside `capabilities.rs`.
+// Capability-bitmap tests for issue #984 (recovery capabilities view).
+#[cfg(test)]
+mod capability_bitmap_tests;
 #[cfg(test)]
 mod market_state_matrix_tests;
 #[cfg(test)]
