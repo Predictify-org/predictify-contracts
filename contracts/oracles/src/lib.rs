@@ -179,7 +179,7 @@ pub enum Error {
 /// | `confidence`   | `Option<i128>` | Half-width of the 95 % confidence interval, if available   |
 /// | `exponent`     | `i32`          | Decimal exponent: `real = price × 10^exponent`             |
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OraclePriceData {
     /// Raw integer price from the oracle feed.
     pub price: i128,
@@ -644,9 +644,9 @@ mod tests {
 
         let contract_id = env.register(OraclesContract, ());
         let key = DataKey::OracleList;
+        env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle).unwrap();
 
             let ttl = env.storage().persistent().get_ttl(&key);
@@ -666,9 +666,9 @@ mod tests {
 
         let contract_id = env.register(OraclesContract, ());
         let key = DataKey::OracleList;
+        env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
             // Populate the list.
             OraclesContract::add_oracle(env.clone(), admin, oracle).unwrap();
 
@@ -695,23 +695,31 @@ mod tests {
         });
     }
 
-    /// `remove_oracle` writes the updated list, which implicitly extends TTL.
+    /// `remove_oracle` writes the updated list, which extends TTL via `.set()`
+    /// followed by an explicit `extend_ttl` call.
     #[test]
     fn remove_oracle_extends_ttl_via_set() {
         let env = Env::default();
         let admin = soroban_sdk::Address::generate(&env);
-        let oracle_a = soroban_sdk::Address::generate(&env);
-        let oracle_b = soroban_sdk::Address::generate(&env);
+        let oracle = soroban_sdk::Address::generate(&env);
 
         let contract_id = env.register(OraclesContract, ());
         let key = DataKey::OracleList;
 
+        // Pre-populate storage directly to avoid double-require_auth on the
+        // same address in one as_contract call (mock_all_auths rejects it).
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
-            // Add two oracles.
-            OraclesContract::add_oracle(env.clone(), admin.clone(), oracle_a.clone()).unwrap();
-            OraclesContract::add_oracle(env.clone(), admin.clone(), oracle_b.clone()).unwrap();
+            let mut list: Vec<Address> = Vec::new(&env);
+            list.push_back(oracle.clone());
+            env.storage().persistent().set(&key, &list);
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
+        });
 
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
             // Advance ledgers to decay TTL.
             env.ledger().with_mut(|li| {
                 li.sequence_number += 2000;
@@ -719,8 +727,8 @@ mod tests {
 
             let decayed_ttl = env.storage().persistent().get_ttl(&key);
 
-            // Removing an oracle writes the list, extending TTL.
-            OraclesContract::remove_oracle(env.clone(), admin, oracle_a).unwrap();
+            // Removing the oracle writes the list, extending TTL.
+            OraclesContract::remove_oracle(env.clone(), admin, oracle).unwrap();
 
             let refreshed_ttl = env.storage().persistent().get_ttl(&key);
             assert!(refreshed_ttl > decayed_ttl,
@@ -742,9 +750,9 @@ mod tests {
 
         let contract_id = env.register(OraclesContract, ());
         let key = DataKey::OracleList;
+        env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
 
             // Advance ledgers.
@@ -780,9 +788,9 @@ mod tests {
 
         let contract_id = env.register(OraclesContract, ());
         let key = DataKey::OracleList;
+        env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
 
             env.ledger().with_mut(|li| {
@@ -813,9 +821,9 @@ mod tests {
 
         let contract_id = env.register(OraclesContract, ());
         let key = DataKey::OracleList;
+        env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            env.mock_all_auths();
             OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
 
             env.ledger().with_mut(|li| {
