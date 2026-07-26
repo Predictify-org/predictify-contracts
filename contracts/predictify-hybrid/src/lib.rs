@@ -127,6 +127,8 @@ use types::{Market, ReflectorAsset};
 // `capability_bitmap_tests.rs` does not exist in the tree; the capability
 // bitmap is covered by the unit tests inside `capabilities.rs`.
 #[cfg(test)]
+mod resolution_invariants;
+#[cfg(test)]
 mod market_state_matrix_tests;
 #[cfg(test)]
 mod timelock_tests;
