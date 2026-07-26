@@ -4,6 +4,7 @@ use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, V
 
 // use crate::config; // Unused import
 use crate::err::Error;
+use crate::events::EventEmitter;
 use crate::storage::{
     check_market_creation_rent, check_market_creation_rent_budget, DataKey,
     MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS,
@@ -145,6 +146,9 @@ impl MarketCreator {
 
         // CACHE INVALIDATION: ensure cache is empty for new market
         MarketReadCache::new(env).invalidate(&market_id);
+
+        // Emit structured market created event with schema registry
+        EventEmitter::emit_market_created(env, &market_id, &question, &outcomes, &admin, end_time);
 
         Ok(market_id)
     }
@@ -923,9 +927,17 @@ impl MarketStateManager {
             return Err(Error::InvalidState);
         }
 
-        market.question = new_description;
+        let old_description = market.question.clone();
+        market.question = new_description.clone();
         market.refresh_metadata_commitment(_env);
         Self::update_market(_env, market_id, &market);
+        EventEmitter::emit_market_description_updated(
+            _env,
+            market_id,
+            &old_description,
+            &new_description,
+            &market.admin,
+        );
         Ok(())
     }
 

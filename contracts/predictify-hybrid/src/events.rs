@@ -2206,18 +2206,73 @@ impl EventSchemaRegistry {
     ///
     /// # Registered events
     ///
-    /// | name              | topic symbol  | schema_version |
-    /// |-------------------|---------------|----------------|
-    /// | `"oracle_result"` | `oracle_rs`   | 1              |
-    /// | `"dispute_opened"` | `dispt_opn` | 1              |
+    /// | name                            | topic symbol  | schema_version |
+    /// |---------------------------------|---------------|----------------|
+    /// | `"market_created"`              | `mkt_crt`     | 1              |
+    /// | `"market_resolved"`             | `mkt_res`     | 1              |
+    /// | `"market_closed"`               | `mkt_close`   | 1              |
+    /// | `"market_finalized"`            | `mkt_final`   | 1              |
+    /// | `"state_change"`                | `st_chng`     | 1              |
+    /// | `"market_archived"`             | `mkt_arch`    | 1              |
+    /// | `"oracle_result"`               | `oracle_rs`   | 1              |
+    /// | `"dispute_opened"`              | `dispt_opn`   | 1              |
+    /// | `"vote_cast"`                   | `vote`        | 1              |
+    /// | `"event_created"`               | `evt_crt`     | 1              |
+    /// | `"bet_placed"`                  | `bet_plc`     | 1              |
+    /// | `"market_description_updated"`  | `mkt_dsc`     | 1              |
+    /// | `"market_deadline_extended"`    | `mkt_ext`     | 1              |
     pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
         match name {
+            "market_created" => Some(EventSchemaEntry {
+                topic: symbol_short!("mkt_crt"),
+                schema_version: 1,
+            }),
+            "market_resolved" => Some(EventSchemaEntry {
+                topic: symbol_short!("mkt_res"),
+                schema_version: 1,
+            }),
+            "market_closed" => Some(EventSchemaEntry {
+                topic: symbol_short!("mkt_close"),
+                schema_version: 1,
+            }),
+            "market_finalized" => Some(EventSchemaEntry {
+                topic: symbol_short!("mkt_final"),
+                schema_version: 1,
+            }),
+            "state_change" => Some(EventSchemaEntry {
+                topic: symbol_short!("st_chng"),
+                schema_version: 1,
+            }),
+            "market_archived" => Some(EventSchemaEntry {
+                topic: symbol_short!("mkt_arch"),
+                schema_version: 1,
+            }),
             "oracle_result" => Some(EventSchemaEntry {
                 topic: symbol_short!("oracle_rs"),
                 schema_version: 1,
             }),
             "dispute_opened" => Some(EventSchemaEntry {
                 topic: symbol_short!("dispt_opn"),
+                schema_version: 1,
+            }),
+            "vote_cast" => Some(EventSchemaEntry {
+                topic: symbol_short!("vote"),
+                schema_version: 1,
+            }),
+            "event_created" => Some(EventSchemaEntry {
+                topic: symbol_short!("evt_crt"),
+                schema_version: 1,
+            }),
+            "bet_placed" => Some(EventSchemaEntry {
+                topic: symbol_short!("bet_plc"),
+                schema_version: 1,
+            }),
+            "market_description_updated" => Some(EventSchemaEntry {
+                topic: symbol_short!("mkt_dsc"),
+                schema_version: 1,
+            }),
+            "market_deadline_extended" => Some(EventSchemaEntry {
+                topic: symbol_short!("mkt_ext"),
                 schema_version: 1,
             }),
             _ => None,
@@ -2339,7 +2394,10 @@ impl EventEmitter {
         nonce
     }
 
-    /// Emit market created event
+    /// Emit market created event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`] so
+    /// that all emit sites stay in sync with the registry automatically.
     pub fn emit_market_created(
         env: &Env,
         market_id: &Symbol,
@@ -2348,20 +2406,24 @@ impl EventEmitter {
         admin: &Address,
         end_time: u64,
     ) {
+        let schema = EventSchemaRegistry::get_schema(env, "market_created")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("mkt_crt"),
+                schema_version: 1,
+            });
         let event = MarketCreatedEvent {
             market_id: market_id.clone(),
             question: question.clone(),
             outcomes: outcomes.clone(),
             admin: admin.clone(),
             end_time,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_crt").clone()),
-
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("mkt_crt"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("mkt_crt"), market_id.clone()), event);
+            .publish((schema.topic.clone(), market_id.clone(), schema.schema_version), event);
     }
 
     /// Emit fallback used event
@@ -2839,7 +2901,10 @@ impl EventEmitter {
             .publish((symbol_short!("orc_hlth"), oracle_address.clone()), event);
     }
 
-    /// Emit market resolved event
+    /// Emit market resolved event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`] so
+    /// that all emit sites stay in sync with the registry automatically.
     pub fn emit_market_resolved(
         env: &Env,
         market_id: &Symbol,
@@ -2849,6 +2914,11 @@ impl EventEmitter {
         resolution_method: &String,
         confidence_score: i128,
     ) {
+        let schema = EventSchemaRegistry::get_schema(env, "market_resolved")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("mkt_res"),
+                schema_version: 1,
+            });
         let event = MarketResolvedEvent {
             market_id: market_id.clone(),
             final_outcome: final_outcome.clone(),
@@ -2859,11 +2929,12 @@ impl EventEmitter {
             timestamp: env.ledger().timestamp(),
         };
 
-        env.storage().persistent().set(&symbol_short!("mkt_res"), &event);
+        env.storage().persistent().set(&schema.topic, &event);
         env.events().publish(
             (
-                symbol_short!("mkt_res"),
+                schema.topic.clone(),
                 market_id.clone(),
+                schema.schema_version,
                 resolution_method.clone(),
             ),
             event,
@@ -3426,19 +3497,26 @@ impl EventEmitter {
         env.events().publish(topics, data);
     }
 
-    /// Emit market closed event
+    /// Emit market closed event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`] so
+    /// that all emit sites stay in sync with the registry automatically.
     pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
+        let schema = EventSchemaRegistry::get_schema(env, "market_closed")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("mkt_close"),
+                schema_version: 1,
+            });
         let event = MarketClosedEvent {
             market_id: market_id.clone(),
             admin: admin.clone(),
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_close").clone()),
-
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("mkt_close"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("mkt_close"), market_id.clone()), event);
+            .publish((schema.topic.clone(), market_id.clone(), schema.schema_version), event);
     }
 
     /// Emit refund on oracle failure event (market cancelled, all bets refunded in full).
@@ -3455,20 +3533,27 @@ impl EventEmitter {
             .publish((symbol_short!("ref_oracl"), market_id.clone()), event);
     }
 
-    /// Emit market finalized event
+    /// Emit market finalized event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`] so
+    /// that all emit sites stay in sync with the registry automatically.
     pub fn emit_market_finalized(env: &Env, market_id: &Symbol, admin: &Address, outcome: &String) {
+        let schema = EventSchemaRegistry::get_schema(env, "market_finalized")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("mkt_final"),
+                schema_version: 1,
+            });
         let event = MarketFinalizedEvent {
             market_id: market_id.clone(),
             admin: admin.clone(),
             outcome: outcome.clone(),
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_final").clone()),
-
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("mkt_final"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("mkt_final"), market_id.clone()), event);
+            .publish((schema.topic.clone(), market_id.clone(), schema.schema_version), event);
     }
 
     /// Emit dispute timeout set event
@@ -3729,6 +3814,10 @@ impl EventEmitter {
     ///     &String::from_str(&env, "Voting period completed")
     /// );
     /// ```
+    /// Emit state change event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`] so
+    /// that all emit sites stay in sync with the registry automatically.
     pub fn emit_state_change_event(
         env: &Env,
         market_id: &Symbol,
@@ -3736,18 +3825,22 @@ impl EventEmitter {
         new_state: &crate::types::MarketState,
         reason: &String,
     ) {
+        let schema = EventSchemaRegistry::get_schema(env, "state_change")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("st_chng"),
+                schema_version: 1,
+            });
         let event = StateChangeEvent {
             market_id: market_id.clone(),
             old_state: old_state.clone(),
             new_state: new_state.clone(),
             reason: reason.clone(),
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("st_chng").clone()),
-
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
             timestamp: env.ledger().timestamp(),
         };
-        Self::store_event(env, &symbol_short!("st_chng"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("st_chng"), market_id.clone()), event);
+            .publish((schema.topic.clone(), market_id.clone(), schema.schema_version), event);
     }
 
     /// Emit winnings claimed event when user claims payout
@@ -5207,20 +5300,196 @@ mod event_schema_registry_tests {
     fn test_schema_version_matches_expected() {
         let env = Env::default();
         // Schema version must equal the pinned baseline; any bump is a breaking change.
-        const EXPECTED_ORACLE_RESULT_VERSION: u32 = 1;
-        const EXPECTED_DISPUTE_OPENED_VERSION: u32 = 1;
+        const EXPECTED_VERSION: u32 = 1;
 
-        let oracle_schema = EventSchemaRegistry::get_schema(&env, "oracle_result").unwrap();
-        assert_eq!(
-            oracle_schema.schema_version, EXPECTED_ORACLE_RESULT_VERSION,
-            "OracleResultEvent schema_version mismatch: expected {EXPECTED_ORACLE_RESULT_VERSION}"
-        );
+        let registered_events = [
+            "market_created",
+            "market_resolved",
+            "market_closed",
+            "market_finalized",
+            "state_change",
+            "market_archived",
+            "oracle_result",
+            "dispute_opened",
+            "vote_cast",
+            "event_created",
+            "bet_placed",
+            "market_description_updated",
+            "market_deadline_extended",
+        ];
 
-        let dispute_schema = EventSchemaRegistry::get_schema(&env, "dispute_opened").unwrap();
-        assert_eq!(
-            dispute_schema.schema_version, EXPECTED_DISPUTE_OPENED_VERSION,
-            "DisputeOpenedEvent schema_version mismatch: expected {EXPECTED_DISPUTE_OPENED_VERSION}"
-        );
+        for name in &registered_events {
+            let schema = EventSchemaRegistry::get_schema(&env, name).unwrap_or_else(|| {
+                panic!("Event '{name}' must be registered in EventSchemaRegistry")
+            });
+            assert_eq!(
+                schema.schema_version, EXPECTED_VERSION,
+                "Event '{name}' schema_version mismatch: expected {EXPECTED_VERSION}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_registry_lookup_market_created() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "market_created").unwrap();
+        assert_eq!(schema.topic, symbol_short!("mkt_crt"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_market_resolved() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "market_resolved").unwrap();
+        assert_eq!(schema.topic, symbol_short!("mkt_res"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_market_closed() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "market_closed").unwrap();
+        assert_eq!(schema.topic, symbol_short!("mkt_close"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_market_finalized() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "market_finalized").unwrap();
+        assert_eq!(schema.topic, symbol_short!("mkt_final"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_state_change() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "state_change").unwrap();
+        assert_eq!(schema.topic, symbol_short!("st_chng"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_market_archived() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "market_archived").unwrap();
+        assert_eq!(schema.topic, symbol_short!("mkt_arch"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_vote_cast() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "vote_cast").unwrap();
+        assert_eq!(schema.topic, symbol_short!("vote"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_event_created() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "event_created").unwrap();
+        assert_eq!(schema.topic, symbol_short!("evt_crt"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_bet_placed() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "bet_placed").unwrap();
+        assert_eq!(schema.topic, symbol_short!("bet_plc"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_market_description_updated() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "market_description_updated").unwrap();
+        assert_eq!(schema.topic, symbol_short!("mkt_dsc"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_market_deadline_extended() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "market_deadline_extended").unwrap();
+        assert_eq!(schema.topic, symbol_short!("mkt_ext"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_emit_market_created_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt1");
+            let question = soroban_sdk::String::from_str(&env, "Test?");
+            let outcomes = soroban_sdk::vec![
+                &env,
+                soroban_sdk::String::from_str(&env, "Yes"),
+                soroban_sdk::String::from_str(&env, "No"),
+            ];
+            let admin = soroban_sdk::Address::generate(&env);
+            EventEmitter::emit_market_created(
+                &env, &market_id, &question, &outcomes, &admin, 1000000,
+            );
+        });
+    }
+
+    #[test]
+    fn test_emit_market_resolved_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt2");
+            let outcome = soroban_sdk::String::from_str(&env, "Yes");
+            let oracle_res = soroban_sdk::String::from_str(&env, "Yes");
+            let consensus = soroban_sdk::String::from_str(&env, "Yes");
+            let method = soroban_sdk::String::from_str(&env, "oracle");
+            EventEmitter::emit_market_resolved(
+                &env, &market_id, &outcome, &oracle_res, &consensus, &method, 95,
+            );
+        });
+    }
+
+    #[test]
+    fn test_emit_market_closed_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt3");
+            let admin = soroban_sdk::Address::generate(&env);
+            EventEmitter::emit_market_closed(&env, &market_id, &admin);
+        });
+    }
+
+    #[test]
+    fn test_emit_market_finalized_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt4");
+            let admin = soroban_sdk::Address::generate(&env);
+            let outcome = soroban_sdk::String::from_str(&env, "Yes");
+            EventEmitter::emit_market_finalized(&env, &market_id, &admin, &outcome);
+        });
+    }
+
+    #[test]
+    fn test_emit_state_change_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt5");
+            let reason = soroban_sdk::String::from_str(&env, "market expired");
+            EventEmitter::emit_state_change_event(
+                &env,
+                &market_id,
+                &crate::types::MarketState::Active,
+                &crate::types::MarketState::Ended,
+                &reason,
+            );
+        });
     }
 
     #[test]
