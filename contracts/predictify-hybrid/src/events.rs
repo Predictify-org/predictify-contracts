@@ -1727,6 +1727,167 @@ pub struct GovernanceProposalAutoRejectedEvent {
     pub timestamp: u64,
 }
 
+// ===== GOVERNANCE CONFIGURATION & DELEGATION EVENTS =====
+
+/// Event emitted when the admin updates the governance voting-window duration.
+///
+/// The change takes effect for all proposals created *after* this event.
+/// Off-chain indexers must pick this up to recalculate expected deadlines.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceVotingPeriodUpdatedEvent {
+    /// Admin who changed the value (must have passed `require_auth`).
+    pub admin: Address,
+    /// Previous voting period in seconds.
+    pub old_period_seconds: u64,
+    /// New voting period in seconds.
+    pub new_period_seconds: u64,
+    /// Monotone per-topic nonce for replay detection.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
+/// Event emitted when the admin updates the minimum FOR-vote quorum.
+///
+/// Affects the *next* `validate_proposal` call on any open proposal.
+/// Indexers should recalculate pass/fail thresholds on receipt.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceQuorumUpdatedEvent {
+    /// Admin who changed the value.
+    pub admin: Address,
+    /// Previous quorum (minimum FOR votes required).
+    pub old_quorum: u128,
+    /// New quorum (minimum FOR votes required).
+    pub new_quorum: u128,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
+/// Event emitted when the admin updates (or disables) quorum-decay configuration.
+///
+/// When `enabled` is `false` the `floor_bps` / `halving_seconds` fields carry
+/// no meaningful value and should be ignored by consumers.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceQuorumDecayUpdatedEvent {
+    /// Admin who changed the value.
+    pub admin: Address,
+    /// `true` if decay is now active; `false` if set to `None` (disabled).
+    pub enabled: bool,
+    /// Floor quorum in basis points of base quorum (0 when disabled).
+    pub floor_bps: u32,
+    /// Halving-time in seconds (0 when disabled).
+    pub halving_seconds: u64,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
+/// Event emitted when a delegator activates a vote delegation.
+///
+/// Indexers should update the effective vote weight for `delegate` on receipt.
+/// One delegator may hold at most one active delegation at a time.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceDelegateSetEvent {
+    /// Address granting the delegation.
+    pub delegator: Address,
+    /// Address receiving the delegation.
+    pub delegate: Address,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
+/// Event emitted when a delegator removes their active delegation.
+///
+/// Indexers should decrement the effective vote weight for `former_delegate`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceDelegateUnsetEvent {
+    /// Address that had the delegation.
+    pub delegator: Address,
+    /// Address that was receiving the delegated votes.
+    pub former_delegate: Address,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
+// ===== GOVERNANCE REGISTRY EVENTS =====
+
+/// Event emitted when the governance parameter registry is first initialised.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceRegistryInitializedEvent {
+    /// Governance admin set at initialisation.
+    pub admin: Address,
+    /// Time-lock delay in seconds applied to all future parameter proposals.
+    pub time_lock_delay: u64,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
+/// Event emitted when a governance parameter change is proposed (not yet executable).
+///
+/// Indexers should record this event and await a corresponding
+/// [`GovernanceRegistryParamExecutedEvent`] or [`GovernanceRegistryParamCancelledEvent`].
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceRegistryParamProposedEvent {
+    /// Admin who submitted the proposal.
+    pub admin: Address,
+    /// Parameter key being proposed.
+    pub key: Symbol,
+    /// Proposed new value.
+    pub new_value: i128,
+    /// Ledger timestamp after which execution becomes allowed.
+    pub executable_after: u64,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds) of this event.
+    pub timestamp: u64,
+}
+
+/// Event emitted when a pending parameter proposal is executed after time-lock expiry.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceRegistryParamExecutedEvent {
+    /// Admin who triggered execution.
+    pub admin: Address,
+    /// Parameter key that is now live.
+    pub key: Symbol,
+    /// Value that is now active.
+    pub new_value: i128,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
+/// Event emitted when a pending parameter proposal is cancelled before execution.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceRegistryParamCancelledEvent {
+    /// Admin who cancelled the proposal.
+    pub admin: Address,
+    /// Parameter key whose proposal was cancelled.
+    pub key: Symbol,
+    /// Monotone per-topic nonce.
+    pub nonce: u64,
+    /// Ledger timestamp (Unix seconds).
+    pub timestamp: u64,
+}
+
 /// Config initialized event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
