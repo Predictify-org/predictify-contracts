@@ -953,7 +953,7 @@ impl DisputeManager {
         let effective_floor = global_anti_grief_floor.max(market_floor);
         
         if stake < effective_floor {
-            return Err(Error::InvalidStakeAmount);
+            return Err(Error::InsufficientStake);
         }
 
         // Validate dispute parameters
@@ -2522,7 +2522,10 @@ impl DisputeValidator {
         stake: i128,
     ) -> Result<(), Error> {
         // Validate stake amount
-        if stake < MIN_DISPUTE_STAKE {
+        let global_anti_grief_floor = env.storage().persistent().get(&DataKey::AntiGriefFloor).unwrap_or(0i128);
+        let market_floor = market.dispute_stake_floor.unwrap_or(0);
+        let effective_floor = global_anti_grief_floor.max(market_floor).max(MIN_DISPUTE_STAKE);
+        if stake < effective_floor {
             return Err(Error::InsufficientStake);
         }
 
@@ -3788,35 +3791,35 @@ mod tests {
         let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
         market.oracle_result = Some(String::from_str(&env, "yes"));
         market.state = crate::types::MarketState::Resolved;
-        market.dispute_stake_floor = Some(1500);
+        market.dispute_stake_floor = Some(20_000_000);
         
         env.as_contract(&contract_id, || {
             crate::markets::MarketStateManager::update_market(&env, &market_id, &market);
-            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 1000).unwrap();
+            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 15_000_000).unwrap();
             
-            // Stake 1200: higher than global (1000) but lower than market (1500). Should fail.
+            // Stake 18_000_000: higher than global (15_000_000) but lower than market (20_000_000). Should fail.
             assert_eq!(
-                DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 1200, None).unwrap_err(),
-                Error::InvalidStakeAmount
+                DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 18_000_000, None).unwrap_err(),
+                Error::InsufficientStake
             );
             
-            // Stake 2000: higher than both. 
+            // Stake 25_000_000: higher than both. 
             // process_dispute doesn't check if user has balance in tests because the contract doesn't have the mock balance set up
             // Wait, process_dispute internally locks funds, which will fail if there's no balance.
             // I should use DisputeValidator directly to just check the dispute stake check.
             assert_eq!(
-                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 1200).unwrap_err(),
-                Error::InvalidStakeAmount
+                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 18_000_000).unwrap_err(),
+                Error::InsufficientStake
             );
-            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 2000).is_ok());
+            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 25_000_000).is_ok());
             
             // Test when market_floor < global_anti_grief_floor
-            market.dispute_stake_floor = Some(500);
+            market.dispute_stake_floor = Some(12_000_000);
             assert_eq!(
-                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 800).unwrap_err(),
-                Error::InvalidStakeAmount
+                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 13_000_000).unwrap_err(),
+                Error::InsufficientStake
             );
-            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 1200).is_ok());
+            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 18_000_000).is_ok());
         });
     }
 }
