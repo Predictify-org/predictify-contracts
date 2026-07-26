@@ -67,6 +67,10 @@ pub enum DataKey {
     OracleList,
 }
 
+/// The number of ledgers to extend the TTL of persistent storage keys.
+/// Roughly equivalent to 31 days at 5 seconds per ledger (535,680 ledgers).
+pub const ORACLE_LIST_TTL_LEDGERS: u32 = 535_680;
+
 // ---------------------------------------------------------------------------
 // Error codes
 // ---------------------------------------------------------------------------
@@ -322,10 +326,16 @@ impl OraclesContract {
     /// }
     /// ```
     pub fn list_oracles(env: Env) -> Vec<Address> {
-        env.storage()
+        let list: Vec<Address> = env.storage()
             .persistent()
             .get(&DataKey::OracleList)
-            .unwrap_or_else(|| Vec::new(&env))
+            .unwrap_or_else(|| Vec::new(&env));
+            
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::OracleList, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
+            
+        list
     }
 
     // -----------------------------------------------------------------------
@@ -381,6 +391,10 @@ impl OraclesContract {
             .persistent()
             .get(&DataKey::OracleList)
             .unwrap_or_else(|| Vec::new(&env));
+
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::OracleList, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
 
         let mut found = false;
         for existing in list.iter() {
@@ -458,6 +472,10 @@ impl OraclesContract {
             .persistent()
             .get(&DataKey::OracleList)
             .unwrap_or_else(|| Vec::new(&env));
+
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::OracleList, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
 
         let mut found = false;
         for existing in list.iter() {
@@ -548,6 +566,10 @@ impl OraclesContract {
             .persistent()
             .get(&DataKey::OracleList)
             .unwrap_or_else(|| Vec::new(&env));
+
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::OracleList, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
 
         let mut found = false;
         for existing in list.iter() {
