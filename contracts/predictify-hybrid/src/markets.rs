@@ -3311,6 +3311,8 @@ mod tests {
 pub struct MarketPauseManager;
 
 impl MarketPauseManager {
+    const MIN_COOLOFF_SECONDS: u64 = 3600;
+
     /// Maximum allowed pause duration in hours (7 days)
     const MAX_PAUSE_DURATION_HOURS: u32 = 168;
 
@@ -3417,7 +3419,13 @@ impl MarketPauseManager {
     ///
     /// * `Error::Unauthorized` - Caller is not an authorized administrator
     /// * `Error::MarketNotFound` - Market doesn't exist
-    /// * `Error::InvalidState` - Market is not currently paused
+    /// * `Error::InvalidState` - Market is not currently paused, or cool-off period has not elapsed
+    ///
+    /// # Cool-off Period
+    ///
+    /// The manager enforces a minimum cool-off period before a manually paused market
+    /// can be resumed. If `resume_market` is called before this period elapses, it will
+    /// return `Error::InvalidState`.
     ///
     /// # Example
     ///
@@ -3442,6 +3450,10 @@ impl MarketPauseManager {
             .ok_or(Error::InvalidState)?;
 
         if !pause_info.is_paused {
+            return Err(Error::InvalidState);
+        }
+
+        if env.ledger().timestamp() < pause_info.paused_at + Self::MIN_COOLOFF_SECONDS {
             return Err(Error::InvalidState);
         }
 
@@ -3671,5 +3683,75 @@ impl MarketPauseManager {
             ("market_resumed", market_id),
             (admin, env.ledger().timestamp()),
         );
+    }
+}
+
+#[cfg(test)]
+mod pause_cooloff_tests {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Ledger};
+
+    #[test]
+    fn test_resume_market_cooloff() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            // Set up admin
+            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
+
+            let market_id = Symbol::new(&env, "test_pause_market");
+            let market = Market::new(
+                &env,
+                Address::generate(&env),
+                soroban_sdk::String::from_str(&env, "Will it rain?"),
+                vec![
+                    &env,
+                    soroban_sdk::String::from_str(&env, "yes"),
+                    soroban_sdk::String::from_str(&env, "no"),
+                ],
+                env.ledger().timestamp() + 86400,
+                crate::types::OracleConfig::new(
+                    crate::types::OracleProvider::pyth(),
+                    Address::generate(&env),
+                    soroban_sdk::String::from_str(&env, "BTC/USD"),
+                    2_500_000,
+                    soroban_sdk::String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+            MarketStateManager::store_market(&env, &market_id, &market).unwrap();
+
+            env.ledger().set_timestamp(100_000);
+
+            let non_admin = Address::generate(&env);
+            assert_eq!(
+                MarketPauseManager::resume_market(&env, non_admin, &market_id),
+                Err(Error::Unauthorized)
+            );
+
+            MarketPauseManager::pause_market(&env, admin.clone(), &market_id, 24).unwrap();
+
+            assert_eq!(
+                MarketPauseManager::resume_market(&env, admin.clone(), &market_id),
+                Err(Error::InvalidState)
+            );
+
+            env.ledger().set_timestamp(100_000 + MarketPauseManager::MIN_COOLOFF_SECONDS);
+
+            MarketPauseManager::resume_market(&env, admin.clone(), &market_id).unwrap();
+
+            MarketPauseManager::pause_market(&env, admin.clone(), &market_id, 24).unwrap();
+            let pause_info: MarketPauseInfo = env.storage().persistent().get(&market_id).unwrap();
+
+            assert_eq!(MarketPauseManager::auto_resume_on_expiry(&env, &market_id).unwrap(), false);
+
+            env.ledger().set_timestamp(pause_info.pause_end_time + 1);
+            assert_eq!(MarketPauseManager::auto_resume_on_expiry(&env, &market_id).unwrap(), true);
+        });
     }
 }
