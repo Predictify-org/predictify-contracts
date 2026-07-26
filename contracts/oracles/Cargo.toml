@@ -17,3 +17,8 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 [[test]]
 name = "err_stab"
 path = "tests/err_stab.rs"
+
+[[test]]
+name = "oracle_tests"
+path = "tests/oracle_tests.rs"
+
