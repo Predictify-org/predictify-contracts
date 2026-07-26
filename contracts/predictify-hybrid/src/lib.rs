@@ -186,8 +186,7 @@ mod betting_invariant_proptest;
 #[cfg(test)]
 mod property_based_tests;
 #[cfg(test)]
-#[path = "tests/disputes_proptest.rs"]
-mod disputes_proptest;
+mod betting_invariants;
 mod analytics_snapshot;
 
 #[cfg(test)]
