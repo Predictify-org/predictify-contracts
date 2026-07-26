@@ -26,6 +26,16 @@
 //! |--------------------------------|-----------|------------------------------------|
 //! | `DataKey::OracleList`          | Persistent | Ordered `Vec<Address>` of oracles  |
 //!
+//! ## TTL Behaviour
+//!
+//! Every read of `OracleList` from persistent storage bumps the entry's TTL
+//! by [`ORACLE_LIST_TTL_LEDGERS`] ledgers (~365 days).  This includes the
+//! read-only entrypoints [`list_oracles`][Self::list_oracles],
+//! [`get_price`][Self::get_price], [`get_price_data`][Self::get_price_data],
+//! and [`is_oracle_healthy`][Self::is_oracle_healthy].  Write entrypoints
+//! (`add_oracle`, `remove_oracle`) extend TTL via `.set()` followed by an
+//! explicit [`extend_ttl`] call.
+//!
 //! ## Example – full lifecycle
 //!
 //! ```rust,ignore
@@ -51,6 +61,20 @@
 //! ```
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
+
+// ---------------------------------------------------------------------------
+// TTL constants
+// ---------------------------------------------------------------------------
+
+/// Number of ledgers in a ~24-hour period at 5 s/ledger.
+const LEDGERS_PER_DAY: u32 = 17_280;
+
+/// TTL for the `OracleList` persistent storage entry (~365 days at 5 s/ledger).
+///
+/// Every read of the oracle list from persistent storage bumps the TTL to this
+/// value, preventing archival pressure on hot read paths.  Write operations
+/// (`add_oracle`, `remove_oracle`) implicitly extend TTL via `.set()`.
+pub const ORACLE_LIST_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 
 // ---------------------------------------------------------------------------
 // Storage key
@@ -152,7 +176,7 @@ pub enum Error {
 /// | `confidence`   | `Option<i128>` | Half-width of the 95 % confidence interval, if available   |
 /// | `exponent`     | `i32`          | Decimal exponent: `real = price × 10^exponent`             |
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OraclePriceData {
     /// Raw integer price from the oracle feed.
     pub price: i128,
@@ -233,7 +257,13 @@ impl OraclesContract {
         }
 
         list.push_back(oracle);
-        env.storage().persistent().set(&DataKey::OracleList, &list);
+        let key = DataKey::OracleList;
+        env.storage()
+            .persistent()
+            .set(&key, &list);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
 
         Ok(())
     }
@@ -285,9 +315,13 @@ impl OraclesContract {
             }
         }
 
+        let key = DataKey::OracleList;
         env.storage()
             .persistent()
-            .set(&DataKey::OracleList, &updated);
+            .set(&key, &updated);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
 
         Ok(())
     }
@@ -317,9 +351,14 @@ impl OraclesContract {
     /// }
     /// ```
     pub fn list_oracles(env: Env) -> Vec<Address> {
+        let key = DataKey::OracleList;
         env.storage()
             .persistent()
-            .get(&DataKey::OracleList)
+            .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
+
+        env.storage()
+            .persistent()
+            .get(&key)
             .unwrap_or_else(|| Vec::new(&env))
     }
 
@@ -371,10 +410,15 @@ impl OraclesContract {
     /// ```
     pub fn get_price(env: Env, oracle: Address, feed_id: String) -> Result<i128, Error> {
         // Validate the oracle is registered.
+        let key = DataKey::OracleList;
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
+
         let list: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&DataKey::OracleList)
+            .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
 
         let mut found = false;
@@ -448,10 +492,15 @@ impl OraclesContract {
         feed_id: String,
     ) -> Result<OraclePriceData, Error> {
         // Validate the oracle is registered.
+        let key = DataKey::OracleList;
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
+
         let list: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&DataKey::OracleList)
+            .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
 
         let mut found = false;
@@ -538,10 +587,15 @@ impl OraclesContract {
     /// ```
     pub fn is_oracle_healthy(env: Env, oracle: Address) -> Result<bool, Error> {
         // Validate the oracle is registered.
+        let key = DataKey::OracleList;
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
+
         let list: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&DataKey::OracleList)
+            .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
 
         let mut found = false;
@@ -564,5 +618,235 @@ impl OraclesContract {
         );
 
         Ok(healthy.unwrap_or(false))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Ledger, storage::Persistent};
+
+    /// `add_oracle` writes the `OracleList` entry and the TTL reflects
+    /// `ORACLE_LIST_TTL_LEDGERS` (or `max_ttl()` when the environment ceiling
+    /// is lower).
+    #[test]
+    fn add_oracle_sets_ttl() {
+        let env = Env::default();
+        let admin = soroban_sdk::Address::generate(&env);
+        let oracle = soroban_sdk::Address::generate(&env);
+
+        let contract_id = env.register(OraclesContract, ());
+        let key = DataKey::OracleList;
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            OraclesContract::add_oracle(env.clone(), admin, oracle).unwrap();
+
+            let ttl = env.storage().persistent().get_ttl(&key);
+            let expected = ORACLE_LIST_TTL_LEDGERS.min(env.storage().max_ttl());
+            assert_eq!(ttl, expected,
+                "TTL after add_oracle should be {expected}, got {ttl}"
+            );
+        });
+    }
+
+    /// `list_oracles` extends the TTL of the `OracleList` entry on every read.
+    #[test]
+    fn list_oracles_bumps_ttl_on_read() {
+        let env = Env::default();
+        let admin = soroban_sdk::Address::generate(&env);
+        let oracle = soroban_sdk::Address::generate(&env);
+
+        let contract_id = env.register(OraclesContract, ());
+        let key = DataKey::OracleList;
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            // Populate the list.
+            OraclesContract::add_oracle(env.clone(), admin, oracle).unwrap();
+
+            let initial_ttl = env.storage().persistent().get_ttl(&key);
+
+            // Advance the ledger so TTL decays.
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 1000;
+            });
+
+            let decayed_ttl = env.storage().persistent().get_ttl(&key);
+            assert!(decayed_ttl < initial_ttl,
+                "TTL should decay after ledger advance: {decayed_ttl} >= {initial_ttl}"
+            );
+
+            // A read via list_oracles must bump the TTL back up.
+            let _oracles = OraclesContract::list_oracles(env.clone());
+
+            let refreshed_ttl = env.storage().persistent().get_ttl(&key);
+            let expected = ORACLE_LIST_TTL_LEDGERS.min(env.storage().max_ttl());
+            assert_eq!(refreshed_ttl, expected,
+                "list_oracles should bump TTL back to {expected}, got {refreshed_ttl}"
+            );
+        });
+    }
+
+    /// `remove_oracle` writes the updated list, which extends TTL via `.set()`
+    /// followed by an explicit `extend_ttl` call.
+    #[test]
+    fn remove_oracle_extends_ttl_via_set() {
+        let env = Env::default();
+        let admin = soroban_sdk::Address::generate(&env);
+        let oracle = soroban_sdk::Address::generate(&env);
+
+        let contract_id = env.register(OraclesContract, ());
+        let key = DataKey::OracleList;
+
+        // Pre-populate storage directly to avoid double-require_auth on the
+        // same address in one as_contract call (mock_all_auths rejects it).
+        env.as_contract(&contract_id, || {
+            let mut list: Vec<Address> = Vec::new(&env);
+            list.push_back(oracle.clone());
+            env.storage().persistent().set(&key, &list);
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, ORACLE_LIST_TTL_LEDGERS, ORACLE_LIST_TTL_LEDGERS);
+        });
+
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            // Advance ledgers to decay TTL.
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 2000;
+            });
+
+            let decayed_ttl = env.storage().persistent().get_ttl(&key);
+
+            // Removing the oracle writes the list, extending TTL.
+            OraclesContract::remove_oracle(env.clone(), admin, oracle).unwrap();
+
+            let refreshed_ttl = env.storage().persistent().get_ttl(&key);
+            assert!(refreshed_ttl > decayed_ttl,
+                "remove_oracle should extend TTL via .set(): {refreshed_ttl} <= {decayed_ttl}"
+            );
+        });
+    }
+
+    /// `get_price` bumps TTL on the `OracleList` entry during the lookup,
+    /// even when the oracle is not registered (the TTL bump happens before
+    /// the error is returned).
+    #[test]
+    fn get_price_bumps_ttl_on_read() {
+        let env = Env::default();
+        let admin = soroban_sdk::Address::generate(&env);
+        let oracle = soroban_sdk::Address::generate(&env);
+        let unknown = soroban_sdk::Address::generate(&env);
+        let feed = String::from_str(&env, "BTC/USD");
+
+        let contract_id = env.register(OraclesContract, ());
+        let key = DataKey::OracleList;
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
+
+            // Advance ledgers.
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 1000;
+            });
+
+            let decayed_ttl = env.storage().persistent().get_ttl(&key);
+
+            // Querying an unknown oracle still bumps TTL (the bump happens
+            // before the lookup check returns an error).
+            let result = OraclesContract::get_price(
+                env.clone(),
+                unknown,
+                feed.clone(),
+            );
+            assert_eq!(result, Err(Error::InvalidOracleConfig));
+
+            let refreshed_ttl = env.storage().persistent().get_ttl(&key);
+            assert!(refreshed_ttl > decayed_ttl,
+                "get_price should bump TTL even on error paths: {refreshed_ttl} <= {decayed_ttl}"
+            );
+        });
+    }
+
+    /// `is_oracle_healthy` bumps TTL during its lookup.
+    #[test]
+    fn is_oracle_healthy_bumps_ttl_on_read() {
+        let env = Env::default();
+        let admin = soroban_sdk::Address::generate(&env);
+        let oracle = soroban_sdk::Address::generate(&env);
+        let unknown = soroban_sdk::Address::generate(&env);
+
+        let contract_id = env.register(OraclesContract, ());
+        let key = DataKey::OracleList;
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
+
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 1000;
+            });
+
+            let decayed_ttl = env.storage().persistent().get_ttl(&key);
+
+            // Unregistered oracle → error, but TTL bump still happens.
+            let result = OraclesContract::is_oracle_healthy(env.clone(), unknown);
+            assert_eq!(result, Err(Error::InvalidOracleConfig));
+
+            let refreshed_ttl = env.storage().persistent().get_ttl(&key);
+            assert!(refreshed_ttl > decayed_ttl,
+                "is_oracle_healthy should bump TTL even on error paths: {refreshed_ttl} <= {decayed_ttl}"
+            );
+        });
+    }
+
+    /// `get_price_data` bumps TTL during its lookup.
+    #[test]
+    fn get_price_data_bumps_ttl_on_read() {
+        let env = Env::default();
+        let admin = soroban_sdk::Address::generate(&env);
+        let oracle = soroban_sdk::Address::generate(&env);
+        let unknown = soroban_sdk::Address::generate(&env);
+        let feed = String::from_str(&env, "ETH/USD");
+
+        let contract_id = env.register(OraclesContract, ());
+        let key = DataKey::OracleList;
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            OraclesContract::add_oracle(env.clone(), admin, oracle.clone()).unwrap();
+
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 1000;
+            });
+
+            let decayed_ttl = env.storage().persistent().get_ttl(&key);
+
+            let result = OraclesContract::get_price_data(env.clone(), unknown, feed.clone());
+            assert_eq!(result, Err(Error::InvalidOracleConfig));
+
+            let refreshed_ttl = env.storage().persistent().get_ttl(&key);
+            assert!(refreshed_ttl > decayed_ttl,
+                "get_price_data should bump TTL even on error paths: {refreshed_ttl} <= {decayed_ttl}"
+            );
+        });
+    }
+
+    /// The TTL constant is within the reasonable range for the network.
+    #[test]
+    fn oracle_list_ttl_constant_is_reasonable() {
+        // 365 days of ledgers at ~5 s/ledger = 6,307,200
+        assert_eq!(ORACLE_LIST_TTL_LEDGERS, 365 * 17_280);
+        // Must be well above a single day.
+        assert!(ORACLE_LIST_TTL_LEDGERS > 17_280);
+        // Must not exceed a typical u32 ledger range by an absurd margin.
+        assert!(ORACLE_LIST_TTL_LEDGERS < 100_000_000);
     }
 }
