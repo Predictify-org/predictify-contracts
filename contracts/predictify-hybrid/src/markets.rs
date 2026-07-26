@@ -994,8 +994,12 @@ impl MarketStateManager {
 
         match market {
             Some(m) => {
-                // Extend the TTL of this market to ensure it remains accessible
-                crate::storage::bump_market_ttl(_env, market_id);
+                // TTL BUMP: extend persistent storage TTL on hot read to prevent
+                // frequently-accessed markets from expiring.
+                let effective_ttl = MARKET_TTL_LEDGERS.min(_env.storage().max_ttl());
+                _env.storage()
+                    .persistent()
+                    .extend_ttl(market_id, effective_ttl, effective_ttl);
                 // Populate cache for subsequent reads
                 cache.set(market_id.clone(), &m);
                 Ok(m)
@@ -3307,7 +3311,8 @@ impl MarketStateLogic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::storage::Persistent as _;
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig, Ledger};
 
     #[test]
     fn test_market_validation() {
@@ -3429,6 +3434,147 @@ mod tests {
         let consensus = MarketAnalytics::calculate_community_consensus(&market);
         assert_eq!(consensus.total_votes, 0);
         assert_eq!(consensus.percentage, 0);
+    }
+
+    #[test]
+    fn test_get_market_bumps_persistent_ttl_on_cache_miss() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let market = Market::new(
+                &env,
+                admin,
+                String::from_str(&env, "TTL test?"),
+                vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env.ledger().timestamp() + 86400,
+                OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    String::from_str(&env, "BTC"),
+                    2500000,
+                    String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+
+            let market_id = Symbol::new(&env, "ttl_test_market");
+            env.storage().persistent().set(&market_id, &market);
+            env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
+            let initial_ttl = env.storage().persistent().get_ttl(&market_id);
+
+            // Advance ledger to consume some TTL
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 500;
+            });
+            let depleted_ttl = env.storage().persistent().get_ttl(&market_id);
+            assert!(depleted_ttl < initial_ttl);
+
+            // Clear instance cache so get_market falls through to persistent read
+            MarketReadCache::new(&env).invalidate(&market_id);
+
+            // get_market cache miss should bump persistent TTL back to full
+            let result = MarketStateManager::get_market(&env, &market_id);
+            assert!(result.is_ok());
+            let refreshed_ttl = env.storage().persistent().get_ttl(&market_id);
+            assert_eq!(refreshed_ttl, initial_ttl);
+        });
+    }
+
+    #[test]
+    fn test_get_market_cache_hit_does_not_bump_persistent_ttl() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let market = Market::new(
+                &env,
+                admin,
+                String::from_str(&env, "Cache test?"),
+                vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env.ledger().timestamp() + 86400,
+                OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    String::from_str(&env, "BTC"),
+                    2500000,
+                    String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+
+            let market_id = Symbol::new(&env, "cache_test_market");
+            env.storage().persistent().set(&market_id, &market);
+            env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
+
+            // First read: cache miss → bumps persistent TTL, populates cache
+            let _ = MarketStateManager::get_market(&env, &market_id);
+            let ttl_after_miss = env.storage().persistent().get_ttl(&market_id);
+
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 200;
+            });
+
+            // Second read: cache hit → should NOT bump persistent TTL
+            let _ = MarketStateManager::get_market(&env, &market_id);
+            let ttl_after_hit = env.storage().persistent().get_ttl(&market_id);
+            assert_eq!(ttl_after_hit, ttl_after_miss - 200);
+        });
+    }
+
+    #[test]
+    fn test_get_market_ttl_bump_respects_max_ttl() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let market = Market::new(
+                &env,
+                admin,
+                String::from_str(&env, "Max TTL test?"),
+                vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env.ledger().timestamp() + 86400,
+                OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    String::from_str(&env, "BTC"),
+                    2500000,
+                    String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+
+            let market_id = Symbol::new(&env, "max_ttl_market");
+            let max_ttl = env.storage().max_ttl();
+            env.storage().persistent().set(&market_id, &market);
+            env.storage().persistent().extend_ttl(&market_id, max_ttl, max_ttl);
+
+            // Clear cache and read
+            MarketReadCache::new(&env).invalidate(&market_id);
+            let _ = MarketStateManager::get_market(&env, &market_id);
+
+            let effective_ttl = env.storage().persistent().get_ttl(&market_id);
+            // TTL should never exceed max_ttl
+            assert!(effective_ttl <= max_ttl);
+        });
     }
 }
 
