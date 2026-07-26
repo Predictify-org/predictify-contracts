@@ -19,6 +19,5 @@ name = "err_stab"
 path = "tests/err_stab.rs"
 
 [[test]]
-name = "oracle_tests"
-path = "tests/oracle_tests.rs"
-
+name = "ttl"
+path = "tests/ttl.rs"
