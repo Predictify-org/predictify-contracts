@@ -810,7 +810,7 @@ impl DisputeManager {
         DisputeValidator::validate_admin_permissions(env, &admin)?;
         Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "set_collusion_detector_config"))?;
 
-        let key = DataKey::CollusionDetectorConfig;
+        let key = DataKey::CollusionDetectorConfig(Symbol::new(env, "collusion_config"));
         env.storage().persistent().set(&key, &config);
         env.storage().persistent().extend_ttl(&key, 535680, 535680);
         Ok(())
@@ -818,7 +818,7 @@ impl DisputeManager {
 
     /// Retrieves the collusion detector configuration.
     pub fn get_collusion_detector_config(env: &Env) -> CollusionDetectorConfig {
-        let key = DataKey::CollusionDetectorConfig;
+        let key = DataKey::CollusionDetectorConfig(Symbol::new(env, "collusion_config"));
         env.storage().persistent().get(&key).unwrap_or(CollusionDetectorConfig {
             stake_delta_threshold: 1_000_000,
             time_delta_threshold: 600, // 10 minutes
@@ -1208,7 +1208,7 @@ impl DisputeManager {
             env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
         }
 
-        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id);
+        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market);
         crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
             env,
             &market_id,
@@ -3098,13 +3098,7 @@ impl DisputeUtils {
         vote: bool,
         stake: i128,
     ) {
-        crate::events::EventEmitter::emit_dispute_vote_cast(
-            env,
-            dispute_id,
-            user,
-            vote,
-            stake,
-        );
+        // NOTE: emit_dispute_vote_cast not yet implemented in EventEmitter
     }
 
     /// Emit fee distribution event
@@ -3114,12 +3108,7 @@ impl DisputeUtils {
         dispute_id: &Symbol,
         distribution: &DisputeFeeDistribution,
     ) {
-        crate::events::EventEmitter::emit_dispute_fee_distributed(
-            env,
-            dispute_id,
-            distribution.total_fees,
-            distribution.fees_distributed,
-        );
+        // NOTE: emit_dispute_fee_distributed not yet implemented in EventEmitter
     }
 
     /// Emit dispute escalation event

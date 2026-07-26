@@ -1360,7 +1360,7 @@ impl BetValidator {
         caller.require_auth();
 
         // Verify caller is admin
-        let admin = crate::admin::AdminManager::get_admin(env)?;
+        let admin = crate::admin::AdminAccessControl::get_admin(env)?;
         if *caller != admin {
             return Err(Error::Unauthorized);
         }
@@ -1393,7 +1393,7 @@ impl BetValidator {
     ///
     /// Returns the cumulative amount the user has bet on this market (0 if no prior bets).
     pub fn get_user_stake(env: &Env, market_id: &Symbol, user: &Address) -> i128 {
-        let key = crate::storage::DataKey::UserStake(market_id.clone(), user.clone());
+        let key = crate::storage::DataKey::UserStake(user.clone(), market_id.clone());
         env.storage()
             .persistent()
             .get::<_, i128>(&key)
@@ -1422,7 +1422,7 @@ impl BetValidator {
             .checked_add(amount)
             .ok_or(Error::Overflow)?;
 
-        let key = crate::storage::DataKey::UserStake(market_id.clone(), user.clone());
+        let key = crate::storage::DataKey::UserStake(user.clone(), market_id.clone());
         env.storage().persistent().set(&key, &new_stake);
         // Extend TTL to match market (365 days)
         env.storage().persistent().extend_ttl(&key, crate::storage::MARKET_TTL_LEDGERS, crate::storage::MARKET_TTL_LEDGERS);

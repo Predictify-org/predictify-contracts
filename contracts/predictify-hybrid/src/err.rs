@@ -235,8 +235,6 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
-    /// A place_bets batch with this idempotency key has already been successfully applied.
-    IdempotentBatchAlreadyApplied = 509,
     /// Force-resolve idempotency key has already been used. Use a new unique key.
     ForceResolveReplayed = 517,
     /// Force-resolve reason is empty. Every force-resolve must be justified.
@@ -260,6 +258,36 @@ pub enum Error {
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
     MaxParticipantsReached = 528,
+    /// The bet amount exceeds the maximum cap for this user/market.
+    BetExceedsCap = 675,
+    /// An admin override was replayed; reject to prevent replay attacks.
+    ReplayedOverride = 526,
+    /// Oracle admin cooldown is currently active.
+    OracleAdminCooldownActive = 676,
+    /// Signer rotation cooldown is currently active.
+    SignerRotationCooldown = 677,
+    /// User is not whitelisted for this operation.
+    UserNotWhitelisted = 678,
+    /// User has been blacklisted.
+    UserBlacklisted = 679,
+    /// Creator has been blacklisted.
+    CreatorBlacklisted = 680,
+    /// Contract is already initialized.
+    AlreadyInitialized = 681,
+    /// Invalid timelock delay.
+    InvalidTimeLockDelay = 682,
+    /// Timelock has not yet expired.
+    TimeLockNotExpired = 683,
+    /// No pending update found.
+    NoPendingUpdate = 684,
+    /// A pending update already exists.
+    PendingUpdateExists = 685,
+    /// Invalid stake amount.
+    InvalidStakeAmount = 686,
+    /// Per-ledger bet cap exceeded.
+    PerLedgerBetCapExceeded = 687,
+    /// Registry is full.
+    RegistryFull = 688,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

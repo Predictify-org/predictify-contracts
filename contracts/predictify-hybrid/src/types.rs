@@ -1539,6 +1539,7 @@ impl Market {
             winnings_swept: false,
             timelock_config: MarketTimelockConfig::default(),
             dispute_stake_floor: None,
+            max_participants: None,
         }
     }
 

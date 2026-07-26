@@ -102,7 +102,7 @@ fn record_oracle_health(
         // the real address (e.g., OracleBackup methods) can emit separately.
         EventEmitter::emit_oracle_health_status(
             env,
-            &Address::generate(env),
+            &Address::from_str(env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
             &provider_str,
             prev_health == OracleHealth::Working,
             new_health == OracleHealth::Working,
@@ -257,7 +257,7 @@ pub fn monitor_oracle_health(
     oracle: OracleProvider,
     oracle_address: &Address,
 ) -> OracleHealth {
-    let backup = OracleBackup::new(oracle.clone(), oracle);
+    let backup = OracleBackup::new(oracle.clone(), oracle.clone());
 
     // Probe the oracle.
     let working = backup.is_working(env, oracle_address).unwrap_or(false);

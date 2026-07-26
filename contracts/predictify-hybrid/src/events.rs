@@ -2331,7 +2331,7 @@ impl EventEmitter {
     ///
     /// Note: This nonce is reset only on contract upgrade, provided the 
     /// persistent storage for `EventNonce` is cleared during the upgrade migration.
-    fn get_and_increment_nonce(env: &Env, topic: Symbol) -> u64 {
+    pub(crate) fn get_and_increment_nonce(env: &Env, topic: Symbol) -> u64 {
         let key = crate::storage::DataKey::EventNonce(topic);
         let mut nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
         nonce += 1;
@@ -2589,6 +2589,7 @@ impl EventEmitter {
             price,
             threshold,
             comparison: comparison.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_res")),
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2856,6 +2857,7 @@ impl EventEmitter {
             community_consensus: community_consensus.clone(),
             resolution_method: resolution_method.clone(),
             confidence_score,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_res")),
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2910,6 +2912,7 @@ impl EventEmitter {
             disputer: disputer.clone(),
             stake,
             reason,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dispt_opn")),
             timestamp: env.ledger().timestamp(),
         };
 
@@ -3054,14 +3057,13 @@ impl EventEmitter {
         admin: &Address,
         amount: i128,
         remaining_fees: i128,
-        nonce: Self::get_and_increment_nonce(env, symbol_short!("fwd_ok").clone()),
-
         timestamp: u64,
     ) {
         let event = FeeWithdrawnEvent {
             admin: admin.clone(),
             amount,
             remaining_fees,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fwd_ok")),
             timestamp,
         };
 
@@ -3149,13 +3151,13 @@ impl EventEmitter {
     pub fn emit_max_bet_cap_set(env: &Env, cap: i128) {
         let event = MaxBetCapSetEvent {
             cap,
-            nonce: Self::get_and_increment_nonce(env, symbol_short!("max_bet_cap").clone()),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mxbtcap").clone()),
 
             timestamp: env.ledger().timestamp(),
         };
-        Self::store_event(env, &symbol_short!("max_bet_cap"), &event);
+        Self::store_event(env, &symbol_short!("mxbtcap"), &event);
         env.events()
-            .publish((symbol_short!("max_bet_cap"),), event);
+            .publish((symbol_short!("mxbtcap"),), event);
     }
 
     /// Emit error logged event
@@ -3304,8 +3306,9 @@ impl EventEmitter {
     /// Emit contract initialized event (full initialization with platform fee)
     pub fn emit_contract_initialized(env: &Env, admin: &Address, fee: i128) {
         let event = ContractInitializedEvent {
-            admin: admin.clone(), // Clone because the struct owns the Address
+            admin: admin.clone(),
             platform_fee_percentage: fee,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ctr_init")),
             timestamp: env.ledger().timestamp(),
         };
         env.events()
@@ -3316,6 +3319,7 @@ impl EventEmitter {
         let event = PlatformFeeSetEvent {
             fee_percentage: fee,
             set_by: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("pltf_set")),
             timestamp: env.ledger().timestamp(),
         };
         env.events()
@@ -3333,6 +3337,7 @@ impl EventEmitter {
             severity,
             message_hash,
             reason,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_brdc")),
             timestamp: env.ledger().timestamp(),
         };
         env.events()
@@ -3411,8 +3416,8 @@ impl EventEmitter {
         let topics = (Symbol::new(env, "Admin"), Symbol::new(env, "SignerRotationCooldownHit"));
         let mut data = Map::new(env);
         data.set(String::from_str(env, "admin"), admin.to_val());
-        data.set(String::from_str(env, "last_rotation"), last_rotation);
-        data.set(String::from_str(env, "cooldown"), cooldown);
+        data.set(String::from_str(env, "last_rotation"), String::from_str(env, &alloc::string::ToString::to_string(&last_rotation)).to_val());
+        data.set(String::from_str(env, "cooldown"), String::from_str(env, &alloc::string::ToString::to_string(&cooldown)).to_val());
         env.events().publish(topics, data);
     }
 
@@ -3421,8 +3426,8 @@ impl EventEmitter {
         let topics = (Symbol::new(env, "OracleAdmin"), Symbol::new(env, "CooldownHit"));
         let mut data = Map::new(env);
         data.set(String::from_str(env, "admin"), admin.to_val());
-        data.set(String::from_str(env, "last_action"), last_action);
-        data.set(String::from_str(env, "cooldown"), cooldown);
+        data.set(String::from_str(env, "last_action"), String::from_str(env, &alloc::string::ToString::to_string(&last_action)).to_val());
+        data.set(String::from_str(env, "cooldown"), String::from_str(env, &alloc::string::ToString::to_string(&cooldown)).to_val());
         env.events().publish(topics, data);
     }
 
@@ -4217,6 +4222,7 @@ impl EventEmitter {
             proposal_id: proposal_id.clone(),
             voter: voter.clone(),
             support,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_vote")),
             timestamp,
         };
 
@@ -4245,6 +4251,7 @@ impl EventEmitter {
         let event = GovernanceProposalExecutedEvent {
             proposal_id: proposal_id.clone(),
             executor: executor.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_exec")),
             timestamp,
         };
 
@@ -4267,6 +4274,7 @@ impl EventEmitter {
             proposer: proposer.clone(),
             for_votes,
             floor_quorum,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_rej")),
             timestamp,
         };
 
@@ -4809,6 +4817,7 @@ impl EventTestingUtils {
             ],
             admin: admin.clone(),
             end_time: env.ledger().timestamp() + 86400,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("mkt_crt")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4824,6 +4833,7 @@ impl EventTestingUtils {
             voter: voter.clone(),
             outcome: String::from_str(env, "yes"),
             stake: 100_0000000,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("vote")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4838,6 +4848,7 @@ impl EventTestingUtils {
             price: 2500000,
             threshold: 2500000,
             comparison: String::from_str(env, "gt"),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("orc_res")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4851,6 +4862,7 @@ impl EventTestingUtils {
             community_consensus: String::from_str(env, "yes"),
             resolution_method: String::from_str(env, "Oracle"),
             confidence_score: 85,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("mkt_res")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4866,6 +4878,7 @@ impl EventTestingUtils {
             disputer: disputer.clone(),
             stake: 10_0000000,
             reason: Some(String::from_str(env, "Test dispute")),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("dispt_opn")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4881,6 +4894,7 @@ impl EventTestingUtils {
             collector: collector.clone(),
             amount: 20_0000000,
             fee_type: String::from_str(env, "Platform"),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("fee_col")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4893,6 +4907,7 @@ impl EventTestingUtils {
             context: String::from_str(env, "Test context"),
             user: None,
             market_id: None,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("err_log")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4904,6 +4919,7 @@ impl EventTestingUtils {
             value: 100,
             unit: String::from_str(env, "transactions"),
             context: String::from_str(env, "Daily"),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("perf_met")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -5311,15 +5327,6 @@ mod event_schema_registry_tests {
 }
 
 impl EventEmitter {
-    /// Gets and increments the replay protection nonce for a specific topic
-    fn get_and_increment_nonce(env: &Env, topic: Symbol) -> u64 {
-        let key = crate::storage::DataKey::EventNonce(topic);
-        let mut nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
-        nonce += 1;
-        env.storage().persistent().set(&key, &nonce);
-        nonce
-    }
-
     pub fn emit_threshold_proposed(
         env: &Env,
         admin: &Address,
