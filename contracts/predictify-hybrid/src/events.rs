@@ -5610,6 +5610,46 @@ impl EventEmitter {
         env.events()
             .publish((symbol_short!("cum_set"), user.clone()), event);
     }
+
+    /// Emit dispute vote cast event.
+    pub fn emit_dispute_vote_cast(
+        env: &Env,
+        dispute_id: &Symbol,
+        voter: &Address,
+        vote: bool,
+        stake: i128,
+    ) {
+        let event = DisputeVoteCastEvent {
+            dispute_id: dispute_id.clone(),
+            voter: voter.clone(),
+            vote,
+            stake,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("disp_vt").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("disp_vt"), &event);
+        env.events()
+            .publish((symbol_short!("disp_vt"), dispute_id.clone()), event);
+    }
+
+    /// Emit dispute fee distributed event.
+    pub fn emit_dispute_fee_distributed(
+        env: &Env,
+        dispute_id: &Symbol,
+        total_fees: i128,
+        fees_distributed: bool,
+    ) {
+        let event = DisputeFeeDistributedEvent {
+            dispute_id: dispute_id.clone(),
+            total_fees,
+            fees_distributed,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("disp_fee").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("disp_fee"), &event);
+        env.events()
+            .publish((symbol_short!("disp_fee"), dispute_id.clone()), event);
+    }
 }
 
 #[cfg(test)]
@@ -5632,10 +5672,6 @@ mod focused_dispute_tests {
         });
 
         let events = env.events().all();
-        // Expect at least one event with 3 topics: (topic0, topic1, topic2)
-        // topic0 = dispt_opn
-        // topic1 = mkt_123
-        // topic2 = 1 (schema version)
 
         let mut found = false;
         for event in events.events().iter() {
@@ -5651,4 +5687,131 @@ mod focused_dispute_tests {
         }
         assert!(found, "DisputeOpenedEvent not found with correct topic structure");
     }
+
+    #[test]
+    fn test_dispute_vote_cast_event_topics() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let dispute_id = Symbol::new(&env, "disp_123");
+        let voter = Address::generate(&env);
+        let vote = true;
+        let stake = 100_000_000i128;
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_dispute_vote_cast(&env, &dispute_id, &voter, vote, stake);
+        });
+
+        let events = env.events().all();
+        let mut found = false;
+        for event in events.events().iter() {
+            if event.2.len() == 2 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+
+                if topic0 == symbol_short!("disp_vt") {
+                    assert_eq!(topic1, dispute_id, "Dispute ID must be topic1");
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "DisputeVoteCastEvent not found with correct topic structure");
+    }
+
+    #[test]
+    fn test_dispute_fee_distributed_event_topics() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let dispute_id = Symbol::new(&env, "disp_123");
+        let total_fees = 1_000_000i128;
+        let fees_distributed = true;
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_dispute_fee_distributed(&env, &dispute_id, total_fees, fees_distributed);
+        });
+
+        let events = env.events().all();
+        let mut found = false;
+        for event in events.events().iter() {
+            if event.2.len() == 2 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+
+                if topic0 == symbol_short!("disp_fee") {
+                    assert_eq!(topic1, dispute_id, "Dispute ID must be topic1");
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "DisputeFeeDistributedEvent not found with correct topic structure");
+    }
 }
+
+#[cfg(test)]
+mod focused_betting_tests {
+    use super::*;
+    use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol, TryIntoVal, Val, String};
+
+    #[test]
+    fn test_bet_placed_event_topics() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "mkt_123");
+        let bettor = Address::generate(&env);
+        let outcome = String::from_str(&env, "Yes");
+        let amount = 10_000_000i128;
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_placed(&env, &market_id, &bettor, &outcome, amount);
+        });
+
+        let events = env.events().all();
+        let mut found = false;
+        for event in events.events().iter() {
+            if event.2.len() == 2 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+
+                if topic0 == symbol_short!("bet_plc") {
+                    assert_eq!(topic1, market_id, "Market ID must be topic1");
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "BetPlacedEvent not found with correct topic structure");
+    }
+
+    #[test]
+    fn test_bet_status_updated_event_topics() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "mkt_123");
+        let bettor = Address::generate(&env);
+        let old_status = String::from_str(&env, "Active");
+        let new_status = String::from_str(&env, "Won");
+        let payout = Some(15_000_000i128);
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_status_updated(&env, &market_id, &bettor, &old_status, &new_status, payout);
+        });
+
+        let events = env.events().all();
+        let mut found = false;
+        for event in events.events().iter() {
+            if event.2.len() == 2 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+
+                if topic0 == symbol_short!("bet_upd") {
+                    assert_eq!(topic1, market_id, "Market ID must be topic1");
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "BetStatusUpdatedEvent not found with correct topic structure");
+    }
+}
+
