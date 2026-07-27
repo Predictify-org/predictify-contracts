@@ -224,35 +224,27 @@ impl Operation {
                 }
             ),
             // Place vote (30% probability)
-            (
-                0..MAX_USERS,
-                0..10usize,
-                0..4usize,
-                1i128..=MAX_STAKE
-            )
-                .prop_map(|(user_idx, market_idx, outcome_idx, stake)| {
+            (0..MAX_USERS, 0..10usize, 0..4usize, 1i128..=MAX_STAKE).prop_map(
+                |(user_idx, market_idx, outcome_idx, stake)| {
                     Operation::PlaceVote {
                         user_idx,
                         market_idx,
                         outcome_idx,
                         stake,
                     }
-                }),
+                }
+            ),
             // Place bet (20% probability)
-            (
-                0..MAX_USERS,
-                0..10usize,
-                0..4usize,
-                1i128..=MAX_STAKE
-            )
-                .prop_map(|(user_idx, market_idx, outcome_idx, amount)| {
+            (0..MAX_USERS, 0..10usize, 0..4usize, 1i128..=MAX_STAKE).prop_map(
+                |(user_idx, market_idx, outcome_idx, amount)| {
                     Operation::PlaceBet {
                         user_idx,
                         market_idx,
                         outcome_idx,
                         amount,
                     }
-                }),
+                }
+            ),
             // Advance time (15% probability)
             (1u32..=60).prop_map(|days| Operation::AdvanceTime { days }),
             // Resolve market (10% probability)
@@ -284,10 +276,8 @@ impl Operation {
                 let client = state.client();
 
                 // Generate unique market ID
-                let market_id = Symbol::new(
-                    &state.env,
-                    &format!("mk_{}", state.markets.len()).as_str(),
-                );
+                let market_id =
+                    Symbol::new(&state.env, &format!("mk_{}", state.markets.len()).as_str());
 
                 // Generate outcomes
                 let mut outcomes = SorobanVec::new(&state.env);
@@ -881,8 +871,5 @@ fn test_no_vote_after_market_ends() {
         &100_000_000,
     );
 
-    assert!(
-        result.is_err(),
-        "Vote should fail after market ends"
-    );
+    assert!(result.is_err(), "Vote should fail after market ends");
 }

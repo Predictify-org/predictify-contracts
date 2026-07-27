@@ -152,6 +152,61 @@ Withdrawals emit events for observability:
 - `FeeWithdrawalAttemptEvent` (topic key: `fwd_att`) on every attempt, including blocked attempts
 - `FeeWithdrawnEvent` (topic key: `fwd_ok`) on successful withdrawals
 
+## Per-Market Minimum Bet Threshold (#843)
+
+Each market can have its own minimum bet amount, independent of the global `BetLimits` floor.
+When set, any bet whose `amount` is below the per-market threshold is rejected with
+`Error::BetBelowMarketMin` (code 675).
+
+The effective floor is `max(global_min, market_min_bet_amount)` — both checks run on every bet.
+
+### Admin Entrypoints
+
+| Function | Description |
+|---|---|
+| `set_min_bet(admin, market_id, min_amount)` | Set (or clear when `min_amount = 0`) the per-market minimum. Must be `> 0` and `<= MAX_BET_AMOUNT`. |
+| `get_min_bet(market_id)` | Returns `Some(amount)` if set, `None` if no override is configured. |
+| `remove_market_min_bet(admin, market_id)` | Explicitly removes the threshold; equivalent to `set_min_bet(..., 0)`. |
+
+All state-changing entrypoints require `require_auth` on `admin` and verify that `admin` is the
+primary contract admin.
+
+### Event
+
+`set_min_bet` and `remove_market_min_bet` both emit a **`min_bet_set`** event (topic key:
+`min_bet`) carrying:
+
+| Field | Type | Description |
+|---|---|---|
+| `admin` | `Address` | Administrator who made the change |
+| `market_id` | `Symbol` | Target market |
+| `min_amount` | `i128` | New minimum in stroops; `0` means the threshold was removed |
+| `nonce` | `u64` | Monotonic event sequence number |
+| `timestamp` | `u64` | Ledger timestamp |
+
+### Errors
+
+| Code | Variant | Cause |
+|---|---|---|
+| 675 | `BetBelowMarketMin` | Bet amount is below the per-market threshold |
+
+### Example
+
+```rust
+// Set a per-market minimum of 0.5 XLM (5_000_000 stroops)
+client.set_min_bet(&admin, &market_id, &5_000_000)?;
+
+// This bet is accepted (amount >= market minimum)
+client.place_bet(&user, &market_id, &"yes", &5_000_000, &0)?;
+
+// This bet is rejected (amount < market minimum) → BetBelowMarketMin
+let err = client.try_place_bet(&user, &market_id, &"yes", &4_999_999, &0);
+assert_eq!(err, Err(Ok(Error::BetBelowMarketMin)));
+
+// Remove the threshold — only global BetLimits apply again
+client.remove_market_min_bet(&admin, &market_id)?;
+```
+
 ## Pyth Network Oracle Integration
 
 ### Real-Time Institutional Price Feeds
@@ -418,6 +473,10 @@ fetch_oracle_result(
     oracle_contract: Address,  // Oracle contract address (Pyth or Reflector)
 ) -> String
 ```
+
+### Oracle lifecycle events
+
+The event system now emits structured lifecycle transitions for oracle workflows. Consumers can subscribe to `OracleLifecycleEvent` updates via the `ora_lfcy` topic and inspect the stage, status, reason, and metadata for request, verification, degradation, recovery, or resolution transitions.
 
 ## Oracle Provider Comparison
 

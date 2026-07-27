@@ -978,7 +978,7 @@ impl FeeManager {
         // Validate fee tiers
         for (_tier_id, fee_percentage) in new_fee_tiers.iter() {
             if fee_percentage < MIN_FEE_PERCENTAGE || fee_percentage > MAX_FEE_PERCENTAGE {
-                return Err(Error::InvalidInput);
+                return Err(Error::FeePercentageOutOfRange);
             }
         }
 
@@ -1058,16 +1058,11 @@ impl FeeCalculator {
         let fee_percentage = PLATFORM_FEE_PERCENTAGE;
         let fee_amount = Self::checked_bps_floor(market.total_staked, fee_percentage)?;
 
-        if fee_amount < MIN_FEE_AMOUNT {
-            return Err(Error::InsufficientStake);
-        }
+        // Clamp the fee to the market stake so tiny markets do not fail
+        // or exceed the available pool.
+        let capped_fee = fee_amount.min(market.total_staked).max(0);
 
-        // Ensure fee never exceeds the total staked amount (net winnings pool)
-        if fee_amount > market.total_staked {
-            return Err(Error::InvalidFeeConfig);
-        }
-
-        Ok(fee_amount)
+        Ok(capped_fee)
     }
 
     /// Calculate platform fee for a market, using the fee config active when the earliest bet was placed.
@@ -1194,12 +1189,9 @@ impl FeeCalculator {
 
         let adjusted_fee = Self::checked_mul_div_floor(base_fee, size_multiplier, 100)?;
 
-        // Ensure minimum fee
-        if adjusted_fee < MIN_FEE_AMOUNT {
-            Ok(MIN_FEE_AMOUNT)
-        } else {
-            Ok(adjusted_fee)
-        }
+        // Ensure the dynamic fee stays within the available market stake.
+        let capped_fee = adjusted_fee.min(market.total_staked).max(0);
+        Ok(capped_fee)
     }
 
     /// Calculate dynamic fee based on market size and activity
@@ -1295,14 +1287,20 @@ impl FeeCalculator {
         }
     }
 
-    /// Validate fee percentage
+    /// Validate a fee percentage (basis points) against both the absolute range and
+    /// the tolerance band around the market's size-derived tier fee.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::FeePercentageOutOfRange`] when `fee` falls outside
+    /// `[MIN_FEE_PERCENTAGE, MAX_FEE_PERCENTAGE]` or outside ±20% of the tier fee.
     pub fn validate_fee_percentage(env: &Env, fee: i128, market_id: Symbol) -> Result<bool, Error> {
         if fee < MIN_FEE_PERCENTAGE {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         if fee > MAX_FEE_PERCENTAGE {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         // Check if fee is reasonable for the market size
@@ -1314,7 +1312,7 @@ impl FeeCalculator {
         let max_allowed = Self::checked_mul_div_floor(tier.fee_percentage, 120, 100)?; // 20% above tier
 
         if fee < min_allowed || fee > max_allowed {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         Ok(true)
@@ -1440,32 +1438,49 @@ impl FeeValidator {
         Ok(())
     }
 
-    /// Validate fee amount
+    /// Validate a fee amount against the absolute `[MIN_FEE_AMOUNT, MAX_FEE_AMOUNT]` range.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InsufficientStake`] when below [`MIN_FEE_AMOUNT`]
+    /// - [`Error::FeeAmountAboveMaximum`] when above [`MAX_FEE_AMOUNT`]
     pub fn validate_fee_amount(fee_amount: i128) -> Result<(), Error> {
         if fee_amount < MIN_FEE_AMOUNT {
             return Err(Error::InsufficientStake);
         }
 
         if fee_amount > MAX_FEE_AMOUNT {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeeAmountAboveMaximum);
         }
 
         Ok(())
     }
 
-    /// Validate creation fee
+    /// Validate a market creation fee.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::CreationFeeOutOfRange`] when `fee_amount` falls outside
+    /// `[MIN_FEE_AMOUNT, MAX_FEE_AMOUNT]`.
     pub fn validate_creation_fee(fee_amount: i128) -> Result<(), Error> {
         if fee_amount < MIN_FEE_AMOUNT || fee_amount > MAX_FEE_AMOUNT {
-            return Err(Error::InvalidInput);
+            return Err(Error::CreationFeeOutOfRange);
         }
 
         Ok(())
     }
 
-    /// Validate fee configuration
+    /// Validate a fee configuration.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::FeePercentageOutOfRange`] when `platform_fee_percentage` is negative
+    ///   or above [`MAX_FEE_PERCENTAGE`]
+    /// - [`Error::FeeLimitsInverted`] when `max_fee_amount < min_fee_amount`
+    /// - [`Error::InvalidInput`] when any amount field is negative
     pub fn validate_fee_config(config: &FeeConfig) -> Result<(), Error> {
         if config.platform_fee_percentage < 0 || config.platform_fee_percentage > MAX_FEE_PERCENTAGE {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeePercentageOutOfRange);
         }
 
         if config.creation_fee < 0 {
@@ -1477,7 +1492,7 @@ impl FeeValidator {
         }
 
         if config.max_fee_amount < config.min_fee_amount {
-            return Err(Error::InvalidInput);
+            return Err(Error::FeeLimitsInverted);
         }
 
         if config.collection_threshold < 0 {
@@ -2285,6 +2300,33 @@ pub mod testing {
             calculation_factors: testing::create_test_fee_calculation_factors(env),
         }
     }
+
+    pub fn create_test_market(env: &Env) -> Market {
+        Market::new(
+            env,
+            Address::generate(env),
+            String::from_str(env, "Test Market"),
+            soroban_sdk::vec![
+                env,
+                String::from_str(env, "yes"),
+                String::from_str(env, "no"),
+            ],
+            env.ledger().timestamp() + 86400,
+            crate::types::OracleConfig::new(
+                crate::types::OracleProvider::pyth(),
+                Address::from_str(
+                    env,
+                    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                ),
+                String::from_str(env, "BTC/USD"),
+                2_500_000,
+                String::from_str(env, "gt"),
+            ),
+            None,
+            86400,
+            crate::types::MarketState::Active,
+        )
+    }
 }
 
 // ===== MODULE TESTS =====
@@ -2643,11 +2685,11 @@ mod tests {
         let mut market = testing::create_test_market(&env);
 
         // Set total staked to cause fractional result
-        market.total_staked = 1_000_000; // 0.1 XLM
+        market.total_staked = 1_000_000; // 0.01 XLM in stroops
 
-        // 200 basis points of 1_000_000 = (1_000_000 * 200) / 10000 = 200_000 / 10000 = 20
+        // 200 basis points of 1_000_000 = (1_000_000 * 200) / 10000 = 20_000
         let fee = FeeCalculator::calculate_platform_fee(&market).unwrap();
-        assert_eq!(fee, 20); // Truncated towards zero
+        assert_eq!(fee, 20_000);
 
         // Verify no overcharge
         assert!(fee <= market.total_staked);

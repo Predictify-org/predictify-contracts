@@ -78,6 +78,117 @@ pub struct RecoveryTimelockConfig {
     pub timelock_seconds: u64,
 }
 
+impl RecoveryTimelockConfig {
+    fn pending_map_key(env: &Env) -> Symbol {
+        Symbol::new(env, "rcv_pending")
+    }
+
+    fn config_key(env: &Env) -> Symbol {
+        Symbol::new(env, "rcv_timelock_cfg")
+    }
+
+    pub fn get_config(env: &Env) -> Self {
+        env.storage()
+            .persistent()
+            .get(&Self::config_key(env))
+            .unwrap_or(RecoveryTimelockConfig {
+                timelock_seconds: DEFAULT_RECOVERY_TIMELOCK_SECONDS,
+            })
+    }
+
+    pub fn initiate_recovery(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+        action: &PerMarketRecoveryAction,
+        reason: &String,
+    ) -> Result<PendingMarketRecovery, Error> {
+        Self::get_config(env); // ensure config exists
+
+        let timestamp = env.ledger().timestamp();
+        let timelock = Self::get_config(env).timelock_seconds;
+
+        let request = PendingMarketRecovery {
+            market_id: market_id.clone(),
+            initiated_by: admin.clone(),
+            action: action.clone(),
+            initiated_at: timestamp,
+            execute_after: timestamp + timelock,
+            reason: reason.clone(),
+        };
+
+        let mut pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+        pending.set(market_id.clone(), request.clone());
+        env.storage()
+            .persistent()
+            .set(&Self::pending_map_key(env), &pending);
+
+        Ok(request)
+    }
+
+    pub fn execute_recovery(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+    ) -> Result<bool, Error> {
+        let pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+
+        let request = pending.get(market_id.clone()).ok_or(Error::InvalidState)?;
+
+        let now = env.ledger().timestamp();
+        if now < request.execute_after {
+            return Err(Error::InvalidState);
+        }
+
+        let mut pending = pending;
+        pending.remove(market_id.clone());
+        env.storage()
+            .persistent()
+            .set(&Self::pending_map_key(env), &pending);
+
+        Ok(true)
+    }
+
+    pub fn cancel_recovery(
+        env: &Env,
+        _admin: &Address,
+        market_id: &Symbol,
+    ) -> Result<(), Error> {
+        let pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+
+        let _request = pending.get(market_id.clone()).ok_or(Error::InvalidState)?;
+
+        let mut pending = pending;
+        pending.remove(market_id.clone());
+        env.storage()
+            .persistent()
+            .set(&Self::pending_map_key(env), &pending);
+
+        Ok(())
+    }
+
+    pub fn get_pending(env: &Env, market_id: &Symbol) -> Option<PendingMarketRecovery> {
+        let pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+        pending.get(market_id.clone())
+    }
+}
+
 // ===== RECOVERY TYPES =====
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

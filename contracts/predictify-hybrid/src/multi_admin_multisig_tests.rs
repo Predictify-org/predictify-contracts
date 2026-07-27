@@ -32,9 +32,6 @@ fn setup_contract() -> (Env, Address, Address) {
 
     let client = PredictifyHybridClient::new(&env, &contract_id);
     client.initialize(&admin, &None, &None);
-    env.as_contract(&contract_id, || {
-        AdminSystemIntegration::ensure_migration(&env).unwrap();
-    });
     
     (env, contract_id, admin)
 }

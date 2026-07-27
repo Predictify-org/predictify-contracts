@@ -100,6 +100,9 @@ pub enum GovernanceError {
     InvalidReveal,
     /// A commitment already exists for this (proposal, voter) pair.
     CommitmentExists,
+    /// The salt supplied by the voter does not match the proposal's stored salt.
+    /// Prevents vote-replay across re-submitted proposals.
+    SaltMismatch,
 }
 
 /// ---------- CONTRACT ----------
@@ -557,6 +560,9 @@ impl GovernanceContract {
             .persistent()
             .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming + 1));
 
+        // Emit after storage writes are consistent.
+        EventEmitter::emit_governance_delegate_set(&env, &delegator, &delegate);
+
         Ok(())
     }
 
@@ -585,6 +591,9 @@ impl GovernanceContract {
         env.storage()
             .persistent()
             .remove(&StorageKey::Delegate(delegator.clone()));
+
+        // Emit after storage removal. `delegate` was captured before the remove.
+        EventEmitter::emit_governance_delegate_unset(&env, &delegator, &delegate);
 
         Ok(())
     }
@@ -756,50 +765,81 @@ impl GovernanceContract {
         Ok(p.salt)
     }
 
-    /// Admin-only: set voting period (seconds)
+    /// Admin-only: set voting period (seconds).
+    ///
+    /// Emits [`GovernanceVotingPeriodUpdatedEvent`] after the new value is
+    /// persisted so that the event and storage are always consistent.
     pub fn set_voting_period(
         env: Env,
         caller: Address,
         new_period_seconds: i64,
     ) -> Result<(), GovernanceError> {
+        let admin = caller.clone();
         Self::ensure_admin(&env, caller)?;
         if new_period_seconds <= 0 {
             return Err(GovernanceError::InvalidParams);
         }
+        let old_period: u64 = env
+            .storage()
+            .persistent()
+            .get(&StorageKey::VotingPeriod)
+            .unwrap_or(0);
+        let new_period = new_period_seconds as u64;
         env.storage()
             .persistent()
-            .set(&StorageKey::VotingPeriod, &(new_period_seconds as u64));
+            .set(&StorageKey::VotingPeriod, &new_period);
+        EventEmitter::emit_governance_voting_period_updated(&env, &admin, old_period, new_period);
         Ok(())
     }
 
-    /// Admin-only: set quorum votes (minimum for votes)
+    /// Admin-only: set quorum votes (minimum for votes).
+    ///
+    /// Emits [`GovernanceQuorumUpdatedEvent`] after the new value is persisted.
     pub fn set_quorum(env: Env, caller: Address, new_quorum: u128) -> Result<(), GovernanceError> {
+        let admin = caller.clone();
         Self::ensure_admin(&env, caller)?;
         if new_quorum == 0 {
             return Err(GovernanceError::InvalidParams);
         }
+        let old_quorum: u128 = env
+            .storage()
+            .persistent()
+            .get(&StorageKey::QuorumVotes)
+            .unwrap_or(0);
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumVotes, &new_quorum);
+        EventEmitter::emit_governance_quorum_updated(&env, &admin, old_quorum, new_quorum);
         Ok(())
     }
 
     /// Admin-only: configure or disable quorum decay.
+    ///
     /// Pass `None` to disable decay (static quorum).
+    /// Emits [`GovernanceQuorumDecayUpdatedEvent`] after the new config is
+    /// persisted. When disabling, the event carries `enabled = false` and
+    /// zero values for `floor_bps` / `halving_seconds`.
     pub fn set_quorum_decay(
         env: Env,
         caller: Address,
         decay: Option<QuorumDecay>,
     ) -> Result<(), GovernanceError> {
+        let admin = caller.clone();
         Self::ensure_admin(&env, caller)?;
         if let Some(ref d) = decay {
             if d.floor_bps > 10000 || d.halving_seconds == 0 {
                 return Err(GovernanceError::InvalidParams);
             }
         }
+        // Capture event fields before moving `decay` into storage.
+        let (floor_bps, halving_seconds) = decay
+            .as_ref()
+            .map(|d| (Some(d.floor_bps), Some(d.halving_seconds)))
+            .unwrap_or((None, None));
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumDecay, &decay);
+        EventEmitter::emit_governance_quorum_decay_updated(&env, &admin, floor_bps, halving_seconds);
         Ok(())
     }
 

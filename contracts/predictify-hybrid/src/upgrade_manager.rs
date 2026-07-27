@@ -644,7 +644,7 @@ impl UpgradeManager {
         let verify_count = if depth == 0 || depth > chain_len {
             chain_len as u32
         } else {
-            depth
+            depth as u32
         };
 
         let zero_hash = BytesN::from_array(env, &[0u8; 32]);
@@ -1217,11 +1217,5 @@ mod tests {
             assert_eq!(stats.successful_upgrades, 0);
             assert_eq!(stats.failed_upgrades, 0);
         });
-    }
-}
-
-impl VersionManager {
-    pub fn get_current_capabilities(&self, env: &soroban_sdk::Env) -> Result<u64, crate::err::Error> {
-        Ok(0)
     }
 }

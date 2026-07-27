@@ -40,16 +40,7 @@ impl TestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
-        env.as_contract(&contract_id, || {
-            crate::circuit_breaker::CircuitBreaker::initialize(&env)
-                .expect("circuit breaker should initialize in tests");
-        });
-
-        // Initialize circuit breaker (required for create_market and other write operations)
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-        });
+        client.initialize(&admin, &None, &None);
 
         Self {
             env,

@@ -1715,7 +1715,7 @@ fn test_initialize_storage_verification() {
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
-    client.initialize(&admin, &Some(5), &None);
+    client.initialize(&admin, &Some(3), &None);
 
     // Verify admin address is in persistent storage
     env.as_contract(&contract_id, || {
@@ -7821,3 +7821,4 @@ fn test_empty_lists_allow_access() {
     assert!(res.is_ok(), "Sin restricciones, el acceso debe ser libre");
 }
 mod oracle_cooldown_tests;
+mod betting_cooldown_tests;

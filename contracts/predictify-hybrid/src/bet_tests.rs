@@ -159,18 +159,7 @@ impl BetTestSetup {
         // Register and initialize the contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &platform_fee_percentage, &None);
-        // Persist fee config for slippage guard
-        if let Some(fee) = platform_fee_percentage {
-            // Build a ContractConfig with the fee and enable fees
-            let mut cfg = crate::config::ConfigManager::get_development_config(&env);
-            cfg.fees.platform_fee_percentage = fee;
-            cfg.fees.fees_enabled = true;
-            // Store the configuration using the provided API
-            env.as_contract(&contract_id, || {
-                crate::config::ConfigManager::store_config(&env, &cfg).unwrap();
-            });
-        }
+        client.initialize(&admin, &None, &None);
 
         // Setup token for staking
         let token_admin = Address::generate(&env);

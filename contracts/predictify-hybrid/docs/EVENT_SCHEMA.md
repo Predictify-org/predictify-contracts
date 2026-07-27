@@ -23,6 +23,37 @@ Two patterns exist in the codebase today:
    notice. They are called out explicitly in [Stability Legend](#stability-legend)
    and in their own table.
 
+## Delivery guarantees under cross-contract failure
+
+Several emitters sit next to a cross-contract call — `GovernanceManager::execute_proposal`
+invokes an arbitrary proposal target before emitting its execution event, and the
+oracle resolution path calls out to `ReflectorOracleClient` before emitting its
+result events. Soroban gives each invocation its own rollback frame, which fixes
+what an indexer can observe when the callee fails:
+
+| Scenario | What the indexer observes |
+|---|---|
+| Callee reverts (`panic_with_error!`) and the caller lets it propagate | **Nothing.** The caller's frame failed too, so events it published *before* the call are rolled back with it. |
+| Callee aborts (untyped `panic!`) and the caller lets it propagate | **Nothing.** Identical rollback to a revert; only the error code surfaced to the caller differs. |
+| Failure at any depth (caller → middle → callee) | **Nothing** from any frame in the failed chain. |
+| Caller recovers via `env.try_invoke_contract` | The **caller's** events (both those published before the call and any failure-path event such as `fbk_used`) are observable. The **callee's** events, and its storage writes, are discarded. |
+
+Two consequences worth designing around:
+
+- **Events are atomic with the state change they describe.** There is no window in
+  which an event is visible but its transaction's writes are not, so a consumer
+  never has to compensate for a "phantom" emission.
+- **The per-topic replay nonce is restored, not burned.** `EventEmitter` keeps a
+  monotonic nonce per topic in persistent storage (`DataKey::EventNonce(topic)`).
+  A failed call rolls that write back to its previous value, so failed attempts
+  leave no gaps in the nonce sequence: consumers can still treat a gap as
+  genuine data loss rather than as a reverted transaction.
+
+These properties are pinned by `tests/xcontract.rs`. Note that a single logical
+emission produces **two** published events for emitters that call `store_event`:
+one from the archive helper (topics `(topic,)`) and one from the typed emission
+(topics `(topic, id)`). Both carry the same event-name symbol as their first topic.
+
 ## Stability legend
 
 | Badge | Meaning |
@@ -44,6 +75,13 @@ contract-events RPC topic filters without decoding the payload.
 | Event | Topic | Stability |
 |---|---|---|
 | `MarketCreatedEvent` | `("mkt_crt", market_id)` | 🟢 |
+| `MarketActivatedEvent` | `("mkt_act", market_id)` | 🟢 |
+| `MarketEndedEvent` | `("mkt_end", market_id)` | 🟢 |
+| `MarketDisputeStartedEvent` | `("mkt_disp", market_id)` | 🟢 |
+| `MarketCancelledEvent` | `("mkt_canc", market_id)` | 🟢 |
+| `MarketOutcomeSetEvent` | `("mkt_outc", market_id)` | 🟢 |
+| `MarketPausedEvent` | `("mkt_paus", market_id)` | 🟢 |
+| `MarketResumedEvent` | `("mkt_res", market_id)` | 🟢 |
 | `EventCreatedEvent` | `("evt_crt", event_id)` | 🟢 |
 | `MarketClosedEvent` | `("mkt_close", market_id)` | 🟢 |
 | `MarketFinalizedEvent` | `("mkt_final", market_id)` | 🟢 |
@@ -67,6 +105,81 @@ Emitted immediately after a new prediction market is created.
 | `outcomes` | `Vec<String>` | Available outcomes (≥ 2) |
 | `admin` | `Address` | Market admin |
 | `end_time` | `u64` | Unix timestamp, market close |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketActivatedEvent`
+**NEW** — Emitted when a market transitions to the `Active` state, indicating it is ready for participation.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `admin` | `Address` | Market administrator |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketEndedEvent`
+**NEW** — Emitted when a market transitions to the `Ended` state after the voting deadline passes.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `ended_at` | `u64` | Unix timestamp when market ended |
+| `total_staked` | `i128` | Total amount staked in market |
+| `participant_count` | `u32` | Number of unique participants |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketDisputeStartedEvent`
+**NEW** — Emitted when a market enters the `Disputed` state after a participant challenges the result.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `dispute_initiator` | `Address` | Address initiating the dispute |
+| `dispute_stake` | `i128` | Amount staked to initiate dispute |
+| `disputed_outcome` | `String` | Outcome being disputed |
+| `dispute_end_time` | `u64` | Unix timestamp when dispute window closes |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketCancelledEvent`
+**NEW** — Emitted when a market is cancelled by an administrator or due to unforeseen circumstances.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `admin` | `Address` | Admin who initiated cancellation |
+| `reason` | `String` | Reason for cancellation |
+| `total_refunded` | `i128` | Total amount refunded to participants |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketOutcomeSetEvent`
+**NEW** — Emitted when a market outcome is determined and winner pool is calculated.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `winning_outcomes` | `Vec<String>` | Outcome(s) that won (may be multiple if tied) |
+| `payout_pool` | `i128` | Total amount available for winners |
+| `winner_count` | `u32` | Number of winning participants |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketPausedEvent`
+**NEW** — Emitted when a market is paused, either by circuit breaker or admin action.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `reason` | `String` | Reason for pause (e.g., "Circuit breaker triggered", "Maintenance") |
+| `is_circuit_breaker` | `bool` | Whether pause was triggered automatically |
+| `paused_by` | `Address` | Address that initiated or triggered the pause |
+| `timestamp` | `u64` | Emission timestamp |
+
+### `MarketResumedEvent`
+**NEW** — Emitted when a paused market resumes normal operation.
+
+| Field | Type | Notes |
+|---|---|---|
+| `market_id` | `Symbol` | Unique market identifier |
+| `resumed_by` | `Address` | Address that resumed the market |
+| `reason` | `String` | Reason for resumption |
 | `timestamp` | `u64` | Emission timestamp |
 
 ### `EventCreatedEvent`

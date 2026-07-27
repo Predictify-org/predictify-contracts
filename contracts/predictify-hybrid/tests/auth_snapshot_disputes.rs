@@ -42,7 +42,12 @@ impl Fixture {
                 .set(&Symbol::new(&env, "TokenID"), &token_id);
         });
         PredictifyHybridClient::new(&env, &cid).initialize(&admin, &Some(200i128), &None);
-        Fixture { env, cid, admin, token_id }
+        Fixture {
+            env,
+            cid,
+            admin,
+            token_id,
+        }
     }
 
     fn client(&self) -> PredictifyHybridClient<'_> {
@@ -86,20 +91,31 @@ impl Fixture {
         )
     }
 
-    fn yes(&self) -> String { String::from_str(&self.env, "yes") }
+    fn yes(&self) -> String {
+        String::from_str(&self.env, "yes")
+    }
 
     fn advance_past_end(&self) {
-        self.env.ledger().with_mut(|l| l.timestamp += 31 * 24 * 60 * 60);
+        self.env
+            .ledger()
+            .with_mut(|l| l.timestamp += 31 * 24 * 60 * 60);
     }
 
     fn required_auth(&self) -> std::vec::Vec<Address> {
-        self.env.auths().iter().map(|(addr, _)| addr.clone()).collect()
+        self.env
+            .auths()
+            .iter()
+            .map(|(addr, _)| addr.clone())
+            .collect()
     }
 
     fn assert_requires_auth(&self, expected: &Address, label: &str) {
         let required = self.required_auth();
         assert!(!required.is_empty(), "{label}: no auth recorded");
-        assert!(required.contains(expected), "{label}: expected {expected:?}, got {required:?}");
+        assert!(
+            required.contains(expected),
+            "{label}: expected {expected:?}, got {required:?}"
+        );
     }
 }
 
@@ -149,7 +165,8 @@ fn snapshot_resolve_dispute_requires_admin_auth() {
     let f = Fixture::new();
     let market_id = f.market();
     let user = f.user();
-    f.client().vote(&user, &market_id, &f.yes(), &10_000_000i128);
+    f.client()
+        .vote(&user, &market_id, &f.yes(), &10_000_000i128);
     f.advance_past_end();
     let result = f.client().try_resolve_dispute(&f.admin, &market_id);
     assert_auth_passed(&result, "resolve_dispute");
@@ -171,9 +188,12 @@ fn snapshot_dispute_market_requires_user_auth() {
     let f = Fixture::new();
     let market_id = f.market();
     let user = f.user();
-    f.client().vote(&user, &market_id, &f.yes(), &10_000_000i128);
+    f.client()
+        .vote(&user, &market_id, &f.yes(), &10_000_000i128);
     f.advance_past_end();
-    let result = f.client().try_dispute_market(&user, &market_id, &10_000_000i128, &None);
+    let result = f
+        .client()
+        .try_dispute_market(&user, &market_id, &10_000_000i128, &None);
     assert_auth_passed(&result, "dispute_market");
 }
 
@@ -184,7 +204,8 @@ fn edge_dispute_market_without_auth_panics() {
     let market_id = f.market();
     let user = f.user();
     f.env.set_auths(&[]);
-    f.client().dispute_market(&user, &market_id, &10_000_000i128, &None);
+    f.client()
+        .dispute_market(&user, &market_id, &10_000_000i128, &None);
 }
 
 // === Non-admin rejection tests ===

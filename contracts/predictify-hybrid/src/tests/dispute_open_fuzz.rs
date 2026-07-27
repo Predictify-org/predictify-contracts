@@ -157,7 +157,7 @@ proptest! {
         );
 
         prop_assert!(
-            matches!(result, Err(Error::InsufficientStake) | Err(Error::InvalidStakeAmount)),
+            matches!(result, Err(Error::InsufficientStake)),
             "Stake {} below MIN_DISPUTE_STAKE should be rejected, got {:?}",
             sub_min_stake,
             result,
@@ -379,7 +379,6 @@ proptest! {
         if let Err(e) = &result {
             let allowed = [
                 Error::InsufficientStake,
-                Error::InvalidStakeAmount,
                 Error::InvalidState,
                 Error::AlreadyDisputed,
                 Error::DisputeStakeCapExceeded,

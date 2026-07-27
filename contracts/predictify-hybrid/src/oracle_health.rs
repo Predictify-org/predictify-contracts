@@ -263,7 +263,7 @@ impl OracleHealth {
         latency_ms: u64,
         confidence_pct: Option<u32>,
     ) -> Result<OracleHealthState, Error> {
-        let new_state = Self::evaluate_state_transition_static(self)?;
+        let mut new_state = Self::evaluate_state_transition_static(self)?;
 
         if success {
             // Update metrics for success
