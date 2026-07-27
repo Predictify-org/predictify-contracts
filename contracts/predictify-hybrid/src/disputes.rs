@@ -3043,7 +3043,19 @@ impl DisputeUtils {
         result
     }
 
-    /// Returns `true` if `user` has already claimed their winnings for `dispute_id`.
+    /// Checks whether a user has already claimed their winnings for a resolved dispute.
+    ///
+    /// Prevents duplicate claims by tracking claim status per user per dispute.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `dispute_id` - Unique identifier of the resolved dispute
+    /// * `user` - Address of the user to check
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the user has already claimed, `false` otherwise.
     pub fn has_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) -> bool {
         let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
         let result = env.storage().persistent().get(&key).unwrap_or(false);
@@ -3051,9 +3063,16 @@ impl DisputeUtils {
         result
     }
 
-    /// Mark `user` as having claimed their winnings for `dispute_id`.
+    /// Marks a user as having claimed their winnings for a resolved dispute.
     ///
-    /// Prevents duplicate claims via [`DisputeManager::claim_dispute_winnings`].
+    /// Called by [`DisputeManager::claim_dispute_winnings`] after a successful
+    /// payout to prevent double-claiming.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `dispute_id` - Unique identifier of the resolved dispute
+    /// * `user` - Address of the user receiving the payout
     pub fn set_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) {
         let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
         env.storage().persistent().set(&key, &true);
