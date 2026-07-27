@@ -4,6 +4,7 @@ members = [
   "contracts/*",
   "contracts/predictify-hybrid/fuzz",
   "contracts/disputes/fuzz",
+  "contracts/resolution/fuzz",
 ]
 exclude = []
 
