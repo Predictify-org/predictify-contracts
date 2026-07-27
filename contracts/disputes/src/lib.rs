@@ -3,10 +3,10 @@
 use soroban_sdk::{contract, contractimpl, Env};
 
 #[contract]
-pub struct MarketsContract;
+pub struct DisputesContract;
 
 #[contractimpl]
-impl MarketsContract {
+impl DisputesContract {
     pub fn version(_env: Env) -> u32 {
         7
     }

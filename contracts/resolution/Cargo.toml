@@ -1,0 +1,20 @@
+[package]
+name = "resolution"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+predictify-hybrid = { path = "../predictify-hybrid" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[[test]]
+name = "gas_snap"
+path = "tests/gas_snap.rs"
