@@ -2904,7 +2904,6 @@ impl DisputeUtils {
         env.storage().persistent().extend_ttl(&key, 535680, 535680);
         Ok(result)
     }
-    }
 
     /// Persist a [`DisputeVoting`] record under the `dispute_v` + `dispute_id` key.
     pub fn store_dispute_voting(
@@ -3049,7 +3048,6 @@ impl DisputeUtils {
             distribution_timestamp: 0,
             fees_distributed: false,
         }))
-    }
     }
 
     /// Persist a [`DisputeEscalation`] under the `dispute_e` + `dispute_id` key.
