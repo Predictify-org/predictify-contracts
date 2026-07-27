@@ -111,6 +111,19 @@ This is a hybrid prediction market contract built on Stellar using Soroban that 
 - **Batch Bet Placement**: Place multiple bets in a single atomic transaction for gas efficiency
 - **Admin Fee Withdrawal Schedule**: Timelock + optional cap for fee withdrawals to reduce abuse risk
 
+## Deterministic Per-Market Analytics Snapshots
+
+The contract now exposes `PredictifyHybrid::get_market_analytics_snapshot(env, market_id)` for off-chain analytics and indexers. The returned envelope is versioned and XDR-encoded so consumers can persist a deterministic byte stream for downstream processing without relying on host-side map iteration order.
+
+### What the snapshot includes
+- Market identifier and question
+- Current market state
+- Vote and stake totals
+- Outcome counts in a stable sorted order
+- Participant count
+
+This is intended for read-only analytics and reporting workflows that need a canonical per-market view.
+
 ## Admin Fee Vault & Withdrawal Schedule
 
 Collected platform fees accumulate inside the contract and are withdrawn by the admin through a
@@ -138,6 +151,61 @@ Withdrawals emit events for observability:
 
 - `FeeWithdrawalAttemptEvent` (topic key: `fwd_att`) on every attempt, including blocked attempts
 - `FeeWithdrawnEvent` (topic key: `fwd_ok`) on successful withdrawals
+
+## Per-Market Minimum Bet Threshold (#843)
+
+Each market can have its own minimum bet amount, independent of the global `BetLimits` floor.
+When set, any bet whose `amount` is below the per-market threshold is rejected with
+`Error::BetBelowMarketMin` (code 675).
+
+The effective floor is `max(global_min, market_min_bet_amount)` — both checks run on every bet.
+
+### Admin Entrypoints
+
+| Function | Description |
+|---|---|
+| `set_min_bet(admin, market_id, min_amount)` | Set (or clear when `min_amount = 0`) the per-market minimum. Must be `> 0` and `<= MAX_BET_AMOUNT`. |
+| `get_min_bet(market_id)` | Returns `Some(amount)` if set, `None` if no override is configured. |
+| `remove_market_min_bet(admin, market_id)` | Explicitly removes the threshold; equivalent to `set_min_bet(..., 0)`. |
+
+All state-changing entrypoints require `require_auth` on `admin` and verify that `admin` is the
+primary contract admin.
+
+### Event
+
+`set_min_bet` and `remove_market_min_bet` both emit a **`min_bet_set`** event (topic key:
+`min_bet`) carrying:
+
+| Field | Type | Description |
+|---|---|---|
+| `admin` | `Address` | Administrator who made the change |
+| `market_id` | `Symbol` | Target market |
+| `min_amount` | `i128` | New minimum in stroops; `0` means the threshold was removed |
+| `nonce` | `u64` | Monotonic event sequence number |
+| `timestamp` | `u64` | Ledger timestamp |
+
+### Errors
+
+| Code | Variant | Cause |
+|---|---|---|
+| 675 | `BetBelowMarketMin` | Bet amount is below the per-market threshold |
+
+### Example
+
+```rust
+// Set a per-market minimum of 0.5 XLM (5_000_000 stroops)
+client.set_min_bet(&admin, &market_id, &5_000_000)?;
+
+// This bet is accepted (amount >= market minimum)
+client.place_bet(&user, &market_id, &"yes", &5_000_000, &0)?;
+
+// This bet is rejected (amount < market minimum) → BetBelowMarketMin
+let err = client.try_place_bet(&user, &market_id, &"yes", &4_999_999, &0);
+assert_eq!(err, Err(Ok(Error::BetBelowMarketMin)));
+
+// Remove the threshold — only global BetLimits apply again
+client.remove_market_min_bet(&admin, &market_id)?;
+```
 
 ## Pyth Network Oracle Integration
 
@@ -276,7 +344,8 @@ The contract now makes **actual calls** to the Reflector oracle contract:
 1. **Contract-to-Contract Calls**: Uses `env.invoke_contract()` to call Reflector functions
 2. **Price Fetching**: Calls `lastprice()` and `twap()` functions from Reflector
 3. **Fallback Mechanism**: If `lastprice()` fails, tries `twap()` with 1 record
-4. **Error Handling**: Returns `OracleUnavailable` if both methods fail
+4. **Disagreement Handling**: If the primary and fallback oracle sources return different outcomes, the fallback outcome is preferred to avoid acting on conflicting data
+5. **Error Handling**: Returns `OracleUnavailable` if both methods fail
 
 ### Reflector Contract Functions Used
 
@@ -404,6 +473,10 @@ fetch_oracle_result(
     oracle_contract: Address,  // Oracle contract address (Pyth or Reflector)
 ) -> String
 ```
+
+### Oracle lifecycle events
+
+The event system now emits structured lifecycle transitions for oracle workflows. Consumers can subscribe to `OracleLifecycleEvent` updates via the `ora_lfcy` topic and inspect the stage, status, reason, and metadata for request, verification, degradation, recovery, or resolution transitions.
 
 ## Oracle Provider Comparison
 
@@ -856,3 +929,48 @@ The contract is now ready for production use with **real oracle data** from both
 5. **Monitor Performance**: Track oracle response times and reliability
 
 **The mock implementation has been completely replaced with a production-ready Pyth Network integration!** 🚀
+
+## Deprecated-Entrypoints Registry
+
+The contract maintains a **persistent, on-chain registry** (`src/deprecated.rs`) that tracks
+every entrypoint scheduled for removal.  This gives any caller a single, authoritative
+source of truth for discovering which functions are deprecated and what to use instead.
+
+### Read API (permissionless)
+
+| Entrypoint                 | Returns                     | Description                                   |
+|----------------------------|-----------------------------|-----------------------------------------------|
+| `get_deprecated_entry`     | `Option<DeprecatedEntry>`   | Look up a single entry by name                |
+| `list_deprecated_entries`  | `Vec<DeprecatedEntry>`      | Return every registered entry                 |
+| `deprecated_entry_count`   | `u32`                       | Number of registered entries                  |
+| `is_deprecated`            | `bool`                      | Check whether an entrypoint is deprecated     |
+
+### Write API (admin-only)
+
+| Entrypoint            | Description                                              |
+|-----------------------|----------------------------------------------------------|
+| `register_deprecated` | Register a new entry (idempotent)                        |
+| `remove_deprecated`   | Remove an entry (no-op if absent)                        |
+
+### DeprecatedEntry
+
+```rust
+pub struct DeprecatedEntry {
+    pub entrypoint:  Symbol,         // deprecated function name
+    pub replacement: Symbol,         // recommended successor
+    pub since:       u64,            // ledger timestamp of registration
+    pub note:        Option<String>, // optional migration hint
+}
+```
+
+### Capacity limit
+
+`MAX_REGISTRY_ENTRIES = 64`.  Exceeding this returns `Error::RegistryFull` (528).
+
+### Events
+
+* `depr_reg` – emitted when an entry is registered.
+* `depr_rem` – emitted when an entry is removed.
+* `depr_call` – emitted on every call to a deprecated entrypoint (via `DeprecatedRegistry::record_call`).
+
+For the full deprecation lifecycle and migration guides see [`docs/DEPRECATION_POLICY.md`](../../docs/DEPRECATION_POLICY.md).

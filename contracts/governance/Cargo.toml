@@ -1,0 +1,16 @@
+[package]
+name = "governance-events"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Structured governance lifecycle events for off-chain indexers (FWC26)"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

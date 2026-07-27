@@ -659,7 +659,7 @@ impl ExtensionValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Check if caller is market admin
-        if market.admin != *admin {
+        if market.admin != admin.clone() {
             return Err(Error::Unauthorized);
         }
 

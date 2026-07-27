@@ -1,5 +1,5 @@
 use alloc::format;
-use soroban_sdk::{contracttype, panic_with_error, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;
@@ -17,6 +17,177 @@ pub const MAX_RECOVERY_HISTORY_PER_MARKET: u32 = 10;
 
 /// Maximum entries removable in a single admin prune call (gas safety).
 pub const MAX_RECOVERY_PRUNE_BATCH: u32 = 30;
+
+// ===== PER-MARKET RECOVERY TIMELOCK =====
+
+/// Default timelock delay before a per-market recovery action can be executed (24 hours).
+pub const DEFAULT_RECOVERY_TIMELOCK_SECONDS: u64 = 24 * 60 * 60;
+
+/// Minimum allowed recovery timelock (1 hour). Prevents setting dangerously short windows.
+pub const MIN_RECOVERY_TIMELOCK_SECONDS: u64 = 60 * 60;
+
+/// Maximum allowed recovery timelock (7 days). Prevents excessively long lockouts.
+pub const MAX_RECOVERY_TIMELOCK_SECONDS: u64 = 7 * 24 * 60 * 60;
+
+/// Specifies the type of recovery action to perform on a market.
+///
+/// Each variant maps to a specific recovery operation that can be
+/// initiated with a timelock and executed after the delay.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PerMarketRecoveryAction {
+    /// Reconstruct market state from stored data (fix total_staked inconsistencies, etc.)
+    ReconstructState,
+    /// Cancel the market and refund all stakes to participants.
+    CancelMarket,
+    /// Force-resolve the market with a specified outcome (for stuck ended markets).
+    ForceResolve,
+}
+
+/// A pending per-market recovery request protected by an admin timelock.
+///
+/// Once initiated, the recovery action cannot be executed until `execute_after`
+/// timestamp has been reached. This gives the admin a window to review and
+/// cancel if the recovery was initiated in error.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingMarketRecovery {
+    /// The market this recovery targets.
+    pub market_id: Symbol,
+    /// The admin who initiated the recovery request.
+    pub initiated_by: Address,
+    /// The recovery action to execute.
+    pub action: PerMarketRecoveryAction,
+    /// Unix timestamp when this request was initiated.
+    pub initiated_at: u64,
+    /// Unix timestamp after which this recovery may be executed.
+    pub execute_after: u64,
+    /// Human-readable reason for the recovery.
+    pub reason: String,
+}
+
+/// Configuration for the per-market recovery timelock.
+///
+/// The timelock delay controls how long after initiation a recovery action
+/// can actually be executed. Admin can tighten (increase) but not loosen
+/// (decrease) this value once set.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryTimelockConfig {
+    /// Minimum number of seconds between initiation and execution.
+    pub timelock_seconds: u64,
+}
+
+impl RecoveryTimelockConfig {
+    fn pending_map_key(env: &Env) -> Symbol {
+        Symbol::new(env, "rcv_pending")
+    }
+
+    fn config_key(env: &Env) -> Symbol {
+        Symbol::new(env, "rcv_timelock_cfg")
+    }
+
+    pub fn get_config(env: &Env) -> Self {
+        env.storage()
+            .persistent()
+            .get(&Self::config_key(env))
+            .unwrap_or(RecoveryTimelockConfig {
+                timelock_seconds: DEFAULT_RECOVERY_TIMELOCK_SECONDS,
+            })
+    }
+
+    pub fn initiate_recovery(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+        action: &PerMarketRecoveryAction,
+        reason: &String,
+    ) -> Result<PendingMarketRecovery, Error> {
+        Self::get_config(env); // ensure config exists
+
+        let timestamp = env.ledger().timestamp();
+        let timelock = Self::get_config(env).timelock_seconds;
+
+        let request = PendingMarketRecovery {
+            market_id: market_id.clone(),
+            initiated_by: admin.clone(),
+            action: action.clone(),
+            initiated_at: timestamp,
+            execute_after: timestamp + timelock,
+            reason: reason.clone(),
+        };
+
+        let mut pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+        pending.set(market_id.clone(), request.clone());
+        env.storage()
+            .persistent()
+            .set(&Self::pending_map_key(env), &pending);
+
+        Ok(request)
+    }
+
+    pub fn execute_recovery(
+        env: &Env,
+        admin: &Address,
+        market_id: &Symbol,
+    ) -> Result<bool, Error> {
+        let pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+
+        let request = pending.get(market_id.clone()).ok_or(Error::InvalidState)?;
+
+        let now = env.ledger().timestamp();
+        if now < request.execute_after {
+            return Err(Error::InvalidState);
+        }
+
+        let mut pending = pending;
+        pending.remove(market_id.clone());
+        env.storage()
+            .persistent()
+            .set(&Self::pending_map_key(env), &pending);
+
+        Ok(true)
+    }
+
+    pub fn cancel_recovery(
+        env: &Env,
+        _admin: &Address,
+        market_id: &Symbol,
+    ) -> Result<(), Error> {
+        let pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+
+        let _request = pending.get(market_id.clone()).ok_or(Error::InvalidState)?;
+
+        let mut pending = pending;
+        pending.remove(market_id.clone());
+        env.storage()
+            .persistent()
+            .set(&Self::pending_map_key(env), &pending);
+
+        Ok(())
+    }
+
+    pub fn get_pending(env: &Env, market_id: &Symbol) -> Option<PendingMarketRecovery> {
+        let pending: Map<Symbol, PendingMarketRecovery> = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_map_key(env))
+            .unwrap_or(Map::new(env));
+        pending.get(market_id.clone())
+    }
+}
 
 // ===== RECOVERY TYPES =====
 #[contracttype]
@@ -420,6 +591,15 @@ impl RecoveryValidator {
             return Err(Error::InvalidState);
         }
 
+        // Check total_staked matches sum of stakes map
+        let mut recomputed: i128 = 0;
+        for (_, stake) in market.stakes.iter() {
+            recomputed = recomputed.checked_add(stake).ok_or(Error::InvalidState)?;
+        }
+        if recomputed != market.total_staked {
+            return Err(Error::InvalidState);
+        }
+
         Ok(())
     }
 
@@ -730,7 +910,10 @@ fn symbol_to_string(env: &Env, sym: &Symbol) -> String {
 mod tests {
     use super::*;
     use alloc::string::ToString;
+    use soroban_sdk::vec;
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::vec;
+    use soroban_sdk::testutils::Ledger;
 
     struct RecoveryTest {
         env: Env,
@@ -1076,6 +1259,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 86400,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
             env.storage().persistent().set(&market_id, &market);
         });

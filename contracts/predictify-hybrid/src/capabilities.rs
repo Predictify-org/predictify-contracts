@@ -198,6 +198,12 @@ pub fn capabilities(_env: &Env) -> u64 {
         | capability::PAYOUT_DISTRIBUTION
 }
 
+/// Compute a capabilities bitmask for a given contract version.
+/// For now, all capabilities are enabled regardless of version.
+pub fn compute_capabilities_for_version(_version: crate::versioning::Version) -> u64 {
+    capabilities(&soroban_sdk::Env::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

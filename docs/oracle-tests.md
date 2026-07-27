@@ -281,6 +281,10 @@ open ./coverage/tarpaulin-report.html
 3. **Performance Testing**: Load testing for high-frequency oracle calls
 4. **Cross-Chain Testing**: Test oracle behavior across different networks
 
+### Oracle State Invariant Coverage
+- Added focused property-based tests for oracle configuration validation in the hybrid contract module.
+- These tests cover valid reflector configurations, invalid thresholds and comparisons, and the reserved fallback-sentinel invariant.
+
 ### Extensibility
 - **New Oracle Providers**: Easy addition of new oracle types
 - **Custom Mock Behaviors**: Extensible mock framework

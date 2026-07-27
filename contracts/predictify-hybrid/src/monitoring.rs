@@ -3,8 +3,10 @@
 use alloc::format;
 use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
 
+use crate::admin::AdminAccessControl;
 use crate::err::Error;
 use crate::events::EventEmitter;
+use crate::monitor::{BoundedMonitorQueue, MonitorEvent, MonitorEventCategory, MonitorEventSeverity};
 use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 /// Comprehensive monitoring system for Predictify contract health and performance.
 ///
@@ -204,12 +206,133 @@ pub struct TransitionHookEvent {
     pub timestamp: u64,
 }
 
+/// Rolling Window Ring Buffer
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct RollingWindow {
+    pub capacity: u32,
+    pub entries: Vec<i128>,
+    pub head: u32,
+    pub count: u32,
+}
+
+impl RollingWindow {
+    pub fn new(env: &Env, capacity: u32) -> Self {
+        Self {
+            capacity,
+            entries: Vec::new(env),
+            head: 0,
+            count: 0,
+        }
+    }
+
+    pub fn push(&mut self, env: &Env, value: i128) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.entries.len() < self.capacity {
+            self.entries.push_back(value);
+            self.count += 1;
+        } else {
+            self.entries.set(self.head, value);
+        }
+        self.head = (self.head + 1) % self.capacity;
+    }
+
+    pub fn average(&self) -> i128 {
+        if self.count == 0 {
+            return 0;
+        }
+        let mut sum: i128 = 0;
+        for i in 0..self.entries.len() {
+            sum = sum.saturating_add(self.entries.get(i).unwrap_or(0));
+        }
+        sum / (self.count as i128)
+    }
+}
+
 // ===== CONTRACT MONITOR STRUCT =====
 
 /// Main contract monitoring system
 pub struct ContractMonitor;
 
 impl ContractMonitor {
+    const MTTR_WINDOW_KEY: &'static str = "MTTR_WINDOW";
+    const MTBF_WINDOW_KEY: &'static str = "MTBF_WINDOW";
+    const LAST_INCIDENT_TIME_KEY: &'static str = "LAST_INCIDENT_TIME";
+    const WINDOW_CAPACITY_KEY: &'static str = "MON_WINDOW_CAPACITY";
+
+    pub fn set_window_capacity(env: &Env, admin: &Address, capacity: u32) -> Result<(), Error> {
+        AdminAccessControl::require_admin_auth(env, admin)?;
+        if capacity == 0 || capacity > 10000 {
+            return Err(Error::InvalidInput);
+        }
+        env.storage().persistent().set(&Symbol::new(env, Self::WINDOW_CAPACITY_KEY), &capacity);
+        Ok(())
+    }
+
+    pub fn get_window_capacity(env: &Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::WINDOW_CAPACITY_KEY))
+            .unwrap_or(10)
+    }
+
+    pub fn get_mttr_window(env: &Env) -> RollingWindow {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::MTTR_WINDOW_KEY))
+            .unwrap_or_else(|| RollingWindow::new(env, Self::get_window_capacity(env)))
+    }
+
+    pub fn get_mtbf_window(env: &Env) -> RollingWindow {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::MTBF_WINDOW_KEY))
+            .unwrap_or_else(|| RollingWindow::new(env, Self::get_window_capacity(env)))
+    }
+
+    pub fn get_mttr(env: &Env) -> i128 {
+        Self::get_mttr_window(env).average()
+    }
+
+    pub fn get_mtbf(env: &Env) -> i128 {
+        Self::get_mtbf_window(env).average()
+    }
+
+    pub fn record_incident(env: &Env, current_time: u64) -> Result<(), Error> {
+        let last_time: u64 = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, Self::LAST_INCIDENT_TIME_KEY))
+            .unwrap_or(0);
+
+        if last_time > 0 && current_time >= last_time {
+            let mtbf_seconds = (current_time - last_time) as i128;
+            let mut window = Self::get_mtbf_window(env);
+            window.capacity = Self::get_window_capacity(env);
+            window.push(env, mtbf_seconds);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(env, Self::MTBF_WINDOW_KEY), &window);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, Self::LAST_INCIDENT_TIME_KEY), &current_time);
+        Ok(())
+    }
+
+    pub fn record_recovery(env: &Env, recovery_time_seconds: i128) -> Result<(), Error> {
+        let mut window = Self::get_mttr_window(env);
+        window.capacity = Self::get_window_capacity(env);
+        window.push(env, recovery_time_seconds);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, Self::MTTR_WINDOW_KEY), &window);
+        Ok(())
+    }
+
     fn market_state_label(env: &Env, state: &MarketState) -> String {
         match state {
             MarketState::Active => String::from_str(env, "Active"),
@@ -516,6 +639,125 @@ impl ContractMonitor {
         );
     }
 
+    // ===== BOUNDED QUEUE INTEGRATION =====
+
+    /// Record a monitor event into the bounded queue.
+    ///
+    /// Wraps a `MonitorEvent` and pushes it into the `BoundedMonitorQueue`.
+    /// When the queue is at capacity, the oldest event is evicted and an
+    /// overflow event is emitted automatically.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `event` - The monitor event to record.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Event recorded but caused an eviction (overflow).
+    /// * `Ok(false)` - Event recorded normally.
+    /// * `Err(Error)` - Queue not initialized or storage error.
+    pub fn record_event(env: &Env, event: &MonitorEvent) -> Result<bool, Error> {
+        BoundedMonitorQueue::push(env, event)
+    }
+
+    /// Record a monitoring alert into the bounded queue.
+    ///
+    /// Converts a `MonitoringAlert` into a `MonitorEvent` and pushes it
+    /// into the `BoundedMonitorQueue`. The alert's severity is mapped to
+    /// `MonitorEventSeverity` and its type to `MonitorEventCategory`.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `alert` - The monitoring alert to record.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Alert recorded but caused an overflow.
+    /// * `Ok(false)` - Alert recorded normally.
+    /// * `Err(Error)` - Queue not initialized or storage error.
+    pub fn record_alert(env: &Env, alert: &MonitoringAlert) -> Result<bool, Error> {
+        let severity = match alert.severity {
+            AlertSeverity::Info => MonitorEventSeverity::Info,
+            AlertSeverity::Warning => MonitorEventSeverity::Warning,
+            AlertSeverity::Critical | AlertSeverity::Emergency => {
+                MonitorEventSeverity::Critical
+            }
+        };
+
+        let category = match alert.alert_type {
+            MonitoringAlertType::MarketHealth => MonitorEventCategory::Market,
+            MonitoringAlertType::OracleHealth => MonitorEventCategory::Oracle,
+            MonitoringAlertType::FeeCollection => MonitorEventCategory::Fee,
+            MonitoringAlertType::DisputeResolution => MonitorEventCategory::Dispute,
+            MonitoringAlertType::Security | MonitoringAlertType::Performance => {
+                MonitorEventCategory::System
+            }
+            MonitoringAlertType::SystemOverload
+            | MonitoringAlertType::DataIntegrity
+            | MonitoringAlertType::NetworkIssues => MonitorEventCategory::CircuitBreaker,
+            MonitoringAlertType::Custom => MonitorEventCategory::Admin,
+        };
+
+        let mut meta = alert.metadata.clone();
+        meta.set(
+            String::from_str(env, "alert_id"),
+            alert.alert_id.clone(),
+        );
+
+        let event = MonitorEvent {
+            event_id: Symbol::new(env, "alert"),
+            category,
+            severity,
+            message: alert.description.clone(),
+            market_id: None,
+            actor: None,
+            timestamp: alert.timestamp,
+            metadata: meta,
+        };
+
+        Self::record_event(env, &event)
+    }
+
+    /// Drain up to `max_count` events from the bounded queue.
+    ///
+    /// Returns drained events in FIFO order (oldest first) and removes them
+    /// from the queue. Useful for off-chain indexers to consume events in
+    /// batches.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `max_count` - Maximum number of events to drain. Use `u32::MAX` for all.
+    ///
+    /// # Returns
+    ///
+    /// A vector of drained events in FIFO order.
+    pub fn drain_events(env: &Env, max_count: u32) -> Result<Vec<MonitorEvent>, Error> {
+        BoundedMonitorQueue::drain(env, max_count)
+    }
+
+    /// Peek at the oldest event in the bounded queue without removing it.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(event))` - The oldest event if the queue is non-empty.
+    /// * `Ok(None)` - The queue is empty.
+    pub fn peek_next_event(env: &Env) -> Result<Option<MonitorEvent>, Error> {
+        BoundedMonitorQueue::peek(env)
+    }
+
+    /// Return current bounded queue statistics.
+    ///
+    /// Provides a snapshot of queue utilization, overflow history, and
+    /// throughput counters for monitoring dashboards.
+    pub fn get_queue_stats(
+        env: &Env,
+    ) -> Result<crate::monitor::MonitorQueueStats, Error> {
+        Ok(BoundedMonitorQueue::stats(env))
+    }
+
     /// Validate monitoring data integrity
     pub fn validate_monitoring_data(env: &Env, data: &MonitoringData) -> Result<bool, Error> {
         // Validate timestamp
@@ -611,6 +853,9 @@ impl ContractMonitor {
             bet_deadline: 0,
             dispute_window_seconds: 86400,
             winnings_swept: false,
+            timelock_config: crate::timelock::MarketTimelockConfig::default(),
+            dispute_stake_floor: None,
+            max_participants: None,
         })
     }
 
@@ -1446,6 +1691,216 @@ mod tests {
 
         assert_eq!(env.events().all().events().len(), 1);
     }
+
+    // ===== BOUNDED QUEUE INTEGRATION TESTS =====
+
+    fn make_monitor_event(env: &Env, id: &str) -> crate::monitor::MonitorEvent {
+        crate::monitor::MonitorEvent {
+            event_id: Symbol::new(env, id),
+            category: MonitorEventCategory::System,
+            severity: MonitorEventSeverity::Info,
+            message: String::from_str(env, "test"),
+            market_id: None,
+            actor: None,
+            timestamp: env.ledger().timestamp(),
+            metadata: Map::new(env),
+        }
+    }
+
+    fn setup_queue(env: &Env, contract_id: &soroban_sdk::Address, capacity: u32) {
+        env.as_contract(contract_id, || {
+            crate::monitor::BoundedMonitorQueue::initialize(env, capacity).unwrap();
+        });
+    }
+
+    #[test]
+    fn record_event_pushes_into_queue() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 8);
+        let ev = make_monitor_event(&env, "rec1");
+
+        let overflowed = env
+            .as_contract(&contract_id, || ContractMonitor::record_event(&env, &ev))
+            .unwrap();
+        assert!(!overflowed);
+
+        let stats = env
+            .as_contract(&contract_id, || ContractMonitor::get_queue_stats(&env))
+            .unwrap();
+        assert_eq!(stats.current_len, 1);
+        assert_eq!(stats.total_pushed, 1);
+    }
+
+    #[test]
+    fn record_event_returns_overflow_when_full() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 2);
+
+        env.as_contract(&contract_id, || {
+            let ev1 = make_monitor_event(&env, "a");
+            let ev2 = make_monitor_event(&env, "b");
+            ContractMonitor::record_event(&env, &ev1).unwrap();
+            ContractMonitor::record_event(&env, &ev2).unwrap();
+
+            // Third push should overflow.
+            let ev3 = make_monitor_event(&env, "c");
+            let overflowed = ContractMonitor::record_event(&env, &ev3).unwrap();
+            assert!(overflowed);
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.overflow_count, 1);
+            assert_eq!(stats.current_len, 2);
+        });
+    }
+
+    #[test]
+    fn drain_events_returns_fifo() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "x")).unwrap();
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "y")).unwrap();
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "z")).unwrap();
+
+            let drained = ContractMonitor::drain_events(&env, 2).unwrap();
+            assert_eq!(drained.len(), 2);
+            assert_eq!(drained.get(0).unwrap().event_id, Symbol::new(&env, "x"));
+            assert_eq!(drained.get(1).unwrap().event_id, Symbol::new(&env, "y"));
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.current_len, 1);
+        });
+    }
+
+    #[test]
+    fn peek_next_event_does_not_remove() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "peek1")).unwrap();
+
+            let peeked = ContractMonitor::peek_next_event(&env).unwrap().unwrap();
+            assert_eq!(peeked.event_id, Symbol::new(&env, "peek1"));
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.current_len, 1);
+        });
+    }
+
+    #[test]
+    fn peek_next_event_empty_queue_returns_none() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            let result = ContractMonitor::peek_next_event(&env).unwrap();
+            assert!(result.is_none());
+        });
+    }
+
+    #[test]
+    fn record_alert_pushes_into_queue() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 8);
+
+        let alert = MonitoringUtils::create_alert(
+            &env,
+            MonitoringAlertType::OracleHealth,
+            AlertSeverity::Critical,
+            String::from_str(&env, "Oracle down"),
+            String::from_str(&env, "Primary oracle unreachable"),
+            String::from_str(&env, "oracle"),
+        );
+
+        env.as_contract(&contract_id, || {
+            let overflowed = ContractMonitor::record_alert(&env, &alert).unwrap();
+            assert!(!overflowed);
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.current_len, 1);
+        });
+    }
+
+    #[test]
+    fn record_alert_maps_severity_correctly() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 8);
+
+        let alert = MonitoringUtils::create_alert(
+            &env,
+            MonitoringAlertType::Security,
+            AlertSeverity::Emergency,
+            String::from_str(&env, "Intrusion"),
+            String::from_str(&env, "Unauthorized access attempt"),
+            String::from_str(&env, "auth"),
+        );
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_alert(&env, &alert).unwrap();
+
+            let peeked = ContractMonitor::peek_next_event(&env).unwrap().unwrap();
+            assert_eq!(peeked.severity, MonitorEventSeverity::Critical);
+            assert_eq!(peeked.category, MonitorEventCategory::System);
+        });
+    }
+
+    #[test]
+    fn drain_events_empty_queue_returns_empty_vec() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            let drained = ContractMonitor::drain_events(&env, 10).unwrap();
+            assert_eq!(drained.len(), 0);
+        });
+    }
+
+    #[test]
+    fn drain_events_large_max_drains_all() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 4);
+
+        env.as_contract(&contract_id, || {
+            for i in 0..3 {
+                ContractMonitor::record_event(&env, &make_monitor_event(&env, &format!("d{}", i)))
+                    .unwrap();
+            }
+
+            let drained = ContractMonitor::drain_events(&env, u32::MAX).unwrap();
+            assert_eq!(drained.len(), 3);
+            assert!(ContractMonitor::get_queue_stats(&env).unwrap().is_empty);
+        });
+    }
+
+    #[test]
+    fn overflow_emits_event_with_evicted_id() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        setup_queue(&env, &contract_id, 1);
+
+        env.as_contract(&contract_id, || {
+            ContractMonitor::record_event(&env, &make_monitor_event(&env, "first")).unwrap();
+            let overflowed =
+                ContractMonitor::record_event(&env, &make_monitor_event(&env, "second")).unwrap();
+            assert!(overflowed);
+
+            let stats = ContractMonitor::get_queue_stats(&env).unwrap();
+            assert_eq!(stats.overflow_count, 1);
+            assert_eq!(stats.current_len, 1);
+            assert_eq!(stats.total_pushed, 2);
+        });
+    }
 }
 
 // ===== BOUNDED QUEUE TESTS =====
@@ -1513,6 +1968,7 @@ mod bounded_queue_tests {
         use crate::config::MONITOR_QUEUE_CAP;
         let (env, contract_id, _admin) = setup();
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             // Fill to cap.
             for i in 0..MONITOR_QUEUE_CAP {
                 let id = alloc::format!("a{}", i);
@@ -1540,6 +1996,7 @@ mod bounded_queue_tests {
     fn test_fifo_eviction_cap_one() {
         let (env, contract_id, _admin) = setup();
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             // Manually test the cap-1 edge case by storing two alerts.
             // We cannot change MONITOR_QUEUE_CAP at runtime, so we just verify
             // the eviction loop path works when queue.len() reaches cap on the
@@ -1570,6 +2027,7 @@ mod bounded_queue_tests {
         use crate::config::MONITOR_QUEUE_CAP;
         let (env, contract_id, _admin) = setup();
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             // Fill to cap then add 10 more.
             for i in 0..(MONITOR_QUEUE_CAP + 10) {
                 let id = alloc::format!("r{}", i);
@@ -1604,6 +2062,7 @@ mod bounded_queue_tests {
         let (env, contract_id, _admin) = setup();
         let not_admin = Address::generate(&env);
         env.as_contract(&contract_id, || {
+            env.budget().reset_default();
             for i in 0..(MONITOR_QUEUE_CAP + 1) {
                 let id = alloc::format!("u{}", i);
                 ContractMonitor::store_alert(&env, &make_alert(&env, &id)).unwrap();

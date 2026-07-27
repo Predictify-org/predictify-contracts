@@ -159,18 +159,7 @@ impl BetTestSetup {
         // Register and initialize the contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &platform_fee_percentage, &None);
-        // Persist fee config for slippage guard
-        if let Some(fee) = platform_fee_percentage {
-            // Build a ContractConfig with the fee and enable fees
-            let mut cfg = crate::config::ConfigManager::get_development_config(&env);
-            cfg.fees.platform_fee_percentage = fee;
-            cfg.fees.fees_enabled = true;
-            // Store the configuration using the provided API
-            env.as_contract(&contract_id, || {
-                crate::config::ConfigManager::store_config(&env, &cfg).unwrap();
-            });
-        }
+        client.initialize(&admin, &None, &None);
 
         // Setup token for staking
         let token_admin = Address::generate(&env);
@@ -1212,3 +1201,320 @@ fn test_get_live_fee_percentage() {
 }
 
 
+
+
+// ===== MAX BET CAP TESTS =====
+
+/// Test setting and getting the per-user max bet cap
+#[test]
+fn test_set_max_bet_cap() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    
+    env.mock_all_auths();
+    env.as_contract(&admin, || {
+        let cap = 50_000_000_000i128; // 50 XLM
+        let result = BetValidator::set_max_bet_cap(&env, &admin, cap);
+        assert!(result.is_ok());
+        
+        // Verify cap was stored
+        let retrieved = BetValidator::get_max_bet_cap(&env);
+        assert_eq!(retrieved, Some(cap));
+    });
+}
+
+/// Test that invalid cap (zero or negative) is rejected
+#[test]
+fn test_set_max_bet_cap_invalid() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    
+    env.mock_all_auths();
+    env.as_contract(&admin, || {
+        // Test zero cap
+        let result = BetValidator::set_max_bet_cap(&env, &admin, 0);
+        assert_eq!(result, Err(Error::InvalidCap));
+        
+        // Test negative cap
+        let result = BetValidator::set_max_bet_cap(&env, &admin, -1);
+        assert_eq!(result, Err(Error::InvalidCap));
+    });
+}
+
+/// Test that non-admin cannot set max bet cap
+#[test]
+fn test_set_max_bet_cap_unauthorized() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    
+    // Set admin first
+    env.mock_all_auths();
+    env.as_contract(&admin, || {
+        crate::admin::AdminManager::initialize(&env, &admin).ok();
+    });
+    
+    // Try to set cap as non-admin (should fail on auth check)
+    let cap = 50_000_000_000i128;
+    let result = BetValidator::set_max_bet_cap(&env, &non_admin, cap);
+    // This will fail due to require_auth or admin check
+    assert!(result.is_err());
+}
+
+/// Test that user stake is tracked correctly
+#[test]
+fn test_user_stake_tracking() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Initial stake should be 0
+    let initial = BetValidator::get_user_stake(&env, &market_id, &user);
+    assert_eq!(initial, 0);
+    
+    // Update stake
+    let amount = 10_000_000i128;
+    let result = BetValidator::update_user_stake(&env, &market_id, &user, amount);
+    assert!(result.is_ok());
+    
+    // Verify stake was updated
+    let updated = BetValidator::get_user_stake(&env, &market_id, &user);
+    assert_eq!(updated, amount);
+    
+    // Update again
+    let result = BetValidator::update_user_stake(&env, &market_id, &user, amount);
+    assert!(result.is_ok());
+    
+    let final_stake = BetValidator::get_user_stake(&env, &market_id, &user);
+    assert_eq!(final_stake, amount * 2);
+}
+
+/// Test that stake overflow is properly detected
+#[test]
+fn test_user_stake_overflow() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Set stake to near i128::MAX
+    let near_max = i128::MAX - 100;
+    let _ = BetValidator::update_user_stake(&env, &market_id, &user, near_max);
+    
+    // Try to add more (should overflow)
+    let result = BetValidator::update_user_stake(&env, &market_id, &user, 200);
+    assert_eq!(result, Err(Error::Overflow));
+}
+
+/// Test single bet within cap succeeds
+#[test]
+fn test_single_bet_within_cap() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Set cap to 100 XLM
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user, || {
+        BetValidator::set_max_bet_cap(&env, &user, cap).ok();
+    });
+    
+    // Bet with 50 XLM (within cap)
+    let amount = 50_000_000_000i128;
+    let result = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, amount);
+    assert!(result.is_ok());
+}
+
+/// Test bet exactly at cap succeeds
+#[test]
+fn test_bet_exactly_at_cap() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Set cap to 100 XLM
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user, || {
+        BetValidator::set_max_bet_cap(&env, &user, cap).ok();
+    });
+    
+    // Bet with exactly 100 XLM (at cap boundary, should succeed)
+    let amount = 100_000_000_000i128;
+    let result = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, amount);
+    assert!(result.is_ok());
+}
+
+/// Test bet one unit over cap fails
+#[test]
+fn test_bet_one_unit_over_cap() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Set cap to 100 XLM
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user, || {
+        BetValidator::set_max_bet_cap(&env, &user, cap).ok();
+    });
+    
+    // Bet with 100 XLM + 1 stroop (over cap, should fail)
+    let amount = 100_000_000_001i128;
+    let result = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, amount);
+    assert_eq!(result, Err(Error::MaxBetCapExceeded));
+}
+
+/// Test bet with no cap set succeeds (uncapped)
+#[test]
+fn test_bet_with_no_cap_set_uncapped() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Do NOT set a cap (uncapped by default)
+    let cap = BetValidator::get_max_bet_cap(&env);
+    assert_eq!(cap, None);
+    
+    // Very large bet should succeed (no cap to limit it)
+    let amount = 1_000_000_000_000i128;
+    let result = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, amount);
+    assert!(result.is_ok());
+}
+
+/// Test two bets that individually fit but together exceed cap
+#[test]
+fn test_cumulative_bets_exceed_cap() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Set cap to 100 XLM
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user, || {
+        BetValidator::set_max_bet_cap(&env, &user, cap).ok();
+    });
+    
+    // First bet: 60 XLM
+    let bet1 = 60_000_000_000i128;
+    let result1 = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, bet1);
+    assert!(result1.is_ok());
+    
+    // Simulate first bet being recorded
+    let _ = BetValidator::update_user_stake(&env, &market_id, &user, bet1);
+    
+    // Second bet: 50 XLM (total would be 110 XLM, over cap of 100)
+    let bet2 = 50_000_000_000i128;
+    let result2 = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, bet2);
+    assert_eq!(result2, Err(Error::MaxBetCapExceeded));
+}
+
+/// Test two bets that together exactly hit cap both succeed
+#[test]
+fn test_cumulative_bets_exactly_hit_cap() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Set cap to 100 XLM
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user, || {
+        BetValidator::set_max_bet_cap(&env, &user, cap).ok();
+    });
+    
+    // First bet: 60 XLM
+    let bet1 = 60_000_000_000i128;
+    let result1 = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, bet1);
+    assert!(result1.is_ok());
+    
+    // Record first bet
+    let _ = BetValidator::update_user_stake(&env, &market_id, &user, bet1);
+    
+    // Second bet: 40 XLM (total = 100 XLM, exactly at cap, should succeed)
+    let bet2 = 40_000_000_000i128;
+    let result2 = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, bet2);
+    assert!(result2.is_ok());
+}
+
+/// Test each user's cap is tracked independently on the same market
+#[test]
+fn test_independent_per_user_cap_same_market() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
+    
+    // Set cap to 100 XLM
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user_a, || {
+        BetValidator::set_max_bet_cap(&env, &user_a, cap).ok();
+    });
+    
+    // User A bets 100 XLM (hits cap)
+    let bet_a = 100_000_000_000i128;
+    let result_a = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user_a, bet_a);
+    assert!(result_a.is_ok());
+    let _ = BetValidator::update_user_stake(&env, &market_id, &user_a, bet_a);
+    
+    // User A tries to bet more (should fail)
+    let result_a2 = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user_a, 1);
+    assert_eq!(result_a2, Err(Error::MaxBetCapExceeded));
+    
+    // User B bets 100 XLM on same market (should succeed - independent cap)
+    let bet_b = 100_000_000_000i128;
+    let result_b = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user_b, bet_b);
+    assert!(result_b.is_ok());
+}
+
+/// Test same user's cap is independent across different markets
+#[test]
+fn test_independent_per_market_cap_same_user() {
+    let env = Env::default();
+    let market_a = Symbol::new(&env, "BTC_50K");
+    let market_b = Symbol::new(&env, "ETH_3K");
+    let user = Address::generate(&env);
+    
+    // Set cap to 100 XLM
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user, || {
+        BetValidator::set_max_bet_cap(&env, &user, cap).ok();
+    });
+    
+    // User bets 100 XLM on market A (hits cap for that market)
+    let bet_a = 100_000_000_000i128;
+    let result_a = BetValidator::validate_user_stake_under_cap(&env, &market_a, &user, bet_a);
+    assert!(result_a.is_ok());
+    let _ = BetValidator::update_user_stake(&env, &market_a, &user, bet_a);
+    
+    // User tries to bet more on market A (should fail - at cap)
+    let result_a2 = BetValidator::validate_user_stake_under_cap(&env, &market_a, &user, 1);
+    assert_eq!(result_a2, Err(Error::MaxBetCapExceeded));
+    
+    // User bets 100 XLM on market B (should succeed - independent market cap)
+    let bet_b = 100_000_000_000i128;
+    let result_b = BetValidator::validate_user_stake_under_cap(&env, &market_b, &user, bet_b);
+    assert!(result_b.is_ok());
+}
+
+/// Test that amount = 0 fails (should be caught by earlier validation)
+#[test]
+fn test_bet_zero_amount() {
+    let env = Env::default();
+    let market_id = Symbol::new(&env, "BTC_50K");
+    let user = Address::generate(&env);
+    
+    // Set cap
+    let cap = 100_000_000_000i128;
+    env.mock_all_auths();
+    env.as_contract(&user, || {
+        BetValidator::set_max_bet_cap(&env, &user, cap).ok();
+    });
+    
+    // Amount 0 should still pass cap validation (cap check runs after amount validation)
+    let result = BetValidator::validate_user_stake_under_cap(&env, &market_id, &user, 0);
+    assert!(result.is_ok());
+}

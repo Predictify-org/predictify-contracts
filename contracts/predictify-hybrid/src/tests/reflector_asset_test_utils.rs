@@ -24,7 +24,7 @@ impl AssetTestBuilder {
         )
     }
 
-    /// Create a native XLM asset
+
     pub fn native_xlm(&self) -> Asset {
         Asset::new(
             Address::default(&self.env),

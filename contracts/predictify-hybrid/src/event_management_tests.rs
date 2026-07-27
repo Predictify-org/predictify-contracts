@@ -40,16 +40,7 @@ impl TestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
-        env.as_contract(&contract_id, || {
-            crate::circuit_breaker::CircuitBreaker::initialize(&env)
-                .expect("circuit breaker should initialize in tests");
-        });
-
-        // Initialize circuit breaker (required for create_market and other write operations)
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-        });
+        client.initialize(&admin, &None, &None);
 
         Self {
             env,
@@ -858,6 +849,57 @@ fn test_event_market_created_published() {
         .try_into_val(&setup.env)
         .unwrap();
     assert_eq!(topic, Symbol::new(&setup.env, "mkt_crt"));
+    assert_eq!(emitted_market_id, market_id);
+}
+
+#[test]
+fn test_event_market_resolved_published() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "No"),
+    ];
+
+    let market_id = setup.create_market("Test question?", outcomes.clone(), 30);
+
+    setup.env.ledger().with_mut(|li| {
+        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
+    });
+
+    let result = client.try_resolve_market_manual(
+        &setup.admin,
+        &market_id,
+        &String::from_str(&setup.env, "Yes"),
+    );
+    assert!(result.is_ok());
+
+    // Get emitted events
+    let all_events = setup.env.events().all();
+    let resolved_event = all_events
+        .iter()
+        .find(|e| {
+            e.1.get(0).and_then(|v| v.try_into_val(&setup.env).ok())
+                == Some(Symbol::new(&setup.env, "mkt_res"))
+        })
+        .expect("MarketResolvedEvent not found in emitted events");
+
+    assert_eq!(resolved_event.0, setup.contract_id);
+    let topic: Symbol = resolved_event
+        .1
+        .get(0)
+        .unwrap()
+        .try_into_val(&setup.env)
+        .unwrap();
+    let emitted_market_id: Symbol = resolved_event
+        .1
+        .get(1)
+        .unwrap()
+        .try_into_val(&setup.env)
+        .unwrap();
+    assert_eq!(topic, Symbol::new(&setup.env, "mkt_res"));
     assert_eq!(emitted_market_id, market_id);
 }
 

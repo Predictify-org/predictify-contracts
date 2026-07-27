@@ -99,7 +99,7 @@ impl GasTestContext {
 
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
+        client.initialize(&admin, &None, &None);
 
         // Initialize configuration
         env.as_contract(&contract_id, || {
@@ -180,7 +180,7 @@ fn test_gas_initialize_baseline() {
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
 
-    client.initialize(&\1, &None, &None);
+    client.initialize(&admin, &None, &None);
 
     // Verify: Admin stored correctly
     let stored_admin = env.as_contract(&contract_id, || {
@@ -499,7 +499,7 @@ fn test_gas_operations_within_expected_ranges() {
 fn test_gas_usage_ring_buffer_initialization() {
     // Test: Ring buffer initializes correctly with empty state
     let env = Env::default();
-    let mut usage = GasUsage::default();
+    let mut usage = GasUsage::new(&env);
     
     assert_eq!(usage.history_count, 0);
     assert_eq!(usage.history_index, 0);
@@ -510,7 +510,7 @@ fn test_gas_usage_ring_buffer_initialization() {
 fn test_gas_usage_add_to_history() {
     // Test: Adding values to ring buffer works correctly
     let env = Env::default();
-    let mut usage = GasUsage::default();
+    let mut usage = GasUsage::new(&env);
     
     // Add first value
     let avg1 = usage.add_to_history(&env, 100);
@@ -534,7 +534,7 @@ fn test_gas_usage_add_to_history() {
 fn test_gas_usage_ring_buffer_wrap_around() {
     // Test: Ring buffer wraps around correctly when full
     let env = Env::default();
-    let mut usage = GasUsage::default();
+    let mut usage = GasUsage::new(&env);
     
     // Fill buffer to capacity (GAS_TRACKING_WINDOW_SIZE = 10)
     for i in 1..=10 {
@@ -557,7 +557,7 @@ fn test_gas_usage_ring_buffer_wrap_around() {
 fn test_gas_usage_moving_average_empty_buffer() {
     // Test: Moving average returns 0 for empty buffer
     let env = Env::default();
-    let usage = GasUsage::default();
+    let usage = GasUsage::new(&env);
     
     // Empty buffer should return 0
     let avg = usage.calculate_moving_average(&env);
@@ -727,7 +727,7 @@ fn test_gas_usage_ring_buffer_o1_insertion() {
     // Test: Verify ring buffer insertion is O(1) by checking it doesn't
     // depend on buffer size for insertion time
     let env = Env::default();
-    let mut usage = GasUsage::default();
+    let mut usage = GasUsage::new(&env);
     
     // Fill buffer
     for i in 0..10 {
@@ -744,8 +744,8 @@ fn test_gas_usage_ring_buffer_o1_insertion() {
 
 #[test]
 fn test_gas_usage_default_fields() {
-    // Test: Default GasUsage has all new fields initialized
-    let usage = GasUsage::default();
+    let env = Env::default();
+    let usage = GasUsage::new(&env);
     
     assert_eq!(usage.cpu, 0);
     assert_eq!(usage.mem, 0);
