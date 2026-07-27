@@ -4,7 +4,11 @@ use soroban_sdk::{contracttype, token, vec, Address, Env, Map, String, Symbol, V
 
 // use crate::config; // Unused import
 use crate::err::Error;
-use crate::storage::{check_market_creation_rent, DataKey, MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS};
+use crate::events::EventEmitter;
+use crate::storage::{
+    check_market_creation_rent, check_market_creation_rent_budget, DataKey,
+    MARKET_CACHE_TTL_LEDGERS, MARKET_TTL_LEDGERS,
+};
 use crate::types::*;
 // Oracle imports removed - not currently used
 
@@ -27,8 +31,6 @@ use crate::types::*;
 pub struct MarketCreator;
 
 impl MarketCreator {
-    /// Create a new market with full configuration
-
     /// Creates a new prediction market with comprehensive configuration options.
     ///
     /// This is the primary market creation function that supports all oracle types
@@ -89,7 +91,6 @@ impl MarketCreator {
     ///     oracle_config
     /// ).expect("Market creation should succeed");
     /// ```
-
     pub fn create_market(
         env: &Env,
         admin: Address,
@@ -128,8 +129,13 @@ impl MarketCreator {
         // Use the generated id after creation in higher-level flows when event metadata is required.
        let _ = MarketUtils::process_creation_fee(env, &admin)?;
 
-        // Pre-flight check: ensure sufficient storage rent budget
+        // Pre-flight checks: ensure sufficient storage rent budget.
+        // The single-key check guards the market record itself; the aggregate
+        // check additionally covers every persistent entry a full creation
+        // flow writes, so a caller cannot get partway through and strand a
+        // market record whose companion entries could not be given a TTL.
         check_market_creation_rent(env)?;
+        check_market_creation_rent_budget(env)?;
 
         // Store market
         env.storage().persistent().set(&market_id, &market);
@@ -137,6 +143,9 @@ impl MarketCreator {
 
         // CACHE INVALIDATION: ensure cache is empty for new market
         MarketReadCache::new(env).invalidate(&market_id);
+
+        // Emit structured market created event with schema registry
+        EventEmitter::emit_market_created(env, &market_id, &question, &outcomes, &admin, end_time);
 
         Ok(market_id)
     }
@@ -196,7 +205,6 @@ impl MarketCreator {
     ///     String::from_str(&env, "gt")
     /// ).expect("Reflector market creation should succeed");
     /// ```
-
     pub fn create_reflector_market(
         _env: &Env,
         admin: Address,
@@ -632,7 +640,57 @@ impl MarketValidator {
         Ok(())
     }
 
-    /// Validate outcome for a market
+    /// Validates that a user-supplied outcome string is a valid choice for a market.
+    ///
+    /// This function checks the given `outcome` against the list of outcomes
+    /// defined at market creation time.  The comparison is exact (byte-for-byte),
+    /// so casing and whitespace must match the stored outcome strings precisely.
+    ///
+    /// # Parameters
+    ///
+    /// * `_env` - The Soroban environment (reserved for future use).
+    /// * `outcome` - The outcome string supplied by the caller (e.g. `"yes"`,
+    ///   `"no"`, `"draw"`).
+    /// * `market_outcomes` - The ordered vector of valid outcome strings that
+    ///   were recorded when the market was created.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - The outcome is present in `market_outcomes`.
+    /// * `Err(Error::InvalidOutcome)` - The outcome is not recognised for this
+    ///   market.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::InvalidOutcome`] — Returned when `outcome` does not match any
+    ///   entry in `market_outcomes`.  Callers should surface this to the user as
+    ///   an invalid selection rather than retrying automatically.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::{Env, String, Vec};
+    /// use predictify_hybrid::markets::MarketValidator;
+    ///
+    /// let env = Env::default();
+    /// let mut valid_outcomes = Vec::new(&env);
+    /// valid_outcomes.push_back(String::from_str(&env, "yes"));
+    /// valid_outcomes.push_back(String::from_str(&env, "no"));
+    ///
+    /// // Valid outcome — should succeed.
+    /// assert!(MarketValidator::validate_outcome(
+    ///     &env,
+    ///     &String::from_str(&env, "yes"),
+    ///     &valid_outcomes,
+    /// ).is_ok());
+    ///
+    /// // Unrecognised outcome — should fail.
+    /// assert!(MarketValidator::validate_outcome(
+    ///     &env,
+    ///     &String::from_str(&env, "maybe"),
+    ///     &valid_outcomes,
+    /// ).is_err());
+    /// ```
     pub fn validate_outcome(
         _env: &Env,
         outcome: &String,
@@ -698,6 +756,53 @@ impl MarketValidator {
 
         Ok(())
     }
+
+    /// Validates that the market has not yet reached its maximum participant cap.
+    ///
+    /// When a market is created with an optional `max_participants` limit, this
+    /// function enforces that cap before a new vote or bet is recorded.  Markets
+    /// without a configured cap always pass this check.
+    ///
+    /// # Parameters
+    ///
+    /// * `market` - Immutable reference to the market whose participant count
+    ///   should be checked.  The check is performed against `market.votes.len()`
+    ///   because every participant casts exactly one vote.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - The market has room for at least one more participant.
+    /// * `Err(Error::MaxParticipantsReached)` - The market is at capacity; no
+    ///   additional participants are accepted.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::MaxParticipantsReached`] — Returned when `market.votes.len() >= max`.
+    ///   Callers should present this to the user as a "market is full" message and
+    ///   should not retry; the condition will only resolve if existing participants
+    ///   cancel their votes (which is not currently supported).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use predictify_hybrid::markets::MarketValidator;
+    /// // markets without a cap always pass:
+    /// // assert!(MarketValidator::validate_participant_cap(&uncapped_market).is_ok());
+    ///
+    /// // markets at capacity return MaxParticipantsReached:
+    /// // assert_eq!(
+    /// //     MarketValidator::validate_participant_cap(&full_market),
+    /// //     Err(Error::MaxParticipantsReached)
+    /// // );
+    /// ```
+    pub fn validate_participant_cap(market: &Market) -> Result<(), Error> {
+        if let Some(max) = market.max_participants {
+            if market.votes.len() >= max {
+                return Err(Error::MaxParticipantsReached);
+            }
+        }
+        Ok(())
+    }
 }
 
 // ===== MARKET READ CACHE =====
@@ -725,6 +830,32 @@ pub struct MarketReadCache<'a> {
 }
 
 impl<'a> MarketReadCache<'a> {
+    /// Creates a new `MarketReadCache` bound to the given Soroban environment.
+    ///
+    /// The returned cache borrows `env` for its entire lifetime.  All reads and
+    /// writes go through `env.storage().instance()`, which is fast but shared
+    /// across all keys in the contract instance.  Call `invalidate` after every
+    /// persistent write to keep the cache coherent.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Reference to the Soroban environment.  Must outlive the cache.
+    ///
+    /// # Returns
+    ///
+    /// A freshly initialised (empty) `MarketReadCache`.  No storage reads are
+    /// performed during construction.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::Env;
+    /// use predictify_hybrid::markets::MarketReadCache;
+    ///
+    /// let env = Env::default();
+    /// let cache = MarketReadCache::new(&env);
+    /// // cache is ready; all lookups miss until a market is populated via `set`.
+    /// ```
     pub fn new(env: &'a Env) -> Self {
         Self { env }
     }
@@ -774,7 +905,33 @@ impl<'a> MarketReadCache<'a> {
 pub struct MarketStateManager;
 
 impl MarketStateManager {
-    /// Create MarketStateManager instance from environment
+    /// Creates a `MarketStateManager` instance bound to the given Soroban environment.
+    ///
+    /// `MarketStateManager` is a zero-sized utility struct — all methods are
+    /// associated functions that receive `env` as an explicit argument.  This
+    /// constructor exists for API consistency and for callers that prefer an
+    /// OOP-style call chain (`MarketStateManager::from_env(env).get_market(…)`)
+    /// over the free-function form.
+    ///
+    /// # Parameters
+    ///
+    /// * `_env` - The Soroban environment.  Accepted but not stored; every method
+    ///   receives `env` directly.
+    ///
+    /// # Returns
+    ///
+    /// A new `MarketStateManager`.  Construction is infallible and performs no
+    /// I/O.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::Env;
+    /// use predictify_hybrid::markets::MarketStateManager;
+    ///
+    /// let env = Env::default();
+    /// let _mgr = MarketStateManager::from_env(&env);
+    /// ```
     pub fn from_env(_env: &Env) -> Self {
         Self
     }
@@ -841,6 +998,12 @@ impl MarketStateManager {
 
         match market {
             Some(m) => {
+                // TTL BUMP: extend persistent storage TTL on hot read to prevent
+                // frequently-accessed markets from expiring.
+                let effective_ttl = MARKET_TTL_LEDGERS.min(_env.storage().max_ttl());
+                _env.storage()
+                    .persistent()
+                    .extend_ttl(market_id, effective_ttl, effective_ttl);
                 // Populate cache for subsequent reads
                 cache.set(market_id.clone(), &m);
                 Ok(m)
@@ -880,6 +1043,8 @@ impl MarketStateManager {
     /// ```
     pub fn update_market(_env: &Env, market_id: &Symbol, market: &Market) {
         _env.storage().persistent().set(market_id, market);
+        // Extend the TTL of this market after updating to keep it alive
+        crate::storage::bump_market_ttl(_env, market_id);
         // CACHE INVALIDATION: remove cache entry after persistent write
         MarketReadCache::new(_env).invalidate(market_id);
     }
@@ -906,9 +1071,17 @@ impl MarketStateManager {
             return Err(Error::InvalidState);
         }
 
-        market.question = new_description;
+        let old_description = market.question.clone();
+        market.question = new_description.clone();
         market.refresh_metadata_commitment(_env);
         Self::update_market(_env, market_id, &market);
+        EventEmitter::emit_market_description_updated(
+            _env,
+            market_id,
+            &old_description,
+            &new_description,
+            &market.admin,
+        );
         Ok(())
     }
 
@@ -1020,13 +1193,12 @@ impl MarketStateManager {
         _market_id: Option<&Symbol>,
     ) {
         MarketStateLogic::check_function_access_for_state("vote", market.state).unwrap();
+        MarketValidator::validate_participant_cap(market).unwrap();
         market.votes.set(user.clone(), outcome);
         market.stakes.set(user.clone(), stake);
         market.total_staked += stake;
         // No state change for voting
     }
-
-    /// Add dispute stake to market
 
     /// Adds a user's dispute stake to challenge the market's oracle result.
     ///
@@ -1086,7 +1258,6 @@ impl MarketStateManager {
     ///
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-
     pub fn add_dispute_stake(
         market: &mut Market,
         user: Address,
@@ -2512,6 +2683,7 @@ impl MarketTestHelpers {
                 String::from_str(_env, "gt"),
             ),
             1_000_000, // Creation fee: 1 XLM
+            None,
         )
     }
 
@@ -2845,8 +3017,6 @@ impl MarketStateLogic {
         }
     }
 
-    /// Check if a function is allowed in the given state
-
     /// Validates that a specific function can be executed in the given market state.
     ///
     /// This function enforces access control based on market state, ensuring
@@ -2894,7 +3064,6 @@ impl MarketStateLogic {
     ///     MarketState::Resolved
     /// ).is_ok());
     /// ```
-
     pub fn check_function_access_for_state(
         function: &str,
         state: MarketState,
@@ -3154,7 +3323,8 @@ impl MarketStateLogic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::storage::Persistent as _;
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig, Ledger};
 
     #[test]
     fn test_market_validation() {
@@ -3277,6 +3447,147 @@ mod tests {
         assert_eq!(consensus.total_votes, 0);
         assert_eq!(consensus.percentage, 0);
     }
+
+    #[test]
+    fn test_get_market_bumps_persistent_ttl_on_cache_miss() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let market = Market::new(
+                &env,
+                admin,
+                String::from_str(&env, "TTL test?"),
+                vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env.ledger().timestamp() + 86400,
+                OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    String::from_str(&env, "BTC"),
+                    2500000,
+                    String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+
+            let market_id = Symbol::new(&env, "ttl_test_market");
+            env.storage().persistent().set(&market_id, &market);
+            env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
+            let initial_ttl = env.storage().persistent().get_ttl(&market_id);
+
+            // Advance ledger to consume some TTL
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 500;
+            });
+            let depleted_ttl = env.storage().persistent().get_ttl(&market_id);
+            assert!(depleted_ttl < initial_ttl);
+
+            // Clear instance cache so get_market falls through to persistent read
+            MarketReadCache::new(&env).invalidate(&market_id);
+
+            // get_market cache miss should bump persistent TTL back to full
+            let result = MarketStateManager::get_market(&env, &market_id);
+            assert!(result.is_ok());
+            let refreshed_ttl = env.storage().persistent().get_ttl(&market_id);
+            assert_eq!(refreshed_ttl, initial_ttl);
+        });
+    }
+
+    #[test]
+    fn test_get_market_cache_hit_does_not_bump_persistent_ttl() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let market = Market::new(
+                &env,
+                admin,
+                String::from_str(&env, "Cache test?"),
+                vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env.ledger().timestamp() + 86400,
+                OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    String::from_str(&env, "BTC"),
+                    2500000,
+                    String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+
+            let market_id = Symbol::new(&env, "cache_test_market");
+            env.storage().persistent().set(&market_id, &market);
+            env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
+
+            // First read: cache miss → bumps persistent TTL, populates cache
+            let _ = MarketStateManager::get_market(&env, &market_id);
+            let ttl_after_miss = env.storage().persistent().get_ttl(&market_id);
+
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 200;
+            });
+
+            // Second read: cache hit → should NOT bump persistent TTL
+            let _ = MarketStateManager::get_market(&env, &market_id);
+            let ttl_after_hit = env.storage().persistent().get_ttl(&market_id);
+            assert_eq!(ttl_after_hit, ttl_after_miss - 200);
+        });
+    }
+
+    #[test]
+    fn test_get_market_ttl_bump_respects_max_ttl() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let market = Market::new(
+                &env,
+                admin,
+                String::from_str(&env, "Max TTL test?"),
+                vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env.ledger().timestamp() + 86400,
+                OracleConfig::new(
+                    OracleProvider::reflector(),
+                    Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    String::from_str(&env, "BTC"),
+                    2500000,
+                    String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+
+            let market_id = Symbol::new(&env, "max_ttl_market");
+            let max_ttl = env.storage().max_ttl();
+            env.storage().persistent().set(&market_id, &market);
+            env.storage().persistent().extend_ttl(&market_id, max_ttl, max_ttl);
+
+            // Clear cache and read
+            MarketReadCache::new(&env).invalidate(&market_id);
+            let _ = MarketStateManager::get_market(&env, &market_id);
+
+            let effective_ttl = env.storage().persistent().get_ttl(&market_id);
+            // TTL should never exceed max_ttl
+            assert!(effective_ttl <= max_ttl);
+        });
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -3292,6 +3603,8 @@ mod tests {
 pub struct MarketPauseManager;
 
 impl MarketPauseManager {
+    const MIN_UNPAUSE_COOLOFF_SECONDS: u64 = 3600;
+
     /// Maximum allowed pause duration in hours (7 days)
     const MAX_PAUSE_DURATION_HOURS: u32 = 168;
 
@@ -3399,6 +3712,13 @@ impl MarketPauseManager {
     /// * `Error::Unauthorized` - Caller is not an authorized administrator
     /// * `Error::MarketNotFound` - Market doesn't exist
     /// * `Error::InvalidState` - Market is not currently paused
+    /// * `Error::CooloffActive` - The minimum cool-off period has not elapsed yet
+    ///
+    /// # Cool-off Period
+    ///
+    /// The manager enforces a minimum cool-off period before a manually paused market
+    /// can be resumed. If `resume_market` is called before this period elapses, it will
+    /// return `Error::CooloffActive`.
     ///
     /// # Example
     ///
@@ -3424,6 +3744,16 @@ impl MarketPauseManager {
 
         if !pause_info.is_paused {
             return Err(Error::InvalidState);
+        }
+
+        let elapsed = env
+            .ledger()
+            .timestamp()
+            .checked_sub(pause_info.paused_at)
+            .ok_or(Error::InvalidState)?;
+
+        if elapsed < Self::MIN_UNPAUSE_COOLOFF_SECONDS {
+            return Err(Error::CooloffActive);
         }
 
         env.storage().persistent().remove(&market_id);
@@ -3593,6 +3923,50 @@ impl MarketPauseManager {
             return Err(Error::Unauthorized);
         }
 
+        Ok(())
+    }
+
+    /// Auto-pause a market due to oracle validation failure (internal, no admin auth).
+    ///
+    /// Called by `OracleValidationConfigManager::validate_oracle_data` when the
+    /// effective config has `auto_pause_duration_secs` set and oracle data is
+    /// rejected.  This path bypasses the normal admin auth check because it
+    /// executes as a contract-internal action.
+    ///
+    /// If the market is already paused this is a safe no-op.
+    pub fn auto_pause_market(
+        env: &Env,
+        market_id: &Symbol,
+        duration_secs: u64,
+    ) -> Result<(), Error> {
+        if Self::is_market_paused(env, market_id)? {
+            return Ok(());
+        }
+        let market = MarketStateManager::get_market(env, market_id)?;
+        match market.state {
+            MarketState::Active | MarketState::Ended | MarketState::Disputed => {}
+            _ => return Err(Error::InvalidState),
+        }
+        let paused_by: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .unwrap_or(market.admin);
+        let current_time = env.ledger().timestamp();
+        let pause_end_time = current_time.saturating_add(duration_secs);
+        let duration_hours = ((duration_secs + 3599) / 3600) as u32;
+        let pause_info = MarketPauseInfo {
+            is_paused: true,
+            paused_at: current_time,
+            pause_duration_hours: duration_hours.max(1),
+            paused_by: paused_by,
+            pause_end_time,
+            original_state: market.state,
+        };
+        env.storage()
+            .persistent()
+            .set(market_id, &pause_info);
+        Self::emit_pause_event(env, market_id, duration_hours, &pause_info.paused_by);
         Ok(())
     }
 

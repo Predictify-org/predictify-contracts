@@ -151,6 +151,7 @@ fn make_price_data(env: &Env, price: i128, publish_time: u64) -> OraclePriceData
     OraclePriceData {
         price,
         publish_time,
+        publish_ledger: env.ledger().sequence(),
         confidence: None,
         exponent: 0,
     }

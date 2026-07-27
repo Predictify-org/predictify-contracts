@@ -646,6 +646,12 @@ impl VersionManager {
         Ok(migration)
     }
 
+    /// Get the capabilities bitmask for the current version.
+    pub fn get_current_capabilities(&self, env: &Env) -> Result<u64, Error> {
+        let version = self.get_current_version(env)?;
+        Ok(crate::capabilities::compute_capabilities_for_version(version))
+    }
+
     /// Validate version compatibility
     pub fn validate_version_compatibility(
         &self,

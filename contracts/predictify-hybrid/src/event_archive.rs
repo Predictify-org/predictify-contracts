@@ -1111,6 +1111,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
             let res =
@@ -1161,6 +1162,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
             let res1 =
@@ -1220,8 +1222,8 @@ mod tests {
         env.mock_all_auths();
         let contract_id = env.register(crate::PredictifyHybrid, ());
 
+        let admin = Address::generate(&env);
         env.as_contract(&contract_id, || {
-            let admin = Address::generate(&env);
             env.storage()
                 .persistent()
                 .set(&Symbol::new(&env, "Admin"), &admin);
@@ -1230,20 +1232,26 @@ mod tests {
                 &env,
                 &[("mkt_a", 100), ("mkt_b", 200), ("mkt_c", 300), ("mkt_d", 400)],
             );
-
-            // First page: prune 2
-            let (removed1, cursor1) =
-                EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
-            assert_eq!(removed1, 2);
-            assert_eq!(cursor1.done, false);
-
-            // Resume with cursor — should prune the next 2
-            let (removed2, cursor2) =
-                EventArchive::prune_archive(&env, &admin, 2, Some(cursor1)).unwrap();
-            assert_eq!(removed2, 2);
-            assert_eq!(cursor2.done, true);
-            assert_eq!(EventArchive::archive_size(&env), 0);
         });
+
+        // First page: prune 2
+        let (removed1, cursor1) =
+            env.as_contract(&contract_id, || {
+                EventArchive::prune_archive(&env, &admin, 2, None).unwrap()
+            });
+        assert_eq!(removed1, 2);
+        assert_eq!(cursor1.done, false);
+
+        // Resume with cursor — should prune the next 2
+        let (removed2, cursor2) =
+            env.as_contract(&contract_id, || {
+                EventArchive::prune_archive(&env, &admin, 2, Some(cursor1)).unwrap()
+            });
+        assert_eq!(removed2, 2);
+        assert_eq!(cursor2.done, true);
+
+        let size = env.as_contract(&contract_id, || EventArchive::archive_size(&env));
+        assert_eq!(size, 0);
     }
 
     #[test]
@@ -1276,24 +1284,28 @@ mod tests {
         env.mock_all_auths();
         let contract_id = env.register(crate::PredictifyHybrid, ());
 
+        let admin = Address::generate(&env);
         env.as_contract(&contract_id, || {
-            let admin = Address::generate(&env);
             env.storage()
                 .persistent()
                 .set(&Symbol::new(&env, "Admin"), &admin);
 
             seed_archive(&env, &[("mkt_p", 100)]);
-
-            let (_, done_cursor) =
-                EventArchive::prune_archive(&env, &admin, 5, None).unwrap();
-            assert!(done_cursor.done);
-
-            // Calling again with a done cursor must remove nothing
-            let (removed2, cursor2) =
-                EventArchive::prune_archive(&env, &admin, 5, Some(done_cursor)).unwrap();
-            assert_eq!(removed2, 0);
-            assert!(cursor2.done);
         });
+
+        let (_, done_cursor) =
+            env.as_contract(&contract_id, || {
+                EventArchive::prune_archive(&env, &admin, 5, None).unwrap()
+            });
+        assert!(done_cursor.done);
+
+        // Calling again with a done cursor must remove nothing
+        let (removed2, cursor2) =
+            env.as_contract(&contract_id, || {
+                EventArchive::prune_archive(&env, &admin, 5, Some(done_cursor)).unwrap()
+            });
+        assert_eq!(removed2, 0);
+        assert!(cursor2.done);
     }
 
     #[test]
@@ -1365,24 +1377,27 @@ mod tests {
         env.mock_all_auths();
         let contract_id = env.register(crate::PredictifyHybrid, ());
 
+        let admin = Address::generate(&env);
         env.as_contract(&contract_id, || {
-            let admin = Address::generate(&env);
             env.storage()
                 .persistent()
                 .set(&Symbol::new(&env, "Admin"), &admin);
 
             seed_archive(&env, &[("a", 10), ("b", 20), ("c", 30)]);
-
-            // Prune 2, then prune 2 more (only 1 remains → partial page → done)
-            let (r1, cur1) = EventArchive::prune_archive(&env, &admin, 2, None).unwrap();
-            assert_eq!(r1, 2);
-            assert!(!cur1.done);
-
-            let (r2, cur2) =
-                EventArchive::prune_archive(&env, &admin, 2, Some(cur1)).unwrap();
-            assert_eq!(r2, 1); // only 1 entry left
-            assert!(cur2.done);
         });
+
+        // Prune 2, then prune 2 more (only 1 remains → partial page → done)
+        let (r1, cur1) = env.as_contract(&contract_id, || {
+            EventArchive::prune_archive(&env, &admin, 2, None).unwrap()
+        });
+        assert_eq!(r1, 2);
+        assert!(!cur1.done);
+
+        let (r2, cur2) = env.as_contract(&contract_id, || {
+            EventArchive::prune_archive(&env, &admin, 2, Some(cur1)).unwrap()
+        });
+        assert_eq!(r2, 1); // only 1 entry left
+        assert!(cur2.done);
     }
 
     #[test]
@@ -1428,6 +1443,7 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
             let res =

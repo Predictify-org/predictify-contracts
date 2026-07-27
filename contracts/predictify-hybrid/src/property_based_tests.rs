@@ -21,7 +21,115 @@ use soroban_sdk::{
 };
 
 // Use lib.rs PERCENTAGE_DENOMINATOR to avoid ambiguity
-const PERCENTAGE_DENOM: i128 = 100;
+const PERCENTAGE_DENOM: i128 = 10_000;
+
+/// Property-based tests for oracle configuration state invariants.
+///
+/// These tests focus on the contract's oracle-config semantics: valid configs remain active,
+/// invalid thresholds and comparisons are rejected, and the reserved fallback sentinel never
+/// transitions into an active oracle state.
+#[cfg(test)]
+mod oracle_state_invariant_properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_valid_feed_id() -> impl Strategy<Value = SorobanString> {
+        proptest::string::string_regex("[A-Za-z0-9/_-]{1,63}")
+            .unwrap()
+            .prop_map(|value| {
+                let env = Env::default();
+                SorobanString::from_str(&env, &value)
+            })
+    }
+
+    fn arb_comparison() -> impl Strategy<Value = SorobanString> {
+        prop_oneof![
+            Just(SorobanString::from_str(&Env::default(), "gt")),
+            Just(SorobanString::from_str(&Env::default(), "lt")),
+            Just(SorobanString::from_str(&Env::default(), "eq")),
+        ]
+    }
+
+    fn arb_invalid_comparison() -> impl Strategy<Value = SorobanString> {
+        proptest::string::string_regex("[A-Za-z]{1,8}")
+            .unwrap()
+            .prop_filter("comparison must be invalid", |value| {
+                !matches!(value.as_str(), "gt" | "lt" | "eq")
+            })
+            .prop_map(|value| {
+                let env = Env::default();
+                SorobanString::from_str(&env, &value)
+            })
+    }
+
+    proptest! {
+        #[test]
+        fn valid_reflector_configs_remain_active_and_validate(
+            feed_id in arb_valid_feed_id(),
+            threshold in 1i128..=1_000_000_000i128,
+            comparison in arb_comparison(),
+        ) {
+            let env = Env::default();
+            let config = OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::generate(&env),
+                feed_id,
+                threshold,
+                comparison,
+            );
+
+            prop_assert!(config.validate(&env).is_ok());
+            prop_assert!(config.is_active());
+            prop_assert!(!config.is_none_sentinel());
+        }
+
+        #[test]
+        fn non_positive_thresholds_are_rejected(
+            feed_id in arb_valid_feed_id(),
+            threshold in -10_000i128..=0i128,
+            comparison in arb_comparison(),
+        ) {
+            let env = Env::default();
+            let config = OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::generate(&env),
+                feed_id,
+                threshold,
+                comparison,
+            );
+
+            prop_assert!(matches!(config.validate(&env), Err(crate::Error::InvalidThreshold)));
+        }
+
+        #[test]
+        fn invalid_comparisons_are_rejected(
+            feed_id in arb_valid_feed_id(),
+            threshold in 1i128..=1_000_000_000i128,
+            comparison in arb_invalid_comparison(),
+        ) {
+            let env = Env::default();
+            let config = OracleConfig::new(
+                OracleProvider::reflector(),
+                Address::generate(&env),
+                feed_id,
+                threshold,
+                comparison,
+            );
+
+            prop_assert!(matches!(config.validate(&env), Err(crate::Error::InvalidComparison)));
+        }
+
+        #[test]
+        fn sentinel_configs_stay_inert() {
+            let env = Env::default();
+            let sentinel = OracleConfig::none_sentinel(&env);
+
+            prop_assert!(sentinel.is_none_sentinel());
+            prop_assert!(!sentinel.is_active());
+            prop_assert!(matches!(sentinel.validate(&env), Err(crate::Error::InvalidOracleConfig)));
+        }
+    }
+}
 
 // ===== ISSUE #553: DISPUTE OUTCOME TALLY (Stellar property-testing guide) =====
 // Ref: https://developers.stellar.org/docs/build/guides/testing/fuzzing
@@ -35,22 +143,46 @@ mod dispute_outcome_tally_properties {
     use soroban_sdk::{Env, Symbol};
     use alloc::format;
 
-    fn completed_voting(
-        env: &Env,
-        dispute_id: Symbol,
-        support: i128,
-        against: i128,
-    ) -> DisputeVoting {
-        DisputeVoting {
-            dispute_id,
-            voting_start: 0,
-            voting_end: 1,
-            total_votes: u32::from(support > 0) + u32::from(against > 0),
-            support_votes: u32::from(support > 0),
-            against_votes: u32::from(against > 0),
-            total_support_stake: support,
-            total_against_stake: against,
-            status: DisputeVotingStatus::Completed,
+impl PropertyBasedTestSuite {
+    /// Initialize the test suite with contract and test accounts
+    pub fn new() -> Self {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let contract_id = env.register(PredictifyHybrid, ());
+        let client = PredictifyHybridClient::new(&env, &contract_id);
+        client.initialize(&admin, &None, &None);
+
+        // Setup Token
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_id = token_contract.address();
+
+        // Store TokenID
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_id);
+        });
+
+        // Generate multiple test users for comprehensive testing
+        let users: StdVec<Address> = (0..10).map(|_| Address::generate(&env)).collect();
+
+        // Mint tokens to admin and users
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+        stellar_client.mint(&admin, &1_000_000_000_000); // Mint ample funds
+
+        for user in &users {
+            stellar_client.mint(user, &1_000_000_000_000);
+        }
+
+        Self {
+            env,
+            contract_id,
+            admin,
+            users,
+            token_id,
         }
     }
 
@@ -832,7 +964,7 @@ mod legacy_contract_property_tests {
                 // wait, soroban-sdk mock doesn't catch panic. We shouldn't assert panic in a proptest unless we can catch it.
                 // Let's just trust `distribute` covers double payouts and we can assert user's claim status.
                 let market = client.get_market(&market_id).unwrap();
-                let is_claimed = market.claimed.get(winner.clone()).unwrap_or(false);
+                let is_claimed = market.claimed.get(winner.clone()).is_some();
                 prop_assert!(is_claimed);
             }
         }

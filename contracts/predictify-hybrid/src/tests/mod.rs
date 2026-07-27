@@ -18,6 +18,7 @@ pub mod fee_calculator_proptest;
 // mod fee_idempotency_tests;
 mod rate_limiter_tests;
 mod rate_limiter_invariants;
+mod rate_limiter_halflife_tests;
 // mod metadata_validation_tests;
 // mod oracle_provider_compatibility_tests;
 // mod oracle_validation_tests;
@@ -27,4 +28,11 @@ pub mod dispute_stake_tests;
 pub mod fee_config_commit_reveal_tests;
 pub mod reflector_twap_cache_tests;
 pub mod dispute_anti_grief_tests;
+pub mod dispute_open_fuzz;
 pub mod oracle_differential_fuzz;
+
+#[cfg(test)]
+pub mod dispute_proptest;
+
+#[cfg(test)]
+pub mod disputes_gas_snap;

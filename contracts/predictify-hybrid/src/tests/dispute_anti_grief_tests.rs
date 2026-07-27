@@ -79,20 +79,20 @@ fn test_anti_grief_floor() {
     
     // Give user balance
     env.as_contract(&env.register(crate::PredictifyHybrid, ()), || {
-        crate::storage::BalanceStorage::add_balance(&env, &user, &crate::types::ReflectorAsset::Stellar, 1000).unwrap();
+        crate::storage::BalanceStorage::add_balance(&env, &user, &crate::types::ReflectorAsset::Stellar, 20_000_000).unwrap();
     });
 
     let contract_id = env.register(crate::PredictifyHybrid, ());
     env.as_contract(&contract_id, || {
-        // Set anti-grief floor to 500
-        DisputeManager::set_anti_grief_floor(&env, admin.clone(), 500).unwrap();
-        assert_eq!(DisputeManager::get_anti_grief_floor(&env), Some(500));
+        // Set anti-grief floor to 15_000_000 (above MIN_DISPUTE_STAKE)
+        DisputeManager::set_anti_grief_floor(&env, admin.clone(), 15_000_000).unwrap();
+        assert_eq!(DisputeManager::get_anti_grief_floor(&env), Some(15_000_000));
 
-        // Attempt to file dispute with stake 100 (below floor) -> should fail
-        let err = DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 100, None).unwrap_err();
-        assert_eq!(err, Error::InvalidStakeAmount);
+        // Attempt to file dispute with stake 12_000_000 (below floor) -> should fail with InsufficientStake
+        let err = DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 12_000_000, None).unwrap_err();
+        assert_eq!(err, Error::InsufficientStake);
 
-        // Attempt to file dispute with stake 500 (at floor) -> should succeed
-        DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 500, None).unwrap();
+        // Attempt to file dispute with stake 15_000_000 (at floor) -> should succeed
+        DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 15_000_000, None).unwrap();
     });
 }

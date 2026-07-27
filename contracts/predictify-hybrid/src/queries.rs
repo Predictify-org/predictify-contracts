@@ -89,7 +89,7 @@ use crate::{
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
     oracles::{OracleMetadata, OracleWhitelist},
     statistics::StatisticsManager,
-    storage::EventManager,
+    storage::{EventManager, MARKET_TTL_LEDGERS},
     types::{Market, MarketState, PagedMarketIds, PagedUserBets},
     voting::VotingStats,
 };
@@ -820,11 +820,22 @@ impl QueryManager {
     /// Retrieve market from persistent storage.
     ///
     /// Internal helper to get market data from storage with error handling.
-    fn get_market_from_storage(env: &Env, market_id: &Symbol) -> Result<Market, Error> {
-        env.storage()
+    /// Bumps persistent TTL on read to keep hot market data alive.
+    pub(crate) fn get_market_from_storage(env: &Env, market_id: &Symbol) -> Result<Market, Error> {
+        let market: Market = env
+            .storage()
             .persistent()
             .get(market_id)
-            .ok_or(Error::MarketNotFound)
+            .ok_or(Error::MarketNotFound)?;
+
+        // TTL BUMP: extend persistent storage TTL on hot read to prevent
+        // frequently-queried markets from expiring.
+        let effective_ttl = MARKET_TTL_LEDGERS.min(env.storage().max_ttl());
+        env.storage()
+            .persistent()
+            .extend_ttl(market_id, effective_ttl, effective_ttl);
+
+        Ok(market)
     }
 
     /// Calculate payout for a user based on stake and market outcome.
@@ -1221,7 +1232,8 @@ impl QueryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::testutils::storage::Persistent as _;
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig, Ledger};
     use soroban_sdk::Env;
 
     #[test]
@@ -1344,5 +1356,53 @@ mod tests {
         let pool = QueryManager::calculate_outcome_pool(&env, &market, &yes_outcome);
         assert!(pool.is_ok());
         assert_eq!(pool.unwrap(), 125);
+    }
+
+    #[test]
+    fn test_get_market_from_storage_bumps_persistent_ttl() {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let market = Market::new(
+                &env,
+                admin,
+                String::from_str(&env, "Query TTL test?"),
+                vec![&env, String::from_str(&env, "yes"), String::from_str(&env, "no")],
+                env.ledger().timestamp() + 86400,
+                crate::types::OracleConfig::new(
+                    crate::types::OracleProvider::reflector(),
+                    Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"),
+                    String::from_str(&env, "BTC"),
+                    2500000,
+                    String::from_str(&env, "gt"),
+                ),
+                None,
+                86400,
+                MarketState::Active,
+            );
+
+            let market_id = Symbol::new(&env, "query_ttl_market");
+            env.storage().persistent().set(&market_id, &market);
+            env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
+            let initial_ttl = env.storage().persistent().get_ttl(&market_id);
+
+            // Advance ledger to consume some TTL
+            env.ledger().with_mut(|li| {
+                li.sequence_number += 500;
+            });
+            let depleted_ttl = env.storage().persistent().get_ttl(&market_id);
+            assert!(depleted_ttl < initial_ttl);
+
+            // get_market_from_storage should bump persistent TTL back to full
+            let result = QueryManager::get_market_from_storage(&env, &market_id);
+            assert!(result.is_ok());
+            let refreshed_ttl = env.storage().persistent().get_ttl(&market_id);
+            assert_eq!(refreshed_ttl, initial_ttl);
+        });
     }
 }

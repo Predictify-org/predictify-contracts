@@ -78,6 +78,8 @@ pub enum AdminPermission {
     ViewAnalytic,
     /// Emergency actions
     Emergency,
+    /// Configure system settings
+    ConfigAdmin,
 }
 
 /// Admin action record
@@ -605,6 +607,14 @@ impl AdminAccessControl {
         }
 
         Ok(())
+    }
+
+    /// Gets the primary admin address from persistent storage.
+    pub fn get_admin(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, "Admin"))
+            .ok_or(Error::AdminNotSet)
     }
 }
 
@@ -1683,6 +1693,114 @@ pub struct PendingThresholdUpdate {
     pub proposed_by: Address,
 }
 
+/// State for multisig signer rotation cooldowns
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct MultisigRotationState {
+    pub cooldown_seconds: u64,
+    pub last_rotation_timestamp: u64,
+}
+
+/// State for oracle admin cooldowns
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct OracleAdminCooldownState {
+    pub cooldown_seconds: u64,
+    pub last_action_timestamp: u64,
+}
+
+pub struct OracleAdminCooldownManager;
+
+impl OracleAdminCooldownManager {
+    pub fn get_state(env: &Env) -> OracleAdminCooldownState {
+        env.storage().persistent().get(&crate::storage::DataKey::OracleAdminCooldownState)
+            .unwrap_or(OracleAdminCooldownState {
+                cooldown_seconds: 0,
+                last_action_timestamp: 0,
+            })
+    }
+
+    pub fn set_cooldown(env: &Env, admin: &Address, cooldown_seconds: u64) -> Result<(), Error> {
+        admin.require_auth();
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::ConfigAdmin)?;
+        let mut state = Self::get_state(env);
+        state.cooldown_seconds = cooldown_seconds;
+        env.storage().persistent().set(&crate::storage::DataKey::OracleAdminCooldownState, &state);
+        Ok(())
+    }
+
+    pub fn enforce_cooldown(env: &Env, admin: &Address) -> Result<(), Error> {
+        let mut state = Self::get_state(env);
+        if state.cooldown_seconds == 0 {
+            return Ok(());
+        }
+        let current_time = env.ledger().timestamp();
+        
+        let cooldown_end = state.last_action_timestamp.checked_add(state.cooldown_seconds)
+            .ok_or(Error::Overflow)?;
+            
+        if current_time < cooldown_end {
+            EventEmitter::emit_oracle_admin_cooldown_hit(env, admin, state.last_action_timestamp, state.cooldown_seconds);
+            return Err(Error::OracleAdminCooldownActive);
+        }
+        
+        state.last_action_timestamp = current_time;
+        env.storage().persistent().set(&crate::storage::DataKey::OracleAdminCooldownState, &state);
+        
+        Ok(())
+    }
+}
+
+/// State for betting admin cooldowns
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct BettingAdminCooldownState {
+    pub cooldown_seconds: u64,
+    pub last_action_timestamp: u64,
+}
+
+pub struct BettingAdminCooldownManager;
+
+impl BettingAdminCooldownManager {
+    pub fn get_state(env: &Env) -> BettingAdminCooldownState {
+        env.storage().persistent().get(&crate::storage::DataKey::BettingAdminCooldownState)
+            .unwrap_or(BettingAdminCooldownState {
+                cooldown_seconds: 0,
+                last_action_timestamp: 0,
+            })
+    }
+
+    pub fn set_cooldown(env: &Env, admin: &Address, cooldown_seconds: u64) -> Result<(), Error> {
+        admin.require_auth();
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::ConfigAdmin)?;
+        let mut state = Self::get_state(env);
+        state.cooldown_seconds = cooldown_seconds;
+        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
+        Ok(())
+    }
+
+    pub fn enforce_cooldown(env: &Env, admin: &Address) -> Result<(), Error> {
+        let mut state = Self::get_state(env);
+        if state.cooldown_seconds == 0 {
+            return Ok(());
+        }
+        let current_time = env.ledger().timestamp();
+        
+        let cooldown_end = state.last_action_timestamp.checked_add(state.cooldown_seconds)
+            .ok_or(Error::Overflow)?;
+            
+        if current_time < cooldown_end {
+            EventEmitter::emit_betting_admin_cooldown_hit(env, admin, state.last_action_timestamp, state.cooldown_seconds);
+            return Err(Error::BettingAdminCooldownActive);
+        }
+        
+        state.last_action_timestamp = current_time;
+        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
+        
+        Ok(())
+    }
+}
+
 pub struct MultisigManager;
 
 impl MultisigManager {
@@ -1895,6 +2013,71 @@ impl MultisigManager {
     fn count_active_admins(env: &Env) -> u32 {
         let count_key = Symbol::new(env, "AdminCount");
         env.storage().persistent().get(&count_key).unwrap_or(1)
+    }
+
+    /// Get current rotation state
+    pub fn get_rotation_state(env: &Env) -> MultisigRotationState {
+        env.storage()
+            .persistent()
+            .get(&crate::storage::DataKey::MultisigRotationState)
+            .unwrap_or(MultisigRotationState {
+                cooldown_seconds: 3600, // 1 hour default
+                last_rotation_timestamp: 0,
+            })
+    }
+
+    /// Set rotation cooldown (Emergency permission required)
+    pub fn set_rotation_cooldown(env: &Env, admin: &Address, cooldown_seconds: u64) -> Result<(), Error> {
+        admin.require_auth();
+        AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
+        let mut state = Self::get_rotation_state(env);
+        state.cooldown_seconds = cooldown_seconds;
+        env.storage().persistent().set(&crate::storage::DataKey::MultisigRotationState, &state);
+        Ok(())
+    }
+
+    /// Enforce rotation cooldown
+    fn enforce_rotation_cooldown(env: &Env, admin: &Address) -> Result<(), Error> {
+        let mut state = Self::get_rotation_state(env);
+        let current_time = env.ledger().timestamp();
+        
+        if current_time < state.last_rotation_timestamp + state.cooldown_seconds {
+            EventEmitter::emit_signer_rotation_cooldown_hit(env, admin, state.last_rotation_timestamp, state.cooldown_seconds);
+            return Err(Error::SignerRotationCooldown);
+        }
+        
+        state.last_rotation_timestamp = current_time;
+        env.storage().persistent().set(&crate::storage::DataKey::MultisigRotationState, &state);
+        Ok(())
+    }
+
+    /// Add a new signer enforcing rotation cooldown
+    pub fn add_signer(env: &Env, admin: &Address, new_signer: &Address, role: AdminRole) -> Result<(), Error> {
+        admin.require_auth();
+        Self::enforce_rotation_cooldown(env, admin)?;
+        AdminManager::add_admin(env, admin, new_signer, role)
+    }
+
+    /// Remove a signer enforcing rotation cooldown
+    pub fn remove_signer(env: &Env, admin: &Address, old_signer: &Address) -> Result<(), Error> {
+        admin.require_auth();
+        Self::enforce_rotation_cooldown(env, admin)?;
+        AdminManager::remove_admin(env, admin, old_signer)
+    }
+
+    /// Rotate signer enforcing rotation cooldown
+    pub fn rotate_signer(
+        env: &Env,
+        admin: &Address,
+        old_signer: &Address,
+        new_signer: &Address,
+        role: AdminRole,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        Self::enforce_rotation_cooldown(env, admin)?;
+        
+        AdminManager::remove_admin(env, admin, old_signer)?;
+        AdminManager::add_admin(env, admin, new_signer, role)
     }
 }
 
@@ -3417,6 +3600,9 @@ impl AdminUtils {
             }
             AdminPermission::Emergency => {
                 String::from_str(&soroban_sdk::Env::default(), "Emergency")
+            }
+            AdminPermission::ConfigAdmin => {
+                String::from_str(&soroban_sdk::Env::default(), "ConfigAdmin")
             }
         }
     }

@@ -31,6 +31,17 @@ pub struct GovernanceProposal {
     pub for_votes: u128,
     pub against_votes: u128,
     pub executed: bool,
+    /// Per-proposal random salt generated at creation time using `Env::prng`.
+    ///
+    /// The salt **must** be included in the canonical vote message signed by
+    /// each voter.  This binds each signature to a specific proposal instance
+    /// and prevents vote-replay: an off-chain signature authorising a vote on
+    /// proposal P₁ cannot be replayed against a re-submitted proposal P₂
+    /// that happens to share the same `id`, `title`, and `description`.
+    ///
+    /// Entropy source: `env.prng().gen::<BytesN<32>>()` at creation — never
+    /// derived from the block timestamp or any other predictable value.
+    pub salt: BytesN<32>,
 }
 
 // Key namespaces used in storage
@@ -89,6 +100,9 @@ pub enum GovernanceError {
     InvalidReveal,
     /// A commitment already exists for this (proposal, voter) pair.
     CommitmentExists,
+    /// The salt supplied by the voter does not match the proposal's stored salt.
+    /// Prevents vote-replay across re-submitted proposals.
+    SaltMismatch,
 }
 
 /// ---------- CONTRACT ----------
@@ -220,6 +234,10 @@ impl GovernanceContract {
             for_votes: 0,
             against_votes: 0,
             executed: false,
+            // Generate a cryptographically random salt using Soroban's PRNG.
+            // Using env.prng() here — never the block timestamp — ensures that
+            // entropy is not predictable by the proposer or any observer.
+            salt: env.prng().gen::<BytesN<32>>(),
         };
 
         env.storage()
@@ -244,11 +262,24 @@ impl GovernanceContract {
 
     /// Vote on a proposal. `support = true` means FOR, false means AGAINST.
     /// Each address counts as 1 vote plus 1 for each address that has delegated to it.
+    ///
+    /// # Vote-replay prevention
+    ///
+    /// The caller **must** supply the proposal's `salt` value.  The contract
+    /// compares it against the salt stored in the proposal and rejects the vote
+    /// with `GovernanceError::SaltMismatch` if they differ.
+    ///
+    /// Off-chain signers should include the salt in the canonical message they
+    /// sign, e.g. `sha256(proposal_id || salt || voter || support)`.  This
+    /// ensures that a valid signature for one proposal instance cannot be
+    /// replayed against a different instance that happens to share the same
+    /// payload.
     pub fn vote(
         env: Env,
         voter: Address,
         proposal_id: Symbol,
         support: bool,
+        salt: BytesN<32>,
     ) -> Result<(), GovernanceError> {
         voter.require_auth();
 
@@ -261,6 +292,12 @@ impl GovernanceContract {
             return Err(GovernanceError::ProposalNotFound);
         }
         let mut p = p_opt.unwrap();
+
+        // Verify that the salt supplied by the voter matches the stored salt.
+        // This prevents vote-replay across re-submitted proposals.
+        if salt != p.salt {
+            return Err(GovernanceError::SaltMismatch);
+        }
 
         let now = env.ledger().timestamp();
         if now < p.start_time {
@@ -392,6 +429,15 @@ impl GovernanceContract {
     ) -> Result<(), GovernanceError> {
         voter.require_auth();
 
+        // Guard: already counted via direct vote or prior reveal — check before commitment lookup
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::AlreadyVoted);
+        }
+
         let stored: BytesN<32> = env
             .storage()
             .persistent()
@@ -422,15 +468,6 @@ impl GovernanceContract {
         }
         if now >= p.end_time {
             return Err(GovernanceError::VotingEnded);
-        }
-
-        // Guard: already counted via direct vote or prior reveal
-        if env
-            .storage()
-            .persistent()
-            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
-        {
-            return Err(GovernanceError::AlreadyVoted);
         }
 
         // Tally with delegation weight
@@ -523,6 +560,9 @@ impl GovernanceContract {
             .persistent()
             .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming + 1));
 
+        // Emit after storage writes are consistent.
+        EventEmitter::emit_governance_delegate_set(&env, &delegator, &delegate);
+
         Ok(())
     }
 
@@ -551,6 +591,9 @@ impl GovernanceContract {
         env.storage()
             .persistent()
             .remove(&StorageKey::Delegate(delegator.clone()));
+
+        // Emit after storage removal. `delegate` was captured before the remove.
+        EventEmitter::emit_governance_delegate_unset(&env, &delegator, &delegate);
 
         Ok(())
     }
@@ -705,50 +748,98 @@ impl GovernanceContract {
         Ok(p_opt.unwrap())
     }
 
-    /// Admin-only: set voting period (seconds)
+    /// Return the salt for a proposal.
+    ///
+    /// Off-chain clients use this to build the canonical vote message:
+    /// `sha256(proposal_id || salt || voter || support)`.
+    ///
+    /// The salt is generated by `Env::prng` at proposal creation and never
+    /// derived from predictable data, so it cannot be forged or pre-computed
+    /// by an attacker before the proposal is submitted.
+    pub fn get_proposal_salt(env: Env, id: Symbol) -> Result<BytesN<32>, GovernanceError> {
+        let p: GovernanceProposal = env
+            .storage()
+            .persistent()
+            .get(&StorageKey::Proposal(id.clone()))
+            .ok_or(GovernanceError::ProposalNotFound)?;
+        Ok(p.salt)
+    }
+
+    /// Admin-only: set voting period (seconds).
+    ///
+    /// Emits [`GovernanceVotingPeriodUpdatedEvent`] after the new value is
+    /// persisted so that the event and storage are always consistent.
     pub fn set_voting_period(
         env: Env,
         caller: Address,
         new_period_seconds: i64,
     ) -> Result<(), GovernanceError> {
+        let admin = caller.clone();
         Self::ensure_admin(&env, caller)?;
         if new_period_seconds <= 0 {
             return Err(GovernanceError::InvalidParams);
         }
+        let old_period: u64 = env
+            .storage()
+            .persistent()
+            .get(&StorageKey::VotingPeriod)
+            .unwrap_or(0);
+        let new_period = new_period_seconds as u64;
         env.storage()
             .persistent()
-            .set(&StorageKey::VotingPeriod, &(new_period_seconds as u64));
+            .set(&StorageKey::VotingPeriod, &new_period);
+        EventEmitter::emit_governance_voting_period_updated(&env, &admin, old_period, new_period);
         Ok(())
     }
 
-    /// Admin-only: set quorum votes (minimum for votes)
+    /// Admin-only: set quorum votes (minimum for votes).
+    ///
+    /// Emits [`GovernanceQuorumUpdatedEvent`] after the new value is persisted.
     pub fn set_quorum(env: Env, caller: Address, new_quorum: u128) -> Result<(), GovernanceError> {
+        let admin = caller.clone();
         Self::ensure_admin(&env, caller)?;
         if new_quorum == 0 {
             return Err(GovernanceError::InvalidParams);
         }
+        let old_quorum: u128 = env
+            .storage()
+            .persistent()
+            .get(&StorageKey::QuorumVotes)
+            .unwrap_or(0);
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumVotes, &new_quorum);
+        EventEmitter::emit_governance_quorum_updated(&env, &admin, old_quorum, new_quorum);
         Ok(())
     }
 
     /// Admin-only: configure or disable quorum decay.
+    ///
     /// Pass `None` to disable decay (static quorum).
+    /// Emits [`GovernanceQuorumDecayUpdatedEvent`] after the new config is
+    /// persisted. When disabling, the event carries `enabled = false` and
+    /// zero values for `floor_bps` / `halving_seconds`.
     pub fn set_quorum_decay(
         env: Env,
         caller: Address,
         decay: Option<QuorumDecay>,
     ) -> Result<(), GovernanceError> {
+        let admin = caller.clone();
         Self::ensure_admin(&env, caller)?;
         if let Some(ref d) = decay {
             if d.floor_bps > 10000 || d.halving_seconds == 0 {
                 return Err(GovernanceError::InvalidParams);
             }
         }
+        // Capture event fields before moving `decay` into storage.
+        let (floor_bps, halving_seconds) = decay
+            .as_ref()
+            .map(|d| (Some(d.floor_bps), Some(d.halving_seconds)))
+            .unwrap_or((None, None));
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumDecay, &decay);
+        EventEmitter::emit_governance_quorum_decay_updated(&env, &admin, floor_bps, halving_seconds);
         Ok(())
     }
 

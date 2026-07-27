@@ -33,7 +33,7 @@ impl TestSetup {
 
         // Initialize the contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
+        client.initialize(&admin, &None, &None);
 
         // Configure token used for creation fee collection and fund admin balance.
         env.as_contract(&contract_id, || {
@@ -97,9 +97,23 @@ fn test_create_event_invalid_outcomes_too_few() {
     let setup = TestSetup::new();
     let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
 
-    let description = String::from_str(&setup.env, "Single outcome event?");
-    let outcomes = vec![&setup.env, String::from_str(&setup.env, "Yes")]; // Only 1 outcome - invalid
-    let end_time = setup.env.ledger().timestamp() + 3600;
+    env.ledger().with_mut(|li| {
+        li.timestamp = 10000;
+    });
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(PredictifyHybrid, ());
+    let client = PredictifyHybridClient::new(&env, &contract_id);
+    client.initialize(&admin, &None, &None);
+
+    // Intentionally do NOT configure TokenID so creation fee processing fails
+    let description = String::from_str(&env, "Fee test event");
+    let outcomes = vec![
+        &env,
+        String::from_str(&env, "Yes"),
+        String::from_str(&env, "No"),
+    ];
+    let end_time = env.ledger().timestamp() + 3600;
     let oracle_config = OracleConfig {
         provider: OracleProvider::reflector(),
         oracle_address: Address::generate(&setup.env),

@@ -22,7 +22,7 @@ impl Ctx {
         env.mock_all_auths();
         let admin = Address::generate(&env);
         let contract_id = env.register(PredictifyHybrid, ());
-        PredictifyHybridClient::new(&env, &contract_id).initialize(&admin, &None, &None);
+        crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
         Self { env, contract_id, admin }
     }
 
@@ -169,7 +169,7 @@ fn test_override_rejects_non_admin() {
     let admin = Address::generate(&env);
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None, &None);
+    crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
     // Create market while auths are still mocked
     let market_id = client.create_market(
@@ -236,7 +236,7 @@ fn test_override_no_partial_state_on_auth_failure() {
     let admin = Address::generate(&env);
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &None, &None);
+    crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
 
     let market_id = client.create_market(
         &admin,
@@ -380,4 +380,77 @@ fn test_override_nonce_persisted_in_audit() {
         let record = AuditTrailManager::get_record(&ctx.env, head.latest_index).unwrap();
         assert_eq!(record.override_nonce, Some(42u64));
     });
+}
+
+// ── AdminAccessControl::validate_and_consume_admin_override_nonce ──────────────
+
+fn setup_nonce_test_env() -> (Env, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    env.register(PredictifyHybrid, ());
+    crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+    (env, admin)
+}
+
+#[test]
+fn test_nonce_accepts_first_zero() {
+    let (env, admin) = setup_nonce_test_env();
+    let result = crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+        &env, &admin, 0u64,
+    );
+    assert_eq!(result, Ok(()));
+}
+
+#[test]
+fn test_nonce_rejects_replay_of_zero() {
+    let (env, admin) = setup_nonce_test_env();
+    crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+        &env, &admin, 0u64,
+    )
+    .unwrap();
+    let result = crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+        &env, &admin, 0u64,
+    );
+    assert_eq!(result, Err(Error::ReplayedOverride));
+}
+
+#[test]
+fn test_nonce_accepts_increasing_values() {
+    let (env, admin) = setup_nonce_test_env();
+    for nonce in &[1u64, 2u64, 5u64, 100u64] {
+        let result = crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+            &env, &admin, *nonce,
+        );
+        assert_eq!(result, Ok(()), "nonce {} should be accepted", nonce);
+    }
+}
+
+#[test]
+fn test_nonce_rejects_out_of_order() {
+    let (env, admin) = setup_nonce_test_env();
+    crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+        &env, &admin, 42u64,
+    )
+    .unwrap();
+    let result = crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+        &env, &admin, 10u64,
+    );
+    assert_eq!(result, Err(Error::ReplayedOverride));
+}
+
+#[test]
+fn test_nonce_is_per_admin() {
+    let (env, admin1) = setup_nonce_test_env();
+    let admin2 = Address::generate(&env);
+    // admin1 uses nonce 0
+    crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+        &env, &admin1, 0u64,
+    )
+    .unwrap();
+    // admin2 with nonce 0 should still succeed (different key)
+    let result = crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+        &env, &admin2, 0u64,
+    );
+    assert_eq!(result, Ok(()));
 }

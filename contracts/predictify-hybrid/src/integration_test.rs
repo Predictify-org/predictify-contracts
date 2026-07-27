@@ -52,7 +52,7 @@ impl IntegrationTestSuite {
         // Initialize contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&\1, &None, &None);
+        client.initialize(&admin, &None, &None);
 
         // Set token for staking
         env.as_contract(&contract_id, || {
@@ -354,7 +354,7 @@ fn test_complete_market_lifecycle_with_betting_and_payouts() {
     let yes_amounts = vec![100_0000000, 50_0000000, 25_0000000, 40_0000000, 20_0000000];
 
     for (i, user_idx) in yes_bettors.iter().enumerate() {
-        let user = test_suite.get_user(*user_idx);
+        let user = test_suite.get_user(user.clone()_idx);
         let initial_balance = test_suite.get_user_balance(&user);
 
         test_suite.claim_winnings(&user, &market_id);

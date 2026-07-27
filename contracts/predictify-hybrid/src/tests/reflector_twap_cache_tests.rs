@@ -21,7 +21,7 @@ impl MockReflectorOracle {
 }
 
 #[test]
-fn test_reflector_twap_cache() {
+fn test_reflector_twap_cache_within_transaction() {
     let env = Env::default();
     
     // Register the mock oracle contract
@@ -52,4 +52,29 @@ fn test_reflector_twap_cache() {
     let res4 = client.twap(asset, records, false);
     assert_eq!(res4, Some(100_000_000));
     assert_eq!(mock_client.get_calls(), 2);
+}
+
+#[test]
+fn test_twap_cache_resets_between_transactions() {
+    // Transaction 1
+    let env1 = Env::default();
+    let mock_id1 = env1.register_contract(None, MockReflectorOracle);
+    let mock_client1 = MockReflectorOracleClient::new(&env1, &mock_id1);
+    let client1 = ReflectorOracleClient::new(&env1, mock_id1.clone());
+    let asset = ReflectorAsset::Other(Symbol::new(&env1, "BTC"));
+    
+    let val1 = client1.twap(asset.clone(), 5, false);
+    assert_eq!(val1, Some(100_000_000));
+    assert_eq!(mock_client1.get_calls(), 1);
+    
+    // Transaction 2 — fresh Env, cache must not persist
+    let env2 = Env::default();
+    let mock_id2 = env2.register_contract(None, MockReflectorOracle);
+    let mock_client2 = MockReflectorOracleClient::new(&env2, &mock_id2);
+    let client2 = ReflectorOracleClient::new(&env2, mock_id2.clone());
+    
+    let val2 = client2.twap(asset, 5, false);
+    assert_eq!(val2, Some(100_000_000));
+    // In a new transaction the cache is empty, so the mock must be called again.
+    assert_eq!(mock_client2.get_calls(), 1);
 }
