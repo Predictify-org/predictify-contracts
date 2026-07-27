@@ -46,7 +46,7 @@
 
 use oracles::{Error, OraclesContract, OraclesContractClient};
 use soroban_sdk::{
-    testutils::{Address as _, Budget},
+    testutils::Address as _,
     Address, Env, String,
 };
 
@@ -92,7 +92,7 @@ const IS_ORACLE_HEALTHY_MEM: u64 = 80_000;
 ///
 /// Returns `(cpu_instructions, memory_bytes)`.
 fn snap(env: &Env) -> (u64, u64) {
-    let b = env.budget();
+    let b = env.cost_estimate().budget();
     (b.cpu_instruction_cost(), b.memory_bytes_cost())
 }
 
