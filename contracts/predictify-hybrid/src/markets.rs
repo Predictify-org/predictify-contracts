@@ -3698,7 +3698,7 @@ impl MarketPauseManager {
     /// // Pause market for 24 hours due to maintenance
     /// MarketPauseManager::pause_market(&env, admin, &market_id, 24, PauseReason::Maintenance)?;
     /// ```
-    ,pub fn pause_market(
+    pub fn pause_market(
         env: &Env,
         admin: Address,
         market_id: &Symbol,
@@ -3731,12 +3731,6 @@ impl MarketPauseManager {
 
         env.storage().persistent().set(&market_id, &pause_info);
         Self::emit_pause_event(env, market_id, duration_hours, &admin, &reason);
-
-        Ok(())
-    };
-
-        env.storage().persistent().set(&market_id, &pause_info);
-        Self::emit_pause_event(env, market_id, duration_hours, Self::emit_pause_event(env, market_id, duration_hours, &admin);admin, Self::emit_pause_event(env, market_id, duration_hours, &admin);reason);
 
         Ok(())
     }
@@ -4010,15 +4004,15 @@ impl MarketPauseManager {
             is_paused: true,
             paused_at: current_time,
             pause_duration_hours: duration_hours.max(1),
-            paused_by: paused_by,
+            paused_by: paused_by.clone(),
             pause_end_time,
             original_state: market.state,
-            reason: reason.clone(),
+            reason: PauseReason::OracleIssue,
         };
         env.storage()
             .persistent()
             .set(market_id, &pause_info);
-        Self::emit_pause_event(env, market_id, duration_hours, &pause_info.paused_by);
+        Self::emit_pause_event(env, market_id, duration_hours, &paused_by, &PauseReason::OracleIssue);
         Ok(())
     }
 

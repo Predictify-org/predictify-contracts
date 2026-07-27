@@ -3050,7 +3050,6 @@ impl DisputeUtils {
             fees_distributed: false,
         }))
     }
-    }
 
     /// Persist a [`DisputeEscalation`] under the `dispute_e` + `dispute_id` key.
     pub fn store_dispute_escalation(
