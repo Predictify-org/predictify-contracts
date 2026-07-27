@@ -9,6 +9,14 @@ const STORAGE_CONFIG_KEY: &str = "storage_config";
 const LEDGERS_PER_DAY: u32 = 17_280;
 const BALANCE_TTL_LEDGERS: u32 = 31 * LEDGERS_PER_DAY;
 pub const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
+/// Minimum remaining ledgers before a market record is bumped on read.
+/// At ~5 s/ledger, 31 days ≈ 535 680 ledgers — a record within 31 days of
+/// expiry is treated as "near expiry" and refreshed on every hot read.
+pub const MARKETS_LIFETIME_THRESHOLD: u32 = 31 * LEDGERS_PER_DAY;
+/// Number of ledgers to extend a market record's TTL when bumped.
+/// Matches [`MARKET_TTL_LEDGERS`] so a freshly-bumped record gets the full
+/// one-year lifetime again (idempotent via `extend_ttl` semantics).
+pub const MARKETS_BUMP_AMOUNT: u32 = MARKET_TTL_LEDGERS;
 const EVENT_TTL_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 /// TTL for consumed `place_bets` idempotency keys (≈ 7 days at 5 s/ledger).

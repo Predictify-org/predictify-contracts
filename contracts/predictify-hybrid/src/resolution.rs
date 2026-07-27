@@ -172,6 +172,7 @@ impl OracleResolutionManager {
 
     pub fn fetch_oracle_result(env: &Env, market_id: &Symbol) -> Result<OracleResolution, Error> {
         let mut market = MarketStateManager::get_market(env, market_id)?;
+        crate::storage::bump_market_ttl(env, market_id);
         let current_time = env.ledger().timestamp();
 
         if current_time >= market.end_time.saturating_add(market.resolution_timeout) {
@@ -744,9 +745,19 @@ impl ResolutionOutcomeCache {
 
     /// Read the cached summary if present.
     pub fn get(env: &Env, market_id: &Symbol) -> Option<ResolvedOutcomeSummary> {
-        env.storage()
-            .persistent()
-            .get(&Self::storage_key(market_id))
+        let key = Self::storage_key(market_id);
+        let value: Option<ResolvedOutcomeSummary> = env.storage().persistent().get(&key);
+        if value.is_some() {
+            crate::storage::StorageOptimizer::extend_persistent_ttl(
+                env,
+                &key,
+                crate::storage::StorageOptimizer::persistent_ttl_for_tier(
+                    env,
+                    crate::storage::StorageTtlTier::Market,
+                ),
+            );
+        }
+        value
     }
 
     /// Return the cached summary, refreshing it if missing or stale.
@@ -800,11 +811,26 @@ impl OracleResolutionManager {
     }
 
     pub fn get_median_config(env: &Env) -> Result<MedianOracleConfig, Error> {
-        env.storage().persistent().get(&symbol_short!("med_cfg")).ok_or(Error::ConfigNotFound)
+        let key = symbol_short!("med_cfg");
+        let value: Option<MedianOracleConfig> = env.storage().persistent().get(&key);
+        if let Some(ref cfg) = value {
+            crate::storage::StorageOptimizer::extend_persistent_ttl(
+                env,
+                &key,
+                crate::storage::StorageOptimizer::persistent_ttl_for_tier(
+                    env,
+                    crate::storage::StorageTtlTier::Market,
+                ),
+            );
+            Ok(cfg.clone())
+        } else {
+            Err(Error::ConfigNotFound)
+        }
     }
 
     pub fn resolve_with_median(env: &Env, market_id: &Symbol) -> Result<MedianResolutionResult, Error> {
         let mut market = MarketStateManager::get_market(env, market_id)?;
+        crate::storage::bump_market_ttl(env, market_id);
         let current_time = env.ledger().timestamp();
 
         if current_time >= market.end_time.saturating_add(market.resolution_timeout) {
@@ -1119,7 +1145,19 @@ impl ResolutionOutcomeCache {
     }
 
     pub fn get(env: &Env, market_id: &Symbol) -> Option<ResolvedOutcomeSummary> {
-        env.storage().persistent().get(&Self::storage_key(market_id))
+        let key = Self::storage_key(market_id);
+        let value: Option<ResolvedOutcomeSummary> = env.storage().persistent().get(&key);
+        if value.is_some() {
+            crate::storage::StorageOptimizer::extend_persistent_ttl(
+                env,
+                &key,
+                crate::storage::StorageOptimizer::persistent_ttl_for_tier(
+                    env,
+                    crate::storage::StorageTtlTier::Market,
+                ),
+            );
+        }
+        value
     }
 
     pub fn require(env: &Env, market_id: &Symbol, market: &Market) -> Result<ResolvedOutcomeSummary, Error> {
@@ -1138,6 +1176,7 @@ pub struct MarketResolutionManager;
 impl MarketResolutionManager {
     pub fn resolve_market(env: &Env, market_id: &Symbol) -> Result<MarketResolution, Error> {
         let mut market = MarketStateManager::get_market(env, market_id)?;
+        crate::storage::bump_market_ttl(env, market_id);
         let validation = MarketResolutionValidator::validate_market_for_resolution(env, &market);
         
         if let Err(Error::InvalidState) = validation {
@@ -1215,6 +1254,7 @@ impl MarketResolutionManager {
     ) -> Result<MarketResolution, Error> {
         MarketResolutionValidator::validate_admin_permissions(env, admin)?;
         let mut market = MarketStateManager::get_market(env, market_id)?;
+        crate::storage::bump_market_ttl(env, market_id);
         MarketResolutionValidator::validate_outcome(env, outcome, &market.outcomes)?;
 
         let resolution = MarketResolution {
@@ -1247,16 +1287,43 @@ impl MarketResolutionManager {
 
     pub fn check_resolution_cooldown(env: &Env, admin: &Address, fn_name: &Symbol) -> Result<(), Error> {
         let cooldown_key = crate::storage::DataKey::ResolutionCooldownSeconds;
-        let cooldown: u64 = env.storage().persistent().get(&cooldown_key).unwrap_or(0);
-        if cooldown == 0 { return Ok(()); }
-        let now = env.ledger().timestamp();
-        let last_key = crate::storage::DataKey::ResolutionAdminLastAction(fn_name.clone());
-        let last_action: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
-        if last_action > 0 && now < last_action.saturating_add(cooldown) {
-            return Err(Error::AdminActionTimelocked);
+        let cooldown: Option<u64> = env.storage().persistent().get(&cooldown_key);
+        if let Some(cd) = cooldown {
+            crate::storage::StorageOptimizer::extend_persistent_ttl(
+                env,
+                &cooldown_key,
+                crate::storage::StorageOptimizer::persistent_ttl_for_tier(
+                    env,
+                    crate::storage::StorageTtlTier::Market,
+                ),
+            );
+            if cd == 0 { return Ok(()); }
+            let now = env.ledger().timestamp();
+            let last_key = crate::storage::DataKey::ResolutionAdminLastAction(fn_name.clone());
+            let last_action: Option<u64> = env.storage().persistent().get(&last_key);
+            if let Some(la) = last_action {
+                crate::storage::StorageOptimizer::extend_persistent_ttl(
+                    env,
+                    &last_key,
+                    crate::storage::StorageOptimizer::persistent_ttl_for_tier(
+                        env,
+                        crate::storage::StorageTtlTier::Market,
+                    ),
+                );
+                if la > 0 && now < la.saturating_add(cd) {
+                    return Err(Error::AdminActionTimelocked);
+                }
+            }
+            env.storage().persistent().set(&last_key, &now);
+            crate::storage::StorageOptimizer::extend_persistent_ttl(
+                env,
+                &last_key,
+                crate::storage::StorageOptimizer::persistent_ttl_for_tier(
+                    env,
+                    crate::storage::StorageTtlTier::Market,
+                ),
+            );
         }
-        env.storage().persistent().set(&last_key, &now);
-        env.storage().persistent().extend_ttl(&last_key, 535680, 535680);
         Ok(())
     }
 
@@ -1274,6 +1341,7 @@ impl MarketResolutionManager {
         Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "resolve_market_manual")).unwrap();
 
         let mut market: Market = env.storage().persistent().get(&market_id).unwrap();
+        crate::storage::bump_market_ttl(&env, &market_id);
 
         if env.ledger().timestamp() < market.end_time {
             panic!("MarketClosed");
@@ -1327,6 +1395,7 @@ impl MarketResolutionManager {
         if winning_outcomes.len() == 0 { panic!("InvalidInput"); }
 
         let mut market: Market = env.storage().persistent().get(&market_id).unwrap();
+        crate::storage::bump_market_ttl(&env, &market_id);
 
         if env.ledger().timestamp() < market.end_time { panic!("MarketClosed"); }
 
@@ -1380,6 +1449,7 @@ impl MarketResolutionManager {
         if winning_outcomes.len() == 0 { return Err(Error::InvalidInput); }
 
         let mut market: Market = env.storage().persistent().get(&market_id).ok_or(Error::MarketNotFound)?;
+        crate::storage::bump_market_ttl(&env, &market_id);
 
         for outcome in winning_outcomes.iter() {
             let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
@@ -1588,11 +1658,24 @@ impl OracleCallbackResolver {
     }
 }
 
-#[cfg(any())]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::{Address as _, Ledger}, Address, String};
-    
+    use soroban_sdk::{
+        symbol_short,
+        testutils::{Address as _, Ledger},
+        Address, Env, Map, Symbol,
+    };
+
+    fn setup_ledger(env: &Env, ttl: u32) {
+        env.ledger().with_mut(|li| {
+            li.timestamp = 1_700_000_000;
+            li.sequence_number = 100_000;
+            li.max_live_until_ledger = 100_000 + ttl;
+            li.protocol_version = 21;
+        });
+    }
+
     #[test]
     fn test_resolution_method_determination() {
         let env = Env::default();
@@ -1602,7 +1685,282 @@ mod tests {
             total_votes: 100,
             percentage: 75,
         };
-        let method = MarketResolutionAnalytics::determine_resolution_method(&String::from_str(&env, "yes"), &community_consensus);
+        let method = MarketResolutionAnalytics::determine_resolution_method(
+            &String::from_str(&env, "yes"),
+            &community_consensus,
+        );
         assert!(matches!(method, ResolutionMethod::Hybrid));
+    }
+
+    #[test]
+    fn resolution_outcome_cache_get_bumps_ttl() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 100);
+        let market_id = symbol_short!("m001");
+
+        let summary = ResolvedOutcomeSummary {
+            winning_total: 1_000_000,
+            total_pool: 2_000_000,
+            num_winning_outcomes: 1,
+        };
+        let key = (symbol_short!("res_out"), market_id.clone());
+        env.storage().persistent().set(&key, &summary);
+        let before: u32 = env.storage().persistent().live_until_ledger(&key).unwrap();
+
+        let retrieved = ResolutionOutcomeCache::get(&env, &market_id);
+        assert!(retrieved.is_some());
+        let got = retrieved.unwrap();
+        assert_eq!(got.winning_total, 1_000_000);
+        assert_eq!(got.total_pool, 2_000_000);
+        assert_eq!(got.num_winning_outcomes, 1);
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&key).unwrap();
+        assert!(
+            after > before,
+            "res_out TTL should be bumped after get (before={}, after={})",
+            before,
+            after,
+        );
+    }
+
+    #[test]
+    fn resolution_outcome_cache_get_missing_does_not_bump() {
+        let env = Env::default();
+        setup_ledger(&env, 5_000_000);
+        let market_id = symbol_short!("m999");
+        let key = (symbol_short!("res_out"), market_id.clone());
+
+        let result = ResolutionOutcomeCache::get(&env, &market_id);
+        assert!(result.is_none());
+        assert!(env.storage().persistent().get::<_, ResolvedOutcomeSummary>(&key).is_none());
+    }
+
+    #[test]
+    fn resolution_outcome_cache_require_hits_bumped_get() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 100);
+        let market_id = symbol_short!("m002");
+        let admin = Address::generate(&env);
+
+        let mut market = make_minimal_market(&env, "m002");
+        market.admin = admin.clone();
+        market.total_staked = 2_000_000;
+        let winning_outcomes: Vec<String> = Vec::from_slice(&env, &[String::from_str(&env, "yes")]);
+        market.winning_outcomes = Some(winning_outcomes);
+        env.storage().persistent().set(&market_id, &market);
+
+        let key = (symbol_short!("res_out"), market_id.clone());
+        let seeded = ResolvedOutcomeSummary {
+            winning_total: 1_000_000,
+            total_pool: 2_000_000,
+            num_winning_outcomes: 1,
+        };
+        env.storage().persistent().set(&key, &seeded);
+        let before: u32 = env.storage().persistent().live_until_ledger(&key).unwrap();
+
+        let got = ResolutionOutcomeCache::require(&env, &market_id, &market).unwrap();
+        assert_eq!(got.winning_total, 1_000_000);
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&key).unwrap();
+        assert!(
+            after > before,
+            "require -> get should bump TTL on cache hit (before={}, after={})",
+            before,
+            after,
+        );
+    }
+
+    #[test]
+    fn get_median_config_bumps_ttl() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 50);
+        let key = symbol_short!("med_cfg");
+
+        let admin = Address::generate(&env);
+        let cfg = MedianOracleConfig {
+            pyth_address: Address::generate(&env),
+            reflector_address: Address::generate(&env),
+            band_address: Address::generate(&env),
+            max_deviation_bps: 300,
+            min_fulfilled: 1,
+            fallback_admin: admin.clone(),
+        };
+        env.storage().persistent().set(&key, &cfg);
+        let before: u32 = env.storage().persistent().live_until_ledger(&key).unwrap();
+
+        let got = OracleResolutionManager::get_median_config(&env).unwrap();
+        assert_eq!(got.max_deviation_bps, 300);
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&key).unwrap();
+        assert!(
+            after > before,
+            "med_cfg TTL must bump on read (before={}, after={})",
+            before,
+            after,
+        );
+    }
+
+    #[test]
+    fn get_median_config_missing_errors() {
+        let env = Env::default();
+        setup_ledger(&env, 5_000_000);
+        let err = OracleResolutionManager::get_median_config(&env).err();
+        assert_eq!(err, Some(Error::ConfigNotFound));
+    }
+
+    fn make_minimal_market(env: &Env, symbol: &str) -> Market {
+        let admin = Address::generate(env);
+        Market {
+            creator: Address::generate(env),
+            symbol: Symbol::new(env, symbol),
+            title: String::from_str(env, "t"),
+            description: None,
+            category: String::from_str(env, "c"),
+            sub_category: None,
+            oracle: Address::generate(env),
+            outcomes: Vec::from_slice(env, &[String::from_str(env, "yes"), String::from_str(env, "no")]),
+            start_time: 1,
+            end_time: 1_700_000_000 - 100,
+            resolution_timeout: 100_000,
+            oracle_result: None,
+            winning_outcomes: None,
+            resolution_source: None,
+            state: MarketState::Expired,
+            total_pool: 0,
+            winning_pool: None,
+            bets: Map::new(env),
+            votes: None,
+            stakes: None,
+            vote_started_at: None,
+            resolved_at: None,
+            finalized_at: None,
+            fee_bps: 200,
+            min_pool_size: Some(0),
+            creator_fee_bps: Some(0),
+            last_oracle_error: None,
+            created_at: 1,
+            updated_at: 1,
+            admin,
+            payout_queue: None,
+            version: 1,
+        }
+    }
+
+    #[test]
+    fn fetch_oracle_result_bumps_market_ttl() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 10);
+        let market_id = symbol_short!("m002");
+        let market = make_minimal_market(&env, "m002");
+        env.storage().persistent().set(&market_id, &market);
+        let before: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+
+        let _ = OracleResolutionManager::fetch_oracle_result(&env, &market_id);
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+        assert!(after > before, "fetch_oracle_result must bump market TTL (b={}, a={})", before, after);
+    }
+
+    #[test]
+    fn resolve_with_median_bumps_market_ttl() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 10);
+        let market_id = symbol_short!("m003");
+        let market = make_minimal_market(&env, "m003");
+        env.storage().persistent().set(&market_id, &market);
+        let before: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+
+        let _ = OracleResolutionManager::resolve_with_median(&env, &market_id);
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+        assert!(after > before, "resolve_with_median must bump market TTL (b={}, a={})", before, after);
+    }
+
+    #[test]
+    fn resolve_market_bumps_market_ttl() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 10);
+        let market_id = symbol_short!("m004");
+        let market = make_minimal_market(&env, "m004");
+        env.storage().persistent().set(&market_id, &market);
+        let before: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+
+        let _ = MarketResolutionManager::resolve_market(&env, &market_id);
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+        assert!(after > before, "resolve_market must bump market TTL (b={}, a={})", before, after);
+    }
+
+    #[test]
+    fn finalize_market_bumps_market_ttl() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 10);
+        let market_id = symbol_short!("m005");
+        let admin = Address::generate(&env);
+        let mut market = make_minimal_market(&env, "m005");
+        market.admin = admin.clone();
+        market.state = MarketState::Vote;
+        env.storage().persistent().set(&market_id, &market);
+        env.mock_all_auths();
+        let before: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+
+        let _ = MarketResolutionManager::finalize_market(
+            &env,
+            &admin,
+            &market_id,
+            &String::from_str(&env, "yes"),
+        );
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+        assert!(after > before, "finalize_market must bump market TTL (b={}, a={})", before, after);
+    }
+
+    #[test]
+    fn force_resolve_bumps_market_ttl() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 10);
+        let market_id = symbol_short!("m006");
+        let admin = Address::generate(&env);
+        let mut market = make_minimal_market(&env, "m006");
+        market.admin = admin.clone();
+        env.storage().persistent().set(&market_id, &market);
+        env.mock_all_auths();
+        let before: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+
+        let outcomes = Vec::from_slice(&env, &[String::from_str(&env, "yes")]);
+        let reason = String::from_str(&env, "test reason");
+        let _ = MarketResolutionManager::force_resolve_market(
+            env.clone(),
+            admin.clone(),
+            market_id.clone(),
+            outcomes,
+            reason,
+        );
+
+        let after: u32 = env.storage().persistent().live_until_ledger(&market_id).unwrap();
+        assert!(after > before, "force_resolve must bump market TTL (b={}, a={})", before, after);
+    }
+
+    #[test]
+    fn check_resolution_cooldown_bumps_keys() {
+        let env = Env::default();
+        setup_ledger(&env, crate::storage::MARKETS_LIFETIME_THRESHOLD - 10);
+        let admin = Address::generate(&env);
+        let fn_name = symbol_short!("res_man");
+
+        let cooldown_key = crate::storage::DataKey::ResolutionCooldownSeconds;
+        let last_key = crate::storage::DataKey::ResolutionAdminLastAction(fn_name.clone());
+
+        env.storage().persistent().set(&cooldown_key, &(60u64));
+        env.storage().persistent().set(&last_key, &(0u64));
+        let before_cd: u32 = env.storage().persistent().live_until_ledger(&cooldown_key).unwrap();
+        let before_la: u32 = env.storage().persistent().live_until_ledger(&last_key).unwrap();
+
+        MarketResolutionManager::check_resolution_cooldown(&env, &admin, &fn_name).unwrap();
+
+        let after_cd: u32 = env.storage().persistent().live_until_ledger(&cooldown_key).unwrap();
+        let after_la: u32 = env.storage().persistent().live_until_ledger(&last_key).unwrap();
+        assert!(after_cd > before_cd, "cooldown TTL must bump (b={}, a={})", before_cd, after_cd);
+        assert!(after_la > before_la, "last_action TTL must bump (b={}, a={})", before_la, after_la);
     }
 }
