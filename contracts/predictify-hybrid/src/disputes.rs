@@ -4428,3 +4428,337 @@ mod tests {
         assert!(DisputeValidator::validate_dispute_timeout_status_for_extension(&expired).is_err());
     }
 }
+
+// ============================================================
+// Per-entrypoint auth snapshot tests for disputes
+// ============================================================
+
+#[cfg(test)]
+mod auth_snapshot_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::Address as _,
+        Address, Env, String, Symbol,
+    };
+    use crate::{Error, PredictifyHybrid};
+
+    fn required_auth(env: &Env) -> std::vec::Vec<Address> {
+        env.auths()
+            .iter()
+            .map(|(addr, _)| addr.clone())
+            .collect()
+    }
+
+    fn assert_requires_auth(env: &Env, expected: &Address, label: &str) {
+        let auths = required_auth(env);
+        assert!(
+            !auths.is_empty(),
+            "{label}: no auth recorded",
+        );
+        assert!(
+            auths.contains(expected),
+            "{label}: expected {expected:?}, captured {auths:?}",
+        );
+    }
+
+    fn admin_setup(env: &Env) -> Address {
+        let admin = Address::generate(env);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, "Admin"), &admin);
+        admin
+    }
+
+    #[test]
+    fn snap_set_history_cap_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = admin_setup(&env);
+            DisputeManager::set_history_cap(&env, admin.clone(), 50).unwrap();
+            assert_requires_auth(&env, &admin, "set_history_cap");
+        });
+    }
+
+    #[test]
+    fn snap_set_anti_grief_floor_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = admin_setup(&env);
+            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 10_000).unwrap();
+            assert_requires_auth(&env, &admin, "set_anti_grief_floor");
+        });
+    }
+
+    #[test]
+    fn snap_set_dispute_timeout_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        let did = Symbol::new(&env, "d_to");
+        env.as_contract(&cid, || {
+            let admin = admin_setup(&env);
+            DisputeManager::set_dispute_timeout(&env, did, 24, admin.clone()).unwrap();
+            assert_requires_auth(&env, &admin, "set_dispute_timeout");
+        });
+    }
+
+    #[test]
+    fn snap_set_admin_cooldown_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = admin_setup(&env);
+            DisputeManager::set_admin_cooldown(&env, &admin, 300).unwrap();
+            assert_requires_auth(&env, &admin, "set_admin_cooldown");
+        });
+    }
+
+    #[test]
+    fn snap_set_dispute_cumulative_stake_cap_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        let user = Address::generate(&env);
+        let admin = Address::generate(&env);
+        env.as_contract(&cid, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            DisputeManager::set_dispute_cumulative_stake_cap(
+                &env, &admin, &user, 100_000_000,
+            ).unwrap();
+            assert_requires_auth(&env, &admin, "set_dispute_cumulative_stake_cap");
+        });
+    }
+
+    #[test]
+    fn snap_set_dispute_decay_config_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let config = DisputeDecayConfig { half_life_seconds: 100, floor_bps: 1000 };
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = admin_setup(&env);
+            DisputeUtils::set_dispute_decay_config(&env, admin.clone(), config).unwrap();
+            assert_requires_auth(&env, &admin, "set_dispute_decay_config");
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn edge_set_history_cap_no_auth_panics() {
+        let env = Env::default();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = Address::generate(&env);
+            let _ = DisputeManager::set_history_cap(&env, admin, 50);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn edge_set_anti_grief_floor_no_auth_panics() {
+        let env = Env::default();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = Address::generate(&env);
+            let _ = DisputeManager::set_anti_grief_floor(&env, admin, 10_000);
+        });
+    }
+
+    #[test]
+    fn edge_non_admin_set_history_cap_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            admin_setup(&env);
+            let attacker = Address::generate(&env);
+            let result = DisputeManager::set_history_cap(&env, attacker, 50);
+            assert_eq!(result, Err(Error::Unauthorized));
+        });
+    }
+
+    #[test]
+    fn edge_non_admin_set_anti_grief_floor_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            admin_setup(&env);
+            let attacker = Address::generate(&env);
+            let result = DisputeManager::set_anti_grief_floor(&env, attacker, 10_000);
+            assert_eq!(result, Err(Error::Unauthorized));
+        });
+    }
+
+    // ── Admin: resolve_dispute ──────────────────────────────
+
+    #[test]
+    fn snap_resolve_dispute_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        let mid = Symbol::new(&env, "auth_res");
+        let admin = Address::generate(&env);
+        env.as_contract(&cid, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            DisputeManager::set_history_cap(&env, admin.clone(), 5).unwrap();
+            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 10_000).unwrap();
+            DisputeManager::resolve_dispute(&env, mid, admin.clone()).unwrap();
+            assert_requires_auth(&env, &admin, "resolve_dispute");
+        });
+    }
+
+    // ── User-scoped entrypoints ──────────────────────────────
+
+    #[test]
+    fn snap_process_dispute_requires_user() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        let mid = Symbol::new(&env, "mkt_auth");
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(Address::generate(&env));
+        let token_address = token_contract.address();
+        let stellar_client = StellarAssetClient::new(&env, &token_address);
+        stellar_client.mint(&user, &10_000_000_000i128);
+
+        env.as_contract(&cid, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
+            DisputeManager::set_history_cap(&env, admin.clone(), 5).unwrap();
+            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 10_000).unwrap();
+            DisputeManager::process_dispute(
+                &env, user.clone(), mid, MIN_DISPUTE_STAKE, None,
+            ).unwrap();
+            assert_requires_auth(&env, &user, "process_dispute");
+        });
+    }
+
+    #[test]
+    fn snap_escalate_dispute_requires_user() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        let did = Symbol::new(&env, "d_esc");
+        let user = Address::generate(&env);
+
+        env.as_contract(&cid, || {
+            DisputeManager::escalate_dispute(
+                &env, user.clone(), did, String::from_str(&env, "test"),
+            ).unwrap();
+            assert_requires_auth(&env, &user, "escalate_dispute");
+        });
+    }
+
+    #[test]
+    fn snap_extend_dispute_timeout_requires_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        let did = Symbol::new(&env, "d_ext");
+        let admin = Address::generate(&env);
+
+        env.as_contract(&cid, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            DisputeManager::set_history_cap(&env, admin.clone(), 5).unwrap();
+            DisputeManager::extend_dispute_timeout(&env, did, 6, admin.clone()).unwrap();
+            assert_requires_auth(&env, &admin, "extend_dispute_timeout");
+        });
+    }
+
+    // ── Negative: missing auth panics ─────────────────────────
+
+    #[test]
+    #[should_panic]
+    fn edge_process_dispute_no_auth_panics() {
+        let env = Env::default();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let user = Address::generate(&env);
+            let mid = Symbol::new(&env, "mid");
+            let _ = DisputeManager::process_dispute(&env, user, mid, MIN_DISPUTE_STAKE, None);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn edge_escalate_dispute_no_auth_panics() {
+        let env = Env::default();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let user = Address::generate(&env);
+            let did = Symbol::new(&env, "did");
+            let _ = DisputeManager::escalate_dispute(&env, user, did, String::from_str(&env, ""));
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn edge_resolve_dispute_no_auth_panics() {
+        let env = Env::default();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = Address::generate(&env);
+            let mid = Symbol::new(&env, "mid");
+            let _ = DisputeManager::resolve_dispute(&env, mid, admin);
+        });
+    }
+
+    #[test]
+    #[should_panic]
+    fn edge_extend_dispute_timeout_no_auth_panics() {
+        let env = Env::default();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            let admin = Address::generate(&env);
+            let did = Symbol::new(&env, "did");
+            let _ = DisputeManager::extend_dispute_timeout(&env, did, 6, admin);
+        });
+    }
+
+    // ── Non-admin rejection tests ────────────────────────────
+
+    #[test]
+    fn edge_non_admin_set_dispute_timeout_is_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        env.as_contract(&cid, || {
+            admin_setup(&env);
+            let attacker = Address::generate(&env);
+            let did = Symbol::new(&env, "d_unauth");
+            let result = DisputeManager::set_dispute_timeout(&env, did, 24, attacker);
+            assert_eq!(result, Err(Error::Unauthorized));
+        });
+    }
+
+    #[test]
+    fn edge_non_admin_extend_dispute_timeout_is_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let cid = env.register(PredictifyHybrid, ());
+        let did = Symbol::new(&env, "d_ext_unauth");
+        env.as_contract(&cid, || {
+            admin_setup(&env);
+            let attacker = Address::generate(&env);
+            let result = DisputeManager::extend_dispute_timeout(&env, did, 6, attacker);
+            assert_eq!(result, Err(Error::Unauthorized));
+        });
+    }
+}
