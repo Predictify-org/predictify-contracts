@@ -16,3 +16,7 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 [[bin]]
 name = "resolution"
 path = "targets/resolution.rs"
+
+[[bin]]
+name = "resolve"
+path = "targets/resolve.rs"
