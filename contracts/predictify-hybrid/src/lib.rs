@@ -125,6 +125,8 @@ mod category_tags_tests;
 mod tie_resolution_tests;
 #[cfg(test)]
 mod force_resolve_tests;
+#[cfg(test)]
+mod resolution_auth_snap_tests;
 // #[cfg(any())]
 // mod statistics_tests;
 
