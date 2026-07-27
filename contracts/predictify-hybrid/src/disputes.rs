@@ -3185,8 +3185,6 @@ impl DisputeUtils {
         // The validation will use the per-market per-user cap already implemented.
         0
     }
-}
-
 pub struct DisputeAnalytics;
 
 impl DisputeAnalytics {
