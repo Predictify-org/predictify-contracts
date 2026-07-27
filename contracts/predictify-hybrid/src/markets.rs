@@ -3652,10 +3652,53 @@ impl MarketPauseManager {
     /// let admin = Address::generate(&env);
     /// let market_id = Symbol::new(&env, "market_123");
     ///
-    /// // Pause market for 24 hours
-    /// MarketPauseManager::pause_market(&env, admin, &market_id, 24)?;
+    /// // Pause market for 24 hours    /// Pauses a market temporarily for maintenance or emergency situations.
+    ///
+    /// This function allows administrators to temporarily suspend market operations
+    /// while preserving the market state. The market will automatically resume
+    /// after the specified duration expires.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - Address of the administrator pausing the market
+    /// * `market_id` - Unique identifier of the market to pause
+    /// * `duration_hours` - Duration of the pause in hours (1-168 hours)
+    /// * `reason` - The reason for pausing the market (for audit clarity)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Market paused successfully
+    /// * `Err(Error)` - Pause operation failed
+    ///
+    /// # Errors
+    ///
+    /// * `Error::Unauthorized` - Caller is not an authorized administrator
+    /// * `Error::MarketNotFound` - Market doesn't exist
+    /// * `Error::InvalidState` - Market is already paused or in invalid state
+    /// * `Error::InvalidDuration` - Duration is outside allowed range
+    ///
+    /// # State Requirements
+    ///
+    /// * Market must not already be paused
+    /// * Market must be in Active, Ended, or Disputed state
+    /// * Caller must be contract admin
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use soroban_sdk::{Env, Address, Symbol};
+    /// use crate::pause::MarketPauseManager;
+    /// use crate::types::PauseReason;
+    ///
+    /// let env = Env::default();
+    /// let admin = Address::generate(&env);
+    /// let market_id = Symbol::new(&env, "market_123");
+    ///
+    /// // Pause market for 24 hours due to maintenance
+    /// MarketPauseManager::pause_market(&env, admin, &market_id, 24, PauseReason::Maintenance)?;
     /// ```
-    pub fn pause_market(
+    ,pub fn pause_market(
         env: &Env,
         admin: Address,
         market_id: &Symbol,
@@ -3693,7 +3736,7 @@ impl MarketPauseManager {
     };
 
         env.storage().persistent().set(&market_id, &pause_info);
-        Self::emit_pause_event(env, market_id, duration_hours, &admin);
+        Self::emit_pause_event(env, market_id, duration_hours, Self::emit_pause_event(env, market_id, duration_hours, &admin);admin, Self::emit_pause_event(env, market_id, duration_hours, &admin);reason);
 
         Ok(())
     }
@@ -3970,6 +4013,7 @@ impl MarketPauseManager {
             paused_by: paused_by,
             pause_end_time,
             original_state: market.state,
+            reason: reason.clone(),
         };
         env.storage()
             .persistent()
