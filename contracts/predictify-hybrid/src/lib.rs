@@ -51,6 +51,10 @@ mod resolution_state_property_tests;
 mod oracle_validation_tests;
 
 #[cfg(test)]
+#[path = "tests/market_closed_tests.rs"]
+mod market_closed_tests;
+
+#[cfg(test)]
 mod cross_oracle_staleness_tests;
 mod resolution;
 mod storage;

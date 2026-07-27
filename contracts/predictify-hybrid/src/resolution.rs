@@ -1344,7 +1344,7 @@ impl MarketResolutionManager {
         crate::storage::bump_market_ttl(&env, &market_id);
 
         if env.ledger().timestamp() < market.end_time {
-            panic!("MarketClosed");
+            panic_with_error!(env, Error::MarketClosed);
         }
         
         let outcome_exists = market.outcomes.iter().any(|o| o == winning_outcome);
@@ -1397,7 +1397,7 @@ impl MarketResolutionManager {
         let mut market: Market = env.storage().persistent().get(&market_id).unwrap();
         crate::storage::bump_market_ttl(&env, &market_id);
 
-        if env.ledger().timestamp() < market.end_time { panic!("MarketClosed"); }
+        if env.ledger().timestamp() < market.end_time { panic_with_error!(env, Error::MarketClosed); }
 
         for outcome in winning_outcomes.iter() {
             let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
