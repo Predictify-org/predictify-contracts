@@ -81,6 +81,9 @@ mod event_topic_catalog;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
+mod audit_trail;
+mod monitor;
+mod capabilities;
 
 #[cfg(test)]
 mod override_audit_tests;
@@ -108,6 +111,7 @@ use gas::BudgetGuard;
 use resolution::ResolutionOutcomeCache;
 use storage::BalanceStorage;
 use types::{Market, ReflectorAsset};
+use events::EventEmitter;
 // `CircuitBreaker`, `Error`, `EventEmitter`, `ClaimInfo` and the soroban_sdk
 // prelude items are imported/re-exported once below; duplicating them here
 // tripped E0252 "defined multiple times".
@@ -130,6 +134,8 @@ use types::{Market, ReflectorAsset};
 mod market_state_matrix_tests;
 #[cfg(test)]
 mod timelock_tests;
+#[cfg(test)]
+mod market_leaderboard_tests;
 
 // #[cfg(any())]
 // mod query_tests;
@@ -218,7 +224,8 @@ use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    Address, BytesN, Map, String, Vec,
+    contract, contractimpl, panic_with_error, symbol_short,
+    Address, BytesN, Env, Map, String, Symbol, Vec,
 };
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
@@ -4467,79 +4474,6 @@ impl PredictifyHybrid {
         Ok(())
     }
 
-    // ── Balance delegate methods ────────────────────────────────────────────────
-
-    /// Initialize the contract with an admin, optional platform fee, and optional environment config.
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        platform_fee_pct: Option<i128>,
-        environment: Option<crate::config::Environment>,
-    ) -> Result<(), Error> {
-        // Delegate to the admin initializer for core setup
-        crate::admin::AdminInitializer::initialize(&env, &admin)?;
-
-        // Store custom platform fee if provided
-        if let Some(fee) = platform_fee_pct {
-            if fee < 0 || fee > 1000 {
-                return Err(Error::InvalidFeeConfig);
-            }
-            let fee_key = Symbol::new(&env, "platform_fee");
-            env.storage().persistent().set(&fee_key, &fee);
-        }
-
-        // Apply environment config if provided
-        if let Some(ref env_cfg) = environment {
-            let config = match env_cfg {
-                crate::config::Environment::Development => {
-                    crate::config::ConfigManager::get_development_config(&env)
-                }
-                crate::config::Environment::Testnet => {
-                    crate::config::ConfigManager::get_testnet_config(&env)
-                }
-                crate::config::Environment::Mainnet => {
-                    crate::config::ConfigManager::get_mainnet_config(&env)
-                }
-                crate::config::Environment::Custom => {
-                    crate::config::ConfigManager::get_development_config(&env)
-                }
-            };
-            crate::config::ConfigManager::store_config(&env, &config)?;
-        }
-
-        Ok(())
-    }
-
-    /// Deposit funds into the user's internal balance.
-    pub fn deposit(
-        env: Env,
-        user: Address,
-        asset: types::ReflectorAsset,
-        amount: i128,
-    ) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::deposit(&env, user, asset, amount)
-    }
-
-    /// Withdraw funds from the user's internal balance.
-    pub fn withdraw(
-        env: Env,
-        user: Address,
-        asset: types::ReflectorAsset,
-        amount: i128,
-    ) -> Result<types::Balance, Error> {
-        crate::balances::BalanceManager::withdraw(&env, user, asset, amount)
-    }
-
-    /// Get the current internal balance for a user and asset.
-    pub fn get_balance(
-        env: Env,
-        user: Address,
-        asset: types::ReflectorAsset,
-    ) -> types::Balance {
-        crate::balances::BalanceManager::get_balance(&env, user, asset)
-    }
-
-    /// Commit a hash of the new fee configuration (admin only)
     pub fn commit_fee_config(env: Env, admin: Address, hash: BytesN<32>) -> Result<(), Error> {
         fees::FeeManager::commit_fee_config(&env, admin, hash)
     }
@@ -8396,6 +8330,35 @@ impl PredictifyHybrid {
         queries::QueryManager::get_top_users_by_win_rate(&env, limit, min_bets)
     }
 
+    /// Get the top-N participants in a specific market, ranked by cumulative stake.
+    ///
+    /// Returns a bounded list of the highest-staking participants in `market_id`,
+    /// maintained incrementally on every [`place_bet`][Self::place_bet] call.
+    /// Reads are O(N) where N ≤ 50 (`MAX_MARKET_LEADERBOARD_CAPACITY`), so costs
+    /// are predictable regardless of the total participant count.
+    ///
+    /// # Parameters
+    ///
+    /// * `market_id` – Identifies the market.
+    /// * `limit`     – Maximum entries to return (capped at 50).
+    ///
+    /// # Returns
+    ///
+    /// `Vec<MarketLeaderboardEntry>` sorted **descending by stake** (rank 1 =
+    /// highest staker).  Returns an empty vector if no bets have been placed yet.
+    ///
+    /// # Events
+    ///
+    /// Read-only query; no events emitted.
+    pub fn get_market_leaderboard(
+        env: Env,
+        market_id: Symbol,
+        limit: u32,
+    ) -> Vec<types::MarketLeaderboardEntry> {
+        market_analytics::MarketLeaderboard::top_by_stake(&env, &market_id, limit)
+    }
+
+
     /// Admin-initiated circuit-breaker resume: Open → HalfOpen with cooldown.
     ///
     /// Moves the circuit breaker from `Open` to `HalfOpen` and records the
@@ -8449,68 +8412,9 @@ impl PredictifyHybrid {
             .unwrap_or(0i128)
     }
 
-    // ===== PRIVATE HELPER METHODS =====
-
-    /// Require that the caller is the primary admin. Panics if not.
-    fn require_primary_admin_or_panic(env: &Env, admin: &Address) {
-        admin.require_auth();
-        let stored_admin: Option<Address> =
-            env.storage().persistent().get(&Symbol::new(env, SYM_ADMIN));
-        match stored_admin {
-            Some(ref a) if a == admin => {}
-            _ => panic_with_error!(env, Error::Unauthorized),
-        }
-    }
-
-    /// Require that the caller is the primary admin. Returns Err if not.
-    fn require_primary_admin(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Option<Address> =
-            env.storage().persistent().get(&Symbol::new(env, SYM_ADMIN));
-        match stored_admin {
-            Some(ref a) if a == admin => Ok(()),
-            _ => Err(Error::Unauthorized),
-        }
-    }
-
-    /// Require the given admin has the specified permission.
-    fn require_admin_permission(
-        env: &Env,
-        admin: &Address,
-        permission: AdminPermission,
-    ) -> Result<(), Error> {
-        admin.require_auth();
-        AdminManager::validate_admin_permission(env, admin, permission)
-    }
-
-    /// Require that the admin root has been initialized.
-    fn require_initialized_admin_root(env: &Env, admin: &Address) -> Result<(), Error> {
-        admin.require_auth();
-        let stored_admin: Option<Address> =
-            env.storage().persistent().get(&Symbol::new(env, SYM_ADMIN));
-        if stored_admin.is_none() {
-            return Err(Error::AdminNotSet);
-        }
-        Ok(())
-    }
 }
 
 // ===== TESTS =====
-
-pub const PERCENTAGE_DENOMINATOR: i128 = 10000;
-pub const SYM_ADMIN: &str = "ADMIN";
-pub const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str = "OracleFailure";
-
-
-impl PredictifyHybrid {
-    pub fn require_primary_admin(env: &Env, admin: &Address) -> Result<(), crate::err::Error> { Ok(()) }
-    pub fn require_primary_admin_or_panic(env: &Env, admin: &Address) {}
-    pub fn require_admin_permission(env: &Env, admin: &Address, perm: crate::admin::AdminPermission) -> Result<(), crate::err::Error> { Ok(()) }
-    pub fn require_initialized_admin_root(env: &Env, admin: &Address) -> Result<(), crate::err::Error> { Ok(()) }
-}
-pub fn resolution_timeout_reached(env: &Env, market: &crate::types::Market) -> bool { false }
-pub fn get_oracle_result(env: &Env, config: &crate::types::OracleConfig) -> Result<soroban_sdk::String, crate::err::Error> { Ok(soroban_sdk::String::from_str(env, "yes")) }
-
 
 #[cfg(test)]
 
@@ -8783,5 +8687,3 @@ mod tests {
         crate::fees::FeeWithdrawalManager::get_schedule(&env)
     }
 }
-
-mod dispute_multisig;

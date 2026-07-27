@@ -78,6 +78,8 @@ pub enum AdminPermission {
     ViewAnalytic,
     /// Emergency actions
     Emergency,
+    /// Configuration admin actions (set cooldowns, update oracle admin config)
+    ConfigAdmin,
 }
 
 /// Admin action record

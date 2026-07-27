@@ -422,6 +422,25 @@ impl BetManager {
         // Update user stake for per-user max bet cap tracking
         BetValidator::update_user_stake(env, &market_id, &user, amount)?;
 
+        // ── Per-market leaderboard update ─────────────────────────────────────
+        // Read the user's cumulative stake (just written above) and push it into
+        // the bounded top-N heap.  The upsert is a no-op if the candidate does
+        // not qualify (heap full and stake below current minimum), so it is safe
+        // to call unconditionally here with no extra error propagation.
+        {
+            let cumulative_stake = BetValidator::get_user_stake(env, &market_id, &user);
+            let timestamp = env.ledger().timestamp();
+            // Silently ignore leaderboard errors so they cannot abort a bet.
+            let _ = crate::market_analytics::MarketLeaderboard::upsert(
+                env,
+                &market_id,
+                &user,
+                cumulative_stake,
+                timestamp,
+                crate::storage::MAX_MARKET_LEADERBOARD_CAPACITY,
+            );
+        }
+
         // Update market betting stats
         Self::update_market_bet_stats(env, &market_id, &outcome, amount)?;
 
@@ -1291,7 +1310,7 @@ impl BetValidator {
         caller.require_auth();
 
         // Verify caller is admin
-        let admin = crate::admin::AdminManager::get_admin(env)?;
+        let admin = crate::admin::AdminAccessControl::get_admin(env)?;
         if *caller != admin {
             return Err(Error::Unauthorized);
         }

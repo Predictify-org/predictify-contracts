@@ -1112,6 +1112,8 @@ mod tests {
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
                 timelock_config: crate::timelock::MarketTimelockConfig::default(),
+                dispute_stake_floor: None,
+                max_participants: None,
             };
 
             let res =
@@ -1163,6 +1165,8 @@ mod tests {
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
                 timelock_config: crate::timelock::MarketTimelockConfig::default(),
+                dispute_stake_floor: None,
+                max_participants: None,
             };
 
             let res1 =
@@ -1444,6 +1448,8 @@ mod tests {
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
                 timelock_config: crate::timelock::MarketTimelockConfig::default(),
+                dispute_stake_floor: None,
+                max_participants: None,
             };
 
             let res =

@@ -236,8 +236,6 @@ pub enum Error {
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
     /// A place_bets batch with this idempotency key has already been successfully applied.
-    IdempotentBatchAlreadyApplied = 509,
-    /// Force-resolve idempotency key has already been used. Use a new unique key.
     ForceResolveReplayed = 517,
     /// Force-resolve reason is empty. Every force-resolve must be justified.
     ForceResolveReasonEmpty = 518,
@@ -256,10 +254,39 @@ pub enum Error {
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
     /// An admin override nonce was replayed; reject to prevent replay attacks.
+    ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
     MaxParticipantsReached = 528,
+    /// Bet exceeds the per-user cap for this market.
+    BetExceedsCap = 529,
+    /// Stake amount is invalid (zero, negative, or outside allowed range).
+    InvalidStakeAmount = 530,
+    /// Oracle admin action blocked by cooldown period.
+    OracleAdminCooldownActive = 531,
+    /// Signer rotation blocked by rotation cooldown period.
+    SignerRotationCooldown = 532,
+    /// Contract has already been initialized; re-initialization is not allowed.
+    AlreadyInitialized = 533,
+    /// Timelock delay is invalid (zero, too short, or too long).
+    InvalidTimeLockDelay = 534,
+    /// A pending update already exists; cancel or apply it before creating another.
+    PendingUpdateExists = 535,
+    /// No pending update exists to apply or cancel.
+    NoPendingUpdate = 536,
+    /// The timelock delay has not yet expired; the operation cannot proceed.
+    TimeLockNotExpired = 537,
+    /// Registry is full; no more entries can be added.
+    RegistryFull = 538,
+    /// Per-ledger bet cap has been exceeded.
+    PerLedgerBetCapExceeded = 539,
+    /// User is blacklisted and cannot perform this operation.
+    UserBlacklisted = 540,
+    /// User is not whitelisted for this operation.
+    UserNotWhitelisted = 541,
+    /// Market creator is blacklisted.
+    CreatorBlacklisted = 542,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

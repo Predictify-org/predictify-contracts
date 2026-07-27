@@ -5311,15 +5311,6 @@ mod event_schema_registry_tests {
 }
 
 impl EventEmitter {
-    /// Gets and increments the replay protection nonce for a specific topic
-    fn get_and_increment_nonce(env: &Env, topic: Symbol) -> u64 {
-        let key = crate::storage::DataKey::EventNonce(topic);
-        let mut nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
-        nonce += 1;
-        env.storage().persistent().set(&key, &nonce);
-        nonce
-    }
-
     pub fn emit_threshold_proposed(
         env: &Env,
         admin: &Address,

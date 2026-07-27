@@ -221,20 +221,9 @@ pub enum ResolutionState {
 /// - **Dispute Evidence**: Data available for dispute proceedings
 /// - **Analytics**: Historical analysis of oracle performance
 /// - **Transparency**: Public verification of resolution logic
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MedianResolutionResult {
-    pub market_id: Symbol,
-    pub outcome: String,
-    pub weighted_median_price: i128,
-    pub threshold: i128,
-    pub comparison: String,
-    pub quotes: Vec<crate::types::OracleQuote>,
-    pub included_count: u32,
-    pub confidence_score: u32,
-    pub timestamp: u64,
-}
 
+/// Result of a single oracle resolution fetch.
+#[derive(Clone, Debug)]
 pub struct OracleResolution {
     pub market_id: Symbol,
     pub oracle_result: String,
@@ -246,6 +235,7 @@ pub struct OracleResolution {
     pub feed_id: String,
 }
 
+/// Oracle-based resolution manager (first impl block — core helpers).
 pub struct OracleResolutionManager;
 
 impl OracleResolutionManager {
@@ -895,8 +885,6 @@ impl ResolutionOutcomeCache {
 }
 
 /// Oracle-based resolution manager: fetches oracle results, validates them, and
-/// computes median/aggregate prices used to resolve markets.
-pub struct OracleResolutionManager;
 
 impl OracleResolutionManager {
     /// Get oracle resolution for a market

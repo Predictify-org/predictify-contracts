@@ -16,6 +16,13 @@ const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 /// can be reused in a fresh batch after expiry.
 pub const PLACE_BETS_IDEM_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 
+/// Hard cap on entries kept in each per-market leaderboard heap.
+///
+/// Limits the maximum `N` for `get_market_leaderboard(limit)` calls.  Any
+/// caller-supplied `limit` greater than this value is silently clamped, so gas
+/// costs are always bounded by O(MAX_MARKET_LEADERBOARD_CAPACITY).
+pub const MAX_MARKET_LEADERBOARD_CAPACITY: u32 = 50;
+
 /// TTL for instance storage cache entries, in ledgers.
 /// At ~5 seconds per ledger on Soroban mainnet, 100 ledgers ≈ 8 minutes.
 /// Instance TTL is shared - bumping extends all instance storage keys.
@@ -109,7 +116,7 @@ enum StorageTtlTier {
 }
 
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct StorageTtlPressure {
     pub key: Val,
     pub remaining_ledgers: u32,
@@ -158,7 +165,31 @@ pub enum DataKey {
     /// Global max bet cap per user.
     MaxBetCap,
     /// Per-user total stake in a market.
-    UserStake(Address, Symbol),
+    UserStake(Symbol, Address),
+    /// Per-market bounded top-N stake leaderboard heap.
+    ///
+    /// Stores a `Vec<MarketLeaderboardEntry>` (max [`MAX_MARKET_LEADERBOARD_CAPACITY`] entries)
+    /// that is updated incrementally on every `place_bet`.  Reads are O(N) in the heap
+    /// size which is bounded, keeping costs predictable.
+    MarketLeaderboard(Symbol),
+    /// Cooldown state for oracle admin actions.
+    OracleAdminCooldownState,
+    /// Cooldown state for multisig signer rotations.
+    MultisigRotationState,
+    /// Per-topic event nonce for replay protection.
+    EventNonce(Symbol),
+    /// Head (latest index + hash) of a per-market audit log.
+    MarketAuditHead(Symbol),
+    /// Individual entry in a per-market audit log.
+    MarketAuditLog(Symbol, u64),
+    /// Per-market admin override nonce for replay protection.
+    AdminOverrideNonce(Symbol),
+    /// Global collusion detector configuration.
+    CollusionDetectorConfig,
+    /// Global per-ledger bet cap.
+    PerLedgerBetCap,
+    /// Per-ledger bet counter (temporary storage key).
+    PerLedgerBetCounter,
 }
 
 /// Storage format version for migration tracking
