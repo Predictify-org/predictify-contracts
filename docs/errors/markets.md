@@ -16,3 +16,30 @@ This document describes the `ContractError` variants for the markets smart contr
 | `8` | `Overflow` | Overflow; thrown when math operations overflow, preventing unsafe state changes. |
 | `9` | `StakeTooSmall` | Stake too small; thrown when a deposit or bet is below the minimum threshold. |
 | `10` | `InvalidState` | Invalid State; thrown when a generic state transition fails. |
+
+---
+
+## `MarketClosed` — Code `3`
+
+### When returned
+
+The `MarketClosed` error is returned whenever a caller attempts to interact
+with a market that is no longer accepting operations:
+
+- Placing a bet after the market's deadline.
+- Attempting to vote or otherwise participate once the market has ended.
+
+### Recovery guidance
+
+This error is **terminal** for the current call. The caller should:
+
+1. Verify the market ID is correct.
+2. Check that the market's end time has not passed.
+3. Look for a different market that is still active.
+
+Retrying without a state change will always fail.
+
+---
+
+> See also: [`predictify-hybrid.md`](./predictify-hybrid.md) for the
+> `MarketClosed = 102` error in the hybrid contract.

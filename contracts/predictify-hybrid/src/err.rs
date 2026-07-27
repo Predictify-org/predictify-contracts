@@ -25,6 +25,41 @@ pub enum Error {
     MarketNotFound = 101,
     /// The market is closed and cannot accept new bets or operations. Market has
     /// passed its deadline.
+    ///
+    /// # When Returned
+    ///
+    /// This error is returned in any of the following situations:
+    ///
+    /// - A user attempts to place a bet after the market's `end_time` (or
+    ///   `bet_deadline`, whichever comes first).
+    /// - An admin attempts to manually resolve a market whose `end_time` has
+    ///   **not yet** been reached (market must end before resolution).
+    /// - Any state-changing operation is called on a market that is no longer
+    ///   in the `Active` state for betting purposes.
+    ///
+    /// # Callers
+    ///
+    /// | Function | Condition |
+    /// |---|---|
+    /// | `place_bet` / `place_bets` | `current_time >= bet_deadline` or `state != Active` |
+    /// | `cancel_bet` | `current_time >= market.end_time` |
+    /// | `resolve_market_manual` | `current_time < market.end_time` |
+    /// | `resolve_market_with_ties` | `current_time < market.end_time` |
+    /// | `fetch_oracle_result` | `current_time < market.end_time` |
+    /// | `MarketResolutionValidator::validate_market_for_resolution` | `market.is_active()` |
+    ///
+    /// # Recovery
+    ///
+    /// This is a **terminal** error for the current operation. The caller should:
+    ///
+    /// - For betting: wait for a new market to open, or look for active markets.
+    /// - For resolution: wait until the market's `end_time` has passed.
+    ///
+    /// Retrying the same call without changing the market state will always fail.
+    ///
+    /// # Error Code
+    ///
+    /// Numeric value: `102`
     MarketClosed = 102,
     /// The market has already been resolved with a final outcome. No further betting is allowed.
     MarketResolved = 103,

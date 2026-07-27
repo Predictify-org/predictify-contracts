@@ -37,3 +37,10 @@ pub mod dispute_proptest;
 
 #[cfg(test)]
 pub mod disputes_gas_snap;
+
+/// Focused tests for `Error::MarketClosed` (code 102).
+///
+/// Covers every code path that should return or panic with `MarketClosed`,
+/// boundary conditions around `end_time`, and verifies the error metadata
+/// (code, description, string code).
+pub mod market_closed_tests;
