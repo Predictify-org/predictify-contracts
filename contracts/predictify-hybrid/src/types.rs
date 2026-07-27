@@ -3479,6 +3479,7 @@ pub struct CommunityConsensus {
     pub percentage: i128,
 }
 
+
 ///////////////////////////////////////////////////
 /// Market pause information tracking   //////////
 /////////////////////////////////////////////////
@@ -3491,9 +3492,32 @@ pub struct MarketPauseInfo {
     pub paused_by: Address,
     pub pause_end_time: u64,
     pub original_state: MarketState,
+    pub reason: PauseReason,
+}
+
+///////////////////////////////////////////////////
+/// Pause Reason   //////////
+/////////////////////////////////////////////////
+#[contracttype]
+pub enum PauseReason {
+    /// Market paused due to emergency or security issue
+    Emergency,
+    /// Market paused for regulatory compliance
+    Regulatory,
+    /// Market paused for maintenance or upgrade
+    Maintenance,
+    /// Market paused due to oracle issues
+    OracleIssue,
+    /// Market paused due to liquidity concerns
+    LiquidityConcern,
+    /// Market paused due to suspicious activity
+    SuspiciousActivity,
+    /// Market paused with custom reason (string)
+    Custom(String),
 }
 
 // ===== QUERY RESPONSE TYPES =====
+
 
 /// Market/event status enumeration for queries.
 ///

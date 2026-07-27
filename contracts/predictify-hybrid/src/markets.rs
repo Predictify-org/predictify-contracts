@@ -3660,6 +3660,7 @@ impl MarketPauseManager {
         admin: Address,
         market_id: &Symbol,
         duration_hours: u32,
+        reason: PauseReason,
     ) -> Result<(), Error> {
         Self::verify_admin(env, &admin)?;
 
@@ -3682,7 +3683,14 @@ impl MarketPauseManager {
             paused_by: admin.clone(),
             pause_end_time,
             original_state: market.state,
+            reason: reason.clone(),
         };
+
+        env.storage().persistent().set(&market_id, &pause_info);
+        Self::emit_pause_event(env, market_id, duration_hours, &admin, &reason);
+
+        Ok(())
+    };
 
         env.storage().persistent().set(&market_id, &pause_info);
         Self::emit_pause_event(env, market_id, duration_hours, &admin);
@@ -3970,10 +3978,10 @@ impl MarketPauseManager {
         Ok(())
     }
 
-    fn emit_pause_event(env: &Env, market_id: &Symbol, duration: u32, admin: &Address) {
+    fn emit_pause_event(env: &Env, market_id: &Symbol, duration: u32, admin: &Address, reason: &PauseReason) {
         env.events().publish(
             ("market_paused", market_id),
-            (duration, admin, env.ledger().timestamp()),
+            (duration, admin, env.ledger().timestamp(), reason),
         );
     }
 
