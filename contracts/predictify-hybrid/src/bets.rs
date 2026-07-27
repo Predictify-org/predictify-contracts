@@ -719,7 +719,15 @@ impl BetManager {
             placed_bets.push_back(bet);
         }
 
-        // Phase 4: Consume the idempotency key so replays are rejected.
+        // Phase 4: Emit batch event for the entire operation
+        EventEmitter::emit_bet_batch_placed(
+            env,
+            &user,
+            &bets,
+            total_amount,
+        );
+
+        // Phase 5: Consume the idempotency key so replays are rejected.
         // Stored as temporary (cheaper rent) with PLACE_BETS_IDEM_TTL_LEDGERS TTL.
         let ttl = crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS;
         env.storage().persistent().set(&idem_key, &true);
@@ -794,6 +802,15 @@ impl BetManager {
 
         // Store updated stats
         BetStorage::store_market_bet_stats(env, market_id, &stats)?;
+
+        // Emit bet stats updated event
+        EventEmitter::emit_bet_stats_updated(
+            env,
+            market_id,
+            stats.total_bets,
+            stats.total_amount_locked,
+            stats.unique_bettors,
+        );
 
         Ok(())
     }

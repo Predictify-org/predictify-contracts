@@ -3654,3 +3654,209 @@ mod focused_dispute_tests {
         assert!(found, "DisputeOpenedEvent not found with correct topic structure");
     }
 }
+
+#[cfg(test)]
+mod focused_betting_events_tests {
+    use super::*;
+    use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol, Vec};
+
+    #[test]
+    fn test_bet_batch_placed_event_struct() {
+        let env = Env::default();
+        let bettor = Address::generate(&env);
+        let market1 = Symbol::new(&env, "mkt1");
+        let market2 = Symbol::new(&env, "mkt2");
+        let outcome1 = String::from_str(&env, "yes");
+        let outcome2 = String::from_str(&env, "no");
+
+        let bets = vec![
+            &env,
+            (market1, outcome1, 10_000_000i128),
+            (market2, outcome2, 5_000_000i128),
+        ];
+
+        let event = BetBatchPlacedEvent {
+            bettor: bettor.clone(),
+            bets: bets.clone(),
+            total_amount: 15_000_000,
+            bet_count: 2,
+            timestamp: 1000,
+        };
+
+        assert_eq!(event.bettor, bettor);
+        assert_eq!(event.bet_count, 2);
+        assert_eq!(event.total_amount, 15_000_000);
+        assert_eq!(event.bets.len(), 2);
+    }
+
+    #[test]
+    fn test_bet_stats_updated_event_struct() {
+        let env = Env::default();
+        let market_id = Symbol::new(&env, "btc_100k");
+
+        let event = BetStatsUpdatedEvent {
+            market_id: market_id.clone(),
+            total_bets: 42u32,
+            total_amount_locked: 1_000_000_000,
+            unique_bettors: 25u32,
+            timestamp: 2000,
+        };
+
+        assert_eq!(event.market_id, market_id);
+        assert_eq!(event.total_bets, 42u32);
+        assert_eq!(event.total_amount_locked, 1_000_000_000);
+        assert_eq!(event.unique_bettors, 25u32);
+    }
+
+    #[test]
+    fn test_emit_bet_batch_placed_publishes_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let bettor = Address::generate(&env);
+        let market1 = Symbol::new(&env, "mkt1");
+        let market2 = Symbol::new(&env, "mkt2");
+        let outcome1 = String::from_str(&env, "yes");
+        let outcome2 = String::from_str(&env, "no");
+
+        let bets = vec![
+            &env,
+            (market1, outcome1, 10_000_000i128),
+            (market2, outcome2, 5_000_000i128),
+        ];
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_batch_placed(&env, &bettor, &bets, 15_000_000);
+        });
+
+        let events = env.events().all();
+        let mut found = false;
+        for event in events.iter() {
+            if event.2.len() > 0 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                if topic0 == symbol_short!("bet_batch") {
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "BetBatchPlacedEvent not found in published events");
+    }
+
+    #[test]
+    fn test_emit_bet_stats_updated_publishes_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "btc_100k");
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_stats_updated(&env, &market_id, 42u32, 1_000_000_000, 25u32);
+        });
+
+        let events = env.events().all();
+        let mut found = false;
+        for event in events.iter() {
+            if event.2.len() > 0 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                if topic0 == symbol_short!("bet_stat") {
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "BetStatsUpdatedEvent not found in published events");
+    }
+
+    #[test]
+    fn test_emit_bet_batch_placed_stores_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let bettor = Address::generate(&env);
+        let bets = vec![
+            &env,
+            (
+                Symbol::new(&env, "mkt1"),
+                String::from_str(&env, "yes"),
+                10_000_000i128,
+            ),
+        ];
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_batch_placed(&env, &bettor, &bets, 10_000_000);
+            let stored: Option<BetBatchPlacedEvent> = env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("bet_batch"));
+            assert!(stored.is_some(), "BetBatchPlacedEvent should be stored");
+            let stored_event = stored.unwrap();
+            assert_eq!(stored_event.bettor, bettor);
+            assert_eq!(stored_event.bet_count, 1);
+            assert_eq!(stored_event.total_amount, 10_000_000);
+        });
+    }
+
+    #[test]
+    fn test_emit_bet_stats_updated_stores_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "btc_100k");
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_stats_updated(&env, &market_id, 42u32, 1_000_000_000, 25u32);
+            let stored: Option<BetStatsUpdatedEvent> = env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("bet_stat"));
+            assert!(stored.is_some(), "BetStatsUpdatedEvent should be stored");
+            let stored_event = stored.unwrap();
+            assert_eq!(stored_event.total_bets, 42u32);
+            assert_eq!(stored_event.total_amount_locked, 1_000_000_000);
+            assert_eq!(stored_event.unique_bettors, 25u32);
+        });
+    }
+
+    #[test]
+    fn test_emit_bet_batch_placed_with_empty_bets() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let bettor = Address::generate(&env);
+        let empty_bets: Vec<(Symbol, String, i128)> = Vec::new(&env);
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_batch_placed(&env, &bettor, &empty_bets, 0);
+            let events = env.events().all();
+            let mut found = false;
+            for event in events.iter() {
+                if event.2.len() > 0 {
+                    let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                    if topic0 == symbol_short!("bet_batch") {
+                        found = true;
+                    }
+                }
+            }
+            assert!(found, "Batch event with empty bets should still be published");
+        });
+    }
+
+    #[test]
+    fn test_emit_bet_stats_updated_zero_values() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "fresh_market");
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_bet_stats_updated(&env, &market_id, 0u32, 0, 0u32);
+            let stored: Option<BetStatsUpdatedEvent> = env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("bet_stat"));
+            assert!(stored.is_some(), "Bet stats event should be stored");
+            let stored_event = stored.unwrap();
+            assert_eq!(stored_event.total_bets, 0u32);
+            assert_eq!(stored_event.unique_bettors, 0u32);
+        });
+    }
+}

@@ -2,6 +2,9 @@
 set -e
 
 
+
+
+
 # Default budget: 768 KiB = 768 * 1024 = 786432 bytes
 BUDGET=${WASM_SIZE_BUDGET:-786432}
 
