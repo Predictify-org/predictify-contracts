@@ -21,3 +21,25 @@ The markets contract has comprehensive auth boundary tests covering all entrypoi
 ### Running Tests
 ```bash
 cargo test --test auth_boundary -- --nocapture
+
+## Reporting Auth Boundary Tests
+
+### Overview
+The reporting contract has comprehensive auth boundary tests covering all entrypoints.
+
+### Test Coverage
+- `initialize` - Requires admin auth
+- `submit_report` - Requires reporter auth
+- `verify_report` - Requires admin auth
+- `dispute_report` - Requires reporter auth
+- `resolve_dispute` - Requires admin auth
+- `update_report_status` - Requires admin auth
+- `delete_report` - Requires admin auth
+- `pause_reporting` - Requires admin auth
+- `unpause_reporting` - Requires admin auth
+- `transfer_ownership` - Requires admin auth
+
+### Running Tests
+```bash
+cargo test --test auth_boundary -- --nocapture
+```
