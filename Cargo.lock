@@ -192,6 +192,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
 
 [[package]]
+name = "betting"
+version = "0.0.0"
+dependencies = [
+ "predictify-hybrid",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -493,16 +501,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "disputes-fuzz"
-version = "0.0.0"
-dependencies = [
- "arbitrary",
- "libfuzzer-sys",
- "predictify-hybrid",
- "soroban-sdk",
-]
-
-[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -676,6 +674,15 @@ name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+dependencies = [
+ "cfg-if 1.0.0",
+ "libc",
+ "r-efi",
+]
+
+[[package]]
+name = "governance-events"
+version = "0.1.0"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
@@ -925,13 +932,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
-]
-
-[[package]]
-name = "markets"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
 ]
 
 [[package]]
@@ -1186,16 +1186,6 @@ checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 name = "resolution"
 version = "0.0.0"
 dependencies = [
- "predictify-hybrid",
- "soroban-sdk",
-]
-
-[[package]]
-name = "resolution-fuzz"
-version = "0.0.0"
-dependencies = [
- "arbitrary",
- "libfuzzer-sys",
  "predictify-hybrid",
  "soroban-sdk",
 ]
