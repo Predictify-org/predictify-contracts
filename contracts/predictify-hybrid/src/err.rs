@@ -53,6 +53,10 @@ pub enum Error {
     BetsAlreadyPlaced = 111,
     /// The user's balance is insufficient for the requested operation.
     InsufficientBalance = 112,
+    /// The user is within the cool-off period for this market and must wait before
+    /// placing another bet.  The cool-off window is configurable per-market or globally
+    /// by the contract admin.
+    BetCoolOffActive = 113,
 
     // ===== ORACLE ERRORS =====
     /// The oracle service is unavailable. External data source may be temporarily
@@ -805,6 +809,7 @@ impl ErrorHandler {
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
             Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
+            Error::BetCoolOffActive => RecoveryStrategy::RetryWithDelay,
             Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
         }
@@ -1506,6 +1511,7 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
+            Error::BetCoolOffActive => "User is within the cool-off period; wait before placing another bet",
             Error::InsufficientStorageRentBudget => "Insufficient storage rent for persistent key allocation",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
@@ -1620,6 +1626,7 @@ impl Error {
             Error::AlreadyBet => "ALREADY_BET",
             Error::BetsAlreadyPlaced => "BETS_ALREADY_PLACED",
             Error::InsufficientBalance => "INSUFFICIENT_BALANCE",
+            Error::BetCoolOffActive => "BET_COOL_OFF_ACTIVE",
             Error::OracleUnavailable => "ORACLE_UNAVAILABLE",
             Error::InvalidOracleConfig => "INVALID_ORACLE_CONFIG",
             Error::GasBudgetExceeded => "GAS_BUDGET_EXCEEDED",
