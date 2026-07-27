@@ -5,9 +5,7 @@ members = [
   "contracts/predictify-hybrid/fuzz",
   "contracts/disputes/fuzz",
 ]
-exclude = [
-  "contracts/markets",
-]
+exclude = []
 
 [workspace.dependencies]
 soroban-sdk = "25.0.0"
