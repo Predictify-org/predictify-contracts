@@ -813,6 +813,22 @@ impl DisputeManager {
         Ok(())
     }
 
+    /// Validates that a market is ready for dispute resolution.
+    ///
+    /// Checks that an oracle result is available and that the market has at least
+    /// one dispute stake. Called by [`DisputeManager::resolve_dispute`] before
+    /// computing the final outcome.
+    ///
+    /// # Parameters
+    ///
+    /// * `_env` - The Soroban environment (unused in this function)
+    /// * `market` - The market to validate
+    /// * `admin` - Address of the admin performing resolution
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::OracleResultNotAvailable`] — no oracle result has been submitted
+    /// - [`Error::NoDisputesFound`] — no dispute stakes exist on this market
     pub fn validate_market_for_resolution(
         _env: &Env,
         market: &Market,
@@ -829,6 +845,14 @@ impl DisputeManager {
         Ok(())
     }
 
+    /// Validates dispute timeout parameters.
+    ///
+    /// `timeout_hours` must be between 1 and 720 (30 days). Used by
+    /// [`DisputeManager::set_dispute_timeout`].
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InvalidDuration`] — `timeout_hours` is 0 or exceeds 720
     pub fn validate_dispute_timeout_parameters(timeout_hours: u32) -> Result<(), Error> {
         if timeout_hours == 0 || timeout_hours > 720 {
             return Err(Error::InvalidDuration);
@@ -836,6 +860,14 @@ impl DisputeManager {
         Ok(())
     }
 
+    /// Validates dispute timeout extension parameters.
+    ///
+    /// `extension_hours` must be between 1 and 168 (7 days). Used by
+    /// [`DisputeManager::extend_dispute_timeout`].
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InvalidDuration`] — `extension_hours` is 0 or exceeds 168
     pub fn validate_dispute_timeout_extension_parameters(extension_hours: u32) -> Result<(), Error> {
         if extension_hours == 0 || extension_hours > 168 {
             return Err(Error::InvalidDuration);
@@ -847,6 +879,35 @@ impl DisputeManager {
 pub struct DisputeManager;
 
 impl DisputeManager {
+    /// Processes a user's formal dispute against a market's oracle resolution.
+    ///
+    /// Validates market eligibility, dispute parameters, and anti-grief floor
+    /// before creating and persisting the dispute record.
+    ///
+    /// # Authorization
+    ///
+    /// Requires `user.require_auth()`.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - Address of the user initiating the dispute
+    /// * `market_id` - Unique identifier of the market being disputed
+    /// * `stake` - Amount to stake on the dispute (in stroops)
+    /// * `reason` - Optional explanation for the dispute
+    ///
+    /// # Returns
+    ///
+    /// Returns the created [`Dispute`] record on success.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::MarketClosed`] — market has not ended yet
+    /// - [`Error::MarketResolved`] — market is already resolved
+    /// - [`Error::OracleUnavailable`] — no oracle result to dispute
+    /// - [`Error::InsufficientStake`] — stake below minimum
+    /// - [`Error::AlreadyDisputed`] — user already disputed this market
+    /// - [`Error::DisputeStakeCapExceeded`] — per-user or cumulative cap exceeded
     pub fn process_dispute(
         env: &Env,
         user: Address,
@@ -892,6 +953,27 @@ impl DisputeManager {
         Ok(dispute)
     }
 
+    /// Casts a vote on a dispute, transferring stake as economic commitment.
+    ///
+    /// Records the vote in the market's vote map, updates the total staked
+    /// amount, and runs collusion detection against recent dispute activity.
+    ///
+    /// # Authorization
+    ///
+    /// Requires `user.require_auth()`.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `user` - Address of the user casting the vote
+    /// * `market_id` - Unique identifier of the disputed market
+    /// * `vote` - The outcome the user is voting for
+    /// * `stake` - Amount to stake with the vote (in stroops)
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InsufficientStake`] — `stake` is zero or negative
+    /// - [`Error::Overflow`] — arithmetic overflow when adding stakes
     pub fn vote_on_dispute(
         env: &Env,
         user: Address,
@@ -957,6 +1039,32 @@ impl DisputeManager {
         Ok(())
     }
 
+    /// Resolves a dispute by combining oracle data with community voting.
+    ///
+    /// Computes the final outcome by weighing the oracle result against
+    /// community consensus. If the oracle is overturned, all disputers
+    /// receive their stakes back via refund transfers.
+    ///
+    /// # Authorization
+    ///
+    /// Requires `admin.require_auth()` and that `admin` matches the stored
+    /// contract admin.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `market_id` - Unique identifier of the market to resolve
+    /// * `admin` - Address of the admin performing the resolution
+    ///
+    /// # Returns
+    ///
+    /// Returns a [`DisputeResolution`] containing the final outcome and metadata.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`] — caller does not match stored contract admin
+    /// - [`Error::OracleResultNotAvailable`] — no oracle result submitted
+    /// - [`Error::NoDisputesFound`] — no dispute stakes exist on this market
     pub fn resolve_dispute(
         env: &Env,
         market_id: Symbol,
@@ -3333,6 +3441,15 @@ impl DisputeAnalytics {
         }
     }
 
+    /// Returns a snapshot of timeout analytics for a specific dispute.
+    ///
+    /// Includes remaining time, expiration status, and extension count.
+    /// Returns a zero-valued snapshot when no timeout is configured.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `dispute_id` - Unique identifier of the dispute to inspect
     pub fn get_timeout_analytics(env: &Env, dispute_id: &Symbol) -> TimeoutAnalytics {
         match DisputeUtils::get_dispute_timeout(env, dispute_id) {
             Ok(timeout) => {
