@@ -383,15 +383,15 @@ proptest! {
             &no_stakes,
         );
 
-        // Advance past end_time.
-        advance_time(&env, duration_days as u64 * 86_400 + 3600);
-
         // First resolve may succeed or fail depending on market config.
         let first_result = env.as_contract(&contract_id, || {
             MarketResolutionManager::resolve_market(&env, &market_id)
         });
 
         if first_result.is_ok() {
+            // Advance past end_time.
+            advance_time(&env, duration_days as u64 * 86_400 + 3600);
+
             // Second resolve must fail with MarketResolved.
             let second_result = env.as_contract(&contract_id, || {
                 MarketResolutionManager::resolve_market(&env, &market_id)
