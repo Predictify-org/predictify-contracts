@@ -37,3 +37,6 @@ pub mod dispute_proptest;
 
 #[cfg(test)]
 pub mod disputes_gas_snap;
+
+#[cfg(test)]
+mod auth_snapshot_tests;
