@@ -20,20 +20,114 @@ pub enum ResolutionState {
     Finalized,
 }
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MedianResolutionResult {
-    pub market_id: Symbol,
-    pub outcome: String,
-    pub weighted_median_price: i128,
-    pub threshold: i128,
-    pub comparison: String,
-    pub quotes: Vec<crate::types::OracleQuote>,
-    pub included_count: u32,
-    pub confidence_score: u32,
-    pub timestamp: u64,
-}
+/// Comprehensive oracle resolution result containing all data needed for market resolution.
+///
+/// This structure captures the complete oracle response for a market, including
+/// the raw price data, comparison logic, outcome determination, and metadata
+/// necessary for validation and audit trails.
+///
+/// # Core Components
+///
+/// **Market Context:**
+/// - **Market ID**: Unique identifier linking resolution to specific market
+/// - **Timestamp**: When the oracle resolution was performed
+/// - **Provider**: Which oracle service provided the data
+///
+/// **Oracle Data:**
+/// - **Price**: Current asset price from oracle feed
+/// - **Threshold**: Market-defined price threshold for comparison
+/// - **Comparison**: Comparison operator ("gt", "lt", "eq")
+/// - **Feed ID**: Specific oracle feed identifier used
+///
+/// **Resolution Result:**
+/// - **Oracle Result**: Final outcome ("yes"/"no") based on price comparison
+///
+/// # Example Usage
+///
+/// ```ignore
+/// # use soroban_sdk::{Env, Symbol, String, Address};
+/// # use predictify_hybrid::resolution::OracleResolution;
+/// # use predictify_hybrid::types::OracleProvider;
+/// # let env = Env::default();
+/// # let market_id = Symbol::new(&env, "btc_50k");
+/// # let oracle_contract = Address::generate(&env);
+///
+/// // Fetch oracle resolution for a market
+/// let oracle_resolution = MarketResolutionManager::fetch_oracle_result(
+///     &env,
+///     &market_id,
+///     &oracle_contract
+/// )?;
+///
+/// // Examine oracle resolution details
+/// println!("Market: {}", oracle_resolution.market_id);
+/// println!("Oracle result: {}", oracle_resolution.oracle_result);
+/// println!("Price: ${}", oracle_resolution.price / 100);
+/// println!("Threshold: ${}", oracle_resolution.threshold / 100);
+/// println!("Comparison: {}", oracle_resolution.comparison);
+/// println!("Provider: {:?}", oracle_resolution.provider);
+/// println!("Feed: {}", oracle_resolution.feed_id);
+///
+/// // Validate oracle resolution
+/// MarketResolutionManager::validate_oracle_resolution(&env, &oracle_resolution)?;
+///
+/// // Calculate confidence score
+/// let confidence = MarketResolutionManager::calculate_oracle_confidence(&oracle_resolution);
+/// println!("Oracle confidence: {}%", confidence);
+/// # Ok::<(), predictify_hybrid::errors::Error>(())
+/// ```
+///
+/// # Price Comparison Logic
+///
+/// The oracle resolution evaluates market conditions:
+/// ```rust
+/// # use soroban_sdk::{Env, String};
+/// # use predictify_hybrid::oracles::OracleUtils;
+/// # let env = Env::default();
+///
+/// // Example: BTC above $50,000?
+/// let btc_price = 52_000_00;    // $52,000 (8 decimal precision)
+/// let threshold = 50_000_00;    // $50,000
+/// let comparison = String::from_str(&env, "gt"); // Greater than
+///
+/// let outcome = OracleUtils::determine_outcome(
+///     btc_price,
+///     threshold,
+///     &comparison,
+///     &env
+/// )?;
+///
+/// assert_eq!(outcome, String::from_str(&env, "yes")); // BTC > $50k = "yes"
+/// # Ok::<(), predictify_hybrid::errors::Error>(())
+/// ```
+///
+/// # Validation Requirements
+///
+/// Oracle resolutions must meet criteria:
+/// - **Valid Price**: Price must be positive and within reasonable bounds
+/// - **Recent Data**: Timestamp must be within acceptable staleness limits
+/// - **Supported Provider**: Oracle provider must be supported on current network
+/// - **Valid Feed**: Feed ID must exist and be active
+/// - **Proper Comparison**: Comparison operator must be supported
+///
+/// # Integration with Market Resolution
+///
+/// Oracle resolutions feed into broader market resolution:
+/// - **Hybrid Resolution**: Combined with community consensus
+/// - **Oracle-Only**: Used directly as final outcome
+/// - **Dispute Input**: Provides data for dispute resolution
+/// - **Confidence Scoring**: Contributes to overall resolution confidence
+///
+/// # Audit and Transparency
+///
+/// All oracle resolution data is preserved for:
+/// - **Audit Trails**: Complete record of resolution process
+/// - **Dispute Evidence**: Data available for dispute proceedings
+/// - **Analytics**: Historical analysis of oracle performance
+/// - **Transparency**: Public verification of resolution logic
 
+/// Result of a single oracle resolution fetch.
+#[derive(Clone, Debug)]
 pub struct OracleResolution {
     pub market_id: Symbol,
     pub oracle_result: String,
@@ -45,6 +139,7 @@ pub struct OracleResolution {
     pub feed_id: String,
 }
 
+/// Oracle-based resolution manager (first impl block — core helpers).
 pub struct OracleResolutionManager;
 
 impl OracleResolutionManager {
@@ -203,7 +298,489 @@ impl OracleResolutionManager {
         Ok(resolution)
     }
 
-    pub fn get_oracle_resolution(_env: &Env, _market_id: &Symbol) -> Result<Option<OracleResolution>, Error> {
+    /// Get oracle resolution for a market
+    pub fn get_oracle_resolution(
+        _env: &Env,
+        _market_id: &Symbol,
+    ) -> Result<Option<OracleResolution>, Error> {
+        // For now, return None since we don't store complex types in storage
+        // In a real implementation, you would store this in a more sophisticated way
+        Ok(None)
+    }
+
+    /// Validate oracle resolution
+    pub fn validate_oracle_resolution(
+        _env: &Env,
+        resolution: &OracleResolution,
+    ) -> Result<(), Error> {
+        // Validate price is positive
+        if resolution.price <= 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        // Validate threshold is positive
+        if resolution.threshold <= 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        // Validate outcome is not empty
+        if resolution.oracle_result.is_empty() {
+            return Err(Error::InvalidInput);
+        }
+
+        Ok(())
+    }
+
+    /// Calculate oracle confidence score
+    pub fn calculate_oracle_confidence(resolution: &OracleResolution) -> u32 {
+        OracleResolutionAnalytics::calculate_confidence_score(resolution)
+    }
+}
+
+/// Comprehensive market resolution result combining oracle data with community consensus.
+///
+/// This structure represents the final resolution of a prediction market, incorporating
+/// data from multiple sources (oracle feeds, community voting, admin decisions) to
+/// determine the authoritative market outcome with confidence scoring and audit trails.
+///
+/// # Resolution Components
+///
+/// **Core Resolution Data:**
+/// - **Market ID**: Unique identifier for the resolved market
+/// - **Final Outcome**: Definitive market result ("yes"/"no" or custom outcomes)
+/// - **Resolution Timestamp**: When the resolution was finalized
+/// - **Resolution Method**: How the resolution was determined
+///
+/// **Data Sources:**
+/// - **Oracle Result**: Outcome from oracle price feeds
+/// - **Community Consensus**: Aggregated community voting results
+/// - **Confidence Score**: Statistical confidence in the resolution (0-100)
+///
+/// # Resolution Methods
+///
+/// Markets can be resolved through various methods:
+/// - **Oracle Only**: Based purely on oracle price data
+/// - **Community Only**: Based on community voting consensus
+/// - **Hybrid**: Combines oracle data with community input
+/// - **Admin Override**: Administrative decision overrides other methods
+/// - **Dispute Resolution**: Outcome determined through dispute process
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol, String};
+/// # use predictify_hybrid::resolution::{MarketResolutionManager, MarketResolution, ResolutionMethod};
+/// # let env = Env::default();
+/// # let market_id = Symbol::new(&env, "btc_prediction");
+///
+/// // Resolve a market using hybrid method
+/// let resolution = MarketResolutionManager::resolve_market(&env, &market_id)?;
+///
+/// // Examine resolution details
+/// println!("Market: {}", resolution.market_id);
+/// println!("Final outcome: {}", resolution.final_outcome);
+/// println!("Oracle result: {}", resolution.oracle_result);
+/// println!("Community consensus: {}% ({})",
+///     resolution.community_consensus.percentage,
+///     resolution.community_consensus.outcome
+/// );
+/// println!("Resolution method: {:?}", resolution.resolution_method);
+/// println!("Confidence: {}%", resolution.confidence_score);
+///
+/// // Validate the resolution
+/// MarketResolutionManager::validate_market_resolution(&env, &resolution)?;
+///
+/// // Check resolution method
+/// match resolution.resolution_method {
+///     ResolutionMethod::Hybrid => {
+///         println!("Resolution combines oracle and community data");
+///     },
+///     ResolutionMethod::OracleOnly => {
+///         println!("Resolution based purely on oracle data");
+///     },
+///     ResolutionMethod::AdminOverride => {
+///         println!("Resolution was administratively determined");
+///     },
+///     _ => println!("Other resolution method used"),
+/// }
+/// # Ok::<(), predictify_hybrid::errors::Error>(())
+/// ```
+///
+/// # Confidence Scoring
+///
+/// Resolution confidence is calculated based on:
+/// - **Oracle Reliability**: Historical oracle accuracy and freshness
+/// - **Community Agreement**: Level of consensus in community voting
+/// - **Data Quality**: Quality and recency of underlying data
+/// - **Method Reliability**: Inherent reliability of resolution method
+///
+/// ```rust
+/// # use predictify_hybrid::resolution::MarketResolution;
+/// # let resolution = MarketResolution::default(); // Placeholder
+///
+/// // Interpret confidence scores
+/// match resolution.confidence_score {
+///     90..=100 => println!("Very high confidence resolution"),
+///     80..=89 => println!("High confidence resolution"),
+///     70..=79 => println!("Moderate confidence resolution"),
+///     60..=69 => println!("Low confidence resolution"),
+///     _ => println!("Very low confidence - may need review"),
+/// }
+/// ```
+///
+/// # Resolution Validation
+///
+/// Market resolutions undergo validation to ensure:
+/// - **Outcome Consistency**: Oracle and community data alignment
+/// - **Method Appropriateness**: Resolution method suitable for market type
+/// - **Data Quality**: All input data meets quality standards
+/// - **Timestamp Validity**: Resolution timing is appropriate
+/// - **Confidence Thresholds**: Confidence score meets minimum requirements
+///
+/// # Integration Points
+///
+/// Market resolutions integrate with:
+/// - **Payout System**: Determines winner payouts and distributions
+/// - **Dispute System**: Can be challenged through dispute mechanisms
+/// - **Analytics**: Contributes to platform performance metrics
+/// - **Audit System**: Provides complete resolution audit trails
+/// - **Event System**: Triggers resolution events for transparency
+///
+/// # Immutability and Finalization
+///
+/// Once finalized, market resolutions are immutable except through:
+/// - **Dispute Process**: Formal dispute resolution procedures
+/// - **Admin Override**: Emergency administrative corrections
+/// - **System Upgrades**: Protocol-level corrections (rare)
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct MarketResolution {
+    pub market_id: Symbol,
+    pub final_outcome: String,
+    pub oracle_result: String,
+    pub community_consensus: CommunityConsensus,
+    pub resolution_timestamp: u64,
+    pub resolution_method: ResolutionMethod,
+    pub confidence_score: u32,
+}
+
+/// Enumeration of available market resolution methods and their characteristics.
+///
+/// This enum defines the different approaches available for resolving prediction markets,
+/// each with distinct data sources, validation requirements, and confidence characteristics.
+/// The choice of resolution method depends on market type, data availability, and
+/// community participation levels.
+///
+/// # Resolution Method Types
+///
+/// **Automated Methods:**
+/// - **Oracle Only**: Purely algorithmic based on price feed data
+/// - **Community Only**: Based entirely on community voting consensus
+/// - **Hybrid**: Combines oracle data with community input for balanced resolution
+///
+/// **Manual Methods:**
+/// - **Admin Override**: Administrative decision for exceptional circumstances
+/// - **Dispute Resolution**: Outcome determined through formal dispute process
+///
+/// # Method Selection Logic
+///
+/// Resolution methods are typically selected based on:
+/// ```rust
+/// # use predictify_hybrid::resolution::ResolutionMethod;
+/// # use predictify_hybrid::markets::CommunityConsensus;
+/// # use soroban_sdk::{Env, String};
+/// # let env = Env::default();
+///
+/// // Example method selection logic
+/// fn select_resolution_method(
+///     oracle_available: bool,
+///     community_participation: u32,
+///     consensus_strength: u32
+/// ) -> ResolutionMethod {
+///     match (oracle_available, community_participation, consensus_strength) {
+///         (true, participation, consensus) if participation > 50 && consensus > 75 => {
+///             ResolutionMethod::Hybrid // Strong community + oracle
+///         },
+///         (true, participation, _) if participation < 30 => {
+///             ResolutionMethod::OracleOnly // Low community participation
+///         },
+///         (false, participation, consensus) if participation > 100 && consensus > 80 => {
+///             ResolutionMethod::CommunityOnly // No oracle, strong community
+///         },
+///         _ => ResolutionMethod::AdminOverride // Fallback to admin
+///     }
+/// }
+/// ```
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, String};
+/// # use predictify_hybrid::resolution::{ResolutionMethod, MarketResolutionAnalytics};
+/// # use predictify_hybrid::markets::CommunityConsensus;
+/// # let env = Env::default();
+///
+/// // Determine resolution method based on available data
+/// let oracle_result = String::from_str(&env, "yes");
+/// let community_consensus = CommunityConsensus {
+///     outcome: String::from_str(&env, "yes"),
+///     votes: 150,
+///     total_votes: 200,
+///     percentage: 75,
+/// };
+///
+/// let method = MarketResolutionAnalytics::determine_resolution_method(
+///     &oracle_result,
+///     &community_consensus
+/// );
+///
+/// match method {
+///     ResolutionMethod::Hybrid => {
+///         println!("Using hybrid resolution - oracle and community agree");
+///     },
+///     ResolutionMethod::OracleOnly => {
+///         println!("Using oracle-only resolution - low community participation");
+///     },
+///     ResolutionMethod::CommunityOnly => {
+///         println!("Using community-only resolution - oracle unavailable");
+///     },
+///     ResolutionMethod::AdminOverride => {
+///         println!("Using admin override - exceptional circumstances");
+///     },
+///     ResolutionMethod::DisputeResolution => {
+///         println!("Using dispute resolution - conflicting data sources");
+///     },
+/// }
+/// ```
+///
+/// # Method Characteristics
+///
+/// **Oracle Only:**
+/// - **Speed**: Fastest resolution method
+/// - **Objectivity**: Purely algorithmic, no human bias
+/// - **Reliability**: Depends on oracle data quality
+/// - **Use Case**: Clear-cut price-based markets
+///
+/// **Community Only:**
+/// - **Participation**: Requires active community engagement
+/// - **Flexibility**: Can handle subjective or complex outcomes
+/// - **Consensus**: Relies on community agreement
+/// - **Use Case**: Subjective or oracle-unavailable markets
+///
+/// **Hybrid:**
+/// - **Balance**: Combines objective data with community wisdom
+/// - **Validation**: Cross-validates oracle data with community input
+/// - **Confidence**: Generally highest confidence scores
+/// - **Use Case**: Most standard prediction markets
+///
+/// **Admin Override:**
+/// - **Authority**: Administrative decision with full authority
+/// - **Speed**: Can be immediate when needed
+/// - **Responsibility**: Requires admin accountability
+/// - **Use Case**: Emergency situations or system failures
+///
+/// **Dispute Resolution:**
+/// - **Process**: Formal dispute resolution procedures
+/// - **Thoroughness**: Most comprehensive review process
+/// - **Time**: Longest resolution time
+/// - **Use Case**: Contested or controversial outcomes
+///
+/// # Integration with Confidence Scoring
+///
+/// Different methods contribute to confidence scores:
+/// - **Hybrid**: Highest confidence when oracle and community agree
+/// - **Oracle Only**: High confidence for clear price-based outcomes
+/// - **Community Only**: Confidence based on participation and consensus
+/// - **Admin Override**: Confidence based on admin justification
+/// - **Dispute Resolution**: Confidence based on dispute outcome strength
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum ResolutionMethod {
+    /// Oracle only resolution
+    OracleOnly,
+    /// Community consensus only
+    CommunityOnly,
+    /// Hybrid oracle + community
+    Hybrid,
+    /// Admin override
+    AdminOverride,
+    /// Dispute resolution
+    DisputeResolution,
+    /// Administrative force-resolve (bypasses time/state checks, idempotent).
+    /// Used for emergency overrides regardless of market state.
+    ForceResolve,
+}
+
+/// Result of a median-based oracle resolution.
+///
+/// Returned by [`OracleResolutionManager::resolve_with_median`] after
+/// collecting quotes from configured oracle providers, computing the
+/// weighted median, and comparing it against the market threshold.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct MedianResolutionResult {
+    /// Market that was resolved.
+    pub market_id: Symbol,
+    /// Resolved outcome ("yes" / "no" or custom).
+    pub outcome: String,
+    /// Weighted-median price across included oracle quotes.
+    pub weighted_median_price: i128,
+    /// Market-defined price threshold for comparison.
+    pub threshold: i128,
+    /// Comparison operator string ("gt", "lt", "eq").
+    pub comparison: String,
+    /// All collected oracle quotes (included and excluded).
+    pub quotes: Vec<OracleQuote>,
+    /// Number of quotes that participated in the median.
+    pub included_count: u32,
+    /// Aggregate confidence score in [0, 100].
+    pub confidence_score: u32,
+    /// Timestamp of the resolution.
+    pub timestamp: u64,
+}
+
+/// Aggregated resolution analytics across all markets.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ResolutionAnalytics {
+    pub total_resolutions: u32,
+    pub oracle_resolutions: u32,
+    pub community_resolutions: u32,
+    pub hybrid_resolutions: u32,
+    pub average_confidence: u32,
+    pub resolution_times: Vec<u64>,
+    pub outcome_distribution: Map<String, u32>,
+}
+
+/// Precomputed payout totals persisted at resolution time (O(1) reads on claim/distribute).
+///
+/// Built once when winning outcomes are set; invalidated when outcomes or pool change.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedOutcomeSummary {
+    /// Sum of winning-side stakes (votes + bets, deduplicated).
+    pub winning_total: i128,
+    /// Total market pool at resolution (`market.total_staked`).
+    pub total_pool: i128,
+    /// Number of winning outcomes (tie split divisor).
+    pub num_winning_outcomes: u32,
+}
+
+
+/// Storage-backed cache for resolved market payout math.
+///
+/// Time: O(V + B) once at `refresh`; O(1) on payout paths.
+/// Space: O(1) per market (single summary struct).
+pub struct ResolutionOutcomeCache;
+
+impl ResolutionOutcomeCache {
+    fn storage_key(market_id: &Symbol) -> (Symbol, Symbol) {
+        (symbol_short!("res_out"), market_id.clone())
+    }
+
+    /// Remove the cached summary (e.g. before an outcome override).
+    pub fn invalidate(env: &Env, market_id: &Symbol) {
+        env.storage()
+            .persistent()
+            .remove(&Self::storage_key(market_id));
+    }
+
+    /// Compute the winning-side total (votes + bets, deduplicated) for a market.
+    pub fn compute_winning_total_for_market(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+        winning_outcomes: &Vec<String>,
+    ) -> Result<i128, Error> {
+        let mut winning_total: i128 = 0;
+
+        for (voter, outcome) in market.votes.iter() {
+            if winning_outcomes.contains(&outcome) {
+                winning_total = winning_total
+                    .checked_add(market.stakes.get(voter.clone()).unwrap_or(0))
+                    .ok_or(Error::InvalidInput)?;
+            }
+        }
+
+        let bettors = BetStorage::get_all_bets_for_market(env, market_id);
+        for user in bettors.iter() {
+            if market.votes.contains_key(user.clone()) {
+                continue;
+            }
+            if let Some(bet) = BetStorage::get_bet(env, market_id, &user) {
+                if winning_outcomes.contains(&bet.outcome) {
+                    winning_total = winning_total
+                        .checked_add(bet.amount)
+                        .ok_or(Error::InvalidInput)?;
+                }
+            }
+        }
+
+        Ok(winning_total)
+    }
+
+    /// Recompute and persist the payout summary after resolution or outcome change.
+    pub fn refresh(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
+        let winning_outcomes = market
+            .winning_outcomes
+            .as_ref()
+            .ok_or(Error::MarketNotResolved)?;
+
+        let winning_total =
+            Self::compute_winning_total_for_market(env, market_id, market, winning_outcomes)?;
+
+        let summary = ResolvedOutcomeSummary {
+            winning_total,
+            total_pool: market.total_staked,
+            num_winning_outcomes: winning_outcomes.len(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&Self::storage_key(market_id), &summary);
+
+        Ok(())
+    }
+
+    /// Read the cached summary if present.
+    pub fn get(env: &Env, market_id: &Symbol) -> Option<ResolvedOutcomeSummary> {
+        env.storage()
+            .persistent()
+            .get(&Self::storage_key(market_id))
+    }
+
+    /// Return the cached summary, refreshing it if missing or stale.
+    pub fn require(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<ResolvedOutcomeSummary, Error> {
+        if let (Some(summary), Some(ref outcomes)) =
+            (Self::get(env, market_id), &market.winning_outcomes)
+        {
+            if summary.total_pool == market.total_staked
+                && summary.num_winning_outcomes == outcomes.len()
+            {
+                return Ok(summary);
+            }
+        }
+        Self::refresh(env, market_id, market)?;
+        Self::get(env, market_id).ok_or(Error::MarketNotResolved)
+    }
+}
+
+/// Oracle-based resolution manager: fetches oracle results, validates them, and
+
+impl OracleResolutionManager {
+    /// Get oracle resolution for a market
+
+    pub fn get_oracle_resolution(
+        _env: &Env,
+        _market_id: &Symbol,
+    ) -> Result<Option<OracleResolution>, Error> {
+        // For now, return None since we don't store complex types in storage
+        // In a real implementation, you would store this in a more sophisticated way
+
         Ok(None)
     }
 

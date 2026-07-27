@@ -588,7 +588,256 @@ impl MarketAnalyticsManager {
     }
 }
 
-#[cfg(test)]
+// ===== PER-MARKET LEADERBOARD (bounded top-N heap by stake) =====
+//
+// Each market maintains a bounded min-heap of [`MarketLeaderboardEntry`] stored
+// under `DataKey::MarketLeaderboard(market_id)`.  The heap never exceeds
+// `MAX_MARKET_LEADERBOARD_CAPACITY` entries; insert is O(N) (linear scan to
+// find existing user + linear scan to find minimum), which for N ≤ 50 is
+// constant-bounded in ledger I/O.
+//
+// Public surface:
+//   [`MarketLeaderboard::upsert`]      – called on every `place_bet`
+//   [`MarketLeaderboard::top_by_stake`] – read-only sorted view
+
+use crate::storage::{DataKey, MAX_MARKET_LEADERBOARD_CAPACITY};
+use crate::types::MarketLeaderboardEntry;
+
+/// Manages the per-market top-N stake leaderboard.
+pub struct MarketLeaderboard;
+
+impl MarketLeaderboard {
+    // ── Write ──────────────────────────────────────────────────────────────
+
+    /// Insert or update a user's cumulative stake in the leaderboard for
+    /// `market_id`.
+    ///
+    /// Algorithm (all operations are O(N) for N ≤ 50):
+    ///
+    /// 1. Load the heap from persistent storage (empty if absent).
+    /// 2. If the user already has an entry, update their stake and timestamp
+    ///    in place (their rank can only rise).
+    /// 3. If the heap has capacity remaining, append the new entry.
+    /// 4. If the heap is full and the candidate stake exceeds the current
+    ///    minimum, evict the minimum and insert the candidate.
+    /// 5. Persist the updated heap.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`         – Soroban environment.
+    /// * `market_id`   – Identifies the market.
+    /// * `user`        – Participant address.
+    /// * `new_stake`   – **Total** cumulative stake for this user in the market
+    ///                   (caller must have already added the latest bet amount).
+    /// * `timestamp`   – Ledger timestamp of the current bet.
+    /// * `capacity`    – Maximum heap size (`1..=MAX_MARKET_LEADERBOARD_CAPACITY`).
+    ///                   Values above the hard cap are silently clamped.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success.  The function does not return an error on ordinary
+    /// capacity constraints — a candidate that does not qualify is silently
+    /// dropped.
+    pub fn upsert(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        new_stake: i128,
+        timestamp: u64,
+        capacity: u32,
+    ) -> Result<(), crate::err::Error> {
+        let cap = capacity.min(MAX_MARKET_LEADERBOARD_CAPACITY).max(1);
+        let key = DataKey::MarketLeaderboard(market_id.clone());
+
+        let mut heap: soroban_sdk::Vec<MarketLeaderboardEntry> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+
+        // ── Case 1: user already in heap – update in place ─────────────────
+        if let Some(idx) = find_user_in_heap(&heap, user) {
+            let mut entry = heap.get(idx).ok_or(crate::err::Error::InvalidInput)?;
+            // Stake only ever grows (each bet adds to the total).
+            entry.stake = new_stake;
+            entry.last_bet_timestamp = timestamp;
+            heap.remove(idx);
+            heap.insert(idx, entry);
+            env.storage().persistent().set(&key, &heap);
+            return Ok(());
+        }
+
+        let candidate = MarketLeaderboardEntry {
+            user: user.clone(),
+            rank: 0, // Assigned at read time; stored value is irrelevant.
+            stake: new_stake,
+            last_bet_timestamp: timestamp,
+        };
+
+        // ── Case 2: capacity available – append ────────────────────────────
+        if heap.len() < cap {
+            heap.push_back(candidate);
+            env.storage().persistent().set(&key, &heap);
+            return Ok(());
+        }
+
+        // ── Case 3: evict minimum if candidate is strictly better ──────────
+        if heap.is_empty() {
+            return Ok(());
+        }
+        let min_idx = min_stake_index(&heap);
+        let min_entry = heap.get(min_idx).ok_or(crate::err::Error::InvalidInput)?;
+
+        // Primary key: stake (higher is better).
+        // Tie-break: earlier timestamp keeps the seat (first-bettor advantage).
+        let evict = if new_stake > min_entry.stake {
+            true
+        } else if new_stake == min_entry.stake && timestamp < min_entry.last_bet_timestamp {
+            true
+        } else {
+            false
+        };
+
+        if evict {
+            heap.remove(min_idx);
+            heap.insert(min_idx, candidate);
+            env.storage().persistent().set(&key, &heap);
+        }
+
+        // Case 4: candidate does not qualify – nothing to do.
+        Ok(())
+    }
+
+    // ── Read ───────────────────────────────────────────────────────────────
+
+    /// Return up to `limit` entries from the market leaderboard, sorted
+    /// **descending by stake** (highest stake = rank 1).
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       – Soroban environment.
+    /// * `market_id` – Identifies the market.
+    /// * `limit`     – Maximum results to return.  Clamped to
+    ///                 [`MAX_MARKET_LEADERBOARD_CAPACITY`].
+    ///
+    /// # Returns
+    ///
+    /// `Vec<MarketLeaderboardEntry>` with `rank` fields populated (1-indexed).
+    /// Returns an empty vector when no data exists for the market.
+    pub fn top_by_stake(
+        env: &Env,
+        market_id: &Symbol,
+        limit: u32,
+    ) -> soroban_sdk::Vec<MarketLeaderboardEntry> {
+        let cap = limit.min(MAX_MARKET_LEADERBOARD_CAPACITY);
+        let key = DataKey::MarketLeaderboard(market_id.clone());
+
+        let heap: soroban_sdk::Vec<MarketLeaderboardEntry> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+
+        sort_descending_by_stake(env, heap, cap)
+    }
+}
+
+// ── Private heap helpers ──────────────────────────────────────────────────
+
+/// Find the index of `user` in the heap, or `None`.
+fn find_user_in_heap(
+    heap: &soroban_sdk::Vec<MarketLeaderboardEntry>,
+    user: &Address,
+) -> Option<u32> {
+    for i in 0..heap.len() {
+        // `unwrap` is safe here: `i < heap.len()`.
+        if &heap.get(i).unwrap().user == user {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Return the index of the entry with the **smallest** stake.
+///
+/// When two entries have equal stake the one with the **later** timestamp is
+/// preferred for eviction (later first-bettor loses the seat).
+///
+/// Precondition: `heap.len() >= 1`.
+fn min_stake_index(heap: &soroban_sdk::Vec<MarketLeaderboardEntry>) -> u32 {
+    let mut min_idx = 0u32;
+    let mut min_entry = heap.get(0).unwrap();
+
+    for i in 1..heap.len() {
+        let entry = heap.get(i).unwrap();
+        let replace = if entry.stake < min_entry.stake {
+            true
+        } else if entry.stake == min_entry.stake
+            && entry.last_bet_timestamp > min_entry.last_bet_timestamp
+        {
+            // Tie-break: later timestamp is weaker; prefer to evict it.
+            true
+        } else {
+            false
+        };
+        if replace {
+            min_idx = i;
+            min_entry = entry;
+        }
+    }
+    min_idx
+}
+
+/// Sort a copy of `heap` descending by stake, assign ranks, and cap at `limit`.
+///
+/// Uses insertion sort (O(N²)) which is acceptable for N ≤ 50.
+fn sort_descending_by_stake(
+    env: &Env,
+    heap: soroban_sdk::Vec<MarketLeaderboardEntry>,
+    limit: u32,
+) -> soroban_sdk::Vec<MarketLeaderboardEntry> {
+    let mut sorted: soroban_sdk::Vec<MarketLeaderboardEntry> = soroban_sdk::Vec::new(env);
+    for i in 0..heap.len() {
+        sorted.push_back(heap.get(i).unwrap());
+    }
+
+    // Insertion sort: descending by stake, then ascending by timestamp (tie-break).
+    let n = sorted.len();
+    for i in 1..n {
+        let mut j = i;
+        while j > 0 {
+            let a = sorted.get(j - 1).unwrap();
+            let b = sorted.get(j).unwrap();
+
+            // `a` should come before `b` when a.stake > b.stake, or equal
+            // stake with earlier timestamp (first-bettor advantage).
+            let a_first = a.stake > b.stake
+                || (a.stake == b.stake && a.last_bet_timestamp <= b.last_bet_timestamp);
+
+            if a_first {
+                break; // already in order
+            }
+            // swap j-1 and j
+            sorted.remove(j - 1);
+            sorted.insert(j - 1, b);
+            sorted.remove(j);
+            sorted.insert(j, a);
+            j -= 1;
+        }
+    }
+
+    // Trim to limit and assign 1-indexed ranks.
+    let take = limit.min(sorted.len());
+    let mut result: soroban_sdk::Vec<MarketLeaderboardEntry> = soroban_sdk::Vec::new(env);
+    for i in 0..take {
+        let mut entry = sorted.get(i).unwrap();
+        entry.rank = i.checked_add(1).unwrap_or(u32::MAX);
+        result.push_back(entry);
+    }
+    result
+}
+
+
 mod tests {
     use super::*;
     use alloc::string::ToString;

@@ -1400,6 +1400,35 @@ pub struct UserLeaderboardEntryV1 {
     pub last_activity: u64,
 }
 
+
+/// Per-market top-N leaderboard entry, ranked by cumulative stake in that market.
+///
+/// This type is stored inside the bounded heap at
+/// `DataKey::MarketLeaderboard(market_id)`.  The heap never grows beyond
+/// `MAX_MARKET_LEADERBOARD_CAPACITY` (50) entries, so storage costs are fixed.
+///
+/// ## Ranking key
+///
+/// Entries are ranked **descending by `stake`**.  Two users with equal stake are
+/// compared by `last_bet_timestamp` as a secondary key (earlier first gets the
+/// higher position, preserving first-bettor advantage on ties).
+///
+/// # Stability
+///
+/// Versioned suffix (`V1`) reserved for non-breaking future fields.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketLeaderboardEntry {
+    /// Address of the participant.
+    pub user: Address,
+    /// 1-indexed rank within this market's leaderboard (assigned at read time).
+    pub rank: u32,
+    /// Total amount staked by this user in this market (cumulative across bets).
+    pub stake: i128,
+    /// Ledger timestamp of the user's most recent bet in this market.
+    pub last_bet_timestamp: u64,
+}
+
 /// Category statistics for filtered dashboard views
 ///
 /// Aggregates metrics per market category (e.g., "sports", "crypto", "politics")
@@ -1550,6 +1579,7 @@ impl Market {
             dispute_window_seconds: 86400, // 24h default
             winnings_swept: false,
             timelock_config: MarketTimelockConfig::default(),
+            max_participants: None,
             dispute_stake_floor: None,
             max_participants: None,
         }

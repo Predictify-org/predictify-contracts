@@ -231,7 +231,7 @@ pub enum Error {
     /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
     /// The bet is rejected to protect the caller from unexpected fee changes.
     FeeExceedsMax = 508,
-    /// Force-resolve idempotency key has already been used. Use a new unique key.
+    /// A place_bets batch with this idempotency key has already been successfully applied.
     ForceResolveReplayed = 517,
     /// Force-resolve reason is empty. Every force-resolve must be justified.
     ForceResolveReasonEmpty = 518,
@@ -255,19 +255,34 @@ pub enum Error {
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
     MaxParticipantsReached = 528,
-    /// Admin Cooldown Active
-    OracleAdminCooldownActive = 529,
-    /// Invalid Stake Amount 
+    /// Bet exceeds the per-user cap for this market.
+    BetExceedsCap = 529,
+    /// Stake amount is invalid (zero, negative, or outside allowed range).
     InvalidStakeAmount = 530,
-    /// Signer Cooldown
-    SignerRotationCooldown = 531,
-    /// Registry limit
-    RegistryFull = 532,
-    /// User lists
-    UserBlacklisted = 533,
-    UserNotWhitelisted = 534,
-    CreatorBlacklisted = 535,
-    BetExceedsCap = 536,
+    /// Oracle admin action blocked by cooldown period.
+    OracleAdminCooldownActive = 531,
+    /// Signer rotation blocked by rotation cooldown period.
+    SignerRotationCooldown = 532,
+    /// Contract has already been initialized; re-initialization is not allowed.
+    AlreadyInitialized = 533,
+    /// Timelock delay is invalid (zero, too short, or too long).
+    InvalidTimeLockDelay = 534,
+    /// A pending update already exists; cancel or apply it before creating another.
+    PendingUpdateExists = 535,
+    /// No pending update exists to apply or cancel.
+    NoPendingUpdate = 536,
+    /// The timelock delay has not yet expired; the operation cannot proceed.
+    TimeLockNotExpired = 537,
+    /// Registry is full; no more entries can be added.
+    RegistryFull = 538,
+    /// Per-ledger bet cap has been exceeded.
+    PerLedgerBetCapExceeded = 539,
+    /// User is blacklisted and cannot perform this operation.
+    UserBlacklisted = 540,
+    /// User is not whitelisted for this operation.
+    UserNotWhitelisted = 541,
+    /// Market creator is blacklisted.
+    CreatorBlacklisted = 542,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

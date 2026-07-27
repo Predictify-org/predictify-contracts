@@ -166,6 +166,9 @@ fn setup_auto_pause_env(env: &Env, contract_id: &Address) -> Symbol {
             bet_deadline: 0,
             dispute_window_seconds: 86400,
             winnings_swept: false,
+            timelock_config: crate::timelock::MarketTimelockConfig::default(),
+            dispute_stake_floor: None,
+            max_participants: None,
         };
         env.storage().persistent().set(&market_id, &market);
     });

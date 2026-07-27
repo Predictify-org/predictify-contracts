@@ -16,15 +16,12 @@ const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 /// can be reused in a fresh batch after expiry.
 pub const PLACE_BETS_IDEM_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
 
-/// Minimum number of ledgers a market storage entry must remain live.
-/// Approximately 30 days at ~5 seconds per ledger on Soroban mainnet.
-/// Used as the bump amount when extending market TTLs.
-pub const MARKETS_BUMP_AMOUNT: u32 = 518_400; // ~30 days
-
-/// Threshold below which a market's TTL is extended to keep it alive.
-/// Set to half of MARKETS_BUMP_AMOUNT (~15 days) so we don't bump on every call.
-/// When a market's remaining TTL falls below this, it will be bumped by MARKETS_BUMP_AMOUNT.
-pub const MARKETS_LIFETIME_THRESHOLD: u32 = 259_200; // ~15 days
+/// Hard cap on entries kept in each per-market leaderboard heap.
+///
+/// Limits the maximum `N` for `get_market_leaderboard(limit)` calls.  Any
+/// caller-supplied `limit` greater than this value is silently clamped, so gas
+/// costs are always bounded by O(MAX_MARKET_LEADERBOARD_CAPACITY).
+pub const MAX_MARKET_LEADERBOARD_CAPACITY: u32 = 50;
 
 /// TTL for instance storage cache entries, in ledgers.
 /// At ~5 seconds per ledger on Soroban mainnet, 100 ledgers ≈ 8 minutes.
@@ -187,16 +184,31 @@ pub enum DataKey {
     /// Global max bet cap per user.
     MaxBetCap,
     /// Per-user total stake in a market.
-    UserStake(Address, Symbol),
-    MarketAuditHead(Symbol),
-    MarketAuditLog(Symbol, u32),
+    UserStake(Symbol, Address),
+    /// Per-market bounded top-N stake leaderboard heap.
+    ///
+    /// Stores a `Vec<MarketLeaderboardEntry>` (max [`MAX_MARKET_LEADERBOARD_CAPACITY`] entries)
+    /// that is updated incrementally on every `place_bet`.  Reads are O(N) in the heap
+    /// size which is bounded, keeping costs predictable.
+    MarketLeaderboard(Symbol),
+    /// Cooldown state for oracle admin actions.
     OracleAdminCooldownState,
+    /// Cooldown state for multisig signer rotations.
     MultisigRotationState,
-    PerLedgerBetCap,
-    PerLedgerBetCounter,
-    CollusionDetectorConfig,
+    /// Per-topic event nonce for replay protection.
     EventNonce(Symbol),
-    AdminOverrideNonce(Address)
+    /// Head (latest index + hash) of a per-market audit log.
+    MarketAuditHead(Symbol),
+    /// Individual entry in a per-market audit log.
+    MarketAuditLog(Symbol, u64),
+    /// Per-market admin override nonce for replay protection.
+    AdminOverrideNonce(Symbol),
+    /// Global collusion detector configuration.
+    CollusionDetectorConfig,
+    /// Global per-ledger bet cap.
+    PerLedgerBetCap,
+    /// Per-ledger bet counter (temporary storage key).
+    PerLedgerBetCounter,
 }
 
 /// Storage format version for migration tracking
