@@ -18,3 +18,7 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 [[test]]
 name = "err_stab"
 path = "tests/err_stab.rs"
+
+[[test]]
+name = "dispute_edge_cases"
+path = "tests/dispute_edge_cases.rs"
