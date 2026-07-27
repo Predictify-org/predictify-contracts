@@ -1,0 +1,24 @@
+[package]
+name = "betting"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+predictify-hybrid = { path = "../predictify-hybrid" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[[test]]
+name = "betting_tests"
+path = "tests/betting_tests.rs"
+
+[[test]]
+name = "err_stab"
+path = "tests/err_stab.rs"
