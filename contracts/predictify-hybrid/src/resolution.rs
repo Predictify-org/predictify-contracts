@@ -249,8 +249,20 @@ pub struct OracleResolution {
 pub struct OracleResolutionManager;
 
 impl OracleResolutionManager {
-    /// Helper to fetch price and determine outcome from an oracle config
-    fn try_fetch_from_config(
+    /// Helper to fetch price and determine outcome from an oracle config.
+    ///
+    /// Internal helper that queries a specific oracle configuration and determines
+    /// the outcome based on the price comparison with the market's threshold.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment for oracle calls and validation
+    /// * `market_id` - Unique market identifier for validation context
+    /// * `config` - Oracle configuration specifying provider, feed, and threshold
+    ///
+    /// # Returns
+    /// * `Ok((price, outcome))` - Tuple of oracle price and determined outcome
+    /// * `Err(Error)` - Oracle call failure, validation error, or unavailable oracle
+    pub fn try_fetch_from_config(
         env: &Env,
         market_id: &Symbol,
         config: &crate::types::OracleConfig,
@@ -423,7 +435,20 @@ impl OracleResolutionManager {
         Ok(resolution)
     }
 
-    /// Get oracle resolution for a market
+    /// Retrieve a previously fetched oracle resolution for a market.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Unique market identifier
+    ///
+    /// # Returns
+    /// * `Ok(Some(OracleResolution))` - The cached oracle resolution
+    /// * `Ok(None)` - No resolution cached (placeholder implementation)
+    /// * `Err(Error)` - Storage or validation error
+    ///
+    /// # Note
+    /// Currently returns `None` as a placeholder. A production implementation
+    /// would persist oracle resolutions in contract storage.
     pub fn get_oracle_resolution(
         _env: &Env,
         _market_id: &Symbol,
@@ -433,7 +458,20 @@ impl OracleResolutionManager {
         Ok(None)
     }
 
-    /// Validate oracle resolution
+    /// Validate an oracle resolution struct for correctness.
+    ///
+    /// Checks that all required fields are present and within valid ranges:
+    /// - `price` must be positive
+    /// - `threshold` must be positive
+    /// - `oracle_result` must not be empty
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused in current implementation)
+    /// * `resolution` - Oracle resolution to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Resolution passes all validation checks
+    /// * `Err(Error::InvalidInput)` - Any validation check fails
     pub fn validate_oracle_resolution(
         _env: &Env,
         resolution: &OracleResolution,
@@ -456,7 +494,16 @@ impl OracleResolutionManager {
         Ok(())
     }
 
-    /// Calculate oracle confidence score
+    /// Calculate a confidence score (0-100) for an oracle resolution.
+    ///
+    /// Delegates to [`OracleResolutionAnalytics::calculate_confidence_score`]
+    /// which scores based on price deviation from the threshold.
+    ///
+    /// # Arguments
+    /// * `resolution` - The oracle resolution to score
+    ///
+    /// # Returns
+    /// Confidence score in basis points (0-100).
     pub fn calculate_oracle_confidence(resolution: &OracleResolution) -> u32 {
         OracleResolutionAnalytics::calculate_confidence_score(resolution)
     }
@@ -804,6 +851,10 @@ impl ResolutionOutcomeCache {
     }
 
     /// Remove the cached summary (e.g. before an outcome override).
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Unique market identifier
     pub fn invalidate(env: &Env, market_id: &Symbol) {
         env.storage()
             .persistent()
@@ -811,6 +862,19 @@ impl ResolutionOutcomeCache {
     }
 
     /// Compute the winning-side total (votes + bets, deduplicated) for a market.
+    ///
+    /// Sums stakes from voters and bettors who chose any of the winning outcomes,
+    /// ensuring no double-counting of users who both voted and bet.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Unique market identifier
+    /// * `market` - Market data containing votes and stakes
+    /// * `winning_outcomes` - Vector of winning outcome strings
+    ///
+    /// # Returns
+    /// * `Ok(i128)` - Total winning side stake amount
+    /// * `Err(Error::InvalidInput)` - Overflow during addition
     pub fn compute_winning_total_for_market(
         env: &Env,
         market_id: &Symbol,
@@ -868,6 +932,14 @@ impl ResolutionOutcomeCache {
     }
 
     /// Read the cached summary if present.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Unique market identifier
+    ///
+    /// # Returns
+    /// * `Some(ResolvedOutcomeSummary)` - Cached summary if present
+    /// * `None` - No cached summary found
     pub fn get(env: &Env, market_id: &Symbol) -> Option<ResolvedOutcomeSummary> {
         env.storage()
             .persistent()
@@ -875,6 +947,19 @@ impl ResolutionOutcomeCache {
     }
 
     /// Return the cached summary, refreshing it if missing or stale.
+    ///
+    /// Checks if cached summary matches current market state (total pool and
+    /// number of winning outcomes). If stale or missing, recomputes and stores
+    /// fresh summary before returning.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Unique market identifier
+    /// * `market` - Current market data for freshness validation
+    ///
+    /// # Returns
+    /// * `Ok(ResolvedOutcomeSummary)` - Valid cached or freshly computed summary
+    /// * `Err(Error::MarketNotResolved)` - Market not resolved or refresh failed
     pub fn require(
         env: &Env,
         market_id: &Symbol,
@@ -899,8 +984,20 @@ impl ResolutionOutcomeCache {
 pub struct OracleResolutionManager;
 
 impl OracleResolutionManager {
-    /// Get oracle resolution for a market
-
+    /// Retrieve a previously fetched oracle resolution for a market.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Unique market identifier
+    ///
+    /// # Returns
+    /// * `Ok(Some(OracleResolution))` - The cached oracle resolution
+    /// * `Ok(None)` - No resolution cached (placeholder implementation)
+    /// * `Err(Error)` - Storage or validation error
+    ///
+    /// # Note
+    /// Currently returns `None` as a placeholder. A production implementation
+    /// would persist oracle resolutions in contract storage.
     pub fn get_oracle_resolution(
         _env: &Env,
         _market_id: &Symbol,
@@ -911,7 +1008,20 @@ impl OracleResolutionManager {
         Ok(None)
     }
 
-    /// Validate oracle resolution
+    /// Validate an oracle resolution struct for correctness.
+    ///
+    /// Checks that all required fields are present and within valid ranges:
+    /// - `price` must be positive
+    /// - `threshold` must be positive
+    /// - `oracle_result` must not be empty
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused in current implementation)
+    /// * `resolution` - Oracle resolution to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Resolution passes all validation checks
+    /// * `Err(Error::InvalidInput)` - Any validation check fails
     pub fn validate_oracle_resolution(
         _env: &Env,
         resolution: &OracleResolution,
@@ -934,7 +1044,16 @@ impl OracleResolutionManager {
         Ok(())
     }
 
-    /// Calculate oracle confidence score
+    /// Calculate a confidence score (0-100) for an oracle resolution.
+    ///
+    /// Delegates to [`OracleResolutionAnalytics::calculate_confidence_score`]
+    /// which scores based on price deviation from the threshold.
+    ///
+    /// # Arguments
+    /// * `resolution` - The oracle resolution to score
+    ///
+    /// # Returns
+    /// Confidence score in basis points (0-100).
     pub fn calculate_oracle_confidence(resolution: &OracleResolution) -> u32 {
         OracleResolutionAnalytics::calculate_confidence_score(resolution)
     }
@@ -1749,7 +1868,27 @@ impl MarketResolutionManager {
         Ok(resolution)
     }
 
-    /// Finalize market with admin override
+    /// Finalize a market with an admin override, bypassing oracle/community resolution.
+    ///
+    /// This function allows an admin to manually resolve a market. It validates
+    /// admin permissions and the provided outcome before creating a resolution
+    /// record with `ResolutionMethod::AdminOverride` and 100% confidence.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `admin` - Address of the admin (must match stored admin)
+    /// * `market_id` - Unique market identifier
+    /// * `outcome` - Outcome to set as the final result (must be in market's outcomes)
+    ///
+    /// # Returns
+    /// * `Ok(MarketResolution)` - The created resolution record
+    /// * `Err(Error::Unauthorized)` - Admin address doesn't match stored admin
+    /// * `Err(Error::InvalidOutcome)` - Outcome not in market's valid outcomes
+    /// * `Err(Error::MarketNotFound)` - Market doesn't exist
+    /// * `Err(Error::InvalidState)` - Market not found or storage error
+    ///
+    /// # Events
+    /// Emits `MarketResolved` and state change events.
     pub fn finalize_market(
         env: &Env,
         admin: &Address,
@@ -1792,8 +1931,20 @@ impl MarketResolutionManager {
         Ok(resolution)
     }
 
-    /// Get market resolution
-
+    /// Retrieve a previously finalized market resolution.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Unique market identifier
+    ///
+    /// # Returns
+    /// * `Ok(Some(MarketResolution))` - The cached market resolution
+    /// * `Ok(None)` - No resolution cached (placeholder implementation)
+    /// * `Err(Error)` - Storage or validation error
+    ///
+    /// # Note
+    /// Currently returns `None` as a placeholder. A production implementation
+    /// would persist market resolutions in contract storage.
     pub fn get_market_resolution(
         _env: &Env,
         _market_id: &Symbol,
@@ -1804,7 +1955,21 @@ impl MarketResolutionManager {
         Ok(None)
     }
 
-    /// Validate market resolution
+    /// Validate a market resolution struct for correctness.
+    ///
+    /// Delegates to [`MarketResolutionValidator::validate_market_resolution`]
+    /// which checks:
+    /// - `final_outcome` is not empty
+    /// - `confidence_score` is <= 100
+    /// - `resolution_timestamp` is not in the future
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (for timestamp comparison)
+    /// * `resolution` - Market resolution to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Resolution passes all validation checks
+    /// * `Err(Error::InvalidInput)` - Any validation check fails
     pub fn validate_market_resolution(
         env: &Env,
         resolution: &MarketResolution,
@@ -2009,7 +2174,20 @@ impl MarketResolutionManager {
 pub struct OracleResolutionValidator;
 
 impl OracleResolutionValidator {
-    /// Validate market for oracle resolution
+    /// Validate that a market is eligible for oracle resolution.
+    ///
+    /// Checks:
+    /// - Market has not already been resolved (no oracle result yet)
+    /// - Market end time has passed (current time >= end_time)
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (for ledger timestamp)
+    /// * `market` - Market to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Market is eligible for oracle resolution
+    /// * `Err(Error::MarketResolved)` - Market already has an oracle result
+    /// * `Err(Error::MarketClosed)` - Market has not ended yet
     pub fn validate_market_for_oracle_resolution(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if the market has already been resolved
         if market.oracle_result.is_some() {
@@ -2025,7 +2203,20 @@ impl OracleResolutionValidator {
         Ok(())
     }
 
-    /// Validate oracle resolution
+    /// Validate an oracle resolution struct for correctness.
+    ///
+    /// Checks that all required fields are present and within valid ranges:
+    /// - `price` must be positive
+    /// - `threshold` must be positive
+    /// - `oracle_result` must not be empty
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused in current implementation)
+    /// * `resolution` - Oracle resolution to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Resolution passes all validation checks
+    /// * `Err(Error::InvalidInput)` - Any validation check fails
     pub fn validate_oracle_resolution(
         _env: &Env,
         resolution: &OracleResolution,
@@ -2053,7 +2244,25 @@ impl OracleResolutionValidator {
 pub struct MarketResolutionValidator;
 
 impl MarketResolutionValidator {
-    /// Validate market for resolution
+    /// Validate that a market is ready for final resolution.
+    ///
+    /// Performs the following checks:
+    /// 1. Market is not already resolved (no winning outcomes set)
+    /// 2. Oracle result is available
+    /// 3. Market has ended (not currently active)
+    /// 4. Minimum pool size requirement is met (if configured)
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (for storage access and token client)
+    /// * `market` - Market to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Market passes all resolution readiness checks
+    /// * `Err(Error::MarketResolved)` - Market already has winning outcomes
+    /// * `Err(Error::OracleUnavailable)` - No oracle result available
+    /// * `Err(Error::MarketClosed)` - Market is still active
+    /// * `Err(Error::InvalidState)` - Minimum pool size not met
+    /// * `Err(Error::InvalidInput)` - Token client error
     pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market is already resolved
         if market.winning_outcomes.is_some() {
@@ -2096,7 +2305,18 @@ impl MarketResolutionValidator {
         Ok(())
     }
 
-    /// Validate admin permissions
+    /// Validate that the caller is the authorized admin.
+    ///
+    /// Retrieves the stored admin address from contract storage and compares
+    /// it with the provided admin address.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (for storage access)
+    /// * `admin` - Address to verify as admin
+    ///
+    /// # Returns
+    /// * `Ok(())` - Admin address matches stored admin
+    /// * `Err(Error::Unauthorized)` - Admin doesn't match or no admin stored
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
         let stored_admin: Option<Address> =
             env.storage().persistent().get(&Symbol::new(env, "Admin"));
@@ -2112,7 +2332,16 @@ impl MarketResolutionValidator {
         }
     }
 
-    /// Validate outcome
+    /// Validate that an outcome is among the market's valid outcomes.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused in current implementation)
+    /// * `outcome` - Outcome string to validate
+    /// * `valid_outcomes` - Vector of valid outcome strings for the market
+    ///
+    /// # Returns
+    /// * `Ok(())` - Outcome is in the valid outcomes list
+    /// * `Err(Error::InvalidOutcome)` - Outcome not found in valid outcomes
     pub fn validate_outcome(
         _env: &Env,
         outcome: &String,
@@ -2125,7 +2354,20 @@ impl MarketResolutionValidator {
         Ok(())
     }
 
-    /// Validate market resolution
+    /// Validate a market resolution struct for correctness.
+    ///
+    /// Checks:
+    /// - `final_outcome` is not empty
+    /// - `confidence_score` is <= 100
+    /// - `resolution_timestamp` is not in the future (relative to ledger time)
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (for current ledger timestamp)
+    /// * `resolution` - Market resolution to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Resolution passes all validation checks
+    /// * `Err(Error::InvalidInput)` - Any validation check fails
     pub fn validate_market_resolution(
         env: &Env,
         resolution: &MarketResolution,
@@ -2156,7 +2398,18 @@ impl MarketResolutionValidator {
 pub struct OracleResolutionAnalytics;
 
 impl OracleResolutionAnalytics {
-    /// Calculate oracle confidence score
+    /// Calculate a confidence score (0-100) for an oracle resolution.
+    ///
+    /// Base score is 80. Adjusted based on price deviation from threshold:
+    /// - Deviation > 10%: -20 confidence
+    /// - Deviation < 5%: +10 confidence
+    /// Result capped at 100.
+    ///
+    /// # Arguments
+    /// * `resolution` - Oracle resolution containing price and threshold
+    ///
+    /// # Returns
+    /// Confidence score in range 0-100.
     pub fn calculate_confidence_score(resolution: &OracleResolution) -> u32 {
         // Base confidence for oracle resolution
         let mut confidence: u32 = 80;
@@ -2176,7 +2429,18 @@ impl OracleResolutionAnalytics {
         confidence.min(100)
     }
 
-    /// Get oracle resolution statistics
+    /// Get oracle resolution statistics.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused in current implementation)
+    ///
+    /// # Returns
+    /// * `Ok(OracleStats)` - Default statistics (placeholder)
+    /// * `Err(Error)` - Error if stats unavailable
+    ///
+    /// # Note
+    /// Currently returns default stats. A production implementation would
+    /// aggregate historical resolution data from storage.
     pub fn get_oracle_stats(_env: &Env) -> Result<OracleStats, Error> {
         Ok(OracleStats::default())
     }
@@ -2186,7 +2450,15 @@ impl OracleResolutionAnalytics {
 pub struct MarketResolutionAnalytics;
 
 impl MarketResolutionAnalytics {
-    /// Determine resolution method
+    /// Determine the resolution method based on community consensus.
+    ///
+    /// # Arguments
+    /// * `oracle_result` - Oracle result (unused in current logic)
+    /// * `community_consensus` - Community voting consensus data
+    ///
+    /// # Returns
+    /// * `ResolutionMethod::Hybrid` if community consensus > 70%
+    /// * `ResolutionMethod::OracleOnly` otherwise
     pub fn determine_resolution_method(
         _oracle_result: &String,
         community_consensus: &CommunityConsensus,
@@ -2198,7 +2470,23 @@ impl MarketResolutionAnalytics {
         }
     }
 
-    /// Calculate confidence score
+    /// Calculate a confidence score (0-100) for a market resolution.
+    ///
+    /// Score depends on resolution method:
+    /// - `OracleOnly`: 85
+    /// - `CommunityOnly`: Community consensus percentage (capped at 90)
+    /// - `Hybrid`: Average of oracle (85) and community consensus (capped at 95)
+    /// - `AdminOverride`: 100
+    /// - `DisputeResolution`: 75
+    /// - `ForceResolve`: 100
+    ///
+    /// # Arguments
+    /// * `oracle_result` - Oracle result (unused)
+    /// * `community_consensus` - Community voting data
+    /// * `method` - Resolution method used
+    ///
+    /// # Returns
+    /// Confidence score in range 0-100.
     pub fn calculate_confidence_score(
         _oracle_result: &String,
         community_consensus: &CommunityConsensus,
@@ -2221,12 +2509,35 @@ impl MarketResolutionAnalytics {
         }
     }
 
-    /// Calculate resolution analytics
+    /// Calculate resolution analytics from stored data.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused in current implementation)
+    ///
+    /// # Returns
+    /// * `Ok(MarketResolutionAnalytics)` - Default analytics (placeholder)
+    /// * `Err(Error)` - Error if analytics unavailable
+    ///
+    /// # Note
+    /// Currently returns default analytics. A production implementation would
+    /// aggregate historical resolution data from storage.
     pub fn calculate_resolution_analytics(_env: &Env) -> Result<MarketResolutionAnalytics, Error> {
         Ok(ResolutionAnalytics::default())
     }
 
-    /// Update resolution analytics
+    /// Update resolution analytics with a new resolution.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused)
+    /// * `resolution` - New market resolution to incorporate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Always succeeds (placeholder)
+    /// * `Err(Error)` - Never returns error in current implementation
+    ///
+    /// # Note
+    /// Currently a no-op. A production implementation would persist
+    /// updated analytics to storage.
     pub fn update_resolution_analytics(
         _env: &Env,
         _resolution: &MarketResolution,
@@ -2242,7 +2553,20 @@ impl MarketResolutionAnalytics {
 pub struct ResolutionUtils;
 
 impl ResolutionUtils {
-    /// Get resolution state for a market
+    /// Determine the current resolution state of a market.
+    ///
+    /// State is determined by checking (in order):
+    /// 1. `MarketResolved` - Market has winning outcomes set
+    /// 2. `OracleResolved` - Market has oracle result but not yet resolved
+    /// 3. `Disputed` - Market has active dispute stakes
+    /// 4. `Active` - Default state
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused)
+    /// * `market` - Market to check
+    ///
+    /// # Returns
+    /// Current [`ResolutionState`] enum variant.
     pub fn get_resolution_state(_env: &Env, market: &Market) -> ResolutionState {
         if market.winning_outcomes.is_some() {
             ResolutionState::MarketResolved
@@ -2255,12 +2579,39 @@ impl ResolutionUtils {
         }
     }
 
-    /// Check if market can be resolved
+    /// Check if a market is eligible for resolution.
+    ///
+    /// A market can be resolved if:
+    /// - Market has ended (`has_ended(env)` returns true)
+    /// - Oracle result is available
+    /// - Market is not already resolved (no winning outcomes)
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market` - Market to check
+    ///
+    /// # Returns
+    /// `true` if market can be resolved, `false` otherwise.
     pub fn can_resolve_market(env: &Env, market: &Market) -> bool {
         market.has_ended(env) && market.oracle_result.is_some() && market.winning_outcomes.is_none()
     }
 
-    /// Get resolution eligibility
+    /// Get detailed resolution eligibility for a market.
+    ///
+    /// Returns a tuple of (eligible, reason). Checks in order:
+    /// 1. Market must have ended
+    /// 2. Oracle result must be available
+    /// 3. Market must not already be resolved
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market` - Market to check
+    ///
+    /// # Returns
+    /// * `(true, "Eligible for resolution")` - All checks pass
+    /// * `(false, "Market has not ended")` - Market end time not reached
+    /// * `(false, "Oracle result not available")` - No oracle result yet
+    /// * `(false, "Market already resolved")` - Winning outcomes already set
     pub fn get_resolution_eligibility(env: &Env, market: &Market) -> (bool, String) {
         if !market.has_ended(env) {
             return (false, String::from_str(env, "Market has not ended"));
@@ -2277,7 +2628,14 @@ impl ResolutionUtils {
         (true, String::from_str(env, "Eligible for resolution"))
     }
 
-    /// Calculate resolution time
+    /// Calculate time elapsed since market end.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market` - Market to check
+    ///
+    /// # Returns
+    /// Seconds since market end time, or 0 if market hasn't ended yet.
     pub fn calculate_resolution_time(env: &Env, market: &Market) -> u64 {
         let current_time = env.ledger().timestamp();
         if current_time > market.end_time {
@@ -2287,7 +2645,21 @@ impl ResolutionUtils {
         }
     }
 
-    /// Validate resolution parameters
+    /// Validate parameters for a manual resolution.
+    ///
+    /// Checks:
+    /// - Outcome is one of the market's valid outcomes
+    /// - Market is not already resolved
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment (unused)
+    /// * `market` - Market being resolved
+    /// * `outcome` - Proposed outcome to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Parameters are valid
+    /// * `Err(Error::InvalidOutcome)` - Outcome not in market's outcomes
+    /// * `Err(Error::MarketResolved)` - Market already has winning outcomes
     pub fn validate_resolution_parameters(
         _env: &Env,
         market: &Market,
@@ -2313,7 +2685,21 @@ impl ResolutionUtils {
 pub struct ResolutionTesting;
 
 impl ResolutionTesting {
-    /// Create test oracle resolution
+    /// Create a test oracle resolution with default values.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Market identifier for the test resolution
+    ///
+    /// # Returns
+    /// An [`OracleResolution`] with:
+    /// - `oracle_result`: "yes"
+    /// - `price`: 2500000
+    /// - `threshold`: 2500000
+    /// - `comparison`: "gt"
+    /// - `provider`: Pyth
+    /// - `feed_id`: "BTC/USD"
+    /// - `timestamp`: Current ledger timestamp
     pub fn create_test_oracle_resolution(env: &Env, market_id: &Symbol) -> OracleResolution {
         OracleResolution {
             market_id: market_id.clone(),
@@ -2327,7 +2713,20 @@ impl ResolutionTesting {
         }
     }
 
-    /// Create test market resolution
+    /// Create a test market resolution with default values.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Market identifier for the test resolution
+    ///
+    /// # Returns
+    /// A [`MarketResolution`] with:
+    /// - `final_outcome`: "yes"
+    /// - `oracle_result`: "yes"
+    /// - `community_consensus`: 60% for "yes" (6/10 votes)
+    /// - `resolution_method`: `Hybrid`
+    /// - `confidence_score`: 80
+    /// - `resolution_timestamp`: Current ledger timestamp
     pub fn create_test_market_resolution(env: &Env, market_id: &Symbol) -> MarketResolution {
         MarketResolution {
             market_id: market_id.clone(),
@@ -2345,7 +2744,18 @@ impl ResolutionTesting {
         }
     }
 
-    /// Validate resolution structure
+    /// Validate the basic structure of a market resolution.
+    ///
+    /// Checks:
+    /// - `final_outcome` is not empty
+    /// - `confidence_score` is <= 100
+    ///
+    /// # Arguments
+    /// * `resolution` - Market resolution to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` - Structure is valid
+    /// * `Err(Error::InvalidInput)` - Validation fails
     pub fn validate_resolution_structure(resolution: &MarketResolution) -> Result<(), Error> {
         if resolution.final_outcome.is_empty() {
             return Err(Error::InvalidInput);
@@ -2358,7 +2768,20 @@ impl ResolutionTesting {
         Ok(())
     }
 
-    /// Simulate resolution process
+    /// Simulate the full resolution process for a market.
+    ///
+    /// This helper drives the resolution path by calling
+    /// [`MarketResolutionManager::resolve_market`]. Note that the oracle-fetch
+    /// step is exercised through the `fetch_oracle_result` contract entrypoint;
+    /// this simulation only drives the resolution path.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `market_id` - Market to resolve
+    ///
+    /// # Returns
+    /// * `Ok(MarketResolution)` - The resulting market resolution
+    /// * `Err(Error)` - Any error from the resolution process
     pub fn simulate_resolution_process(
         env: &Env,
         market_id: &Symbol,
@@ -3044,11 +3467,34 @@ mod median_resolution_tests {
 
 /// Oracle callback authentication integration for market resolution
 ///
+/// Oracle callback authentication integration for market resolution
+///
 /// This module integrates the oracle callback authentication system with market resolution,
 /// ensuring that only authenticated oracle callbacks can update market outcomes.
 pub struct OracleCallbackResolver;
 
 impl OracleCallbackResolver {
+    /// Process an authenticated oracle callback for market resolution.
+    ///
+    /// This is the entry point for oracle callbacks. It verifies the callback
+    /// authentication and updates the market resolution accordingly.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `caller` - Address of the callback caller (should be authenticated oracle)
+    /// * `callback_data` - Data from the oracle callback containing price feed info
+    /// * `market_id` - Market identifier to resolve
+    ///
+    /// # Returns
+    /// * `Ok(())` - Callback processed successfully
+    /// * `Err(Error)` - Authentication or processing error
+    ///
+    /// # Note
+    /// Currently a placeholder implementation. Full implementation would:
+    /// 1. Verify caller is an authorized oracle for the market
+    /// 2. Validate callback_data against oracle response format
+    /// 3. Update market with oracle result
+    /// 4. Emit resolution events
     pub fn process_authenticated_callback(
         env: &Env,
         caller: &Address,
