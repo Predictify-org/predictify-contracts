@@ -100,7 +100,7 @@ impl AnalyticsSnapshotManager {
         for (outcome, count) in counts.iter() {
             ordered.push((outcome, count));
         }
-        ordered.sort_by(|left, right| left.0.to_string().cmp(&right.0.to_string()));
+        ordered.sort_by(|left, right| left.0.cmp(&right.0));
 
         for (outcome, count) in ordered {
             outcome_counts.push_back(OutcomeCount { outcome, count });

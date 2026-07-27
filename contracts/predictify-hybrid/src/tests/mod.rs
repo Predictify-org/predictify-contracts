@@ -30,3 +30,9 @@ pub mod reflector_twap_cache_tests;
 pub mod dispute_anti_grief_tests;
 pub mod dispute_open_fuzz;
 pub mod oracle_differential_fuzz;
+
+#[cfg(test)]
+pub mod dispute_proptest;
+
+#[cfg(test)]
+pub mod disputes_gas_snap;

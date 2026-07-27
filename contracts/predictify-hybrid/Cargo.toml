@@ -27,9 +27,29 @@ soroban-sdk = { workspace = true }
 name = "err_stability"
 path = "tests/err_stability.rs"
 
+# #867 — betting error-code stability: freezes client-facing Error discriminants
+# for every error variant reachable from betting entrypoints.
+[[test]]
+name = "err_stab"
+path = "tests/err_stab.rs"
+
+# #859 — per-entrypoint auth snapshot: asserts which address each market
+# entrypoint requires authorization from (admin, user, or none).
+[[test]]
+name = "auth_snap"
+path = "tests/auth_snap.rs"
+
+[[test]]
+name = "auth_snapshot_betting"
+path = "tests/auth_snapshot_betting.rs"
+
 [[test]]
 name = "stateful"
 path = "tests/stateful.rs"
+
+[[test]]
+name = "vote_conserve"
+path = "tests/vote_conserve.rs"
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

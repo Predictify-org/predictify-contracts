@@ -17,3 +17,7 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 [[test]]
 name = "err_stab"
 path = "tests/err_stab.rs"
+
+[[test]]
+name = "ttl"
+path = "tests/ttl.rs"

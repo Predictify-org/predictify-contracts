@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 use crate::admin::AdminAccessControl;
 use crate::err::Error;
 use crate::events::{CircuitBreakerEvent, EventEmitter};
@@ -743,6 +743,7 @@ impl CircuitBreaker {
             action,
             condition,
             reason: reason.clone(),
+            nonce: crate::events::EventEmitter::get_and_increment_nonce(env, symbol_short!("cb_evnt")),
             timestamp: env.ledger().timestamp(),
             admin,
         };

@@ -297,6 +297,7 @@ pub trait OracleInterface {
         Ok(OraclePriceData {
             price,
             publish_time: env.ledger().timestamp(),
+            publish_ledger: env.ledger().sequence(),
             confidence: None,
             exponent: 0,
         })
@@ -1186,6 +1187,7 @@ impl OracleInterface for ReflectorOracle {
             return Ok(OraclePriceData {
                 price: price_data.price,
                 publish_time: price_data.timestamp,
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             });
@@ -1195,6 +1197,7 @@ impl OracleInterface for ReflectorOracle {
         Ok(OraclePriceData {
             price,
             publish_time: env.ledger().timestamp(),
+            publish_ledger: env.ledger().sequence(),
             confidence: None,
             exponent: 0,
         })
@@ -2846,6 +2849,8 @@ pub struct OracleValidationConfigManager;
 impl OracleValidationConfigManager {
     /// Default maximum data staleness (60 seconds)
     const DEFAULT_MAX_STALENESS_SECS: u64 = 60;
+    /// Default maximum age in ledgers (10 ledgers)
+    const DEFAULT_MAX_AGE_LEDGERS: u32 = 10;
     /// Default maximum confidence interval (5% = 500 bps)
     const DEFAULT_MAX_CONFIDENCE_BPS: u32 = 500;
     /// Maximum allowed confidence interval (100% = 10_000 bps)
@@ -2858,6 +2863,7 @@ impl OracleValidationConfigManager {
             .get(&OracleValidationKey::GlobalConfig)
             .unwrap_or_else(|| GlobalOracleValidationConfig {
                 max_staleness_secs: Self::DEFAULT_MAX_STALENESS_SECS,
+                max_age_ledgers: Self::DEFAULT_MAX_AGE_LEDGERS,
                 max_confidence_bps: Self::DEFAULT_MAX_CONFIDENCE_BPS,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
@@ -2873,6 +2879,7 @@ impl OracleValidationConfigManager {
     ) -> Result<(), Error> {
         Self::validate_config_values(
             config.max_staleness_secs,
+            config.max_age_ledgers,
             config.max_confidence_bps,
             config.max_deviation_bps,
             config.max_deviation_z_multiple,
@@ -2902,6 +2909,7 @@ impl OracleValidationConfigManager {
     ) -> Result<(), Error> {
         Self::validate_config_values(
             config.max_staleness_secs,
+            config.max_age_ledgers,
             config.max_confidence_bps,
             config.max_deviation_bps,
             config.max_deviation_z_multiple,
@@ -2924,6 +2932,7 @@ impl OracleValidationConfigManager {
         if let Some(event_cfg) = Self::get_event_config(env, market_id) {
             GlobalOracleValidationConfig {
                 max_staleness_secs: event_cfg.max_staleness_secs,
+                max_age_ledgers: event_cfg.max_age_ledgers,
                 max_confidence_bps: event_cfg.max_confidence_bps,
                 max_deviation_bps: event_cfg.max_deviation_bps,
                 max_deviation_z_multiple: event_cfg.max_deviation_z_multiple,
@@ -2990,7 +2999,9 @@ impl OracleValidationConfigManager {
 
         let config = Self::get_effective_config(env, market_id);
         let now = env.ledger().timestamp();
+        let current_ledger = env.ledger().sequence();
         let observed_age = now.saturating_sub(data.publish_time);
+        let observed_ledger_age = current_ledger.saturating_sub(data.publish_ledger);
 
         if observed_age > config.max_staleness_secs {
             EventEmitter::emit_oracle_validation_failed(
@@ -3009,6 +3020,21 @@ impl OracleValidationConfigManager {
                     env, market_id, dur,
                 );
             }
+            return Err(Error::OracleStale);
+        }
+
+        if observed_ledger_age > config.max_age_ledgers {
+            EventEmitter::emit_oracle_validation_failed(
+                env,
+                market_id,
+                &provider.name(),
+                feed_id,
+                &String::from_str(env, "stale_ledger_data"),
+                observed_ledger_age as u64,
+                config.max_age_ledgers as u64,
+                None,
+                config.max_confidence_bps,
+            );
             return Err(Error::OracleStale);
         }
 
@@ -3168,12 +3194,13 @@ impl OracleValidationConfigManager {
 
     fn validate_config_values(
         max_staleness_secs: u64,
+        max_age_ledgers: u32,
         max_confidence_bps: u32,
         max_deviation_bps: Option<u32>,
         max_deviation_z_multiple: Option<u32>,
         auto_pause_duration_secs: Option<u64>,
     ) -> Result<(), Error> {
-        if max_staleness_secs == 0 || max_confidence_bps == 0 {
+        if max_staleness_secs == 0 || max_age_ledgers == 0 || max_confidence_bps == 0 {
             return Err(Error::InvalidInput);
         }
         if max_confidence_bps > Self::MAX_CONFIDENCE_BPS {
@@ -3405,25 +3432,34 @@ impl OracleIntegrationManager {
 
         let oracle_config = &market.oracle_config;
         let mut successful_readings: alloc::vec::Vec<(i128, u32)> = alloc::vec::Vec::new();
+        // (oracle_address, provider_name, publish_time) per successful source for
+        // cross-oracle staleness detection.
+        let mut source_publish_times: alloc::vec::Vec<(Address, alloc::string::String, u64)> =
+            alloc::vec::Vec::new();
         let mut total_weight: u32 = 0;
         let mut sources_count: u32 = 0;
         let mut last_error: Option<Error> = None;
 
         // Try each oracle source
         for oracle_address in oracle_sources.iter() {
-            match Self::fetch_single_oracle_result(
+            match Self::fetch_single_oracle_result_with_timestamp(
                 env,
                 market_id,
                 &oracle_address,
                 &oracle_config.feed_id,
                 &oracle_config.provider,
             ) {
-                Ok(price) => {
+                Ok((price, publish_time)) => {
                     // Validate price is within acceptable range
                     if Self::validate_price_range(price) {
                         let weight = Self::get_oracle_weight(env, &oracle_address);
                         if weight > 0 {
                             successful_readings.push((price, weight));
+                            source_publish_times.push((
+                                oracle_address.clone(),
+                                oracle_config.provider.name().to_string(),
+                                publish_time,
+                            ));
                             total_weight = total_weight.saturating_add(weight);
                             sources_count += 1;
                         }
@@ -3451,6 +3487,41 @@ impl OracleIntegrationManager {
 
         // Calculate weighted median price
         let median_price = Self::calculate_weighted_median(env, &successful_readings, total_weight);
+
+        // === CROSS-ORACLE STALENESS DETECTION ===
+        // Find the freshest publish_time across all successful sources. If any source's
+        // publish_time lags more than the configured staleness threshold behind the
+        // freshest one, emit CrossOracleStalenessEvent. The stale source is still
+        // included in the consensus set (staleness is treated as informational), but
+        // operators can monitor for repeated offenders.
+        if source_publish_times.len() > 1 {
+            let freshest_ts = source_publish_times
+                .iter()
+                .map(|(_, _, ts)| *ts)
+                .fold(0u64, |acc, ts| if ts > acc { ts } else { acc });
+
+            let validation_config =
+                OracleValidationConfigManager::get_effective_config(env, market_id);
+            let max_cross_staleness = validation_config.max_staleness_secs;
+
+            for (oracle_addr, provider_name, publish_time) in source_publish_times.iter() {
+                let gap = freshest_ts.saturating_sub(*publish_time);
+                if gap > max_cross_staleness {
+                    EventEmitter::emit_cross_oracle_staleness(
+                        env,
+                        market_id,
+                        oracle_addr,
+                        &String::from_str(env, provider_name.as_str()),
+                        &oracle_config.feed_id,
+                        freshest_ts,
+                        *publish_time,
+                        gap,
+                        max_cross_staleness,
+                        sources_count,
+                    );
+                }
+            }
+        }
 
         // Determine final outcome directly from the weighted median price
         let final_outcome = OracleUtils::determine_outcome(
@@ -3556,6 +3627,24 @@ impl OracleIntegrationManager {
         feed_id: &String,
         provider: &crate::types::OracleProvider,
     ) -> Result<i128, Error> {
+        Self::fetch_single_oracle_result_with_timestamp(
+            env, market_id, oracle_address, feed_id, provider,
+        )
+        .map(|(price, _)| price)
+    }
+
+    /// Fetch result from a single oracle source, returning `(price, publish_time)`.
+    ///
+    /// The `publish_time` is the ledger timestamp at which the oracle last updated
+    /// its price feed.  It is used by `fetch_and_verify_oracle_result` to detect
+    /// cross-oracle staleness divergence.
+    fn fetch_single_oracle_result_with_timestamp(
+        env: &Env,
+        market_id: &Symbol,
+        oracle_address: &Address,
+        feed_id: &String,
+        provider: &crate::types::OracleProvider,
+    ) -> Result<(i128, u64), Error> {
         // Validate oracle is whitelisted
         if !OracleWhitelist::validate_oracle_contract(env, oracle_address)? {
             return Err(Error::InvalidOracleConfig);
@@ -3570,10 +3659,10 @@ impl OracleIntegrationManager {
             return Err(Error::OracleUnavailable);
         }
 
-        // Get price data with metadata
+        // Get price data with metadata (includes publish_time)
         let price_data = oracle_instance.get_price_data(env, feed_id)?;
 
-        // Validate staleness/confidence
+        // Validate per-source staleness/confidence
         OracleValidationConfigManager::validate_oracle_data(
             env,
             market_id,
@@ -3585,7 +3674,7 @@ impl OracleIntegrationManager {
         // Validate price
         OracleUtils::validate_oracle_response(price_data.price)?;
 
-        Ok(price_data.price)
+        Ok((price_data.price, price_data.publish_time))
     }
 
 
@@ -3755,18 +3844,33 @@ impl OracleIntegrationManager {
     ///
     /// Allows admin to manually set verification result when automatic
     /// verification fails or produces incorrect results.
+    ///
+    /// # Nonce replay protection
+    ///
+    /// A per-admin monotonic nonce prevents replay attacks. The caller must
+    /// supply a `provided_nonce` that is strictly greater than the last stored
+    /// nonce for `admin`. See
+    /// [`AdminAccessControl::validate_and_consume_admin_override_nonce`].
     pub fn admin_override_result(
         env: &Env,
         admin: &Address,
         market_id: &Symbol,
         outcome: &String,
         reason: &String,
+        provided_nonce: u64,
     ) -> Result<(), Error> {
         use crate::events::EventEmitter;
         use crate::markets::MarketStateManager;
 
         // Verify admin authority
         OracleWhitelist::require_admin(env, admin)?;
+
+        // Per-admin nonce replay protection
+        crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+            env,
+            admin,
+            provided_nonce,
+        )?;
 
         // Get market to validate
         let market = MarketStateManager::get_market(env, market_id)?;
@@ -3969,6 +4073,7 @@ mod oracle_integration_tests {
             });
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 10,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
@@ -3979,6 +4084,7 @@ mod oracle_integration_tests {
             let data = OraclePriceData {
                 price: 100_00,
                 publish_time: env.ledger().timestamp().saturating_sub(11),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4005,6 +4111,107 @@ mod oracle_integration_tests {
     }
 
     #[test]
+    fn test_oracle_validation_stale_ledger_rejected() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "stale_ledger_market");
+
+        env.as_contract(&contract_id, || {
+            env.ledger().set(LedgerInfo {
+                timestamp: 100,
+                protocol_version: 22,
+                sequence_number: 100,
+                network_id: Default::default(),
+                base_reserve: 10,
+                min_temp_entry_ttl: 1,
+                max_temp_entry_ttl: 100,
+            });
+            
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_age_ledgers: 10,
+                max_confidence_bps: 500,
+                max_deviation_bps: None,
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            // Data from ledger 85 (15 ledgers old, exceeds max_age_ledgers of 10)
+            let data = OraclePriceData {
+                price: 100_00,
+                publish_time: env.ledger().timestamp(),
+                publish_ledger: 85,
+                confidence: None,
+                exponent: 0,
+            };
+
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env,
+                &market_id,
+                &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC/USD"),
+                &data,
+            );
+
+            assert_eq!(result.unwrap_err(), Error::OracleStale);
+
+            let event: OracleValidationFailedEvent = env
+                .storage()
+                .persistent()
+                .get(&symbol_short!("orc_val"))
+                .unwrap();
+            assert_eq!(event.reason, String::from_str(&env, "stale_ledger_data"));
+            assert_eq!(event.observed_age_secs, 15);
+            assert_eq!(event.max_age_secs, 10);
+        });
+    }
+
+    #[test]
+    fn test_oracle_validation_fresh_ledger_accepted() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, crate::PredictifyHybrid);
+        let market_id = Symbol::new(&env, "fresh_ledger_market");
+
+        env.as_contract(&contract_id, || {
+            env.ledger().set(LedgerInfo {
+                timestamp: 100,
+                protocol_version: 22,
+                sequence_number: 100,
+                network_id: Default::default(),
+                base_reserve: 10,
+                min_temp_entry_ttl: 1,
+                max_temp_entry_ttl: 100,
+            });
+            
+            let config = GlobalOracleValidationConfig {
+                max_staleness_secs: 60,
+                max_age_ledgers: 10,
+                max_confidence_bps: 500,
+                max_deviation_bps: None,
+            };
+            OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
+
+            // Data from ledger 95 (5 ledgers old, within max_age_ledgers of 10)
+            let data = OraclePriceData {
+                price: 100_00,
+                publish_time: env.ledger().timestamp(),
+                publish_ledger: 95,
+                confidence: None,
+                exponent: 0,
+            };
+
+            let result = OracleValidationConfigManager::validate_oracle_data(
+                &env,
+                &market_id,
+                &OracleProvider::reflector(),
+                &String::from_str(&env, "BTC/USD"),
+                &data,
+            );
+
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
     fn test_oracle_validation_confidence_too_wide_rejected() {
         let env = Env::default();
         let contract_id = env.register_contract(None, crate::PredictifyHybrid);
@@ -4013,6 +4220,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
@@ -4023,6 +4231,7 @@ mod oracle_integration_tests {
             let data = OraclePriceData {
                 price: 1_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: Some(100_00), // 10% confidence interval
                 exponent: 0,
             };
@@ -4057,6 +4266,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
@@ -4067,6 +4277,7 @@ mod oracle_integration_tests {
             let data = OraclePriceData {
                 price: 1_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: Some(20_00), // 2%
                 exponent: 0,
             };
@@ -4095,6 +4306,7 @@ mod oracle_integration_tests {
             });
             let global = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
@@ -4104,6 +4316,7 @@ mod oracle_integration_tests {
 
             let event_cfg = EventOracleValidationConfig {
                 max_staleness_secs: 5,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
@@ -4114,6 +4327,7 @@ mod oracle_integration_tests {
             let data = OraclePriceData {
                 price: 1_000_00,
                 publish_time: env.ledger().timestamp().saturating_sub(10),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4159,6 +4373,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
@@ -4169,6 +4384,7 @@ mod oracle_integration_tests {
             let data = OraclePriceData {
                 price: 100_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4198,6 +4414,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
@@ -4209,6 +4426,7 @@ mod oracle_integration_tests {
             let first = OraclePriceData {
                 price: 100_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4221,6 +4439,7 @@ mod oracle_integration_tests {
             let second = OraclePriceData {
                 price: 103_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4241,6 +4460,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
@@ -4251,6 +4471,7 @@ mod oracle_integration_tests {
             let first = OraclePriceData {
                 price: 100_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4263,6 +4484,7 @@ mod oracle_integration_tests {
             let second = OraclePriceData {
                 price: 105_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4283,6 +4505,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
@@ -4293,6 +4516,7 @@ mod oracle_integration_tests {
             let first = OraclePriceData {
                 price: 100_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4305,6 +4529,7 @@ mod oracle_integration_tests {
             let spike = OraclePriceData {
                 price: 120_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4336,6 +4561,7 @@ mod oracle_integration_tests {
         env.as_contract(&contract_id, || {
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None, // disabled
                 max_deviation_z_multiple: None,
@@ -4346,6 +4572,7 @@ mod oracle_integration_tests {
             let first = OraclePriceData {
                 price: 100_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4358,6 +4585,7 @@ mod oracle_integration_tests {
             let big_move = OraclePriceData {
                 price: 150_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4379,6 +4607,7 @@ mod oracle_integration_tests {
             // Global has no deviation bound
             let global = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
@@ -4389,6 +4618,7 @@ mod oracle_integration_tests {
             // Per-event sets a tight 2% bound
             let event_cfg = EventOracleValidationConfig {
                 max_staleness_secs: 60,
+                max_age_ledgers: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: Some(200),
                 max_deviation_z_multiple: None,
@@ -4399,6 +4629,7 @@ mod oracle_integration_tests {
             let first = OraclePriceData {
                 price: 100_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };
@@ -4411,6 +4642,7 @@ mod oracle_integration_tests {
             let second = OraclePriceData {
                 price: 103_000_00,
                 publish_time: env.ledger().timestamp(),
+                publish_ledger: env.ledger().sequence(),
                 confidence: None,
                 exponent: 0,
             };

@@ -1106,6 +1106,18 @@ pub struct Market {
     pub dispute_stake_floor: Option<i128>,
     /// Maximum number of unique participants allowed (None = no limit).
     pub max_participants: Option<u32>,
+
+    /// Per-market minimum bet amount in base token units (e.g. stroops).
+    ///
+    /// When `Some(amount)`, any individual bet on this market whose `amount`
+    /// is less than this value is rejected with [`Error::BetBelowMarketMin`].
+    /// The check is applied **after** the global/per-event [`BetLimits`]
+    /// `min_bet`, so the effective floor is `max(global_min, min_bet_amount)`.
+    ///
+    /// `None` means no per-market override — the global/per-event minimum applies.
+    /// Must be positive when `Some`; zero or negative values are rejected with
+    /// [`Error::InvalidInput`] during `set_min_bet`.
+    pub min_bet_amount: Option<i128>,
 }
 
 /// Canonical payload committed by `Market::metadata_commitment`.
@@ -1569,6 +1581,7 @@ impl Market {
             timelock_config: MarketTimelockConfig::default(),
             max_participants: None,
             dispute_stake_floor: None,
+            max_participants: None,
         }
     }
 
@@ -1952,6 +1965,8 @@ pub struct OraclePriceData {
     pub price: i128,
     /// Publish time of the oracle data (unix timestamp seconds)
     pub publish_time: u64,
+    /// Publish ledger sequence of the oracle data
+    pub publish_ledger: u32,
     /// Confidence interval (absolute) in the same base units as `price`
     pub confidence: Option<i128>,
     /// Exponent/decimals scale used by the oracle (e.g., Pyth exponent)

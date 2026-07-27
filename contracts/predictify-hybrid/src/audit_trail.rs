@@ -72,7 +72,7 @@ pub struct AuditRecord {
 pub struct AuditEntryV2 {
     pub index: u64,
     pub action: Symbol,
-    pub reason_idx: u8,
+    pub reason_idx: u32,
     pub actor: Address,
     pub ts: u64,
     pub ref_id: BytesN<32>,
@@ -110,14 +110,18 @@ impl AuditTrailManager {
     }
 
     /// Registers a new reason in the append-only reason table (admin-gated).
-    /// Returns the u8 index assigned to the reason.
+    /// Returns the u32 index assigned to the reason.
     pub fn add_reason(
         env: &Env,
         admin: &Address,
         reason: String,
-    ) -> Result<u8, crate::err::Error> {
+    ) -> Result<u32, crate::err::Error> {
         // Require admin authentication
-        crate::admin::AdminManager::require_admin_auth(env, admin)?;
+        admin.require_auth();
+        let stored_admin: Address = env.storage().persistent().get(&Symbol::new(env, "Admin")).ok_or(crate::err::Error::AdminNotSet)?;
+        if admin != &stored_admin {
+            return Err(crate::err::Error::Unauthorized);
+        }
 
         let mut reasons: Vec<String> = env
             .storage()
@@ -129,7 +133,7 @@ impl AuditTrailManager {
             return Err(crate::err::Error::ReasonTableFull);
         }
 
-        let idx = reasons.len() as u8;
+        let idx = reasons.len() as u32;
         reasons.push_back(reason);
 
         env.storage()
@@ -139,8 +143,8 @@ impl AuditTrailManager {
         Ok(idx)
     }
 
-    /// Retrieves a reason from the table by its u8 index.
-    pub fn get_reason(env: &Env, index: u8) -> Option<String> {
+    /// Retrieves a reason from the table by its u32 index.
+    pub fn get_reason(env: &Env, index: u32) -> Option<String> {
         let reasons: Vec<String> = env
             .storage()
             .persistent()
@@ -209,7 +213,7 @@ impl AuditTrailManager {
     pub fn append_record_v2(
         env: &Env,
         action: Symbol,
-        reason_idx: u8,
+        reason_idx: u32,
         actor: Address,
         ref_id: BytesN<32>,
         override_nonce: Option<u64>,
@@ -340,14 +344,16 @@ impl AuditTrailManager {
             }
 
             let versioned = versioned_opt.unwrap();
-            let (actual_hash, prev_hash) = match versioned {
+            let (actual_hash, prev_hash): (BytesN<32>, BytesN<32>) = match versioned {
                 AuditRecordVersion::V1(v1) => {
+                    let prev = v1.prev_record_hash.clone();
                     let record_bytes = v1.to_xdr(env);
-                    (env.crypto().sha256(&record_bytes).into(), v1.prev_record_hash)
+                    (env.crypto().sha256(&record_bytes).into(), prev)
                 }
                 AuditRecordVersion::V2(v2) => {
+                    let prev = v2.prev_record_hash.clone();
                     let record_bytes = v2.to_xdr(env);
-                    (env.crypto().sha256(&record_bytes).into(), v2.prev_record_hash)
+                    (env.crypto().sha256(&record_bytes).into(), prev)
                 }
             };
 

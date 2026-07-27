@@ -152,6 +152,10 @@ This document provides a complete API reference for the Predictify Hybrid smart 
 - `remove_bet(env, market_id, user)` - Delete bet from storage
 - `get_market_bet_stats(env, market_id)` - Get aggregated betting stats
 - `get_all_bets_for_market(env, market_id)` - Get all bettors for market
+- Testing note: betting state invariants are covered by a focused `proptest`
+  suite in `contracts/predictify-hybrid/src/betting_invariant_proptest.rs`
+  that verifies placed/cancelled bet totals stay consistent with stored
+  per-market aggregate statistics.
 
 **BetValidator**
 - `validate_market_for_betting(env, market)` - Check market state for bets
@@ -593,7 +597,7 @@ All functions below live on `QueryManager` in `queries.rs` unless a different ca
 - `get_oracle_result(env, market_id)` - Retrieve verified result
 - `verify_result_with_retry(env, market_id, retries)` - Verify with retries
 - `verify_oracle_authority(env, oracle_address)` - Verify oracle legitimacy
-- `admin_override_result(env, admin, market_id, result)` - Manual override
+- `admin_override_result(env, admin, market_id, result, provided_nonce)` - Manual override with per-admin nonce replay protection
 
 ---
 

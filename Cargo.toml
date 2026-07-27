@@ -2,6 +2,10 @@
 resolver = "2"
 members = [
   "contracts/*",
+  "contracts/predictify-hybrid/fuzz",
+]
+exclude = [
+  "contracts/markets",
 ]
 
 [workspace.dependencies]

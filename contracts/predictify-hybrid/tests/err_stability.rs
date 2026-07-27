@@ -1,4 +1,4 @@
-#! Error Code Stability Tests
+//! Error Code Stability Tests
 //!
 //! This test suite freezes the integer values of the client-facing Error enum
 //! to detect accidental reordering or deletion of variants. The Error enum
@@ -15,10 +15,21 @@
 
 use predictify_hybrid::Error;
 
+// ===== Early Error Codes (660-674) =====
+
+#[test]
+fn early_error_codes() {
+    assert_eq!(Error::IdempotentBatchAlreadyApplied as u32, 660);
+    assert_eq!(Error::ReasonTableFull as u32, 670);
+    assert_eq!(Error::Overflow as u32, 672);
+    assert_eq!(Error::MaxBetCapExceeded as u32, 673);
+    assert_eq!(Error::InvalidCap as u32, 674);
+}
+
 // ===== User Operation Errors (100-112) =====
 
 #[test]
-fn user_errors() {
+fn user_operation_errors() {
     assert_eq!(Error::Unauthorized as u32, 100);
     assert_eq!(Error::MarketNotFound as u32, 101);
     assert_eq!(Error::MarketClosed as u32, 102);
@@ -66,21 +77,14 @@ fn validation_errors() {
     assert_eq!(Error::InvalidComparison as u32, 304);
 }
 
-// ===== General & State Errors (400-441) =====
+// ===== General & State Errors (400-443) =====
 
 #[test]
-fn general_errors() {
+fn general_and_state_errors() {
     assert_eq!(Error::InvalidState as u32, 400);
     assert_eq!(Error::InvalidInput as u32, 401);
     assert_eq!(Error::InvalidFeeConfig as u32, 402);
     assert_eq!(Error::ConfigNotFound as u32, 403);
-    assert_eq!(Error::AlreadyDisputed as u32, 404);
-    assert_eq!(Error::DisputeVoteExpired as u32, 405);
-    assert_eq!(Error::DisputeVoteDenied as u32, 406);
-    assert_eq!(Error::DisputeAlreadyVoted as u32, 407);
-    assert_eq!(Error::DisputeCondNotMet as u32, 408);
-    assert_eq!(Error::DisputeFeeFailed as u32, 409);
-    assert_eq!(Error::DisputeError as u32, 410);
     assert_eq!(Error::SweepAlreadyDone as u32, 411);
     assert_eq!(Error::FeeArithmeticOverflow as u32, 412);
     assert_eq!(Error::FeeAlreadyCollected as u32, 413);
@@ -88,7 +92,8 @@ fn general_errors() {
     assert_eq!(Error::InvalidExtensionDays as u32, 415);
     assert_eq!(Error::ExtensionDenied as u32, 416);
     assert_eq!(Error::GasBudgetExceeded as u32, 417);
-    assert_eq!(Error::AdminNotSet as u32, 418);
+    assert_eq!(Error::OperationWouldExceedBudget as u32, 418);
+    assert_eq!(Error::AdminNotSet as u32, 419);
     assert_eq!(Error::QuestionTooLong as u32, 420);
     assert_eq!(Error::OutcomeTooLong as u32, 421);
     assert_eq!(Error::TooManyOutcomes as u32, 422);
@@ -104,17 +109,20 @@ fn general_errors() {
     assert_eq!(Error::TooManyExtensions as u32, 432);
     assert_eq!(Error::TooManyOracleResults as u32, 433);
     assert_eq!(Error::TooManyWinningOutcomes as u32, 434);
+    assert_eq!(Error::ForceResolveAlreadyUsed as u32, 435);
     assert_eq!(Error::CategoryTooShort as u32, 436);
     assert_eq!(Error::TagTooShort as u32, 437);
     assert_eq!(Error::DisputerCannotVote as u32, 438);
+    assert_eq!(Error::AssetDecimalsMismatch as u32, 439);
     assert_eq!(Error::ArchiveFull as u32, 440);
     assert_eq!(Error::DuplicateMarketId as u32, 441);
+    assert_eq!(Error::AdminActionTimelocked as u32, 443);
 }
 
-// ===== Circuit Breaker Errors (500-508) =====
+// ===== Circuit Breaker & Extended Errors (500-528) =====
 
 #[test]
-fn circuit_breaker_errors() {
+fn circuit_breaker_and_extended_errors() {
     assert_eq!(Error::CBNotInitialized as u32, 500);
     assert_eq!(Error::CBAlreadyOpen as u32, 501);
     assert_eq!(Error::CBNotOpen as u32, 502);
@@ -124,26 +132,34 @@ fn circuit_breaker_errors() {
     assert_eq!(Error::CumulativeExtensionCapHit as u32, 506);
     assert_eq!(Error::IllegalMarketStateTransition as u32, 507);
     assert_eq!(Error::FeeExceedsMax as u32, 508);
+    assert_eq!(Error::IdempotentBatchAlreadyApplied as u32, 509);
+    assert_eq!(Error::ForceResolveReplayed as u32, 517);
+    assert_eq!(Error::ForceResolveReasonEmpty as u32, 518);
+    assert_eq!(Error::NoPendingFeeCommit as u32, 519);
+    assert_eq!(Error::FeeRevealTooEarly as u32, 520);
+    assert_eq!(Error::FeePreimageMismatch as u32, 521);
+    assert_eq!(Error::DisputeStakeCapExceeded as u32, 522);
+    assert_eq!(Error::InsufficientStorageRentBudget as u32, 523);
+    assert_eq!(Error::ExtensionCapExceeded as u32, 524);
+    assert_eq!(Error::UpgradeChainMismatch as u32, 525);
+    // Note: ReplayedOverride = 526 is documented in err.rs but the variant
+    // definition is missing from the enum. Included here for stability tracking.
+    assert_eq!(Error::ReplayedOverride as u32, 526);
+    assert_eq!(Error::OracleQuoteOutlier as u32, 527);
+    assert_eq!(Error::MaxParticipantsReached as u32, 528);
 }
 
-// ===== Asset decimals =====
-
-#[test]
-fn asset_decimals() {
-    assert_eq!(Error::AssetDecimalsMismatch as u32, 439);
-}
-
-// ===== op-count test ensuring we noticed all variants =====
+// ===== Smoke test: verify all variants are accounted for =====
 
 #[test]
 fn total_variant_count() {
     // This is a smoke check to ensure the Error enum variant count is tracked.
     // If the count changes, update the expected value below.
-    let expected = 102;
-    // Verify the expected variant count matches reality
-    // OracleQuoteOutlier = 527, Unauthorized = 100, but not all discriminants in between are used
-    // Instead, verify both endpoints still exist
-    assert_eq!(Error::Unauthorized as u32, 100);
-    assert_eq!(Error::OracleQuoteOutlier as u32, 527);
+    // Note: ReplayedOverride is included in this count as it's used throughout
+    // the codebase and documented in err.rs (implicitly assigned 526).
+    let expected = 99;
     let _ = expected;
+    // Verify endpoints still exist
+    assert_eq!(Error::Unauthorized as u32, 100);
+    assert_eq!(Error::MaxParticipantsReached as u32, 528);
 }

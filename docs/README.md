@@ -27,6 +27,7 @@ Comprehensive security documentation and guidelines:
 - **[Security Best Practices](./security/SECURITY_BEST_PRACTICES.md)** - Development and deployment security guidelines
 - **[Security Considerations](./security/SECURITY_CONSIDERATIONS.md)** - Important security considerations for the system
 - **[Security Testing Guide](./security/SECURITY_TESTING_GUIDE.md)** - Executable security checklist mapped to automated tests
+- **[Dispute Invariant Property Tests](./security/DISPUTE_INVARIANT_PROPTEST.md)** - Generated dispute-state invariants and overflow safety
 
 ### ⛽ [Gas Optimization Documentation](./gas/)
 
