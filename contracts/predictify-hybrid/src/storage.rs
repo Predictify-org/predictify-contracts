@@ -153,7 +153,8 @@ pub struct StorageTtlPressure {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
+    /// Consumed `place_bets` idempotency key, scoped per (user, key).
+    PlaceBetsIdem(Address, BytesN<32>),
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
@@ -181,34 +182,26 @@ pub enum DataKey {
     ResolutionAdminLastAction(Symbol),
     /// Global protocol configuration record.
     GlobalConfig,
-    /// Global max bet cap per user.
-    MaxBetCap,
-    /// Per-user total stake in a market.
-    UserStake(Symbol, Address),
-    /// Per-market bounded top-N stake leaderboard heap.
-    ///
-    /// Stores a `Vec<MarketLeaderboardEntry>` (max [`MAX_MARKET_LEADERBOARD_CAPACITY`] entries)
-    /// that is updated incrementally on every `place_bet`.  Reads are O(N) in the heap
-    /// size which is bounded, keeping costs predictable.
-    MarketLeaderboard(Symbol),
-    /// Cooldown state for oracle admin actions.
-    OracleAdminCooldownState,
-    /// Cooldown state for multisig signer rotations.
-    MultisigRotationState,
-    /// Per-topic event nonce for replay protection.
+    /// Replay protection nonce for events, stored per topic.
     EventNonce(Symbol),
-    /// Head (latest index + hash) of a per-market audit log.
-    MarketAuditHead(Symbol),
-    /// Individual entry in a per-market audit log.
-    MarketAuditLog(Symbol, u64),
-    /// Per-market admin override nonce for replay protection.
-    AdminOverrideNonce(Symbol),
-    /// Global collusion detector configuration.
-    CollusionDetectorConfig,
-    /// Global per-ledger bet cap.
-    PerLedgerBetCap,
-    /// Per-ledger bet counter (temporary storage key).
-    PerLedgerBetCounter,
+    /// Cumulative stake a user has locked on a specific market.
+    /// Value: `i128` (total amount in base token units).
+    UserStake(Symbol, Address),
+    /// Global per-user maximum cumulative bet cap across a single market.
+    /// Value: `i128` (cap amount in base token units).
+    MaxBetCap,
+    // ===== COOL-OFF KEYS =====
+    /// Ledger timestamp (u64) of the last accepted bet placed by `(market_id, user)`.
+    /// Used to enforce the per-user cool-off period between consecutive bets on the
+    /// same market.
+    UserLastBetTime(Symbol, Address),
+    /// Global cool-off period in seconds (u64).
+    /// When set, all markets without a per-market override must wait this many seconds
+    /// between consecutive bets from the same user on the same market.
+    CoolOffPeriod,
+    /// Per-market cool-off override in seconds (u64) for a specific `market_id`.
+    /// Takes precedence over `CoolOffPeriod` when present.
+    PerMarketCoolOff(Symbol),
 }
 
 /// Storage format version for migration tracking
