@@ -1,5 +1,5 @@
 use alloc::format;
-use soroban_sdk::{contracttype, panic_with_error, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, vec, Address, Env, IntoVal, Map, String, Symbol, Val, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;
@@ -7,6 +7,8 @@ use crate::types::{ClaimInfo, MarketState};
 use crate::Error;
 
 const DEFAULT_UNCLAIMED_CLAIM_PERIOD_SECONDS: u64 = 90 * 24 * 60 * 60;
+const RECOVERY_TTL_LEDGERS: u32 = 365 * 17_280;
+const RECOVERY_LIFETIME_THRESHOLD: u32 = 31 * 17_280;
 
 /// Maximum completed recovery records retained per market.
 ///
@@ -323,17 +325,25 @@ impl RecoveryStorage {
 
     fn load_active_map(env: &Env) -> Map<Symbol, MarketRecovery> {
         Self::ensure_migrated(env);
-        env.storage()
+        let key = Self::active_key(env);
+        let map = env
+            .storage()
             .persistent()
-            .get(&Self::active_key(env))
-            .unwrap_or(Map::new(env))
+            .get(&key)
+            .unwrap_or(Map::new(env));
+        Self::bump_recovery_ttl(env, &key);
+        map
     }
 
     fn load_history_direct(env: &Env, market_id: &Symbol) -> Vec<RecoveryHistoryEntry> {
-        env.storage()
+        let key = Self::per_market_history_key(env, market_id);
+        let history = env
+            .storage()
             .persistent()
-            .get(&Self::per_market_history_key(env, market_id))
-            .unwrap_or_else(|| Vec::new(env))
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env));
+        Self::bump_recovery_ttl(env, &key);
+        history
     }
 
     fn load_history(env: &Env, market_id: &Symbol) -> Vec<RecoveryHistoryEntry> {
@@ -346,6 +356,20 @@ impl RecoveryStorage {
             &Self::per_market_history_key(env, market_id),
             history,
         );
+    }
+
+    fn bump_recovery_ttl<K>(env: &Env, key: &K)
+    where
+        K: IntoVal<Env, Val>,
+    {
+        if env.storage().persistent().has(key) {
+            let max_ttl = env.storage().max_ttl();
+            let min_ttl = RECOVERY_LIFETIME_THRESHOLD.min(max_ttl);
+            let bump_ttl = RECOVERY_TTL_LEDGERS.min(max_ttl);
+            env.storage()
+                .persistent()
+                .extend_ttl(key, min_ttl, bump_ttl);
+        }
     }
 
     fn trim_history(env: &Env, history: &mut Vec<RecoveryHistoryEntry>) {
@@ -423,11 +447,13 @@ impl RecoveryStorage {
     }
 
     pub fn status(env: &Env, market_id: &Symbol) -> Option<String> {
+        let key = Self::status_key(env);
         let status_map: Map<Symbol, String> = env
             .storage()
             .persistent()
-            .get(&Self::status_key(env))
+            .get(&key)
             .unwrap_or(Map::new(env));
+        Self::bump_recovery_ttl(env, &key);
         status_map.get(market_id.clone())
     }
 
@@ -1007,6 +1033,39 @@ mod tests {
             RecoveryStorage::status(&test.env, &test.market_id)
         });
         assert!(status.is_some());
+    }
+
+    #[test]
+    fn test_recovery_storage_load_active_bumps_ttl() {
+        let test = RecoveryTest::new();
+        let contract_id = test.env.register(crate::PredictifyHybrid, ());
+        let record = MarketRecovery {
+            market_id: test.market_id.clone(),
+            actions: Vec::new(&test.env),
+            issues_detected: Vec::new(&test.env),
+            recovered: false,
+            partial_refund_total: 0,
+            last_action: None,
+        };
+
+        let active_key = RecoveryStorage::active_key(&test.env);
+        let (initial_ttl, ttl_before_read, ttl_after_read) = test.env.as_contract(&contract_id, || {
+            RecoveryStorage::save(&test.env, &record);
+            let initial_ttl = test.env.storage().persistent().get_ttl(&active_key);
+            if initial_ttl > RECOVERY_LIFETIME_THRESHOLD {
+                test.env.ledger().with_mut(|li| {
+                    li.sequence_number += initial_ttl - RECOVERY_LIFETIME_THRESHOLD + 1;
+                });
+            }
+            let ttl_before_read = test.env.storage().persistent().get_ttl(&active_key);
+            let loaded = RecoveryStorage::load_active(&test.env, &test.market_id);
+            let ttl_after_read = test.env.storage().persistent().get_ttl(&active_key);
+            assert!(loaded.is_some());
+            (initial_ttl, ttl_before_read, ttl_after_read)
+        });
+
+        assert!(ttl_before_read < initial_ttl);
+        assert!(ttl_after_read >= ttl_before_read);
     }
 
     #[test]
