@@ -156,6 +156,10 @@ mod max_participants_tests;
 #[path = "tests/fee_config_commit_reveal_tests.rs"]
 mod fee_config_commit_reveal_tests;
 
+/// Regression tests keeping `docs/storage.md` aligned with `storage::DataKey` [b#015].
+#[cfg(test)]
+mod storage_docs_tests;
+
 use admin::{
     AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
     AdminRole, AdminSystemIntegration,
