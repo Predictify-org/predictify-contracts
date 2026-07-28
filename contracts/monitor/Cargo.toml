@@ -1,0 +1,28 @@
+[package]
+name = "monitor"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Per-account state-cap monitor contract for Predictify"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[[test]]
+name = "limits"
+path = "tests/limits.rs"
+
+[[test]]
+name = "auth_boundary"
+path = "tests/auth_boundary.rs"
+
+[[test]]
+name = "err_stab"
+path = "tests/err_stab.rs"
