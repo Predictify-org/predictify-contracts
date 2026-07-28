@@ -63,7 +63,7 @@ impl AdminManager {
         };
         
         if last_action > 0 && now < last_action.saturating_add(cooldown) {
-            return Err(ContractError::AdminActionTimelocked);
+            return Err(ContractError::AdminCooldownActive);
         }
         
         env.storage().persistent().set(&last_key, &now);
