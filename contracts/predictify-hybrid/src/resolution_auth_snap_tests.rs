@@ -16,16 +16,106 @@
 
 use crate::err::Error;
 use crate::types::{OracleConfig, OracleProvider};
+use crate::{ResolutionContract, ResolutionContractClient};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    vec, Address, BytesN, Env, String, Symbol, Vec,
+    testutils::{Address as _, Ledger, AuthorizedFunction, AuthorizedInvocation},
+    vec, Address, BytesN, Env, String, Symbol, Vec, IntoVal,
 };
+
+
 
 // ============================================================
 // Shared helpers
 // ============================================================
 
+
+/// Helper to set up the environment and client
+fn setup_env() -> (Env, ResolutionContractClient<'static>, Address) {
+    let env = Env::default();
+    env.mock_all_auths(); // Allow us to simulate auth calls without real signatures
+    
+    let contract_id = env.register_contract(None, ResolutionContract);
+    let client = ResolutionContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    
+    (env, client, admin)
+}
+
+#[test]
+fn test_auth_snapshot_resolve_market() {
+    let (env, client, admin) = setup_env();
+    let market_id = 123u64;
+    let outcome = 1u32;
+
+    // Call the resolution entrypoint
+    client.resolve(&admin, &market_id, &outcome);
+
+    // Snapshot Assertion: Verify that the contract requested auth for 'admin'
+    // with function 'resolve' and specific arguments.
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    client.address.clone(),
+                    Symbol::new(&env, "resolve"),
+                    (admin.clone(), market_id, outcome).into_val(&env),
+                )),
+                sub_invocations: std::vec![]
+            }
+        )]
+    );
+}
+
+#[test]
+fn test_auth_snapshot_propose_resolution() {
+    let (env, client, user) = setup_env();
+    let market_id = 456u64;
+
+    client.propose(&user, &market_id);
+
+    // Verify the auth snapshot for proposal
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            user.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    client.address.clone(),
+                    Symbol::new(&env, "propose"),
+                    (user.clone(), market_id).into_val(&env),
+                )),
+                sub_invocations: std::vec![]
+            }
+        )]
+    );
+}
+
+#[test]
+fn test_auth_snapshot_update_config() {
+    let (env, client, admin) = setup_env();
+    let new_min_votes = 10u32;
+
+    client.update_config(&admin, &new_min_votes);
+
+    // Verify the auth snapshot for configuration changes
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    client.address.clone(),
+                    Symbol::new(&env, "update_config"),
+                    (admin.clone(), new_min_votes).into_val(&env),
+                )),
+                sub_invocations: std::vec![]
+            }
+        )]
+    );
+}
 /// Build an initialized contract with mock_all_auths active.
 fn setup() -> (Env, Address, Address) {
     let env = Env::default();
