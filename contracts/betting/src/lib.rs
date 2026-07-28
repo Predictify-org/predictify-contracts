@@ -25,3 +25,6 @@
 extern crate alloc;
 
 pub mod events;
+
+/// Default instance storage TTL bump in ledgers (~30 days).
+pub const INSTANCE_TTL_LEDGERS: u32 = 535_680;
