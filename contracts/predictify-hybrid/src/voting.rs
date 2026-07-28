@@ -36,7 +36,8 @@ pub const FEE_PERCENTAGE: i128 = crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE;
 
 /// Dispute extension period in hours
 pub const DISPUTE_EXTENSION_HOURS: u32 = crate::config::DISPUTE_EXTENSION_HOURS;
-
+/// Cooldown between critical admin voting actions.
+pub const ADMIN_ACTION_COOLDOWN_SECS: u64 = 3600;
 // ===== VOTING STRUCTURES =====
 
 /// Represents a user's vote on a prediction market.
@@ -235,6 +236,11 @@ pub struct ThresholdHistoryEntry {
     pub timestamp: u64,
 }
 
+#[contracttype]
+pub enum VotingAdminDataKey {
+    LastCriticalAdminAction,
+}
+
 // ===== VOTING MANAGER =====
 
 /// Comprehensive voting manager for prediction market voting operations.
@@ -301,6 +307,34 @@ pub struct ThresholdHistoryEntry {
 pub struct VotingManager;
 
 impl VotingManager {
+           /// Enforce cooldown between critical admin actions.
+    pub fn validate_admin_cooldown(
+        env: &Env,
+    ) -> Result<(), Error> {
+        let key = VotingAdminDataKey::LastCriticalAdminAction;
+
+        let last_action: Option<u64> =
+            env.storage().persistent().get(&key);
+
+        if let Some(last_action_ts) = last_action {
+            let now = env.ledger().timestamp();
+
+            if now < last_action_ts.saturating_add(ADMIN_ACTION_COOLDOWN_SECS)
+            {
+                return Err(Error::AdminCooldownActive);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn record_admin_action(env: &Env) {
+        let key = VotingAdminDataKey::LastCriticalAdminAction;
+
+        env.storage()
+            .persistent()
+            .set(&key, &env.ledger().timestamp());
+    }
     /// Process a user's vote on a market
     pub fn process_vote(
         env: &Env,
@@ -446,8 +480,12 @@ impl VotingManager {
         // Require authentication from the admin
         admin.require_auth();
 
-        // Validate admin permissions
-        VotingValidator::validate_admin_authentication(env, &admin)?;
+        VotingValidator::validate_admin_authentication(
+         env,
+         &admin,
+     )?;
+
+        VotingValidator::validate_admin_cooldown(env)?;
 
         // Validate new threshold
         ThresholdValidator::validate_threshold_limits(new_threshold)?;
@@ -468,7 +506,7 @@ impl VotingManager {
 
         // Store new threshold
         ThresholdUtils::store_dispute_threshold(env, &market_id, &new_threshold_data)?;
-
+        VotingValidator::record_admin_action(env);
         // Add to history
         ThresholdUtils::add_threshold_history_entry(
             env,

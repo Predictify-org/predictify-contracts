@@ -110,13 +110,17 @@ mod tests;
 #[cfg(any())]
 mod event_creation_tests;
 
+#[cfg(test)]
+mod admin_cooldown_tests;
+
 // Re-export commonly used items
 use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
-pub use err::Error;
+use crate::Error;
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
-    pub use crate::err::*;
+    pub use crate::Error;
 }
+pub use crate::Error;
 // pub use queries::QueryManager;
 pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
@@ -4074,7 +4078,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedResult<Symbol>` with `items`, `next_cursor`, and `total_count`.
+    /// `SymbolPagedResult<Symbol>` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4083,11 +4087,18 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only; no events emitted.
-    pub fn get_all_markets_paged(env: Env, cursor: u32, limit: u32) -> PagedResult<Symbol> {
-        crate::queries::QueryManager::get_all_markets_paged(&env, cursor, limit)
-            .unwrap_or_else(|e| panic_with_error!(&env, e))
-    }
-
+   pub fn get_all_markets_paged(
+    env: Env,
+    cursor: u32,
+    limit: u32,
+) -> SymbolPagedResult {
+    crate::queries::QueryManager::get_all_markets_paged(
+        &env,
+        cursor,
+        limit,
+    )
+    .unwrap_or_else(|e| panic_with_error!(&env, e))
+}
     /// Return a paginated page of a user's bets across markets.
     ///
     /// Scans the market index slice `[cursor, cursor+limit)` and returns only
@@ -4103,7 +4114,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedResult<UserBetQuery>` with `items`, `next_cursor`, and `total_count`.
+    /// `SymbolPagedResult<UserBetQuery>` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4117,11 +4128,10 @@ impl PredictifyHybrid {
         user: Address,
         cursor: u32,
         limit: u32,
-    ) -> PagedResult<UserBetQuery> {
-        crate::queries::QueryManager::query_user_bets_paged(&env, user, cursor, limit)
+    ) -> UserBetPagedResult {
+            crate::queries::QueryManager::query_user_bets_paged(&env, user, cursor, limit)
             .unwrap_or_else(|e| panic_with_error!(&env, e))
-    }
-
+        }       
     /// Return partial contract state statistics for a market-list page.
     ///
     /// Processes only the market slice `[cursor, cursor+limit)`.  Callers
