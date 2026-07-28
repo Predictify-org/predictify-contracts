@@ -23,7 +23,7 @@
 //! | `transfer_ownership`   | Admin                      |
 //! | `version`              | Anyone (read-only)         |
 
-mod errors;
+pub mod errors;
 
 use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env, String, Vec};
 
@@ -90,7 +90,6 @@ pub struct LiquidityData {
     pub total_amount: i128,
 }
 
-pub mod errors;
 pub mod admin;
 
 #[contract]

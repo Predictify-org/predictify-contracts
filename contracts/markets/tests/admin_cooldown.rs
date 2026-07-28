@@ -54,7 +54,7 @@ fn test_admin_cooldown() {
     
     // Second invocation immediately should fail due to cooldown
     let res_err = client.try_check_cd(&admin, &func_name);
-    assert_eq!(res_err.unwrap_err().unwrap(), ContractError::AdminActionTimelocked);
+    assert_eq!(res_err.unwrap_err().unwrap(), ContractError::AdminCooldownActive);
     
     // Advance ledger timestamp beyond cooldown
     env.ledger().with_mut(|l| {
