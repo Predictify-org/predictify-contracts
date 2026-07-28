@@ -5,6 +5,14 @@ use alloc::string::{String as StdString, ToString};
 use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol, Vec};
 
 /// Comprehensive error codes for the Predictify Hybrid prediction market contract.
+///
+/// # Stability
+///
+/// Each discriminant is part of the client-facing contract API. Clients may
+/// persist these numbers or use them to decode failed invocations, so existing
+/// values must not be renumbered or reused. Add new variants with an explicit,
+/// previously unused value and update `tests/err_stability.rs` in the same
+/// change. A deliberate breaking change requires a versioned migration plan.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -135,8 +143,6 @@ pub enum Error {
     /// Contract is in an invalid or unexpected state. Manual intervention may be required.
     InvalidState = 494,
 
-    /// Overflow occurred during arithmetic operation.
-    Overflow = 495,
     /// No disputes found for the market.
     NoDisputesFound = 496,
     /// Oracle result not available when required.
