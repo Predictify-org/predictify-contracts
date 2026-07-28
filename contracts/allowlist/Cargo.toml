@@ -25,3 +25,7 @@ path = "tests/allowlist_lifecycle.rs"
 [[test]]
 name = "err_stab"
 path = "tests/err_stab.rs"
+
+[[test]]
+name = "proptest"
+path = "tests/proptest.rs"
