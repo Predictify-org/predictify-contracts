@@ -2,7 +2,20 @@
 
 use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Address, Env, Symbol, Vec, Map, BytesN};
 
-/// Contract error types for migration operations
+mod migrate;
+
+use soroban_sdk::{
+    contract, contracterror, contractevent, contractimpl, contracttype, Address, Env,
+};
+
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    Admin,
+    Version,
+}
+
+/// Errors returned by migration entrypoints.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -80,10 +93,50 @@ impl MigrateContract {
         if env.storage().instance().has(&VERSION_KEY) {
             return Err(ContractError::AlreadyInitialized);
         }
-        
-        env.storage().instance().set(&ADMIN_KEY, &admin);
-        env.storage().instance().set(&VERSION_KEY, &version);
-        
-        // Initialize empty data map
-        let data: Map<Symbol, Vec<u8>> = Map::new(&env);
-        env.storage().instance().set(&Symbol::new("DATA\
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Returns the configured migration administrator.
+    pub fn admin(env: Env) -> Result<Address, ContractError> {
+        Self::load_admin(&env)
+    }
+
+    /// Returns the current stored version.
+    pub fn current_version(env: Env) -> Result<u32, ContractError> {
+        Self::load_version(&env)
+    }
+
+    fn load_admin(env: &Env) -> Result<Address, ContractError> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::NotInitialized)
+    }
+
+    /// Migrate error-related state from one version to the next.
+    ///
+    /// This entrypoint delegates to [`migrate::migrate_error_state`] and
+    /// provides the same pre-condition guarantees — version compare-and-set,
+    /// admin authentication, and an extensible data-reshape hook.
+    ///
+    /// # Errors
+    ///
+    /// See [`migrate::migrate_error_state`].
+    pub fn migrate_error_data(
+        env: Env,
+        admin: Address,
+        expected_version: u32,
+        target_version: u32,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        migrate::migrate_error_state(&env, &admin, expected_version, target_version)
+    }
+
+    fn load_version(env: &Env) -> Result<u32, ContractError> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Version)
+            .ok_or(ContractError::NotInitialized)
+    }
+}
