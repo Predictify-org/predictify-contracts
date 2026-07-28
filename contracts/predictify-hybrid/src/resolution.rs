@@ -1512,9 +1512,46 @@ pub struct MarketResolutionValidator;
 
 impl MarketResolutionValidator {
     pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
-        if market.winning_outcomes.is_some() { return Err(Error::MarketResolved); }
-        if market.oracle_result.is_none() { return Err(Error::OracleUnavailable); }
-        if market.is_active(env) { return Err(Error::MarketClosed); }
+        // Check if market is already resolved
+        if market.winning_outcomes.is_some() {
+            return Err(Error::MarketResolved);
+        }
+
+        // Check if oracle result is available
+        if market.oracle_result.is_none() {
+            return Err(Error::OracleUnavailable);
+        }
+
+        // Check if market has ended
+        if market.is_active(env) {
+            return Err(Error::MarketClosed);
+        }
+
+        // Check minimum pool size requirement (per-market override, else global)
+        let global_min: i128 = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, "global_min_pool"))
+            .unwrap_or(0);
+        let min_pool = market.min_pool_size.unwrap_or(global_min);
+        
+        // Only check if min pool is set
+        if min_pool > 0 {
+            // Get token decimals to normalize amounts for comparison
+            let token_client = crate::markets::MarketUtils::get_token_client(env)?;
+            let token_decimals = token_client.decimals() as u32;
+            
+            // Normalize both total staked and min pool to canonical scale for comparison
+            let normalized_total = crate::tokens::normalize_amount(market.total_staked, token_decimals)
+                .ok_or(Error::InvalidInput)?;
+            let normalized_min = crate::tokens::normalize_amount(min_pool, token_decimals)
+                .ok_or(Error::InvalidInput)?;
+            
+            if normalized_total < normalized_min {
+                return Err(Error::InvalidState);
+            }
+        }
+
         Ok(())
     }
 

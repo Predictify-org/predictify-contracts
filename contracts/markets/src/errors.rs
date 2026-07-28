@@ -27,6 +27,13 @@ pub enum ContractError {
     InvalidState = 10,
     /// Admin action timelocked; thrown when an admin action is invoked before the cooldown has elapsed.
     AdminActionTimelocked = 11,
+    // ===== ADMIN-SPECIFIC ERROR VARIANTS (12-19) =====
+    /// Admin cooldown period is still active; the action cannot be executed yet.
+    AdminCooldownActive = 12,
+    /// The provided admin address is invalid (e.g., zero address or self-referential).
+    AdminAddressInvalid = 13,
+    /// The requested admin operation is not permitted in the current contract state.
+    AdminOperationNotPermitted = 14,
 }
 
 #[cfg(test)]
@@ -46,5 +53,8 @@ mod tests {
         assert_eq!(ContractError::StakeTooSmall as u32, 9);
         assert_eq!(ContractError::InvalidState as u32, 10);
         assert_eq!(ContractError::AdminActionTimelocked as u32, 11);
+        assert_eq!(ContractError::AdminCooldownActive as u32, 12);
+        assert_eq!(ContractError::AdminAddressInvalid as u32, 13);
+        assert_eq!(ContractError::AdminOperationNotPermitted as u32, 14);
     }
 }

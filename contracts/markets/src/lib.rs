@@ -23,7 +23,7 @@
 //! | `transfer_ownership`   | Admin                      |
 //! | `version`              | Anyone (read-only)         |
 
-mod errors;
+pub mod errors;
 
 use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env, String, Vec};
 
@@ -90,7 +90,6 @@ pub struct LiquidityData {
     pub total_amount: i128,
 }
 
-pub mod errors;
 pub mod admin;
 
 #[contract]
@@ -102,15 +101,18 @@ impl MarketsContract {
     //  Read-only
     // -----------------------------------------------------------------------
 
-    /// Returns the contract version.
-    ///
-    /// This is a read-only introspection entrypoint that does **not** require
-    /// authentication.
+    /// @notice Returns the contract version.
+    /// @dev This is a read-only introspection entrypoint that does **not** require authentication.
+    /// @param _env The contract environment.
+    /// @return The version number as u32.
     pub fn version(_env: Env) -> u32 {
         7
     }
 
-    /// Read a market from persistent storage and bump its TTL.
+    /// @notice Read a market from persistent storage and bump its TTL.
+    /// @param env The contract environment.
+    /// @param market_id The unique symbol identifying the market.
+    /// @return An optional value containing the market data if it exists.
     pub fn get_market(env: Env, market_id: soroban_sdk::Symbol) -> Option<soroban_sdk::Val> {
         let market: Option<soroban_sdk::Val> = env.storage().persistent().get(&market_id);
         if market.is_some() {

@@ -71,8 +71,8 @@ pub enum DataKey {
 ///
 /// Constructed at runtime as a tuple `(Symbol("Allowlist"), allowlist_id)` so
 /// that each allowlist is stored under a unique composite key.
-fn allowlist_storage_key(allowlist_id: &Symbol) -> (Symbol, Symbol) {
-    (Symbol::new(&allowlist_id.env(), "Allowlist"), allowlist_id.clone())
+fn allowlist_storage_key(env: &Env, allowlist_id: &Symbol) -> (Symbol, Symbol) {
+    (Symbol::new(env, "Allowlist"), allowlist_id.clone())
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ impl AllowlistContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .persistent()
-            .set(&DataKey::AllowlistRegistry, &Vec::new(&env));
+            .set(&DataKey::AllowlistRegistry, &Vec::<Symbol>::new(&env));
 
         events::emit_allowlist_initialized(&env, &admin);
 
@@ -140,7 +140,7 @@ impl AllowlistContract {
         Self::require_initialized(&env)?;
         Self::require_admin(&env, &admin)?;
 
-        let key = allowlist_storage_key(&allowlist_id);
+        let key = allowlist_storage_key(&env, &allowlist_id);
         if env.storage().persistent().has(&key) {
             return Err(AllowlistError::AllowlistAlreadyExists);
         }
@@ -233,7 +233,12 @@ impl AllowlistContract {
             return Err(AllowlistError::AddressNotInAllowlist);
         }
 
-        let filtered: Vec<Address> = addrs.iter().filter(|a| *a != address).collect();
+        let mut filtered: Vec<Address> = Vec::new(&env);
+        for a in addrs.iter() {
+            if a != address {
+                filtered.push_back(a);
+            }
+        }
         Self::save_allowlist(&env, &allowlist_id, &filtered);
 
         events::emit_allowlist_address_removed(&env, &admin, &allowlist_id, &address);
@@ -382,7 +387,7 @@ impl AllowlistContract {
         // Remove the allowlist data
         env.storage()
             .persistent()
-            .remove(&allowlist_storage_key(&allowlist_id));
+            .remove(&allowlist_storage_key(&env, &allowlist_id));
 
         // Remove from registry
         let registry: Vec<Symbol> = env
@@ -391,7 +396,12 @@ impl AllowlistContract {
             .get(&DataKey::AllowlistRegistry)
             .unwrap_or_else(|| Vec::new(&env));
 
-        let filtered: Vec<Symbol> = registry.iter().filter(|id| *id != allowlist_id).collect();
+        let mut filtered: Vec<Symbol> = Vec::new(&env);
+        for id in registry.iter() {
+            if id != allowlist_id {
+                filtered.push_back(id);
+            }
+        }
         env.storage()
             .persistent()
             .set(&DataKey::AllowlistRegistry, &filtered);
@@ -512,7 +522,7 @@ impl AllowlistContract {
     /// # Errors
     /// - [`AllowlistError::AllowlistNotFound`] if the allowlist does not exist.
     fn load_allowlist(env: &Env, allowlist_id: &Symbol) -> Result<Vec<Address>, AllowlistError> {
-        let key = allowlist_storage_key(allowlist_id);
+        let key = allowlist_storage_key(env, allowlist_id);
         env.storage()
             .persistent()
             .get(&key)
@@ -521,7 +531,7 @@ impl AllowlistContract {
 
     /// Persist an allowlist's address vector and extend its TTL.
     fn save_allowlist(env: &Env, allowlist_id: &Symbol, addrs: &Vec<Address>) {
-        let key = allowlist_storage_key(allowlist_id);
+        let key = allowlist_storage_key(env, allowlist_id);
         env.storage().persistent().set(&key, addrs);
         // Extend TTL so the allowlist record does not expire prematurely.
         env.storage()

@@ -1,11 +1,8 @@
 #![no_std]
 
-//! Version migration contract.
-//!
-//! The contract keeps a single administrator and monotonically increasing
-//! version number. A migration must name the version it expects to replace;
-//! this compare-and-set rule prevents stale operators from overwriting a
-//! newer migration.
+use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Address, Env, Symbol, Vec, Map, BytesN};
+
+mod migrate;
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, Env,
@@ -13,114 +10,88 @@ use soroban_sdk::{
 
 #[contracttype]
 #[derive(Clone)]
-enum DataKey {
+pub enum DataKey {
     Admin,
     Version,
 }
 
 /// Errors returned by migration entrypoints.
 #[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum ContractError {
-    /// The contract has already been initialized.
-    AlreadyInitialized = 1,
-    /// The contract has not been initialized.
+    /// Caller is not authorized
+    Unauthorized = 1,
+    /// Contract not initialized
     NotInitialized = 2,
-    /// The authenticated caller is not the migration administrator.
-    Unauthorized = 3,
-    /// The target version is not strictly greater than the current version.
-    InvalidTargetVersion = 4,
-    /// The supplied expected version does not match the stored version.
-    VersionMismatch = 5,
+    /// Contract already initialized
+    AlreadyInitialized = 3,
+    /// Version mismatch - current version doesn't match expected
+    VersionMismatch = 4,
+    /// Target version is invalid (same as current or lower)
+    InvalidTargetVersion = 5,
+    /// Migration data validation failed
+    InvalidMigrationData = 6,
+    /// Storage migration failed
+    MigrationFailed = 7,
 }
 
-/// Emitted after migration state is initialized.
-#[contractevent]
+/// Storage version key
+const VERSION_KEY: Symbol = Symbol::new("VERSION");
+/// Admin key
+const ADMIN_KEY: Symbol = Symbol::new("ADMIN");
+/// Migration data prefix
+const MIGRATION_PREFIX: Symbol = Symbol::new("MIGRATION_");
+
+/// Migration metadata stored per version upgrade
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Initialized {
-    /// Administrator authorized to perform migrations.
-    #[topic]
-    pub admin: Address,
-    /// First active version.
-    pub initial_version: u32,
+pub struct MigrationRecord {
+    pub from_version: u32,
+    pub to_version: u32,
+    pub timestamp: u64,
+    pub migrated_by: Address,
+    pub data_checksum: BytesN<32>,
 }
 
-/// Emitted after a version migration succeeds.
-#[contractevent]
+/// Storage layout version 1 - initial schema
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Migrated {
-    /// Administrator that authorized the migration.
-    #[topic]
+pub struct StorageV1 {
     pub admin: Address,
-    /// Version replaced by this migration.
-    pub previous_version: u32,
-    /// Version activated by this migration.
-    pub target_version: u32,
+    pub version: u32,
+    pub data: Map<Symbol, Vec<u8>>,
 }
+
+/// Storage layout version 2 - added migration history
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageV2 {
+    pub admin: Address,
+    pub version: u32,
+    pub data: Map<Symbol, Vec<u8>>,
+    pub migration_history: Vec<MigrationRecord>,
+}
+
+/// Current storage version
+const CURRENT_VERSION: u32 = 2;
 
 #[contract]
 pub struct MigrateContract;
 
 #[contractimpl]
 impl MigrateContract {
-    /// Initializes migration state with an administrator and starting version.
-    ///
-    /// The administrator must authorize the call. Re-initialization returns
-    /// [`ContractError::AlreadyInitialized`] and leaves state unchanged.
-    pub fn initialize(env: Env, admin: Address, initial_version: u32) -> Result<(), ContractError> {
+    /// Initialize the contract with admin and version
+    /// Requires auth from admin
+    pub fn initialize(env: Env, admin: Address, version: u32) -> Result<(), ContractError> {
         admin.require_auth();
-
-        if env.storage().instance().has(&DataKey::Admin) {
-            return Err(ContractError::AlreadyInitialized);
-        }
-
-        env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage()
-            .instance()
-            .set(&DataKey::Version, &initial_version);
-        Initialized {
-            admin,
-            initial_version,
-        }
-        .publish(&env);
-        Ok(())
-    }
-
-    /// Advances the stored version using an authenticated compare-and-set.
-    ///
-    /// `expected_version` must equal the stored version and `target_version`
-    /// must be strictly greater. These checks prevent stale, duplicate, and
-    /// downgrade migrations. Successful calls emit a `migrated` event whose
-    /// data is `(previous_version, target_version)`.
-    pub fn migrate(
-        env: Env,
-        admin: Address,
-        expected_version: u32,
-        target_version: u32,
-    ) -> Result<(), ContractError> {
-        admin.require_auth();
-
-        let stored_admin = Self::load_admin(&env)?;
-        if admin != stored_admin {
-            return Err(ContractError::Unauthorized);
-        }
-
-        let current_version = Self::load_version(&env)?;
-        if expected_version != current_version {
-            return Err(ContractError::VersionMismatch);
-        }
-        if target_version <= current_version {
+        
+        if version == 0 || version > CURRENT_VERSION {
             return Err(ContractError::InvalidTargetVersion);
         }
-
-        env.storage()
-            .instance()
-            .set(&DataKey::Version, &target_version);
-        Migrated {
-            admin,
-            previous_version: current_version,
-            target_version,
+        
+        if env.storage().instance().has(&VERSION_KEY) {
+            return Err(ContractError::AlreadyInitialized);
         }
         .publish(&env);
         Ok(())
@@ -141,6 +112,25 @@ impl MigrateContract {
             .instance()
             .get(&DataKey::Admin)
             .ok_or(ContractError::NotInitialized)
+    }
+
+    /// Migrate error-related state from one version to the next.
+    ///
+    /// This entrypoint delegates to [`migrate::migrate_error_state`] and
+    /// provides the same pre-condition guarantees — version compare-and-set,
+    /// admin authentication, and an extensible data-reshape hook.
+    ///
+    /// # Errors
+    ///
+    /// See [`migrate::migrate_error_state`].
+    pub fn migrate_error_data(
+        env: Env,
+        admin: Address,
+        expected_version: u32,
+        target_version: u32,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        migrate::migrate_error_state(&env, &admin, expected_version, target_version)
     }
 
     fn load_version(env: &Env) -> Result<u32, ContractError> {
