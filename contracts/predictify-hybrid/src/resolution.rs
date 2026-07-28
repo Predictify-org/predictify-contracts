@@ -1708,8 +1708,10 @@ impl MarketResolutionValidator {
             let token_decimals = token_client.decimals() as u32;
             
             // Normalize both total staked and min pool to canonical scale for comparison
-            let normalized_total = crate::tokens::normalize_amount(market.total_staked, token_decimals);
-            let normalized_min = crate::tokens::normalize_amount(min_pool, token_decimals);
+            let normalized_total = crate::tokens::normalize_amount(market.total_staked, token_decimals)
+                .ok_or(Error::InvalidInput)?;
+            let normalized_min = crate::tokens::normalize_amount(min_pool, token_decimals)
+                .ok_or(Error::InvalidInput)?;
             
             if normalized_total < normalized_min {
                 return Err(Error::InvalidState);
