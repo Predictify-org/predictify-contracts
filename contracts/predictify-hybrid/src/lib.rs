@@ -156,19 +156,19 @@ mod max_participants_tests;
 #[path = "tests/fee_config_commit_reveal_tests.rs"]
 mod fee_config_commit_reveal_tests;
 
-use admin::{
-    AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
-    AdminRole, AdminSystemIntegration,
-};
-pub use admin::Severity;
-pub use err::Error;
-use crate::storage::{
-    check_market_creation_rent, check_market_creation_rent_budget, DataKey, MARKET_TTL_LEDGERS,
-    MARKETS_BUMP_AMOUNT, MARKETS_LIFETIME_THRESHOLD,
-};
+#[cfg(test)]
+mod admin_cooldown_tests;
+
+// Re-export commonly used items
+use admin::{AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole};
+use crate::Error;
+// Backwards-compatible re-export for existing module paths.
 pub mod errors {
-    pub use crate::err::*;
+    pub use crate::Error;
 }
+pub use crate::Error;
+// pub use queries::QueryManager;
+pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
 use crate::config::{
@@ -4148,7 +4148,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedMarketIds` with `items`, `next_cursor`, and `total_count`.
+    /// `SymbolPagedResult<Symbol>` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4157,11 +4157,18 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only; no events emitted.
-    pub fn get_all_markets_paged(env: Env, cursor: u32, limit: u32) -> PagedMarketIds {
-        crate::queries::QueryManager::get_all_markets_paged(&env, cursor, limit)
-            .unwrap_or_else(|e| panic_with_error!(&env, e))
-    }
-
+   pub fn get_all_markets_paged(
+    env: Env,
+    cursor: u32,
+    limit: u32,
+) -> SymbolPagedResult {
+    crate::queries::QueryManager::get_all_markets_paged(
+        &env,
+        cursor,
+        limit,
+    )
+    .unwrap_or_else(|e| panic_with_error!(&env, e))
+}
     /// Return a paginated page of a user's bets across markets.
     ///
     /// Scans the market index slice `[cursor, cursor+limit)` and returns only
@@ -4177,7 +4184,7 @@ impl PredictifyHybrid {
     ///
     /// # Returns
     ///
-    /// `PagedUserBets` with `items`, `next_cursor`, and `total_count`.
+    /// `SymbolPagedResult<UserBetQuery>` with `items`, `next_cursor`, and `total_count`.
     ///
     /// # Errors
     ///
@@ -4191,11 +4198,10 @@ impl PredictifyHybrid {
         user: Address,
         cursor: u32,
         limit: u32,
-    ) -> PagedUserBets {
-        crate::queries::QueryManager::query_user_bets_paged(&env, user, cursor, limit)
+    ) -> UserBetPagedResult {
+            crate::queries::QueryManager::query_user_bets_paged(&env, user, cursor, limit)
             .unwrap_or_else(|e| panic_with_error!(&env, e))
-    }
-
+        }       
     /// Return partial contract state statistics for a market-list page.
     ///
     /// Processes only the market slice `[cursor, cursor+limit)`.  Callers
