@@ -1,4 +1,3 @@
-#![no_std]
 use soroban_sdk::contracterror;
 
 /// A stable catalog of errors for the markets smart contract.
@@ -26,6 +25,8 @@ pub enum ContractError {
     StakeTooSmall = 9,
     /// Invalid State; thrown when a generic state transition fails.
     InvalidState = 10,
+    /// Admin action timelocked; thrown when an admin action is invoked before the cooldown has elapsed.
+    AdminActionTimelocked = 11,
 }
 
 #[cfg(test)]
@@ -44,5 +45,6 @@ mod tests {
         assert_eq!(ContractError::Overflow as u32, 8);
         assert_eq!(ContractError::StakeTooSmall as u32, 9);
         assert_eq!(ContractError::InvalidState as u32, 10);
+        assert_eq!(ContractError::AdminActionTimelocked as u32, 11);
     }
 }
