@@ -1,6 +1,6 @@
 extern crate alloc;
 use alloc::format;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec, panic_with_error};
 // use alloc::string::ToString; // Unused import
 
 use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
@@ -12,6 +12,7 @@ use crate::markets::MarketStateManager;
 // use crate::resolution::MarketResolutionManager;
 use crate::audit_trail::{AuditAction, AuditTrailManager};
 use alloc::string::ToString;
+
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -41,6 +42,12 @@ pub enum AdminRole {
     ReadOnlyAdmin,
 }
 
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum AdminError {
+    CooldownActive = 101, // Error code for rapid abuse prevention
+}
+
 /// Severity level for admin broadcasts
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -48,6 +55,44 @@ pub enum Severity {
     Info,
     Warning,
     Critical,
+}
+
+// 1. Define the storage key for the last action timestamp
+pub const LAST_ADMIN_ACTION: &str = "LAST_ADMIN_ACT";
+
+// 2. Define the cooldown duration (24 hours = 86,400 seconds)
+// For testing purposes, you might want to make this configurable, 
+// but b#009 usually implies a strict window.
+pub const COOLDOWN_PERIOD: u64 = 86_400;
+
+/// Internal helper to enforce a wait period between critical admin actions.
+/// Call this inside any function that modifies sensitive contract state.
+pub fn check_and_update_cooldown(env: &Env) {
+    let now = env.ledger().timestamp();
+    
+    // Get the timestamp of the last action (default to 0 if never called)
+    let last_action: u64 = env.storage().instance().get(&LAST_ADMIN_ACTION).unwrap_or(0);
+
+    if last_action > 0 {
+        // Ensure (now - last_action) >= COOLDOWN_PERIOD
+        if now < last_action.checked_add(COOLDOWN_PERIOD).expect("Overflow") {
+            panic_with_error!(env, AdminError::CooldownActive);
+        }
+    }
+
+    // Update the timestamp to the current time for the next action
+    env.storage().instance().set(&LAST_ADMIN_ACTION, &now);
+}
+
+// --- Critical Admin Functions ---
+
+pub fn set_voting_parameters(env: Env, admin: Address, /* other params */) {
+    admin.require_auth();
+    
+    // 3. ENFORCE COOLDOWN (The fix for #1099)
+    check_and_update_cooldown(&env);
+
+    // ... rest of the logic to update parameters ...
 }
 
 /// Admin permission enumeration
