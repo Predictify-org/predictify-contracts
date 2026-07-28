@@ -1,0 +1,12 @@
+# Rust / cargo
+/target/
+
+# Soroban compiled WASM artifacts (built per scripts/check_wasm_size.sh)
+/.wasm/
+
+# OS / editor junk
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
