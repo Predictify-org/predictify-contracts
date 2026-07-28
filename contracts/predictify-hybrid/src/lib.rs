@@ -5701,62 +5701,33 @@ impl PredictifyHybrid {
 
     // ===== CONTRACT UPGRADE METHODS =====
 
-    /// Upgrade the contract to new Wasm bytecode
+    /// Upgrade the contract to a new Wasm bytecode.
     ///
-    /// This function allows authorized admins to upgrade the contract to a new
-    /// version by replacing the Wasm bytecode. It includes comprehensive validation,
-    /// version checking, and event logging.
+    /// This entrypoint lets the configured primary admin rotate the active
+    /// contract bytecode after a predecessor-hash check. It is the primary
+    /// authenticated upgrade path for on-chain migrations.
     ///
-    /// # Parameters
+    /// # What
     ///
-    /// * `env` - The Soroban environment
-    /// * `admin` - The admin performing the upgrade (must be authorized)
-    /// * `new_wasm_hash` - Hash of the new Wasm bytecode to deploy
+    /// Replaces the active Wasm hash with `new_wasm_hash` when the caller is the
+    /// stored primary admin and the supplied predecessor matches the current
+    /// deployed hash.
     ///
-    /// # Returns
+    /// # How
     ///
-    /// * `Ok(())` if upgrade succeeds
-    /// * `Err(Error)` if authorization fails or upgrade is incompatible
+    /// The call verifies admin authorization, hands the request to the upgrade
+    /// manager for chain and compatibility checks, and appends an audit-trail
+    /// record for the resulting state change.
     ///
-    /// # Security
+    /// # Why
     ///
-    /// - Requires Soroban `require_auth()` from the caller
-    /// - Requires the caller to match the stored primary admin in persistent storage
-    /// - Validates WASM hash chain to prevent out-of-order/forked upgrades
-    /// - Validates version compatibility
-    /// - Performs safety checks before upgrade
-    /// - Logs all upgrade attempts for audit trail
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - Soroban environment
-    /// * `admin` - Admin performing the upgrade (must be authorized)
-    /// * `new_wasm_hash` - Hash of new Wasm bytecode to deploy
-    /// * `expected_predecessor` - Expected current WASM hash (for chain verification)
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use soroban_sdk::{Env, Address, BytesN};
-    /// # let env = Env::default();
-    /// # let admin = Address::generate(&env);
-    /// # let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-    /// # let current_hash = BytesN::from_array(&env, &[0u8; 32]);
-    ///
-    /// // Perform upgrade with admin authorization and chain verification
-    /// admin.require_auth();
-    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash, current_hash)?;
-    /// # Ok::<(), predictify_hybrid::errors::Error>(())
-    /// ```
+    /// This keeps upgrades authenticated, ordered, and observable for operators.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    /// Returns [`Error::UpgradeChainMismatch`] if the expected predecessor does not match the current WASM hash.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the caller is not the primary admin, the supplied
+    /// predecessor hash does not match, or the upgrade manager rejects the
+    /// proposed upgrade.
     pub fn upgrade_contract(
         env: Env,
         admin: Address,
@@ -5782,7 +5753,30 @@ impl PredictifyHybrid {
         result
     }
 
-    /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event.
+    /// Broadcast an emergency notice to off-chain clients.
+    ///
+    /// This entrypoint publishes an admin broadcast event so operators and
+    /// monitoring services can react to urgent contract-state changes.
+    ///
+    /// # What
+    ///
+    /// Emits a broadcast event carrying the provided severity, message hash, and
+    /// human-readable reason.
+    ///
+    /// # How
+    ///
+    /// The call delegates to the admin broadcast helper after validation of the
+    /// caller and the supplied payload.
+    ///
+    /// # Why
+    ///
+    /// This keeps critical operational messages visible without requiring a full
+    /// contract upgrade.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when the caller is not authorized or the broadcast
+    /// payload cannot be accepted by the admin subsystem.
     pub fn admin_broadcast(
         env: Env,
         admin: Address,
@@ -5793,29 +5787,30 @@ impl PredictifyHybrid {
         crate::admin::AdminFunctions::admin_broadcast(&env, &admin, severity, message_hash, reason)
     }
 
-    /// Rollback contract to previous version
+    /// Roll back the contract to a previous Wasm bytecode.
     ///
-    /// Reverts the contract to a previous Wasm version. This is a critical
-    /// recovery mechanism for failed upgrades.
+    /// This entrypoint reverts the deployed bytecode to a known good version when
+    /// an upgrade is incomplete or unsafe. It is a recovery-oriented path for
+    /// operators.
     ///
-    /// # Parameters
+    /// # What
     ///
-    /// * `env` - The Soroban environment
-    /// * `admin` - The admin performing the rollback (must be authorized)
-    /// * `rollback_wasm_hash` - Hash of the Wasm bytecode to rollback to
+    /// Restores the contract to `rollback_wasm_hash` when the caller is the
+    /// stored primary admin.
     ///
-    /// # Returns
+    /// # How
     ///
-    /// * `Ok(())` if rollback succeeds
-    /// * `Err(Error)` if authorization fails or rollback is invalid
+    /// The call verifies admin authorization, delegates to the rollback manager,
+    /// and records the rollback in the audit trail.
+    ///
+    /// # Why
+    ///
+    /// This provides a controlled recovery path for failed or risky upgrades.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the caller is not authorized or the rollback target
+    /// cannot be applied safely.
     pub fn rollback_upgrade(
         env: Env,
         admin: Address,
@@ -5836,115 +5831,160 @@ impl PredictifyHybrid {
         result
     }
 
-    /// Get current contract version
+    /// Return the currently active contract version.
     ///
-    /// Returns the currently active contract version information.
+    /// This read-only entrypoint exposes the version information associated with
+    /// the currently deployed contract implementation.
     ///
-    /// # Returns
+    /// # What
     ///
-    /// * `Ok(Version)` - Current contract version
-    /// * `Err(Error)` - If version cannot be retrieved
+    /// Returns the active [`versioning::Version`] descriptor for the contract.
+    ///
+    /// # How
+    ///
+    /// The call delegates to the version manager to read the stored version state.
+    ///
+    /// # Why
+    ///
+    /// This helps clients and operators verify which implementation is currently
+    /// active before issuing versioned operations.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the active version cannot be read from storage.
     pub fn get_contract_version(env: Env) -> Result<versioning::Version, Error> {
         upgrade_manager::UpgradeManager::get_contract_version(&env)
     }
 
-    /// Return the current capability bitmap for the contract version.
+    /// Return the capability bitmap for the active contract version.
     ///
-    /// Clients can call this to probe which features are supported without
-    /// maintaining a client-side version-to-capability lookup table.
+    /// Clients can call this entrypoint to learn which feature flags are enabled
+    /// without maintaining a client-side version-to-capability lookup table.
+    ///
+    /// # What
     ///
     /// Returns a `u64` bitmask where each bit corresponds to a `CAPABILITY_*`
     /// constant defined in the [`versioning`] module.
+    ///
+    /// # How
+    ///
+    /// The call delegates to the capability resolver for the active environment.
+    ///
+    /// # Why
+    ///
+    /// This provides a stable compatibility discovery mechanism during upgrades.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint does not currently emit contract errors; it returns the
+    /// bitmap directly for the active environment.
     pub fn capabilities(env: Env) -> u64 {
         crate::capabilities::capabilities(&env)
     }
 
-    /// Check if upgrade is available
+    /// Report whether an upgrade is currently available for execution.
     ///
-    /// Checks if there are approved upgrade proposals ready for execution.
+    /// This read-only entrypoint checks whether there is an approved proposal that
+    /// can be executed without further operator intervention.
     ///
-    /// # Returns
+    /// # What
     ///
-    /// * `Ok(bool)` - True if upgrade is available
+    /// Returns `true` when an upgrade proposal is ready for execution and `false`
+    /// otherwise.
+    ///
+    /// # How
+    ///
+    /// The call delegates to the upgrade manager to inspect the stored proposal
+    /// state and readiness flags.
+    ///
+    /// # Why
+    ///
+    /// This lets operators or clients quickly determine whether an upgrade can be
+    /// triggered.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the proposal state cannot be inspected safely.
     pub fn check_upgrade_available(env: Env) -> Result<bool, Error> {
         upgrade_manager::UpgradeManager::check_upgrade_available(&env)
     }
 
-    /// Get upgrade history
+    /// Return the upgrade history for the contract.
     ///
-    /// Retrieves complete history of all contract upgrades.
+    /// This entrypoint exposes the historical record of all upgrade attempts and
+    /// successful changes applied to the contract implementation.
     ///
-    /// # Returns
+    /// # What
     ///
-    /// * `Ok(Vec<UpgradeRecord>)` - List of all upgrade records
+    /// Returns the full upgrade history as a vector of upgrade records.
+    ///
+    /// # How
+    ///
+    /// The call reads and formats the stored upgrade history through the upgrade
+    /// manager.
+    ///
+    /// # Why
+    ///
+    /// This is useful for auditing, debugging, and operational review.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the history cannot be read from storage.
     pub fn get_upgrade_history(env: Env) -> Result<Vec<upgrade_manager::UpgradeRecord>, Error> {
         upgrade_manager::UpgradeManager::get_upgrade_history(&env)
     }
 
-    /// Get upgrade statistics
+    /// Return aggregate analytics about prior upgrades.
     ///
-    /// Calculates and returns comprehensive upgrade statistics.
+    /// This read-only entrypoint summarizes the upgrade lifecycle with a compact
+    /// statistics object for dashboards and audits.
     ///
-    /// # Returns
+    /// # What
     ///
-    /// * `Ok(UpgradeStats)` - Upgrade statistics and analytics
+    /// Returns an [`upgrade_manager::UpgradeStats`] object summarizing upgrade
+    /// activity.
+    ///
+    /// # How
+    ///
+    /// The call delegates to the upgrade manager to compute the aggregate metrics
+    /// from stored history.
+    ///
+    /// # Why
+    ///
+    /// This provides a stable way to surface operational health and migration
+    /// patterns.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the statistics cannot be derived from the available
+    /// history.
     pub fn get_upgrade_statistics(env: Env) -> Result<upgrade_manager::UpgradeStats, Error> {
         upgrade_manager::UpgradeManager::get_upgrade_statistics(&env)
     }
 
-    /// Validate upgrade compatibility
+    /// Validate an upgrade proposal before execution.
     ///
-    /// Performs comprehensive validation of an upgrade proposal without
-    /// executing the upgrade. Useful for testing and validation.
+    /// This entrypoint performs a compatibility analysis without applying the
+    /// upgrade, which helps operators confirm that a target bytecode and config
+    /// are safe to deploy.
     ///
-    /// # Parameters
+    /// # What
     ///
-    /// * `env` - The Soroban environment
-    /// * `proposal` - The upgrade proposal to validate
+    /// Returns a compatibility analysis result for the supplied proposal.
     ///
-    /// # Returns
+    /// # How
     ///
-    /// * `Ok(CompatibilityCheckResult)` - Detailed compatibility analysis
+    /// The call routes the proposal through the upgrade manager for validation and
+    /// compatibility checks.
+    ///
+    /// # Why
+    ///
+    /// This reduces the risk of introducing incompatible or unsafe upgrades.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the proposal cannot be validated or the environment
+    /// cannot safely evaluate it.
     pub fn validate_upgrade_compatibility(
         env: Env,
         proposal: upgrade_manager::UpgradeProposal,
@@ -5952,26 +5992,28 @@ impl PredictifyHybrid {
         upgrade_manager::UpgradeManager::validate_upgrade_compatibility(&env, &proposal)
     }
 
-    /// Test upgrade safety
+    /// Test whether an upgrade proposal would pass the safety checks.
     ///
-    /// Performs dry-run validation of an upgrade proposal without executing.
+    /// This entrypoint performs a dry-run safety evaluation without applying the
+    /// proposal, which is useful for pre-flight validation.
     ///
-    /// # Parameters
+    /// # What
     ///
-    /// * `env` - The Soroban environment
-    /// * `proposal` - The upgrade proposal to test
+    /// Returns `true` when the proposal would pass the safety checks and `false`
+    /// otherwise.
     ///
-    /// # Returns
+    /// # How
     ///
-    /// * `Ok(bool)` - True if upgrade would succeed
+    /// The call delegates to the upgrade manager to run the proposal through the
+    /// same validation path as a real execution, minus the actual state change.
+    ///
+    /// # Why
+    ///
+    /// This helps operators avoid unsafe or non-compliant upgrades.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Returns [`Error`] when the proposal cannot be evaluated safely.
     pub fn test_upgrade_safety(
         env: Env,
         proposal: upgrade_manager::UpgradeProposal,
@@ -7306,6 +7348,31 @@ mod tests {
         env.as_contract(&contract_id, || {
             let guard = BudgetGuard::new(&env, 100_000);
             assert!(guard.consumed() == 0); // No instructions consumed yet in test host
+        });
+    }
+
+    #[test]
+    fn test_upgrade_entrypoints_expose_expected_contract_surface() {
+        let env = Env::default();
+        let contract_id = env.register(PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            let version = PredictifyHybrid::get_contract_version(env.clone());
+            assert!(version.is_ok());
+
+            let capability_bitmap = PredictifyHybrid::capabilities(env.clone());
+            assert!(capability_bitmap > 0);
+
+            let available = PredictifyHybrid::check_upgrade_available(env.clone());
+            assert!(available.is_ok());
+            assert!(!available.unwrap());
+
+            let history = PredictifyHybrid::get_upgrade_history(env.clone());
+            assert!(history.is_ok());
+            assert!(history.unwrap().is_empty());
+
+            let stats = PredictifyHybrid::get_upgrade_statistics(env.clone());
+            assert!(stats.is_ok());
         });
     }
 
