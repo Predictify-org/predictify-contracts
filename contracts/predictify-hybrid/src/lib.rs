@@ -47,6 +47,11 @@ mod resolution_event_ordering_tests;
 mod resolution_state_property_tests;
 
 #[cfg(test)]
+mod tests {
+    mod auth_snap;
+}
+
+#[cfg(test)]
 #[path = "tests/oracle_validation_tests.rs"]
 mod oracle_validation_tests;
 
