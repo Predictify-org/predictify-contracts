@@ -13,6 +13,8 @@ pub mod security;
 
 #[cfg(test)]
 pub mod fee_calculator_proptest;
+#[cfg(test)]
+pub mod monitor_invariant_proptest;
 
 // DISABLED: API drift - re-enable after fixing
 // mod fee_idempotency_tests;
