@@ -21,7 +21,8 @@ pub mod views;
 pub use views::CapabilityFlag;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, String, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, IntoVal,
+    String, Vec,
 };
 
 /// Persistent storage key for the oracle address list.
@@ -80,6 +81,13 @@ pub enum Error {
     OracleCallbackReplayDetected = 213,
     /// The oracle callback arrived after its deadline.
     OracleCallbackTimeout = 214,
+    // ===== CAPABILITIES ERRORS (220-229) =====
+    /// The requested capability is not supported by this contract version.
+    CapabilityNotSupported = 220,
+    /// The capabilities query returned an unexpected or malformed bitmap.
+    CapabilityBitmapCorrupt = 221,
+    /// A reserved capability bit was unexpectedly set.
+    ReservedCapabilitySet = 222,
 }
 
 /// Minimum TTL ledgers for the oracle registry key.
@@ -159,7 +167,12 @@ impl OraclesContract {
         admin.require_auth();
 
         let list = load_oracle_list(&env);
-        let filtered: Vec<Address> = list.iter().filter(|a| *a != oracle).collect();
+        let mut filtered: Vec<Address> = Vec::new(&env);
+        for a in list.iter() {
+            if a != oracle {
+                filtered.push_back(a);
+            }
+        }
         save_oracle_list(&env, &filtered);
     }
 
