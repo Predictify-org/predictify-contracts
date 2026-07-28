@@ -93,6 +93,8 @@ mod override_audit_tests;
 mod market_audit_tests;
 #[cfg(test)]
 mod test_audit_trail;
+#[cfg(test)]
+mod tests;
 
 mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
