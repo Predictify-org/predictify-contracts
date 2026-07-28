@@ -30,3 +30,6 @@ debug-assertions = true
 
 [workspace.members]
 "contracts/auction"
+
+[workspace.members]
+"contracts/analytics"
