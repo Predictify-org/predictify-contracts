@@ -25,3 +25,7 @@ path = "tests/err_stab.rs"
 [[test]]
 name = "gas_snap"
 path = "tests/gas_snap.rs"
+
+[[test]]
+name = "cap_error_stab"
+path = "tests/cap_error_stab.rs"
