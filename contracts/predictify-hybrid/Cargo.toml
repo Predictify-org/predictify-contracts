@@ -31,6 +31,10 @@ path = "tests/err_stability.rs"
 name = "stateful"
 path = "tests/stateful.rs"
 
+[[test]]
+name = "gas_snap"
+path = "tests/gas_snap.rs"
+
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 proptest = "1.4"
