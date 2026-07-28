@@ -196,6 +196,7 @@ name = "betting"
 version = "0.0.0"
 dependencies = [
  "predictify-hybrid",
+ "proptest",
  "soroban-sdk",
 ]
 
