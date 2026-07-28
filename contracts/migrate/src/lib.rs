@@ -7,13 +7,15 @@
 //! this compare-and-set rule prevents stale operators from overwriting a
 //! newer migration.
 
+mod migrate;
+
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, Env,
 };
 
 #[contracttype]
 #[derive(Clone)]
-enum DataKey {
+pub enum DataKey {
     Admin,
     Version,
 }
@@ -141,6 +143,25 @@ impl MigrateContract {
             .instance()
             .get(&DataKey::Admin)
             .ok_or(ContractError::NotInitialized)
+    }
+
+    /// Migrate error-related state from one version to the next.
+    ///
+    /// This entrypoint delegates to [`migrate::migrate_error_state`] and
+    /// provides the same pre-condition guarantees — version compare-and-set,
+    /// admin authentication, and an extensible data-reshape hook.
+    ///
+    /// # Errors
+    ///
+    /// See [`migrate::migrate_error_state`].
+    pub fn migrate_error_data(
+        env: Env,
+        admin: Address,
+        expected_version: u32,
+        target_version: u32,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        migrate::migrate_error_state(&env, &admin, expected_version, target_version)
     }
 
     fn load_version(env: &Env) -> Result<u32, ContractError> {
