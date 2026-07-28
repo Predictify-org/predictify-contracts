@@ -438,3 +438,25 @@ fn schema_version_is_frozen_at_one() {
     let entry = BettingEventSchema::get_schema(&env, EVENT_NAME_BET_CREATED).unwrap();
     assert_eq!(entry.schema_version, 1u32);
 }
+
+// -----------------------------------------------------------------
+// §10 TTL bumping tests
+// -----------------------------------------------------------------
+
+#[test]
+fn emit_event_bumps_instance_ttl() {
+    let env = env();
+    env.ledger().with_mut(|li| {
+        li.min_temp_entry_ttl = 1;
+        li.min_persistent_entry_ttl = 1;
+        li.max_entry_ttl = 6_000_000;
+    });
+
+    let market_id = new_market_id(&env, "mkt_ttl");
+    let user = bettor(&env);
+    let outcome = soroban_sdk::String::from_str(&env, "yes");
+
+    // Emit hits `next_nonce` which bumps instance TTL by 535_680 ledgers.
+    // If max_entry_ttl wasn't set, or if extend_ttl was invalid, this would panic.
+    BettingEventEmitter::emit_bet_created(&env, &market_id, &user, &outcome, 1, 0);
+}

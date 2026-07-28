@@ -307,6 +307,9 @@ fn nonce_key(topic: Symbol) -> (Symbol, Symbol) {
 fn next_nonce(env: &Env, topic: Symbol) -> u64 {
     let key = nonce_key(topic);
     let current: u64 = env.storage().instance().get(&key).unwrap_or(0u64);
+    
+    env.storage().instance().extend_ttl(crate::INSTANCE_TTL_LEDGERS, crate::INSTANCE_TTL_LEDGERS);
+    
     let incremented = current.saturating_add(1);
     env.storage().instance().set(&key, &incremented);
     incremented
