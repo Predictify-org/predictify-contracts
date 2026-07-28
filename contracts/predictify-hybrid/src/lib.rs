@@ -156,6 +156,10 @@ mod max_participants_tests;
 #[path = "tests/fee_config_commit_reveal_tests.rs"]
 mod fee_config_commit_reveal_tests;
 
+/// Auth-context tests for the Reflector oracle integration [b#018].
+#[cfg(test)]
+mod reflector_auth_tests;
+
 use admin::{
     AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
     AdminRole, AdminSystemIntegration,
