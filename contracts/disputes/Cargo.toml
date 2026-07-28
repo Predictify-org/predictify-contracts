@@ -22,3 +22,7 @@ path = "tests/err_stab.rs"
 [[test]]
 name = "dispute_edge_cases"
 path = "tests/dispute_edge_cases.rs"
+
+[[test]]
+name = "xcontract"
+path = "tests/xcontract.rs"
