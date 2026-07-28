@@ -1,4 +1,3 @@
-#![no_std]
 use soroban_sdk::contracterror;
 
 /// A stable catalog of errors for the markets smart contract.
