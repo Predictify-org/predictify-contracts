@@ -30,10 +30,6 @@ pub struct DisputeDecayConfig {
     pub floor_bps: u32,
 }
 
-        if market.oracle_result.is_none() {
-            return Err(Error::OracleResultNotAvailable);
-        }
-
 /// Comprehensive statistics about disputes for a specific market.
 ///
 /// This structure aggregates dispute activity data to provide insights into
@@ -4893,4 +4889,5 @@ mod auth_snapshot_tests {
             assert_eq!(result, Err(Error::Unauthorized));
         });
     }
+}
 }

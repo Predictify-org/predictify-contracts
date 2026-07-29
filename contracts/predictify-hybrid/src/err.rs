@@ -328,6 +328,22 @@ pub enum Error {
     UserNotWhitelisted = 541,
     /// Market creator is blacklisted.
     CreatorBlacklisted = 542,
+
+    // ===== HANDSHAKE ERRORS (1000-1006) =====
+    /// The proposed protocol version is not compatible with the supported set.
+    HandshakeVersionMismatch = 1000,
+    /// The handshake has expired and can no longer be accepted or rejected.
+    HandshakeExpired = 1001,
+    /// The handshake has already been completed (accepted or rejected).
+    HandshakeAlreadyCompleted = 1002,
+    /// The handshake is not in the pending state required for this operation.
+    HandshakePending = 1003,
+    /// No handshake record exists for the given adapter.
+    HandshakeNotFound = 1004,
+    /// The caller is not authorized to perform this handshake operation.
+    HandshakeUnauthorized = 1005,
+    /// The supported versions map has not been configured.
+    HandshakeSupportedVersionsNotSet = 1006,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

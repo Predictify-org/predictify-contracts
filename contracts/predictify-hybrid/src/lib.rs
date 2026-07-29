@@ -29,7 +29,6 @@ mod force_resolve;
 mod event_archive;
 pub mod events;
 mod extensions;
-mod events;
 pub mod gov_registry;
 mod fees;
 mod gas;
@@ -74,22 +73,18 @@ mod market_analytics;
 mod performance_benchmarks;
 mod disputes;
 mod edge_cases;
-mod extensions;
 mod graceful_degradation;
 mod market_id_generator;
 mod metadata_limits;
 mod queries;
 mod recovery;
 mod statistics;
-mod tokens;
 mod rate_limiter;
 mod dispute_multisig;
 mod event_topic_catalog;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
-mod audit_trail;
-mod monitor;
 mod capabilities;
 
 #[cfg(test)]
@@ -106,6 +101,7 @@ mod bandprotocol {
 }
 
 pub mod timelock;
+pub mod handshake;
 
 use bets::BetStorage;
 use gas::BudgetGuard;
