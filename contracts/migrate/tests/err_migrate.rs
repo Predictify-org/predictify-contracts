@@ -10,6 +10,7 @@ use soroban_sdk::{testutils::Address as _, Address, Env};
 
 /// Deploy and initialise a fresh migrate contract.
 struct Fixture {
+    #[allow(dead_code)]
     env: Env,
     client: MigrateContractClient<'static>,
     admin: Address,
@@ -59,10 +60,12 @@ fn migration_can_skip_multiple_versions() {
 
 #[test]
 fn migrate_from_non_default_start() {
-    let f = Fixture::new(10);
+    // Start at version 2 (the maximum allowed by CURRENT_VERSION) and
+    // migrate forward — demonstrating non-default starting points work.
+    let f = Fixture::new(2);
 
-    assert_eq!(f.client.try_migrate_error_data(&f.admin, &10, &11), Ok(Ok(())));
-    assert_eq!(f.client.current_version(), 11);
+    assert_eq!(f.client.try_migrate_error_data(&f.admin, &2, &3), Ok(Ok(())));
+    assert_eq!(f.client.current_version(), 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,42 +74,43 @@ fn migrate_from_non_default_start() {
 
 #[test]
 fn rejects_expected_version_mismatch() {
-    let f = Fixture::new(3);
+    // Start at version 1; pass expected=2 (wrong) — should get VersionMismatch.
+    let f = Fixture::new(1);
 
     assert_eq!(
         f.client.try_migrate_error_data(&f.admin, &2, &4),
         Err(Ok(ContractError::VersionMismatch)),
-        "should reject expected=2 when stored=3"
+        "should reject expected=2 when stored=1"
     );
     assert_eq!(
         f.client.current_version(),
-        3,
+        1,
         "state must remain unchanged on error"
     );
 }
 
 #[test]
 fn rejects_target_equal_to_current() {
-    let f = Fixture::new(5);
+    let f = Fixture::new(2);
 
     assert_eq!(
-        f.client.try_migrate_error_data(&f.admin, &5, &5),
+        f.client.try_migrate_error_data(&f.admin, &2, &2),
         Err(Ok(ContractError::InvalidTargetVersion)),
         "target==current is not an upgrade"
     );
-    assert_eq!(f.client.current_version(), 5);
+    assert_eq!(f.client.current_version(), 2);
 }
 
 #[test]
 fn rejects_target_lower_than_current() {
-    let f = Fixture::new(5);
+    let f = Fixture::new(2);
 
     assert_eq!(
-        f.client.try_migrate_error_data(&f.admin, &5, &3),
+        f.client.try_migrate_error_data(&f.admin, &2, &1),
         Err(Ok(ContractError::InvalidTargetVersion)),
         "downgrade must be rejected"
     );
-    assert_eq!(f.client.current_version(), 5);
+    assert_eq!(f.client.current_version(), 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -157,19 +161,19 @@ fn rejects_non_admin_caller() {
 
 #[test]
 fn state_not_changed_on_version_mismatch() {
-    let f = Fixture::new(7);
+    let f = Fixture::new(1);
 
-    let _ = f.client.try_migrate_error_data(&f.admin, &6, &8);
-    assert_eq!(f.client.current_version(), 7);
+    let _ = f.client.try_migrate_error_data(&f.admin, &2, &3);
+    assert_eq!(f.client.current_version(), 1);
 }
 
 #[test]
 fn state_not_changed_on_invalid_target() {
-    let f = Fixture::new(4);
+    let f = Fixture::new(2);
 
-    let _ = f.client.try_migrate_error_data(&f.admin, &4, &4);
-    assert_eq!(f.client.current_version(), 4);
+    let _ = f.client.try_migrate_error_data(&f.admin, &2, &2);
+    assert_eq!(f.client.current_version(), 2);
 
-    let _ = f.client.try_migrate_error_data(&f.admin, &4, &1);
-    assert_eq!(f.client.current_version(), 4);
+    let _ = f.client.try_migrate_error_data(&f.admin, &2, &1);
+    assert_eq!(f.client.current_version(), 2);
 }

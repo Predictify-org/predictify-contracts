@@ -122,7 +122,7 @@ fn snapshot_migrate() {
     let client = fixture.client();
 
     reset_budget(&fixture.env);
-    client.migrate(&fixture.admin, &1, &2);
+    client.migrate_error_data(&fixture.admin, &1, &2);
     let measured = measured_budget(&fixture.env);
 
     assert_eq!(client.current_version(), 2);
@@ -146,36 +146,36 @@ fn snapshot_admin() {
 #[test]
 fn snapshot_current_version() {
     let fixture = Fixture::new();
-    fixture.initialize(7);
+    fixture.initialize(2);
     let client = fixture.client();
 
     reset_budget(&fixture.env);
     let current_version = client.current_version();
     let measured = measured_budget(&fixture.env);
 
-    assert_eq!(current_version, 7);
+    assert_eq!(current_version, 2);
     assert_budget("current_version", measured, CURRENT_VERSION);
 }
 
 #[test]
 fn rejects_stale_and_unsafe_migrations_without_changing_state() {
     let fixture = Fixture::new();
-    fixture.initialize(3);
+    fixture.initialize(1);
     let client = fixture.client();
 
     assert_eq!(
-        client.try_migrate(&fixture.admin, &2, &4),
+        client.try_migrate_error_data(&fixture.admin, &2, &4),
         Err(Ok(ContractError::VersionMismatch))
     );
     assert_eq!(
-        client.try_migrate(&fixture.admin, &3, &3),
+        client.try_migrate_error_data(&fixture.admin, &1, &1),
         Err(Ok(ContractError::InvalidTargetVersion))
     );
     assert_eq!(
-        client.try_migrate(&fixture.admin, &3, &2),
+        client.try_migrate_error_data(&fixture.admin, &1, &0),
         Err(Ok(ContractError::InvalidTargetVersion))
     );
-    assert_eq!(client.current_version(), 3);
+    assert_eq!(client.current_version(), 1);
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn rejects_an_authenticated_non_admin() {
     let stranger = Address::generate(&fixture.env);
 
     assert_eq!(
-        fixture.client().try_migrate(&stranger, &1, &2),
+        fixture.client().try_migrate_error_data(&stranger, &1, &2),
         Err(Ok(ContractError::Unauthorized))
     );
     assert_eq!(fixture.client().current_version(), 1);

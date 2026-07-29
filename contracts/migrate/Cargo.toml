@@ -21,3 +21,7 @@ path = "tests/gas_snap.rs"
 [[test]]
 name = "err_migrate"
 path = "tests/err_migrate.rs"
+
+[[test]]
+name = "auth_snap"
+path = "tests/auth_snap.rs"
