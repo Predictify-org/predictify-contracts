@@ -27,12 +27,3 @@ lto = true
 inherits = "release"
 debug-assertions = true
 
-
-[workspace.members]
-"contracts/auction"
-
-[workspace.members]
-"contracts/analytics"
-
-[workspace.members]
-"contracts/limits"
