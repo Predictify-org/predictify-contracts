@@ -150,11 +150,19 @@ error_code_snapshot! {
     MaxBetCapExceeded = 673,
     InvalidCap = 674,
     CoolOffPeriodActive = 675,
+
+    HandshakeVersionMismatch = 1000,
+    HandshakeExpired = 1001,
+    HandshakeAlreadyCompleted = 1002,
+    HandshakePending = 1003,
+    HandshakeNotFound = 1004,
+    HandshakeUnauthorized = 1005,
+    HandshakeSupportedVersionsNotSet = 1006,
 }
 
 #[test]
 fn contract_error_codes_are_stable() {
-    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 120);
+    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 127);
 
     for &(error, expected) in ERROR_CODE_SNAPSHOT {
         assert_eq!(

@@ -4842,3 +4842,4 @@ mod auth_snapshot_tests {
         });
     }
 }
+}

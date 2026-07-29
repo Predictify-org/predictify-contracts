@@ -103,6 +103,7 @@ mod bandprotocol {
 }
 
 pub mod timelock;
+pub mod handshake;
 
 use bets::BetStorage;
 use gas::BudgetGuard;
