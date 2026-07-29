@@ -31,3 +31,7 @@ path = "tests/proptest.rs"
 [[test]]
 name = "auth_snap"
 path = "tests/auth_snap.rs"
+
+[[test]]
+name = "overflow_safety"
+path = "tests/overflow_safety.rs"

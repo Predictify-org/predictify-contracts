@@ -409,6 +409,7 @@ impl BetManager {
     /// - `Error::InvalidOutcome` - Selected outcome not valid for this market
     /// - `Error::InsufficientBalance` - User doesn't have enough funds
     /// - `Error::FeeExceedsMax` - Effective fee exceeds caller-supplied `max_fee_bps`
+    /// - `Error::Overflow` - Internal counter or pool accumulation overflowed
     ///
     /// # Security
     ///
@@ -418,6 +419,8 @@ impl BetManager {
     /// - Validates user has sufficient balance
     /// - Locks funds atomically with bet creation
     /// - Fee slippage guard prevents unexpected fee increases
+    /// - All internal arithmetic uses checked operations — no raw `+=` or `*`
+    ///   on any token-amount or counter field
     ///
     /// # Example
     ///
@@ -537,8 +540,13 @@ impl BetManager {
         // Update market betting stats
         Self::update_market_bet_stats(env, &market_id, &outcome, amount)?;
 
-        // Update market's total staked (for payout pool calculation)
-        market.total_staked += amount;
+        // Update market's total staked (for payout pool calculation).
+        // Uses checked_add so that a hostile batch of bets cannot silently wrap
+        // the pool counter — overflow returns Error::Overflow instead of panicking.
+        market.total_staked = market
+            .total_staked
+            .checked_add(amount)
+            .ok_or(Error::Overflow)?;
 
         // Also update votes and stakes for backward compatibility with payout distribution
         // This allows distribute_payouts to work with both bets and votes
@@ -781,6 +789,14 @@ impl BetManager {
     }
 
     /// Update market betting statistics after a new bet.
+    ///
+    /// # Overflow safety
+    ///
+    /// Every arithmetic operation uses checked arithmetic (`checked_add`) and
+    /// returns [`Error::Overflow`] on overflow instead of wrapping or panicking.
+    /// This guarantees that aggregate counters — `total_bets` (u64),
+    /// `total_amount_locked` (i128), `unique_bettors` (u32), and the per-outcome
+    /// locked totals (i128) — can never silently corrupt the market ledger.
     fn update_market_bet_stats(
         env: &Env,
         market_id: &Symbol,
@@ -789,16 +805,28 @@ impl BetManager {
     ) -> Result<(), Error> {
         let mut stats = BetStorage::get_market_bet_stats(env, market_id);
 
-        // Update totals
-        stats.total_bets += 1;
-        stats.total_amount_locked += amount;
-        stats.unique_bettors += 1;
+        // Update totals — all with checked arithmetic; overflow returns Error::Overflow.
+        stats.total_bets = stats
+            .total_bets
+            .checked_add(1)
+            .ok_or(Error::Overflow)?;
+        stats.total_amount_locked = stats
+            .total_amount_locked
+            .checked_add(amount)
+            .ok_or(Error::Overflow)?;
+        stats.unique_bettors = stats
+            .unique_bettors
+            .checked_add(1)
+            .ok_or(Error::Overflow)?;
 
-        // Update outcome totals
+        // Update outcome totals — checked to guard against per-outcome pool overflow.
         let current_outcome_total = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
-        stats
-            .outcome_totals
-            .set(outcome.clone(), current_outcome_total + amount);
+        stats.outcome_totals.set(
+            outcome.clone(),
+            current_outcome_total
+                .checked_add(amount)
+                .ok_or(Error::Overflow)?,
+        );
 
         // Store updated stats
         BetStorage::store_market_bet_stats(env, market_id, &stats)?;
@@ -940,17 +968,42 @@ impl BetManager {
     /// Calculate payout for a winning bet.
     ///
     /// The payout is calculated as:
-    /// `payout = (user_bet_amount / total_winning_bets) * total_pool * (1 - fee_percentage)`
+    /// ```text
+    /// fee              = total_pool × fee_percentage / 10_000
+    /// distributable    = total_pool − fee
+    /// pool_per_winner  = distributable / num_winning_outcomes
+    /// payout           = (user_bet_amount × pool_per_winner) / total_staked_on_outcome
+    /// ```
     ///
     /// # Parameters
     ///
-    /// - `env` - The Soroban environment
+    /// - `env`       - The Soroban environment
     /// - `market_id` - Symbol identifying the market
-    /// - `user` - Address of the user claiming winnings
+    /// - `user`      - Address of the user claiming winnings
     ///
     /// # Returns
     ///
     /// Returns `Ok(i128)` with the payout amount, or `Err(Error)` if calculation fails.
+    ///
+    /// # Overflow safety
+    ///
+    /// Every arithmetic step uses checked operations and returns [`Error::Overflow`]
+    /// on overflow instead of wrapping or panicking:
+    ///
+    /// - `fee` — `checked_mul` then `checked_div` on `total_pool × fee_percentage`
+    /// - `distributable_pool` — `checked_sub` on `total_pool − fee`
+    /// - `pool_per_winner` — `checked_div` on `distributable_pool / num_winners`
+    /// - `payout` — `checked_mul` then `checked_div` on the final ratio
+    ///
+    /// Division-by-zero is pre-guarded by the `num_winners == 0` and
+    /// `total_bets_on_outcome == 0` early-return checks, so no `checked_div`
+    /// returns `None` for a zero divisor in the hot path.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::NothingToClaim`]    – no bet found for `user` on `market_id`
+    /// - [`Error::MarketNotResolved`] – winning outcomes have not been set
+    /// - [`Error::Overflow`]          – any intermediate arithmetic overflowed
     pub fn calculate_bet_payout(
         env: &Env,
         market_id: &Symbol,
@@ -965,7 +1018,7 @@ impl BetManager {
         }
 
         let market = MarketStateManager::get_market(env, market_id)?;
-        let winning_outcomes = market
+        let _winning_outcomes = market
             .winning_outcomes
             .as_ref()
             .ok_or(Error::MarketNotResolved)?;
@@ -984,15 +1037,33 @@ impl BetManager {
 
         let fee_percentage = crate::fees::FeeManager::get_fee_percentage_for_timestamp(env, bet.timestamp);
 
-        let fee = (summary.total_pool * fee_percentage as i128) / 10_000;
-        let distributable_pool = summary.total_pool - fee;
-        let pool_per_winner = distributable_pool / num_winners;
+        // fee = total_pool × fee_percentage / 10_000  (checked)
+        let fee = summary
+            .total_pool
+            .checked_mul(fee_percentage as i128)
+            .ok_or(Error::Overflow)?
+            .checked_div(10_000)
+            .ok_or(Error::Overflow)?;
 
-        let payout = (bet
+        // distributable_pool = total_pool − fee  (checked)
+        let distributable_pool = summary
+            .total_pool
+            .checked_sub(fee)
+            .ok_or(Error::Overflow)?;
+
+        // pool_per_winner = distributable_pool / num_winners  (checked; num_winners > 0 guarded above)
+        let pool_per_winner = distributable_pool
+            .checked_div(num_winners)
+            .ok_or(Error::Overflow)?;
+
+        // payout = (bet.amount × pool_per_winner) / total_bets_on_outcome
+        // (total_bets_on_outcome > 0 is guarded above)
+        let payout = bet
             .amount
             .checked_mul(pool_per_winner)
-            .ok_or(Error::InvalidInput)?)
-            / total_bets_on_outcome;
+            .ok_or(Error::Overflow)?
+            .checked_div(total_bets_on_outcome)
+            .ok_or(Error::Overflow)?;
 
         Ok(payout)
     }
