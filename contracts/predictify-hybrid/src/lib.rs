@@ -61,6 +61,13 @@ mod market_closed_tests;
 
 #[cfg(test)]
 mod cross_oracle_staleness_tests;
+
+#[cfg(test)]
+mod reflector_auth_tests;
+
+#[cfg(test)]
+mod reflector_auth_snap_tests;
+
 mod resolution;
 mod storage;
 mod tokens;
