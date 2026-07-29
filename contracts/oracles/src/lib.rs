@@ -7,15 +7,18 @@
 //! ## State-changing (require admin `require_auth`)
 //! - [`OraclesContract::add_oracle`] — register an oracle address
 //! - [`OraclesContract::remove_oracle`] — deregister an oracle address
+//! - [`OraclesContract::migrate_data`] — versioned data-reshape guard, see [`migrate`]
 //!
 //! ## Read-only (no auth)
 //! - [`OraclesContract::capabilities`] — `u64` bitmap of supported features
 //! - [`OraclesContract::version`] — contract version number
+//! - [`OraclesContract::data_version`] — on-chain data-schema version
 //! - [`OraclesContract::list_oracles`] — enumerate registered oracles
 //! - [`OraclesContract::get_price`] — fetch a raw price from an oracle
 //! - [`OraclesContract::get_price_data`] — fetch full price data from an oracle
 //! - [`OraclesContract::is_oracle_healthy`] — check if an oracle is live
 
+pub mod migrate;
 pub mod views;
 
 pub use views::CapabilityFlag;
@@ -30,6 +33,8 @@ use soroban_sdk::{
 pub enum DataKey {
     /// Stores `Vec<Address>` — the ordered list of registered oracle addresses.
     OracleList,
+    /// Stores `u32` — the oracle registry's on-chain data-schema version.
+    DataVersion,
 }
 
 /// Price data returned by `get_price_data`.
@@ -88,6 +93,13 @@ pub enum Error {
     CapabilityBitmapCorrupt = 221,
     /// A reserved capability bit was unexpectedly set.
     ReservedCapabilitySet = 222,
+    // ===== MIGRATION ERRORS (230-239) =====
+    /// The `expected` version passed to `migrate_data` does not match the
+    /// stored data version.
+    VersionMismatch = 230,
+    /// The `target` version passed to `migrate_data` is not strictly greater
+    /// than the stored data version.
+    InvalidTargetVersion = 231,
 }
 
 /// Minimum TTL ledgers for the oracle registry key.
@@ -226,6 +238,24 @@ impl OraclesContract {
             }),
             None => Err(Error::OracleUnavailable),
         }
+    }
+
+    /// Return the oracle registry's current on-chain data-schema version.
+    pub fn data_version(env: Env) -> u32 {
+        migrate::data_version(&env)
+    }
+
+    /// Migrate the oracle registry's stored data from `expected` to `target`.
+    ///
+    /// Requires `admin` authorization. See [`migrate::migrate_data`] for the
+    /// full guard and reshape semantics.
+    pub fn migrate_data(
+        env: Env,
+        admin: Address,
+        expected: u32,
+        target: u32,
+    ) -> Result<(), Error> {
+        migrate::migrate_data(&env, &admin, expected, target)
     }
 
     /// Check whether a registered oracle reports itself as live.
