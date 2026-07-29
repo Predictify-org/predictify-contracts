@@ -210,6 +210,8 @@ pub enum DataKey {
     /// Per-market cool-off override in seconds (u64) for a specific `market_id`.
     /// Takes precedence over `CoolOffPeriod` when present.
     PerMarketCoolOff(Symbol),
+    /// Collusion-detector configuration, keyed by a fixed config name symbol.
+    CollusionDetectorConfig(Symbol),
 }
 
 /// Storage format version for migration tracking
