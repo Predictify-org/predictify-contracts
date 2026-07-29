@@ -1,0 +1,12 @@
+/Users/mac/Documents/GitHub/predictify-contracts/target/debug/deps/libc-f7ba9431eb4b2b91.d: /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/lib.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/macros.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/primitives.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/b64/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/b64/x86_64/mod.rs
+
+/Users/mac/Documents/GitHub/predictify-contracts/target/debug/deps/liblibc-f7ba9431eb4b2b91.rmeta: /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/lib.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/macros.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/primitives.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/b64/mod.rs /Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/b64/x86_64/mod.rs
+
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/lib.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/macros.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/primitives.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/mod.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/mod.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/mod.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/b64/mod.rs:
+/Users/mac/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.171/src/unix/bsd/apple/b64/x86_64/mod.rs:

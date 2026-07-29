@@ -29,7 +29,6 @@ mod force_resolve;
 mod event_archive;
 pub mod events;
 mod extensions;
-mod events;
 pub mod gov_registry;
 mod fees;
 mod gas;
@@ -45,11 +44,6 @@ mod reporting;
 mod resolution_event_ordering_tests;
 #[cfg(test)]
 mod resolution_state_property_tests;
-
-#[cfg(test)]
-mod tests {
-    mod auth_snap;
-}
 
 #[cfg(test)]
 #[path = "tests/oracle_validation_tests.rs"]
@@ -74,22 +68,18 @@ mod market_analytics;
 mod performance_benchmarks;
 mod disputes;
 mod edge_cases;
-mod extensions;
 mod graceful_degradation;
 mod market_id_generator;
 mod metadata_limits;
 mod queries;
 mod recovery;
 mod statistics;
-mod tokens;
 mod rate_limiter;
 mod dispute_multisig;
 mod event_topic_catalog;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
-mod audit_trail;
-mod monitor;
 mod capabilities;
 
 #[cfg(test)]

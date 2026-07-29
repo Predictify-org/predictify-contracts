@@ -26,10 +26,3 @@ lto = true
 [profile.release-with-logs]
 inherits = "release"
 debug-assertions = true
-
-
-[workspace.members]
-"contracts/auction"
-
-[workspace.members]
-"contracts/analytics"

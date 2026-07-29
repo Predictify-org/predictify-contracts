@@ -30,10 +30,6 @@ pub struct DisputeDecayConfig {
     pub floor_bps: u32,
 }
 
-        if market.oracle_result.is_none() {
-            return Err(Error::OracleResultNotAvailable);
-        }
-
 /// Comprehensive statistics about disputes for a specific market.
 ///
 /// This structure aggregates dispute activity data to provide insights into
@@ -803,11 +799,13 @@ impl DisputeManager {
     /// Evicts the oldest resolved/expired disputes if history size exceeds the cap.
     pub fn apply_eviction(
         env: &Env,
-        market_id: &Symbol,
+        _market_id: &Symbol,
         history: &mut Vec<Dispute>,
     ) -> Result<(), Error> {
-        if stake < MIN_DISPUTE_STAKE {
-            return Err(Error::InsufficientStake);
+        if let Some(cap) = Self::get_history_cap(env) {
+            while history.len() > cap {
+                history.remove(0);
+            }
         }
 
         Ok(())
@@ -875,8 +873,6 @@ impl DisputeManager {
         Ok(())
     }
 }
-
-pub struct DisputeManager;
 
 impl DisputeManager {
     /// Processes a user's formal dispute against a market's oracle resolution.
@@ -951,92 +947,6 @@ impl DisputeManager {
         DisputeUtils::emit_dispute_submitted_event(env, &dispute);
 
         Ok(dispute)
-    }
-
-    /// Casts a vote on a dispute, transferring stake as economic commitment.
-    ///
-    /// Records the vote in the market's vote map, updates the total staked
-    /// amount, and runs collusion detection against recent dispute activity.
-    ///
-    /// # Authorization
-    ///
-    /// Requires `user.require_auth()`.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `user` - Address of the user casting the vote
-    /// * `market_id` - Unique identifier of the disputed market
-    /// * `vote` - The outcome the user is voting for
-    /// * `stake` - Amount to stake with the vote (in stroops)
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InsufficientStake`] — `stake` is zero or negative
-    /// - [`Error::Overflow`] — arithmetic overflow when adding stakes
-    pub fn vote_on_dispute(
-        env: &Env,
-        user: Address,
-        market_id: Symbol,
-        vote: String,
-        stake: i128,
-    ) -> Result<(), Error> {
-        user.require_auth();
-
-        let mut market = MarketStateManager::get_market(env, &market_id)?;
-
-        if stake <= 0 {
-            return Err(Error::InsufficientStake);
-        }
-
-        let token_address = TokenStorage::get_token_id(env)?;
-        let token_client = token::Client::new(env, &token_address);
-        token_client.transfer(&user, &env.current_contract_address(), &stake);
-
-        let current_stake = market.stakes.get(user.clone()).unwrap_or(0);
-        let new_stake = current_stake.checked_add(stake).ok_or(Error::Overflow)?;
-
-        market.votes.set(user.clone(), vote.clone());
-        market.stakes.set(user.clone(), new_stake);
-
-        let total_staked = market.total_staked.checked_add(stake).ok_or(Error::Overflow)?;
-        market.total_staked = total_staked;
-
-        MarketStateManager::update_market(env, &market_id, &market);
-
-        DisputeUtils::emit_dispute_vote_event(env, &market_id, &user, &vote, stake);
-
-        // --- Collusion Detector ---
-        let config = Self::get_collusion_detector_config(env);
-        let window_size = config.window_size;
-        let start_idx = if history.len() > window_size {
-            history.len() - window_size
-        } else {
-            0
-        };
-
-        for i in start_idx..history.len().saturating_sub(1) {
-            if let Some(prev_dispute) = history.get(i) {
-                if prev_dispute.user != user {
-                    let stake_diff = if prev_dispute.stake > stake { prev_dispute.stake - stake } else { stake - prev_dispute.stake };
-                    let time_diff = if prev_dispute.timestamp > dispute.timestamp { prev_dispute.timestamp - dispute.timestamp } else { dispute.timestamp - prev_dispute.timestamp };
-
-                    if stake_diff <= config.stake_delta_threshold && time_diff <= config.time_delta_threshold {
-                        crate::events::EventEmitter::emit_suspected_collusion_flag(
-                            env,
-                            &market_id,
-                            &user,
-                            &prev_dispute.user,
-                            stake_diff,
-                            time_diff,
-                        );
-                    }
-                }
-            }
-        }
-        // --------------------------
-
-        Ok(())
     }
 
     /// Resolves a dispute by combining oracle data with community voting.
@@ -3311,6 +3221,8 @@ impl DisputeUtils {
         // The validation will use the per-market per-user cap already implemented.
         0
     }
+}
+
 pub struct DisputeAnalytics;
 
 impl DisputeAnalytics {

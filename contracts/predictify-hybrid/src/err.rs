@@ -24,6 +24,12 @@ pub enum Error {
     InvalidCap = 674,
     /// The cool-off period is still active. Cannot unpause/resume the market.
     CoolOffPeriodActive = 675,
+    /// Bet amount is below the per-market minimum threshold set by `set_min_bet`.
+    ///
+    /// Returned when the bet amount is less than the `min_bet_amount` configured for
+    /// a specific market via the `set_min_bet` entrypoint.  This is distinct from
+    /// [`Error::InsufficientStake`] (which covers the global/per-event minimum).
+    BetBelowMarketMin = 676,
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.
@@ -302,6 +308,54 @@ pub enum Error {
     MaxParticipantsReached = 528,
     /// Bet exceeds the per-user cap for this market.
     BetExceedsCap = 529,
+
+    // ===== LIMIT ERRORS (600-611) =====
+    //
+    // Semantic bound-violation codes. Every one of these replaces a site that
+    // previously reported a bound violation as a generic `InvalidInput` (or, for
+    // [`Error::QueueAlreadyInitialized`], as an unrecoverable host panic), so
+    // off-chain clients can tell *which* limit was hit without string matching.
+    //
+    // Naming convention:
+    // * `*AboveMaximum`   — a value exceeded an upper bound.
+    // * `*OutOfRange`     — a value fell outside an inclusive `[min, max]` window.
+    // * `*LimitsInverted` — an admin-supplied `min`/`max` pair is contradictory.
+    /// Bet amount exceeds the effective maximum bet for the market.
+    ///
+    /// Distinct from [`Error::BetExceedsCap`], which is the *per-market single-bet* cap.
+    BetAboveMaximum = 600,
+    /// Admin-supplied bet limits are contradictory: `min_bet > max_bet`.
+    BetLimitsInverted = 601,
+    /// Admin-supplied `max_bet` exceeds the absolute ceiling.
+    BetLimitAboveMaximum = 602,
+    /// Per-market single-bet cap is outside the permitted range: it must be strictly
+    /// positive and at most the absolute maximum bet amount.
+    ///
+    /// Raised when setting the cap, not when checking a bet against it — a bet that
+    /// exceeds an already-configured cap yields [`Error::BetExceedsCap`].
+    BetCapOutOfRange = 603,
+    /// A batch operation was submitted with zero entries.
+    BatchEmpty = 604,
+    /// A batch operation exceeds the maximum number of entries allowed per call.
+    BatchSizeExceeded = 605,
+    /// Fee percentage (basis points) is outside the inclusive allowed range.
+    FeePercentageOutOfRange = 606,
+    /// Fee amount exceeds the maximum allowed fee amount.
+    ///
+    /// A fee amount *below* the minimum keeps reporting [`Error::InsufficientStake`],
+    /// which is already semantic.
+    FeeAmountAboveMaximum = 607,
+    /// Market creation fee is outside the inclusive allowed range.
+    CreationFeeOutOfRange = 608,
+    /// Admin-supplied fee bounds are contradictory: `max_fee_amount < min_fee_amount`.
+    FeeLimitsInverted = 609,
+    /// Monitor queue capacity is outside the inclusive allowed range.
+    QueueCapacityOutOfRange = 610,
+    /// The monitor queue has already been initialized; re-initialization is rejected.
+    ///
+    /// Previously a bare `panic!`, which aborted the host frame with no client-readable
+    /// code. Callers that treat re-initialization as a no-op can now match on this.
+    QueueAlreadyInitialized = 611,
     /// Stake amount is invalid (zero, negative, or outside allowed range).
     InvalidStakeAmount = 530,
     /// Oracle admin action blocked by cooldown period.
