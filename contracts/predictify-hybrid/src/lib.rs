@@ -87,7 +87,10 @@ mod event_topic_catalog;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
-mod capabilities;
+pub mod capabilities;
+
+#[cfg(test)]
+mod storage_capability_tests;
 
 #[cfg(test)]
 mod override_audit_tests;
@@ -5930,13 +5933,15 @@ impl PredictifyHybrid {
 
     /// Return the capability bitmap for the active contract version.
     ///
-    /// Clients can call this entrypoint to learn which feature flags are enabled
-    /// without maintaining a client-side version-to-capability lookup table.
+    /// Clients can call this read-only entrypoint to learn which recovery and
+    /// storage feature flags are enabled without maintaining a client-side
+    /// version-to-capability lookup table. It requires no authorization,
+    /// performs no storage access, and emits no events.
     ///
     /// # What
     ///
-    /// Returns a `u64` bitmask where each bit corresponds to a `CAPABILITY_*`
-    /// constant defined in the [`versioning`] module.
+    /// Returns a `u64` bitmask. Recovery flags occupy bits 0-10 and storage
+    /// flags occupy bits 11-20 as defined in the [`capabilities`] module.
     ///
     /// # How
     ///
