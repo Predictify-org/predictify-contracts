@@ -5746,12 +5746,23 @@ impl PredictifyHybrid {
         expected_predecessor: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        capabilities::admin::CapabilitiesAdminCooldown::require_elapsed(
+            &env,
+            &capabilities::admin::CapabilitiesAdminAction::Upgrade,
+        )?;
         let result = upgrade_manager::UpgradeManager::upgrade_contract(
             &env,
             &admin,
             new_wasm_hash,
             expected_predecessor,
         );
+
+        if result.is_ok() {
+            capabilities::admin::CapabilitiesAdminCooldown::record_action(
+                &env,
+                &capabilities::admin::CapabilitiesAdminAction::Upgrade,
+            );
+        }
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -5828,8 +5839,19 @@ impl PredictifyHybrid {
         rollback_wasm_hash: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        capabilities::admin::CapabilitiesAdminCooldown::require_elapsed(
+            &env,
+            &capabilities::admin::CapabilitiesAdminAction::Rollback,
+        )?;
         let result =
             upgrade_manager::UpgradeManager::rollback_upgrade(&env, &admin, rollback_wasm_hash);
+
+        if result.is_ok() {
+            capabilities::admin::CapabilitiesAdminCooldown::record_action(
+                &env,
+                &capabilities::admin::CapabilitiesAdminAction::Rollback,
+            );
+        }
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -5891,6 +5913,18 @@ impl PredictifyHybrid {
     /// bitmap directly for the active environment.
     pub fn capabilities(env: Env) -> u64 {
         crate::capabilities::capabilities(&env)
+    }
+
+    /// Return the cooldown for repeated capability-critical admin actions.
+    ///
+    /// The returned duration is expressed in seconds. Contract upgrades and
+    /// rollbacks each maintain an independent last-success timestamp and return
+    /// [`Error::AdminActionTimelocked`] when repeated before this duration
+    /// elapses.
+    ///
+    /// This is a read-only entrypoint and requires no authorization.
+    pub fn get_capabilities_admin_cooldown(_env: Env) -> u64 {
+        crate::capabilities::admin_cooldown_seconds()
     }
 
     /// Report whether an upgrade is currently available for execution.
