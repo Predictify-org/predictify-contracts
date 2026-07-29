@@ -1,14 +1,47 @@
-use crate::errors::Error;
-use crate::storage::{AdminStorage, MarketStateManager, TokenStorage};
-use crate::types::{
-    Dispute, DisputeEscalation, DisputeFeeDistribution, DisputeResolution, DisputeStats,
-    DisputeStatus, DisputeTimeout, DisputeTimeoutOutcome, DisputeTimeoutStatus, Market,
-    TimeoutAnalytics, TimeoutStats,
-};
-use soroban_sdk::{symbol_short, token, Address, Env, Map, String, Symbol, Vec};
+use crate::admin::AdminAccessControl;
+use crate::err::Error;
+use crate::markets::MarketStateManager;
+use crate::storage::DataKey;
+use crate::types::Market;
+use crate::voting::VotingUtils;
+use soroban_sdk::{contracttype, symbol_short, token, vec, Address, Env, Map, String, Symbol, Vec};
 
 pub const MIN_DISPUTE_STAKE: i128 = 10_000_000;
 pub const DISPUTE_PERIOD_SECS: u64 = 86400;
+/// Hours the market's `end_time` is extended by when a dispute is raised, giving
+/// the community time to vote before the market would otherwise close.
+pub const DISPUTE_EXTENSION_HOURS: u32 = 24;
+
+/// A single formal dispute raised against a market's oracle-verified resolution.
+///
+/// Created by [`DisputeManager::process_dispute`] when a user stakes tokens to
+/// challenge the resolved outcome. Tracked per-market in dispute history and
+/// voted on by the community via [`DisputeManager::vote_on_dispute`].
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Dispute {
+    pub user: Address,
+    pub market_id: Symbol,
+    pub stake: i128,
+    pub timestamp: u64,
+    pub reason: Option<String>,
+    pub status: DisputeStatus,
+}
+
+/// Represents the current lifecycle status of a dispute.
+///
+/// * `Active` - Dispute is open and accepting community votes
+/// * `Resolved` - Dispute has been resolved with a final outcome
+/// * `Rejected` - Dispute was rejected by community consensus
+/// * `Expired` - Dispute voting period ended without sufficient participation
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    Active,
+    Resolved,
+    Rejected,
+    Expired,
+}
 
 pub struct DisputeValidator;
 
@@ -786,7 +819,7 @@ impl DisputeManager {
     ///
     /// Defaults: stake_delta = 1 XLM, time_delta = 10 min, window = 8.
     pub fn get_collusion_detector_config(env: &Env) -> CollusionDetectorConfig {
-        let key = DataKey::CollusionDetectorConfig;
+        let key = DataKey::CollusionDetectorConfig(Symbol::new(env, "collusion_config"));
         let result = env.storage().persistent().get(&key);
         env.storage().persistent().extend_ttl(&key, 535680, 535680);
         result.unwrap_or(CollusionDetectorConfig {
@@ -916,7 +949,7 @@ impl DisputeManager {
         let mut market = MarketStateManager::get_market(env, &market_id)?;
 
         DisputeValidator::validate_market_for_dispute(env, &market)?;
-        DisputeValidator::validate_dispute_parameters(env, &user, &market, stake)?;
+        DisputeValidator::validate_dispute_parameters(env, &market_id, &user, &market, stake)?;
 
         // Enforce anti-grief floor (market specific or global)
         let global_anti_grief_floor = Self::get_anti_grief_floor(env).unwrap_or(0);
@@ -927,6 +960,7 @@ impl DisputeManager {
             return Err(Error::InsufficientStake);
         }
 
+        let token_client = crate::markets::MarketUtils::get_token_client(env)?;
         token_client.transfer(&user, &env.current_contract_address(), &stake);
 
         let current_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
@@ -944,7 +978,7 @@ impl DisputeManager {
             status: DisputeStatus::Active,
         };
 
-        DisputeUtils::emit_dispute_submitted_event(env, &dispute);
+        crate::events::EventEmitter::emit_dispute_opened(env, &market_id, &user, stake, reason);
 
         Ok(dispute)
     }
@@ -982,14 +1016,14 @@ impl DisputeManager {
     ) -> Result<DisputeResolution, Error> {
         admin.require_auth();
 
-        let contract_admin = AdminStorage::get_admin(env)?;
+        let contract_admin = AdminAccessControl::get_admin(env)?;
         if admin != contract_admin {
             return Err(Error::Unauthorized);
         }
 
         let mut market = MarketStateManager::get_market(env, &market_id)?;
 
-        DisputeValidator::validate_market_for_resolution(env, &market, &admin)?;
+        DisputeValidator::validate_market_for_resolution(env, &market)?;
 
         let oracle_result = market
             .oracle_result
@@ -1010,28 +1044,26 @@ impl DisputeManager {
 
         if is_oracle_overturned {
             // Refund all disputers their stakes and emit a StakeRefunded event per disputer.
-            let token_address = TokenStorage::get_token_id(env)?;
-            let token_client = token::Client::new(env, &token_address);
+            let token_client = crate::markets::MarketUtils::get_token_client(env)?;
 
-            let disputers: Vec<(Address, i128)> = market
-                .dispute_stakes
-                .iter()
-                .map(|(user, stake)| (user, stake))
-                .collect();
+            let mut disputers: Vec<(Address, i128)> = Vec::new(env);
+            for (user, stake) in market.dispute_stakes.iter() {
+                disputers.push_back((user, stake));
+            }
 
             for (disputer, stake) in disputers.iter() {
-                if *stake > 0 {
+                if stake > 0 {
                     // Perform the refund transfer.
-                    token_client.transfer(&env.current_contract_address(), &disputer, stake);
+                    token_client.transfer(&env.current_contract_address(), &disputer, &stake);
                     // Reset the stored stake for the disputer.
                     market.dispute_stakes.set(disputer.clone(), 0);
                     // Emit an event for the refund.
-                    DisputeUtils::emit_stake_refunded_event(env, disputer, *stake);
+                    DisputeUtils::emit_stake_refunded_event(env, &disputer, stake);
                 }
             }
         }
 
-        market.winning_outcomes = Some(final_outcome.clone());
+        market.winning_outcomes = Some(vec![env, final_outcome.clone()]);
         market.state = crate::types::MarketState::Resolved;
 
         MarketStateManager::update_market(env, &market_id, &market);
@@ -2316,8 +2348,6 @@ impl DisputeManager {
 ///
 /// All methods return `Ok(())` on success or a typed [`Error`] on failure.
 /// Called internally by [`DisputeManager`] before any state mutation.
-pub struct DisputeValidator;
-
 impl DisputeValidator {
     /// Validate market state for dispute.
     ///
@@ -3111,10 +3141,16 @@ impl DisputeUtils {
         env: &Env,
         _market_id: &Symbol,
         user: &Address,
-        vote: &String,
+        vote: bool,
         stake: i128,
     ) {
         // NOTE: emit_dispute_vote_cast not yet implemented in EventEmitter
+    }
+
+    /// Emit an event when a disputer's stake is refunded after the oracle result
+    /// was overturned by [`DisputeManager::resolve_dispute`].
+    pub fn emit_stake_refunded_event(_env: &Env, _disputer: &Address, _amount: i128) {
+        // NOTE: a dedicated `stake_refunded` event is not yet implemented in EventEmitter.
     }
 
     /// Emit a `dispute_fee_distributed` event via [`crate::events::EventEmitter`].

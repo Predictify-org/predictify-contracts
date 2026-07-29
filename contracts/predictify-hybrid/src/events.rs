@@ -1323,6 +1323,79 @@ impl EventEmitter {
         env.events().publish((schema.topic, market_id.clone(), schema.schema_version), event);
     }
 
+    pub fn emit_dispute_timeout_set(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        timeout_hours: u32,
+        set_by: &Address,
+    ) {
+        let event = DisputeTimeoutSetEvent {
+            dispute_id: dispute_id.clone(), market_id: market_id.clone(), timeout_hours, set_by: set_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dt_set")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("dt_set"), &event);
+        env.events().publish((symbol_short!("dt_set"), dispute_id.clone()), event);
+    }
+
+    pub fn emit_dispute_timeout_expired(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        outcome: &String,
+        resolution_method: &String,
+    ) {
+        let event = DisputeTimeoutExpiredEvent {
+            dispute_id: dispute_id.clone(), market_id: market_id.clone(), expiration_timestamp: env.ledger().timestamp(),
+            outcome: outcome.clone(), resolution_method: resolution_method.clone(),
+        };
+        Self::store_event(env, &symbol_short!("dt_exp"), &event);
+        env.events().publish((symbol_short!("dt_exp"), dispute_id.clone()), event);
+    }
+
+    pub fn emit_dispute_auto_resolved(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        outcome: &String,
+        reason: &String,
+    ) {
+        let event = DisputeAutoResolvedEvent {
+            dispute_id: dispute_id.clone(), market_id: market_id.clone(), outcome: outcome.clone(), reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dt_auto")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("dt_auto"), &event);
+        env.events().publish((symbol_short!("dt_auto"), dispute_id.clone()), event);
+    }
+
+    pub fn emit_dispute_timeout_extended(
+        env: &Env,
+        dispute_id: &Symbol,
+        market_id: &Symbol,
+        additional_hours: u32,
+        extended_by: &Address,
+    ) {
+        let event = DisputeTimeoutExtendedEvent {
+            dispute_id: dispute_id.clone(), market_id: market_id.clone(), additional_hours, extended_by: extended_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dt_ext")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("dt_ext"), &event);
+        env.events().publish((symbol_short!("dt_ext"), dispute_id.clone()), event);
+    }
+
+    pub fn emit_dispute_vote_rejected(env: &Env, dispute_id: &Symbol, voter: &Address, reason: &String) {
+        let event = DisputeVoteRejectedEvent {
+            dispute_id: dispute_id.clone(), voter: voter.clone(), reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dv_rej")),
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("dv_rej"), &event);
+        env.events().publish((symbol_short!("dv_rej"), dispute_id.clone()), event);
+    }
+
     pub fn emit_fee_collected(env: &Env, market_id: &Symbol, collector: &Address, amount: i128, fee_type: &String) {
         let event = FeeCollectedEvent {
             market_id: market_id.clone(), collector: collector.clone(), amount, fee_type: fee_type.clone(),
