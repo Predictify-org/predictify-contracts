@@ -3,6 +3,7 @@ name = "resolution"
 version = "0.0.0"
 edition = "2021"
 publish = false
+autotests = false
 
 [lib]
 crate-type = ["lib", "cdylib"]
@@ -19,5 +20,5 @@ name = "error_tests"
 path = "tests/error_tests.rs"
 
 [[test]]
-name = "err_stab"
-path = "tests/err_stab.rs"
+name = "ttl_tests"
+path = "tests/ttl.rs"
