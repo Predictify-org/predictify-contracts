@@ -1,0 +1,27 @@
+[package]
+name = "governance"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[[test]]
+name = "governance_lifecycle"
+path = "tests/governance_lifecycle.rs"
+
+[[test]]
+name = "events"
+path = "tests/events.rs"
+
+[[test]]
+name = "auth_boundary"
+path = "tests/auth_boundary.rs"
