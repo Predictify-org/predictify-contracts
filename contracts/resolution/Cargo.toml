@@ -3,6 +3,7 @@ name = "resolution"
 version = "0.0.0"
 edition = "2021"
 publish = false
+autotests = false
 
 [lib]
 crate-type = ["lib", "cdylib"]
@@ -17,3 +18,7 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 [[test]]
 name = "error_tests"
 path = "tests/error_tests.rs"
+
+[[test]]
+name = "ttl_tests"
+path = "tests/ttl.rs"
