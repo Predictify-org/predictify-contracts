@@ -14,6 +14,7 @@ predictify-hybrid = { path = "../predictify-hybrid" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+criterion = "0.5"
 
 [[test]]
 name = "err_stab"
@@ -26,3 +27,7 @@ path = "tests/dispute_edge_cases.rs"
 [[test]]
 name = "xcontract"
 path = "tests/xcontract.rs"
+
+[[bench]]
+name = "main"
+harness = false
