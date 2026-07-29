@@ -6,7 +6,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 extern crate alloc;
 
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
 };
 
 pub const PERCENTAGE_DENOMINATOR: i128 = 10000;
@@ -177,10 +177,6 @@ use crate::gas::GasTracker;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
-use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short,
-    Address, BytesN, Env, Map, String, Symbol, Vec,
-};
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
     fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
@@ -4973,10 +4969,10 @@ impl PredictifyHybrid {
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
             panic_with_error!(env, e);
         }
-        let result = match crate::recovery::RecoveryManager::recover_market_state(
-            &env, &admin, &market_id,
+        let plan = match crate::recovery::RecoveryManager::recover_market_state(
+            &env, &admin, &market_id, true,
         ) {
-            Ok(res) => res,
+            Ok(p) => p,
             Err(e) => panic_with_error!(env, e),
         };
 
@@ -4988,7 +4984,33 @@ impl PredictifyHybrid {
             None,
         );
 
-        result
+        plan.recovered
+    }
+
+    /// Read-only preview of the recovery plan for a market.
+    ///
+    /// Returns a [`RecoveryPlan`] describing exactly what `recover_market_state`
+    /// would do if called, without executing any side effects. No admin
+    /// authentication is required — any caller can inspect the plan.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `market_id` - The market to analyse.
+    ///
+    /// # Returns
+    /// A [`RecoveryPlan`] with the predicted recovery outcome.
+    ///
+    /// # Events
+    ///
+    /// This entrypoint performs no state changes and emits no events.
+    pub fn recovery_plan(
+        env: Env,
+        market_id: Symbol,
+    ) -> crate::recovery::RecoveryPlan {
+        match crate::recovery::RecoveryManager::dry_run_recovery_plan(&env, &market_id) {
+            Ok(plan) => plan,
+            Err(e) => panic_with_error!(env, e),
+        }
     }
 
     /// Executes partial refund mechanism for selected users in a failed/corrupted market. Only admin.
