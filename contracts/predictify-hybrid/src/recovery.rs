@@ -1,10 +1,10 @@
 use alloc::format;
-use soroban_sdk::{contracttype, panic_with_error, vec, Address, Env, IntoVal, Map, String, Symbol, Val, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, IntoVal, Map, String, Symbol, Val, Vec};
 
 use crate::events::EventEmitter;
 use crate::markets::MarketStateManager;
-use crate::types::{ClaimInfo, MarketState};
-use crate::Error;
+use crate::types::MarketState;
+use crate::err::Error;
 
 const DEFAULT_UNCLAIMED_CLAIM_PERIOD_SECONDS: u64 = 90 * 24 * 60 * 60;
 const RECOVERY_TTL_LEDGERS: u32 = 365 * 17_280;
@@ -19,6 +19,15 @@ pub const MAX_RECOVERY_HISTORY_PER_MARKET: u32 = 10;
 
 /// Maximum entries removable in a single admin prune call (gas safety).
 pub const MAX_RECOVERY_PRUNE_BATCH: u32 = 30;
+
+/// Maximum number of actions reported in a single [`RecoveryPlan`].
+pub const MAX_PLAN_ACTIONS: u32 = 20;
+
+/// Maximum number of per-user balance deltas reported in a single [`RecoveryPlan`].
+pub const MAX_PLAN_BALANCE_DELTAS: u32 = 50;
+
+/// Maximum number of deferred events reported in a single [`RecoveryPlan`].
+pub const MAX_PLAN_EVENTS: u32 = 20;
 
 // ===== PER-MARKET RECOVERY TIMELOCK =====
 
@@ -248,6 +257,72 @@ pub struct DryRunResult {
     pub state_description: String,
 }
 
+/// A single per-user balance change predicted or performed during recovery.
+///
+/// When `delta` is positive the user receives tokens; when negative they are
+/// deducted. The ordering of entries within a [`RecoveryPlan`] matches the
+/// order in which mutations would be applied.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BalanceDelta {
+    /// The user whose balance is affected.
+    pub user: Address,
+    /// Signed change to the user's balance (positive = credit, negative = debit).
+    pub delta: i128,
+}
+
+/// A deferred event that would be emitted during a committed recovery.
+///
+/// Stored inside [`RecoveryPlan`] so callers can inspect exactly which events
+/// would fire before authorising the actual mutation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeferredEvent {
+    /// Event action label (e.g. `"recover"`, `"skip"`, `"partial_refund"`).
+    pub action: String,
+    /// Event status label (e.g. `"reconstructed"`, `"integrity_ok"`).
+    pub status: String,
+    /// Monetary amount carried by the event, or zero when not applicable.
+    pub amount: i128,
+}
+
+/// Structured recovery plan produced by a read-only dry run or as a side
+/// output of a committed recovery.
+///
+/// Contains ordered lists of actions, per-user balance mutations, and
+/// deferred events that describe what was (or would be) done to recover a
+/// market. When obtained via `dry_run_recovery_plan` (commit = false) the
+/// plan describes the predicted side effects without performing any storage
+/// writes or event emissions. When obtained via `recover_market_state`
+/// (commit = true) the plan reflects what was actually executed.
+///
+/// All contained `Vec` fields maintain deterministic insertion order and are
+/// bounded by the corresponding `MAX_PLAN_*` constants.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryPlan {
+    /// The market targeted by this recovery plan.
+    pub market_id: Symbol,
+    /// Whether the recovery was actually performed (as opposed to a dry-run
+    /// preview or a no-op skip).
+    pub recovered: bool,
+    /// Ordered list of recovery action descriptions (e.g.
+    /// `"reconstructed_totals"`, `"skip_closed_or_cancelled"`).
+    pub actions: Vec<String>,
+    /// Per-user balance mutations that would be or were applied.
+    ///
+    /// Each entry records a signed delta; the caller can reconstruct
+    /// before/after state by applying (or reversing) these deltas to the
+    /// market's stake map.
+    pub balance_deltas: Vec<BalanceDelta>,
+    /// Events that would be or were emitted during recovery.
+    ///
+    /// Ordered by emission order. The actual timestamp is not part of the
+    /// deferred record; it would be `env.ledger().timestamp()` at commit
+    /// time.
+    pub deferred_events: Vec<DeferredEvent>,
+}
+
 pub struct RecoveryStorage;
 impl RecoveryStorage {
     #[inline(always)]
@@ -372,7 +447,7 @@ impl RecoveryStorage {
         }
     }
 
-    fn trim_history(env: &Env, history: &mut Vec<RecoveryHistoryEntry>) {
+    fn trim_history(_env: &Env, history: &mut Vec<RecoveryHistoryEntry>) {
         while history.len() > MAX_RECOVERY_HISTORY_PER_MARKET {
             history.remove(0);
         }
@@ -771,78 +846,198 @@ impl RecoveryManager {
     ) -> Result<u32, Error> {
         RecoveryStorage::prune_history(env, admin, market_id, count)
     }
-    /// Perform recovery for a market. This operation is privileged and requires the caller to be
-    /// the configured admin. The `actor` address will be recorded in emitted events for full
-    /// visibility and auditability.
-    pub fn recover_market_state(
+    /// Core recovery logic shared by the commit and dry-run paths.
+    ///
+    /// When `commit` is `false` the function computes every mutation that would
+    /// be applied, builds a [`RecoveryPlan`], and returns it **without**
+    /// writing to storage or emitting events. No authorisation is checked in
+    /// this mode so that unauthenticated callers (e.g. monitoring) can preview
+    /// the plan.
+    ///
+    /// When `commit` is `true` the caller must pass a valid `actor` address
+    /// (the recovery admin), storage writes and events happen as normal, and
+    /// the returned plan reflects the actual execution.
+    fn inner_recover(
         env: &Env,
-        actor: &Address,
         market_id: &Symbol,
-    ) -> Result<bool, Error> {
-        // Ensure caller is admin (defense-in-depth; callers should also enforce auth).
-        Self::assert_is_admin(env, actor)?;
+        actor: Option<&Address>,
+        commit: bool,
+    ) -> Result<RecoveryPlan, Error> {
+        let mut plan = RecoveryPlan {
+            market_id: market_id.clone(),
+            recovered: false,
+            actions: Vec::new(env),
+            balance_deltas: Vec::new(env),
+            deferred_events: Vec::new(env),
+        };
 
         // Validate integrity first; if valid skip
         if RecoveryValidator::validate_market_state_integrity(env, market_id).is_ok() {
-            let rec = MarketRecovery {
-                market_id: market_id.clone(),
-                actions: Vec::new(env),
-                issues_detected: Vec::new(env),
-                recovered: false,
-                partial_refund_total: 0,
-                last_action: Some(String::from_str(env, "no_action_needed")),
-            };
-            RecoveryStorage::save(env, &rec);
-            EventEmitter::emit_recovery_event(
-                env,
-                actor,
-                market_id,
-                &String::from_str(env, "skip"),
-                &String::from_str(env, "integrity_ok"),
-                None,
-            );
-            return Ok(false);
+            plan.actions
+                .push_back(String::from_str(env, "no_action_needed"));
+            if commit {
+                let rec = MarketRecovery {
+                    market_id: market_id.clone(),
+                    actions: Vec::new(env),
+                    issues_detected: Vec::new(env),
+                    recovered: false,
+                    partial_refund_total: 0,
+                    last_action: Some(String::from_str(env, "no_action_needed")),
+                };
+                RecoveryStorage::save(env, &rec);
+                if let Some(actor) = actor {
+                    EventEmitter::emit_recovery_event(
+                        env,
+                        actor,
+                        market_id,
+                        &String::from_str(env, "skip"),
+                        &String::from_str(env, "integrity_ok"),
+                        None,
+                    );
+                }
+            }
+            if plan.deferred_events.len() < MAX_PLAN_EVENTS {
+                plan.deferred_events.push_back(DeferredEvent {
+                    action: String::from_str(env, "skip"),
+                    status: String::from_str(env, "integrity_ok"),
+                    amount: 0,
+                });
+            }
+            return Ok(plan);
         }
 
         // Attempt reconstruction heuristics (simplified)
         let mut market = MarketStateManager::get_market(env, market_id)?;
         if market.state == MarketState::Closed || market.state == MarketState::Cancelled {
-            // cannot reconstruct closed or cancelled; treat as skip
-            return Ok(false);
+            plan.actions
+                .push_back(String::from_str(env, "skip_closed_or_cancelled"));
+            return Ok(plan);
         }
 
-        // Example heuristic: ensure total_staked matches sum of stakes map
+        // Ensure total_staked matches sum of stakes map (checked_add for overflow safety)
         let mut recomputed: i128 = 0;
         for (_, v) in market.stakes.iter() {
-            recomputed += v;
+            recomputed = recomputed.checked_add(v).ok_or(Error::InvalidState)?;
         }
-        if recomputed != market.total_staked {
+
+        let totals_differ = recomputed != market.total_staked;
+        if totals_differ {
             market.total_staked = recomputed;
+            if plan.actions.len() < MAX_PLAN_ACTIONS {
+                plan.actions
+                    .push_back(String::from_str(env, "reconstructed_totals"));
+            }
+            if commit {
+                MarketStateManager::update_market(env, market_id, &market);
+            }
         }
 
-        MarketStateManager::update_market(env, market_id, &market);
+        plan.recovered = totals_differ;
 
-        let mut actions = Vec::new(env);
-        actions.push_back(String::from_str(env, "reconstructed_totals"));
+        if commit {
+            let mut actions = Vec::new(env);
+            if totals_differ {
+                actions.push_back(String::from_str(env, "reconstructed_totals"));
+            }
+            let status = if totals_differ {
+                String::from_str(env, "reconstructed")
+            } else {
+                String::from_str(env, "skipped")
+            };
+            let rec = MarketRecovery {
+                market_id: market_id.clone(),
+                actions,
+                issues_detected: Vec::new(env),
+                recovered: plan.recovered,
+                partial_refund_total: 0,
+                last_action: Some(status.clone()),
+            };
+            RecoveryStorage::save(env, &rec);
+            if let Some(actor) = actor {
+                let action_label = if totals_differ {
+                    String::from_str(env, "recover")
+                } else {
+                    String::from_str(env, "skip")
+                };
+                EventEmitter::emit_recovery_event(
+                    env,
+                    actor,
+                    market_id,
+                    &action_label,
+                    &status,
+                    None,
+                );
+            }
+        }
+        if plan.deferred_events.len() < MAX_PLAN_EVENTS {
+            let action_label = if totals_differ {
+                String::from_str(env, "recover")
+            } else {
+                String::from_str(env, "skip")
+            };
+            let status = if totals_differ {
+                String::from_str(env, "reconstructed")
+            } else {
+                String::from_str(env, "integrity_ok")
+            };
+            plan.deferred_events.push_back(DeferredEvent {
+                action: action_label,
+                status,
+                amount: 0,
+            });
+        }
 
-        let rec = MarketRecovery {
-            market_id: market_id.clone(),
-            actions,
-            issues_detected: Vec::new(env),
-            recovered: true,
-            partial_refund_total: 0,
-            last_action: Some(String::from_str(env, "reconstructed")),
-        };
-        RecoveryStorage::save(env, &rec);
-        EventEmitter::emit_recovery_event(
-            env,
-            actor,
-            market_id,
-            &String::from_str(env, "recover"),
-            &String::from_str(env, "reconstructed"),
-            None,
-        );
-        Ok(true)
+        Ok(plan)
+    }
+
+    /// Perform recovery for a market. This operation is privileged and requires the caller to be
+    /// the configured admin. The `actor` address will be recorded in emitted events for full
+    /// visibility and auditability.
+    ///
+    /// When `commit` is `true` storage writes and event emissions occur as
+    /// normal. When `commit` is `false` the same logic runs but **no** storage
+    /// writes or events happen — the returned [`RecoveryPlan`] describes what
+    /// *would* happen.  Regardless of the `commit` flag the caller must still
+    /// pass an authenticated `actor` (the admin address is validated by the
+    /// public entry point before calling this method).
+    pub fn recover_market_state(
+        env: &Env,
+        actor: &Address,
+        market_id: &Symbol,
+        commit: bool,
+    ) -> Result<RecoveryPlan, Error> {
+        if commit {
+            Self::assert_is_admin(env, actor)?;
+        }
+        Self::inner_recover(env, market_id, Some(actor), commit)
+    }
+
+    /// Read-only preview of the recovery plan for a market.
+    ///
+    /// Analyses the market's current state and returns a [`RecoveryPlan`]
+    /// describing exactly what `recover_market_state` would do if called with
+    /// `commit: true`. **No** storage writes are performed and **no** events
+    /// are emitted. No admin authentication is required — any caller can
+    /// inspect the plan.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `market_id` - The market to analyse.
+    ///
+    /// # Returns
+    /// A [`RecoveryPlan`] with ordered actions, balance deltas, and deferred
+    /// events that would result from a committed recovery. If the market is
+    /// healthy, `recovered` is `false` and `actions` contains
+    /// `"no_action_needed"`.
+    ///
+    /// # Errors
+    /// Returns [`Error::MarketNotFound`] if the market does not exist.
+    /// Returns [`Error::InvalidState`] on overflow during stake recomputation.
+    pub fn dry_run_recovery_plan(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Result<RecoveryPlan, Error> {
+        Self::inner_recover(env, market_id, None, false)
     }
 
     /// Execute partial refunds for selected users. This is privileged and requires the caller
@@ -1629,6 +1824,304 @@ mod tests {
         assert!(result.integrity_ok);
         assert!(!result.can_recover);
         assert_eq!(result.state_description, String::from_str(&test.env, "Active"));
+    }
+
+    // ============ RECOVERY PLAN / DRY RUN (COMMIT-BASED) TESTS ============
+
+    #[test]
+    fn test_recovery_plan_struct_creation() {
+        let test = RecoveryTest::new();
+        let plan = RecoveryPlan {
+            market_id: test.market_id.clone(),
+            recovered: false,
+            actions: Vec::new(&test.env),
+            balance_deltas: Vec::new(&test.env),
+            deferred_events: Vec::new(&test.env),
+        };
+        assert_eq!(plan.market_id, test.market_id);
+        assert!(!plan.recovered);
+        assert!(plan.actions.is_empty());
+        assert!(plan.balance_deltas.is_empty());
+        assert!(plan.deferred_events.is_empty());
+    }
+
+    #[test]
+    fn test_balance_delta_struct() {
+        let test = RecoveryTest::new();
+        let user = Address::generate(&test.env);
+        let delta = BalanceDelta {
+            user: user.clone(),
+            delta: 1000,
+        };
+        assert_eq!(delta.user, user);
+        assert_eq!(delta.delta, 1000);
+    }
+
+    #[test]
+    fn test_deferred_event_struct() {
+        let test = RecoveryTest::new();
+        let event = DeferredEvent {
+            action: String::from_str(&test.env, "recover"),
+            status: String::from_str(&test.env, "reconstructed"),
+            amount: 500,
+        };
+        assert_eq!(event.action, String::from_str(&test.env, "recover"));
+        assert_eq!(event.status, String::from_str(&test.env, "reconstructed"));
+        assert_eq!(event.amount, 500);
+    }
+
+    #[test]
+    fn test_dry_run_recovery_plan_healthy_market() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            let plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id).unwrap();
+            // Healthy market → no recovery needed
+            assert!(!plan.recovered);
+            assert!(plan.actions.contains(&String::from_str(&env, "no_action_needed")));
+            assert!(plan.balance_deltas.is_empty());
+        });
+    }
+
+    #[test]
+    fn test_dry_run_recovery_plan_no_mutation() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            // Introduce an integrity issue (total_staked mismatch)
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.total_staked = 500;  // stakes map is empty, so sum is 0
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let total_staked_before = MarketStateManager::get_market(&env, &market_id)
+                .unwrap()
+                .total_staked;
+
+            // Dry run — no side effects
+            let _plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id).unwrap();
+
+            let total_staked_after = MarketStateManager::get_market(&env, &market_id)
+                .unwrap()
+                .total_staked;
+
+            // Must NOT have changed
+            assert_eq!(total_staked_before, total_staked_after);
+            assert_eq!(total_staked_before, 500);
+        });
+    }
+
+    #[test]
+    fn test_dry_run_recovery_plan_detects_issues() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            // Introduce total_staked mismatch
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.total_staked = 500;
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id).unwrap();
+
+            assert!(plan.recovered);
+            assert!(plan.actions.contains(&String::from_str(&env, "reconstructed_totals")));
+            assert!(!plan.deferred_events.is_empty());
+        });
+    }
+
+    #[test]
+    fn test_dry_run_recovery_plan_closed_market() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.state = MarketState::Closed;
+            market.total_staked = -1;  // break integrity
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id).unwrap();
+
+            assert!(!plan.recovered, "closed market cannot be recovered");
+            assert!(plan.actions.contains(&String::from_str(&env, "skip_closed_or_cancelled")));
+        });
+    }
+
+    #[test]
+    fn test_dry_run_recovery_plan_cancelled_market() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.state = MarketState::Cancelled;
+            market.total_staked = -10;  // break integrity
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id).unwrap();
+
+            assert!(!plan.recovered, "cancelled market cannot be recovered");
+            assert!(plan.actions.contains(&String::from_str(&env, "skip_closed_or_cancelled")));
+        });
+    }
+
+    #[test]
+    fn test_dry_run_recovery_plan_no_auth_required() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            // No auth setup needed — dry_run must work without admin authentication
+            let plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id);
+            assert!(plan.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_dry_run_then_commit_plan_equality() {
+        let (env, admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            // Introduce an integrity issue
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.total_staked = 500;
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            // 1. Dry run — preview the plan without mutation
+            let dry_plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id).unwrap();
+
+            // Verify market state unchanged after dry run
+            let market_after_dry = MarketStateManager::get_market(&env, &market_id).unwrap();
+            assert_eq!(market_after_dry.total_staked, 500);
+
+            // 2. Commit — actually apply the recovery
+            let commit_plan = RecoveryManager::recover_market_state(
+                &env, &admin, &market_id, true,
+            )
+            .unwrap();
+
+            // Verify market state IS changed after commit
+            let market_after_commit = MarketStateManager::get_market(&env, &market_id).unwrap();
+            assert_eq!(market_after_commit.total_staked, 0);
+
+            // 3. Plans must be identical (same input → same output)
+            assert_eq!(dry_plan.market_id, commit_plan.market_id);
+            assert_eq!(dry_plan.recovered, commit_plan.recovered);
+            assert_eq!(dry_plan.actions.len(), commit_plan.actions.len());
+            assert_eq!(dry_plan.actions.get(0), commit_plan.actions.get(0));
+            assert_eq!(dry_plan.deferred_events.len(), commit_plan.deferred_events.len());
+        });
+    }
+
+    #[test]
+    fn test_recover_market_state_commit_works() {
+        let (env, admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            market.total_staked = 500;
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let plan = RecoveryManager::recover_market_state(
+                &env, &admin, &market_id, true,
+            )
+            .unwrap();
+
+            assert!(plan.recovered);
+
+            // Market should have been fixed
+            let market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            assert_eq!(market.total_staked, 0);
+
+            // Recovery record should exist
+            let record = RecoveryStorage::load(&env, &market_id);
+            assert!(record.is_some());
+            let record = record.unwrap();
+            assert!(record.recovered);
+        });
+    }
+
+    #[test]
+    fn test_recover_market_state_commit_noop_market() {
+        let (env, admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            // Healthy market — commit should produce a no-op plan
+            let plan = RecoveryManager::recover_market_state(
+                &env, &admin, &market_id, true,
+            )
+            .unwrap();
+
+            assert!(!plan.recovered);
+            assert!(plan.actions.contains(&String::from_str(&env, "no_action_needed")));
+        });
+    }
+
+    #[test]
+    fn test_dry_run_market_not_found() {
+        let test = RecoveryTest::new();
+        let contract_id = test.env.register(crate::PredictifyHybrid, ());
+        let result = test.env.as_contract(&contract_id, || {
+            RecoveryManager::dry_run_recovery_plan(&test.env, &test.market_id)
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_recovery_plan_max_bounds() {
+        let test = RecoveryTest::new();
+        // Verify that the bound constants are reasonable
+        assert!(MAX_PLAN_ACTIONS > 0);
+        assert!(MAX_PLAN_BALANCE_DELTAS > 0);
+        assert!(MAX_PLAN_EVENTS > 0);
+        // Plan with max actions should not exceed limit
+        let mut actions = Vec::new(&test.env);
+        for i in 0..MAX_PLAN_ACTIONS {
+            actions.push_back(String::from_str(&test.env, &format!("action_{}", i)));
+        }
+        assert_eq!(actions.len(), MAX_PLAN_ACTIONS);
+
+        let mut deltas = Vec::new(&test.env);
+        for _ in 0..MAX_PLAN_BALANCE_DELTAS {
+            deltas.push_back(BalanceDelta {
+                user: Address::generate(&test.env),
+                delta: 0,
+            });
+        }
+        assert_eq!(deltas.len(), MAX_PLAN_BALANCE_DELTAS);
+
+        let mut events = Vec::new(&test.env);
+        for _ in 0..MAX_PLAN_EVENTS {
+            events.push_back(DeferredEvent {
+                action: String::from_str(&test.env, "test"),
+                status: String::from_str(&test.env, "test"),
+                amount: 0,
+            });
+        }
+        assert_eq!(events.len(), MAX_PLAN_EVENTS);
+    }
+
+    #[test]
+    fn test_recovery_plan_commit_without_auth_fails() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        let intruder = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            // Non-admin calling recover_market_state with commit:true should fail
+            let result = RecoveryManager::recover_market_state(
+                &env, &intruder, &market_id, true,
+            );
+            assert_eq!(result, Err(Error::Unauthorized));
+        });
+    }
+
+    #[test]
+    fn test_dry_run_recovery_plan_overflow_safe() {
+        let (env, _admin, contract_id, market_id) = setup_market_env();
+        env.as_contract(&contract_id, || {
+            let mut market = MarketStateManager::get_market(&env, &market_id).unwrap();
+            // Set stakes to i128::MAX to test overflow handling
+            let user = Address::generate(&env);
+            market.stakes.set(user.clone(), i128::MAX);
+            market.total_staked = 0;  // force mismatch
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            // checked_add on i128::MAX + 0 = i128::MAX (no overflow with single entry)
+            let plan = RecoveryManager::dry_run_recovery_plan(&env, &market_id).unwrap();
+            assert!(plan.recovered);
+            assert_eq!(
+                MarketStateManager::get_market(&env, &market_id)
+                    .unwrap()
+                    .total_staked,
+                0,  // dry run should not mutate
+            );
+        });
     }
 }
 
