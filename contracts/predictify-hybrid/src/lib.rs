@@ -6,7 +6,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 extern crate alloc;
 
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
+    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec, Val,
 };
 
 pub const PERCENTAGE_DENOMINATOR: i128 = 10000;
@@ -108,7 +108,7 @@ pub mod handshake;
 use bets::BetStorage;
 use gas::BudgetGuard;
 use resolution::ResolutionOutcomeCache;
-use storage::BalanceStorage;
+use storage::{BalanceStorage, StorageOptimizer};
 use types::{Market, ReflectorAsset};
 use events::EventEmitter;
 // `CircuitBreaker`, `Error`, `EventEmitter`, `ClaimInfo` and the soroban_sdk
@@ -394,6 +394,23 @@ impl PredictifyHybrid {
         }
         if let Err(e) = check_market_creation_rent_budget(&env) {
             panic_with_error!(env, e);
+        }
+
+        // Pre-flight TTL pressure check: reject creation if any target key
+        // appears to be under TTL pressure such that the recommended bump
+        // cannot be satisfied. Use existing storage optimizer probe to
+        // inspect the market and audit-head keys before mutating state.
+        let mut probe_keys: Vec<Val> = Vec::new(&env);
+        probe_keys.push_back(market_id.clone().into());
+        probe_keys.push_back(Symbol::new(&env, "AUDIT_HEAD").into());
+
+        let pressures = StorageOptimizer::check_ttl_pressure(&env, probe_keys);
+        if pressures.len() > 0 {
+            for p in pressures.iter() {
+                if p.remaining_ledgers < p.recommended_bump {
+                    panic_with_error!(env, Error::InsufficientStorageRentBudget);
+                }
+            }
         }
 
         env.storage().persistent().set(&market_id, &market);
