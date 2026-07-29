@@ -4030,3 +4030,109 @@ impl MarketPauseManager {
         );
     }
 }
+
+use soroban_sdk::contractimpl;
+
+#[contractimpl]
+impl crate::PredictifyHybrid {
+    /// Pauses a market temporarily with a specific reason for audit trail.
+    ///
+    /// Requires admin authentication.
+    pub fn pause_market(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        duration_hours: u32,
+        reason: crate::types::PauseReason,
+    ) -> Result<(), Error> {
+        MarketPauseManager::pause_market(&env, admin, &market_id, duration_hours, reason)
+    }
+
+    /// Resumes a paused market before the pause duration expires.
+    ///
+    /// Requires admin authentication.
+    pub fn unpause_market(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        MarketPauseManager::resume_market(&env, admin, &market_id)
+    }
+}
+
+#[cfg(test)]
+mod pause_entrypoint_tests {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig, Ledger};
+    use crate::types::{PauseReason, MarketPauseInfo};
+
+    #[test]
+    fn test_pause_market_entrypoint() {
+        let mut env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        
+        // Setup config and initialize
+        let cfg = crate::config::ConfigManager::get_development_config(&env);
+        crate::config::ConfigManager::store_config(&env, &cfg).unwrap();
+        crate::AdminInitializer::initialize(&env, &admin).unwrap();
+        env.storage().persistent().set(&Symbol::new(&env, crate::SYM_PLATFORM_FEE), &100i128);
+
+        // Create a market to pause
+        let market_id = Symbol::new(&env, "test_pause");
+        let question = String::from_str(&env, "Test Question");
+        let outcomes = vec![&env, String::from_str(&env, "Yes"), String::from_str(&env, "No")];
+        let now = env.ledger().timestamp();
+        let end_time = now + 86400;
+        
+        let market = crate::types::Market::new(
+            &env,
+            admin.clone(),
+            question,
+            outcomes,
+            end_time,
+            crate::types::OracleConfig::new(
+                crate::types::OracleProvider::reflector(),
+                Address::generate(&env),
+                String::from_str(&env, "BTC"),
+                2500000,
+                String::from_str(&env, "gt"),
+            ),
+            None,
+            86400,
+            crate::types::MarketState::Active,
+        );
+        MarketStateManager::update_market(&env, &market_id, &market);
+
+        // Use the entrypoint directly via PredictifyHybrid
+        let reason = PauseReason::Maintenance;
+        let res = crate::PredictifyHybrid::pause_market(
+            env.clone(),
+            admin.clone(),
+            market_id.clone(),
+            24,
+            reason.clone(),
+        );
+        assert!(res.is_ok());
+
+        // Verify the pause status and reason
+        let pause_info: MarketPauseInfo = env.storage().persistent().get(&market_id).unwrap();
+        assert!(pause_info.is_paused);
+        assert_eq!(pause_info.pause_duration_hours, 24);
+        assert!(matches!(pause_info.reason, PauseReason::Maintenance));
+        
+        // Fast forward slightly past min cooloff to allow unpause
+        env.ledger().set_timestamp(now + 3601);
+
+        // Unpause market using entrypoint
+        let res_unpause = crate::PredictifyHybrid::unpause_market(
+            env.clone(),
+            admin.clone(),
+            market_id.clone(),
+        );
+        assert!(res_unpause.is_ok());
+        
+        let pause_info_after: MarketPauseInfo = env.storage().persistent().get(&market_id).unwrap();
+        assert!(!pause_info_after.is_paused);
+    }
+}
