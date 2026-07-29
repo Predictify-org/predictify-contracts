@@ -30,9 +30,9 @@ use crate::{ContractError, DataKey};
 /// * `env`        - Contract environment.
 /// * `admin`      - Authenticated administrator.
 /// * `expected`   - The version we expect to find stored. Must equal the
-///                  current contract version.
+///   current contract version.
 /// * `target`     - The version to upgrade to. Must be strictly greater than
-///                  `expected`.
+///   `expected`.
 ///
 /// # Errors
 ///
