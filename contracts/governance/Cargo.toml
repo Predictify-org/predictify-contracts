@@ -13,6 +13,7 @@ soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+proptest = "1.4"
 
 [[test]]
 name = "governance_lifecycle"
@@ -25,3 +26,7 @@ path = "tests/events.rs"
 [[test]]
 name = "auth_boundary"
 path = "tests/auth_boundary.rs"
+
+[[test]]
+name = "proptest"
+path = "tests/proptest.rs"
