@@ -25,7 +25,7 @@
 
 pub mod errors;
 
-use soroban_sdk::{contract, contractimpl, contracttype, panic_with_error, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
 
 pub use errors::ContractError;
 
@@ -74,7 +74,7 @@ pub struct MarketData {
 
 /// On-chain record of a user's bet on a market.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BetData {
     /// Index of the selected outcome.
     pub outcome_index: u32,
@@ -84,7 +84,7 @@ pub struct BetData {
 
 /// Tracks how much liquidity a user has added to a market.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LiquidityData {
     /// Total amount of liquidity provided.
     pub total_amount: i128,
