@@ -15,8 +15,9 @@
 //! | `alist_deleted`  | An allowlist is deleted     |
 //! | `alist_owner_xf` | Ownership is transferred    |
 //! | `alist_init`     | Contract is initialized     |
+//! | `alist_limit_set` | Per-account cap is updated |
 
-use soroban_sdk::{Address, Env, Symbol, Vec};
+use soroban_sdk::{Address, Env, Symbol};
 
 /// Emit an `AllowlistCreated` event.
 ///
@@ -142,4 +143,14 @@ pub fn emit_allowlist_initialized(env: &Env, admin: &Address) {
         admin,
     );
     env.events().publish(topics, env.ledger().timestamp());
+}
+
+/// Emit an `AllowlistAccountLimitSet` event.
+///
+/// Published when the administrator changes the maximum number of allowlists
+/// that may contain one address.
+pub fn emit_account_limit_set(env: &Env, admin: &Address, max_memberships: u32) {
+    let topics = (Symbol::new(env, "alist_limit_set"), admin);
+    env.events()
+        .publish(topics, (max_memberships, env.ledger().timestamp()));
 }

@@ -29,3 +29,7 @@ path = "tests/err_stab.rs"
 [[test]]
 name = "proptest"
 path = "tests/proptest.rs"
+
+[[test]]
+name = "limits"
+path = "tests/limits.rs"

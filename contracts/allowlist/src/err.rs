@@ -31,4 +31,8 @@ pub enum AllowlistError {
     InvalidInput = 9,
     /// Arithmetic overflow occurred.
     Overflow = 10,
+    /// The address has reached its configured per-account membership cap.
+    AccountLimitExceeded = 11,
+    /// Arithmetic underflow occurred while releasing membership capacity.
+    Underflow = 12,
 }
