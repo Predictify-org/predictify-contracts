@@ -27,3 +27,7 @@ path = "tests/err_stab.rs"
 [[test]]
 name = "proptest"
 path = "tests/proptest.rs"
+
+[[test]]
+name = "auth_snap"
+path = "tests/auth_snap.rs"
