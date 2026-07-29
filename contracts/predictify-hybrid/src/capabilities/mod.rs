@@ -1,5 +1,7 @@
 use soroban_sdk::Env;
 
+pub(crate) mod admin;
+
 /// Recovery feature capability flags (u64 bitmap).
 ///
 /// Each bit represents a discrete feature the recovery subsystem supports.
@@ -50,4 +52,13 @@ pub mod recovery {
 /// capabilities are available and detect changes after contract upgrades.
 pub fn capabilities(_env: &Env) -> u64 {
     recovery::SUPPORTED
+}
+
+/// Returns the fixed cooldown between repeated capability-critical admin actions.
+///
+/// The cooldown is enforced independently for contract upgrades and rollbacks.
+/// This keeps emergency rollback available after an upgrade while preventing
+/// rapid repetition of either critical action.
+pub fn admin_cooldown_seconds() -> u64 {
+    admin::ADMIN_ACTION_COOLDOWN_SECONDS
 }
