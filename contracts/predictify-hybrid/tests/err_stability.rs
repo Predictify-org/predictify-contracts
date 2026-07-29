@@ -61,6 +61,7 @@ error_code_snapshot! {
     InvalidDuration = 302,
     InvalidThreshold = 303,
     InvalidComparison = 304,
+    InvalidCharacter = 305,
 
     InvalidInput = 401,
     InvalidFeeConfig = 402,
@@ -162,7 +163,7 @@ error_code_snapshot! {
 
 #[test]
 fn contract_error_codes_are_stable() {
-    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 127);
+    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 128);
 
     for &(error, expected) in ERROR_CODE_SNAPSHOT {
         assert_eq!(

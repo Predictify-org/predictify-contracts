@@ -144,6 +144,9 @@ pub enum Error {
     InvalidThreshold = 303,
     /// Comparison operator is invalid or not supported.
     InvalidComparison = 304,
+    /// Metadata string contains a forbidden Unicode character (e.g. zero-width, bidi control).
+    /// The first offending codepoint is included in the error context.
+    InvalidCharacter = 305,
 
     // ===== GENERAL ERRORS =====
     /// Contract is in an invalid or unexpected state. Manual intervention may be required.
@@ -1698,6 +1701,7 @@ impl Error {
             Error::InvalidDuration => "Invalid duration specified",
             Error::InvalidThreshold => "Invalid threshold value",
             Error::InvalidComparison => "Invalid comparison operator",
+            Error::InvalidCharacter => "Invalid character detected in metadata",
             Error::InvalidState => "Invalid state",
             Error::InvalidInput => "Invalid input",
             Error::InvalidFeeConfig => "Invalid fee configuration",
@@ -1817,6 +1821,7 @@ impl Error {
             Error::InvalidDuration => "INVALID_DURATION",
             Error::InvalidThreshold => "INVALID_THRESHOLD",
             Error::InvalidComparison => "INVALID_COMPARISON",
+            Error::InvalidCharacter => "INVALID_CHARACTER",
             Error::InvalidState => "INVALID_STATE",
             Error::InvalidInput => "INVALID_INPUT",
             Error::InvalidFeeConfig => "INVALID_FEE_CONFIG",
