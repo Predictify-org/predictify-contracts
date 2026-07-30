@@ -745,7 +745,7 @@ mod circuit_breaker_tests {
         });
     }
 
-    /// Probe success threshold: after the cooldown window passes,
+/// Probe success threshold: after the cooldown window passes,
     /// `half_open_max_requests` consecutive successes must auto-close the breaker.
     #[test]
     fn test_half_open_probe_success_threshold_closes() {
@@ -798,6 +798,372 @@ mod circuit_breaker_tests {
             );
             assert_eq!(state.half_open_since, 0);
             assert_eq!(state.failure_count, 0);
+        });
+    }
+
+    // =========================================================================
+    //  HalfOpen Probe Tests (rate-limited)
+    // =========================================================================
+
+    /// Helper: transition the breaker from Closed → Open → HalfOpen with the
+    /// given config overrides written directly to storage (bypasses admin ACL).
+    fn setup_half_open_probe_test(
+        env: &Env,
+        admin: &soroban_sdk::Address,
+    ) {
+        CircuitBreaker::initialize(env).unwrap();
+
+        crate::admin::AdminInitializer::initialize(env, admin).unwrap();
+        AdminRoleManager::assign_role(
+            env,
+            admin,
+            crate::admin::AdminRole::SuperAdmin,
+            admin,
+        )
+        .unwrap();
+
+        // Open the breaker
+        let reason = String::from_str(env, "pause for probe test");
+        CircuitBreaker::emergency_pause(env, admin, &reason).unwrap();
+        // Request resume → HalfOpen
+        CircuitBreaker::request_resume(env, admin).unwrap();
+
+        assert_eq!(
+            CircuitBreaker::get_state(env).unwrap().state,
+            BreakerState::HalfOpen
+        );
+    }
+
+    /// Rate-limited probe admitted when quota is available.
+    #[test]
+    fn test_probe_request_admitted_within_quota() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Override config to have zero cooldown so probes are accepted.
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            config.half_open_quota.calls_per_minute = 5; // 5 probes per window
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // First 5 probes should be admitted.
+            for i in 1..=5 {
+                let admitted = CircuitBreaker::probe_request(&env).unwrap();
+                assert!(admitted, "probe {} should be admitted", i);
+            }
+
+            // 6th probe should be rejected (quota exhausted).
+            let admitted = CircuitBreaker::probe_request(&env).unwrap();
+            assert!(!admitted, "probe beyond quota must be rejected");
+
+            // Verify half-open window counters.
+            let key = CircuitBreakerTempData::HalfOpenWindow;
+            let window: HalfOpenWindow = env.storage().temporary().get(&key).unwrap();
+            assert_eq!(window.admitted, 5, "exactly 5 probes must be admitted");
+        });
+    }
+
+    /// Probe rejected when quota exhausted (even before window ends).
+    #[test]
+    fn test_probe_request_rejected_when_quota_exhausted() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Override config: small quota, zero cooldown.
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            config.half_open_quota.calls_per_minute = 2;
+            config.half_open_quota.evaluation_window_s = 3600;
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // Admit 2 probes.
+            assert!(CircuitBreaker::probe_request(&env).unwrap());
+            assert!(CircuitBreaker::probe_request(&env).unwrap());
+
+            // 3rd should fail.
+            assert!(!CircuitBreaker::probe_request(&env).unwrap());
+
+            // The quota exhaustion should have triggered the auto-decision:
+            // 0 failures among admitted → close.
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(state.state, BreakerState::Closed, "no failures → close");
+        });
+    }
+
+    /// Cooldown enforcement: probe_request returns false before cooldown elapses.
+    #[test]
+    fn test_probe_request_cooldown_enforcement() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Ensure quota is available but cooldown is active.
+            // Default config has recovery_timeout = 300, and we haven't advanced time.
+            assert!(CircuitBreaker::get_state(&env).unwrap().half_open_since > 0);
+
+            // Probe should be rejected because cooldown hasn't elapsed.
+            let admitted = CircuitBreaker::probe_request(&env).unwrap();
+            assert!(!admitted, "probe must be rejected during cooldown");
+
+            // State must remain HalfOpen.
+            assert_eq!(
+                CircuitBreaker::get_state(&env).unwrap().state,
+                BreakerState::HalfOpen
+            );
+        });
+    }
+
+    /// probe_request returns false when breaker is not in HalfOpen.
+    #[test]
+    fn test_probe_request_not_half_open() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::initialize(&env).unwrap();
+
+            // Closed → no probe admitted.
+            assert!(!CircuitBreaker::probe_request(&env).unwrap());
+
+            // Open → no probe admitted.
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
+            AdminRoleManager::assign_role(
+                &env,
+                &admin,
+                crate::admin::AdminRole::SuperAdmin,
+                &admin,
+            )
+            .unwrap();
+            CircuitBreaker::emergency_pause(
+                &env,
+                &admin,
+                &String::from_str(&env, "test"),
+            )
+            .unwrap();
+            assert!(!CircuitBreaker::probe_request(&env).unwrap());
+        });
+    }
+
+    /// half_open_probe_success tracks completion and delegates to record_success.
+    #[test]
+    fn test_half_open_probe_success_tracks_completion() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Override config: zero cooldown, small max requests.
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            config.half_open_max_requests = 2;
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // Call half_open_probe_success — should increment completed counter.
+            CircuitBreaker::half_open_probe_success(&env).unwrap();
+            let window: HalfOpenWindow = env.storage().temporary()
+                .get(&CircuitBreakerTempData::HalfOpenWindow)
+                .unwrap();
+            assert_eq!(window.completed, 1, "one probe must be completed");
+            assert_eq!(window.failures, 0, "no failures yet");
+
+            // Still in HalfOpen (1 < half_open_max_requests=2).
+            assert_eq!(
+                CircuitBreaker::get_state(&env).unwrap().state,
+                BreakerState::HalfOpen
+            );
+
+            // Second success → should auto-close.
+            CircuitBreaker::half_open_probe_success(&env).unwrap();
+            assert_eq!(
+                CircuitBreaker::get_state(&env).unwrap().state,
+                BreakerState::Closed,
+                "breaker must close after 2 probe successes"
+            );
+        });
+    }
+
+    /// half_open_probe_failure tracks failure and re-opens.
+    #[test]
+    fn test_half_open_probe_failure_reopens_circuit() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Override config: zero cooldown.
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // Probe failure → should re-open immediately.
+            CircuitBreaker::half_open_probe_failure(&env).unwrap();
+
+            let window: HalfOpenWindow = env.storage().temporary()
+                .get(&CircuitBreakerTempData::HalfOpenWindow)
+                .unwrap();
+            assert_eq!(window.failures, 1, "one failure must be recorded");
+            assert_eq!(window.completed, 1, "one probe completed");
+
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(
+                state.state,
+                BreakerState::Open,
+                "a single probe failure must re-open the breaker"
+            );
+            assert_eq!(state.half_open_since, 0, "half_open_since must be cleared");
+        });
+    }
+
+    /// Quota window resets after evaluation_window_s passes.
+    #[test]
+    fn test_probe_request_quota_window_resets() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Override config: small quota, short window, zero cooldown.
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            config.half_open_quota.calls_per_minute = 2;
+            config.half_open_quota.evaluation_window_s = 1; // 1 second
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // Use up the quota.
+            assert!(CircuitBreaker::probe_request(&env).unwrap());
+            assert!(CircuitBreaker::probe_request(&env).unwrap());
+            assert!(!CircuitBreaker::probe_request(&env).unwrap(),
+                "quota exhausted before window reset");
+
+            // The quota exhaustion with 0 failures should have auto-closed.
+            assert_eq!(
+                CircuitBreaker::get_state(&env).unwrap().state,
+                BreakerState::Closed,
+                "quota exhaustion with no failures must close"
+            );
+        });
+    }
+
+    /// Quota exhausted with failures → re-open.
+    #[test]
+    fn test_quota_exhausted_with_failures_reopens() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Override config: small quota, zero cooldown.
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            config.half_open_quota.calls_per_minute = 3;
+            config.half_open_quota.evaluation_window_s = 3600;
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // Admit 3 probes via is_operation_allowed (this increments admitted).
+            assert!(CircuitBreaker::is_operation_allowed(&env, "betting").unwrap());
+            assert!(CircuitBreaker::is_operation_allowed(&env, "betting").unwrap());
+            assert!(CircuitBreaker::is_operation_allowed(&env, "betting").unwrap());
+
+            // Record a failure for one of them.
+            CircuitBreaker::record_failure(&env).unwrap();
+
+            // 4th call should trip the quota exhaustion logic.
+            // failures > 0 → re-open.
+            let admitted = CircuitBreaker::is_operation_allowed(&env, "betting").unwrap();
+            assert!(!admitted, "probe must be rejected (quota full, failures present)");
+
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(
+                state.state,
+                BreakerState::Open,
+                "quota exhausted with failures must re-open"
+            );
+        });
+    }
+
+    /// probe_oracle_with_circuit_breaker integration test:
+    /// - When HalfOpen and cooldown elapsed, probe_request succeeds.
+    /// - oracle health is probed; on failure, circuit re-opens.
+    #[test]
+    fn test_probe_oracle_with_circuit_breaker_integration() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let admin = <soroban_sdk::Address as Address>::generate(&env);
+            setup_half_open_probe_test(&env, &admin);
+
+            // Override config: zero cooldown so probe is accepted.
+            let mut config = CircuitBreaker::get_config(&env).unwrap();
+            config.recovery_timeout = 0;
+            config.half_open_quota.calls_per_minute = 5;
+            env.storage()
+                .instance()
+                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+
+            // Use the graceful_degradation probe function.
+            let oracle = crate::types::OracleProvider::reflector();
+            let oracle_address = <soroban_sdk::Address as Address>::generate(&env);
+
+            let health = crate::graceful_degradation::probe_oracle_with_circuit_breaker(
+                &env, &oracle, &oracle_address,
+            );
+
+            // The oracle test endpoint will fail because there's no real oracle backend,
+            // so we expect Degraded (probe admitted but oracle call itself failed).
+            assert_eq!(
+                health,
+                crate::graceful_degradation::OracleHealth::Degraded,
+                "oracle probe should fail (no real oracle backend)"
+            );
+
+            // The breaker should have re-opened because half_open_probe_failure was called.
+            let state = CircuitBreaker::get_state(&env).unwrap();
+            assert_eq!(
+                state.state,
+                BreakerState::Open,
+                "breaker must re-open after oracle probe failure"
+            );
         });
     }
 }

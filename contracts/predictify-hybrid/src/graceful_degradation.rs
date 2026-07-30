@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::circuit_breaker::CircuitBreaker;
 use crate::err::Error;
 use crate::events::EventEmitter;
 // use crate::oracles::{OracleInterface, ReflectorOracle};
@@ -205,6 +206,63 @@ pub fn get_degradation_status(
     oracle_address: &Address,
 ) -> OracleHealth {
     monitor_oracle_health(env, oracle, oracle_address)
+}
+
+/// Attempt a circuit-breaker aware probe of the oracle.
+///
+/// This function integrates the graceful degradation layer with the circuit
+/// breaker's half-open probe mechanism.  When the breaker is in HalfOpen
+/// state, callers should use this function instead of directly calling
+/// the oracle, so that the probe quota and cooldown are respected.
+///
+/// # Flow
+///
+/// 1. Call `CircuitBreaker::probe_request()` to check if a probe is
+///    admitted under the current quota and cooldown.
+/// 2. If admitted, perform the actual oracle health check.
+/// 3. On success, call `CircuitBreaker::half_open_probe_success()`.
+/// 4. On failure, call `CircuitBreaker::half_open_probe_failure()`.
+///
+/// # Returns
+///
+/// * `Ok(OracleHealth::Working)` – Probe admitted and oracle responded.
+/// * `Ok(OracleHealth::Degraded)` – Probe admitted but oracle failed
+///   (the breaker will re-open).
+/// * `Ok(OracleHealth::Broken)` – The breaker is not in HalfOpen or the
+///   probe was rejected (caller should treat this as "no probe sent").
+pub fn probe_oracle_with_circuit_breaker(
+    env: &Env,
+    oracle: &OracleProvider,
+    oracle_address: &Address,
+) -> OracleHealth {
+    // Step 1: Check if the breaker admits a probe.
+    let admitted = match CircuitBreaker::probe_request(env) {
+        Ok(true) => true,
+        _ => return OracleHealth::Broken, // Not in HalfOpen or quota full
+    };
+
+    if !admitted {
+        return OracleHealth::Broken;
+    }
+
+    // Step 2: Perform the actual oracle health check.
+    let backup = OracleBackup::new(oracle.clone(), oracle.clone());
+    let is_healthy = backup.is_working(env, oracle_address).unwrap_or(false);
+
+    if is_healthy {
+        // Step 3: Probe succeeded – record success.
+        let _ = CircuitBreaker::half_open_probe_success(env);
+        let msg = String::from_str(env, "Oracle probe succeeded");
+        record_oracle_health(env, oracle, OracleHealth::Working, &msg);
+        OracleHealth::Working
+    } else {
+        // Step 4: Probe failed – record failure (breaker re-opens).
+        let _ = CircuitBreaker::half_open_probe_failure(env);
+        let msg = String::from_str(env, "Oracle probe failed");
+        record_oracle_health(env, oracle, OracleHealth::Degraded, &msg);
+        emit_degradation_event(env, oracle.clone(), msg);
+        OracleHealth::Degraded
+    }
 }
 
 pub fn validate_degradation_strategy(_strategy: DegradationStrategy) -> Result<(), Error> {

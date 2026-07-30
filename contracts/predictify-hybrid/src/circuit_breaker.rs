@@ -361,7 +361,7 @@ impl CircuitBreaker {
         }
     }
 
-    /// Check whether a read-only operation is allowed.
+/// Check whether a read-only operation is allowed.
     ///
     /// Read paths remain available while the breaker is paused so integrators can
     /// inspect state, balances, and status without changing contract storage.
@@ -393,6 +393,148 @@ impl CircuitBreaker {
         } else {
             Err(Error::CBOpen)
         }
+    }
+
+    /// Explicitly request admission for a probe request in the half-open state.
+    ///
+    /// This is the primary entry-point for callers that want to check whether
+    /// they are allowed to send a probe through the half-open breaker.  It
+    /// combines the cooldown check, the quota-based admission window, and
+    /// rate-limit tracking into a single call.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)`  – Probe is admitted (caller may proceed).
+    /// * `Ok(false)` – Probe is rejected (quota full, cooldown active, or
+    ///   the breaker is not in HalfOpen).
+    /// * `Err(e)`    – Storage error.
+    ///
+    /// # Rate-limit integration
+    ///
+    /// When the half-open quota is configured (`calls_per_minute > 0`), this
+    /// function records the admission in a temporary `HalfOpenWindow` and
+    /// returns `true` only if the window has remaining capacity.  Once the
+    /// window is full the caller must wait for the next evaluation window
+    /// (or for the breaker to auto-close or re-open based on the probe
+    /// results accumulated in the window).
+    pub fn probe_request(env: &Env) -> Result<bool, Error> {
+        let state = Self::get_state(env)?;
+        if state.state != BreakerState::HalfOpen {
+            return Ok(false);
+        }
+
+        let config = Self::get_config(env)?;
+
+        // Enforce cooldown: probes are not counted (and not admitted) until
+        // `recovery_timeout` seconds have elapsed since entering HalfOpen.
+        let current_time = env.ledger().timestamp();
+        if current_time < state.half_open_since + config.recovery_timeout {
+            return Ok(false);
+        }
+
+        // Use quota-based admission when configured.
+        if config.half_open_quota.calls_per_minute > 0 {
+            Self::half_open_admit(env, &config)
+        } else {
+            // Fallback: simple max-requests gate.
+            if state.half_open_requests < config.half_open_max_requests {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+    }
+
+    /// Record a successful probe while in the half-open state.
+    ///
+    /// This is a thin wrapper around `record_success` that additionally
+    /// increments the `HalfOpenWindow.completed` counter so the quota-based
+    /// scheduler can see how many probes succeeded.
+    ///
+    /// After `half_open_max_requests` consecutive successes the breaker
+    /// auto-closes (see [`record_success`] for details).
+    pub fn half_open_probe_success(env: &Env) -> Result<(), Error> {
+        let state = Self::get_state(env)?;
+        if state.state != BreakerState::HalfOpen {
+            return Ok(());
+        }
+
+        // Track completion in the temporary window.
+        let key = CircuitBreakerTempData::HalfOpenWindow;
+        let current_time = env.ledger().timestamp();
+        let config = Self::get_config(env)?;
+        let mut window: HalfOpenWindow = env.storage().temporary().get(&key).unwrap_or(HalfOpenWindow {
+            admitted: 0,
+            completed: 0,
+            failures: 0,
+            window_start: current_time,
+        });
+        // Reset window if expired
+        if current_time >= window.window_start.saturating_add(config.half_open_quota.evaluation_window_s) {
+            window.admitted = 0;
+            window.completed = 0;
+            window.failures = 0;
+            window.window_start = current_time;
+        }
+        window.completed = window.completed.saturating_add(1);
+        env.storage().temporary().set(&key, &window);
+        env.storage().temporary().extend_ttl(&key, config.half_open_quota.evaluation_window_s as u32 + 86400, config.half_open_quota.evaluation_window_s as u32 + 86400);
+
+        // Delegate to record_success which handles the half-open → closed transition.
+        Self::record_success(env)
+    }
+
+    /// Record a failed probe while in the half-open state.
+    ///
+    /// This is a thin wrapper around `record_failure` that additionally
+    /// increments the `HalfOpenWindow.failures` counter so the quota-based
+    /// scheduler can see how many probes failed.
+    ///
+    /// A single failure re-opens the breaker (see [`record_failure`] for details).
+    pub fn half_open_probe_failure(env: &Env) -> Result<(), Error> {
+        let state = Self::get_state(env)?;
+        if state.state != BreakerState::HalfOpen {
+            return Ok(());
+        }
+
+        // Track completion in the temporary window.
+        let key = CircuitBreakerTempData::HalfOpenWindow;
+        let current_time = env.ledger().timestamp();
+        let config = Self::get_config(env)?;
+        let mut window: HalfOpenWindow = env.storage().temporary().get(&key).unwrap_or(HalfOpenWindow {
+            admitted: 0,
+            completed: 0,
+            failures: 0,
+            window_start: current_time,
+        });
+        // Reset window if expired
+        if current_time >= window.window_start.saturating_add(config.half_open_quota.evaluation_window_s) {
+            window.admitted = 0;
+            window.completed = 0;
+            window.failures = 0;
+            window.window_start = current_time;
+        }
+        window.failures = window.failures.saturating_add(1);
+        window.completed = window.completed.saturating_add(1);
+        env.storage().temporary().set(&key, &window);
+        env.storage().temporary().extend_ttl(&key, config.half_open_quota.evaluation_window_s as u32 + 86400, config.half_open_quota.evaluation_window_s as u32 + 86400);
+
+        // Delegate to record_failure which handles the half-open → open transition.
+        Self::record_failure(env)
+    }
+
+    /// Reset the half-open probe window counters.
+    ///
+    /// This is useful after the breaker transitions out of HalfOpen so that
+    /// stale window data does not linger in temporary storage.
+    pub fn reset_half_open_window(env: &Env) {
+        let key = CircuitBreakerTempData::HalfOpenWindow;
+        env.storage().temporary().set(&key, &HalfOpenWindow {
+            admitted: 0,
+            completed: 0,
+            failures: 0,
+            window_start: 0,
+        });
     }
 
     /// Returns whether withdrawals are allowed under the current pause state.
