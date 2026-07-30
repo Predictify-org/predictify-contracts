@@ -4,7 +4,7 @@
 //!
 //! Provides core admin functionality with per-entrypoint gas regression testing.
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, Symbol};
 
 #[contracttype]
 #[derive(Clone)]
@@ -88,21 +88,21 @@ impl AdminContract {
             return Err(ContractError::Unauthorized);
         }
 
-        let cooldown = Self::get_admin_cooldown(env);
+        let cooldown = Self::get_admin_cooldown(env.clone());
         if cooldown == 0 {
             return Ok(());
         }
 
         let now = env.ledger().timestamp();
         let last_key = DataKey::AdminLastAction(function_name);
-        let last_action: u64 = env
-            .storage()
-            .persistent()
-            .get(&last_key)
-            .unwrap_or(0);
-
-        if last_action > 0 && now < last_action.saturating_add(cooldown) {
-            return Err(ContractError::AdminActionTimelocked);
+        // `has()` distinguishes "never recorded" from "recorded at ledger
+        // timestamp 0" -- a bare `last_action > 0` sentinel would wrongly
+        // skip the cooldown check when the first action happens at the
+        // default/initial ledger timestamp.
+        if let Some(last_action) = env.storage().persistent().get::<_, u64>(&last_key) {
+            if now < last_action.saturating_add(cooldown) {
+                return Err(ContractError::AdminActionTimelocked);
+            }
         }
 
         env.storage().persistent().set(&last_key, &now);

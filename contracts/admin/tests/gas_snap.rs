@@ -15,7 +15,10 @@ struct Baseline {
     memory: u64,
 }
 
-// Baselines measured with soroban-sdk 25.3.1 and a reset unlimited budget.
+// Baselines measured with soroban-sdk 25.3.2 and a reset unlimited budget.
+// SET_ADMIN_COOLDOWN/GET_ADMIN_COOLDOWN/CHECK_ADMIN_COOLDOWN were re-measured
+// after fixing a missing `contracterror` import and a use-after-move bug that
+// previously prevented this crate from compiling at all (see issue #1179).
 const INITIALIZE: Baseline = Baseline {
     cpu: 55_643,
     memory: 20_337,
@@ -25,16 +28,16 @@ const ADMIN: Baseline = Baseline {
     memory: 12_495,
 };
 const SET_ADMIN_COOLDOWN: Baseline = Baseline {
-    cpu: 45_000,
-    memory: 18_000,
+    cpu: 61_169,
+    memory: 25_361,
 };
 const GET_ADMIN_COOLDOWN: Baseline = Baseline {
-    cpu: 28_000,
-    memory: 10_000,
+    cpu: 37_321,
+    memory: 16_811,
 };
 const CHECK_ADMIN_COOLDOWN: Baseline = Baseline {
-    cpu: 52_000,
-    memory: 19_000,
+    cpu: 89_142,
+    memory: 36_809,
 };
 
 fn measured_budget(env: &Env) -> (u64, u64) {
@@ -127,7 +130,7 @@ fn snapshot_admin() {
     let stored_admin = client.admin();
     let measured = measured_budget(&fixture.env);
 
-    assert_eq!(stored_admin, Ok(fixture.admin));
+    assert_eq!(stored_admin, fixture.admin);
     assert_budget("admin", measured, ADMIN);
 }
 
@@ -170,10 +173,9 @@ fn snapshot_check_admin_cooldown() {
     let func_name = Symbol::new(&fixture.env, "test_action");
 
     reset_budget(&fixture.env);
-    let result = client.check_admin_cooldown(&fixture.admin, &func_name);
+    client.check_admin_cooldown(&fixture.admin, &func_name);
     let measured = measured_budget(&fixture.env);
 
-    assert!(result.is_ok());
     assert_budget("check_admin_cooldown", measured, CHECK_ADMIN_COOLDOWN);
 }
 
@@ -209,8 +211,8 @@ fn rejects_cooldown_when_active() {
     
     let func_name = Symbol::new(&fixture.env, "test_action");
     
-    // First call should succeed
-    assert!(client.check_admin_cooldown(&fixture.admin, &func_name).is_ok());
+    // First call should succeed (would panic on Err since this is the non-try_ client method)
+    client.check_admin_cooldown(&fixture.admin, &func_name);
     
     // Immediate second call should fail due to cooldown
     assert_eq!(
