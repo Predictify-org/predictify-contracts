@@ -1,6 +1,7 @@
 use soroban_sdk::Env;
 
 pub(crate) mod admin;
+pub mod storage;
 
 /// Recovery feature capability flags (u64 bitmap).
 ///
@@ -8,8 +9,6 @@ pub(crate) mod admin;
 /// Clients can compare the bitmap across contract versions to detect
 /// capability deltas (features added or removed after an upgrade).
 pub mod recovery {
-    use super::*;
-
     /// Per-market timelock before a recovery action can be executed.
     pub const TIMELOCK_GUARD: u64 = 1 << 0;
     /// Admin-initiated market state reconstruction (fix total_staked mismatches, etc.).
@@ -46,12 +45,50 @@ pub mod recovery {
         | INTEGRITY_VALIDATOR;
 }
 
-/// Returns the recovery feature bitmap for the current contract version.
+/// Combined bitmap of all features advertised by this contract version.
+pub const SUPPORTED: u64 = recovery::SUPPORTED | storage::SUPPORTED;
+
+/// Returns the feature bitmap for the current contract version.
 ///
-/// Clients can call this read-only view to discover which recovery
+/// Clients can call this read-only view to discover which recovery and storage
 /// capabilities are available and detect changes after contract upgrades.
 pub fn capabilities(_env: &Env) -> u64 {
-    recovery::SUPPORTED
+    SUPPORTED
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{capabilities, recovery, storage, SUPPORTED};
+    use soroban_sdk::Env;
+
+    #[test]
+    fn subsystem_bitmaps_are_disjoint() {
+        assert_eq!(
+            recovery::SUPPORTED & storage::SUPPORTED,
+            0,
+            "recovery and storage capability bits must not overlap"
+        );
+    }
+
+    #[test]
+    fn capabilities_combines_all_supported_subsystems() {
+        let env = Env::default();
+
+        assert_eq!(capabilities(&env), SUPPORTED);
+        assert_eq!(SUPPORTED, recovery::SUPPORTED | storage::SUPPORTED);
+    }
+
+    #[test]
+    fn unassigned_bits_remain_clear() {
+        const ASSIGNED_BITS: u32 = 21;
+        let reserved_mask = !((1u64 << ASSIGNED_BITS) - 1);
+
+        assert_eq!(
+            SUPPORTED & reserved_mask,
+            0,
+            "bits 21-63 are reserved for future capabilities"
+        );
+    }
 }
 
 /// Returns the fixed cooldown between repeated capability-critical admin actions.
