@@ -1472,6 +1472,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "reporting-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "reporting",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "resolution"
 version = "0.0.0"
 dependencies = [
