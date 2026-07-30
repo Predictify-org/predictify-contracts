@@ -122,4 +122,53 @@ impl MarketsContract {
         market
     }
 
+    /// @notice Whether the markets subsystem is currently paused.
+    /// @dev Read-only; defaults to `false` (not paused) before `pause_markets` is ever called.
+    pub fn is_paused(env: Env) -> bool {
+        env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
+    }
+
+    // -----------------------------------------------------------------------
+    //  Admin
+    // -----------------------------------------------------------------------
+
+    /// @notice Set the admin address once. Required before `pause_markets`/`unpause_markets`.
+    /// @dev Fails with `AlreadyInitialized`-equivalent (`InvalidState`) if the admin is already set.
+    pub fn initialize(env: Env, admin: Address) -> Result<(), ContractError> {
+        admin.require_auth();
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(ContractError::InvalidState);
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        Ok(())
+    }
+
+    /// @notice Pause the markets subsystem. Admin-only.
+    /// @dev Once paused, other entrypoints are expected to check [`Self::is_paused`] and
+    /// reject state-changing calls with `MarketClosed` while active.
+    pub fn pause_markets(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin)?;
+        env.storage().instance().set(&DataKey::Paused, &true);
+        Ok(())
+    }
+
+    /// @notice Resume the markets subsystem after a pause. Admin-only.
+    pub fn unpause_markets(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin)?;
+        env.storage().instance().set(&DataKey::Paused, &false);
+        Ok(())
+    }
+
+    fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
+        caller.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::InvalidState)?;
+        if *caller != stored_admin {
+            return Err(ContractError::Unauthorized);
+        }
+        Ok(())
+    }
 }
