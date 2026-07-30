@@ -4269,3 +4269,13 @@ mod tests {
         assert_eq!(market.validate(&env), Ok(()));
     }
 }
+
+/// Total extension days
+    pub total_extension_days: u32,
+    /// Maximum extension days allowed
+    pub max_extension_days: u32,
+      /// Number of times this market's end time has been extended (dispute extensions).
+    /// Independent of the cumulative-hours cap (`total_extension_days` vs `max_extension_days`) —
+    /// this caps the *number of extension calls* per market lifecycle.
+    pub extension_count: u32,
+

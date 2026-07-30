@@ -1618,12 +1618,20 @@ impl MarketStateManager {
     ///
     /// MarketStateManager::update_market(&env, &market_id, &market);
     /// ```
-    pub fn extend_for_dispute(market: &mut Market, _env: &Env, extension_hours: u64) -> Result<(), Error> {
+  pub fn extend_for_dispute(market: &mut Market, _env: &Env, extension_hours: u64) -> Result<(), Error> {
         const MAX_CUMULATIVE_EXTENSION_HOURS: u64 = 72; // 3 days maximum
+        /// Maximum number of times a market's end time may be extended, independent
+        /// of the cumulative-hours cap above.
+        const MAX_EXTENSION_COUNT: u32 = 3;
 
         // Check if adding this extension exceeds the cumulative cap
         if (market.total_extension_days as u64) + extension_hours > MAX_CUMULATIVE_EXTENSION_HOURS {
             return Err(Error::ExtensionCapExceeded);
+        }
+
+        // Check if this market has already been extended the maximum number of times
+        if market.extension_count >= MAX_EXTENSION_COUNT {
+            return Err(Error::ExtensionCountCapExceeded);
         }
 
         let current_time = _env.ledger().timestamp();
@@ -1636,6 +1644,9 @@ impl MarketStateManager {
 
         // Track cumulative extension
         market.total_extension_days = market.total_extension_days.saturating_add(extension_hours as u32);
+
+        // Track extension count
+        market.extension_count = market.extension_count.saturating_add(1);
 
         Ok(())
     }
@@ -4135,4 +4146,62 @@ mod pause_entrypoint_tests {
         let pause_info_after: MarketPauseInfo = env.storage().persistent().get(&market_id).unwrap();
         assert!(!pause_info_after.is_paused);
     }
+}
+
+
+#[test]
+fn test_extension_count_cap_allows_up_to_max() {
+    let env = Env::default();
+    let mut market = create_test_market(&env); // adjust to your repo's real test market helper
+
+    assert!(MarketStateManager::extend_for_dispute(&mut market, &env, 1).is_ok());
+    assert_eq!(market.extension_count, 1);
+
+    assert!(MarketStateManager::extend_for_dispute(&mut market, &env, 1).is_ok());
+    assert_eq!(market.extension_count, 2);
+
+    assert!(MarketStateManager::extend_for_dispute(&mut market, &env, 1).is_ok());
+    assert_eq!(market.extension_count, 3);
+}
+
+#[test]
+fn test_extension_count_cap_rejects_beyond_max() {
+    let env = Env::default();
+    let mut market = create_test_market(&env);
+
+    for _ in 0..3 {
+        MarketStateManager::extend_for_dispute(&mut market, &env, 1).unwrap();
+    }
+
+    let result = MarketStateManager::extend_for_dispute(&mut market, &env, 1);
+    assert_eq!(result, Err(Error::ExtensionCountCapExceeded));
+    assert_eq!(market.extension_count, 3); // unchanged after rejection
+}
+
+#[test]
+fn test_extension_count_cap_independent_of_hours_cap() {
+    let env = Env::default();
+    let mut market = create_test_market(&env);
+
+    // Use up the count cap with small extensions well under the 72h cumulative cap.
+    for _ in 0..3 {
+        MarketStateManager::extend_for_dispute(&mut market, &env, 1).unwrap();
+    }
+    assert_eq!(market.total_extension_days, 3); // plenty of hours budget remains
+
+    // Count cap should still reject, even though the hours cap has headroom.
+    let result = MarketStateManager::extend_for_dispute(&mut market, &env, 1);
+    assert_eq!(result, Err(Error::ExtensionCountCapExceeded));
+}
+
+#[test]
+fn test_extension_hours_cap_still_enforced_independently() {
+    let env = Env::default();
+    let mut market = create_test_market(&env);
+
+    // A single huge extension should still trip the hours cap first,
+    // without needing to reach the count cap.
+    let result = MarketStateManager::extend_for_dispute(&mut market, &env, 73);
+    assert_eq!(result, Err(Error::ExtensionCapExceeded));
+    assert_eq!(market.extension_count, 0); // rejected before increment
 }

@@ -312,6 +312,15 @@ pub enum Error {
     ExtensionCapExceeded = 524,
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
+
+    Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
+            Error::ExtensionCountCapExceeded => "Extension count cap for this market has been reached",
+    /// Per-market extension count cap has been reached (max number of extension calls).
+    ExtensionCountCapExceeded = 526,
+
+    Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
+    Error::ExtensionCountCapExceeded => "Extension count cap for this market has been reached",
+
     /// An admin override nonce was replayed; reject to prevent replay attacks.
     ReplayedOverride = 526,
     /// Oracle quote is an outlier relative to the rolling median history.
