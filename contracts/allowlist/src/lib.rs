@@ -8,16 +8,19 @@
 //! # Overview
 //!
 //! The contract supports creating, populating, querying, and deleting
-//! independent allowlists. Every lifecycle transition — creation, address
-//! addition/removal, clear, deletion, and ownership transfer — emits a
-//! distinct event with a stable topic symbol and all relevant payload data.
+//! independent allowlists. An administrator-configured cap bounds how many
+//! allowlists may contain any one address. Every lifecycle transition —
+//! creation, address addition/removal, clear, deletion, ownership transfer,
+//! and limit update — emits a distinct event with a stable topic symbol and
+//! all relevant payload data.
 //!
 //! # Authorization
 //!
 //! - All state-changing entrypoints require `require_auth()` from the
 //!   registered admin address.
 //! - Read-only entrypoints (`is_allowed`, `get_allowlist`, `list_allowlists`,
-//!   `get_admin`, `version`) do not require authentication.
+//!   `get_account_limit`, `get_account_usage`, `get_admin`, `version`) do not
+//!   require authentication.
 //!
 //! # Event Topics
 //!
@@ -30,13 +33,16 @@
 //! | `alist_cleared`     | All addresses cleared                |
 //! | `alist_deleted`     | Entire allowlist deleted             |
 //! | `alist_owner_xf`    | Ownership transferred                |
+//! | `alist_limit_set`   | Per-account membership cap updated   |
 
 #![no_std]
 
 mod err;
 mod events;
+mod limits;
 
 pub use err::AllowlistError;
+pub use limits::{DEFAULT_MAX_MEMBERSHIPS_PER_ACCOUNT, MAX_CONFIGURABLE_ACCOUNT_LIMIT};
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, Address, Env, Symbol, Vec,
@@ -106,9 +112,8 @@ impl AllowlistContract {
 
         env.storage().instance().set(&DataKey::Initialized, &true);
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage()
-            .persistent()
-            .set(&DataKey::AllowlistRegistry, &Vec::<Symbol>::new(&env));
+        Self::save_registry(&env, &Vec::<Symbol>::new(&env));
+        limits::initialize(&env);
 
         events::emit_allowlist_initialized(&env, &admin);
 
@@ -157,9 +162,7 @@ impl AllowlistContract {
 
         if !registry.contains(&allowlist_id) {
             registry.push_back(allowlist_id.clone());
-            env.storage()
-                .persistent()
-                .set(&DataKey::AllowlistRegistry, &registry);
+            Self::save_registry(&env, &registry);
         }
 
         events::emit_allowlist_created(&env, &admin, &allowlist_id);
@@ -180,6 +183,9 @@ impl AllowlistContract {
     /// - [`AllowlistError::Unauthorized`] if caller is not the admin.
     /// - [`AllowlistError::AllowlistNotFound`] if the allowlist does not exist.
     /// - [`AllowlistError::AddressAlreadyInAllowlist`] if the address is already present.
+    /// - [`AllowlistError::AccountLimitExceeded`] if the address has reached
+    ///   its per-account membership cap.
+    /// - [`AllowlistError::Overflow`] if the membership count cannot be incremented.
     pub fn add_address(
         env: Env,
         admin: Address,
@@ -196,6 +202,7 @@ impl AllowlistContract {
             return Err(AllowlistError::AddressAlreadyInAllowlist);
         }
 
+        limits::add_membership(&env, &address)?;
         addrs.push_back(address.clone());
         Self::save_allowlist(&env, &allowlist_id, &addrs);
 
@@ -217,6 +224,7 @@ impl AllowlistContract {
     /// - [`AllowlistError::Unauthorized`] if caller is not the admin.
     /// - [`AllowlistError::AllowlistNotFound`] if the allowlist does not exist.
     /// - [`AllowlistError::AddressNotInAllowlist`] if the address is not present.
+    /// - [`AllowlistError::Underflow`] if membership usage is inconsistent.
     pub fn remove_address(
         env: Env,
         admin: Address,
@@ -233,6 +241,7 @@ impl AllowlistContract {
             return Err(AllowlistError::AddressNotInAllowlist);
         }
 
+        limits::remove_membership(&env, &address)?;
         let mut filtered: Vec<Address> = Vec::new(&env);
         for a in addrs.iter() {
             if a != address {
@@ -260,6 +269,9 @@ impl AllowlistContract {
     /// - [`AllowlistError::NotInitialized`] if contract not initialized.
     /// - [`AllowlistError::Unauthorized`] if caller is not the admin.
     /// - [`AllowlistError::AllowlistNotFound`] if the allowlist does not exist.
+    /// - [`AllowlistError::AccountLimitExceeded`] if any new address has
+    ///   reached its per-account membership cap.
+    /// - [`AllowlistError::Overflow`] if a membership count cannot be incremented.
     pub fn add_addresses(
         env: Env,
         admin: Address,
@@ -274,6 +286,7 @@ impl AllowlistContract {
 
         for addr in addresses.iter() {
             if !addrs.contains(&addr) {
+                limits::add_membership(&env, &addr)?;
                 addrs.push_back(addr.clone());
                 events::emit_allowlist_address_added(&env, &admin, &allowlist_id, &addr);
             }
@@ -298,6 +311,7 @@ impl AllowlistContract {
     /// - [`AllowlistError::NotInitialized`] if contract not initialized.
     /// - [`AllowlistError::Unauthorized`] if caller is not the admin.
     /// - [`AllowlistError::AllowlistNotFound`] if the allowlist does not exist.
+    /// - [`AllowlistError::Underflow`] if membership usage is inconsistent.
     pub fn remove_addresses(
         env: Env,
         admin: Address,
@@ -314,6 +328,7 @@ impl AllowlistContract {
         let mut remaining = Vec::new(&env);
         for a in addrs.iter() {
             if addresses.contains(&a) {
+                limits::remove_membership(&env, &a)?;
                 events::emit_allowlist_address_removed(&env, &admin, &allowlist_id, &a);
             } else {
                 remaining.push_back(a.clone());
@@ -337,6 +352,7 @@ impl AllowlistContract {
     /// - [`AllowlistError::NotInitialized`] if contract not initialized.
     /// - [`AllowlistError::Unauthorized`] if caller is not the admin.
     /// - [`AllowlistError::AllowlistNotFound`] if the allowlist does not exist.
+    /// - [`AllowlistError::Underflow`] if membership usage is inconsistent.
     pub fn clear_allowlist(
         env: Env,
         admin: Address,
@@ -348,6 +364,10 @@ impl AllowlistContract {
 
         let addrs = Self::load_allowlist(&env, &allowlist_id)?;
         let count: u32 = addrs.len();
+
+        for address in addrs.iter() {
+            limits::remove_membership(&env, &address)?;
+        }
 
         // Replace with empty allowlist (via save_allowlist for TTL extension)
         Self::save_allowlist(&env, &allowlist_id, &Vec::<Address>::new(&env));
@@ -372,6 +392,7 @@ impl AllowlistContract {
     /// - [`AllowlistError::NotInitialized`] if contract not initialized.
     /// - [`AllowlistError::Unauthorized`] if caller is not the admin.
     /// - [`AllowlistError::AllowlistNotFound`] if the allowlist does not exist.
+    /// - [`AllowlistError::Underflow`] if membership usage is inconsistent.
     pub fn delete_allowlist(
         env: Env,
         admin: Address,
@@ -383,6 +404,10 @@ impl AllowlistContract {
 
         let addrs = Self::load_allowlist(&env, &allowlist_id)?;
         let count: u32 = addrs.len();
+
+        for address in addrs.iter() {
+            limits::remove_membership(&env, &address)?;
+        }
 
         // Remove the allowlist data
         env.storage()
@@ -402,9 +427,7 @@ impl AllowlistContract {
                 filtered.push_back(id);
             }
         }
-        env.storage()
-            .persistent()
-            .set(&DataKey::AllowlistRegistry, &filtered);
+        Self::save_registry(&env, &filtered);
 
         events::emit_allowlist_deleted(&env, &admin, &allowlist_id, count);
 
@@ -441,6 +464,37 @@ impl AllowlistContract {
             .set(&DataKey::Admin, &new_admin);
 
         events::emit_allowlist_ownership_transferred(&env, &current_admin, &new_admin);
+
+        Ok(())
+    }
+
+    /// Update the maximum number of allowlists that may contain one address.
+    ///
+    /// The cap applies independently to every address. A value of zero blocks
+    /// new memberships. Lowering the cap does not remove existing memberships;
+    /// accounts at or above the new cap cannot be added to another allowlist
+    /// until enough memberships are removed.
+    ///
+    /// # Authorization
+    /// The `admin` must authenticate via `require_auth()` and be the
+    /// registered admin.
+    ///
+    /// # Errors
+    /// - [`AllowlistError::NotInitialized`] if contract not initialized.
+    /// - [`AllowlistError::Unauthorized`] if caller is not the admin.
+    /// - [`AllowlistError::InvalidInput`] if `max_memberships` exceeds
+    ///   [`MAX_CONFIGURABLE_ACCOUNT_LIMIT`].
+    pub fn set_account_limit(
+        env: Env,
+        admin: Address,
+        max_memberships: u32,
+    ) -> Result<(), AllowlistError> {
+        admin.require_auth();
+        Self::require_initialized(&env)?;
+        Self::require_admin(&env, &admin)?;
+
+        limits::set_account_limit(&env, max_memberships)?;
+        events::emit_account_limit_set(&env, &admin, max_memberships);
 
         Ok(())
     }
@@ -492,6 +546,19 @@ impl AllowlistContract {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
+    /// Return the configured maximum memberships per account.
+    pub fn get_account_limit(env: Env) -> u32 {
+        limits::get_account_limit(&env)
+    }
+
+    /// Return the number of allowlists that currently contain `address`.
+    ///
+    /// # Errors
+    /// - [`AllowlistError::Overflow`] if the derived count cannot fit in a `u32`.
+    pub fn get_account_usage(env: Env, address: Address) -> Result<u32, AllowlistError> {
+        limits::get_account_usage(&env, &address)
+    }
+
     // =======================================================================
     // Internal helpers
     // =======================================================================
@@ -537,5 +604,23 @@ impl AllowlistContract {
         env.storage()
             .persistent()
             .extend_ttl(&key, ALLOWLIST_TTL_THRESHOLD, ALLOWLIST_TTL_TO);
+        Self::extend_registry_ttl(env);
+    }
+
+    /// Persist the allowlist registry with the same lifetime as list records.
+    fn save_registry(env: &Env, registry: &Vec<Symbol>) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::AllowlistRegistry, registry);
+        Self::extend_registry_ttl(env);
+    }
+
+    /// Keep the authoritative registry alive whenever allowlist state changes.
+    fn extend_registry_ttl(env: &Env) {
+        env.storage().persistent().extend_ttl(
+            &DataKey::AllowlistRegistry,
+            ALLOWLIST_TTL_THRESHOLD,
+            ALLOWLIST_TTL_TO,
+        );
     }
 }
