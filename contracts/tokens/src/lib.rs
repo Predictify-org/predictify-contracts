@@ -9,6 +9,7 @@
 
 #![no_std]
 
+pub mod events;
 mod limits;
 
 pub use limits::{
@@ -43,7 +44,9 @@ impl TokensContract {
         account_limits: AccountLimits,
     ) -> Result<(), TokenLimitError> {
         admin.require_auth();
-        limits::initialize(&env, &admin, &account_limits)
+        limits::initialize(&env, &admin, &account_limits)?;
+        events::emit_initialized(&env, &admin, &account_limits);
+        Ok(())
     }
 
     /// Replaces the global limits applied independently to every account.
@@ -69,7 +72,9 @@ impl TokensContract {
         account_limits: AccountLimits,
     ) -> Result<(), TokenLimitError> {
         admin.require_auth();
-        limits::set_account_limits(&env, &admin, &account_limits)
+        limits::set_account_limits(&env, &admin, &account_limits)?;
+        events::emit_limits_set(&env, &admin, &account_limits);
+        Ok(())
     }
 
     /// Tracks one item for an account after enforcing its category cap.
@@ -96,7 +101,9 @@ impl TokensContract {
         item_id: BytesN<32>,
     ) -> Result<AccountUsage, TokenLimitError> {
         account.require_auth();
-        limits::track_account_item(&env, &account, &kind, &item_id)
+        let usage = limits::track_account_item(&env, &account, &kind, &item_id)?;
+        events::emit_item_tracked(&env, &account, kind, usage);
+        Ok(usage)
     }
 
     /// Removes one tracked item and releases its occupied capacity.
@@ -120,7 +127,9 @@ impl TokensContract {
         item_id: BytesN<32>,
     ) -> Result<AccountUsage, TokenLimitError> {
         account.require_auth();
-        limits::untrack_account_item(&env, &account, &kind, &item_id)
+        let usage = limits::untrack_account_item(&env, &account, &kind, &item_id)?;
+        events::emit_item_untracked(&env, &account, kind, usage);
+        Ok(usage)
     }
 
     /// Returns the configured global per-account limits.
