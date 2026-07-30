@@ -30,6 +30,13 @@ pub enum Error {
     /// a specific market via the `set_min_bet` entrypoint.  This is distinct from
     /// [`Error::InsufficientStake`] (which covers the global/per-event minimum).
     BetBelowMarketMin = 676,
+    /// The cumulative stake for this account would exceed the configured per-account
+    /// global limit.  Returned by [`betting::limits::AccountLimits::check_and_record`]
+    /// before any funds are transferred.
+    PerAccountLimitExceeded = 677,
+    /// An admin supplied an invalid configuration for the per-account limit (e.g. a
+    /// cap value of zero or a negative value).
+    PerAccountLimitInvalidConfig = 678,
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.

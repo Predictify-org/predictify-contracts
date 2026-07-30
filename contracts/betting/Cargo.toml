@@ -35,3 +35,11 @@ path = "tests/auth_snap.rs"
 [[test]]
 name = "overflow_safety"
 path = "tests/overflow_safety.rs"
+
+[[test]]
+name = "limits_tests"
+path = "tests/limits_tests.rs"
+
+[[test]]
+name = "limits_err_stab"
+path = "tests/limits_err_stab.rs"
