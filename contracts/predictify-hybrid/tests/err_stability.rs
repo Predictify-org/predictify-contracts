@@ -55,6 +55,7 @@ error_code_snapshot! {
     OracleCallbackInvalidSignature = 212,
     OracleCallbackReplayDetected = 213,
     OracleCallbackTimeout = 214,
+    PriceFeedDegraded = 215,
 
     InvalidQuestion = 300,
     InvalidOutcomes = 301,
@@ -163,7 +164,7 @@ error_code_snapshot! {
 
 #[test]
 fn contract_error_codes_are_stable() {
-    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 128);
+    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 129);
 
     for &(error, expected) in ERROR_CODE_SNAPSHOT {
         assert_eq!(

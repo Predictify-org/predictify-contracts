@@ -139,6 +139,8 @@ pub enum Error {
     OracleCallbackReplayDetected = 213,
     /// Oracle callback timeout. Response time exceeded maximum allowed duration.
     OracleCallbackTimeout = 214,
+    /// Price feed is in a degraded state. Data quality or freshness thresholds are marginally compromised.
+    PriceFeedDegraded = 215,
 
     // ===== VALIDATION ERRORS =====
     /// Market question is empty or invalid. Question must be non-empty and descriptive.
@@ -794,6 +796,9 @@ impl ErrorHandler {
             Error::OracleUnavailable => {
                 "Oracle service is unavailable. The external data source may be down."
             }
+            Error::PriceFeedDegraded => {
+                "Price feed is degraded. Data quality or freshness thresholds are partially compromised."
+            }
             Error::InsufficientStake => {
                 "Insufficient stake. Please increase the amount to meet the minimum requirement."
             }
@@ -926,7 +931,7 @@ impl ErrorHandler {
     /// The recommended `RecoveryStrategy` for this error.
     pub fn get_error_recovery_strategy(error: &Error) -> RecoveryStrategy {
         match error {
-            Error::OracleUnavailable => RecoveryStrategy::RetryWithDelay,
+            Error::OracleUnavailable | Error::PriceFeedDegraded => RecoveryStrategy::RetryWithDelay,
             Error::InvalidInput => RecoveryStrategy::Retry,
             Error::OracleConfidenceTooWide => RecoveryStrategy::NoRecovery,
             Error::MarketNotFound => RecoveryStrategy::AlternativeMethod,
@@ -1353,6 +1358,7 @@ impl ErrorHandler {
     fn get_max_recovery_attempts(error: &Error) -> u32 {
         match error {
             Error::OracleUnavailable => 3,
+            Error::PriceFeedDegraded => 2,
             Error::InvalidInput => 2,
             Error::MarketNotFound | Error::ConfigNotFound => 1,
             Error::AlreadyVoted
@@ -1486,6 +1492,11 @@ impl ErrorHandler {
             ),
             Error::OracleUnavailable => (
                 ErrorSeverity::High,
+                ErrorCategory::Oracle,
+                RecoveryStrategy::RetryWithDelay,
+            ),
+            Error::PriceFeedDegraded => (
+                ErrorSeverity::Medium,
                 ErrorCategory::Oracle,
                 RecoveryStrategy::RetryWithDelay,
             ),
@@ -1625,6 +1636,9 @@ impl ErrorHandler {
             (Error::OracleUnavailable, _) => {
                 "The oracle is temporarily unavailable. Please try again later."
             }
+            (Error::PriceFeedDegraded, _) => {
+                "The price feed is degraded. Please try again later or wait for oracle recovery."
+            }
             (Error::InvalidInput, _) => "Check your input parameters and try again.",
             (Error::OperationWouldExceedBudget, _) => {
                 "The operation requires too much CPU time. Try with fewer winners or split across multiple transactions."
@@ -1744,6 +1758,7 @@ impl Error {
             Error::OracleCallbackInvalidSignature => "Oracle callback signature invalid",
             Error::OracleCallbackReplayDetected => "Oracle callback replay detected",
             Error::OracleCallbackTimeout => "Oracle callback timed out",
+            Error::PriceFeedDegraded => "Price feed is in a degraded state",
             Error::InvalidStakeAmount => "Invalid Stake Amount",
             Error::SignerRotationCooldown => "Signer Rotation Cooldown Active",
             Error::RegistryFull => "Deprecated registry is full",
@@ -1864,6 +1879,7 @@ impl Error {
             Error::OracleCallbackInvalidSignature => "ORACLE_CALLBACK_INVALID_SIGNATURE",
             Error::OracleCallbackReplayDetected => "ORACLE_CALLBACK_REPLAY_DETECTED",
             Error::OracleCallbackTimeout => "ORACLE_CALLBACK_TIMEOUT",
+            Error::PriceFeedDegraded => "PRICE_FEED_DEGRADED",
             Error::InvalidStakeAmount => "INVALID_STAKE_AMOUNT",
             Error::SignerRotationCooldown => "SIGNER_ROTATION_COOLDOWN",
             Error::RegistryFull => "REGISTRY_FULL",
@@ -1914,5 +1930,25 @@ impl Error {
             Error::OracleAdminCooldownActive => "ORACLE_ADMIN_COOLDOWN_ACTIVE",
             _ => "UNSPECIFIED_ERROR",
         }
+    }
+}
+
+#[cfg(test)]
+mod price_feed_degraded_tests {
+    use super::*;
+
+    #[test]
+    fn test_price_feed_degraded_properties() {
+        let err = Error::PriceFeedDegraded;
+        assert_eq!(err as u32, 215);
+        assert_eq!(err.code(), "PRICE_FEED_DEGRADED");
+        assert_eq!(err.description(), "Price feed is in a degraded state");
+
+        let (severity, category, strategy) = ErrorHandler::get_error_classification(&err);
+        assert_eq!(severity, ErrorSeverity::Medium);
+        assert_eq!(category, ErrorCategory::Oracle);
+        assert_eq!(strategy, RecoveryStrategy::RetryWithDelay);
+        assert_eq!(ErrorHandler::get_error_recovery_strategy(&err), RecoveryStrategy::RetryWithDelay);
+        assert_eq!(ErrorHandler::get_max_recovery_attempts(&err), 2);
     }
 }
