@@ -2,7 +2,7 @@
 
 // use crate::reentrancy_guard::ReentrancyGuard; // Removed - module no longer exists
 use crate::{
-    errors::Error,
+    err::Error,
     markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
     types::Market,
 };

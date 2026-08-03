@@ -24,11 +24,7 @@ impl Fixture {
         let admin = Address::generate(&env);
         let client = MigrateContractClient::new(&env, &contract_id);
         client.initialize(&admin, &initial_version);
-        Self {
-            env,
-            client,
-            admin,
-        }
+        Self { env, client, admin }
     }
 }
 
@@ -54,7 +50,10 @@ fn successful_migration_bumps_version() {
 fn migration_can_skip_multiple_versions() {
     let f = Fixture::new(1);
 
-    assert_eq!(f.client.try_migrate_error_data(&f.admin, &1, &5), Ok(Ok(())));
+    assert_eq!(
+        f.client.try_migrate_error_data(&f.admin, &1, &5),
+        Ok(Ok(()))
+    );
     assert_eq!(f.client.current_version(), 5);
 }
 
@@ -64,7 +63,10 @@ fn migrate_from_non_default_start() {
     // migrate forward — demonstrating non-default starting points work.
     let f = Fixture::new(2);
 
-    assert_eq!(f.client.try_migrate_error_data(&f.admin, &2, &3), Ok(Ok(())));
+    assert_eq!(
+        f.client.try_migrate_error_data(&f.admin, &2, &3),
+        Ok(Ok(()))
+    );
     assert_eq!(f.client.current_version(), 3);
 }
 

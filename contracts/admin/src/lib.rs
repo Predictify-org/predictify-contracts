@@ -51,7 +51,7 @@ impl AdminContract {
     /// Set the cooldown period (in seconds) between admin actions.
     pub fn set_admin_cooldown(env: Env, admin: Address, seconds: u64) -> Result<(), ContractError> {
         admin.require_auth();
-        
+
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -62,7 +62,9 @@ impl AdminContract {
             return Err(ContractError::Unauthorized);
         }
 
-        env.storage().persistent().set(&DataKey::AdminCooldownSeconds, &seconds);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AdminCooldownSeconds, &seconds);
         Ok(())
     }
 
@@ -75,9 +77,13 @@ impl AdminContract {
     }
 
     /// Check and enforce admin cooldown for a specific function.
-    pub fn check_admin_cooldown(env: Env, admin: Address, function_name: Symbol) -> Result<(), ContractError> {
+    pub fn check_admin_cooldown(
+        env: Env,
+        admin: Address,
+        function_name: Symbol,
+    ) -> Result<(), ContractError> {
         admin.require_auth();
-        
+
         let stored_admin: Address = env
             .storage()
             .instance()

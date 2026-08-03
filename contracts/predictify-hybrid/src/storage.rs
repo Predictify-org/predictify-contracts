@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::markets::{MarketStateLogic, MarketStateManager};
-use crate::types::{Balance, ReflectorAsset, Market, MarketState, OracleConfig};
+use crate::types::{Balance, Market, MarketState, OracleConfig, ReflectorAsset};
 use soroban_sdk::{contracttype, Address, BytesN, Env, IntoVal, Map, Symbol, Val, Vec};
 
 const STORAGE_CONFIG_KEY: &str = "storage_config";
@@ -135,7 +135,7 @@ pub fn check_market_creation_rent_budget(env: &Env) -> Result<(), Error> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StorageTtlTier {
+pub(crate) enum StorageTtlTier {
     Balance,
     Market,
     Event,
@@ -212,6 +212,14 @@ pub enum DataKey {
     PerMarketCoolOff(Symbol),
     /// Collusion-detector configuration, keyed by a fixed config name symbol.
     CollusionDetectorConfig(Symbol),
+    /// Replay-protection nonce for admin override operations, scoped per admin.
+    AdminOverrideNonce(Address),
+    /// Oracle admin cooldown state.
+    OracleAdminCooldownState,
+    /// Betting admin cooldown state.
+    BettingAdminCooldownState,
+    /// Multisig rotation state.
+    MultisigRotationState,
 }
 
 /// Storage format version for migration tracking
@@ -327,7 +335,7 @@ impl StorageMigration {
             metadata.admin.require_auth();
 
             let config = StorageOptimizer::get_storage_config(env);
-            
+
             StorageOptimizer::set_persistent_with_ttl(
                 env,
                 &persistent_key,
@@ -378,7 +386,10 @@ impl StorageMigration {
 
         market.admin.require_auth();
 
-        let scratch_opt = env.storage().persistent().get::<_, Vec<i128>>(&persistent_key);
+        let scratch_opt = env
+            .storage()
+            .persistent()
+            .get::<_, Vec<i128>>(&persistent_key);
 
         if let Some(scratch_data) = scratch_opt {
             let config = StorageOptimizer::get_storage_config(env);
@@ -485,12 +496,8 @@ impl StorageOptimizer {
             .extend_ttl(key, effective_ttl, effective_ttl);
     }
 
-    fn set_persistent_with_ttl<K, V>(
-        env: &Env,
-        key: &K,
-        value: &V,
-        desired_ttl_ledgers: u32,
-    ) where
+    fn set_persistent_with_ttl<K, V>(env: &Env, key: &K, value: &V, desired_ttl_ledgers: u32)
+    where
         K: IntoVal<Env, Val>,
         V: IntoVal<Env, Val>,
     {
@@ -502,21 +509,21 @@ impl StorageOptimizer {
     pub fn check_ttl_pressure(env: &Env, keys: Vec<Val>) -> Vec<StorageTtlPressure> {
         let max_ttl = env.storage().max_ttl();
         let mut pressures = alloc::vec::Vec::new();
-        
+
         for key in keys.iter() {
             let mut remaining = None;
-            
-            // TTL checking currently requires native function support and isn't broadly accessible 
-            // from standard smart contracts without host function wrappers. This logic acts as 
+
+            // TTL checking currently requires native function support and isn't broadly accessible
+            // from standard smart contracts without host function wrappers. This logic acts as
             // placeholder assuming host function mapping.
             if env.storage().persistent().has(&key) {
-                remaining = Some(max_ttl / 2); // Mock placeholder 
+                remaining = Some(max_ttl / 2); // Mock placeholder
             } else if env.storage().temporary().has(&key) {
                 remaining = Some(max_ttl / 2); // Mock placeholder
             } else if env.storage().instance().has(&key) {
                 remaining = Some(max_ttl / 2); // Mock placeholder
             }
-            
+
             if let Some(r) = remaining {
                 let bump = MARKET_TTL_LEDGERS.min(max_ttl);
                 pressures.push(StorageTtlPressure {
@@ -526,9 +533,9 @@ impl StorageOptimizer {
                 });
             }
         }
-        
+
         pressures.sort_by_key(|p| p.remaining_ledgers);
-        
+
         let mut result = Vec::new(env);
         for p in pressures {
             result.push_back(p);
@@ -763,10 +770,9 @@ impl StorageOptimizer {
                 if let Err(_e) = market.validate(env) {
                     result.is_valid = false;
                     result.corruption_detected = true;
-                    result.errors.push_back(String::from_str(
-                        env,
-                        "Validation failed",
-                    ));
+                    result
+                        .errors
+                        .push_back(String::from_str(env, "Validation failed"));
                 }
 
                 // Check for missing critical data
@@ -787,10 +793,9 @@ impl StorageOptimizer {
                 // Validate state consistency
                 if let Err(_e) = MarketStateLogic::validate_market_state_consistency(env, &market) {
                     result.is_valid = false;
-                    result.errors.push_back(String::from_str(
-                        env,
-                        "State inconsistency",
-                    ));
+                    result
+                        .errors
+                        .push_back(String::from_str(env, "State inconsistency"));
                 }
             }
             Err(_e) => {
@@ -944,7 +949,12 @@ impl BalanceStorage {
         let balance = Self::checked_add_balance(env, user, asset, amount)?;
         Self::set_balance(env, &balance)?;
         crate::events::EventEmitter::emit_balance_changed(
-            env, user, asset, &String::from_str(env, "deposit"), amount, balance.amount
+            env,
+            user,
+            asset,
+            &String::from_str(env, "deposit"),
+            amount,
+            balance.amount,
         );
         Ok(balance)
     }
@@ -961,7 +971,12 @@ impl BalanceStorage {
         let balance = Self::checked_sub_balance(env, user, asset, amount)?;
         Self::set_balance(env, &balance)?;
         crate::events::EventEmitter::emit_balance_changed(
-            env, user, asset, &String::from_str(env, "withdrawal"), amount, balance.amount
+            env,
+            user,
+            asset,
+            &String::from_str(env, "withdrawal"),
+            amount,
+            balance.amount,
         );
         Ok(balance)
     }
@@ -1025,7 +1040,11 @@ impl StorageOptimizer {
     }
 
     /// Archive market data before deletion
-    pub(crate) fn archive_market_data(env: &Env, market_id: &Symbol, market: &Market) -> Result<(), Error> {
+    pub(crate) fn archive_market_data(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<(), Error> {
         // Store archived version with timestamp
         let archive_key = DataKey::ArchivedMarket(market_id.clone(), env.ledger().timestamp());
         Self::set_persistent_with_ttl(
@@ -1089,7 +1108,11 @@ impl StorageOptimizer {
         env: &Env,
         compressed_market: &CompressedMarket,
     ) -> Result<(), Error> {
-        let key = crate::event_archive::derive_archive_key(env, &compressed_market.market_id, "compressed");
+        let key = crate::event_archive::derive_archive_key(
+            env,
+            &compressed_market.market_id,
+            "compressed",
+        );
         Self::set_persistent_with_ttl(
             env,
             &key,
@@ -1437,7 +1460,8 @@ mod tests {
             BalanceStorage::set_balance(&env, &balance).unwrap();
 
             let key = BalanceStorage::get_key(&env, &user, &asset);
-            let expected_ttl = StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Balance);
+            let expected_ttl =
+                StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Balance);
             assert_eq!(env.storage().persistent().get_ttl(&key), expected_ttl);
 
             env.ledger().with_mut(|li| {
@@ -1462,7 +1486,8 @@ mod tests {
         env.as_contract(&contract_id, || {
             EventManager::store_event(&env, &event);
             let key = EventManager::event_storage_key(&env, &event.id);
-            let expected_ttl = StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Event);
+            let expected_ttl =
+                StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Event);
             assert_eq!(env.storage().persistent().get_ttl(&key), expected_ttl);
         });
     }

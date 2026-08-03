@@ -4,7 +4,7 @@ extern crate alloc;
 
 use crate::{
     config,
-    errors::Error,
+    err::Error,
     types::{BetLimits, Market, OracleConfig, OracleProvider},
 };
 use alloc::{string::String as StdString, vec::Vec as AllocVec};

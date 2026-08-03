@@ -169,7 +169,7 @@ fn snapshot_check_admin_cooldown() {
     fixture.initialize();
     let client = fixture.client();
     client.set_admin_cooldown(&fixture.admin, &300);
-    
+
     let func_name = Symbol::new(&fixture.env, "test_action");
 
     reset_budget(&fixture.env);
@@ -208,12 +208,12 @@ fn rejects_cooldown_when_active() {
     fixture.initialize();
     let client = fixture.client();
     client.set_admin_cooldown(&fixture.admin, &300);
-    
+
     let func_name = Symbol::new(&fixture.env, "test_action");
-    
+
     // First call should succeed (would panic on Err since this is the non-try_ client method)
     client.check_admin_cooldown(&fixture.admin, &func_name);
-    
+
     // Immediate second call should fail due to cooldown
     assert_eq!(
         client.try_check_admin_cooldown(&fixture.admin, &func_name),

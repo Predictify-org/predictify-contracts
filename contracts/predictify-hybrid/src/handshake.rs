@@ -21,7 +21,7 @@
 //! - Overflow-safe math is used throughout; no `unwrap()` appears in
 //!   production paths.
 
-use crate::errors::Error;
+use crate::err::Error;
 use soroban_sdk::{
     contracttype, panic_with_error, symbol_short, Address, Env, Map, Symbol,
 };
