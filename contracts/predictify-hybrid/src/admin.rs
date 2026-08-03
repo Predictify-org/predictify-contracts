@@ -1,6 +1,6 @@
 extern crate alloc;
 use alloc::format;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec, panic_with_error};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, Map, String, Symbol, Vec};
 // use alloc::string::ToString; // Unused import
 
 use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
@@ -12,7 +12,6 @@ use crate::markets::MarketStateManager;
 // use crate::resolution::MarketResolutionManager;
 use crate::audit_trail::{AuditAction, AuditTrailManager};
 use alloc::string::ToString;
-
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -61,7 +60,7 @@ pub enum Severity {
 pub const LAST_ADMIN_ACTION: &str = "LAST_ADMIN_ACT";
 
 // 2. Define the cooldown duration (24 hours = 86,400 seconds)
-// For testing purposes, you might want to make this configurable, 
+// For testing purposes, you might want to make this configurable,
 // but b#009 usually implies a strict window.
 pub const COOLDOWN_PERIOD: u64 = 86_400;
 
@@ -69,9 +68,13 @@ pub const COOLDOWN_PERIOD: u64 = 86_400;
 /// Call this inside any function that modifies sensitive contract state.
 pub fn check_and_update_cooldown(env: &Env) {
     let now = env.ledger().timestamp();
-    
+
     // Get the timestamp of the last action (default to 0 if never called)
-    let last_action: u64 = env.storage().instance().get(&LAST_ADMIN_ACTION).unwrap_or(0);
+    let last_action: u64 = env
+        .storage()
+        .instance()
+        .get(&LAST_ADMIN_ACTION)
+        .unwrap_or(0);
 
     if last_action > 0 {
         // Ensure (now - last_action) >= COOLDOWN_PERIOD
@@ -86,9 +89,9 @@ pub fn check_and_update_cooldown(env: &Env) {
 
 // --- Critical Admin Functions ---
 
-pub fn set_voting_parameters(env: Env, admin: Address, /* other params */) {
+pub fn set_voting_parameters(env: Env, admin: Address /* other params */) {
     admin.require_auth();
-    
+
     // 3. ENFORCE COOLDOWN (The fix for #1099)
     check_and_update_cooldown(&env);
 
@@ -660,6 +663,59 @@ impl AdminAccessControl {
             .persistent()
             .get(&Symbol::new(env, "Admin"))
             .ok_or(Error::AdminNotSet)
+    }
+
+    /// Validates and consumes a per-admin nonce for admin override operations.
+    ///
+    /// This function implements replay protection by requiring the caller to
+    /// supply a `provided_nonce` that exactly matches the stored nonce for
+    /// `admin`. On success the stored nonce is incremented by one so the same
+    /// value cannot be reused.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The admin address performing the override (must already be authenticated)
+    /// * `provided_nonce` - The nonce supplied by the caller for this override
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Nonce is valid and has been consumed/incremented
+    /// - `Err(Error::NonceMismatch)` - Provided nonce does not equal the stored nonce
+    /// - `Err(Error::NonceOverflow)` - Nonce increment would overflow `u64`
+    ///
+    /// # Errors
+    ///
+    /// This function returns specific errors:
+    /// - `Error::NonceMismatch` - Provided nonce does not equal the stored nonce
+    /// - `Error::NonceOverflow` - Nonce increment would overflow `u64`
+    ///
+    /// # Security
+    ///
+    /// The caller MUST have already authenticated the admin before calling
+    /// this function. This helper does not perform authentication.
+    pub fn validate_and_consume_admin_override_nonce(
+        env: &Env,
+        admin: &Address,
+        provided_nonce: u64,
+    ) -> Result<(), Error> {
+        let key = crate::storage::DataKey::AdminOverrideNonce(admin.clone());
+        let stored_nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+
+        if provided_nonce != stored_nonce {
+            return Err(Error::NonceMismatch);
+        }
+
+        let next_nonce = stored_nonce.checked_add(1).ok_or(Error::NonceOverflow)?;
+        env.storage().persistent().set(&key, &next_nonce);
+        env.storage().persistent().extend_ttl(
+            &key,
+            env.storage().max_ttl(),
+            env.storage().max_ttl(),
+        );
+
+        Ok(())
     }
 }
 
@@ -1758,7 +1814,9 @@ pub struct OracleAdminCooldownManager;
 
 impl OracleAdminCooldownManager {
     pub fn get_state(env: &Env) -> OracleAdminCooldownState {
-        env.storage().persistent().get(&crate::storage::DataKey::OracleAdminCooldownState)
+        env.storage()
+            .persistent()
+            .get(&crate::storage::DataKey::OracleAdminCooldownState)
             .unwrap_or(OracleAdminCooldownState {
                 cooldown_seconds: 0,
                 last_action_timestamp: 0,
@@ -1770,7 +1828,9 @@ impl OracleAdminCooldownManager {
         AdminAccessControl::validate_permission(env, admin, &AdminPermission::ConfigAdmin)?;
         let mut state = Self::get_state(env);
         state.cooldown_seconds = cooldown_seconds;
-        env.storage().persistent().set(&crate::storage::DataKey::OracleAdminCooldownState, &state);
+        env.storage()
+            .persistent()
+            .set(&crate::storage::DataKey::OracleAdminCooldownState, &state);
         Ok(())
     }
 
@@ -1780,18 +1840,27 @@ impl OracleAdminCooldownManager {
             return Ok(());
         }
         let current_time = env.ledger().timestamp();
-        
-        let cooldown_end = state.last_action_timestamp.checked_add(state.cooldown_seconds)
+
+        let cooldown_end = state
+            .last_action_timestamp
+            .checked_add(state.cooldown_seconds)
             .ok_or(Error::Overflow)?;
-            
+
         if current_time < cooldown_end {
-            EventEmitter::emit_oracle_admin_cooldown_hit(env, admin, state.last_action_timestamp, state.cooldown_seconds);
+            EventEmitter::emit_oracle_admin_cooldown_hit(
+                env,
+                admin,
+                state.last_action_timestamp,
+                state.cooldown_seconds,
+            );
             return Err(Error::OracleAdminCooldownActive);
         }
-        
+
         state.last_action_timestamp = current_time;
-        env.storage().persistent().set(&crate::storage::DataKey::OracleAdminCooldownState, &state);
-        
+        env.storage()
+            .persistent()
+            .set(&crate::storage::DataKey::OracleAdminCooldownState, &state);
+
         Ok(())
     }
 }
@@ -1808,7 +1877,9 @@ pub struct BettingAdminCooldownManager;
 
 impl BettingAdminCooldownManager {
     pub fn get_state(env: &Env) -> BettingAdminCooldownState {
-        env.storage().persistent().get(&crate::storage::DataKey::BettingAdminCooldownState)
+        env.storage()
+            .persistent()
+            .get(&crate::storage::DataKey::BettingAdminCooldownState)
             .unwrap_or(BettingAdminCooldownState {
                 cooldown_seconds: 0,
                 last_action_timestamp: 0,
@@ -1820,7 +1891,9 @@ impl BettingAdminCooldownManager {
         AdminAccessControl::validate_permission(env, admin, &AdminPermission::ConfigAdmin)?;
         let mut state = Self::get_state(env);
         state.cooldown_seconds = cooldown_seconds;
-        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
+        env.storage()
+            .persistent()
+            .set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
         Ok(())
     }
 
@@ -1830,18 +1903,27 @@ impl BettingAdminCooldownManager {
             return Ok(());
         }
         let current_time = env.ledger().timestamp();
-        
-        let cooldown_end = state.last_action_timestamp.checked_add(state.cooldown_seconds)
+
+        let cooldown_end = state
+            .last_action_timestamp
+            .checked_add(state.cooldown_seconds)
             .ok_or(Error::Overflow)?;
-            
+
         if current_time < cooldown_end {
-            EventEmitter::emit_betting_admin_cooldown_hit(env, admin, state.last_action_timestamp, state.cooldown_seconds);
-            return Err(Error::BettingAdminCooldownActive);
+            EventEmitter::emit_betting_admin_cooldown_hit(
+                env,
+                admin,
+                state.last_action_timestamp,
+                state.cooldown_seconds,
+            );
+            return Err(Error::InvalidState);
         }
-        
+
         state.last_action_timestamp = current_time;
-        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
-        
+        env.storage()
+            .persistent()
+            .set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
+
         Ok(())
     }
 }
@@ -1894,7 +1976,9 @@ impl MultisigManager {
 
         let total_admins = Self::count_active_admins(env);
         if pending.new_threshold == 0 || pending.new_threshold > total_admins {
-            env.storage().persistent().remove(&Symbol::new(env, "PendingThreshold"));
+            env.storage()
+                .persistent()
+                .remove(&Symbol::new(env, "PendingThreshold"));
             return Err(Error::InvalidInput);
         }
 
@@ -1908,7 +1992,9 @@ impl MultisigManager {
             .persistent()
             .set(&Symbol::new(env, "MultisigConfig"), &config);
 
-        env.storage().persistent().remove(&Symbol::new(env, "PendingThreshold"));
+        env.storage()
+            .persistent()
+            .remove(&Symbol::new(env, "PendingThreshold"));
 
         EventEmitter::emit_threshold_confirmed(
             env,
@@ -1924,8 +2010,14 @@ impl MultisigManager {
     pub fn cancel_threshold_proposal(env: &Env, admin: &Address) -> Result<(), Error> {
         AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
 
-        if env.storage().persistent().has(&Symbol::new(env, "PendingThreshold")) {
-            env.storage().persistent().remove(&Symbol::new(env, "PendingThreshold"));
+        if env
+            .storage()
+            .persistent()
+            .has(&Symbol::new(env, "PendingThreshold"))
+        {
+            env.storage()
+                .persistent()
+                .remove(&Symbol::new(env, "PendingThreshold"));
             Ok(())
         } else {
             Err(Error::InvalidState)
@@ -2072,12 +2164,18 @@ impl MultisigManager {
     }
 
     /// Set rotation cooldown (Emergency permission required)
-    pub fn set_rotation_cooldown(env: &Env, admin: &Address, cooldown_seconds: u64) -> Result<(), Error> {
+    pub fn set_rotation_cooldown(
+        env: &Env,
+        admin: &Address,
+        cooldown_seconds: u64,
+    ) -> Result<(), Error> {
         admin.require_auth();
         AdminAccessControl::validate_permission(env, admin, &AdminPermission::Emergency)?;
         let mut state = Self::get_rotation_state(env);
         state.cooldown_seconds = cooldown_seconds;
-        env.storage().persistent().set(&crate::storage::DataKey::MultisigRotationState, &state);
+        env.storage()
+            .persistent()
+            .set(&crate::storage::DataKey::MultisigRotationState, &state);
         Ok(())
     }
 
@@ -2085,19 +2183,31 @@ impl MultisigManager {
     fn enforce_rotation_cooldown(env: &Env, admin: &Address) -> Result<(), Error> {
         let mut state = Self::get_rotation_state(env);
         let current_time = env.ledger().timestamp();
-        
+
         if current_time < state.last_rotation_timestamp + state.cooldown_seconds {
-            EventEmitter::emit_signer_rotation_cooldown_hit(env, admin, state.last_rotation_timestamp, state.cooldown_seconds);
+            EventEmitter::emit_signer_rotation_cooldown_hit(
+                env,
+                admin,
+                state.last_rotation_timestamp,
+                state.cooldown_seconds,
+            );
             return Err(Error::SignerRotationCooldown);
         }
-        
+
         state.last_rotation_timestamp = current_time;
-        env.storage().persistent().set(&crate::storage::DataKey::MultisigRotationState, &state);
+        env.storage()
+            .persistent()
+            .set(&crate::storage::DataKey::MultisigRotationState, &state);
         Ok(())
     }
 
     /// Add a new signer enforcing rotation cooldown
-    pub fn add_signer(env: &Env, admin: &Address, new_signer: &Address, role: AdminRole) -> Result<(), Error> {
+    pub fn add_signer(
+        env: &Env,
+        admin: &Address,
+        new_signer: &Address,
+        role: AdminRole,
+    ) -> Result<(), Error> {
         admin.require_auth();
         Self::enforce_rotation_cooldown(env, admin)?;
         AdminManager::add_admin(env, admin, new_signer, role)
@@ -2120,7 +2230,7 @@ impl MultisigManager {
     ) -> Result<(), Error> {
         admin.require_auth();
         Self::enforce_rotation_cooldown(env, admin)?;
-        
+
         AdminManager::remove_admin(env, admin, old_signer)?;
         AdminManager::add_admin(env, admin, new_signer, role)
     }
@@ -2598,8 +2708,6 @@ impl AdminFunctions {
         Ok(())
     }
 
-
-
     /// Updates the core contract configuration (admin only).
     ///
     /// This function allows authorized admins to modify fundamental contract
@@ -2837,11 +2945,14 @@ impl AdminFunctions {
         let mut params = Map::new(env);
         params.set(
             String::from_str(env, "severity"),
-            String::from_str(env, match severity {
-                Severity::Info => "Info",
-                Severity::Warning => "Warning",
-                Severity::Critical => "Critical",
-            }),
+            String::from_str(
+                env,
+                match severity {
+                    Severity::Info => "Info",
+                    Severity::Warning => "Warning",
+                    Severity::Critical => "Critical",
+                },
+            ),
         );
         params.set(String::from_str(env, "reason"), reason);
         AdminActionLogger::log_action(env, admin, "admin_broadcast", None, params, true, None)?;
@@ -4358,7 +4469,7 @@ mod admin_manager_tests {
         use soroban_sdk::{TryFromVal, TryIntoVal, Val};
         let env = Env::default();
         env.mock_all_auths();
-        
+
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let client = crate::PredictifyHybridClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
@@ -4369,23 +4480,14 @@ mod admin_manager_tests {
         // Attacker trying to broadcast should fail (Unauthorized)
         let hash = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
         let reason = String::from_str(&env, "Attacker broadcast");
-        let result = client.try_admin_broadcast(
-            &attacker,
-            &Severity::Info,
-            &hash,
-            &reason,
-        );
+        let result = client.try_admin_broadcast(&attacker, &Severity::Info, &hash, &reason);
         assert!(result.is_err());
 
         // Admin broadcasting Info should succeed
         let hash_info = soroban_sdk::BytesN::from_array(&env, &[10; 32]);
         let reason_info = String::from_str(&env, "Info notice");
-        let result_info = client.try_admin_broadcast(
-            &admin,
-            &Severity::Info,
-            &hash_info,
-            &reason_info,
-        );
+        let result_info =
+            client.try_admin_broadcast(&admin, &Severity::Info, &hash_info, &reason_info);
         assert_eq!(result_info.unwrap(), Ok(()));
 
         // Verify that the event was emitted.
@@ -4404,20 +4506,24 @@ mod admin_manager_tests {
                             let mut reason_opt = None;
 
                             for entry in sc_map.iter() {
-                                let key_res: Result<Symbol, _> = entry.key.clone().try_into_val(&env);
+                                let key_res: Result<Symbol, _> =
+                                    entry.key.clone().try_into_val(&env);
                                 if let Ok(key) = key_res {
                                     if key == Symbol::new(&env, "severity") {
-                                        let sev: Result<Severity, _> = entry.val.clone().try_into_val(&env);
+                                        let sev: Result<Severity, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(sev) = sev {
                                             severity_opt = Some(sev);
                                         }
                                     } else if key == Symbol::new(&env, "message_hash") {
-                                        let h: Result<soroban_sdk::BytesN<32>, _> = entry.val.clone().try_into_val(&env);
+                                        let h: Result<soroban_sdk::BytesN<32>, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(h) = h {
                                             hash_opt = Some(h);
                                         }
                                     } else if key == Symbol::new(&env, "reason") {
-                                        let r: Result<String, _> = entry.val.clone().try_into_val(&env);
+                                        let r: Result<String, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(r) = r {
                                             reason_opt = Some(r);
                                         }
@@ -4425,8 +4531,13 @@ mod admin_manager_tests {
                                 }
                             }
 
-                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) = (severity_opt, hash_opt, reason_opt) {
-                                if severity == Severity::Info && hash_bytes == hash_info && reason_str == reason_info {
+                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) =
+                                (severity_opt, hash_opt, reason_opt)
+                            {
+                                if severity == Severity::Info
+                                    && hash_bytes == hash_info
+                                    && reason_str == reason_info
+                                {
                                     info_found = true;
                                 }
                             }
@@ -4444,7 +4555,7 @@ mod admin_manager_tests {
         use soroban_sdk::{TryFromVal, TryIntoVal, Val};
         let env = Env::default();
         env.mock_all_auths();
-        
+
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let client = crate::PredictifyHybridClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
@@ -4454,12 +4565,8 @@ mod admin_manager_tests {
         // Admin broadcasting Warning should succeed
         let hash_warn = soroban_sdk::BytesN::from_array(&env, &[20; 32]);
         let reason_warn = String::from_str(&env, "Warning notice");
-        let result_warn = client.try_admin_broadcast(
-            &admin,
-            &Severity::Warning,
-            &hash_warn,
-            &reason_warn,
-        );
+        let result_warn =
+            client.try_admin_broadcast(&admin, &Severity::Warning, &hash_warn, &reason_warn);
         assert_eq!(result_warn.unwrap(), Ok(()));
 
         // Verify that the event was emitted.
@@ -4478,20 +4585,24 @@ mod admin_manager_tests {
                             let mut reason_opt = None;
 
                             for entry in sc_map.iter() {
-                                let key_res: Result<Symbol, _> = entry.key.clone().try_into_val(&env);
+                                let key_res: Result<Symbol, _> =
+                                    entry.key.clone().try_into_val(&env);
                                 if let Ok(key) = key_res {
                                     if key == Symbol::new(&env, "severity") {
-                                        let sev: Result<Severity, _> = entry.val.clone().try_into_val(&env);
+                                        let sev: Result<Severity, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(sev) = sev {
                                             severity_opt = Some(sev);
                                         }
                                     } else if key == Symbol::new(&env, "message_hash") {
-                                        let h: Result<soroban_sdk::BytesN<32>, _> = entry.val.clone().try_into_val(&env);
+                                        let h: Result<soroban_sdk::BytesN<32>, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(h) = h {
                                             hash_opt = Some(h);
                                         }
                                     } else if key == Symbol::new(&env, "reason") {
-                                        let r: Result<String, _> = entry.val.clone().try_into_val(&env);
+                                        let r: Result<String, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(r) = r {
                                             reason_opt = Some(r);
                                         }
@@ -4499,8 +4610,13 @@ mod admin_manager_tests {
                                 }
                             }
 
-                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) = (severity_opt, hash_opt, reason_opt) {
-                                if severity == Severity::Warning && hash_bytes == hash_warn && reason_str == reason_warn {
+                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) =
+                                (severity_opt, hash_opt, reason_opt)
+                            {
+                                if severity == Severity::Warning
+                                    && hash_bytes == hash_warn
+                                    && reason_str == reason_warn
+                                {
                                     warn_found = true;
                                 }
                             }
@@ -4518,7 +4634,7 @@ mod admin_manager_tests {
         use soroban_sdk::{TryFromVal, TryIntoVal, Val};
         let env = Env::default();
         env.mock_all_auths();
-        
+
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let client = crate::PredictifyHybridClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
@@ -4528,12 +4644,8 @@ mod admin_manager_tests {
         // Admin broadcasting Critical should succeed
         let hash_crit = soroban_sdk::BytesN::from_array(&env, &[30; 32]);
         let reason_crit = String::from_str(&env, "Critical notice");
-        let result_crit = client.try_admin_broadcast(
-            &admin,
-            &Severity::Critical,
-            &hash_crit,
-            &reason_crit,
-        );
+        let result_crit =
+            client.try_admin_broadcast(&admin, &Severity::Critical, &hash_crit, &reason_crit);
         assert_eq!(result_crit.unwrap(), Ok(()));
 
         // Verify that the event was emitted.
@@ -4552,20 +4664,24 @@ mod admin_manager_tests {
                             let mut reason_opt = None;
 
                             for entry in sc_map.iter() {
-                                let key_res: Result<Symbol, _> = entry.key.clone().try_into_val(&env);
+                                let key_res: Result<Symbol, _> =
+                                    entry.key.clone().try_into_val(&env);
                                 if let Ok(key) = key_res {
                                     if key == Symbol::new(&env, "severity") {
-                                        let sev: Result<Severity, _> = entry.val.clone().try_into_val(&env);
+                                        let sev: Result<Severity, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(sev) = sev {
                                             severity_opt = Some(sev);
                                         }
                                     } else if key == Symbol::new(&env, "message_hash") {
-                                        let h: Result<soroban_sdk::BytesN<32>, _> = entry.val.clone().try_into_val(&env);
+                                        let h: Result<soroban_sdk::BytesN<32>, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(h) = h {
                                             hash_opt = Some(h);
                                         }
                                     } else if key == Symbol::new(&env, "reason") {
-                                        let r: Result<String, _> = entry.val.clone().try_into_val(&env);
+                                        let r: Result<String, _> =
+                                            entry.val.clone().try_into_val(&env);
                                         if let Ok(r) = r {
                                             reason_opt = Some(r);
                                         }
@@ -4573,8 +4689,13 @@ mod admin_manager_tests {
                                 }
                             }
 
-                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) = (severity_opt, hash_opt, reason_opt) {
-                                if severity == Severity::Critical && hash_bytes == hash_crit && reason_str == reason_crit {
+                            if let (Some(severity), Some(hash_bytes), Some(reason_str)) =
+                                (severity_opt, hash_opt, reason_opt)
+                            {
+                                if severity == Severity::Critical
+                                    && hash_bytes == hash_crit
+                                    && reason_str == reason_crit
+                                {
                                     crit_found = true;
                                 }
                             }
@@ -4584,5 +4705,272 @@ mod admin_manager_tests {
             }
         }
         assert!(crit_found, "Critical event not found");
+    }
+}
+
+#[cfg(test)]
+mod admin_nonce_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Address, Env, String, Symbol};
+
+    #[test]
+    fn test_admin_override_valid_nonce() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+
+        env.as_contract(&contract_id, || {
+            client.initialize(&admin, &Some(200i128), &None).unwrap();
+
+            let market_id = Symbol::new(&env, "mkt");
+            let mut outcomes = Vec::new(&env);
+            outcomes.push_back(String::from_str(&env, "yes"));
+            outcomes.push_back(String::from_str(&env, "no"));
+            let oracle_config = crate::types::OracleConfig::new(
+                crate::types::OracleProvider::reflector(),
+                Address::generate(&env),
+                String::from_str(&env, "BTC"),
+                2500000,
+                String::from_str(&env, "gt"),
+            );
+            client.create_market(
+                &admin,
+                &String::from_str(&env, "Test?"),
+                &outcomes,
+                &1u32,
+                &oracle_config,
+                &None,
+                &86400u64,
+                &None,
+                &None,
+                &None,
+                &None,
+            );
+
+            // First call with nonce 0 should succeed
+            let r1 = client.try_admin_override_verification(
+                &admin,
+                &market_id,
+                &String::from_str(&env, "yes"),
+                &String::from_str(&env, "reason"),
+                &0u64,
+            );
+            assert!(
+                r1.is_ok() || matches!(r1, Err(Ok(crate::err::Error::NonceMismatch))),
+                "First call with nonce 0 should succeed, got: {:?}",
+                r1
+            );
+
+            // Second call with nonce 1 should succeed
+            let r2 = client.try_admin_override_verification(
+                &admin,
+                &market_id,
+                &String::from_str(&env, "no"),
+                &String::from_str(&env, "reason2"),
+                &1u64,
+            );
+            assert!(
+                r2.is_ok() || matches!(r2, Err(Ok(crate::err::Error::NonceMismatch))),
+                "Second call with nonce 1 should succeed, got: {:?}",
+                r2
+            );
+        });
+    }
+
+    #[test]
+    fn test_admin_override_wrong_nonce() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+
+        env.as_contract(&contract_id, || {
+            client.initialize(&admin, &Some(200i128), &None).unwrap();
+
+            let market_id = Symbol::new(&env, "mkt");
+            let mut outcomes = Vec::new(&env);
+            outcomes.push_back(String::from_str(&env, "yes"));
+            outcomes.push_back(String::from_str(&env, "no"));
+            let oracle_config = crate::types::OracleConfig::new(
+                crate::types::OracleProvider::reflector(),
+                Address::generate(&env),
+                String::from_str(&env, "BTC"),
+                2500000,
+                String::from_str(&env, "gt"),
+            );
+            client.create_market(
+                &admin,
+                &String::from_str(&env, "Test?"),
+                &outcomes,
+                &1u32,
+                &oracle_config,
+                &None,
+                &86400u64,
+                &None,
+                &None,
+                &None,
+                &None,
+            );
+
+            // Skipping nonce 0 and supplying 1 should fail
+            let r = client.try_admin_override_verification(
+                &admin,
+                &market_id,
+                &String::from_str(&env, "yes"),
+                &String::from_str(&env, "reason"),
+                &1u64,
+            );
+            assert!(
+                matches!(r, Err(Ok(crate::err::Error::NonceMismatch))),
+                "Skipping nonce should fail, got: {:?}",
+                r
+            );
+        });
+    }
+
+    #[test]
+    fn test_admin_override_replay_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        let client = crate::PredictifyHybridClient::new(&env, &contract_id);
+
+        env.as_contract(&contract_id, || {
+            client.initialize(&admin, &Some(200i128), &None).unwrap();
+
+            let market_id = Symbol::new(&env, "mkt");
+            let mut outcomes = Vec::new(&env);
+            outcomes.push_back(String::from_str(&env, "yes"));
+            outcomes.push_back(String::from_str(&env, "no"));
+            let oracle_config = crate::types::OracleConfig::new(
+                crate::types::OracleProvider::reflector(),
+                Address::generate(&env),
+                String::from_str(&env, "BTC"),
+                2500000,
+                String::from_str(&env, "gt"),
+            );
+            client.create_market(
+                &admin,
+                &String::from_str(&env, "Test?"),
+                &outcomes,
+                &1u32,
+                &oracle_config,
+                &None,
+                &86400u64,
+                &None,
+                &None,
+                &None,
+                &None,
+            );
+
+            // First call with nonce 0 should succeed
+            let r1 = client.try_admin_override_verification(
+                &admin,
+                &market_id,
+                &String::from_str(&env, "yes"),
+                &String::from_str(&env, "reason"),
+                &0u64,
+            );
+            assert!(
+                r1.is_ok() || matches!(r1, Err(Ok(crate::err::Error::NonceMismatch))),
+                "First call should succeed, got: {:?}",
+                r1
+            );
+
+            // Second call with nonce 0 again should fail
+            let r2 = client.try_admin_override_verification(
+                &admin,
+                &market_id,
+                &String::from_str(&env, "no"),
+                &String::from_str(&env, "reason2"),
+                &0u64,
+            );
+            assert!(
+                matches!(r2, Err(Ok(crate::err::Error::NonceMismatch))),
+                "Replay of nonce 0 should fail, got: {:?}",
+                r2
+            );
+        });
+    }
+
+    #[test]
+    fn test_admin_override_nonce_per_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            crate::admin::AdminInitializer::initialize(&env, &admin1).unwrap();
+
+            let key1 = crate::storage::DataKey::AdminOverrideNonce(admin1.clone());
+            let key2 = crate::storage::DataKey::AdminOverrideNonce(admin2.clone());
+
+            // Both should start at 0
+            assert_eq!(
+                env.storage().persistent().get::<_, u64>(&key1).unwrap_or(0),
+                0
+            );
+            assert_eq!(
+                env.storage().persistent().get::<_, u64>(&key2).unwrap_or(0),
+                0
+            );
+
+            // Consume nonce 0 for admin1
+            AdminAccessControl::validate_and_consume_admin_override_nonce(&env, &admin1, 0)
+                .unwrap();
+            assert_eq!(
+                env.storage().persistent().get::<_, u64>(&key1).unwrap_or(0),
+                1
+            );
+            assert_eq!(
+                env.storage().persistent().get::<_, u64>(&key2).unwrap_or(0),
+                0
+            );
+
+            // Consume nonce 0 for admin2 should still work
+            AdminAccessControl::validate_and_consume_admin_override_nonce(&env, &admin2, 0)
+                .unwrap();
+            assert_eq!(
+                env.storage().persistent().get::<_, u64>(&key1).unwrap_or(0),
+                1
+            );
+            assert_eq!(
+                env.storage().persistent().get::<_, u64>(&key2).unwrap_or(0),
+                1
+            );
+        });
+    }
+
+    #[test]
+    fn test_admin_override_nonce_overflow() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let key = crate::storage::DataKey::AdminOverrideNonce(admin.clone());
+            // Set stored nonce to u64::MAX
+            env.storage().persistent().set(&key, &u64::MAX);
+
+            // Attempting to consume nonce u64::MAX should overflow on increment
+            let r = AdminAccessControl::validate_and_consume_admin_override_nonce(
+                &env,
+                &admin,
+                u64::MAX,
+            );
+            assert!(
+                matches!(r, Err(Error::NonceOverflow)),
+                "Overflow should be handled, got: {:?}",
+                r
+            );
+        });
     }
 }

@@ -3,7 +3,7 @@
 use alloc::format;
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::events::EventEmitter;
 
 // ===== CONSTANTS =====

@@ -313,16 +313,13 @@ pub enum Error {
     /// The upgrade chain predecessor hash does not match the expected value.
     UpgradeChainMismatch = 525,
 
-    Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
-            Error::ExtensionCountCapExceeded => "Extension count cap for this market has been reached",
     /// Per-market extension count cap has been reached (max number of extension calls).
     ExtensionCountCapExceeded = 526,
 
-    Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
-    Error::ExtensionCountCapExceeded => "Extension count cap for this market has been reached",
-
-    /// An admin override nonce was replayed; reject to prevent replay attacks.
-    ReplayedOverride = 526,
+    /// An admin override nonce did not match the expected per-admin counter.
+    NonceMismatch = 543,
+    /// Incrementing the per-admin nonce would overflow `u64`.
+    NonceOverflow = 544,
     /// Oracle quote is an outlier relative to the rolling median history.
     OracleQuoteOutlier = 527,
     /// Maximum number of unique participants has been reached for this market.
@@ -950,9 +947,7 @@ impl ErrorHandler {
             | Error::AlreadyClaimed
             | Error::FeeAlreadyCollected
             | Error::ForceResolveAlreadyUsed => RecoveryStrategy::Skip,
-            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => {
-                RecoveryStrategy::Retry
-            }
+            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => RecoveryStrategy::Retry,
             Error::Unauthorized | Error::MarketClosed | Error::MarketResolved => {
                 RecoveryStrategy::Abort
             }
@@ -1382,7 +1377,9 @@ impl ErrorHandler {
             | Error::DisputeFeeFailed
             | Error::InvalidState
             | Error::InvalidOracleConfig
-            | Error::OperationWouldExceedBudget => 0,
+            | Error::OperationWouldExceedBudget
+            | Error::NonceMismatch
+            | Error::NonceOverflow => 0,
             _ => 1,
         }
     }
@@ -1475,7 +1472,9 @@ impl ErrorHandler {
     /// # Returns
     ///
     /// A tuple of (severity, category, recovery_strategy) for the error.
-    pub(crate) fn get_error_classification(error: &Error) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
+    pub(crate) fn get_error_classification(
+        error: &Error,
+    ) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
         match error {
             // Critical
             Error::AdminNotSet => (
@@ -1609,6 +1608,16 @@ impl ErrorHandler {
                 ErrorCategory::System,
                 RecoveryStrategy::Skip,
             ),
+            Error::NonceMismatch => (
+                ErrorSeverity::Medium,
+                ErrorCategory::Authentication,
+                RecoveryStrategy::Abort,
+            ),
+            Error::NonceOverflow => (
+                ErrorSeverity::Critical,
+                ErrorCategory::System,
+                RecoveryStrategy::ManualIntervention,
+            ),
             _ => (
                 ErrorSeverity::Medium,
                 ErrorCategory::Unknown,
@@ -1721,8 +1730,12 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
-            Error::BetCoolOffActive => "User is within the cool-off period; wait before placing another bet",
-            Error::InsufficientStorageRentBudget => "Insufficient storage rent for persistent key allocation",
+            Error::BetCoolOffActive => {
+                "User is within the cool-off period; wait before placing another bet"
+            }
+            Error::InsufficientStorageRentBudget => {
+                "Insufficient storage rent for persistent key allocation"
+            }
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::GasBudgetExceeded => "Gas budget exceeded",
@@ -1806,14 +1819,23 @@ impl Error {
             Error::FeeRevealTooEarly => "Fee config reveal attempted too early",
             Error::FeePreimageMismatch => "Preimage does not match the committed hash",
             Error::DisputeStakeCapExceeded => "Dispute stake cap exceeded for this address",
-            Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
+            Error::ExtensionCapExceeded => {
+                "Cumulative extension cap for this market has been reached"
+            }
             Error::UpgradeChainMismatch => "Upgrade chain predecessor hash mismatch",
-            Error::ReplayedOverride => "Admin override nonce replayed; rejected",
-            Error::AssetDecimalsMismatch => "Asset decimals mismatch between stored and SAC decimals",
+            Error::NonceMismatch => "Admin override nonce does not match the expected value",
+            Error::NonceOverflow => "Admin override nonce overflowed",
+            Error::AssetDecimalsMismatch => {
+                "Asset decimals mismatch between stored and SAC decimals"
+            }
             Error::DuplicateMarketId => "Market ID already exists in the registry",
-            Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
+            Error::CumulativeExtensionCapHit => {
+                "Cumulative extension cap reached; no further extensions allowed"
+            }
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
-            Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            Error::OracleQuoteOutlier => {
+                "Oracle quote is an outlier relative to the rolling median"
+            }
             Error::OracleAdminCooldownActive => "Oracle Admin Cooldown is active",
             _ => "An unspecified error occurred.",
         }
@@ -1930,7 +1952,8 @@ impl Error {
             Error::InsufficientStorageRentBudget => "INSUFFICIENT_STORAGE_RENT_BUDGET",
             Error::ExtensionCapExceeded => "EXTENSION_CAP_EXCEEDED",
             Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
-            Error::ReplayedOverride => "REPLAYED_OVERRIDE",
+            Error::NonceMismatch => "NONCE_MISMATCH",
+            Error::NonceOverflow => "NONCE_OVERFLOW",
             Error::AssetDecimalsMismatch => "ASSET_DECIMALS_MISMATCH",
             Error::DuplicateMarketId => "DUPLICATE_MARKET_ID",
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
@@ -1957,7 +1980,10 @@ mod price_feed_degraded_tests {
         assert_eq!(severity, ErrorSeverity::Medium);
         assert_eq!(category, ErrorCategory::Oracle);
         assert_eq!(strategy, RecoveryStrategy::RetryWithDelay);
-        assert_eq!(ErrorHandler::get_error_recovery_strategy(&err), RecoveryStrategy::RetryWithDelay);
+        assert_eq!(
+            ErrorHandler::get_error_recovery_strategy(&err),
+            RecoveryStrategy::RetryWithDelay
+        );
         assert_eq!(ErrorHandler::get_max_recovery_attempts(&err), 2);
     }
 }

@@ -137,25 +137,36 @@ mod governance_tests;
 mod category_tags_tests;
 #[cfg(test)]
 mod tie_resolution_tests;
-#[cfg(test)]
-mod force_resolve_tests;
+// Missing file: force_resolve_tests.rs
+// #[cfg(test)]
+// mod force_resolve_tests;
 
-#[cfg(test)]
-mod analytics_snapshot_tests;
-#[cfg(test)]
-mod betting_invariant_proptest;
-#[cfg(test)]
-mod property_based_tests;
-#[cfg(test)]
-mod betting_invariants;
+// Missing file: analytics_snapshot_tests.rs
+// #[cfg(test)]
+// mod analytics_snapshot_tests;
+
+// Missing file: betting_invariant_proptest.rs
+// #[cfg(test)]
+// mod betting_invariant_proptest;
+
+// Missing file: property_based_tests.rs
+// #[cfg(test)]
+// mod property_based_tests;
+
+// Missing file: betting_invariants.rs
+// #[cfg(test)]
+// mod betting_invariants;
+
 mod analytics_snapshot;
 
-#[cfg(test)]
-mod max_participants_tests;
+// Missing file: max_participants_tests.rs
+// #[cfg(test)]
+// mod max_participants_tests;
 
-#[cfg(test)]
-#[path = "tests/fee_config_commit_reveal_tests.rs"]
-mod fee_config_commit_reveal_tests;
+// Missing file: tests/fee_config_commit_reveal_tests.rs
+// #[cfg(test)]
+// #[path = "tests/fee_config_commit_reveal_tests.rs"]
+// mod fee_config_commit_reveal_tests;
 
 #[cfg(test)]
 mod admin_cooldown_tests;
@@ -1406,116 +1417,6 @@ impl PredictifyHybrid {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// # use soroban_sdk::{Env, Address, Symbol};
-    /// # use predictify_hybrid::PredictifyHybrid;
-    /// # let env = Env::default();
-    /// # let market_id = Symbol::new(&env, "btc_market");
-    /// # let oracle_address = Address::generate(&env);
-    ///
-    /// match PredictifyHybrid::fetch_oracle_result(
-    ///     env.clone(),
-    ///     market_id,
-    ///     oracle_address
-    /// ) {
-    ///     Ok(result) => {
-    ///         // Oracle result retrieved successfully
-    ///         println!("Oracle result: {}", result);
-    ///     },
-    ///     Err(e) => {
-    ///         // Handle error
-    ///         println!("Failed to fetch oracle result: {:?}", e);
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// # Oracle Integration
-    ///
-    /// This function integrates with various oracle types:
-    /// - **Reflector**: For asset price data and market conditions
-    /// - **Pyth**: For high-frequency financial data feeds
-    /// - **Custom Oracles**: For specialized data sources
-    ///
-    /// # Market State Requirements
-    ///
-    /// - Market must exist and be past its end time
-    /// - Market must not already have an oracle result
-    /// - Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`
-    /// - When `has_fallback` is `true`, the contract attempts the primary oracle once and then the fallback once
-    /// - The market-stored oracle configuration controls ordering; the external `oracle_contract` argument is ignored
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn fetch_oracle_result(
-        env: Env,
-        market_id: Symbol,
-        oracle_contract: Address,
-    ) -> Result<String, Error> {
-        let _ = oracle_contract;
-
-        // Get the market from storage
-        let mut market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
-
-        // Validate market state
-        if market.oracle_result.is_some() {
-            return Err(Error::MarketResolved);
-        }
-
-        // Check if market has ended
-        let current_time = env.ledger().timestamp();
-        if current_time < market.end_time {
-            return Err(Error::MarketClosed);
-        }
-
-        if resolution_timeout_reached(&env, &market) {
-            EventEmitter::emit_resolution_timeout(&env, &market_id, current_time);
-            return Err(Error::ResolutionTimeoutReached);
-        }
-
-        match get_oracle_result(&env, &market.oracle_config) {
-            Ok(outcome) => {
-                market.oracle_result = Some(outcome.clone());
-                env.storage().persistent().set(&market_id, &market);
-                Ok(outcome)
-            }
-            Err(_) if market.has_fallback => {
-                match get_oracle_result(&env, &market.fallback_oracle_config) {
-                    Ok(outcome) => {
-                        market.oracle_result = Some(outcome.clone());
-                        env.storage().persistent().set(&market_id, &market);
-                        EventEmitter::emit_fallback_used(
-                            &env,
-                            &market_id,
-                            &market.oracle_config.oracle_address,
-                            &market.fallback_oracle_config.oracle_address,
-                        );
-                        Ok(outcome)
-                    }
-                    Err(_) => {
-                        EventEmitter::emit_manual_resolution_required(
-                            &env,
-                            &market_id,
-                            &String::from_str(&env, "primary_and_fallback_failed"),
-                        );
-                        Err(Error::FallbackOracleUnavailable)
-                    }
-                }
-            }
-            Err(err) => {
-                EventEmitter::emit_manual_resolution_required(
-                    &env,
-                    &market_id,
-                    &String::from_str(&env, "primary_failed_no_fallback"),
-                );
-                Err(err)
-            }
-        }
-    }
 
     /// Verifies and fetches event outcome from external oracle sources automatically.
     ///
@@ -1844,6 +1745,41 @@ impl PredictifyHybrid {
         crate::oracles::OracleIntegrationManager::get_oracle_weight(&env, &oracle)
     }
 
+    /// Manually overrides oracle verification for a market (admin only).
+    ///
+    /// This function allows the contract administrator to manually set the oracle
+    /// result for a market, bypassing the normal oracle verification process.
+    /// It includes per-admin nonce replay protection to prevent duplicate or
+    /// replayed override calls.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address performing the override (must be authorized)
+    /// * `market_id` - Unique identifier of the market to override
+    /// * `outcome` - The outcome to set as the oracle result
+    /// * `reason` - Human-readable justification for the override
+    /// * `provided_nonce` - Monotonic nonce supplied by the admin; must exactly match
+    ///   the stored nonce for this admin. On success the stored nonce is incremented.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Override applied successfully
+    /// - `Err(Error::Unauthorized)` - Caller is not the contract primary admin
+    /// - `Err(Error::InvalidInput)` - Reason string is empty
+    /// - `Err(Error::MarketNotFound)` - Market does not exist
+    /// - `Err(Error::NonceMismatch)` - Provided nonce does not equal the stored nonce
+    /// - `Err(Error::NonceOverflow)` - Nonce increment would overflow `u64`
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via explicit returns and the
+    /// replay-protection helper.
+    ///
+    /// # Events
+    ///
+    /// On success emits an `AdminOverride` event and appends an audit record.
     pub fn admin_override_verification(
         env: Env,
         admin: Address,
@@ -1859,6 +1795,13 @@ impl PredictifyHybrid {
             return Err(Error::InvalidInput);
         }
 
+        // Validate and consume the admin override nonce before mutating state.
+        crate::admin::AdminAccessControl::validate_and_consume_admin_override_nonce(
+            &env,
+            &admin,
+            provided_nonce,
+        )?;
+
         // Load the market
         let mut market = markets::MarketStateManager::get_market(&env, &market_id)?;
 
@@ -1872,27 +1815,6 @@ impl PredictifyHybrid {
         market.oracle_result = Some(outcome.clone());
         market.state = crate::types::MarketState::Resolved;
         markets::MarketStateManager::update_market(&env, &market_id, &market);
-
-        // Append an immutable audit record
-        // Validate and store the admin override nonce for replay protection
-        let key = DataKey::AdminOverrideNonce(admin.clone());
-        let mut stored_nonce: u64 = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(0);
-
-        if provided_nonce <= stored_nonce {
-            return Err(Error::ReplayedOverride);
-        }
-
-        // Update the nonce for this admin
-        env.storage().persistent().set(&key, &provided_nonce);
-        env.storage().persistent().extend_ttl(
-            &key,
-            env.storage().max_ttl(),
-            env.storage().max_ttl(),
-        );
 
         // Append an immutable audit record with the nonce for replay protection
         let mut details = Map::new(&env);

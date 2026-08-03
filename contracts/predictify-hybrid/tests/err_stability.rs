@@ -129,7 +129,8 @@ error_code_snapshot! {
     InsufficientStorageRentBudget = 523,
     ExtensionCapExceeded = 524,
     UpgradeChainMismatch = 525,
-    ReplayedOverride = 526,
+    NonceMismatch = 543,
+    NonceOverflow = 544,
     OracleQuoteOutlier = 527,
     MaxParticipantsReached = 528,
     BetExceedsCap = 529,
@@ -164,7 +165,7 @@ error_code_snapshot! {
 
 #[test]
 fn contract_error_codes_are_stable() {
-    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 129);
+    assert_eq!(ERROR_CODE_SNAPSHOT.len(), 131);
 
     for &(error, expected) in ERROR_CODE_SNAPSHOT {
         assert_eq!(
