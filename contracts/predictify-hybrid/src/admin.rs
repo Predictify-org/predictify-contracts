@@ -1,6 +1,6 @@
 extern crate alloc;
 use alloc::format;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec, panic_with_error};
+use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 // use alloc::string::ToString; // Unused import
 
 use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
@@ -12,7 +12,6 @@ use crate::markets::MarketStateManager;
 // use crate::resolution::MarketResolutionManager;
 use crate::audit_trail::{AuditAction, AuditTrailManager};
 use alloc::string::ToString;
-
 
 /// Admin management system for Predictify Hybrid contract
 ///
@@ -42,12 +41,6 @@ pub enum AdminRole {
     ReadOnlyAdmin,
 }
 
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub enum AdminError {
-    CooldownActive = 101, // Error code for rapid abuse prevention
-}
-
 /// Severity level for admin broadcasts
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -55,44 +48,6 @@ pub enum Severity {
     Info,
     Warning,
     Critical,
-}
-
-// 1. Define the storage key for the last action timestamp
-pub const LAST_ADMIN_ACTION: &str = "LAST_ADMIN_ACT";
-
-// 2. Define the cooldown duration (24 hours = 86,400 seconds)
-// For testing purposes, you might want to make this configurable, 
-// but b#009 usually implies a strict window.
-pub const COOLDOWN_PERIOD: u64 = 86_400;
-
-/// Internal helper to enforce a wait period between critical admin actions.
-/// Call this inside any function that modifies sensitive contract state.
-pub fn check_and_update_cooldown(env: &Env) {
-    let now = env.ledger().timestamp();
-    
-    // Get the timestamp of the last action (default to 0 if never called)
-    let last_action: u64 = env.storage().instance().get(&LAST_ADMIN_ACTION).unwrap_or(0);
-
-    if last_action > 0 {
-        // Ensure (now - last_action) >= COOLDOWN_PERIOD
-        if now < last_action.checked_add(COOLDOWN_PERIOD).expect("Overflow") {
-            panic_with_error!(env, AdminError::CooldownActive);
-        }
-    }
-
-    // Update the timestamp to the current time for the next action
-    env.storage().instance().set(&LAST_ADMIN_ACTION, &now);
-}
-
-// --- Critical Admin Functions ---
-
-pub fn set_voting_parameters(env: Env, admin: Address, /* other params */) {
-    admin.require_auth();
-    
-    // 3. ENFORCE COOLDOWN (The fix for #1099)
-    check_and_update_cooldown(&env);
-
-    // ... rest of the logic to update parameters ...
 }
 
 /// Admin permission enumeration
@@ -123,7 +78,7 @@ pub enum AdminPermission {
     ViewAnalytic,
     /// Emergency actions
     Emergency,
-    /// Configuration admin actions (set cooldowns, update oracle admin config)
+    /// Configure system settings
     ConfigAdmin,
 }
 
@@ -1791,56 +1746,6 @@ impl OracleAdminCooldownManager {
         
         state.last_action_timestamp = current_time;
         env.storage().persistent().set(&crate::storage::DataKey::OracleAdminCooldownState, &state);
-        
-        Ok(())
-    }
-}
-
-/// State for betting admin cooldowns
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[contracttype]
-pub struct BettingAdminCooldownState {
-    pub cooldown_seconds: u64,
-    pub last_action_timestamp: u64,
-}
-
-pub struct BettingAdminCooldownManager;
-
-impl BettingAdminCooldownManager {
-    pub fn get_state(env: &Env) -> BettingAdminCooldownState {
-        env.storage().persistent().get(&crate::storage::DataKey::BettingAdminCooldownState)
-            .unwrap_or(BettingAdminCooldownState {
-                cooldown_seconds: 0,
-                last_action_timestamp: 0,
-            })
-    }
-
-    pub fn set_cooldown(env: &Env, admin: &Address, cooldown_seconds: u64) -> Result<(), Error> {
-        admin.require_auth();
-        AdminAccessControl::validate_permission(env, admin, &AdminPermission::ConfigAdmin)?;
-        let mut state = Self::get_state(env);
-        state.cooldown_seconds = cooldown_seconds;
-        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
-        Ok(())
-    }
-
-    pub fn enforce_cooldown(env: &Env, admin: &Address) -> Result<(), Error> {
-        let mut state = Self::get_state(env);
-        if state.cooldown_seconds == 0 {
-            return Ok(());
-        }
-        let current_time = env.ledger().timestamp();
-        
-        let cooldown_end = state.last_action_timestamp.checked_add(state.cooldown_seconds)
-            .ok_or(Error::Overflow)?;
-            
-        if current_time < cooldown_end {
-            EventEmitter::emit_betting_admin_cooldown_hit(env, admin, state.last_action_timestamp, state.cooldown_seconds);
-            return Err(Error::BettingAdminCooldownActive);
-        }
-        
-        state.last_action_timestamp = current_time;
-        env.storage().persistent().set(&crate::storage::DataKey::BettingAdminCooldownState, &state);
         
         Ok(())
     }

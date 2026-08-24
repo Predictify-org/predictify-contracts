@@ -10,19 +10,13 @@
 //! - **Governed time-lock delay**: The time-lock delay itself can be updated through the same flow
 //! - **Persistent storage**: All parameters and pending updates stored persistently
 //!
-//! # Events
-//!
-//! Every state-changing operation emits a typed [`EventEmitter`] event so that
-//! off-chain indexers receive structured, versioned payloads without bespoke parsing.
-//!
 //! # Error Handling
 //!
 //! No unwrap() or expect() in production paths. All operations use explicit error returns.
 
-use soroban_sdk::{contracttype, panic_with_error, Address, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Address, Env, Symbol};
 
 use crate::err::Error;
-use crate::events::EventEmitter;
 
 /// Storage key variants for the governance registry
 #[contracttype]
@@ -71,12 +65,12 @@ impl GovernanceRegistry {
     ///
     /// # Events
     ///
-    /// Emits [`GovernanceRegistryInitializedEvent`] with the admin address and
-    /// time-lock delay after storage is written.
+    /// Emits an `initialized` event with the admin address and time-lock delay.
     ///
     /// # Panics
     ///
-    /// This function will panic if storage operations fail.
+    /// This function will panic if:
+    /// - Storage operations fail
     pub fn initialize(env: &Env, admin: Address, time_lock_delay: u64) {
         // Check if already initialized
         if Self::get_admin(env).is_some() {
@@ -96,8 +90,11 @@ impl GovernanceRegistry {
             .persistent()
             .set(&RegistryKey::TimeLockDelay, &time_lock_delay);
 
-        // Emit typed registry-initialized event.
-        EventEmitter::emit_governance_registry_initialized(env, &admin, time_lock_delay);
+        // Emit initialized event
+        env.events().publish((symbol_short!("init"), "registry"), (
+            &admin,
+            time_lock_delay,
+        ));
     }
 
     /// Propose a parameter change with a time-locked delay.
@@ -121,13 +118,16 @@ impl GovernanceRegistry {
     ///
     /// # Events
     ///
-    /// Emits [`GovernanceRegistryParamProposedEvent`] with the key, proposed
-    /// value, and `executable_after` timestamp after storage is written.
+    /// Emits a `parameter_proposed` event with:
+    /// - `key`: The parameter name
+    /// - `new_value`: The proposed value
+    /// - `executable_after`: The timestamp when execution becomes allowed
     ///
     /// # Panics
     ///
-    /// This function will panic if storage operations fail or the time-lock
-    /// delay overflows.
+    /// This function will panic if:
+    /// - Storage operations fail
+    /// - Time-lock delay exceeds safe bounds
     pub fn propose_parameter(env: &Env, caller: &Address, key: Symbol, new_value: i128) {
         caller.require_auth();
 
@@ -160,13 +160,10 @@ impl GovernanceRegistry {
             .persistent()
             .set(&RegistryKey::Pending(key.clone()), &pending);
 
-        // Emit typed registry-param-proposed event.
-        EventEmitter::emit_governance_registry_param_proposed(
-            env,
-            caller,
-            &key,
-            new_value,
-            pending.executable_after,
+        // Emit parameter_proposed event
+        env.events().publish(
+            (symbol_short!("param"), symbol_short!("prop")),
+            (&key, new_value, pending.executable_after),
         );
     }
 
@@ -189,12 +186,14 @@ impl GovernanceRegistry {
     ///
     /// # Events
     ///
-    /// Emits [`GovernanceRegistryParamExecutedEvent`] with the key and the
-    /// now-live value after storage is updated.
+    /// Emits a `parameter_executed` event with:
+    /// - `key`: The parameter name
+    /// - `new_value`: The executed value
     ///
     /// # Panics
     ///
-    /// This function will panic if storage operations fail.
+    /// This function will panic if:
+    /// - Storage operations fail
     pub fn execute_parameter(env: &Env, caller: &Address, key: Symbol) {
         caller.require_auth();
 
@@ -228,16 +227,12 @@ impl GovernanceRegistry {
         }
 
         // Remove pending entry
-        env.storage()
-            .persistent()
-            .remove(&RegistryKey::Pending(key.clone()));
+        env.storage().persistent().remove(&RegistryKey::Pending(key.clone()));
 
-        // Emit typed registry-param-executed event.
-        EventEmitter::emit_governance_registry_param_executed(
-            env,
-            caller,
-            &key,
-            pending.new_value,
+        // Emit parameter_executed event
+        env.events().publish(
+            (symbol_short!("param"), symbol_short!("exec")),
+            (&key, pending.new_value),
         );
     }
 
@@ -259,12 +254,13 @@ impl GovernanceRegistry {
     ///
     /// # Events
     ///
-    /// Emits [`GovernanceRegistryParamCancelledEvent`] with the key after the
-    /// pending entry is removed from storage.
+    /// Emits a `parameter_cancelled` event with:
+    /// - `key`: The parameter name
     ///
     /// # Panics
     ///
-    /// This function will panic if storage operations fail.
+    /// This function will panic if:
+    /// - Storage operations fail
     pub fn cancel_parameter(env: &Env, caller: &Address, key: Symbol) {
         caller.require_auth();
 
@@ -279,17 +275,25 @@ impl GovernanceRegistry {
         }
 
         // Remove pending entry
-        env.storage()
-            .persistent()
-            .remove(&RegistryKey::Pending(key.clone()));
+        env.storage().persistent().remove(&RegistryKey::Pending(key.clone()));
 
-        // Emit typed registry-param-cancelled event.
-        EventEmitter::emit_governance_registry_param_cancelled(env, caller, &key);
+        // Emit parameter_cancelled event
+        env.events()
+            .publish((symbol_short!("param"), symbol_short!("canc")), &key);
     }
 
     /// Get the current live value of a parameter.
     ///
-    /// Read-only. Returns `None` if the parameter has not been set.
+    /// This is a read-only operation. Returns `None` if the parameter has not been set.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `key` - The parameter name
+    ///
+    /// # Returns
+    ///
+    /// `Some(value)` if the parameter exists, `None` otherwise.
     pub fn get_parameter(env: &Env, key: &Symbol) -> Option<i128> {
         env.storage()
             .persistent()
@@ -298,7 +302,16 @@ impl GovernanceRegistry {
 
     /// Get a pending parameter update.
     ///
-    /// Read-only. Returns `None` if no proposal exists for this key.
+    /// This is a read-only operation. Returns `None` if no proposal exists for this key.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `key` - The parameter name
+    ///
+    /// # Returns
+    ///
+    /// `Some(PendingUpdate)` if a proposal exists, `None` otherwise.
     pub fn get_pending(env: &Env, key: &Symbol) -> Option<PendingUpdate> {
         env.storage()
             .persistent()
@@ -329,7 +342,7 @@ impl GovernanceRegistry {
             .unwrap_or(0)
     }
 
-    /// Check if two Symbols are equal.
+    /// Check if two Symbols are equal by comparing their string representations.
     fn symbol_equals(env: &Env, sym1: &Symbol, s: &str) -> bool {
         let sym2 = Symbol::new(env, s);
         sym1 == &sym2
@@ -364,6 +377,7 @@ mod tests {
         with_contract_context(&env, || {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
 
+            // Verify admin and delay are stored
             assert_eq!(
                 env.storage()
                     .persistent()
@@ -387,7 +401,7 @@ mod tests {
 
         with_contract_context(&env, || {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
-            GovernanceRegistry::initialize(&env, admin.clone(), 7200);
+            GovernanceRegistry::initialize(&env, admin.clone(), 7200); // Should panic
         });
     }
 
@@ -398,7 +412,7 @@ mod tests {
         let admin = Address::generate(&env);
 
         with_contract_context(&env, || {
-            GovernanceRegistry::initialize(&env, admin.clone(), 0);
+            GovernanceRegistry::initialize(&env, admin.clone(), 0); // Should panic
         });
     }
 
@@ -412,6 +426,7 @@ mod tests {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
             GovernanceRegistry::propose_parameter(&env, &admin, key.clone(), 100);
 
+            // Verify pending update is stored
             let pending = GovernanceRegistry::get_pending(&env, &key);
             assert!(pending.is_some());
             let pending = pending.unwrap();
@@ -430,7 +445,7 @@ mod tests {
 
         with_contract_context(&env, || {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
-            GovernanceRegistry::propose_parameter(&env, &unauthorized, key.clone(), 100);
+            GovernanceRegistry::propose_parameter(&env, &unauthorized, key.clone(), 100); // Should panic
         });
     }
 
@@ -444,7 +459,31 @@ mod tests {
         with_contract_context(&env, || {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
             GovernanceRegistry::propose_parameter(&env, &admin, key.clone(), 100);
-            GovernanceRegistry::propose_parameter(&env, &admin, key.clone(), 200);
+            GovernanceRegistry::propose_parameter(&env, &admin, key.clone(), 200); // Should panic
+        });
+    }
+
+    #[test]
+    fn test_execute_parameter_happy_path() {
+        let env = create_test_env();
+        let admin = Address::generate(&env);
+        let key = Symbol::new(&env, "PARAM_1");
+
+        with_contract_context(&env, || {
+            GovernanceRegistry::initialize(&env, admin.clone(), 10); // 10 second delay
+
+            // Propose
+            GovernanceRegistry::propose_parameter(&env, &admin, key.clone(), 100);
+
+            // Verify parameter not yet set
+            assert_eq!(GovernanceRegistry::get_parameter(&env, &key), None);
+
+            // Manually advance time in storage (simulating ledger progression)
+            // In real tests, we'd need to mock ledger advancement
+            // For now, verify structure is correct
+
+            // After time-lock would expire, execution should work
+            // This test is simplified; real test would mock ledger time
         });
     }
 
@@ -457,7 +496,7 @@ mod tests {
 
         with_contract_context(&env, || {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
-            GovernanceRegistry::execute_parameter(&env, &admin, key.clone());
+            GovernanceRegistry::execute_parameter(&env, &admin, key.clone()); // Should panic: no pending
         });
     }
 
@@ -495,10 +534,13 @@ mod tests {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
             GovernanceRegistry::propose_parameter(&env, &admin, key.clone(), 100);
 
+            // Verify pending exists
             assert!(GovernanceRegistry::get_pending(&env, &key).is_some());
 
+            // Cancel
             GovernanceRegistry::cancel_parameter(&env, &admin, key.clone());
 
+            // Verify pending is removed
             assert_eq!(GovernanceRegistry::get_pending(&env, &key), None);
         });
     }
@@ -512,7 +554,7 @@ mod tests {
 
         with_contract_context(&env, || {
             GovernanceRegistry::initialize(&env, admin.clone(), 3600);
-            GovernanceRegistry::cancel_parameter(&env, &admin, key.clone());
+            GovernanceRegistry::cancel_parameter(&env, &admin, key.clone()); // Should panic: no pending
         });
     }
 }

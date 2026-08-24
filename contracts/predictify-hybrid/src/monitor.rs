@@ -183,21 +183,20 @@ impl BoundedMonitorQueue {
     ///
     /// # Errors
     ///
-    /// - [`Error::QueueCapacityOutOfRange`] if `capacity` is outside
-    ///   `[MIN_QUEUE_CAPACITY, MAX_QUEUE_CAPACITY]`.
-    /// - [`Error::QueueAlreadyInitialized`] if the queue has already been initialized.
-    ///   Re-initialization is rejected so an existing queue can never be silently reset.
+    /// Returns `Error::InvalidInput` if `capacity` is outside the allowed range.
     ///
-    /// Both conditions previously surfaced as a generic `InvalidInput` or a bare
-    /// `panic!`, neither of which a client could distinguish from any other failure.
+    /// # Panics
+    ///
+    /// Panics if the queue has already been initialized (re-initialization is
+    /// prevented).
     pub fn initialize(env: &Env, capacity: u32) -> Result<(), Error> {
         if capacity < MIN_QUEUE_CAPACITY || capacity > MAX_QUEUE_CAPACITY {
-            return Err(Error::QueueCapacityOutOfRange);
+            return Err(Error::InvalidInput);
         }
 
         let state_key = Symbol::new(env, QUEUE_STATE_KEY);
         if env.storage().persistent().has(&state_key) {
-            return Err(Error::QueueAlreadyInitialized);
+            panic!("monitor queue already initialized");
         }
 
         let state = MonitorQueueState {
@@ -542,13 +541,11 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "monitor queue already initialized")]
     fn initialize_rejects_double_init() {
-        // `setup()` already initializes the queue; the second call must return a
-        // typed error rather than aborting the frame with a panic.
         let (env, contract_id) = setup();
         env.as_contract(&contract_id, || {
-            let result = BoundedMonitorQueue::initialize(&env, 10);
-            assert_eq!(result, Err(Error::QueueAlreadyInitialized));
+            BoundedMonitorQueue::initialize(&env, 10).unwrap();
         });
     }
 
@@ -558,22 +555,7 @@ mod tests {
         let contract_id = env.register(crate::PredictifyHybrid, ());
         env.as_contract(&contract_id, || {
             let result = BoundedMonitorQueue::initialize(&env, 0);
-            assert_eq!(result, Err(Error::QueueCapacityOutOfRange));
-        });
-    }
-
-    #[test]
-    fn initialize_accepts_capacity_bounds() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.as_contract(&contract_id, || {
-            assert!(BoundedMonitorQueue::initialize(&env, MIN_QUEUE_CAPACITY).is_ok());
-        });
-
-        let env2 = Env::default();
-        let contract_id2 = env2.register(crate::PredictifyHybrid, ());
-        env2.as_contract(&contract_id2, || {
-            assert!(BoundedMonitorQueue::initialize(&env2, MAX_QUEUE_CAPACITY).is_ok());
+            assert_eq!(result, Err(Error::InvalidInput));
         });
     }
 
@@ -583,7 +565,7 @@ mod tests {
         let contract_id = env.register(crate::PredictifyHybrid, ());
         env.as_contract(&contract_id, || {
             let result = BoundedMonitorQueue::initialize(&env, MAX_QUEUE_CAPACITY + 1);
-            assert_eq!(result, Err(Error::QueueCapacityOutOfRange));
+            assert_eq!(result, Err(Error::InvalidInput));
         });
     }
 

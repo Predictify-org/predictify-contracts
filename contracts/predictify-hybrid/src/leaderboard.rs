@@ -298,17 +298,8 @@ fn sorted_top(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
-
-    // Minimal stub contract so tests can get a valid contract address for
-    // `env.as_contract` storage operations without depending on the main
-    // `PredictifyHybrid` contract (which has pre-existing compile issues
-    // elsewhere in the codebase).
-    #[contract]
-    struct LeaderboardStub;
-
-    #[contractimpl]
-    impl LeaderboardStub {}
+    use crate::PredictifyHybrid;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
 
     fn make_entry(env: &Env, user: &Address, winnings: i128, win_rate: u32, bets: u64) -> UserLeaderboardEntryV1 {
         UserLeaderboardEntryV1 {
@@ -325,7 +316,7 @@ mod tests {
 
     fn setup() -> (Env, Address) {
         let env = Env::default();
-        let cid = env.register(LeaderboardStub, ());
+        let cid = env.register_contract(None, PredictifyHybrid);
         (env, cid)
     }
 

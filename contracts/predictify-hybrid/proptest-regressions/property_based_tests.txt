@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d5beda84e86a79af46fd30e3b919c1b5e26f7dd893272eaff176639eb01f9b82 # shrinks to question = "Will BTC reach $100k by year end?", duration_days = 1
+cc ec287376804edf904d828c9deab125362ba03a6a97487fe2fcf8fd95a56abf2c # shrinks to question = "Will BTC reach $100k by year end?", outcome_count = 2, user_index = 0, stake_amount = 1000000, outcome_choice = 0
+cc 683c735e4e7a0d574dd602cdce52927faac4d2f500788735556d60e47c330bec # shrinks to question = "Will BTC reach $100k by year end?", outcome_count = 2, duration_days = 1, threshold = 1, comparison = "gt"
+cc 37decdae6683c73fab564d279240ad9de15b9e6edd3871d740ae4a0e26c62b23 # shrinks to question = "Will BTC reach $100k by year end?", outcome_count = 2, duration_days = 1, threshold = 1, comparison = "gt"
+cc 7ec0c802dcefd5fa82fa4ee7cbbde7e177ea6d94bd772961214529af44625848 # shrinks to question = "Will BTC reach $100k by year end?", user_count = 2, stakes = [1000000, 1000000]

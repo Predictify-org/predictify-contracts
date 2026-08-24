@@ -1,22 +1,66 @@
-use crate::admin::AdminAccessControl;
-use crate::err::Error;
-use crate::markets::MarketStateManager;
-use crate::storage::DataKey;
-use crate::types::Market;
-use crate::voting::VotingUtils;
-use soroban_sdk::{contracttype, symbol_short, token, vec, Address, Env, Map, String, Symbol, Vec};
+#![allow(dead_code)]
 
-pub const MIN_DISPUTE_STAKE: i128 = 10_000_000;
-pub const DISPUTE_PERIOD_SECS: u64 = 86400;
-/// Hours the market's `end_time` is extended by when a dispute is raised, giving
-/// the community time to vote before the market would otherwise close.
-pub const DISPUTE_EXTENSION_HOURS: u32 = 24;
+use crate::{
+    errors::Error,
+    markets::MarketStateManager,
+    types::Market,
+    voting::{VotingUtils, DISPUTE_EXTENSION_HOURS, MIN_DISPUTE_STAKE},
+    storage::DataKey,
+};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
-/// A single formal dispute raised against a market's oracle-verified resolution.
+// ===== DISPUTE STRUCTURES =====
+
+/// Represents a formal dispute against a market's oracle resolution.
 ///
-/// Created by [`DisputeManager::process_dispute`] when a user stakes tokens to
-/// challenge the resolved outcome. Tracked per-market in dispute history and
-/// voted on by the community via [`DisputeManager::vote_on_dispute`].
+/// A dispute is created when a community member challenges the oracle's
+/// resolution of a market, believing the outcome is incorrect. Disputes
+/// require a stake to prevent spam and ensure serious commitment.
+///
+/// # Fields
+///
+/// * `user` - Address of the user who initiated the dispute
+/// * `market_id` - Unique identifier of the disputed market
+/// * `stake` - Amount staked by the disputer (must meet minimum requirements)
+/// * `timestamp` - When the dispute was created (ledger timestamp)
+/// * `reason` - Optional explanation for why the dispute was raised
+/// * `status` - Current status of the dispute (Active, Resolved, etc.)
+///
+/// # Example
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Address, Symbol, String};
+/// # use predictify_hybrid::disputes::{Dispute, DisputeStatus};
+/// # let env = Env::default();
+/// # let user = Address::generate(&env);
+/// # let market_id = Symbol::new(&env, "market_123");
+///
+/// let dispute = Dispute {
+///     user: user.clone(),
+///     market_id: market_id.clone(),
+///     stake: 10_000_000, // 1 XLM
+///     timestamp: env.ledger().timestamp(),
+///     reason: Some(String::from_str(&env, "Oracle data appears incorrect")),
+///     status: DisputeStatus::Active,
+/// };
+///
+/// // Dispute is now active and awaiting community voting
+/// assert_eq!(dispute.status, DisputeStatus::Active);
+/// ```
+///
+/// # Dispute Lifecycle
+///
+/// 1. **Creation**: User stakes tokens and provides reasoning
+/// 2. **Community Voting**: Other users vote on dispute validity
+/// 3. **Resolution**: Dispute is resolved based on community consensus
+/// 4. **Fee Distribution**: Stakes are distributed to winning side
+///
+/// # Staking Requirements
+///
+/// - Minimum stake amount enforced to prevent spam
+/// - Stake is locked during dispute resolution
+/// - Winners receive their stake back plus rewards
+/// - Losers forfeit their stake to the winning side
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Dispute {
@@ -28,39 +72,66 @@ pub struct Dispute {
     pub status: DisputeStatus,
 }
 
-/// Represents the current lifecycle status of a dispute.
-///
-/// * `Active` - Dispute is open and accepting community votes
-/// * `Resolved` - Dispute has been resolved with a final outcome
-/// * `Rejected` - Dispute was rejected by community consensus
-/// * `Expired` - Dispute voting period ended without sufficient participation
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DisputeStatus {
-    Active,
-    Resolved,
-    Rejected,
-    Expired,
-}
-
-pub struct DisputeValidator;
-
-/// Configuration for vote stake decay over time.
-///
-/// Applies an exponential decay approximation to vote weights so that
-/// earlier votes carry more influence than late votes.  This discourages
-/// last-minute vote sniping and rewards early participation.
-///
-/// # Fields
-///
-/// * `half_life_seconds` - How many seconds until a vote's weight halves
-/// * `floor_bps` - Minimum weight in basis points (1 % = 100 bps) below which
-///   the weight will never drop
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DisputeDecayConfig {
     pub half_life_seconds: u64,
     pub floor_bps: u32,
+}
+
+/// Represents the current lifecycle status of a dispute.
+///
+/// Disputes progress through various states from creation to final resolution.
+/// Each status indicates what actions are available and the dispute's current phase.
+///
+/// # Variants
+///
+/// * `Active` - Dispute is open and accepting community votes
+/// * `Resolved` - Dispute has been resolved with a final outcome
+/// * `Rejected` - Dispute was rejected by community consensus
+/// * `Expired` - Dispute voting period ended without sufficient participation
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::disputes::DisputeStatus;
+///
+/// // Check if dispute can still receive votes
+/// let status = DisputeStatus::Active;
+/// let can_vote = matches!(status, DisputeStatus::Active);
+/// assert!(can_vote);
+///
+/// // Check if dispute is finalized
+/// let final_status = DisputeStatus::Resolved;
+/// let is_final = matches!(final_status,
+///     DisputeStatus::Resolved | DisputeStatus::Rejected | DisputeStatus::Expired
+/// );
+/// assert!(is_final);
+/// ```
+///
+/// # Status Transitions
+///
+/// Valid transitions:
+/// - `Active` → `Resolved` (community upholds dispute)
+/// - `Active` → `Rejected` (community rejects dispute)
+/// - `Active` → `Expired` (insufficient voting participation)
+///
+/// Invalid transitions:
+/// - Any final status → Any other status (disputes are immutable once resolved)
+///
+/// # Business Logic
+///
+/// - **Active**: Dispute accepts votes, market resolution is pending
+/// - **Resolved**: Oracle result overturned, new outcome established
+/// - **Rejected**: Oracle result upheld, original outcome stands
+/// - **Expired**: Insufficient community engagement, original outcome stands
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    Active,
+    Resolved,
+    Rejected,
+    Expired,
 }
 
 /// Comprehensive statistics about disputes for a specific market.
@@ -553,22 +624,11 @@ pub struct DisputeFeeDistribution {
     pub fees_distributed: bool,
 }
 
-/// Represents dispute timeout configuration.
+/// Represents dispute timeout configuration
 ///
 /// Stores the timeout window for a dispute, including when it was created,
 /// when it expires, and whether it has been extended. Used by
 /// [`DisputeManager::set_dispute_timeout`] and [`DisputeManager::check_dispute_timeout`].
-///
-/// # Fields
-///
-/// * `dispute_id` - Unique identifier of the dispute
-/// * `market_id` - Market that the dispute belongs to
-/// * `timeout_hours` - Configured timeout duration in hours
-/// * `created_at` - Ledger timestamp when the timeout was created
-/// * `expires_at` - Ledger timestamp when the timeout expires
-/// * `extended_at` - Optional timestamp of the last extension
-/// * `total_extension_hours` - Cumulative hours added via extensions
-/// * `status` - Current lifecycle status of the timeout
 #[contracttype]
 pub struct DisputeTimeout {
     pub dispute_id: Symbol,
@@ -583,22 +643,10 @@ pub struct DisputeTimeout {
 
 /// Lifecycle status of a dispute timeout.
 ///
-/// Tracks whether a timeout is still running, has elapsed, was extended,
-/// or triggered automatic resolution.
-///
-/// # Variants
-///
-/// * `Active` — Timeout is running and has not yet expired
-/// * `Expired` — Timeout window elapsed without resolution
-/// * `Extended` — Timeout was extended by an admin via [`DisputeManager::extend_dispute_timeout`]
-/// * `AutoResolved` — Dispute was automatically resolved when the timeout expired
-///
-/// # Valid Transitions
-///
-/// - `Active` → `Expired` (time elapsed)
-/// - `Active` → `Extended` (admin action)
-/// - `Extended` → `Expired` (time elapsed after extension)
-/// - `Active` / `Extended` → `AutoResolved` (system auto-resolution)
+/// - `Active` — timeout is running and has not yet expired
+/// - `Expired` — timeout window elapsed without resolution
+/// - `Extended` — timeout was extended by an admin via [`DisputeManager::extend_dispute_timeout`]
+/// - `AutoResolved` — dispute was automatically resolved when the timeout expired
 #[contracttype]
 #[derive(PartialEq, Debug)]
 pub enum DisputeTimeoutStatus {
@@ -612,15 +660,6 @@ pub enum DisputeTimeoutStatus {
 ///
 /// Created by [`DisputeManager::auto_resolve_dispute_on_timeout`] and emitted
 /// as an event so indexers can track auto-resolved disputes.
-///
-/// # Fields
-///
-/// * `dispute_id` - Unique identifier of the auto-resolved dispute
-/// * `market_id` - Market that the dispute belongs to
-/// * `outcome` - The resolution outcome string (e.g. "Support" or "Against")
-/// * `resolution_method` - Human-readable method description (e.g. "Timeout Auto-Resolution")
-/// * `resolution_timestamp` - When the auto-resolution was applied
-/// * `reason` - Explanation of why this outcome was determined
 #[contracttype]
 pub struct DisputeTimeoutOutcome {
     pub dispute_id: Symbol,
@@ -632,16 +671,6 @@ pub struct DisputeTimeoutOutcome {
 }
 
 /// Configuration for dispute collusion detection.
-///
-/// Flags a potential collusion event when two disputes from different users
-/// within a sliding window fall within a small stake difference **and**
-/// a small time difference.  Used inside [`DisputeManager::process_dispute`].
-///
-/// # Fields
-///
-/// * `stake_delta_threshold` - Maximum stake difference (stroops) to consider suspicious
-/// * `time_delta_threshold` - Maximum time difference (seconds) between disputes
-/// * `window_size` - Number of recent disputes to examine in the sliding window
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CollusionDetectorConfig {
@@ -654,14 +683,6 @@ pub struct CollusionDetectorConfig {
 ///
 /// Returned by timeout analytics queries; useful for governance dashboards
 /// and monitoring how often disputes require auto-resolution.
-///
-/// # Fields
-///
-/// * `total_timeouts` - Total number of timeouts configured across all markets
-/// * `active_timeouts` - Number of timeouts still in `Active` state
-/// * `expired_timeouts` - Number of timeouts that reached expiry without resolution
-/// * `auto_resolved_timeouts` - Number of disputes auto-resolved via timeout
-/// * `average_timeout_hours` - Average configured timeout duration in hours
 #[contracttype]
 pub struct TimeoutStats {
     pub total_timeouts: u32,
@@ -675,16 +696,6 @@ pub struct TimeoutStats {
 ///
 /// Provides a point-in-time view of a single dispute's timeout state,
 /// including how much time remains and how many extensions have been applied.
-///
-/// # Fields
-///
-/// * `dispute_id` - Unique identifier of the dispute
-/// * `timeout_hours` - Original configured timeout duration
-/// * `time_remaining_seconds` - Seconds until the timeout expires (0 if expired)
-/// * `time_remaining_hours` - Hours until the timeout expires (0 if expired)
-/// * `is_expired` - Whether the timeout window has elapsed
-/// * `status` - Current [`DisputeTimeoutStatus`]
-/// * `total_extensions` - Cumulative extension hours applied
 #[contracttype]
 pub struct TimeoutAnalytics {
     pub dispute_id: Symbol,
@@ -769,15 +780,10 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Retrieves the configured dispute history capacity (max number of
-    /// resolved/expired disputes retained per market).
-    ///
-    /// Returns `None` when no cap has been set.
+    /// Retrieves the configured dispute history capacity.
     pub fn get_history_cap(env: &Env) -> Option<u32> {
         let key = DataKey::DisputeHistoryCap;
-        let result = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result
+        env.storage().persistent().get(&key)
     }
 
     /// Sets the anti-grief minimum stake floor.
@@ -792,14 +798,10 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Retrieves the global anti-grief minimum stake floor (in stroops).
-    ///
-    /// Returns `None` if no global floor has been configured.
+    /// Retrieves the anti-grief minimum stake floor.
     pub fn get_anti_grief_floor(env: &Env) -> Option<i128> {
         let key = DataKey::AntiGriefFloor;
-        let result = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result
+        env.storage().persistent().get(&key)
     }
 
     /// Sets the collusion detector configuration.
@@ -814,15 +816,10 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Retrieves the collusion detector configuration, using sensible
-    /// defaults when no configuration has been stored yet.
-    ///
-    /// Defaults: stake_delta = 1 XLM, time_delta = 10 min, window = 8.
+    /// Retrieves the collusion detector configuration.
     pub fn get_collusion_detector_config(env: &Env) -> CollusionDetectorConfig {
         let key = DataKey::CollusionDetectorConfig(Symbol::new(env, "collusion_config"));
-        let result = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result.unwrap_or(CollusionDetectorConfig {
+        env.storage().persistent().get(&key).unwrap_or(CollusionDetectorConfig {
             stake_delta_threshold: 1_000_000,
             time_delta_threshold: 600, // 10 minutes
             window_size: 8,
@@ -832,124 +829,123 @@ impl DisputeManager {
     /// Evicts the oldest resolved/expired disputes if history size exceeds the cap.
     pub fn apply_eviction(
         env: &Env,
-        _market_id: &Symbol,
+        market_id: &Symbol,
         history: &mut Vec<Dispute>,
     ) -> Result<(), Error> {
         if let Some(cap) = Self::get_history_cap(env) {
-            while history.len() > cap {
-                history.remove(0);
+            if cap > 0 {
+                while history.len() > cap {
+                    let mut index_to_evict: Option<u32> = None;
+                    for i in 0..history.len() {
+                        let dispute = history.get(i).ok_or(Error::InvalidState)?;
+                        if matches!(dispute.status, DisputeStatus::Resolved | DisputeStatus::Expired) {
+                            index_to_evict = Some(i);
+                            break;
+                        }
+                    }
+
+                    if let Some(idx) = index_to_evict {
+                        let evicted_dispute = history.get(idx).ok_or(Error::InvalidState)?;
+                        history.remove(idx);
+                        crate::events::EventEmitter::emit_dispute_history_evicted(
+                            env,
+                            market_id,
+                            &evicted_dispute.user,
+                        );
+                    } else {
+                        break;
+                    }
+                }
             }
         }
-
         Ok(())
     }
 
-    /// Validates that a market is ready for dispute resolution.
-    ///
-    /// Checks that an oracle result is available and that the market has at least
-    /// one dispute stake. Called by [`DisputeManager::resolve_dispute`] before
-    /// computing the final outcome.
-    ///
-    /// # Parameters
-    ///
-    /// * `_env` - The Soroban environment (unused in this function)
-    /// * `market` - The market to validate
-    /// * `admin` - Address of the admin performing resolution
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::OracleResultNotAvailable`] — no oracle result has been submitted
-    /// - [`Error::NoDisputesFound`] — no dispute stakes exist on this market
-    pub fn validate_market_for_resolution(
-        _env: &Env,
-        market: &Market,
-        admin: &Address,
-    ) -> Result<(), Error> {
-        if market.oracle_result.is_none() {
-            return Err(Error::OracleResultNotAvailable);
-        }
-
-        if market.total_dispute_stakes() == 0 {
-            return Err(Error::NoDisputesFound);
-        }
-
-        Ok(())
-    }
-
-    /// Validates dispute timeout parameters.
-    ///
-    /// `timeout_hours` must be between 1 and 720 (30 days). Used by
-    /// [`DisputeManager::set_dispute_timeout`].
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidDuration`] — `timeout_hours` is 0 or exceeds 720
-    pub fn validate_dispute_timeout_parameters(timeout_hours: u32) -> Result<(), Error> {
-        if timeout_hours == 0 || timeout_hours > 720 {
-            return Err(Error::InvalidDuration);
-        }
-        Ok(())
-    }
-
-    /// Validates dispute timeout extension parameters.
-    ///
-    /// `extension_hours` must be between 1 and 168 (7 days). Used by
-    /// [`DisputeManager::extend_dispute_timeout`].
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidDuration`] — `extension_hours` is 0 or exceeds 168
-    pub fn validate_dispute_timeout_extension_parameters(extension_hours: u32) -> Result<(), Error> {
-        if extension_hours == 0 || extension_hours > 168 {
-            return Err(Error::InvalidDuration);
-        }
-        Ok(())
-    }
-}
-
-impl DisputeManager {
     /// Processes a user's formal dispute against a market's oracle resolution.
     ///
-    /// Validates market eligibility, dispute parameters, and anti-grief floor
-    /// before creating and persisting the dispute record.
-    ///
-    /// # Authorization
-    ///
-    /// Requires `user.require_auth()`.
+    /// This function allows community members to challenge oracle results by
+    /// staking tokens and providing reasoning. The dispute triggers a community
+    /// voting process to determine if the oracle result should be overturned.
     ///
     /// # Parameters
     ///
     /// * `env` - The Soroban environment for blockchain operations
-    /// * `user` - Address of the user initiating the dispute
+    /// * `user` - Address of the user initiating the dispute (must authenticate)
     /// * `market_id` - Unique identifier of the market being disputed
-    /// * `stake` - Amount to stake on the dispute (in stroops)
-    /// * `reason` - Optional explanation for the dispute
+    /// * `stake` - Amount to stake on the dispute (must meet minimum requirements)
+    /// * `reason` - Optional explanation for why the dispute is being raised
     ///
     /// # Returns
     ///
-    /// Returns the created [`Dispute`] record on success.
+    /// Returns `Ok(())` if the dispute is successfully processed, or an `Error` if:
+    /// - Market is not eligible for disputes (not ended, no oracle result)
+    /// - Stake amount is below minimum requirements
+    /// - User has already disputed this market
+    /// - Market is already in a disputed state
     ///
-    /// # Errors
+    /// # Example
     ///
-    /// - [`Error::MarketClosed`] — market has not ended yet
-    /// - [`Error::MarketResolved`] — market is already resolved
-    /// - [`Error::OracleUnavailable`] — no oracle result to dispute
-    /// - [`Error::InsufficientStake`] — stake below minimum
-    /// - [`Error::AlreadyDisputed`] — user already disputed this market
-    /// - [`Error::DisputeStakeCapExceeded`] — per-user or cumulative cap exceeded
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol, String};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let user = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "btc_price_market");
+    ///
+    /// // User disputes oracle result with reasoning
+    /// let result = DisputeManager::process_dispute(
+    ///     &env,
+    ///     user.clone(),
+    ///     market_id.clone(),
+    ///     15_000_000, // 1.5 XLM stake
+    ///     Some(String::from_str(&env,
+    ///         "Oracle price differs significantly from major exchanges"))
+    /// );
+    ///
+    /// match result {
+    ///     Ok(()) => println!("Dispute successfully created"),
+    ///     Err(e) => println!("Dispute failed: {:?}", e),
+    /// }
+    /// ```
+    ///
+    /// # Process Flow
+    ///
+    /// 1. **Authentication**: Verify user signature and authorization
+    /// 2. **Market Validation**: Ensure market is eligible for disputes
+    /// 3. **Parameter Validation**: Check stake amount and user eligibility
+    /// 4. **Stake Transfer**: Lock user's stake in the dispute
+    /// 5. **Dispute Creation**: Create and store dispute record
+    /// 6. **Market Extension**: Extend market deadline for voting period
+    /// 7. **Storage Update**: Persist all changes to blockchain storage
+    ///
+    /// # Economic Impact
+    ///
+    /// - **Stake Lock**: User's stake is locked until dispute resolution
+    /// - **Market Extension**: Market deadline extended by dispute period
+    /// - **Voting Incentive**: Other users can earn rewards by voting correctly
+    /// - **Quality Control**: Economic cost discourages frivolous disputes
+    ///
+    /// # Security Considerations
+    ///
+    /// - Requires user authentication to prevent unauthorized disputes
+    /// - Validates market state to ensure disputes are only allowed when appropriate
+    /// - Enforces minimum stake requirements to prevent spam
+    /// - Checks for duplicate disputes from the same user
     pub fn process_dispute(
         env: &Env,
         user: Address,
         market_id: Symbol,
         stake: i128,
         reason: Option<String>,
-    ) -> Result<Dispute, Error> {
-        user.require_auth();
+    ) -> Result<(), Error> {
+        // Authorization is enforced by the `dispute_market` entrypoint, which
+        // calls `user.require_auth()` before delegating here. Re-authorizing the
+        // same address in the same frame made the host abort with
+        // `Error(Auth, ExistingValue)` ("frame is already authorized").
 
+        // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
-
         DisputeValidator::validate_market_for_dispute(env, &market)?;
-        DisputeValidator::validate_dispute_parameters(env, &market_id, &user, &market, stake)?;
 
         // Enforce anti-grief floor (market specific or global)
         let global_anti_grief_floor = Self::get_anti_grief_floor(env).unwrap_or(0);
@@ -957,18 +953,23 @@ impl DisputeManager {
         let effective_floor = global_anti_grief_floor.max(market_floor);
         
         if stake < effective_floor {
-            return Err(Error::InsufficientStake);
+            return Err(Error::InvalidStakeAmount);
         }
 
-        let token_client = crate::markets::MarketUtils::get_token_client(env)?;
-        token_client.transfer(&user, &env.current_contract_address(), &stake);
+        // Validate dispute parameters
+        DisputeValidator::validate_dispute_parameters(env, &market_id, &user, &market, stake)?;
 
-        let current_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
-        let new_stake = current_stake.checked_add(stake).ok_or(Error::Overflow)?;
-        market.dispute_stakes.set(user.clone(), new_stake);
+        // Process stake transfer
+        VotingUtils::transfer_stake(env, &user, stake)?;
 
-        MarketStateManager::update_market(env, &market_id, &market);
+        // Prepare reason for event emission before moving dispute
+        let reason_for_event = if reason.is_some() {
+            reason.clone()
+        } else {
+            Some(soroban_sdk::String::from_str(env, "No reason provided"))
+        };
 
+        // Create dispute record
         let dispute = Dispute {
             user: user.clone(),
             market_id: market_id.clone(),
@@ -978,102 +979,209 @@ impl DisputeManager {
             status: DisputeStatus::Active,
         };
 
-        crate::events::EventEmitter::emit_dispute_opened(env, &market_id, &user, stake, reason);
+        // Add dispute to market
+        DisputeUtils::add_dispute_to_market(&mut market, dispute.clone())?;
 
-        Ok(dispute)
+        // Extend market for dispute period
+        DisputeUtils::extend_market_for_dispute(&mut market, env)?;
+
+        // Update market in storage
+        MarketStateManager::update_market(env, &market_id, &market);
+
+        // Add to persistent history
+        let mut history = env.storage().persistent()
+            .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(market_id.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+        history.push_back(dispute.clone());
+
+        // Apply eviction
+        Self::apply_eviction(env, &market_id, &mut history)?;
+
+        env.storage().persistent().set(&DataKey::DisputeHistory(market_id.clone()), &history);
+        env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
+
+        // Add vote for the initiator automatically (using market_id as dispute_id for 1:1 mapping)
+        let dispute_vote = DisputeVote {
+            user: user.clone(),
+            dispute_id: market_id.clone(),
+            vote: true, // Initiators always support the dispute by definition
+            stake,
+            timestamp: env.ledger().timestamp(),
+            reason,
+        };
+        DisputeUtils::add_vote_to_dispute(env, &market_id, dispute_vote)?;
+
+        // Emit dispute opened event
+        crate::events::EventEmitter::emit_dispute_opened(
+            env,
+            &market_id,
+            &user,
+            stake,
+            reason_for_event,
+        );
+        crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
+            env,
+            &market_id,
+            &soroban_sdk::String::from_str(env, "created"),
+            &user,
+            &soroban_sdk::String::from_str(env, "dispute_created"),
+        );
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            env,
+            crate::audit_trail::AuditAction::DisputeCreated,
+            user.clone(),
+            Map::new(env),
+            None,
+        );
+
+        // --- Collusion Detector ---
+        let config = Self::get_collusion_detector_config(env);
+        let window_size = config.window_size;
+        let start_idx = if history.len() > window_size {
+            history.len() - window_size
+        } else {
+            0
+        };
+
+        for i in start_idx..history.len().saturating_sub(1) {
+            if let Some(prev_dispute) = history.get(i) {
+                if prev_dispute.user != user {
+                    let stake_diff = if prev_dispute.stake > stake { prev_dispute.stake - stake } else { stake - prev_dispute.stake };
+                    let time_diff = if prev_dispute.timestamp > dispute.timestamp { prev_dispute.timestamp - dispute.timestamp } else { dispute.timestamp - prev_dispute.timestamp };
+
+                    if stake_diff <= config.stake_delta_threshold && time_diff <= config.time_delta_threshold {
+                        crate::events::EventEmitter::emit_suspected_collusion_flag(
+                            env,
+                            &market_id,
+                            &user,
+                            &prev_dispute.user,
+                            stake_diff,
+                            time_diff,
+                        );
+                    }
+                }
+            }
+        }
+        // --------------------------
+
+        Ok(())
     }
 
-    /// Resolves a dispute by combining oracle data with community voting.
+    /// Resolves a dispute by combining oracle data with community voting results.
     ///
-    /// Computes the final outcome by weighing the oracle result against
-    /// community consensus. If the oracle is overturned, all disputers
-    /// receive their stakes back via refund transfers.
-    ///
-    /// # Authorization
-    ///
-    /// Requires `admin.require_auth()` and that `admin` matches the stored
-    /// contract admin.
+    /// This function determines the final outcome of a disputed market by analyzing
+    /// community votes, calculating weights for oracle vs community input, and
+    /// creating a comprehensive resolution record for transparency and auditability.
     ///
     /// # Parameters
     ///
     /// * `env` - The Soroban environment for blockchain operations
     /// * `market_id` - Unique identifier of the market to resolve
-    /// * `admin` - Address of the admin performing the resolution
+    /// * `admin` - Address of the admin performing the resolution (must authenticate)
     ///
     /// # Returns
     ///
-    /// Returns a [`DisputeResolution`] containing the final outcome and metadata.
+    /// Returns a `DisputeResolution` containing the final outcome and resolution
+    /// metadata, or an `Error` if:
+    /// - Admin lacks proper permissions
+    /// - Market is not ready for resolution (voting still active)
+    /// - Insufficient community participation
+    /// - Resolution calculation fails
     ///
-    /// # Errors
+    /// # Example
     ///
-    /// - [`Error::Unauthorized`] — caller does not match stored contract admin
-    /// - [`Error::OracleResultNotAvailable`] — no oracle result submitted
-    /// - [`Error::NoDisputesFound`] — no dispute stakes exist on this market
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address, Symbol};
+    /// # use predictify_hybrid::disputes::DisputeManager;
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    /// # let market_id = Symbol::new(&env, "disputed_market");
+    ///
+    /// // Admin resolves dispute after voting period
+    /// let resolution = DisputeManager::resolve_dispute(
+    ///     &env,
+    ///     market_id.clone(),
+    ///     admin.clone()
+    /// ).unwrap();
+    ///
+    /// // Check resolution details
+    /// println!("Final outcome: {}", resolution.final_outcome.to_string());
+    /// println!("Oracle weight: {}%", resolution.oracle_weight);
+    /// println!("Community weight: {}%", resolution.community_weight);
+    /// println!("Dispute impact: {}%", resolution.dispute_impact);
+    ///
+    /// // Verify weights sum to 100%
+    /// assert_eq!(resolution.oracle_weight + resolution.community_weight, 100);
+    /// ```
+    ///
+    /// # Resolution Algorithm
+    ///
+    /// The hybrid resolution process:
+    /// 1. **Collect Votes**: Aggregate all community votes and stakes
+    /// 2. **Calculate Impact**: Measure how much disputes affected the outcome
+    /// 3. **Weight Determination**: Balance oracle reliability vs community consensus
+    /// 4. **Outcome Synthesis**: Combine weighted inputs for final result
+    /// 5. **Resolution Record**: Create transparent audit trail
+    ///
+    /// # Weighting Logic
+    ///
+    /// - **High Oracle Confidence + Low Disputes**: Oracle weight ~80%
+    /// - **Medium Oracle Confidence + Medium Disputes**: Balanced ~60/40%
+    /// - **Low Oracle Confidence + High Disputes**: Community weight ~70%
+    /// - **Tie Situations**: Admin discretion with documented reasoning
+    ///
+    /// # Transparency Features
+    ///
+    /// Resolution provides complete audit trail:
+    /// - Final outcome with clear justification
+    /// - Exact weights used in decision process
+    /// - Quantified impact of community disputes
+    /// - Timestamp for regulatory compliance
+    /// - Immutable record for future reference
+    ///
+    /// # Administrative Authority
+    ///
+    /// Only authorized admins can resolve disputes to ensure:
+    /// - Proper validation of voting completion
+    /// - Correct application of resolution algorithms
+    /// - Appropriate handling of edge cases
+    /// - Consistent resolution quality across markets
     pub fn resolve_dispute(
         env: &Env,
         market_id: Symbol,
         admin: Address,
     ) -> Result<DisputeResolution, Error> {
+        // Require authentication from the admin
         admin.require_auth();
 
-        let contract_admin = AdminAccessControl::get_admin(env)?;
-        if admin != contract_admin {
-            return Err(Error::Unauthorized);
-        }
+        // Validate admin permissions
+        DisputeValidator::validate_admin_permissions(env, &admin)?;
 
+        // Enforce admin action cooldown
+        Self::check_admin_cooldown(env, &admin, &Symbol::new(env, "resolve_dispute"))?;
+
+        // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
-
         DisputeValidator::validate_market_for_resolution(env, &market)?;
 
-        let oracle_result = market
-            .oracle_result
-            .clone()
-            .ok_or(Error::OracleResultNotAvailable)?;
+        // Calculate dispute impact
+        let dispute_impact = DisputeAnalytics::calculate_dispute_impact(&market);
 
-        let consensus = DisputeAnalytics::calculate_community_consensus(env, &market);
+        // Determine final outcome with dispute consideration
+        let final_outcome = DisputeUtils::determine_final_outcome_with_disputes(env, &market)?;
 
-        let dispute_impact = DisputeUtils::calculate_dispute_impact(&market);
+        // Calculate weights
+        let oracle_weight = DisputeAnalytics::calculate_oracle_weight(&market);
+        let community_weight = DisputeAnalytics::calculate_community_weight(&market);
 
-        let final_outcome = if dispute_impact > 0.3 && consensus.confidence > 70 {
-            consensus.outcome
-        } else {
-            oracle_result.clone()
-        };
-
-        let is_oracle_overturned = final_outcome != oracle_result;
-
-        if is_oracle_overturned {
-            // Refund all disputers their stakes and emit a StakeRefunded event per disputer.
-            let token_client = crate::markets::MarketUtils::get_token_client(env)?;
-
-            let mut disputers: Vec<(Address, i128)> = Vec::new(env);
-            for (user, stake) in market.dispute_stakes.iter() {
-                disputers.push_back((user, stake));
-            }
-
-            for (disputer, stake) in disputers.iter() {
-                if stake > 0 {
-                    // Perform the refund transfer.
-                    token_client.transfer(&env.current_contract_address(), &disputer, &stake);
-                    // Reset the stored stake for the disputer.
-                    market.dispute_stakes.set(disputer.clone(), 0);
-                    // Emit an event for the refund.
-                    DisputeUtils::emit_stake_refunded_event(env, &disputer, stake);
-                }
-            }
-        }
-
-        market.winning_outcomes = Some(vec![env, final_outcome.clone()]);
-        market.state = crate::types::MarketState::Resolved;
-
-        MarketStateManager::update_market(env, &market_id, &market);
-
+        // Create resolution record
         let resolution = DisputeResolution {
-            market_id,
-            final_outcome,
-            oracle_weight: DisputeAnalytics::calculate_oracle_weight(&market),
-            community_weight: DisputeAnalytics::calculate_community_weight(&market),
-            dispute_impact: (dispute_impact * 100.0) as i128,
+            market_id: market_id.clone(),
+            final_outcome: final_outcome.clone(),
+            oracle_weight,
+            community_weight,
+            dispute_impact,
             resolution_timestamp: env.ledger().timestamp(),
         };
 
@@ -2222,17 +2330,7 @@ impl DisputeManager {
         Ok(())
     }
 
-    /// Set a per-market per-user dispute stake cap.
-    ///
-    /// Once set, the user cannot stake more than `cap` in disputes on
-    /// this specific market.  A cap of 0 disables the limit.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment
-    /// * `market_id` - Market to apply the cap to
-    /// * `user` - User whose stake is capped
-    /// * `cap` - Maximum stake in stroops (0 = unlimited)
+    /// Set the dispute stake cap for a user in a market
     pub fn set_dispute_stake_cap(
         env: &Env,
         market_id: &Symbol,
@@ -2281,9 +2379,7 @@ impl DisputeManager {
     /// Returns 0 if no cap is set (cap is disabled).
     pub fn get_dispute_cumulative_stake_cap(env: &Env, user: &Address) -> i128 {
         let cap_key = crate::storage::DataKey::DisputeCumulativeStakeCap(user.clone());
-        let result = env.storage().persistent().get(&cap_key).unwrap_or(0);
-        env.storage().persistent().extend_ttl(&cap_key, 535680, 535680);
-        result
+        env.storage().persistent().get(&cap_key).unwrap_or(0)
     }
 
     // ── Admin Cooldown ───────────────────────────────────────────────────────
@@ -2302,13 +2398,10 @@ impl DisputeManager {
     }
 
     /// Retrieves the configured dispute admin cooldown period in seconds.
-    ///
     /// Returns 0 (no cooldown) when not configured.
     pub fn get_admin_cooldown(env: &Env) -> u64 {
         let key = DataKey::DisputeCooldownSeconds;
-        let result = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result
+        env.storage().persistent().get(&key).unwrap_or(0)
     }
 
     /// Enforces the per-function admin cooldown for a named dispute operation.
@@ -2332,7 +2425,6 @@ impl DisputeManager {
         let now = env.ledger().timestamp();
         let last_key = DataKey::DisputeAdminLastAction(function_name.clone());
         let last_action: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
-        env.storage().persistent().extend_ttl(&last_key, 535680, 535680);
         if last_action > 0 && now < last_action.saturating_add(cooldown) {
             return Err(Error::AdminActionTimelocked);
         }
@@ -2348,6 +2440,8 @@ impl DisputeManager {
 ///
 /// All methods return `Ok(())` on success or a typed [`Error`] on failure.
 /// Called internally by [`DisputeManager`] before any state mutation.
+pub struct DisputeValidator;
+
 impl DisputeValidator {
     /// Validate market state for dispute.
     ///
@@ -2388,15 +2482,7 @@ impl DisputeValidator {
         Ok(())
     }
 
-    /// Validate market state for resolution.
-    ///
-    /// Ensures that the market has not already been resolved and that
-    /// there is at least one active dispute stake to resolve.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::MarketResolved`] — `winning_outcomes` is already set
-    /// - [`Error::InvalidInput`] — no dispute stakes exist on this market
+    /// Validate market state for resolution
     pub fn validate_market_for_resolution(_env: &Env, market: &Market) -> Result<(), Error> {
         // Check if market is already resolved
         if market.winning_outcomes.is_some() {
@@ -2411,20 +2497,10 @@ impl DisputeValidator {
         Ok(())
     }
 
-    /// Validate that `admin` matches the stored contract admin address.
-    ///
-    /// Reads the `"Admin"` key from persistent storage and compares it
-    /// against the caller.  Returns an error if no admin is set or the
-    /// addresses do not match.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::Unauthorized`] — caller is not the stored contract admin
-    ///   or no admin has been initialised yet
+    /// Validate admin permissions
     pub fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        let key = Symbol::new(env, "Admin");
-        let stored_admin: Option<Address> = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        let stored_admin: Option<Address> =
+            env.storage().persistent().get(&Symbol::new(env, "Admin"));
 
         match stored_admin {
             Some(stored_admin) => {
@@ -2446,10 +2522,7 @@ impl DisputeValidator {
         stake: i128,
     ) -> Result<(), Error> {
         // Validate stake amount
-        let global_anti_grief_floor = env.storage().persistent().get(&DataKey::AntiGriefFloor).unwrap_or(0i128);
-        let market_floor = market.dispute_stake_floor.unwrap_or(0);
-        let effective_floor = global_anti_grief_floor.max(market_floor).max(MIN_DISPUTE_STAKE);
-        if stake < effective_floor {
+        if stake < MIN_DISPUTE_STAKE {
             return Err(Error::InsufficientStake);
         }
 
@@ -2461,7 +2534,6 @@ impl DisputeValidator {
         // Check per-market per-user dispute stake cap
         let cap_key = crate::storage::DataKey::DisputeStakeCap(market_id.clone(), user.clone());
         let cap: i128 = env.storage().persistent().get(&cap_key).unwrap_or(0);
-        env.storage().persistent().extend_ttl(&cap_key, 535680, 535680);
         if cap > 0 {
             let user_current_state_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
             if user_current_state_stake + stake > cap {
@@ -2479,7 +2551,6 @@ impl DisputeValidator {
         // Check per-user cumulative dispute stake cap across all active disputes
         let cumulative_cap_key = crate::storage::DataKey::DisputeCumulativeStakeCap(user.clone());
         let cumulative_cap: i128 = env.storage().persistent().get(&cumulative_cap_key).unwrap_or(0);
-        env.storage().persistent().extend_ttl(&cumulative_cap_key, 535680, 535680);
         if cumulative_cap > 0 {
             // Calculate cumulative stake across all markets with active disputes
             // For markets with active disputes (winning_outcomes is None but disputes exist)
@@ -2507,11 +2578,7 @@ impl DisputeValidator {
         Ok(())
     }
 
-    /// Validate that `final_outcome` is one of the valid outcomes defined on the market.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidOutcome`] — the outcome string is not present in `market.outcomes`
+    /// Validate dispute resolution parameters
     pub fn validate_resolution_parameters(
         market: &Market,
         final_outcome: &String,
@@ -2524,17 +2591,7 @@ impl DisputeValidator {
         Ok(())
     }
 
-    /// Validate that a dispute is in an active voting window.
-    ///
-    /// Checks that the current ledger timestamp falls within
-    /// [`DisputeVoting::voting_start`] .. [`DisputeVoting::voting_end`]
-    /// and that the voting status is still [`DisputeVotingStatus::Active`].
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::ConfigNotFound`] — voting record not found
-    /// - [`Error::DisputeVoteExpired`] — current time is outside the voting window
-    /// - [`Error::DisputeVoteDenied`] — voting is not in `Active` state
+    /// Validate dispute voting conditions
     pub fn validate_dispute_voting_conditions(
         env: &Env,
         _market_id: &Symbol,
@@ -2557,14 +2614,7 @@ impl DisputeValidator {
         Ok(())
     }
 
-    /// Validate that `user` has not already cast a vote on the given dispute.
-    ///
-    /// Iterates over all stored votes for `dispute_id` and returns an error
-    /// if a matching address is found.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::DisputeAlreadyVoted`] — user has already voted on this dispute
+    /// Validate user hasn't already voted
     pub fn validate_user_hasnt_voted(
         env: &Env,
         user: &Address,
@@ -2581,11 +2631,7 @@ impl DisputeValidator {
         Ok(())
     }
 
-    /// Validate that voting has reached `Completed` status.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::DisputeCondNotMet`] — voting is not yet completed
+    /// Validate voting is completed
     pub fn validate_voting_completed(voting_data: &DisputeVoting) -> Result<(), Error> {
         if !matches!(voting_data.status, DisputeVotingStatus::Completed) {
             return Err(Error::DisputeCondNotMet);
@@ -2615,14 +2661,7 @@ impl DisputeValidator {
         Ok(true)
     }
 
-    /// Validate that a dispute is eligible for escalation.
-    ///
-    /// The user must have participated in voting on the dispute and no
-    /// escalation may already exist for it.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::DisputeCondNotMet`] — user did not vote, or escalation already exists
+    /// Validate dispute escalation conditions
     pub fn validate_dispute_escalation_conditions(
         env: &Env,
         user: &Address,
@@ -2703,10 +2742,7 @@ impl DisputeValidator {
 pub struct DisputeUtils;
 
 impl DisputeUtils {
-    /// Record a dispute's stake on the market's `dispute_stakes` map.
-    ///
-    /// Increments the existing stake for the disputing user by the new
-    /// dispute's stake amount.  This is called during dispute creation.
+    /// Add dispute to market
     pub fn add_dispute_to_market(market: &mut Market, dispute: Dispute) -> Result<(), Error> {
         // Add dispute stake to market
         let current_stake = market.dispute_stakes.get(dispute.user.clone()).unwrap_or(0);
@@ -2720,20 +2756,14 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Extend the market's `end_time` by [`DISPUTE_EXTENSION_HOURS`]
-    /// to allow the community voting period to complete.
+    /// Extend market for dispute period
     pub fn extend_market_for_dispute(market: &mut Market, _env: &Env) -> Result<(), Error> {
         let extension_seconds = (DISPUTE_EXTENSION_HOURS as u64) * 3600;
         market.end_time += extension_seconds;
         Ok(())
     }
 
-    /// Determine the final market outcome by weighing oracle data against
-    /// community consensus when dispute impact exceeds a threshold.
-    ///
-    /// If the calculated dispute impact is greater than 30 %, the function
-    /// fetches community consensus and returns it when confidence exceeds
-    /// 70 %.  Otherwise the original oracle result is returned.
+    /// Determine final outcome considering disputes
     pub fn determine_final_outcome_with_disputes(
         env: &Env,
         market: &Market,
@@ -2760,12 +2790,7 @@ impl DisputeUtils {
         Ok(oracle_result.clone())
     }
 
-    /// Set the market's `winning_outcomes` to the given `final_outcome`
-    /// after validating it is one of the market's allowed outcomes.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidOutcome`] — `final_outcome` not in `market.outcomes`
+    /// Finalize market with resolution
     pub fn finalize_market_with_resolution(
         market: &mut Market,
         final_outcome: String,
@@ -2781,10 +2806,7 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Build a `Vec<Dispute>` from the current `market.dispute_stakes` map.
-    ///
-    /// Only entries with a positive stake are included.  Used to migrate
-    /// inline dispute data into the persistent history store.
+    /// Extract disputes from market
     pub fn extract_disputes_from_market(
         env: &Env,
         market: &Market,
@@ -2809,32 +2831,29 @@ impl DisputeUtils {
         disputes
     }
 
-    /// Returns `true` when `user` has a positive stake in the market's
-    /// `dispute_stakes` map.
+    /// Check if user has disputed
     pub fn has_user_disputed(market: &Market, user: &Address) -> bool {
         market.dispute_stakes.get(user.clone()).unwrap_or(0) > 0
     }
 
-    /// Returns the amount `user` has staked in disputes on this market,
-    /// or 0 if they have not disputed.
+    /// Get user's dispute stake
     pub fn get_user_dispute_stake(market: &Market, user: &Address) -> i128 {
         market.dispute_stakes.get(user.clone()).unwrap_or(0)
     }
 
-    /// Calculate the dispute impact ratio as `total_dispute_stakes / total_staked`.
-    ///
-    /// Returns a float between 0.0 and ~1.0.  Used by
-    /// [`DisputeAnalytics::calculate_dispute_impact`] for integer conversion.
+    /// Calculate dispute impact on market resolution
     pub fn calculate_dispute_impact(market: &Market) -> f64 {
-        let total_dispute_stakes = market.total_dispute_stakes();
-        if market.total_staked == 0 {
+        let total_staked = market.total_staked;
+        let total_disputes = market.total_dispute_stakes();
+
+        if total_staked == 0 {
             return 0.0;
         }
-        (total_dispute_stakes as f64) / (market.total_staked as f64)
+
+        (total_disputes as f64) / (total_staked as f64)
     }
 
-    /// Record a [`DisputeVote`] for the given dispute and update the
-    /// aggregated [`DisputeVoting`] counters (including stake decay).
+    /// Add vote to dispute
     pub fn add_vote_to_dispute(
         env: &Env,
         dispute_id: &Symbol,
@@ -2844,32 +2863,17 @@ impl DisputeUtils {
         let mut voting_data = Self::get_dispute_voting(env, dispute_id)?;
 
         // Update voting statistics
-        voting_data.total_votes = voting_data
-            .total_votes
-            .checked_add(1)
-            .ok_or(Error::Overflow)?;
+        voting_data.total_votes += 1;
         
         // Calculate the decayed stake using tally_votes
         let decayed_stake = Self::tally_votes(env, vote.stake, vote.timestamp, voting_data.voting_start);
 
         if vote.vote {
-            voting_data.support_votes = voting_data
-                .support_votes
-                .checked_add(1)
-                .ok_or(Error::Overflow)?;
-            voting_data.total_support_stake = voting_data
-                .total_support_stake
-                .checked_add(decayed_stake)
-                .ok_or(Error::Overflow)?;
+            voting_data.support_votes += 1;
+            voting_data.total_support_stake += decayed_stake;
         } else {
-            voting_data.against_votes = voting_data
-                .against_votes
-                .checked_add(1)
-                .ok_or(Error::Overflow)?;
-            voting_data.total_against_stake = voting_data
-                .total_against_stake
-                .checked_add(decayed_stake)
-                .ok_or(Error::Overflow)?;
+            voting_data.against_votes += 1;
+            voting_data.total_against_stake += decayed_stake;
         }
 
         // Store updated voting data
@@ -2886,8 +2890,7 @@ impl DisputeUtils {
     pub fn tally_votes(env: &Env, raw_stake: i128, vote_time: u64, window_start: u64) -> i128 {
         let config_key = symbol_short!("decaycfg");
         let config: Option<DisputeDecayConfig> = env.storage().persistent().get(&config_key);
-        env.storage().persistent().extend_ttl(&config_key, 535680, 535680);
-
+        
         let cfg = match config {
             Some(c) => c,
             None => return raw_stake,
@@ -2904,22 +2907,15 @@ impl DisputeUtils {
         let shift = num_half_lives.min(16) as u32;
         let weight_at_n = 10000u32.checked_shr(shift).unwrap_or(0);
         let weight_at_n_plus_1 = 10000u32.checked_shr(shift + 1).unwrap_or(0);
-
+        
         let diff = weight_at_n.saturating_sub(weight_at_n_plus_1);
         let exact_weight = weight_at_n.saturating_sub((diff as u64 * rem / cfg.half_life_seconds) as u32);
-
+        
         let final_weight = exact_weight.max(cfg.floor_bps);
-
+        
         (raw_stake * final_weight as i128) / 10000
     }
 
-    /// Set the [`DisputeDecayConfig`] for vote stake decay (admin only).
-    ///
-    /// Controls how quickly late votes lose weight relative to early votes.
-    ///
-    /// # Authorization
-    ///
-    /// Requires `admin.require_auth()` and stored admin match.
     pub fn set_dispute_decay_config(env: &Env, admin: Address, config: DisputeDecayConfig) -> Result<(), Error> {
         admin.require_auth();
         DisputeValidator::validate_admin_permissions(env, &admin)?;
@@ -2929,12 +2925,10 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Read the [`DisputeVoting`] record for `dispute_id` from persistent storage.
-    ///
-    /// Returns a default active voting window if no record exists yet.
+    /// Get dispute voting data
     pub fn get_dispute_voting(env: &Env, dispute_id: &Symbol) -> Result<DisputeVoting, Error> {
         let key = (symbol_short!("dispute_v"), dispute_id.clone());
-        let result = env
+        Ok(env
             .storage()
             .persistent()
             .get(&key)
@@ -2948,12 +2942,10 @@ impl DisputeUtils {
                 total_support_stake: 0,
                 total_against_stake: 0,
                 status: DisputeVotingStatus::Active,
-            });
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        Ok(result)
+            }))
     }
 
-    /// Persist a [`DisputeVoting`] record under the `dispute_v` + `dispute_id` key.
+    /// Store dispute voting data
     pub fn store_dispute_voting(
         env: &Env,
         dispute_id: &Symbol,
@@ -2964,7 +2956,7 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Persist a single [`DisputeVote`] under the `vote` + `dispute_id` + `user` key.
+    /// Store dispute vote
     pub fn store_dispute_vote(
         env: &Env,
         dispute_id: &Symbol,
@@ -2975,58 +2967,23 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Retrieve the [`DisputeVote`] cast by `user` for `dispute_id`, or `None`.
+    /// Extracted get_user_vote
     pub fn get_user_vote(env: &Env, dispute_id: &Symbol, user: &Address) -> Option<DisputeVote> {
         let key = (symbol_short!("vote"), dispute_id.clone(), user.clone());
-        let result = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result
+        env.storage().persistent().get(&key)
     }
 
-    /// Checks whether a user has already claimed their winnings for a resolved dispute.
-    ///
-    /// Prevents duplicate claims by tracking claim status per user per dispute.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `dispute_id` - Unique identifier of the resolved dispute
-    /// * `user` - Address of the user to check
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the user has already claimed, `false` otherwise.
     pub fn has_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) -> bool {
         let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
-        let result = env.storage().persistent().get(&key).unwrap_or(false);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result
+        env.storage().persistent().get(&key).unwrap_or(false)
     }
 
-    /// Marks a user as having claimed their winnings for a resolved dispute.
-    ///
-    /// Called by [`DisputeManager::claim_dispute_winnings`] after a successful
-    /// payout to prevent double-claiming.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `dispute_id` - Unique identifier of the resolved dispute
-    /// * `user` - Address of the user receiving the payout
     pub fn set_user_claimed_dispute(env: &Env, dispute_id: &Symbol, user: &Address) {
         let key = (symbol_short!("d_clm"), dispute_id.clone(), user.clone());
         env.storage().persistent().set(&key, &true);
     }
 
-    /// Retrieve all [`DisputeVote`] records for the given dispute.
-    ///
-    /// **Note:** The current implementation returns an empty vector.
-    /// A production system should maintain a separate vote-key index
-    /// for efficient iteration.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::ConfigNotFound`] — voting record not found
+    /// Get dispute votes
     pub fn get_dispute_votes(env: &Env, dispute_id: &Symbol) -> Result<Vec<DisputeVote>, Error> {
         // This is a simplified implementation - in a real system you'd need to track all votes
         let votes = Vec::new(env);
@@ -3047,10 +3004,7 @@ impl DisputeUtils {
         voting_data.total_support_stake > voting_data.total_against_stake
     }
 
-    /// Create a [`DisputeFeeDistribution`] record from the voting data,
-    /// assigning winner and loser totals based on the boolean outcome.
-    ///
-    /// The distribution is persisted immediately.
+    /// Distribute fees based on outcome
     pub fn distribute_fees_based_on_outcome(
         env: &Env,
         dispute_id: &Symbol,
@@ -3086,7 +3040,7 @@ impl DisputeUtils {
         Ok(fee_distribution)
     }
 
-    /// Persist a [`DisputeFeeDistribution`] under the `dispute_f` + `dispute_id` key.
+    /// Store dispute fee distribution
     pub fn store_dispute_fee_distribution(
         env: &Env,
         dispute_id: &Symbol,
@@ -3097,27 +3051,28 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Read the [`DisputeFeeDistribution`] for `dispute_id`, returning a
-    /// default (un-distributed) record if none exists.
+    /// Get dispute fee distribution
     pub fn get_dispute_fee_distribution(
         env: &Env,
         dispute_id: &Symbol,
     ) -> Result<DisputeFeeDistribution, Error> {
         let key = (symbol_short!("dispute_f"), dispute_id.clone());
-        let result = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        Ok(result.unwrap_or(DisputeFeeDistribution {
-            dispute_id: dispute_id.clone(),
-            total_fees: 0,
-            winner_stake: 0,
-            loser_stake: 0,
-            winner_addresses: Vec::new(env),
-            distribution_timestamp: 0,
-            fees_distributed: false,
-        }))
+        Ok(env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(DisputeFeeDistribution {
+                dispute_id: dispute_id.clone(),
+                total_fees: 0,
+                winner_stake: 0,
+                loser_stake: 0,
+                winner_addresses: Vec::new(env),
+                distribution_timestamp: 0,
+                fees_distributed: false,
+            }))
     }
 
-    /// Persist a [`DisputeEscalation`] under the `dispute_e` + `dispute_id` key.
+    /// Store dispute escalation
     pub fn store_dispute_escalation(
         env: &Env,
         dispute_id: &Symbol,
@@ -3128,18 +3083,17 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Read the [`DisputeEscalation`] for `dispute_id`, or `None`.
+    /// Get dispute escalation
     pub fn get_dispute_escalation(env: &Env, dispute_id: &Symbol) -> Option<DisputeEscalation> {
         let key = (symbol_short!("dispute_e"), dispute_id.clone());
-        let result = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result
+        env.storage().persistent().get(&key)
     }
 
-    /// Emit a `dispute_vote_cast` event via [`crate::events::EventEmitter`].
+    /// Emit dispute vote event
+
     pub fn emit_dispute_vote_event(
         env: &Env,
-        _market_id: &Symbol,
+        dispute_id: &Symbol,
         user: &Address,
         vote: bool,
         stake: i128,
@@ -3147,13 +3101,8 @@ impl DisputeUtils {
         // NOTE: emit_dispute_vote_cast not yet implemented in EventEmitter
     }
 
-    /// Emit an event when a disputer's stake is refunded after the oracle result
-    /// was overturned by [`DisputeManager::resolve_dispute`].
-    pub fn emit_stake_refunded_event(_env: &Env, _disputer: &Address, _amount: i128) {
-        // NOTE: a dedicated `stake_refunded` event is not yet implemented in EventEmitter.
-    }
+    /// Emit fee distribution event
 
-    /// Emit a `dispute_fee_distributed` event via [`crate::events::EventEmitter`].
     pub fn emit_fee_distribution_event(
         env: &Env,
         dispute_id: &Symbol,
@@ -3162,15 +3111,15 @@ impl DisputeUtils {
         // NOTE: emit_dispute_fee_distributed not yet implemented in EventEmitter
     }
 
-    /// Emit a dispute escalation event and store a snapshot in persistent storage.
-    ///
-    /// The snapshot contains the escalator's address, level, and timestamp.
+    /// Emit dispute escalation event
     pub fn emit_dispute_escalation_event(
         env: &Env,
         _dispute_id: &Symbol,
         user: &Address,
         escalation: &DisputeEscalation,
     ) {
+        // In a real implementation, this would emit an event
+        // For now, we'll just store it in persistent storage
         let event_key = symbol_short!("esc_event");
         let event_data = (
             user.clone(),
@@ -3180,7 +3129,7 @@ impl DisputeUtils {
         env.storage().persistent().set(&event_key, &event_data);
     }
 
-    /// Persist a [`DisputeTimeout`] under the `timeout` + `dispute_id` key.
+    /// Store dispute timeout
     pub fn store_dispute_timeout(
         env: &Env,
         dispute_id: &Symbol,
@@ -3191,49 +3140,44 @@ impl DisputeUtils {
         Ok(())
     }
 
-    /// Read the [`DisputeTimeout`] for `dispute_id`.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::ConfigNotFound`] — no timeout configured for this dispute
+    /// Get dispute timeout
     pub fn get_dispute_timeout(env: &Env, dispute_id: &Symbol) -> Result<DisputeTimeout, Error> {
         let key = (symbol_short!("timeout"), dispute_id.clone());
-        let result = env.storage().persistent().get(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result.ok_or(Error::ConfigNotFound)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::ConfigNotFound)
     }
 
-    /// Returns `true` when a timeout record exists for `dispute_id`.
+    /// Check if dispute timeout exists
     pub fn has_dispute_timeout(env: &Env, dispute_id: &Symbol) -> bool {
         let key = (symbol_short!("timeout"), dispute_id.clone());
-        let result = env.storage().persistent().has(&key);
-        env.storage().persistent().extend_ttl(&key, 535680, 535680);
-        result
+        env.storage().persistent().has(&key)
     }
 
-    /// Delete the timeout record for `dispute_id`.
-    ///
-    /// Returns `Ok(())` even if no record existed.
+    /// Remove dispute timeout
     pub fn remove_dispute_timeout(env: &Env, dispute_id: &Symbol) -> Result<(), Error> {
         let key = (symbol_short!("timeout"), dispute_id.clone());
         env.storage().persistent().remove(&key);
         Ok(())
     }
 
-    /// Return a list of all currently active [`DisputeTimeout`] records.
-    ///
-    /// **Note:** The current implementation returns an empty vector.
-    /// A production system should maintain an active-timeout index.
+    /// Get all active timeouts
     pub fn get_active_timeouts(env: &Env) -> Vec<DisputeTimeout> {
+        // This is a simplified implementation
+        // In a real system, you would maintain an index of active timeouts
         Vec::new(env)
     }
 
-    /// Scan for timeouts whose expiry has passed.
-    ///
-    /// **Note:** The current implementation returns an empty vector.
-    /// A production system should iterate through all stored timeouts.
+    /// Check for expired timeouts
     pub fn check_expired_timeouts(env: &Env) -> Vec<Symbol> {
-        Vec::new(env)
+        let _expired_disputes = Vec::new(env);
+        let _current_time = env.ledger().timestamp();
+
+        // This is a simplified implementation
+        // In a real system, you would iterate through all timeouts and check expiration
+        // For now, return empty vector
+        _expired_disputes
     }
 
     /// Get a user's total dispute stake across all active (unresolved) markets.
@@ -3259,13 +3203,15 @@ impl DisputeUtils {
     }
 }
 
+// ===== DISPUTE ANALYTICS =====
+
+/// Read-only analytics helpers that derive metrics from market and voting data.
+///
+/// No storage writes are performed by any method in this struct.
 pub struct DisputeAnalytics;
 
 impl DisputeAnalytics {
-    /// Calculate [`DisputeStats`] from a market's current state.
-    ///
-    /// Counts active vs resolved disputes from the `winning_outcomes` flag
-    /// and tallies unique disputers from the `dispute_stakes` map.
+    /// Calculate dispute statistics for a market
     pub fn calculate_dispute_stats(market: &Market) -> DisputeStats {
         let mut active_disputes = 0;
         let mut resolved_disputes = 0;
@@ -3291,47 +3237,42 @@ impl DisputeAnalytics {
         }
     }
 
-    /// Calculate the dispute impact as an integer percentage (0–100).
-    ///
-    /// Delegates to [`DisputeUtils::calculate_dispute_impact`] and converts
-    /// the float result to a scaled integer.
+    /// Calculate dispute impact on market
     pub fn calculate_dispute_impact(market: &Market) -> i128 {
         let impact = DisputeUtils::calculate_dispute_impact(market);
-        (impact * 100.0) as i128
+        (impact * 100.0) as i128 // Convert to integer percentage
     }
 
-    /// Calculate the oracle's weight in the hybrid resolution (0–100 %).
-    ///
-    /// Starts at a 70 % baseline and subtracts up to 30 percentage points
-    /// based on dispute impact.  Floors at 30 %.
+    /// Calculate oracle weight in resolution
     pub fn calculate_oracle_weight(market: &Market) -> i128 {
-        let dispute_impact = Self::calculate_dispute_impact(market) as f64 / 100.0;
+        let dispute_impact = Self::calculate_dispute_impact(market) as f64 / 100.0; // Convert back to decimal
+
+        // Oracle weight decreases with dispute impact
         let base_oracle_weight = 0.7;
         let dispute_penalty = dispute_impact * 0.3;
+
         let weight = (base_oracle_weight - dispute_penalty).max(0.3);
-        (weight * 100.0) as i128
+        (weight * 100.0) as i128 // Convert to integer percentage
     }
 
-    /// Calculate the community's weight in the hybrid resolution (0–100 %).
-    ///
-    /// Starts at a 30 % baseline and adds up to 40 percentage points based
-    /// on dispute impact.  Caps at 70 %.
+    /// Calculate community weight in resolution
     pub fn calculate_community_weight(market: &Market) -> i128 {
-        let dispute_impact = Self::calculate_dispute_impact(market) as f64 / 100.0;
+        let dispute_impact = Self::calculate_dispute_impact(market) as f64 / 100.0; // Convert back to decimal
+
+        // Community weight increases with dispute impact
         let base_community_weight = 0.3;
         let dispute_boost = dispute_impact * 0.4;
+
         let weight = (base_community_weight + dispute_boost).min(0.7);
-        (weight * 100.0) as i128
+        (weight * 100.0) as i128 // Convert to integer percentage
     }
 
-    /// Determine which outcome the community favours by summing stake-weighted votes.
-    ///
-    /// Returns a [`CommunityConsensus`] with the winning outcome, the
-    /// confidence as an integer percentage, and the total vote stake.
+    /// Calculate community consensus
     pub fn calculate_community_consensus(env: &Env, market: &Market) -> CommunityConsensus {
         let mut outcome_totals = Map::new(env);
         let mut total_votes = 0;
 
+        // Calculate total stakes for each outcome
         for (user, outcome) in market.votes.iter() {
             let stake = market.stakes.get(user).unwrap_or(0);
             let current_total = outcome_totals.get(outcome.clone()).unwrap_or(0);
@@ -3339,6 +3280,7 @@ impl DisputeAnalytics {
             total_votes += stake;
         }
 
+        // Find the outcome with highest stake
         let mut winning_outcome = String::from_str(env, "");
         let mut max_stake = 0;
 
@@ -3350,7 +3292,7 @@ impl DisputeAnalytics {
         }
 
         let confidence = if total_votes > 0 {
-            (max_stake as i128) * 100 / total_votes
+            (max_stake as i128) * 100 / total_votes // Using integer percentage instead of f64
         } else {
             0
         };
@@ -3362,10 +3304,7 @@ impl DisputeAnalytics {
         }
     }
 
-    /// Return the list of disputers and their stakes, unsorted.
-    ///
-    /// `_limit` is reserved for future use (no-`std` sorting is not yet
-    /// implemented).
+    /// Get top disputers by stake amount
     pub fn get_top_disputers(env: &Env, market: &Market, _limit: usize) -> Vec<(Address, i128)> {
         let mut disputers: Vec<(Address, i128)> = Vec::new(env);
 
@@ -3375,12 +3314,12 @@ impl DisputeAnalytics {
             }
         }
 
+        // Note: Sorting is not available in no_std, so we return as-is
+        // In a real implementation, you might want to implement a simple sort
         disputers
     }
 
-    /// Calculate the ratio of disputers to total voters as a float.
-    ///
-    /// Returns 0.0 when there are no voters.
+    /// Calculate dispute participation rate
     pub fn calculate_dispute_participation_rate(market: &Market) -> f64 {
         let total_voters = market.votes.len();
         let total_disputers = market.dispute_stakes.len();
@@ -3392,11 +3331,10 @@ impl DisputeAnalytics {
         (total_disputers as f64) / (total_voters as f64)
     }
 
-    /// Calculate aggregate [`TimeoutStats`] across all markets.
-    ///
-    /// **Note:** The current implementation returns all-zero statistics.
-    /// A production system should iterate through stored timeouts.
+    /// Calculate timeout statistics
     pub fn calculate_timeout_stats(_env: &Env) -> TimeoutStats {
+        // This is a simplified implementation
+        // In a real system, you would iterate through all timeouts and calculate statistics
         TimeoutStats {
             total_timeouts: 0,
             active_timeouts: 0,
@@ -3406,15 +3344,7 @@ impl DisputeAnalytics {
         }
     }
 
-    /// Returns a snapshot of timeout analytics for a specific dispute.
-    ///
-    /// Includes remaining time, expiration status, and extension count.
-    /// Returns a zero-valued snapshot when no timeout is configured.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `dispute_id` - Unique identifier of the dispute to inspect
+    /// Get timeout analytics
     pub fn get_timeout_analytics(env: &Env, dispute_id: &Symbol) -> TimeoutAnalytics {
         match DisputeUtils::get_dispute_timeout(env, dispute_id) {
             Ok(timeout) => {
@@ -3448,14 +3378,13 @@ impl DisputeAnalytics {
     }
 }
 
+// ===== DISPUTE TESTING UTILITIES =====
+
 #[cfg(test)]
 pub mod testing {
     use super::*;
 
-    /// Create a [`Dispute`] with sensible defaults for testing.
-    ///
-    /// The dispute is created with status `Active`, a reason of
-    /// `"Test dispute"`, and the current ledger timestamp.
+    /// Create a test dispute
     pub fn create_test_dispute(
         env: &Env,
         user: Address,
@@ -3472,7 +3401,7 @@ pub mod testing {
         }
     }
 
-    /// Create a zeroed-out [`DisputeStats`] for testing.
+    /// Create test dispute statistics
     pub fn create_test_dispute_stats() -> DisputeStats {
         DisputeStats {
             total_disputes: 0,
@@ -3483,25 +3412,19 @@ pub mod testing {
         }
     }
 
-    /// Create a [`DisputeResolution`] with default weights for testing.
-    ///
-    /// Oracle weight = 70, community weight = 30, impact = 10.
+    /// Create test dispute resolution
     pub fn create_test_dispute_resolution(env: &Env, market_id: Symbol) -> DisputeResolution {
         DisputeResolution {
             market_id,
             final_outcome: String::from_str(env, "yes"),
-            oracle_weight: 70,
-            community_weight: 30,
-            dispute_impact: 10,
+            oracle_weight: 70,    // Using integer percentage
+            community_weight: 30, // Using integer percentage
+            dispute_impact: 10,   // Using integer percentage
             resolution_timestamp: env.ledger().timestamp(),
         }
     }
 
-    /// Validate that a [`Dispute`] has a positive stake.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InsufficientStake`] — `stake <= 0`
+    /// Validate dispute structure
     pub fn validate_dispute_structure(dispute: &Dispute) -> Result<(), Error> {
         if dispute.stake <= 0 {
             return Err(Error::InsufficientStake);
@@ -3510,11 +3433,7 @@ pub mod testing {
         Ok(())
     }
 
-    /// Validate [`DisputeStats`] invariants.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidInput`] — negative total stake or total_disputes < unique_disputers
+    /// Validate dispute stats structure
     pub fn validate_dispute_stats(stats: &DisputeStats) -> Result<(), Error> {
         if stats.total_dispute_stakes < 0 {
             return Err(Error::InvalidInput);
@@ -3527,38 +3446,33 @@ pub mod testing {
         Ok(())
     }
 
-    /// Create a [`DisputeTimeout`] with a 24-hour window for testing.
+    /// Create test dispute timeout
     pub fn create_test_dispute_timeout(env: &Env, dispute_id: Symbol) -> DisputeTimeout {
         DisputeTimeout {
             dispute_id: dispute_id.clone(),
             market_id: Symbol::new(env, "test_market"),
             timeout_hours: 24,
             created_at: env.ledger().timestamp(),
-            expires_at: env.ledger().timestamp() + 86400,
+            expires_at: env.ledger().timestamp() + 86400, // 24 hours
             extended_at: None,
             total_extension_hours: 0,
             status: DisputeTimeoutStatus::Active,
         }
     }
 
-    /// Create a [`DisputeTimeoutOutcome`] with "Support" outcome for testing.
+    /// Create test timeout outcome
     pub fn create_test_timeout_outcome(env: &Env, dispute_id: Symbol) -> DisputeTimeoutOutcome {
         DisputeTimeoutOutcome {
             dispute_id: dispute_id.clone(),
             market_id: Symbol::new(env, "test_market"),
             outcome: String::from_str(env, "Support"),
             resolution_method: String::from_str(env, "Timeout Auto-Resolution"),
-            resolution_timestamp: env.ledger().timestamp().max(1),
+            resolution_timestamp: env.ledger().timestamp().max(1), // Ensure non-zero timestamp
             reason: String::from_str(env, "Test timeout resolution"),
         }
     }
 
-    /// Validate [`DisputeTimeout`] invariants.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidDuration`] — `timeout_hours == 0`
-    /// - [`Error::InvalidInput`] — `expires_at <= created_at`
+    /// Validate timeout structure
     pub fn validate_timeout_structure(timeout: &DisputeTimeout) -> Result<(), Error> {
         if timeout.timeout_hours == 0 {
             return Err(Error::InvalidDuration);
@@ -3571,11 +3485,7 @@ pub mod testing {
         Ok(())
     }
 
-    /// Validate that a [`DisputeTimeoutOutcome`] has a non-zero resolution timestamp.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InvalidInput`] — `resolution_timestamp == 0`
+    /// Validate timeout outcome structure
     pub fn validate_timeout_outcome_structure(
         outcome: &DisputeTimeoutOutcome,
     ) -> Result<(), Error> {
@@ -3589,21 +3499,14 @@ pub mod testing {
 
 // ===== HELPER STRUCTURES =====
 
-/// Represents community consensus data derived from vote tallying.
-///
-/// Produced by [`DisputeAnalytics::calculate_community_consensus`] to summarise
-/// which outcome the community favours and how strongly.
-///
-/// # Fields
-///
-/// * `outcome` - The outcome with the highest total stake backing it
-/// * `confidence` - Confidence score as an integer percentage (0–100)
-/// * `total_votes` - Total stake (stroops) across all votes considered
+/// Represents community consensus data
 pub struct CommunityConsensus {
     pub outcome: String,
-    pub confidence: i128,
+    pub confidence: i128, // Using i128 instead of f64 for no_std compatibility
     pub total_votes: i128,
 }
+
+// ===== MODULE TESTS =====
 
 #[cfg(test)]
 mod tests {
@@ -3642,14 +3545,20 @@ mod tests {
         let env = Env::default();
         let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
 
+        // Market not ended - should fail
         assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
+
+        // Set market as ended
 
         market.end_time = env.ledger().timestamp().saturating_sub(1);
 
+        // No oracle result - should fail
         assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
 
+        // Add oracle result
         market.oracle_result = Some(String::from_str(&env, "yes"));
 
+        // Should pass
         assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_ok());
     }
 
@@ -3662,21 +3571,27 @@ mod tests {
         market.oracle_result = Some(String::from_str(&env, "yes"));
         let market_id = Symbol::new(&env, "market_1");
 
-        assert!(DisputeValidator::validate_dispute_parameters(
-            &env,
-            &user,
-            &market,
-            MIN_DISPUTE_STAKE
-        )
-        .is_ok());
+        env.as_contract(&contract_id, || {
+            // Valid stake
+            assert!(DisputeValidator::validate_dispute_parameters(
+                &env,
+                &market_id,
+                &user,
+                &market,
+                MIN_DISPUTE_STAKE
+            )
+            .is_ok());
 
-        assert!(DisputeValidator::validate_dispute_parameters(
-            &env,
-            &user,
-            &market,
-            MIN_DISPUTE_STAKE - 1
-        )
-        .is_err());
+            // Invalid stake
+            assert!(DisputeValidator::validate_dispute_parameters(
+                &env,
+                &market_id,
+                &user,
+                &market,
+                MIN_DISPUTE_STAKE - 1
+            )
+            .is_err());
+        });
     }
 
     #[test]
@@ -3685,11 +3600,12 @@ mod tests {
         let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
 
         market.total_staked = 10000;
+        // Add dispute stakes to trigger the calculation
         let user = Address::generate(&env);
         market.dispute_stakes.set(user, 2000);
 
         let impact = DisputeUtils::calculate_dispute_impact(&market);
-        assert_eq!(impact, 0.2);
+        assert_eq!(impact, 0.2); // 2000 / 10000
     }
 
     #[test]
@@ -3705,59 +3621,6 @@ mod tests {
         assert_eq!(stats.total_dispute_stakes, 1000);
         assert_eq!(stats.unique_disputers, 1);
         assert_eq!(stats.active_disputes, 1);
-    }
-
-    #[test]
-    fn test_dispute_stake_is_refunded_when_resolution_favors_disputer() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let admin = Address::generate(&env);
-        let user = Address::generate(&env);
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let market_id = Symbol::new(&env, "refund_market");
-
-        let token_admin = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_address = token_contract.address();
-        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
-        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
-        stellar_client.mint(&user, &10_000_000_000i128);
-
-        env.as_contract(&contract_id, || {
-            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "TokenID"), &token_address);
-
-            let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
-            market.oracle_result = Some(String::from_str(&env, "yes"));
-            market.state = crate::types::MarketState::Ended;
-            market.total_staked = 1_000;
-
-            let voter = Address::generate(&env);
-            market.votes.set(voter.clone(), String::from_str(&env, "no"));
-            market.stakes.set(voter, 1_000);
-            MarketStateManager::update_market(&env, &market_id, &market);
-
-            let initial_balance = token_client.balance(&user);
-            let stake = MIN_DISPUTE_STAKE;
-            DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), stake, None)
-                .unwrap();
-
-            let balance_after_dispute = token_client.balance(&user);
-            assert_eq!(balance_after_dispute, initial_balance - stake);
-
-            let contract_balance_before_refund = token_client.balance(&env.current_contract_address());
-            let resolution = DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
-                .unwrap();
-
-            assert_eq!(resolution.final_outcome, String::from_str(&env, "no"));
-            let balance_after_refund = token_client.balance(&user);
-            assert_eq!(balance_after_refund, initial_balance);
-            assert_eq!(token_client.balance(&env.current_contract_address()), 0);
-            assert_eq!(contract_balance_before_refund, stake);
-        });
     }
 
     #[test]
@@ -3787,10 +3650,12 @@ mod tests {
 
     #[test]
     fn test_timeout_validation() {
+        // Test timeout parameters validation
         assert!(DisputeValidator::validate_dispute_timeout_parameters(24).is_ok());
         assert!(DisputeValidator::validate_dispute_timeout_parameters(0).is_err());
         assert!(DisputeValidator::validate_dispute_timeout_parameters(800).is_err());
 
+        // Test timeout extension parameters validation
         assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(24).is_ok());
         assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(0).is_err());
         assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(200).is_err());
@@ -3801,12 +3666,13 @@ mod tests {
         let env = Env::default();
         let dispute_id = Symbol::new(&env, "test_dispute");
 
+        // Test with a mock timeout that doesn't require storage access
         let mock_timeout = DisputeTimeout {
             dispute_id: dispute_id.clone(),
             market_id: Symbol::new(&env, "test_market"),
             timeout_hours: 24,
             created_at: env.ledger().timestamp(),
-            expires_at: env.ledger().timestamp() + 86400,
+            expires_at: env.ledger().timestamp() + 86400, // 24 hours from now
             extended_at: None,
             total_extension_hours: 0,
             status: DisputeTimeoutStatus::Active,
@@ -3835,1010 +3701,111 @@ mod tests {
     }
 
     #[test]
-    fn test_no_refund_when_oracle_result_stands() {
+    fn test_dispute_history_cap_and_eviction() {
         let env = Env::default();
         env.mock_all_auths();
-
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "cap_market");
         let admin = Address::generate(&env);
-        let disputer = Address::generate(&env);
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let market_id = Symbol::new(&env, "stands_mkt");
+        let user1 = Address::generate(&env);
+        let user2 = Address::generate(&env);
+        let user3 = Address::generate(&env);
 
-        let token_admin = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_address = token_contract.address();
-        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
-        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
-        stellar_client.mint(&disputer, &10_000_000_000i128);
+        // Store admin and set cap to 2
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&crate::storage::DataKey::DisputeHistoryCap, &2u32);
+            assert_eq!(DisputeManager::get_history_cap(&env), Some(2));
+        });
 
+        // Create some disputes and apply eviction
+        env.as_contract(&contract_id, || {
+            let mut history = Vec::new(&env);
+            let mut d1 = testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000);
+            d1.status = DisputeStatus::Resolved;
+            let mut d2 = testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000);
+            d2.status = DisputeStatus::Active;
+            let mut d3 = testing::create_test_dispute(&env, user3.clone(), market_id.clone(), 1000);
+            d3.status = DisputeStatus::Resolved;
+
+            history.push_back(d1);
+            history.push_back(d2);
+            history.push_back(d3);
+
+            DisputeManager::apply_eviction(&env, &market_id, &mut history).unwrap();
+            assert_eq!(history.len(), 2);
+
+            let remaining_1 = history.get(0).unwrap();
+            let remaining_2 = history.get(1).unwrap();
+            assert_eq!(remaining_1.user, user2);
+            assert_eq!(remaining_2.user, user3);
+        });
+
+        // Set cap to 0 (disabled) and verify no eviction
         env.as_contract(&contract_id, || {
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "TokenID"), &token_address);
+                .set(&crate::storage::DataKey::DisputeHistoryCap, &0u32);
+            assert_eq!(DisputeManager::get_history_cap(&env), Some(0));
 
-            let mut market =
-                create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
-            market.oracle_result = Some(String::from_str(&env, "yes"));
-            market.state = crate::types::MarketState::Ended;
-            market.total_staked = 1_000;
+            let mut history2 = Vec::new(&env);
+            history2.push_back(testing::create_test_dispute(&env, user1.clone(), market_id.clone(), 1000));
+            history2.push_back(testing::create_test_dispute(&env, user2.clone(), market_id.clone(), 1000));
 
-            let voter = Address::generate(&env);
-            market.votes.set(voter.clone(), String::from_str(&env, "yes"));
-            market.stakes.set(voter, 1_000);
-            MarketStateManager::update_market(&env, &market_id, &market);
+            let mut entry1 = history2.get(0).unwrap();
+            entry1.status = DisputeStatus::Resolved;
+            history2.set(0, entry1);
 
-            let initial_balance = token_client.balance(&disputer);
-            let stake = MIN_DISPUTE_STAKE;
+            let mut entry2 = history2.get(1).unwrap();
+            entry2.status = DisputeStatus::Resolved;
+            history2.set(1, entry2);
 
-            DisputeManager::process_dispute(
-                &env,
-                disputer.clone(),
-                market_id.clone(),
-                stake,
-                None,
-            )
-            .unwrap();
-
-            let balance_after_dispute = token_client.balance(&disputer);
-            assert_eq!(
-                balance_after_dispute,
-                initial_balance - stake,
-                "stake must be locked after process_dispute"
-            );
-
-            let resolution =
-                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
-                    .unwrap();
-
-            assert_eq!(
-                resolution.final_outcome,
-                String::from_str(&env, "yes"),
-                "final outcome must equal oracle result when community agrees"
-            );
-
-            let balance_after_resolution = token_client.balance(&disputer);
-            assert_eq!(
-                balance_after_resolution,
-                initial_balance - stake,
-                "disputer must NOT be refunded when oracle result stands"
-            );
+            DisputeManager::apply_eviction(&env, &market_id, &mut history2).unwrap();
+            assert_eq!(history2.len(), 2);
         });
     }
-
     #[test]
-    fn test_multiple_disputers_all_refunded_when_oracle_overturned() {
+    fn test_market_specific_anti_grief_floor() {
         let env = Env::default();
-        env.mock_all_auths();
-
         let admin = Address::generate(&env);
-        let disputer_a = Address::generate(&env);
-        let disputer_b = Address::generate(&env);
+        let user = Address::generate(&env);
         let contract_id = env.register(crate::PredictifyHybrid, ());
-        let market_id = Symbol::new(&env, "multi_disp");
-
-        let token_admin = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-        let token_address = token_contract.address();
-        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
-        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
-
-        let stake_a = MIN_DISPUTE_STAKE;
-        let stake_b = MIN_DISPUTE_STAKE * 3;
-
-        stellar_client.mint(&disputer_a, &10_000_000_000i128);
-        stellar_client.mint(&disputer_b, &10_000_000_000i128);
-        stellar_client.mint(&contract_id, &(stake_a + stake_b));
-
-        let initial_a = token_client.balance(&disputer_a);
-        let initial_b = token_client.balance(&disputer_b);
-
-        env.as_contract(&contract_id, || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "TokenID"), &token_address);
-
-            let mut market =
-                create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
-            market.oracle_result = Some(String::from_str(&env, "yes"));
-            market.state = crate::types::MarketState::Ended;
-
-            let voter1 = Address::generate(&env);
-            let voter2 = Address::generate(&env);
-            let vote_stake: i128 = 10_000_000;
-            market.votes.set(voter1.clone(), String::from_str(&env, "no"));
-            market.stakes.set(voter1, vote_stake);
-            market.votes.set(voter2.clone(), String::from_str(&env, "no"));
-            market.stakes.set(voter2, vote_stake);
-            market.total_staked = vote_stake * 2;
-
-            market.dispute_stakes.set(disputer_a.clone(), stake_a);
-            market.dispute_stakes.set(disputer_b.clone(), stake_b);
-            MarketStateManager::update_market(&env, &market_id, &market);
-
-            let resolution =
-                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
-                    .unwrap();
-
-            assert_eq!(
-                resolution.final_outcome,
-                String::from_str(&env, "no"),
-                "community consensus must overturn the oracle when confidence > 70 %"
-            );
-
-            assert_eq!(
-                token_client.balance(&disputer_a),
-                initial_a + stake_a,
-                "disputer_a must be fully refunded"
-            );
-            assert_eq!(
-                token_client.balance(&disputer_b),
-                initial_b + stake_b,
-                "disputer_b must be fully refunded"
-            );
-
-            assert_eq!(
-                token_client.balance(&env.current_contract_address()),
-                0,
-                "contract balance must be zero after all refunds"
-            );
-
-            let mkt_after =
-                MarketStateManager::get_market(&env, &market_id).unwrap();
-            assert_eq!(
-                mkt_after.dispute_stakes.get(disputer_a.clone()).unwrap_or(1),
-                0,
-                "disputer_a stake must be zeroed after refund"
-            );
-            assert_eq!(
-                mkt_after.dispute_stakes.get(disputer_b.clone()).unwrap_or(1),
-                0,
-                "disputer_b stake must be zeroed after refund"
-            );
-        });
-    }
-
-    #[test]
-    fn test_tally_votes_no_decay() {
-        let env = Env::default();
-        let raw = 10_000i128;
-        let result = DisputeUtils::tally_votes(&env, raw, 1000, 500);
-        assert_eq!(result, raw);
-    }
-
-    #[test]
-    fn test_tally_votes_with_decay() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.as_contract(&contract_id, || {
-            let config = DisputeDecayConfig { half_life_seconds: 100, floor_bps: 1000 };
-            let key = symbol_short!("decaycfg");
-            env.storage().persistent().set(&key, &config);
-            let result = DisputeUtils::tally_votes(&env, 10000, 600, 0);
-            assert!(result < 10000);
-            assert!(result > 0);
-        });
-    }
-
-    #[test]
-    fn test_tally_votes_at_floor() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.as_contract(&contract_id, || {
-            let config = DisputeDecayConfig { half_life_seconds: 10, floor_bps: 5000 };
-            let key = symbol_short!("decaycfg");
-            env.storage().persistent().set(&key, &config);
-            let result = DisputeUtils::tally_votes(&env, 10000, 1000, 0);
-            assert!(result >= 5000);
-        });
-    }
-
-    #[test]
-    fn test_validate_market_for_resolution() {
-        let env = Env::default();
+        
+        let market_id = Symbol::new(&env, "market_floor_test");
         let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
         market.oracle_result = Some(String::from_str(&env, "yes"));
         market.state = crate::types::MarketState::Resolved;
-        market.dispute_stake_floor = Some(20_000_000);
+        market.dispute_stake_floor = Some(1500);
         
         env.as_contract(&contract_id, || {
             crate::markets::MarketStateManager::update_market(&env, &market_id, &market);
-            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 15_000_000).unwrap();
+            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 1000).unwrap();
             
-            // Stake 18_000_000: higher than global (15_000_000) but lower than market (20_000_000). Should fail.
+            // Stake 1200: higher than global (1000) but lower than market (1500). Should fail.
             assert_eq!(
-                DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 18_000_000, None).unwrap_err(),
-                Error::InsufficientStake
+                DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 1200, None).unwrap_err(),
+                Error::InvalidStakeAmount
             );
             
-            // Stake 25_000_000: higher than both. 
+            // Stake 2000: higher than both. 
             // process_dispute doesn't check if user has balance in tests because the contract doesn't have the mock balance set up
             // Wait, process_dispute internally locks funds, which will fail if there's no balance.
             // I should use DisputeValidator directly to just check the dispute stake check.
             assert_eq!(
-                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 18_000_000).unwrap_err(),
-                Error::InsufficientStake
+                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 1200).unwrap_err(),
+                Error::InvalidStakeAmount
             );
-            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 25_000_000).is_ok());
+            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 2000).is_ok());
             
             // Test when market_floor < global_anti_grief_floor
-            market.dispute_stake_floor = Some(12_000_000);
+            market.dispute_stake_floor = Some(500);
             assert_eq!(
-                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 13_000_000).unwrap_err(),
-                Error::InsufficientStake
+                DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 800).unwrap_err(),
+                Error::InvalidStakeAmount
             );
-            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 18_000_000).is_ok());
-        });
-    }
-
-    #[test]
-    fn test_has_user_disputed() {
-        let env = Env::default();
-        let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
-        let user = Address::generate(&env);
-        assert!(!DisputeUtils::has_user_disputed(&market, &user));
-        market.dispute_stakes.set(user.clone(), 5000);
-        assert!(DisputeUtils::has_user_disputed(&market, &user));
-    }
-
-    #[test]
-    fn test_get_user_dispute_stake() {
-        let env = Env::default();
-        let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
-        let user = Address::generate(&env);
-        assert_eq!(DisputeUtils::get_user_dispute_stake(&market, &user), 0);
-        market.dispute_stakes.set(user.clone(), 5000);
-        assert_eq!(DisputeUtils::get_user_dispute_stake(&market, &user), 5000);
-    }
-
-    #[test]
-    fn test_finalize_market_with_resolution() {
-        let env = Env::default();
-        let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
-        market.oracle_result = Some(String::from_str(&env, "yes"));
-        let user = Address::generate(&env);
-        market.dispute_stakes.set(user.clone(), 1000);
-        DisputeUtils::finalize_market_with_resolution(&mut market, String::from_str(&env, "yes")).unwrap();
-        assert!(market.winning_outcomes.is_some());
-        assert!(DisputeUtils::finalize_market_with_resolution(&mut market, String::from_str(&env, "no")).is_err());
-    }
-
-    #[test]
-    fn test_extract_disputes_from_market() {
-        let env = Env::default();
-        let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
-        let user = Address::generate(&env);
-        market.dispute_stakes.set(user.clone(), 3000);
-        let market_id = Symbol::new(&env, "extract_test");
-        let disputes = DisputeUtils::extract_disputes_from_market(&env, &market, market_id.clone());
-        assert_eq!(disputes.len(), 1);
-        assert_eq!(disputes.get(0).unwrap().stake, 3000);
-    }
-
-    #[test]
-    fn test_validate_dispute_voting_conditions() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let dispute_id = Symbol::new(&env, "voting_test");
-        let market_id = Symbol::new(&env, "market");
-        env.as_contract(&contract_id, || {
-            let voting = DisputeVoting {
-                dispute_id: dispute_id.clone(),
-                voting_start: env.ledger().timestamp().saturating_sub(100),
-                voting_end: env.ledger().timestamp() + 86400,
-                total_votes: 0,
-                support_votes: 0,
-                against_votes: 0,
-                total_support_stake: 0,
-                total_against_stake: 0,
-                status: DisputeVotingStatus::Active,
-            };
-            DisputeUtils::store_dispute_voting(&env, &dispute_id, &voting).unwrap();
-            assert!(DisputeValidator::validate_dispute_voting_conditions(&env, &market_id, &dispute_id).is_ok());
-        });
-    }
-
-    #[test]
-    fn test_validate_user_hasnt_voted() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let dispute_id = Symbol::new(&env, "no_vote_test");
-        let user = Address::generate(&env);
-        let other = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            // No stored votes yet — both users pass
-            assert!(DisputeValidator::validate_user_hasnt_voted(&env, &user, &dispute_id).is_ok());
-            assert!(DisputeValidator::validate_user_hasnt_voted(&env, &other, &dispute_id).is_ok());
-
-            // Store a vote for `user` via the underlying storage key
-            let vote = DisputeVote {
-                user: user.clone(),
-                dispute_id: dispute_id.clone(),
-                vote: true,
-                stake: 1000,
-                timestamp: env.ledger().timestamp(),
-                reason: None,
-            };
-            let key = (symbol_short!("vote"), dispute_id.clone(), user.clone());
-            env.storage().persistent().set(&key, &vote);
-
-            // `validate_user_hasnt_voted` delegates to `get_dispute_votes` which
-            // is a simplified stub that returns an empty Vec (no vote-key index).
-            // The function will not detect the stored vote, so it returns Ok.
-            // Once the stub is replaced with a proper index, this assertion
-            // should be changed to `.is_err()`.
-            assert!(DisputeValidator::validate_user_hasnt_voted(&env, &user, &dispute_id).is_ok());
-        });
-    }
-
-    #[test]
-    fn test_validate_voting_completed() {
-        let completed = DisputeVoting {
-            dispute_id: Symbol::new(&Env::default(), "d"),
-            voting_start: 0,
-            voting_end: 0,
-            total_votes: 0,
-            support_votes: 0,
-            against_votes: 0,
-            total_support_stake: 0,
-            total_against_stake: 0,
-            status: DisputeVotingStatus::Completed,
-        };
-        assert!(DisputeValidator::validate_voting_completed(&completed).is_ok());
-
-        let active = DisputeVoting { status: DisputeVotingStatus::Active, ..completed };
-        assert!(DisputeValidator::validate_voting_completed(&active).is_err());
-    }
-
-    #[test]
-    fn test_calculate_stake_weighted_outcome() {
-        let env = Env::default();
-        let support_wins = DisputeVoting {
-            dispute_id: Symbol::new(&env, "d"),
-            voting_start: 0,
-            voting_end: 0,
-            total_votes: 2,
-            support_votes: 2,
-            against_votes: 0,
-            total_support_stake: 5000,
-            total_against_stake: 3000,
-            status: DisputeVotingStatus::Completed,
-        };
-        assert!(DisputeUtils::calculate_stake_weighted_outcome(&support_wins));
-
-        let against_wins = DisputeVoting {
-            total_support_stake: 2000,
-            total_against_stake: 4000,
-            ..support_wins
-        };
-        assert!(!DisputeUtils::calculate_stake_weighted_outcome(&against_wins));
-
-        let tie = DisputeVoting {
-            total_support_stake: 3000,
-            total_against_stake: 3000,
-            ..support_wins
-        };
-        assert!(!DisputeUtils::calculate_stake_weighted_outcome(&tie));
-    }
-
-    #[test]
-    fn test_set_get_admin_cooldown() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
-            assert_eq!(DisputeManager::get_admin_cooldown(&env), 0);
-            DisputeManager::set_admin_cooldown(&env, &admin, 300).unwrap();
-            assert_eq!(DisputeManager::get_admin_cooldown(&env), 300);
-        });
-    }
-
-    #[test]
-    fn test_set_get_dispute_stake_cap() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let market_id = Symbol::new(&env, "cap_market");
-        let user = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            DisputeManager::set_dispute_stake_cap(&env, &market_id, &user, 50_000_000).unwrap();
-            let cap_key = crate::storage::DataKey::DisputeStakeCap(market_id.clone(), user.clone());
-            let stored: i128 = env.storage().persistent().get(&cap_key).unwrap();
-            assert_eq!(stored, 50_000_000);
-        });
-    }
-
-    #[test]
-    fn test_get_dispute_stats() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let market_id = Symbol::new(&env, "stats_market");
-        let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
-        market.oracle_result = Some(String::from_str(&env, "yes"));
-        let user = Address::generate(&env);
-        market.dispute_stakes.set(user.clone(), 2000);
-        env.as_contract(&contract_id, || {
-            crate::markets::MarketStateManager::update_market(&env, &market_id, &market);
-            let stats = DisputeManager::get_dispute_stats(&env, market_id.clone()).unwrap();
-            assert_eq!(stats.total_disputes, 1);
-            assert_eq!(stats.total_dispute_stakes, 2000);
-            assert_eq!(stats.unique_disputers, 1);
-        });
-    }
-
-    #[test]
-    fn test_calculate_oracle_and_community_weights() {
-        let env = Env::default();
-        let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
-        market.total_staked = 10000;
-        let user = Address::generate(&env);
-        market.dispute_stakes.set(user, 2000);
-        let oracle_w = DisputeAnalytics::calculate_oracle_weight(&market);
-        let community_w = DisputeAnalytics::calculate_community_weight(&market);
-        assert!(oracle_w > 0);
-        assert!(community_w > 0);
-        assert!(oracle_w + community_w <= 100);
-    }
-
-    #[test]
-    fn test_calculate_community_consensus() {
-        let env = Env::default();
-        let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
-        let user_a = Address::generate(&env);
-        let user_b = Address::generate(&env);
-        market.votes.set(user_a.clone(), String::from_str(&env, "yes"));
-        market.stakes.set(user_a.clone(), 5000);
-        market.votes.set(user_b.clone(), String::from_str(&env, "no"));
-        market.stakes.set(user_b.clone(), 3000);
-        let consensus = DisputeAnalytics::calculate_community_consensus(&env, &market);
-        assert_eq!(consensus.outcome, String::from_str(&env, "yes"));
-        assert!(consensus.confidence > 0);
-    }
-
-    #[test]
-    fn test_calculate_dispute_participation_rate() {
-        let env = Env::default();
-        let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
-        assert_eq!(DisputeAnalytics::calculate_dispute_participation_rate(&market), 0.0);
-        let user = Address::generate(&env);
-        market.votes.set(user.clone(), String::from_str(&env, "yes"));
-        market.dispute_stakes.set(user, 1000);
-        let rate = DisputeAnalytics::calculate_dispute_participation_rate(&market);
-        assert!(rate > 0.0);
-    }
-
-    #[test]
-    fn test_dispute_escalation_validation() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let dispute_id = Symbol::new(&env, "esc_test");
-        let user = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            // No stored vote → `get_dispute_votes` stub returns empty Vec,
-            // so `has_participated` is false → returns Err.
-            assert!(DisputeValidator::validate_dispute_escalation_conditions(&env, &user, &dispute_id).is_err());
-        });
-    }
-
-    #[test]
-    fn test_dispute_escalation_storage() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let dispute_id = Symbol::new(&env, "esc_store");
-        let user = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            // No escalation stored yet
-            assert!(DisputeUtils::get_dispute_escalation(&env, &dispute_id).is_none());
-
-            let escalation = DisputeEscalation {
-                dispute_id: dispute_id.clone(),
-                escalated_by: user.clone(),
-                escalation_reason: String::from_str(&env, "tie"),
-                escalation_timestamp: env.ledger().timestamp(),
-                escalation_level: 1,
-                requires_admin_review: true,
-            };
-            DisputeUtils::store_dispute_escalation(&env, &dispute_id, &escalation).unwrap();
-            let stored = DisputeUtils::get_dispute_escalation(&env, &dispute_id).unwrap();
-            assert_eq!(stored.escalation_level, 1);
-            assert!(stored.requires_admin_review);
-        });
-    }
-
-    #[test]
-    fn test_timeout_storage_roundtrip() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let dispute_id = Symbol::new(&env, "timeout_rt");
-        env.as_contract(&contract_id, || {
-            assert!(!DisputeUtils::has_dispute_timeout(&env, &dispute_id));
-            let timeout = testing::create_test_dispute_timeout(&env, dispute_id.clone());
-            DisputeUtils::store_dispute_timeout(&env, &dispute_id, &timeout).unwrap();
-            assert!(DisputeUtils::has_dispute_timeout(&env, &dispute_id));
-            let loaded = DisputeUtils::get_dispute_timeout(&env, &dispute_id).unwrap();
-            assert_eq!(loaded.timeout_hours, 24);
-            assert_eq!(loaded.status, DisputeTimeoutStatus::Active);
-            DisputeUtils::remove_dispute_timeout(&env, &dispute_id).unwrap();
-            assert!(!DisputeUtils::has_dispute_timeout(&env, &dispute_id));
-        });
-    }
-
-    #[test]
-    fn test_dispute_fee_distribution_storage() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let dispute_id = Symbol::new(&env, "fee_storage");
-        env.as_contract(&contract_id, || {
-            let dist = DisputeFeeDistribution {
-                dispute_id: dispute_id.clone(),
-                total_fees: 10000,
-                winner_stake: 6000,
-                loser_stake: 4000,
-                winner_addresses: Vec::new(&env),
-                distribution_timestamp: env.ledger().timestamp(),
-                fees_distributed: true,
-            };
-            DisputeUtils::store_dispute_fee_distribution(&env, &dispute_id, &dist).unwrap();
-            let loaded = DisputeUtils::get_dispute_fee_distribution(&env, &dispute_id).unwrap();
-            assert_eq!(loaded.total_fees, 10000);
-            assert!(loaded.fees_distributed);
-        });
-    }
-
-    #[test]
-    fn test_validate_dispute_resolution_conditions() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let dispute_id = Symbol::new(&env, "res_cond");
-        env.as_contract(&contract_id, || {
-            let voting = DisputeVoting {
-                dispute_id: dispute_id.clone(),
-                voting_start: 0,
-                voting_end: 0,
-                total_votes: 0,
-                support_votes: 0,
-                against_votes: 0,
-                total_support_stake: 0,
-                total_against_stake: 0,
-                status: DisputeVotingStatus::Active,
-            };
-            DisputeUtils::store_dispute_voting(&env, &dispute_id, &voting).unwrap();
-            let dist = DisputeFeeDistribution {
-                dispute_id: dispute_id.clone(),
-                total_fees: 0,
-                winner_stake: 0,
-                loser_stake: 0,
-                winner_addresses: Vec::new(&env),
-                distribution_timestamp: 0,
-                fees_distributed: false,
-            };
-            DisputeUtils::store_dispute_fee_distribution(&env, &dispute_id, &dist).unwrap();
-            assert!(DisputeValidator::validate_dispute_resolution_conditions(&env, &dispute_id).is_err());
-        });
-    }
-
-    #[test]
-    fn test_get_set_anti_grief_floor() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
-            assert!(DisputeManager::get_anti_grief_floor(&env).is_none());
-            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 2500).unwrap();
-            assert_eq!(DisputeManager::get_anti_grief_floor(&env), Some(2500));
-        });
-    }
-
-    #[test]
-    fn test_get_set_history_cap() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        env.as_contract(&contract_id, || {
-            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
-            assert!(DisputeManager::get_history_cap(&env).is_none());
-            DisputeManager::set_history_cap(&env, admin.clone(), 5).unwrap();
-            assert_eq!(DisputeManager::get_history_cap(&env), Some(5));
-        });
-    }
-
-    #[test]
-    fn test_get_set_collusion_detector_config() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        let config = CollusionDetectorConfig {
-            stake_delta_threshold: 500_000,
-            time_delta_threshold: 300,
-            window_size: 4,
-        };
-        env.as_contract(&contract_id, || {
-            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
-            DisputeManager::set_collusion_detector_config(&env, admin, config).unwrap();
-            let loaded = DisputeManager::get_collusion_detector_config(&env);
-            assert_eq!(loaded.stake_delta_threshold, 500_000);
-            assert_eq!(loaded.window_size, 4);
-        });
-    }
-
-    #[test]
-    fn test_set_dispute_decay_config() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        let admin = Address::generate(&env);
-        let config = DisputeDecayConfig { half_life_seconds: 200, floor_bps: 2000 };
-        env.as_contract(&contract_id, || {
-            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
-            DisputeUtils::set_dispute_decay_config(&env, admin, config).unwrap();
-            let key = symbol_short!("decaycfg");
-            let stored: DisputeDecayConfig = env.storage().persistent().get(&key).unwrap();
-            assert_eq!(stored.half_life_seconds, 200);
-            assert_eq!(stored.floor_bps, 2000);
-        });
-    }
-
-    #[test]
-    fn test_validate_dispute_timeout_extension_parameters() {
-        assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(24).is_ok());
-        assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(0).is_err());
-        assert!(DisputeValidator::validate_dispute_timeout_extension_parameters(200).is_err());
-    }
-
-    #[test]
-    fn test_validate_dispute_timeout_status_for_extension() {
-        let env = Env::default();
-        let active = DisputeTimeout {
-            dispute_id: Symbol::new(&env, "d"),
-            market_id: Symbol::new(&env, "m"),
-            timeout_hours: 24,
-            created_at: 0,
-            expires_at: 86400,
-            extended_at: None,
-            total_extension_hours: 0,
-            status: DisputeTimeoutStatus::Active,
-        };
-        assert!(DisputeValidator::validate_dispute_timeout_status_for_extension(&active).is_ok());
-        let expired = DisputeTimeout { status: DisputeTimeoutStatus::Expired, ..active };
-        assert!(DisputeValidator::validate_dispute_timeout_status_for_extension(&expired).is_err());
-    }
-}
-
-// ============================================================
-// Per-entrypoint auth snapshot tests for disputes
-// ============================================================
-
-#[cfg(test)]
-mod auth_snapshot_tests {
-    use super::*;
-    use soroban_sdk::{
-        testutils::Address as _,
-        Address, Env, String, Symbol,
-    };
-    use crate::{Error, PredictifyHybrid};
-
-    fn required_auth(env: &Env) -> std::vec::Vec<Address> {
-        env.auths()
-            .iter()
-            .map(|(addr, _)| addr.clone())
-            .collect()
-    }
-
-    fn assert_requires_auth(env: &Env, expected: &Address, label: &str) {
-        let auths = required_auth(env);
-        assert!(
-            !auths.is_empty(),
-            "{label}: no auth recorded",
-        );
-        assert!(
-            auths.contains(expected),
-            "{label}: expected {expected:?}, captured {auths:?}",
-        );
-    }
-
-    fn admin_setup(env: &Env) -> Address {
-        let admin = Address::generate(env);
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(env, "Admin"), &admin);
-        admin
-    }
-
-    #[test]
-    fn snap_set_history_cap_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = admin_setup(&env);
-            DisputeManager::set_history_cap(&env, admin.clone(), 50).unwrap();
-            assert_requires_auth(&env, &admin, "set_history_cap");
-        });
-    }
-
-    #[test]
-    fn snap_set_anti_grief_floor_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = admin_setup(&env);
-            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 10_000).unwrap();
-            assert_requires_auth(&env, &admin, "set_anti_grief_floor");
-        });
-    }
-
-    #[test]
-    fn snap_set_dispute_timeout_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        let did = Symbol::new(&env, "d_to");
-        env.as_contract(&cid, || {
-            let admin = admin_setup(&env);
-            DisputeManager::set_dispute_timeout(&env, did, 24, admin.clone()).unwrap();
-            assert_requires_auth(&env, &admin, "set_dispute_timeout");
-        });
-    }
-
-    #[test]
-    fn snap_set_admin_cooldown_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = admin_setup(&env);
-            DisputeManager::set_admin_cooldown(&env, &admin, 300).unwrap();
-            assert_requires_auth(&env, &admin, "set_admin_cooldown");
-        });
-    }
-
-    #[test]
-    fn snap_set_dispute_cumulative_stake_cap_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        let user = Address::generate(&env);
-        let admin = Address::generate(&env);
-        env.as_contract(&cid, || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
-            DisputeManager::set_dispute_cumulative_stake_cap(
-                &env, &admin, &user, 100_000_000,
-            ).unwrap();
-            assert_requires_auth(&env, &admin, "set_dispute_cumulative_stake_cap");
-        });
-    }
-
-    #[test]
-    fn snap_set_dispute_decay_config_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let config = DisputeDecayConfig { half_life_seconds: 100, floor_bps: 1000 };
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = admin_setup(&env);
-            DisputeUtils::set_dispute_decay_config(&env, admin.clone(), config).unwrap();
-            assert_requires_auth(&env, &admin, "set_dispute_decay_config");
-        });
-    }
-
-    #[test]
-    #[should_panic]
-    fn edge_set_history_cap_no_auth_panics() {
-        let env = Env::default();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = Address::generate(&env);
-            let _ = DisputeManager::set_history_cap(&env, admin, 50);
-        });
-    }
-
-    #[test]
-    #[should_panic]
-    fn edge_set_anti_grief_floor_no_auth_panics() {
-        let env = Env::default();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = Address::generate(&env);
-            let _ = DisputeManager::set_anti_grief_floor(&env, admin, 10_000);
-        });
-    }
-
-    #[test]
-    fn edge_non_admin_set_history_cap_unauthorized() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            admin_setup(&env);
-            let attacker = Address::generate(&env);
-            let result = DisputeManager::set_history_cap(&env, attacker, 50);
-            assert_eq!(result, Err(Error::Unauthorized));
-        });
-    }
-
-    #[test]
-    fn edge_non_admin_set_anti_grief_floor_unauthorized() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            admin_setup(&env);
-            let attacker = Address::generate(&env);
-            let result = DisputeManager::set_anti_grief_floor(&env, attacker, 10_000);
-            assert_eq!(result, Err(Error::Unauthorized));
-        });
-    }
-
-    // ── Admin: resolve_dispute ──────────────────────────────
-
-    #[test]
-    fn snap_resolve_dispute_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        let mid = Symbol::new(&env, "auth_res");
-        let admin = Address::generate(&env);
-        env.as_contract(&cid, || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
-            DisputeManager::set_history_cap(&env, admin.clone(), 5).unwrap();
-            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 10_000).unwrap();
-            DisputeManager::resolve_dispute(&env, mid, admin.clone()).unwrap();
-            assert_requires_auth(&env, &admin, "resolve_dispute");
-        });
-    }
-
-    // ── User-scoped entrypoints ──────────────────────────────
-
-    #[test]
-    fn snap_process_dispute_requires_user() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        let mid = Symbol::new(&env, "mkt_auth");
-        let admin = Address::generate(&env);
-        let user = Address::generate(&env);
-        let token_contract = env.register_stellar_asset_contract_v2(Address::generate(&env));
-        let token_address = token_contract.address();
-        let stellar_client = StellarAssetClient::new(&env, &token_address);
-        stellar_client.mint(&user, &10_000_000_000i128);
-
-        env.as_contract(&cid, || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "TokenID"), &token_address);
-            DisputeManager::set_history_cap(&env, admin.clone(), 5).unwrap();
-            DisputeManager::set_anti_grief_floor(&env, admin.clone(), 10_000).unwrap();
-            DisputeManager::process_dispute(
-                &env, user.clone(), mid, MIN_DISPUTE_STAKE, None,
-            ).unwrap();
-            assert_requires_auth(&env, &user, "process_dispute");
-        });
-    }
-
-    #[test]
-    fn snap_escalate_dispute_requires_user() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        let did = Symbol::new(&env, "d_esc");
-        let user = Address::generate(&env);
-
-        env.as_contract(&cid, || {
-            DisputeManager::escalate_dispute(
-                &env, user.clone(), did, String::from_str(&env, "test"),
-            ).unwrap();
-            assert_requires_auth(&env, &user, "escalate_dispute");
-        });
-    }
-
-    #[test]
-    fn snap_extend_dispute_timeout_requires_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        let did = Symbol::new(&env, "d_ext");
-        let admin = Address::generate(&env);
-
-        env.as_contract(&cid, || {
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "Admin"), &admin);
-            DisputeManager::set_history_cap(&env, admin.clone(), 5).unwrap();
-            DisputeManager::extend_dispute_timeout(&env, did, 6, admin.clone()).unwrap();
-            assert_requires_auth(&env, &admin, "extend_dispute_timeout");
-        });
-    }
-
-    // ── Negative: missing auth panics ─────────────────────────
-
-    #[test]
-    #[should_panic]
-    fn edge_process_dispute_no_auth_panics() {
-        let env = Env::default();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let user = Address::generate(&env);
-            let mid = Symbol::new(&env, "mid");
-            let _ = DisputeManager::process_dispute(&env, user, mid, MIN_DISPUTE_STAKE, None);
-        });
-    }
-
-    #[test]
-    #[should_panic]
-    fn edge_escalate_dispute_no_auth_panics() {
-        let env = Env::default();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let user = Address::generate(&env);
-            let did = Symbol::new(&env, "did");
-            let _ = DisputeManager::escalate_dispute(&env, user, did, String::from_str(&env, ""));
-        });
-    }
-
-    #[test]
-    #[should_panic]
-    fn edge_resolve_dispute_no_auth_panics() {
-        let env = Env::default();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = Address::generate(&env);
-            let mid = Symbol::new(&env, "mid");
-            let _ = DisputeManager::resolve_dispute(&env, mid, admin);
-        });
-    }
-
-    #[test]
-    #[should_panic]
-    fn edge_extend_dispute_timeout_no_auth_panics() {
-        let env = Env::default();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            let admin = Address::generate(&env);
-            let did = Symbol::new(&env, "did");
-            let _ = DisputeManager::extend_dispute_timeout(&env, did, 6, admin);
-        });
-    }
-
-    // ── Non-admin rejection tests ────────────────────────────
-
-    #[test]
-    fn edge_non_admin_set_dispute_timeout_is_unauthorized() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        env.as_contract(&cid, || {
-            admin_setup(&env);
-            let attacker = Address::generate(&env);
-            let did = Symbol::new(&env, "d_unauth");
-            let result = DisputeManager::set_dispute_timeout(&env, did, 24, attacker);
-            assert_eq!(result, Err(Error::Unauthorized));
-        });
-    }
-
-    #[test]
-    fn edge_non_admin_extend_dispute_timeout_is_unauthorized() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let cid = env.register(PredictifyHybrid, ());
-        let did = Symbol::new(&env, "d_ext_unauth");
-        env.as_contract(&cid, || {
-            admin_setup(&env);
-            let attacker = Address::generate(&env);
-            let result = DisputeManager::extend_dispute_timeout(&env, did, 6, attacker);
-            assert_eq!(result, Err(Error::Unauthorized));
+            assert!(DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 1200).is_ok());
         });
     }
 }

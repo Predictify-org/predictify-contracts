@@ -1106,18 +1106,6 @@ pub struct Market {
     pub dispute_stake_floor: Option<i128>,
     /// Maximum number of unique participants allowed (None = no limit).
     pub max_participants: Option<u32>,
-
-    /// Per-market minimum bet amount in base token units (e.g. stroops).
-    ///
-    /// When `Some(amount)`, any individual bet on this market whose `amount`
-    /// is less than this value is rejected with [`Error::BetBelowMarketMin`].
-    /// The check is applied **after** the global/per-event [`BetLimits`]
-    /// `min_bet`, so the effective floor is `max(global_min, min_bet_amount)`.
-    ///
-    /// `None` means no per-market override — the global/per-event minimum applies.
-    /// Must be positive when `Some`; zero or negative values are rejected with
-    /// [`Error::InvalidInput`] during `set_min_bet`.
-    pub min_bet_amount: Option<i128>,
 }
 
 /// Canonical payload committed by `Market::metadata_commitment`.
@@ -1400,35 +1388,6 @@ pub struct UserLeaderboardEntryV1 {
     pub last_activity: u64,
 }
 
-
-/// Per-market top-N leaderboard entry, ranked by cumulative stake in that market.
-///
-/// This type is stored inside the bounded heap at
-/// `DataKey::MarketLeaderboard(market_id)`.  The heap never grows beyond
-/// `MAX_MARKET_LEADERBOARD_CAPACITY` (50) entries, so storage costs are fixed.
-///
-/// ## Ranking key
-///
-/// Entries are ranked **descending by `stake`**.  Two users with equal stake are
-/// compared by `last_bet_timestamp` as a secondary key (earlier first gets the
-/// higher position, preserving first-bettor advantage on ties).
-///
-/// # Stability
-///
-/// Versioned suffix (`V1`) reserved for non-breaking future fields.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MarketLeaderboardEntry {
-    /// Address of the participant.
-    pub user: Address,
-    /// 1-indexed rank within this market's leaderboard (assigned at read time).
-    pub rank: u32,
-    /// Total amount staked by this user in this market (cumulative across bets).
-    pub stake: i128,
-    /// Ledger timestamp of the user's most recent bet in this market.
-    pub last_bet_timestamp: u64,
-}
-
 /// Category statistics for filtered dashboard views
 ///
 /// Aggregates metrics per market category (e.g., "sports", "crypto", "politics")
@@ -1579,7 +1538,6 @@ impl Market {
             dispute_window_seconds: 86400, // 24h default
             winnings_swept: false,
             timelock_config: MarketTimelockConfig::default(),
-            max_participants: None,
             dispute_stake_floor: None,
             max_participants: None,
         }
@@ -1965,8 +1923,6 @@ pub struct OraclePriceData {
     pub price: i128,
     /// Publish time of the oracle data (unix timestamp seconds)
     pub publish_time: u64,
-    /// Publish ledger sequence of the oracle data
-    pub publish_ledger: u32,
     /// Confidence interval (absolute) in the same base units as `price`
     pub confidence: Option<i128>,
     /// Exponent/decimals scale used by the oracle (e.g., Pyth exponent)
@@ -3509,7 +3465,6 @@ pub struct CommunityConsensus {
     pub percentage: i128,
 }
 
-
 ///////////////////////////////////////////////////
 /// Market pause information tracking   //////////
 /////////////////////////////////////////////////
@@ -3522,32 +3477,9 @@ pub struct MarketPauseInfo {
     pub paused_by: Address,
     pub pause_end_time: u64,
     pub original_state: MarketState,
-    pub reason: PauseReason,
-}
-
-///////////////////////////////////////////////////
-/// Pause Reason   //////////
-/////////////////////////////////////////////////
-#[contracttype]
-pub enum PauseReason {
-    /// Market paused due to emergency or security issue
-    Emergency,
-    /// Market paused for regulatory compliance
-    Regulatory,
-    /// Market paused for maintenance or upgrade
-    Maintenance,
-    /// Market paused due to oracle issues
-    OracleIssue,
-    /// Market paused due to liquidity concerns
-    LiquidityConcern,
-    /// Market paused due to suspicious activity
-    SuspiciousActivity,
-    /// Market paused with custom reason (string)
-    Custom(String),
 }
 
 // ===== QUERY RESPONSE TYPES =====
-
 
 /// Market/event status enumeration for queries.
 ///
@@ -4269,13 +4201,3 @@ mod tests {
         assert_eq!(market.validate(&env), Ok(()));
     }
 }
-
-/// Total extension days
-    pub total_extension_days: u32,
-    /// Maximum extension days allowed
-    pub max_extension_days: u32,
-      /// Number of times this market's end time has been extended (dispute extensions).
-    /// Independent of the cumulative-hours cap (`total_extension_days` vs `max_extension_days`) —
-    /// this caps the *number of extension calls* per market lifecycle.
-    pub extension_count: u32,
-

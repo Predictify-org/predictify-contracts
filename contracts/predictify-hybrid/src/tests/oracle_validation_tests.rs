@@ -166,9 +166,6 @@ fn setup_auto_pause_env(env: &Env, contract_id: &Address) -> Symbol {
             bet_deadline: 0,
             dispute_window_seconds: 86400,
             winnings_swept: false,
-            timelock_config: crate::timelock::MarketTimelockConfig::default(),
-            dispute_stake_floor: None,
-            max_participants: None,
         };
         env.storage().persistent().set(&market_id, &market);
     });
@@ -306,43 +303,6 @@ fn test_auto_pause_already_paused_is_noop() {
         // Second auto-pause should be a no-op
         MarketPauseManager::auto_pause_market(&env, &market_id, 3600).unwrap();
         assert!(MarketPauseManager::is_market_paused(&env, &market_id).unwrap());
-    });
-}
-
-#[test]
-fn test_market_unpause_cool_off() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, crate::PredictifyHybrid);
-    let market_id = setup_auto_pause_env(&env, &contract_id);
-
-    env.as_contract(&contract_id, || {
-        let admin: Address = env.storage().persistent().get(&Symbol::new(&env, "Admin")).unwrap();
-        
-        // Initial state: not paused
-        assert!(!MarketPauseManager::is_market_paused(&env, &market_id).unwrap());
-
-        // Set initial ledger timestamp
-        env.ledger().with_mut(|li| li.timestamp = 10_000);
-
-        // Pause the market for 24 hours
-        MarketPauseManager::pause_market(&env, admin.clone(), &market_id, 24).unwrap();
-        assert!(MarketPauseManager::is_market_paused(&env, &market_id).unwrap());
-
-        // Attempting to resume immediately (0 seconds passed) should fail with CoolOffPeriodActive
-        let err = MarketPauseManager::resume_market(&env, admin.clone(), &market_id).unwrap_err();
-        assert_eq!(err, Error::CoolOffPeriodActive);
-
-        // Fast forward 6 days (518,400 seconds passed)
-        env.ledger().with_mut(|li| li.timestamp = 10_000 + 6 * 24 * 3600);
-        let err = MarketPauseManager::resume_market(&env, admin.clone(), &market_id).unwrap_err();
-        assert_eq!(err, Error::CoolOffPeriodActive);
-
-        // Fast forward to exactly 7 days (604,800 seconds passed)
-        env.ledger().with_mut(|li| li.timestamp = 10_000 + 7 * 24 * 3600);
-        MarketPauseManager::resume_market(&env, admin.clone(), &market_id).unwrap();
-
-        // Resumed successfully
-        assert!(!MarketPauseManager::is_market_paused(&env, &market_id).unwrap());
     });
 }
 

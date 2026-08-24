@@ -36,13 +36,6 @@ pub const MIN_BET_AMOUNT: i128 = 1_000_000;
 /// Maximum bet amount (10,000 XLM = 100,000,000,000 stroops). Absolute ceiling for any configured limit.
 pub const MAX_BET_AMOUNT: i128 = 100_000_000_000;
 
-/// Maximum number of bets accepted by a single [`BetManager::place_bets`] call.
-///
-/// Bounds the per-transaction CPU and storage footprint of a batch. Batches larger
-/// than this are rejected with [`Error::BatchSizeExceeded`]; empty batches are
-/// rejected with [`Error::BatchEmpty`].
-pub const MAX_BATCH_SIZE: u32 = 50;
-
 /// Reentrancy scope for [`BetManager::place_bet`].
 fn guard_scope_place_bet() -> Symbol {
     symbol_short!("place_bet")
@@ -189,12 +182,12 @@ pub fn set_event_bet_limits(
 ///
 /// # Errors
 ///
-/// Returns [`Error::BetCapOutOfRange`] when:
+/// Returns [`Error::InvalidInput`] when:
 /// - `cap` is zero or negative
 /// - `cap` exceeds [`MAX_BET_AMOUNT`]
 pub fn set_market_max_bet_cap(env: &Env, market_id: &Symbol, cap: i128) -> Result<(), Error> {
     if cap <= 0 || cap > MAX_BET_AMOUNT {
-        return Err(Error::BetCapOutOfRange);
+        return Err(Error::InvalidInput);
     }
     let key = Symbol::new(env, PER_MARKET_MAX_BET_CAP_KEY);
     let mut caps: soroban_sdk::Map<Symbol, i128> = env
@@ -247,82 +240,16 @@ pub fn get_market_max_bet_cap(env: &Env, market_id: &Symbol) -> Option<i128> {
     caps.get(market_id.clone())
 }
 
-// ===== PER-MARKET MIN BET AMOUNT =====
-
-/// Set the per-market minimum bet amount on a market stored in the market struct.
-///
-/// # Parameters
-///
-/// - `env`       – Soroban environment
-/// - `market_id` – Identifies the market to configure
-/// - `min_amount` – Minimum allowed bet in base token units (stroops).
-///   Must be `> 0` and `<= MAX_BET_AMOUNT`.
-///
-/// # Errors
-///
-/// - [`Error::MarketNotFound`] if `market_id` does not correspond to an existing market
-/// - [`Error::InvalidInput`] if `min_amount` is zero, negative, or exceeds [`MAX_BET_AMOUNT`]
-pub fn set_market_min_bet(
-    env: &Env,
-    market_id: &Symbol,
-    min_amount: i128,
-) -> Result<(), Error> {
-    if min_amount <= 0 || min_amount > MAX_BET_AMOUNT {
-        return Err(Error::InvalidInput);
-    }
-    let mut market = crate::markets::MarketStateManager::get_market(env, market_id)?;
-    market.min_bet_amount = Some(min_amount);
-    crate::markets::MarketStateManager::update_market(env, market_id, &market);
-    Ok(())
-}
-
-/// Remove the per-market minimum bet threshold for a market (admin only).
-///
-/// After removal, bets are bounded only by the global/per-event minimum.
-///
-/// # Errors
-///
-/// - [`Error::MarketNotFound`] if `market_id` does not correspond to an existing market
-pub fn remove_market_min_bet(env: &Env, market_id: &Symbol) -> Result<(), Error> {
-    let mut market = crate::markets::MarketStateManager::get_market(env, market_id)?;
-    market.min_bet_amount = None;
-    crate::markets::MarketStateManager::update_market(env, market_id, &market);
-    Ok(())
-}
-
-/// Get the per-market minimum bet amount, or `None` if no per-market minimum is set.
-///
-/// # Parameters
-///
-/// - `env`       – Soroban environment
-/// - `market_id` – Identifies the market to query
-///
-/// # Returns
-///
-/// `Some(amount)` if a per-market minimum has been configured via [`set_market_min_bet`],
-/// or `None` if the market has no override (global/per-event minimum applies).
-pub fn get_market_min_bet(env: &Env, market_id: &Symbol) -> Option<i128> {
-    crate::markets::MarketStateManager::get_market(env, market_id)
-        .ok()
-        .and_then(|m| m.min_bet_amount)
-}
-
 /// Validate that min <= max and both are within absolute bounds.
-///
-/// # Errors
-///
-/// - [`Error::BetLimitsInverted`] when `min_bet > max_bet`
-/// - [`Error::InsufficientStake`] when `min_bet` is below [`MIN_BET_AMOUNT`]
-/// - [`Error::BetLimitAboveMaximum`] when `max_bet` exceeds [`MAX_BET_AMOUNT`]
 fn validate_limits_bounds(limits: &BetLimits) -> Result<(), Error> {
     if limits.min_bet > limits.max_bet {
-        return Err(Error::BetLimitsInverted);
+        return Err(Error::InvalidInput);
     }
     if limits.min_bet < MIN_BET_AMOUNT {
         return Err(Error::InsufficientStake);
     }
     if limits.max_bet > MAX_BET_AMOUNT {
-        return Err(Error::BetLimitAboveMaximum);
+        return Err(Error::InvalidInput);
     }
     Ok(())
 }
@@ -409,7 +336,6 @@ impl BetManager {
     /// - `Error::InvalidOutcome` - Selected outcome not valid for this market
     /// - `Error::InsufficientBalance` - User doesn't have enough funds
     /// - `Error::FeeExceedsMax` - Effective fee exceeds caller-supplied `max_fee_bps`
-    /// - `Error::Overflow` - Internal counter or pool accumulation overflowed
     ///
     /// # Security
     ///
@@ -419,8 +345,6 @@ impl BetManager {
     /// - Validates user has sufficient balance
     /// - Locks funds atomically with bet creation
     /// - Fee slippage guard prevents unexpected fee increases
-    /// - All internal arithmetic uses checked operations — no raw `+=` or `*`
-    ///   on any token-amount or counter field
     ///
     /// # Example
     ///
@@ -456,9 +380,6 @@ impl BetManager {
         amount: i128,
         max_fee_bps: i128,
     ) -> Result<Bet, Error> {
-        // Snapshot CPU instructions at entry for regression baseline.
-        let _cpu_before = crate::gas::bet_snapshot_cpu_before(env);
-
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user
         user.require_auth();
@@ -482,9 +403,6 @@ impl BetManager {
 
         // Validate bet parameters (uses configurable min/max limits per event or global)
         BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
-
-        // Enforce per-market minimum bet threshold (set via set_min_bet entrypoint)
-        BetValidator::validate_market_min_bet(&market, amount)?;
 
         // Enforce fee slippage guard: reject if the effective platform fee exceeds caller's max
         BetValidator::validate_fee_slippage(env, max_fee_bps)?;
@@ -518,35 +436,11 @@ impl BetManager {
         // Update user stake for per-user max bet cap tracking
         BetValidator::update_user_stake(env, &market_id, &user, amount)?;
 
-        // ── Per-market leaderboard update ─────────────────────────────────────
-        // Read the user's cumulative stake (just written above) and push it into
-        // the bounded top-N heap.  The upsert is a no-op if the candidate does
-        // not qualify (heap full and stake below current minimum), so it is safe
-        // to call unconditionally here with no extra error propagation.
-        {
-            let cumulative_stake = BetValidator::get_user_stake(env, &market_id, &user);
-            let timestamp = env.ledger().timestamp();
-            // Silently ignore leaderboard errors so they cannot abort a bet.
-            let _ = crate::market_analytics::MarketLeaderboard::upsert(
-                env,
-                &market_id,
-                &user,
-                cumulative_stake,
-                timestamp,
-                crate::storage::MAX_MARKET_LEADERBOARD_CAPACITY,
-            );
-        }
-
         // Update market betting stats
         Self::update_market_bet_stats(env, &market_id, &outcome, amount)?;
 
-        // Update market's total staked (for payout pool calculation).
-        // Uses checked_add so that a hostile batch of bets cannot silently wrap
-        // the pool counter — overflow returns Error::Overflow instead of panicking.
-        market.total_staked = market
-            .total_staked
-            .checked_add(amount)
-            .ok_or(Error::Overflow)?;
+        // Update market's total staked (for payout pool calculation)
+        market.total_staked += amount;
 
         // Also update votes and stakes for backward compatibility with payout distribution
         // This allows distribute_payouts to work with both bets and votes
@@ -557,10 +451,6 @@ impl BetManager {
 
         // Emit bet placed event
         EventEmitter::emit_bet_placed(env, &market_id, &user, &outcome, amount);
-
-        // Record resource snapshot for regression baseline.
-        // write_count: BetKey + BetRegistryKey + MarketBetsKey + UserStake + Market = 5 writes
-        crate::gas::BetSnapshotManager::record(env, _cpu_before, 5, &market_id);
 
         Ok(bet)
     }
@@ -593,8 +483,7 @@ impl BetManager {
     ///
     /// # Errors
     ///
-    /// - `Error::BatchEmpty` - Batch contains no entries
-    /// - `Error::BatchSizeExceeded` - Batch exceeds [`MAX_BATCH_SIZE`] entries
+    /// - `Error::InvalidInput` - Empty batch or exceeds maximum size
     /// - `Error::IdempotentBatchAlreadyApplied` - This idempotency key has already been consumed
     /// - `Error::MarketNotFound` - Any market does not exist
     /// - `Error::MarketClosed` - Any market has ended or is not active
@@ -631,11 +520,12 @@ impl BetManager {
 
         // Validate batch size
         if bets.is_empty() {
-            return Err(Error::BatchEmpty);
+            return Err(Error::InvalidInput);
         }
 
+        const MAX_BATCH_SIZE: u32 = 50;
         if bets.len() > MAX_BATCH_SIZE {
-            return Err(Error::BatchSizeExceeded);
+            return Err(Error::InvalidInput);
         }
 
         // Phase 1: Validate all bets and collect data
@@ -664,9 +554,6 @@ impl BetManager {
                 &market.outcomes,
                 amount,
             )?;
-
-            // Enforce per-market minimum bet threshold (set via set_min_bet entrypoint)
-            BetValidator::validate_market_min_bet(&market, amount)?;
 
             // Check if user has already bet on this market
             if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
@@ -727,15 +614,7 @@ impl BetManager {
             placed_bets.push_back(bet);
         }
 
-        // Phase 4: Emit batch event for the entire operation
-        EventEmitter::emit_bet_batch_placed(
-            env,
-            &user,
-            &bets,
-            total_amount,
-        );
-
-        // Phase 5: Consume the idempotency key so replays are rejected.
+        // Phase 4: Consume the idempotency key so replays are rejected.
         // Stored as temporary (cheaper rent) with PLACE_BETS_IDEM_TTL_LEDGERS TTL.
         let ttl = crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS;
         env.storage().persistent().set(&idem_key, &true);
@@ -789,14 +668,6 @@ impl BetManager {
     }
 
     /// Update market betting statistics after a new bet.
-    ///
-    /// # Overflow safety
-    ///
-    /// Every arithmetic operation uses checked arithmetic (`checked_add`) and
-    /// returns [`Error::Overflow`] on overflow instead of wrapping or panicking.
-    /// This guarantees that aggregate counters — `total_bets` (u64),
-    /// `total_amount_locked` (i128), `unique_bettors` (u32), and the per-outcome
-    /// locked totals (i128) — can never silently corrupt the market ledger.
     fn update_market_bet_stats(
         env: &Env,
         market_id: &Symbol,
@@ -805,40 +676,19 @@ impl BetManager {
     ) -> Result<(), Error> {
         let mut stats = BetStorage::get_market_bet_stats(env, market_id);
 
-        // Update totals — all with checked arithmetic; overflow returns Error::Overflow.
-        stats.total_bets = stats
-            .total_bets
-            .checked_add(1)
-            .ok_or(Error::Overflow)?;
-        stats.total_amount_locked = stats
-            .total_amount_locked
-            .checked_add(amount)
-            .ok_or(Error::Overflow)?;
-        stats.unique_bettors = stats
-            .unique_bettors
-            .checked_add(1)
-            .ok_or(Error::Overflow)?;
+        // Update totals
+        stats.total_bets += 1;
+        stats.total_amount_locked += amount;
+        stats.unique_bettors += 1;
 
-        // Update outcome totals — checked to guard against per-outcome pool overflow.
+        // Update outcome totals
         let current_outcome_total = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
-        stats.outcome_totals.set(
-            outcome.clone(),
-            current_outcome_total
-                .checked_add(amount)
-                .ok_or(Error::Overflow)?,
-        );
+        stats
+            .outcome_totals
+            .set(outcome.clone(), current_outcome_total + amount);
 
         // Store updated stats
         BetStorage::store_market_bet_stats(env, market_id, &stats)?;
-
-        // Emit bet stats updated event
-        EventEmitter::emit_bet_stats_updated(
-            env,
-            market_id,
-            stats.total_bets,
-            stats.total_amount_locked,
-            stats.unique_bettors,
-        );
 
         Ok(())
     }
@@ -968,42 +818,17 @@ impl BetManager {
     /// Calculate payout for a winning bet.
     ///
     /// The payout is calculated as:
-    /// ```text
-    /// fee              = total_pool × fee_percentage / 10_000
-    /// distributable    = total_pool − fee
-    /// pool_per_winner  = distributable / num_winning_outcomes
-    /// payout           = (user_bet_amount × pool_per_winner) / total_staked_on_outcome
-    /// ```
+    /// `payout = (user_bet_amount / total_winning_bets) * total_pool * (1 - fee_percentage)`
     ///
     /// # Parameters
     ///
-    /// - `env`       - The Soroban environment
+    /// - `env` - The Soroban environment
     /// - `market_id` - Symbol identifying the market
-    /// - `user`      - Address of the user claiming winnings
+    /// - `user` - Address of the user claiming winnings
     ///
     /// # Returns
     ///
     /// Returns `Ok(i128)` with the payout amount, or `Err(Error)` if calculation fails.
-    ///
-    /// # Overflow safety
-    ///
-    /// Every arithmetic step uses checked operations and returns [`Error::Overflow`]
-    /// on overflow instead of wrapping or panicking:
-    ///
-    /// - `fee` — `checked_mul` then `checked_div` on `total_pool × fee_percentage`
-    /// - `distributable_pool` — `checked_sub` on `total_pool − fee`
-    /// - `pool_per_winner` — `checked_div` on `distributable_pool / num_winners`
-    /// - `payout` — `checked_mul` then `checked_div` on the final ratio
-    ///
-    /// Division-by-zero is pre-guarded by the `num_winners == 0` and
-    /// `total_bets_on_outcome == 0` early-return checks, so no `checked_div`
-    /// returns `None` for a zero divisor in the hot path.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::NothingToClaim`]    – no bet found for `user` on `market_id`
-    /// - [`Error::MarketNotResolved`] – winning outcomes have not been set
-    /// - [`Error::Overflow`]          – any intermediate arithmetic overflowed
     pub fn calculate_bet_payout(
         env: &Env,
         market_id: &Symbol,
@@ -1018,7 +843,7 @@ impl BetManager {
         }
 
         let market = MarketStateManager::get_market(env, market_id)?;
-        let _winning_outcomes = market
+        let winning_outcomes = market
             .winning_outcomes
             .as_ref()
             .ok_or(Error::MarketNotResolved)?;
@@ -1037,33 +862,15 @@ impl BetManager {
 
         let fee_percentage = crate::fees::FeeManager::get_fee_percentage_for_timestamp(env, bet.timestamp);
 
-        // fee = total_pool × fee_percentage / 10_000  (checked)
-        let fee = summary
-            .total_pool
-            .checked_mul(fee_percentage as i128)
-            .ok_or(Error::Overflow)?
-            .checked_div(10_000)
-            .ok_or(Error::Overflow)?;
+        let fee = (summary.total_pool * fee_percentage as i128) / 10_000;
+        let distributable_pool = summary.total_pool - fee;
+        let pool_per_winner = distributable_pool / num_winners;
 
-        // distributable_pool = total_pool − fee  (checked)
-        let distributable_pool = summary
-            .total_pool
-            .checked_sub(fee)
-            .ok_or(Error::Overflow)?;
-
-        // pool_per_winner = distributable_pool / num_winners  (checked; num_winners > 0 guarded above)
-        let pool_per_winner = distributable_pool
-            .checked_div(num_winners)
-            .ok_or(Error::Overflow)?;
-
-        // payout = (bet.amount × pool_per_winner) / total_bets_on_outcome
-        // (total_bets_on_outcome > 0 is guarded above)
-        let payout = bet
+        let payout = (bet
             .amount
             .checked_mul(pool_per_winner)
-            .ok_or(Error::Overflow)?
-            .checked_div(total_bets_on_outcome)
-            .ok_or(Error::Overflow)?;
+            .ok_or(Error::InvalidInput)?)
+            / total_bets_on_outcome;
 
         Ok(payout)
     }
@@ -1435,9 +1242,8 @@ impl BetValidator {
     /// Validate bet parameters.
     ///
     /// Uses effective bet limits (per-event if set, else global, else default min/max).
-    /// Rejects bets below min with [`Error::InsufficientStake`], above max with
-    /// [`Error::BetAboveMaximum`], and bets exceeding the per-market cap with
-    /// [`Error::BetExceedsCap`] (when set).
+    /// Rejects bets below min with InsufficientStake, above max with InvalidInput.
+    /// Rejects bets exceeding the per-market cap with BetExceedsCap (when set).
     pub fn validate_bet_parameters(
         env: &Env,
         market_id: &Symbol,
@@ -1449,38 +1255,13 @@ impl BetValidator {
         Self::validate_bet_amount_against_limits(env, market_id, amount)
     }
 
-    /// Validate bet amount against the per-market `min_bet_amount` field.
-    ///
-    /// This is checked **in addition to** the global/per-event [`BetLimits`] minimum.
-    /// The effective floor is `max(global_min, market.min_bet_amount)`.
-    ///
-    /// # Parameters
-    ///
-    /// - `market` – The market whose `min_bet_amount` is checked
-    /// - `amount` – The proposed bet amount in base token units
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::BetBelowMarketMin`] when `amount < market.min_bet_amount`
-    pub fn validate_market_min_bet(market: &crate::types::Market, amount: i128) -> Result<(), Error> {
-        if let Some(min) = market.min_bet_amount {
-            if amount < min {
-                return Err(Error::BetBelowMarketMin);
-            }
-        }
-        Ok(())
-    }
-
     /// Validate bet amount against effective limits (per-event or global or defaults)
     /// and the per-market max bet cap (when set).
     ///
     /// Checks in order:
-    /// 1. Amount >= effective `min_bet` (→ [`Error::InsufficientStake`])
-    /// 2. Amount <= effective `max_bet` (→ [`Error::BetAboveMaximum`])
-    /// 3. Amount <= per-market cap when configured (→ [`Error::BetExceedsCap`])
-    ///
-    /// Steps 2 and 3 are distinct on purpose: the former is the market's ordinary
-    /// maximum, the latter an admin-imposed per-market cap layered on top of it.
+    /// 1. Amount >= effective `min_bet` (→ `InsufficientStake`)
+    /// 2. Amount <= effective `max_bet` (→ `InvalidInput`)
+    /// 3. Amount <= per-market cap when configured (→ `BetExceedsCap`)
     pub fn validate_bet_amount_against_limits(
         env: &Env,
         market_id: &Symbol,
@@ -1491,7 +1272,7 @@ impl BetValidator {
             return Err(Error::InsufficientStake);
         }
         if amount > limits.max_bet {
-            return Err(Error::BetAboveMaximum);
+            return Err(Error::InvalidInput);
         }
         // Check the per-market single-bet cap (most specific check, own error code).
         if let Some(cap) = get_market_max_bet_cap(env, market_id) {
@@ -1503,17 +1284,12 @@ impl BetValidator {
     }
 
     /// Validate bet amount using default constants (for tests / backward compatibility).
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::InsufficientStake`] when `amount` is below [`MIN_BET_AMOUNT`]
-    /// - [`Error::BetAboveMaximum`] when `amount` exceeds [`MAX_BET_AMOUNT`]
     pub fn validate_bet_amount(amount: i128) -> Result<(), Error> {
         if amount < MIN_BET_AMOUNT {
             return Err(Error::InsufficientStake);
         }
         if amount > MAX_BET_AMOUNT {
-            return Err(Error::BetAboveMaximum);
+            return Err(Error::InvalidInput);
         }
         Ok(())
     }

@@ -9,27 +9,12 @@ const STORAGE_CONFIG_KEY: &str = "storage_config";
 const LEDGERS_PER_DAY: u32 = 17_280;
 const BALANCE_TTL_LEDGERS: u32 = 31 * LEDGERS_PER_DAY;
 pub const MARKET_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
-/// Minimum remaining ledgers before a market record is bumped on read.
-/// At ~5 s/ledger, 31 days ≈ 535 680 ledgers — a record within 31 days of
-/// expiry is treated as "near expiry" and refreshed on every hot read.
-pub const MARKETS_LIFETIME_THRESHOLD: u32 = 31 * LEDGERS_PER_DAY;
-/// Number of ledgers to extend a market record's TTL when bumped.
-/// Matches [`MARKET_TTL_LEDGERS`] so a freshly-bumped record gets the full
-/// one-year lifetime again (idempotent via `extend_ttl` semantics).
-pub const MARKETS_BUMP_AMOUNT: u32 = MARKET_TTL_LEDGERS;
 const EVENT_TTL_LEDGERS: u32 = 90 * LEDGERS_PER_DAY;
 const ARCHIVE_TTL_LEDGERS: u32 = 365 * LEDGERS_PER_DAY;
 /// TTL for consumed `place_bets` idempotency keys (≈ 7 days at 5 s/ledger).
 /// A key stored beyond this window is treated as expired; the same raw bytes
 /// can be reused in a fresh batch after expiry.
 pub const PLACE_BETS_IDEM_TTL_LEDGERS: u32 = 7 * LEDGERS_PER_DAY;
-
-/// Hard cap on entries kept in each per-market leaderboard heap.
-///
-/// Limits the maximum `N` for `get_market_leaderboard(limit)` calls.  Any
-/// caller-supplied `limit` greater than this value is silently clamped, so gas
-/// costs are always bounded by O(MAX_MARKET_LEADERBOARD_CAPACITY).
-pub const MAX_MARKET_LEADERBOARD_CAPACITY: u32 = 50;
 
 /// TTL for instance storage cache entries, in ledgers.
 /// At ~5 seconds per ledger on Soroban mainnet, 100 ledgers ≈ 8 minutes.
@@ -53,25 +38,6 @@ pub const MARKET_CACHE_TTL_LEDGERS: u32 = 100;
 /// creation which succeeds on the helper path cannot fail partway through the
 /// entrypoint path.
 pub const MARKET_CREATION_PERSISTENT_KEYS: u32 = 3;
-
-/// Extends the TTL of a market's persistent storage entry if it is below
-/// [`MARKETS_LIFETIME_THRESHOLD`].
-///
-/// Uses `extend_ttl()` which only extends — it never shortens.
-/// Safe to call on every hot path without risk of over-bumping.
-///
-/// # Arguments
-/// * `env` - The Soroban environment
-/// * `key` - The storage key for the market entry to bump (typically a market ID Symbol)
-///
-/// # Remarks
-/// This function is designed to be called after reading or writing market storage
-/// to keep persistent market records alive for the expected market lifetime.
-pub(crate) fn bump_market_ttl(env: &Env, key: &impl IntoVal<Env, Val>) {
-    env.storage()
-        .persistent()
-        .extend_ttl(key, MARKETS_LIFETIME_THRESHOLD, MARKETS_BUMP_AMOUNT);
-}
 
 /// Pre-flight storage-rent check for market creation.
 /// Verifies that the ledger has enough sequence headroom so the new persistent
@@ -161,8 +127,7 @@ pub struct StorageTtlPressure {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    /// Consumed `place_bets` idempotency key, scoped per (user, key).
-    PlaceBetsIdem(Address, BytesN<32>),
+    PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
@@ -190,27 +155,27 @@ pub enum DataKey {
     ResolutionAdminLastAction(Symbol),
     /// Global protocol configuration record.
     GlobalConfig,
-    /// Replay protection nonce for events, stored per topic.
-    EventNonce(Symbol),
-    /// Cumulative stake a user has locked on a specific market.
-    /// Value: `i128` (total amount in base token units).
-    UserStake(Symbol, Address),
-    /// Global per-user maximum cumulative bet cap across a single market.
-    /// Value: `i128` (cap amount in base token units).
+    /// Global max bet cap per user.
     MaxBetCap,
-    // ===== COOL-OFF KEYS =====
-    /// Ledger timestamp (u64) of the last accepted bet placed by `(market_id, user)`.
-    /// Used to enforce the per-user cool-off period between consecutive bets on the
-    /// same market.
-    UserLastBetTime(Symbol, Address),
-    /// Global cool-off period in seconds (u64).
-    /// When set, all markets without a per-market override must wait this many seconds
-    /// between consecutive bets from the same user on the same market.
-    CoolOffPeriod,
-    /// Per-market cool-off override in seconds (u64) for a specific `market_id`.
-    /// Takes precedence over `CoolOffPeriod` when present.
-    PerMarketCoolOff(Symbol),
-    /// Collusion-detector configuration, keyed by a fixed config name symbol.
+    /// Per-user total stake in a market.
+    UserStake(Address, Symbol),
+    /// Event nonce for replay protection.
+    EventNonce(Symbol),
+    /// Head of audit trail for a market.
+    MarketAuditHead(Symbol),
+    /// Individual audit log entry for a market.
+    MarketAuditLog(Symbol, u32),
+    /// Oracle admin cooldown state.
+    OracleAdminCooldownState,
+    /// Multisig rotation state.
+    MultisigRotationState,
+    /// Admin override nonce for replay protection.
+    AdminOverrideNonce,
+    /// Per-ledger bet cap.
+    PerLedgerBetCap,
+    /// Per-ledger bet counter.
+    PerLedgerBetCounter,
+    /// Collusion detector configuration.
     CollusionDetectorConfig(Symbol),
 }
 
@@ -506,15 +471,12 @@ impl StorageOptimizer {
         for key in keys.iter() {
             let mut remaining = None;
             
-            // TTL checking currently requires native function support and isn't broadly accessible 
-            // from standard smart contracts without host function wrappers. This logic acts as 
-            // placeholder assuming host function mapping.
             if env.storage().persistent().has(&key) {
-                remaining = Some(max_ttl / 2); // Mock placeholder 
+                remaining = Some(0u32);
             } else if env.storage().temporary().has(&key) {
-                remaining = Some(max_ttl / 2); // Mock placeholder
+                remaining = Some(0u32);
             } else if env.storage().instance().has(&key) {
-                remaining = Some(max_ttl / 2); // Mock placeholder
+                remaining = Some(0u32);
             }
             
             if let Some(r) = remaining {
@@ -760,7 +722,7 @@ impl StorageOptimizer {
         match MarketStateManager::get_market(env, market_id) {
             Ok(market) => {
                 // Validate market structure
-                if let Err(_e) = market.validate(env) {
+                if let Err(e) = market.validate(env) {
                     result.is_valid = false;
                     result.corruption_detected = true;
                     result.errors.push_back(String::from_str(
@@ -785,7 +747,7 @@ impl StorageOptimizer {
                 }
 
                 // Validate state consistency
-                if let Err(_e) = MarketStateLogic::validate_market_state_consistency(env, &market) {
+                if let Err(e) = MarketStateLogic::validate_market_state_consistency(env, &market) {
                     result.is_valid = false;
                     result.errors.push_back(String::from_str(
                         env,
@@ -793,7 +755,7 @@ impl StorageOptimizer {
                     ));
                 }
             }
-            Err(_e) => {
+            Err(e) => {
                 result.is_valid = false;
                 result.missing_data = true;
                 result
@@ -943,9 +905,6 @@ impl BalanceStorage {
     ) -> Result<Balance, Error> {
         let balance = Self::checked_add_balance(env, user, asset, amount)?;
         Self::set_balance(env, &balance)?;
-        crate::events::EventEmitter::emit_balance_changed(
-            env, user, asset, &String::from_str(env, "deposit"), amount, balance.amount
-        );
         Ok(balance)
     }
 
@@ -960,9 +919,6 @@ impl BalanceStorage {
     ) -> Result<Balance, Error> {
         let balance = Self::checked_sub_balance(env, user, asset, amount)?;
         Self::set_balance(env, &balance)?;
-        crate::events::EventEmitter::emit_balance_changed(
-            env, user, asset, &String::from_str(env, "withdrawal"), amount, balance.amount
-        );
         Ok(balance)
     }
 }
@@ -1010,7 +966,7 @@ impl StorageOptimizer {
         // Simple checksum - in production, use a proper hash function
         let mut checksum = 0i128;
         for value in data.iter() {
-            checksum = checksum.wrapping_add(*value);
+            checksum = checksum.wrapping_add(value);
         }
         soroban_sdk::String::from_str(&data.env(), "checksum")
     }
@@ -1375,7 +1331,7 @@ mod tests {
             admin,
             created_at: env.ledger().timestamp(),
             status: MarketState::Active,
-            visibility: crate::types::EventVisibility::Public,
+            visibility: EventVisibility::Public,
             allowlist: Vec::new(env),
         }
     }
@@ -1434,7 +1390,7 @@ mod tests {
                 asset: asset.clone(),
                 amount: 10,
             };
-            BalanceStorage::set_balance(&env, &balance).unwrap();
+            BalanceStorage::set_balance(&env, &balance);
 
             let key = BalanceStorage::get_key(&env, &user, &asset);
             let expected_ttl = StorageOptimizer::persistent_ttl_for_tier(&env, StorageTtlTier::Balance);
@@ -1449,7 +1405,7 @@ mod tests {
                 amount: 20,
                 ..balance
             };
-            BalanceStorage::set_balance(&env, &updated_balance).unwrap();
+            BalanceStorage::set_balance(&env, &updated_balance);
             assert_eq!(env.storage().persistent().get_ttl(&key), expected_ttl);
         });
     }
@@ -1609,7 +1565,7 @@ mod tests {
         assert!(efficiency > 0);
         assert!(efficiency <= 100);
 
-        let _recommendations = StorageUtils::get_storage_recommendations(&market);
+        let recommendations = StorageUtils::get_storage_recommendations(&market);
         // Recommendations may be empty for small markets, so we just check it doesn't panic
         // len() is always >= 0 for Vec
     }
