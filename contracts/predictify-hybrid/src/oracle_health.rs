@@ -245,13 +245,13 @@ impl OracleHealth {
 
     /// Generate storage key for oracle health.
     fn health_key(oracle_address: &Address) -> Symbol {
-        let key_str = alloc::format!("oracle_health_{}", oracle_address.to_string());
+        let key_str = alloc::format!("oracle_health_{:?}", oracle_address);
         Symbol::new(&Env::default(), &key_str)
     }
 
     /// Generate storage key for health history.
     fn history_key(oracle_address: &Address) -> Symbol {
-        let key_str = alloc::format!("oracle_health_history_{}", oracle_address.to_string());
+        let key_str = alloc::format!("oracle_health_history_{:?}", oracle_address);
         Symbol::new(&Env::default(), &key_str)
     }
 
