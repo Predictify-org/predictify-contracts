@@ -798,13 +798,14 @@ impl PredictifyHybrid {
             }
         }
 
-        // Validate inputs
-        if outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
-        }
-
-        if description.len() == 0 {
-            panic_with_error!(env, Error::InvalidQuestion);
+        // Validate shared event-creation invariants before mutating state.
+        if let Err(e) = crate::validation::CreationValidator::validate_event_creation(
+            &env,
+            &description,
+            &outcomes,
+            &end_time,
+        ) {
+            panic_with_error!(env, e);
         }
 
         // Validate oracle configuration
@@ -5030,9 +5031,12 @@ impl PredictifyHybrid {
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        // Validate new description
-        if new_description.is_empty() {
-            panic_with_error!(env, Error::InvalidQuestion);
+        // Validate new description using the same rules as creation-time inputs.
+        if let Err(e) = crate::validation::CreationValidator::validate_event_description(
+            &env,
+            &new_description,
+        ) {
+            return Err(e);
         }
 
         // Get market
@@ -5175,16 +5179,12 @@ impl PredictifyHybrid {
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        // Validate new outcomes
-        if new_outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
-        }
-
-        // Check all outcomes are non-empty
-        for outcome in new_outcomes.iter() {
-            if outcome.is_empty() {
-                panic_with_error!(env, Error::InvalidOutcome);
-            }
+        // Validate new outcomes using the same rules as creation-time inputs.
+        if let Err(e) = crate::validation::CreationValidator::validate_creation_outcomes(
+            &env,
+            &new_outcomes,
+        ) {
+            return Err(e);
         }
 
         // Get market
