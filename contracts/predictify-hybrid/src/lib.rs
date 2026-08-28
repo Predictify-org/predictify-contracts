@@ -11,6 +11,7 @@ extern crate alloc;
 
 const SYM_ADMIN: &str = "Admin";
 const SYM_PLATFORM_FEE: &str = "platform_fee";
+const SYM_REMAINDER_RECIPIENT: &str = "remainder";
 pub use config::PERCENTAGE_DENOMINATOR;
 mod admin;
 // #[cfg(any())]
@@ -334,6 +335,12 @@ impl PredictifyHybrid {
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
+
+        // Store the default remainder recipient (admin) so payout remainders
+        // can be allocated to a specific address instead of being lost.
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, SYM_REMAINDER_RECIPIENT), &admin);
 
         // Seed default runtime configuration so validators and query paths have
         // deterministic bounds immediately after deployment.
