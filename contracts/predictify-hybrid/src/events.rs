@@ -1746,6 +1746,21 @@ pub struct StateChangeEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a payout remainder is allocated to conserve balances.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRemainderAllocatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Recipient that receives the remainder
+    pub recipient: Address,
+    /// Remainder amount in stroops
+    pub amount: i128,
+    /// Event timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
 /// Event emitted when user claims winnings
 ///
 /// This event tracks all winnings claims, providing transparency for payouts
@@ -2218,6 +2233,10 @@ impl EventSchemaRegistry {
             }),
             "dispute_opened" => Some(EventSchemaEntry {
                 topic: symbol_short!("dispt_opn"),
+                schema_version: 1,
+            }),
+            "payout_remainder_allocated" => Some(EventSchemaEntry {
+                topic: symbol_short!("pay_rem"),
                 schema_version: 1,
             }),
             _ => None,
@@ -5617,6 +5636,34 @@ impl EventEmitter {
         env.events()
             .publish((symbol_short!("cum_set"), user.clone()), event);
     }
+
+    /// Emit payout remainder allocation event.
+    ///
+    /// The payout routine must transfer `amount` to `recipient` before
+    /// calling this emitter; this event only records the allocation.
+    pub fn emit_payout_remainder_allocated(
+        env: &Env,
+        market_id: &Symbol,
+        recipient: &Address,
+        amount: i128,
+    ) {
+        let schema = EventSchemaRegistry::get_schema(env, "payout_remainder_allocated")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("pay_rem"),
+                schema_version: 1,
+            });
+        let event = PayoutRemainderAllocatedEvent {
+            market_id: market_id.clone(),
+            recipient: recipient.clone(),
+            amount,
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &schema.topic, &event);
+        env.events()
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+    }
 }
 
 #[cfg(test)]
@@ -5657,5 +5704,44 @@ mod focused_dispute_tests {
             }
         }
         assert!(found, "DisputeOpenedEvent not found with correct topic structure");
+    }
+}
+
+#[cfg(test)]
+mod payout_remainder_allocation_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Events},
+        Address, Env, Symbol, TryIntoVal,
+    };
+
+    #[test]
+    fn test_emit_payout_remainder_allocated_publishes_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = symbol_short!("mkt_rem");
+            let recipient = Address::generate(&env);
+
+            EventEmitter::emit_payout_remainder_allocated(
+                &env,
+                &market_id,
+                &recipient,
+                7,
+            );
+
+            let events = env.events().all();
+            let mut found = false;
+            for event in events.events().iter() {
+                if event.2.len() == 3 {
+                    let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                    let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+                    if topic0 == symbol_short!("pay_rem") && topic1 == market_id {
+                        found = true;
+                    }
+                }
+            }
+            assert!(found, "payout remainder allocation event not found");
+        });
     }
 }
