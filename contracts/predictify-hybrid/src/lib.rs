@@ -148,6 +148,9 @@ mod property_based_tests;
 // #[cfg(test)]
 // mod event_creation_tests;
 
+#[cfg(test)]
+mod voting_snapshot_stability_tests;
+
 // Re-export commonly used items
 use admin::{
     AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole,
