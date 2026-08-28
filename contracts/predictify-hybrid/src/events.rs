@@ -1564,6 +1564,37 @@ pub struct FallbackUsedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when oracle price deviation is detected between primary and fallback.
+///
+/// This event indicates that the price from the primary oracle and the price from the
+/// fallback oracle exceeded the configured deviation bounds. The outcome field indicates
+/// which oracle result was ultimately used for market resolution.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeviationDetectedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Primary oracle address
+    pub primary_oracle: Address,
+    /// Fallback oracle address
+    pub fallback_oracle: Address,
+    /// Primary oracle price
+    pub primary_price: i128,
+    /// Fallback oracle price
+    pub fallback_price: i128,
+    /// Maximum allowed deviation in basis points
+    pub max_deviation_bps: u32,
+    /// Actual deviation in basis points
+    pub actual_deviation_bps: u32,
+    /// Which oracle result was used: "primary" or "fallback"
+    pub resolution_outcome: String,
+    /// Whether fallback enforcement was enabled
+    pub enforce_fallback: bool,
+    /// Event timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
 /// Event emitted when a market resolution timeout is reached.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2383,6 +2414,38 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("fbk_used"), &event);
         env.events()
             .publish((symbol_short!("fbk_used"), market_id.clone()), event);
+    }
+
+    /// Emit oracle deviation detected event
+    pub fn emit_deviation_detected(
+        env: &Env,
+        market_id: &Symbol,
+        primary_oracle: &Address,
+        fallback_oracle: &Address,
+        primary_price: i128,
+        fallback_price: i128,
+        max_deviation_bps: u32,
+        actual_deviation_bps: u32,
+        resolution_outcome: &String,
+        enforce_fallback: bool,
+    ) {
+        let event = DeviationDetectedEvent {
+            market_id: market_id.clone(),
+            primary_oracle: primary_oracle.clone(),
+            fallback_oracle: fallback_oracle.clone(),
+            primary_price,
+            fallback_price,
+            max_deviation_bps,
+            actual_deviation_bps,
+            resolution_outcome: resolution_outcome.clone(),
+            enforce_fallback,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dev_det").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("dev_det"), &event);
+        env.events()
+            .publish((symbol_short!("dev_det"), market_id.clone()), event);
     }
 
     /// Emit resolution timeout event

@@ -704,6 +704,81 @@ impl OracleProvider {
 /// - **InvalidComparison**: Unsupported comparison operator
 /// - **InvalidOracleConfig**: Unsupported oracle provider
 /// - **InvalidFeed**: Empty or malformed feed identifier
+
+/// Deviation bounds for comparing primary and fallback oracle prices.
+///
+/// This structure defines the maximum acceptable deviation between primary and fallback
+/// oracle prices. When prices deviate beyond these bounds, the contract can trigger
+/// fallback mechanisms or emit diagnostic events.
+///
+/// # Fields
+///
+/// - `max_deviation_bps`: Maximum deviation in basis points (0-10000 = 0-100%)
+///   - Example: 500 = 5% maximum deviation
+///   - 0 = prices must match exactly
+///   - 10000 = any price difference is acceptable
+///
+/// - `enforce_fallback_on_deviation`: Whether to use fallback result when deviation exceeded
+///   - `true`: Deviation exceeding bounds triggers fallback oracle usage
+///   - `false`: Deviation is logged but primary result is used
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::types::DeviationBounds;
+///
+/// // Allow up to 5% deviation between oracles, enforce fallback if exceeded
+/// let bounds = DeviationBounds {
+///     max_deviation_bps: 500,
+///     enforce_fallback_on_deviation: true,
+/// };
+/// ```
+///
+/// # Invariants
+///
+/// - `max_deviation_bps` must be 0-10000 (0-100%)
+/// - Deviation calculation: `(max(price1, price2) - min(price1, price2)) / min(price1, price2) * 10000`
+/// - Prices must be positive (>0) to avoid division by zero
+///
+/// # State Machine
+///
+/// When comparing prices with deviation bounds:
+///
+/// 1. Get primary oracle price
+/// 2. Get fallback oracle price (if configured)
+/// 3. Calculate deviation percentage
+/// 4. If deviation <= max_deviation_bps: use primary result
+/// 5. If deviation > max_deviation_bps AND enforce_fallback_on_deviation:
+///    - Use fallback result, emit `DeviationDetectedEvent`
+/// 6. If deviation > max_deviation_bps AND NOT enforce_fallback_on_deviation:
+///    - Use primary result, emit `DeviationDetectedEvent` (informational)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeviationBounds {
+    /// Maximum allowed deviation as percentage in basis points (0-10000)
+    /// Example: 500 = 5% maximum deviation
+    pub max_deviation_bps: u32,
+
+    /// When true: deviation triggers mandatory fallback oracle usage
+    /// When false: deviation is logged but primary result is used
+    pub enforce_fallback_on_deviation: bool,
+}
+
+impl DeviationBounds {
+    /// Create new deviation bounds
+    pub fn new(max_deviation_bps: u32, enforce_fallback_on_deviation: bool) -> Self {
+        Self {
+            max_deviation_bps,
+            enforce_fallback_on_deviation,
+        }
+    }
+
+    /// Returns true if these bounds are valid (max_deviation_bps <= 10000)
+    pub fn is_valid(&self) -> bool {
+        self.max_deviation_bps <= 10000
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleConfig {
@@ -717,10 +792,12 @@ pub struct OracleConfig {
     pub threshold: i128,
     /// Comparison operator: "gt", "lt", "eq"
     pub comparison: String,
+    /// Deviation bounds between primary and fallback prices (optional)
+    pub deviation_bounds: Option<DeviationBounds>,
 }
 
 impl OracleConfig {
-    /// Create a new oracle configuration
+    /// Create a new oracle configuration without deviation bounds
     pub fn new(
         provider: OracleProvider,
         oracle_address: Address,
@@ -734,6 +811,26 @@ impl OracleConfig {
             feed_id,
             threshold,
             comparison,
+            deviation_bounds: None,
+        }
+    }
+
+    /// Create a new oracle configuration with deviation bounds
+    pub fn with_deviation_bounds(
+        provider: OracleProvider,
+        oracle_address: Address,
+        feed_id: String,
+        threshold: i128,
+        comparison: String,
+        deviation_bounds: Option<DeviationBounds>,
+    ) -> Self {
+        Self {
+            provider,
+            oracle_address,
+            feed_id,
+            threshold,
+            comparison,
+            deviation_bounds,
         }
     }
 
@@ -758,6 +855,7 @@ impl OracleConfig {
             feed_id: String::from_str(env, ""),
             threshold: 0,
             comparison: String::from_str(env, ""),
+            deviation_bounds: None,
         }
     }
 

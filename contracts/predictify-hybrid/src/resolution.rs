@@ -277,6 +277,73 @@ impl OracleResolutionManager {
         Ok((price_data.price, outcome))
     }
 
+    /// Check price deviation between primary and fallback oracles.
+    ///
+    /// If deviation bounds are configured in the primary oracle config, this function:
+    /// 1. Calculates the deviation between primary and fallback prices
+    /// 2. Emits a DeviationDetectedEvent if deviation is detected
+    /// 3. Returns whether to use the fallback result based on enforcement setting
+    ///
+    /// # Arguments
+    /// * `primary_price` - Price from primary oracle
+    /// * `fallback_price` - Price from fallback oracle
+    /// * `primary_config` - Primary oracle configuration
+    /// * `fallback_config` - Fallback oracle configuration
+    ///
+    /// # Returns
+    /// * `Ok((should_use_fallback, actual_deviation_bps))` - (true if fallback should be used due to deviation, deviation amount)
+    /// * `Err(Error)` - If deviation check fails
+    fn check_deviation_and_decide(
+        env: &Env,
+        market_id: &Symbol,
+        primary_price: i128,
+        fallback_price: i128,
+        primary_config: &crate::types::OracleConfig,
+        fallback_config: &crate::types::OracleConfig,
+    ) -> Result<(bool, u32), Error> {
+        // If primary config has no deviation bounds, no special handling needed
+        if let Some(bounds) = &primary_config.deviation_bounds {
+            // Validate the bounds
+            crate::validation::DeviationValidator::validate_bounds(bounds)?;
+            
+            // Calculate actual deviation
+            let actual_deviation_bps =
+                crate::validation::DeviationValidator::get_actual_deviation(primary_price, fallback_price)?;
+            
+            // Check if deviation exceeds bounds
+            let exceeds_bounds = actual_deviation_bps > bounds.max_deviation_bps;
+            
+            // Emit event to log the deviation detection
+            let outcome_str = if exceeds_bounds && bounds.enforce_fallback_on_deviation {
+                soroban_sdk::String::from_str(env, "fallback")
+            } else {
+                soroban_sdk::String::from_str(env, "primary")
+            };
+            
+            crate::events::EventEmitter::emit_deviation_detected(
+                env,
+                market_id,
+                &primary_config.oracle_address,
+                &fallback_config.oracle_address,
+                primary_price,
+                fallback_price,
+                bounds.max_deviation_bps,
+                actual_deviation_bps,
+                &outcome_str,
+                bounds.enforce_fallback_on_deviation,
+            );
+            
+            // Return: should_use_fallback = exceeds_bounds AND enforce_fallback
+            Ok((
+                exceeds_bounds && bounds.enforce_fallback_on_deviation,
+                actual_deviation_bps,
+            ))
+        } else {
+            // No deviation bounds configured
+            Ok((false, 0))
+        }
+    }
+
     /// Fetch oracle result for a market with deterministic fallback ordering and timeout handling.
     ///
     /// The resolver attempts the primary oracle once. When `has_fallback` is `true`, it attempts the
@@ -315,13 +382,20 @@ impl OracleResolutionManager {
                         match Self::try_fetch_from_config(env, market_id, fallback_config) {
                             Ok(fallback_res) => {
                                 let fallback_outcome = fallback_res.1.clone();
-                                let resolved_outcome = OracleUtils::resolve_outcome_with_fallback(
-                                    &primary_res.1,
-                                    &fallback_outcome,
-                                    env,
-                                )?;
-
-                                if resolved_outcome == fallback_outcome {
+                                
+                                // NEW: Check for price deviation if bounds are configured
+                                let (should_use_fallback_due_to_deviation, actual_deviation_bps) = 
+                                    Self::check_deviation_and_decide(
+                                        env,
+                                        market_id,
+                                        primary_res.0,
+                                        fallback_res.0,
+                                        &market.oracle_config,
+                                        &fallback_config,
+                                    )?;
+                                
+                                if should_use_fallback_due_to_deviation {
+                                    // Deviation exceeded and fallback is enforced
                                     used_config = fallback_config.clone();
                                     crate::events::EventEmitter::emit_fallback_used(
                                         env,
@@ -329,9 +403,27 @@ impl OracleResolutionManager {
                                         &market.oracle_config.oracle_address,
                                         &fallback_config.oracle_address,
                                     );
-                                    (fallback_res.0, resolved_outcome)
+                                    (fallback_res.0, fallback_outcome)
                                 } else {
-                                    (primary_res.0, primary_res.1)
+                                    // No deviation issue or deviation not enforced - use normal outcome resolution
+                                    let resolved_outcome = OracleUtils::resolve_outcome_with_fallback(
+                                        &primary_res.1,
+                                        &fallback_outcome,
+                                        env,
+                                    )?;
+
+                                    if resolved_outcome == fallback_outcome {
+                                        used_config = fallback_config.clone();
+                                        crate::events::EventEmitter::emit_fallback_used(
+                                            env,
+                                            market_id,
+                                            &market.oracle_config.oracle_address,
+                                            &fallback_config.oracle_address,
+                                        );
+                                        (fallback_res.0, resolved_outcome)
+                                    } else {
+                                        (primary_res.0, primary_res.1)
+                                    }
                                 }
                             }
                             Err(_) => primary_res,

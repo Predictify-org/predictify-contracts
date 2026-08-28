@@ -2617,6 +2617,109 @@ impl OracleValidator {
     }
 }
 
+// ===== DEVIATION VALIDATION =====
+
+/// Deviation bounds validation for comparing oracle prices
+pub struct DeviationValidator;
+
+impl DeviationValidator {
+    /// Validate deviation bounds structure.
+    ///
+    /// Ensures deviation bounds are properly configured with max_deviation_bps in valid range.
+    ///
+    /// # Arguments
+    /// * `bounds` - The deviation bounds to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if bounds are valid
+    /// * `Err(Error)` if bounds are invalid
+    pub fn validate_bounds(bounds: &crate::types::DeviationBounds) -> Result<(), crate::Error> {
+        // max_deviation_bps must be 0-10000 (0-100%)
+        if bounds.max_deviation_bps > 10000 {
+            return Err(crate::Error::InvalidDeviationBounds);
+        }
+        Ok(())
+    }
+
+    /// Calculate deviation between two prices in basis points.
+    ///
+    /// Deviation = (|price1 - price2| / min(price1, price2)) * 10000
+    ///
+    /// # Arguments
+    /// * `price1` - First price
+    /// * `price2` - Second price
+    ///
+    /// # Returns
+    /// * `Ok(u32)` - Deviation in basis points (0-10000)
+    /// * `Err(Error)` if prices are invalid
+    pub fn calculate_deviation_bps(price1: i128, price2: i128) -> Result<u32, crate::Error> {
+        // Both prices must be positive
+        if price1 <= 0 || price2 <= 0 {
+            return Err(crate::Error::InvalidOraclePrice);
+        }
+
+        let (larger, smaller) = if price1 > price2 {
+            (price1, price2)
+        } else {
+            (price2, price1)
+        };
+
+        // If prices are equal, deviation is 0
+        if larger == smaller {
+            return Ok(0);
+        }
+
+        // Calculate deviation as: (larger - smaller) / smaller * 10000
+        let diff = (larger - smaller).abs();
+        
+        // Convert to u128 to avoid overflow in multiplication
+        let diff_u128 = diff as u128;
+        let smaller_u128 = smaller as u128;
+        
+        // deviation_bps = (diff / smaller) * 10000
+        let percentage = ((diff_u128 * 10000) / smaller_u128) as u32;
+        
+        // Cap at 10000 (100%)
+        Ok(percentage.min(10000))
+    }
+
+    /// Check if price deviation exceeds configured bounds.
+    ///
+    /// # Arguments
+    /// * `primary_price` - Price from primary oracle
+    /// * `fallback_price` - Price from fallback oracle
+    /// * `bounds` - Deviation bounds to check against
+    ///
+    /// # Returns
+    /// * `Ok(true)` if deviation exceeds bounds
+    /// * `Ok(false)` if deviation is within bounds
+    /// * `Err(Error)` if prices are invalid
+    pub fn check_deviation_exceeds_bounds(
+        primary_price: i128,
+        fallback_price: i128,
+        bounds: &crate::types::DeviationBounds,
+    ) -> Result<bool, crate::Error> {
+        let deviation_bps = Self::calculate_deviation_bps(primary_price, fallback_price)?;
+        Ok(deviation_bps > bounds.max_deviation_bps)
+    }
+
+    /// Get the actual deviation between two prices.
+    ///
+    /// # Arguments
+    /// * `primary_price` - Price from primary oracle
+    /// * `fallback_price` - Price from fallback oracle
+    ///
+    /// # Returns
+    /// * `Ok(u32)` - Actual deviation in basis points
+    /// * `Err(Error)` if prices are invalid
+    pub fn get_actual_deviation(
+        primary_price: i128,
+        fallback_price: i128,
+    ) -> Result<u32, crate::Error> {
+        Self::calculate_deviation_bps(primary_price, fallback_price)
+    }
+}
+
 // ===== FEE VALIDATION =====
 
 /// Fee validation utilities

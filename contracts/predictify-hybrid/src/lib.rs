@@ -50,6 +50,10 @@ mod resolution_event_ordering_tests;
 #[cfg(test)]
 #[path = "tests/oracle_validation_tests.rs"]
 mod oracle_validation_tests;
+
+#[cfg(test)]
+mod deviation_bounds_tests;
+
 mod resolution;
 mod storage;
 mod deprecated;
