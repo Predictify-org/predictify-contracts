@@ -228,6 +228,23 @@ use crate::circuit_breaker::CircuitBreaker;
 use crate::events::EventEmitter;
 use crate::audit_trail::{AuditTrailManager, AuditAction};
 
+/// Stores a market in the persistent storage tier and explicitly extends its
+/// TTL so active markets cannot expire silently. Emits a storage-tier audit event.
+fn store_market_with_retention(env: &Env, market_id: &Symbol, market: &Market) {
+    env.storage().persistent().set(market_id, market);
+    env.storage()
+        .persistent()
+        .extend_ttl(market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
+    env.events().publish(
+        (
+            symbol_short!("storage"),
+            symbol_short!("persist"),
+            Symbol::new(env, "market"),
+        ),
+        market_id.clone(),
+    );
+}
+
 impl From<crate::reentrancy_guard::GuardError> for Error {
     fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
         Error::InvalidState
@@ -684,8 +701,7 @@ impl PredictifyHybrid {
         }
 
         // Store the market
-        env.storage().persistent().set(&market_id, &market);
-        env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
+        store_market_with_retention(&env, &market_id, &market);
 
         // Emit events
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, end_time);
@@ -1019,7 +1035,7 @@ impl PredictifyHybrid {
         market.stakes.set(user.clone(), stake);
         market.total_staked += stake;
 
-        env.storage().persistent().set(&market_id, &market);
+        store_market_with_retention(&env, &market_id, &market);
 
         // Invalidate analytics cache so next read recomputes fresh stats.
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
@@ -1795,7 +1811,7 @@ impl PredictifyHybrid {
                 market
                     .claimed
                     .set(user.clone(), ClaimInfo::new(&env, payout));
-                env.storage().persistent().set(&market_id, &market);
+                store_market_with_retention(&env, &market_id, &market);
 
                 // Invalidate analytics cache — claimed map has changed.
                 analytics::AnalyticsCache::new(&env).invalidate(&market_id);
@@ -1820,7 +1836,7 @@ impl PredictifyHybrid {
 
         // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
         market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
-        env.storage().persistent().set(&market_id, &market);
+        store_market_with_retention(&env, &market_id, &market);
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
     }
 
@@ -2111,7 +2127,7 @@ impl PredictifyHybrid {
 
         // Mark this market as swept so a second call returns SweepAlreadyDone.
         market.winnings_swept = true;
-        env.storage().persistent().set(&market_id, &market);
+        store_market_with_retention(&env, &market_id, &market);
         EventEmitter::emit_unclaimed_winnings_swept(
             &env,
             &market_id,
