@@ -27,7 +27,7 @@ mod config;
 mod err;
 mod force_resolve;
 mod event_archive;
-mod events;
+pub mod events;
 pub mod gov_registry;
 mod fees;
 mod gas;
@@ -51,12 +51,12 @@ mod resolution_event_ordering_tests;
 #[path = "tests/oracle_validation_tests.rs"]
 mod oracle_validation_tests;
 mod resolution;
-mod storage;
+pub mod storage;
 mod deprecated;
 pub use deprecated::{DeprecatedEntry, DeprecatedRegistry, MAX_REGISTRY_ENTRIES};
 #[cfg(test)]
 mod deprecated_tests;
-mod types;
+pub mod types;
 mod upgrade_manager;
 mod utils;
 mod validation;

@@ -240,6 +240,8 @@ impl BetTestSetup {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 

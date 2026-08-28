@@ -1,0 +1,426 @@
+    Checking predictify-hybrid v0.0.0 (/Users/solveetcoagula/Desktop/bounty_operations/workspaces/predictify-contracts/contracts/predictify-hybrid)
+contracts/predictify-hybrid/src/admin.rs:2:5: warning: unused import: `alloc::format`
+contracts/predictify-hybrid/src/bets.rs:22:56: warning: unused import: `BytesN`
+contracts/predictify-hybrid/src/gas.rs:240:17: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/oracles.rs:166:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/oracle_health.rs:1:52: warning: unused import: `String`
+contracts/predictify-hybrid/src/storage.rs:5:66: warning: unused import: `OracleConfig`
+contracts/predictify-hybrid/src/storage.rs:6:42: warning: unused imports: `BytesN` and `Map`
+contracts/predictify-hybrid/src/voting.rs:6:15: warning: unused import: `MarketAnalytics`
+contracts/predictify-hybrid/src/edge_cases.rs:3:33: warning: unused import: `vec`
+contracts/predictify-hybrid/src/queries.rs:81:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/queries.rs:86:25: warning: unused imports: `DisputeManager`, `MarketAnalytics`, `MarketStateManager`, `MarketValidator`, and `voting::VotingStats`
+contracts/predictify-hybrid/src/queries.rs:96:19: warning: unused import: `contracttype`
+contracts/predictify-hybrid/src/recovery.rs:2:51: warning: unused import: `vec`
+contracts/predictify-hybrid/src/recovery.rs:6:20: warning: unused import: `ClaimInfo`
+contracts/predictify-hybrid/src/statistics.rs:16:5: warning: unused import: `CategoryStatisticsV1`
+contracts/predictify-hybrid/src/statistics.rs:19:47: warning: unused import: `Map`
+contracts/predictify-hybrid/src/tokens.rs:9:13: warning: unused imports: `format` and `string::ToString`
+contracts/predictify-hybrid/src/monitor.rs:4:33: warning: unused import: `symbol_short`
+contracts/predictify-hybrid/src/lib.rs:113:13: warning: private item shadows public glob re-export
+contracts/predictify-hybrid/src/lib.rs:113:21: warning: private item shadows public glob re-export
+contracts/predictify-hybrid/src/lib.rs:198:27: warning: unused import: `AdminFunctions`
+contracts/predictify-hybrid/src/lib.rs:222:5: warning: unused import: `alloc::format`
+contracts/predictify-hybrid/src/lib.rs:224:15: warning: unused imports: `contracterror` and `contracttype`
+contracts/predictify-hybrid/src/circuit_breaker.rs:1142:9: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/circuit_breaker.rs:1143:9: warning: unused import: `soroban_sdk::testutils::Address as _`
+contracts/predictify-hybrid/src/err.rs:1868:9: warning: unused import: `soroban_sdk::testutils::Address`
+contracts/predictify-hybrid/src/events.rs:5625:72: warning: unused imports: `IntoVal` and `Val`
+contracts/predictify-hybrid/src/oracle_health.rs:679:9: warning: unused import: `crate::admin::AdminRoleManager`
+contracts/predictify-hybrid/src/oracle_health.rs:680:9: warning: unused import: `crate::err::Error`
+contracts/predictify-hybrid/src/oracle_health.rs:681:23: warning: unused imports: `Address`, `Env`, `String`, `Vec`, `testutils::Address as _`, and `vec`
+contracts/predictify-hybrid/src/oracle_health.rs:808:9: warning: unused import: `crate::err::Error`
+contracts/predictify-hybrid/src/oracle_health.rs:809:53: warning: unused imports: `String` and `Symbol`
+contracts/predictify-hybrid/src/resolution_event_ordering_tests.rs:20:64: warning: unused import: `LedgerInfo`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:8:42: warning: unused import: `MarketStateManager`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:10:5: warning: unused import: `crate::types::MarketPauseInfo`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:11:59: warning: unused imports: `IntoVal` and `vec`
+contracts/predictify-hybrid/src/resolution.rs:5:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/deprecated_tests.rs:15:9: warning: unused import: `symbol_short`
+contracts/predictify-hybrid/src/upgrade_manager.rs:1119:9: warning: unused import: `soroban_sdk::testutils::Address as _`
+contracts/predictify-hybrid/src/voting.rs:1429:9: warning: unused import: `soroban_sdk::testutils::Address as _`
+contracts/predictify-hybrid/src/voting.rs:1626:48: warning: unused import: `vec`
+contracts/predictify-hybrid/src/market_analytics.rs:595:9: warning: unused import: `soroban_sdk::testutils::Address as _`
+contracts/predictify-hybrid/src/edge_cases.rs:694:9: warning: unused import: `soroban_sdk::testutils::Address`
+contracts/predictify-hybrid/src/extensions.rs:841:48: warning: unused imports: `LedgerInfo` and `Ledger`
+contracts/predictify-hybrid/src/rate_limiter.rs:594:35: warning: unused import: `AuthorizedInvocation`
+contracts/predictify-hybrid/src/monitor.rs:506:9: warning: unused import: `soroban_sdk::testutils::Address as _`
+contracts/predictify-hybrid/src/test_audit_trail.rs:4:65: warning: unused import: `AuditTrailHead`
+contracts/predictify-hybrid/src/timelock_tests.rs:7:39: warning: unused imports: `LedgerInfo` and `Vec`
+contracts/predictify-hybrid/src/governance_tests.rs:5:31: warning: unused import: `Events`
+contracts/predictify-hybrid/src/force_resolve_tests.rs:4:5: warning: unused import: `crate::force_resolve::ForceResolveManager`
+contracts/predictify-hybrid/src/force_resolve_tests.rs:8:39: warning: unused import: `LedgerInfo`
+contracts/predictify-hybrid/src/analytics_snapshot_tests.rs:5:19: warning: unused import: `symbol_short`
+contracts/predictify-hybrid/src/property_based_tests.rs:11:5: warning: unused imports: `DEFAULT_PLATFORM_FEE_PERCENTAGE`, `MAX_MARKET_DURATION_DAYS`, `MAX_MARKET_OUTCOMES`, `MIN_MARKET_DURATION_DAYS`, and `MIN_MARKET_OUTCOMES`
+contracts/predictify-hybrid/src/property_based_tests.rs:14:5: warning: unused import: `crate::types::*`
+contracts/predictify-hybrid/src/property_based_tests.rs:15:5: warning: unused import: `alloc::vec::Vec as StdVec`
+contracts/predictify-hybrid/src/property_based_tests.rs:17:5: warning: unused import: `proptest::prelude::*`
+contracts/predictify-hybrid/src/property_based_tests.rs:19:17: warning: unused imports: `Address as _`, `Address`, `Env`, `LedgerInfo`, `Ledger`, and `String as SorobanString`
+contracts/predictify-hybrid/src/max_participants_tests.rs:18:31: warning: unused imports: `Events`, `TryFromVal`, and `Val`
+contracts/predictify-hybrid/src/tests/fee_config_commit_reveal_tests.rs:9:35: warning: unused import: `Map`
+contracts/predictify-hybrid/src/event_archive.rs:1113:38: error[E0308]: mismatched types: expected `Option<i128>`, found integer
+contracts/predictify-hybrid/src/event_archive.rs:1166:38: error[E0308]: mismatched types: expected `Option<i128>`, found integer
+contracts/predictify-hybrid/src/event_archive.rs:1449:38: error[E0308]: mismatched types: expected `Option<i128>`, found integer
+contracts/predictify-hybrid/src/events.rs:2364:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2385:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2397:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2423:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2446:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2466:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2512:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2562:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2598:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2634:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2688:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2725:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2756:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2803:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2840:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2865:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2892:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2921:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2946:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2971:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2990:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3013:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3048:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3071:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3097:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3120:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3142:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3160:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3184:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3210:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3232:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3249:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3263:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3277:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3290:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3303:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3315:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3326:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3344:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3367:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3395:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3411:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3421:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3431:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3446:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3460:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3476:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3499:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3520:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3543:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3564:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3587:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3602:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3621:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3644:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3665:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3683:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3696:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3710:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3755:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3791:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3821:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3834:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3854:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3868:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3892:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3949:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3994:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4039:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4084:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4129:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4187:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4210:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4231:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4245:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4260:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4283:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4304:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4322:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4345:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4366:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4378:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4399:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4409:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4422:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4446:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5097:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5119:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5140:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5161:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5191:10: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5348:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5370:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5394:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5416:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5430:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5444:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5475:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5503:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5528:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5552:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5570:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5582:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5604:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5618:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:94:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:164:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:233:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:282:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gas.rs:184:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gas.rs:251:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/markets.rs:2983:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5296:39: error[E0599]: no method named `all` found for struct `soroban_sdk::events::Events` in the current scope: method not found in `soroban_sdk::events::Events`
+contracts/predictify-hybrid/src/markets.rs:3545:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/markets.rs:3663:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/markets.rs:3670:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5649:22: error[E0609]: no field `2` on type `&soroban_sdk::xdr::ContractEvent`: unknown field
+contracts/predictify-hybrid/src/events.rs:5650:44: error[E0609]: no field `2` on type `&soroban_sdk::xdr::ContractEvent`: unknown field
+contracts/predictify-hybrid/src/events.rs:5651:44: error[E0609]: no field `2` on type `&soroban_sdk::xdr::ContractEvent`: unknown field
+contracts/predictify-hybrid/src/gas.rs:13:13: warning: use of deprecated method `soroban_sdk::Env::budget`: use cost_estimate().budget()
+contracts/predictify-hybrid/src/monitoring.rs:537:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:576:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:605:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:633:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:706:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:745:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:910:21: warning: use of deprecated associated function `soroban_sdk::Symbol::short`: use [symbol_short!()]
+contracts/predictify-hybrid/src/oracles.rs:2353:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2378:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2410:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2510:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2573:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2641:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2646:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2721:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2759:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:1971:17: warning: use of deprecated method `soroban_sdk::Env::budget`: use cost_estimate().budget()
+contracts/predictify-hybrid/src/monitoring.rs:1999:17: warning: use of deprecated method `soroban_sdk::Env::budget`: use cost_estimate().budget()
+contracts/predictify-hybrid/src/monitoring.rs:2030:17: warning: use of deprecated method `soroban_sdk::Env::budget`: use cost_estimate().budget()
+contracts/predictify-hybrid/src/monitoring.rs:2065:17: warning: use of deprecated method `soroban_sdk::Env::budget`: use cost_estimate().budget()
+contracts/predictify-hybrid/src/storage.rs:111:1: error[E0277]: the trait bound `soroban_sdk::xdr::ScVal: TryFrom<&soroban_sdk::Val>` is not satisfied: the trait `From<&soroban_sdk::Val>` is not implemented for `soroban_sdk::xdr::ScVal`
+contracts/predictify-hybrid/src/oracles.rs:3917:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:3963:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:3970:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4010:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4014:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4054:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4058:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4089:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4096:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4105:29: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::EventOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4136:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4143:35: error[E0308]: mismatched types: expected `&Option<i128>`, found `&u32`
+contracts/predictify-hybrid/src/oracles.rs:4156:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4160:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4195:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4199:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4238:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4242:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4280:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4284:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4333:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4337:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4375:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4380:26: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::GlobalOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4390:29: error[E0063]: missing field `auto_pause_duration_secs` in initializer of `types::EventOracleValidationConfig`: missing `auto_pause_duration_secs`
+contracts/predictify-hybrid/src/oracles.rs:4436:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4449:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4483:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4521:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/oracles.rs:4565:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/reentrancy_guard.rs:335:24: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/deprecated.rs:170:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/deprecated.rs:220:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracle_health.rs:830:26: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:859:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:891:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:921:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:953:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:996:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1034:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1078:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1108:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1140:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1171:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1203:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1253:21: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1280:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1311:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1355:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1430:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1465:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/oracle_health.rs:1497:30: error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+contracts/predictify-hybrid/src/resolution_event_ordering_tests.rs:38:35: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:135:22: error[E0063]: missing fields `dispute_stake_floor`, `max_participants` and `timelock_config` in initializer of `types::Market`: missing `dispute_stake_floor`, `max_participants` and `timelock_config`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:225:27: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:229:22: error[E0599]: no method named `with_mut` found for struct `soroban_sdk::ledger::Ledger` in the current scope: method not found in `soroban_sdk::ledger::Ledger`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:260:27: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:264:22: error[E0599]: no method named `with_mut` found for struct `soroban_sdk::ledger::Ledger` in the current scope: method not found in `soroban_sdk::ledger::Ledger`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:295:27: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:312:27: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:316:22: error[E0599]: no method named `with_mut` found for struct `soroban_sdk::ledger::Ledger` in the current scope: method not found in `soroban_sdk::ledger::Ledger`
+contracts/predictify-hybrid/src/tests/oracle_validation_tests.rs:357:27: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/upgrade_manager.rs:1074:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/upgrade_manager.rs:1177:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/upgrade_manager.rs:1210:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/versioning.rs:824:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/extensions.rs:706:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/recovery.rs:890:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/tokens.rs:548:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/graceful_degradation.rs:542:27: error[E0609]: no field `0` on type `&&soroban_sdk::xdr::ContractEvent`: unknown field
+contracts/predictify-hybrid/src/graceful_degradation.rs:543:14: error[E0277]: a value of type `soroban_sdk::Vec<_>` cannot be built from an iterator over elements of type `&soroban_sdk::xdr::ContractEvent`: value of type `soroban_sdk::Vec<_>` cannot be built from `std::iter::Iterator<Item=&soroban_sdk::xdr::ContractEvent>`
+contracts/predictify-hybrid/src/graceful_degradation.rs:559:27: error[E0609]: no field `0` on type `&&soroban_sdk::xdr::ContractEvent`: unknown field
+contracts/predictify-hybrid/src/graceful_degradation.rs:560:14: error[E0277]: a value of type `soroban_sdk::Vec<_>` cannot be built from an iterator over elements of type `&soroban_sdk::xdr::ContractEvent`: value of type `soroban_sdk::Vec<_>` cannot be built from `std::iter::Iterator<Item=&soroban_sdk::xdr::ContractEvent>`
+contracts/predictify-hybrid/src/recovery.rs:1233:26: error[E0063]: missing fields `dispute_stake_floor` and `max_participants` in initializer of `types::Market`: missing `dispute_stake_floor` and `max_participants`
+contracts/predictify-hybrid/src/rate_limiter.rs:622:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/rate_limiter.rs:665:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/rate_limiter.rs:728:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/rate_limiter.rs:759:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/dispute_multisig.rs:68:31: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/leaderboard.rs:319:23: warning: use of deprecated method `soroban_sdk::Env::register_contract`: use `register`
+contracts/predictify-hybrid/src/override_audit_tests.rs:35:14: error[E0061]: this method takes 0 arguments but 2 arguments were supplied
+contracts/predictify-hybrid/src/override_audit_tests.rs:35:35: error[E0061]: this method takes 12 arguments but 10 arguments were supplied
+contracts/predictify-hybrid/src/market_audit_tests.rs:184:21: error[E0609]: no field `total_entries` on type `core::option::Option<MarketAuditHead>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:219:22: error[E0609]: no field `index` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:220:22: error[E0609]: no field `action` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:221:22: error[E0609]: no field `actor` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:222:22: error[E0609]: no field `timestamp` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:326:15: error[E0609]: no field `details` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:330:15: error[E0609]: no field `details` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:344:21: error[E0609]: no field `total_entries` on type `core::option::Option<MarketAuditHead>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:347:22: error[E0609]: no field `action` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:348:22: error[E0609]: no field `actor` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:349:22: error[E0609]: no field `index` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:368:21: error[E0609]: no field `total_entries` on type `core::option::Option<MarketAuditHead>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:372:22: error[E0609]: no field `action` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:373:22: error[E0609]: no field `actor` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:376:15: error[E0609]: no field `details` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:381:15: error[E0609]: no field `details` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:402:21: error[E0609]: no field `total_entries` on type `core::option::Option<MarketAuditHead>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:405:22: error[E0609]: no field `action` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/market_audit_tests.rs:407:15: error[E0609]: no field `details` on type `core::option::Option<MarketAuditEntry>`: unknown field
+contracts/predictify-hybrid/src/test_audit_trail.rs:305:26: error[E0599]: no method named `get_audit_record` found for struct `PredictifyHybridClient<'a>` in the current scope: method not found in `PredictifyHybridClient<'_>`
+contracts/predictify-hybrid/src/test_audit_trail.rs:308:25: error[E0599]: no method named `get_latest_audit_records` found for struct `PredictifyHybridClient<'a>` in the current scope
+contracts/predictify-hybrid/src/test_audit_trail.rs:313:20: error[E0599]: no method named `verify_audit_integrity` found for struct `PredictifyHybridClient<'a>` in the current scope: method not found in `PredictifyHybridClient<'_>`
+contracts/predictify-hybrid/src/timelock_tests.rs:44:14: error[E0061]: this method takes 0 arguments but 2 arguments were supplied
+contracts/predictify-hybrid/src/timelock_tests.rs:44:35: error[E0061]: this method takes 12 arguments but 10 arguments were supplied
+contracts/predictify-hybrid/src/timelock_tests.rs:74:26: error[E0599]: no method named `set_market_timelock` found for struct `PredictifyHybridClient<'a>` in the current scope
+contracts/predictify-hybrid/src/timelock_tests.rs:77:30: error[E0308]: mismatched types: expected `Result<Result<(), ConversionError>, ...>`, found `Result<_, Result<Error, _>>`
+contracts/predictify-hybrid/src/timelock_tests.rs:84:30: error[E0308]: mismatched types: expected `Result<Result<(), ConversionError>, ...>`, found `Result<(), _>`
+contracts/predictify-hybrid/src/timelock_tests.rs:92:26: error[E0599]: no method named `set_market_timelock` found for struct `PredictifyHybridClient<'a>` in the current scope
+contracts/predictify-hybrid/src/timelock_tests.rs:114:30: error[E0308]: mismatched types: expected `Result<Result<(), ConversionError>, ...>`, found `Result<(), _>`
+contracts/predictify-hybrid/src/tie_resolution_tests.rs:101:65: error[E0369]: no implementation for `&soroban_sdk::Address & core::option::Option<_>`
+contracts/predictify-hybrid/src/tie_resolution_tests.rs:101:9: error[E0061]: this function takes 2 arguments but 3 arguments were supplied
+contracts/predictify-hybrid/src/tie_resolution_tests.rs:101:79: error[E0061]: this method takes 12 arguments but 10 arguments were supplied
+contracts/predictify-hybrid/src/force_resolve_tests.rs:45:14: error[E0061]: this method takes 0 arguments but 2 arguments were supplied
+contracts/predictify-hybrid/src/force_resolve_tests.rs:45:35: error[E0061]: this method takes 12 arguments but 10 arguments were supplied
+contracts/predictify-hybrid/src/analytics_snapshot_tests.rs:8:26: error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope: function or associated item not found in `soroban_sdk::Address`
+contracts/predictify-hybrid/src/analytics_snapshot_tests.rs:33:31: error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope: function or associated item not found in `soroban_sdk::Address`
+contracts/predictify-hybrid/src/analytics_snapshot_tests.rs:34:31: error[E0599]: no function or associated item named `generate` found for struct `soroban_sdk::Address` in the current scope: function or associated item not found in `soroban_sdk::Address`
+contracts/predictify-hybrid/src/market_id_generator.rs:39:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/max_participants_tests.rs:104:9: error[E0308]: mismatched types: expected `err::Error`, found `soroban_sdk::Error`
+contracts/predictify-hybrid/src/admin.rs:1016:13: warning: unused variable: `action`: help: if this is intentional, prefix it with an underscore: `_action`
+contracts/predictify-hybrid/src/bets.rs:846:13: warning: unused variable: `winning_outcomes`: help: if this is intentional, prefix it with an underscore: `_winning_outcomes`
+contracts/predictify-hybrid/src/err.rs:1734:13: warning: unreachable pattern: no value can reach this
+contracts/predictify-hybrid/src/monitoring.rs:1483:34: warning: unused import: `Address`
+contracts/predictify-hybrid/src/resolution_event_ordering_tests.rs:20:56: warning: unused import: `Ledger`
+contracts/predictify-hybrid/src/recovery.rs:915:9: warning: unused import: `soroban_sdk::testutils::Ledger`
+contracts/predictify-hybrid/src/circuit_breaker.rs:1221:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/circuit_breaker.rs:1314:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/circuit_breaker.rs:1353:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/event_archive.rs:800:13: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/event_archive.rs:836:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/event_archive.rs:845:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/event_archive.rs:858:23: warning: unused variable: `cursor`: help: if this is intentional, prefix it with an underscore: `_cursor`
+contracts/predictify-hybrid/src/event_archive.rs:973:13: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/event_archive.rs:995:13: warning: unused variable: `question`: help: if this is intentional, prefix it with an underscore: `_question`
+contracts/predictify-hybrid/src/event_archive.rs:996:13: warning: unused variable: `category`: help: if this is intentional, prefix it with an underscore: `_category`
+contracts/predictify-hybrid/src/event_archive.rs:1017:13: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/events.rs:2213:23: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/gas.rs:119:40: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/monitoring.rs:229:28: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/oracles.rs:1525:13: warning: unused variable: `unknown`: help: if this is intentional, prefix it with an underscore: `_unknown`
+contracts/predictify-hybrid/src/oracles.rs:1974:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/oracles.rs:4729:13: warning: unused variable: `whitelist`: help: if this is intentional, prefix it with an underscore: `_whitelist`
+contracts/predictify-hybrid/src/oracles.rs:4995:9: warning: unused variable: `message`: help: if this is intentional, prefix it with an underscore: `_message`
+contracts/predictify-hybrid/src/oracles.rs:5011:34: warning: unused variable: `caller`: help: if this is intentional, prefix it with an underscore: `_caller`
+contracts/predictify-hybrid/src/oracles.rs:5013:13: warning: unused variable: `cutoff_time`: help: if this is intentional, prefix it with an underscore: `_cutoff_time`
+contracts/predictify-hybrid/src/oracle_health.rs:266:29: warning: value assigned to `new_state` is never read
+contracts/predictify-hybrid/src/reporting.rs:86:26: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/storage.rs:725:28: warning: unused variable: `e`: help: if this is intentional, prefix it with an underscore: `_e`
+contracts/predictify-hybrid/src/storage.rs:750:28: warning: unused variable: `e`: help: if this is intentional, prefix it with an underscore: `_e`
+contracts/predictify-hybrid/src/storage.rs:758:17: warning: unused variable: `e`: help: if this is intentional, prefix it with an underscore: `_e`
+contracts/predictify-hybrid/src/storage.rs:979:9: warning: value assigned to `hash` is never read
+contracts/predictify-hybrid/src/storage.rs:1137:41: warning: unused variable: `creator`: help: if this is intentional, prefix it with an underscore: `_creator`
+contracts/predictify-hybrid/src/types.rs:426:13: warning: unused variable: `unknown`: help: if this is intentional, prefix it with an underscore: `_unknown`
+contracts/predictify-hybrid/src/types.rs:428:21: warning: unused variable: `suffix`: help: if this is intentional, prefix it with an underscore: `_suffix`
+contracts/predictify-hybrid/src/types.rs:430:21: warning: unused variable: `result`: help: if this is intentional, prefix it with an underscore: `_result`
+contracts/predictify-hybrid/src/gas.rs:258:35: warning: unused variable: `operation`: help: if this is intentional, prefix it with an underscore: `_operation`
+contracts/predictify-hybrid/src/types.rs:2129:16: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/types.rs:2141:19: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/storage.rs:1568:13: warning: unused variable: `recommendations`: help: if this is intentional, prefix it with an underscore: `_recommendations`
+contracts/predictify-hybrid/src/deprecated_tests.rs:342:22: error[E0716]: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+contracts/predictify-hybrid/src/deprecated_tests.rs:360:22: error[E0716]: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+contracts/predictify-hybrid/src/disputes.rs:1361:13: warning: variable does not need to be mutable
+contracts/predictify-hybrid/src/disputes.rs:3095:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/disputes.rs:3096:9: warning: unused variable: `dispute_id`: help: if this is intentional, prefix it with an underscore: `_dispute_id`
+contracts/predictify-hybrid/src/disputes.rs:3097:9: warning: unused variable: `user`: help: if this is intentional, prefix it with an underscore: `_user`
+contracts/predictify-hybrid/src/disputes.rs:3098:9: warning: unused variable: `vote`: help: if this is intentional, prefix it with an underscore: `_vote`
+contracts/predictify-hybrid/src/disputes.rs:3099:9: warning: unused variable: `stake`: help: if this is intentional, prefix it with an underscore: `_stake`
+contracts/predictify-hybrid/src/disputes.rs:3107:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/disputes.rs:3108:9: warning: unused variable: `dispute_id`: help: if this is intentional, prefix it with an underscore: `_dispute_id`
+contracts/predictify-hybrid/src/disputes.rs:3109:9: warning: unused variable: `distribution`: help: if this is intentional, prefix it with an underscore: `_distribution`
+contracts/predictify-hybrid/src/disputes.rs:3197:48: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/disputes.rs:3197:59: warning: unused variable: `user`: help: if this is intentional, prefix it with an underscore: `_user`
+contracts/predictify-hybrid/src/graceful_degradation.rs:175:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/graceful_degradation.rs:177:9: warning: unused variable: `address`: help: if this is intentional, prefix it with an underscore: `_address`
+contracts/predictify-hybrid/src/graceful_degradation.rs:178:9: warning: unused variable: `feed_id`: help: if this is intentional, prefix it with an underscore: `_feed_id`
+contracts/predictify-hybrid/src/queries.rs:179:47: warning: unused variable: `action`: help: if this is intentional, prefix it with an underscore: `_action`
+contracts/predictify-hybrid/src/queries.rs:283:13: warning: unused variable: `created_at`: help: if this is intentional, prefix it with an underscore: `_created_at`
+contracts/predictify-hybrid/src/queries.rs:873:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/recovery.rs:135:9: warning: unused variable: `admin`: help: if this is intentional, prefix it with an underscore: `_admin`
+contracts/predictify-hybrid/src/recovery.rs:351:21: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/statistics.rs:103:9: warning: unused variable: `market_stats`: help: if this is intentional, prefix it with an underscore: `_market_stats`
+contracts/predictify-hybrid/src/tokens.rs:162:28: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/tokens.rs:403:13: warning: variable does not need to be mutable
+contracts/predictify-hybrid/src/lib.rs:789:13: warning: unused variable: `gas_marker`: help: if this is intentional, prefix it with an underscore: `_gas_marker`
+contracts/predictify-hybrid/src/lib.rs:1778:21: warning: unused variable: `gross_share`: help: if this is intentional, prefix it with an underscore: `_gross_share`
+contracts/predictify-hybrid/src/lib.rs:2274:45: warning: unused variable: `admin`: help: if this is intentional, prefix it with an underscore: `_admin`
+contracts/predictify-hybrid/src/lib.rs:2986:9: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3047:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/lib.rs:3049:9: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3050:9: warning: unused variable: `max_retries`: help: if this is intentional, prefix it with an underscore: `_max_retries`
+contracts/predictify-hybrid/src/lib.rs:3105:32: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/lib.rs:3105:42: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3129:31: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/lib.rs:3129:41: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3238:13: warning: variable does not need to be mutable
+contracts/predictify-hybrid/src/market_analytics.rs:904:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/market_analytics.rs:914:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/market_analytics.rs:922:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/market_analytics.rs:933:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/market_analytics.rs:943:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/market_analytics.rs:952:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/market_analytics.rs:961:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/performance_benchmarks.rs:808:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/performance_benchmarks.rs:827:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/performance_benchmarks.rs:867:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/performance_benchmarks.rs:952:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/performance_benchmarks.rs:962:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/performance_benchmarks.rs:971:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+warning: `predictify-hybrid` (lib) generated 220 warnings (1 duplicate)
+error: could not compile `predictify-hybrid` (lib) due to 1 previous error; 220 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+contracts/predictify-hybrid/src/recovery.rs:1046:13: warning: unused variable: `result`: help: if this is intentional, prefix it with an underscore: `_result`
+contracts/predictify-hybrid/src/recovery.rs:1097:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/recovery.rs:1409:13: warning: unused variable: `test`: help: if this is intentional, prefix it with an underscore: `_test`
+contracts/predictify-hybrid/src/recovery.rs:1444:19: warning: unused variable: `admin`: help: if this is intentional, prefix it with an underscore: `_admin`
+contracts/predictify-hybrid/src/rate_limiter.rs:627:13: warning: unused variable: `i`: help: if this is intentional, prefix it with an underscore: `_i`
+contracts/predictify-hybrid/src/leaderboard.rs:304:19: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/property_based_tests.rs:39:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+warning: `predictify-hybrid` (lib test) generated 327 warnings (217 duplicates)
+error: could not compile `predictify-hybrid` (lib test) due to 91 previous errors; 327 warnings emitted

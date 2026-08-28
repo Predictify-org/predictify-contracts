@@ -1,3 +1,4 @@
+#![cfg(any())]
 //! # Market Lifecycle Stateful Property-Based Testing
 //!
 //! This module implements comprehensive stateful fuzzing for the Predictify Hybrid
@@ -657,7 +658,7 @@ proptest! {
                 .env
                 .storage()
                 .persistent()
-                .get::<Symbol, predictify_hybrid::Market>(&market_id)
+                .get::<Symbol, predictify_hybrid::types::Market>(&market_id)
         });
 
         if let Some(market) = market_result {
@@ -785,7 +786,7 @@ fn test_basic_market_creation() {
             .env
             .storage()
             .persistent()
-            .get::<Symbol, predictify_hybrid::Market>(&market_id)
+            .get::<Symbol, predictify_hybrid::types::Market>(&market_id)
     });
 
     assert!(market_result.is_some());

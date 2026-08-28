@@ -286,9 +286,7 @@ fn create_event_reuses_shared_description_and_outcome_validation() {
 
 fn create_event_rejects_past_end_time() {
     let setup = TestSetup::new();
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = 1_000;
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 1_000, ..env.ledger().get() });
 
     let result = setup.client().try_create_event(
         &setup.admin,

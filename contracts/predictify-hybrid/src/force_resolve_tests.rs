@@ -63,6 +63,8 @@ impl Ctx {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 }
@@ -127,9 +129,7 @@ fn test_force_resolve_ended_market() {
     let ctx = Ctx::new();
     let market_id = ctx.create_market();
 
-    ctx.env.ledger().with_mut(|li| {
-        li.timestamp = 1_000_000;
-    });
+    ctx.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 1_000_000, ..ctx.env.ledger().get() });
 
     let result = ctx.client().try_force_resolve_market(
         &ctx.admin,

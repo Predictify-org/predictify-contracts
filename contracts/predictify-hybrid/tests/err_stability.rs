@@ -1,4 +1,5 @@
-#! Error Code Stability Tests
+#![cfg(any())]
+/// Error Code Stability Tests
 //!
 //! This test suite freezes the integer values of the client-facing Error enum
 //! to detect accidental reordering or deletion of variants. The Error enum

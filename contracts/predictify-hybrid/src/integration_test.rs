@@ -107,6 +107,8 @@ impl IntegrationTestSuite {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         );
 
         self.market_ids.push_back(market_id.clone());
@@ -258,6 +260,8 @@ impl IntegrationTestSuite {
             &primary_oracle,
             &fallback_oracle,
             &0,
+            &None,
+            &None,
             &None,
             &None,
             &None,

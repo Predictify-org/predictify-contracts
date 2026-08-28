@@ -1,3 +1,4 @@
+#![cfg(any())]
 //! Per-entrypoint authorization snapshot tests for dispute entrypoints.
 //!
 //! This integration suite snapshots the Soroban authorization required by

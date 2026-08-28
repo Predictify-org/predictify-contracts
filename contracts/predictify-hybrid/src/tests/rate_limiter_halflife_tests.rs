@@ -26,6 +26,7 @@
 use crate::rate_limiter::{
     RateLimitConfig, RateLimiterContract, RateLimiterContractClient, RateLimiterError, RefillMode,
 };
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,12 +71,12 @@ fn deploy(env: &Env, config: RateLimitConfig) -> RateLimiterContractClient {
 /// Advance the ledger timestamp by `delta` seconds.
 fn advance(env: &Env, delta: u64) {
     let ts = env.ledger().timestamp();
-    env.ledger().with_mut(|li| li.timestamp = ts.saturating_add(delta));
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: ts.saturating_add(delta), ..env.ledger().get() });
 }
 
 /// Set the ledger timestamp to an absolute value.
 fn set_time(env: &Env, ts: u64) {
-    env.ledger().with_mut(|li| li.timestamp = ts);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: ts, ..env.ledger().get() });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

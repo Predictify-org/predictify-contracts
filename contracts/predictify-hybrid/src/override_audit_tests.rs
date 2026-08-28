@@ -53,6 +53,8 @@ impl Ctx {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 }
@@ -193,6 +195,8 @@ fn test_override_rejects_non_admin() {
         &None,
         &None,
         &None,
+            &None,
+            &None,
     );
 
     // Now attempt override as a stranger — no auths mocked for this address
@@ -259,6 +263,8 @@ fn test_override_no_partial_state_on_auth_failure() {
         &None,
         &None,
         &None,
+            &None,
+            &None,
     );
 
     let before = client.get_market(&market_id).unwrap();

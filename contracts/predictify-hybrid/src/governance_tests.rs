@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use crate::governance::{GovernanceContract, GovernanceError, QuorumDecay};
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
     Address, Bytes, BytesN, Env, String, Symbol,
@@ -28,7 +29,7 @@ impl GovernanceFixture {
     ) -> Self {
         let env = Env::default();
         env.mock_all_auths();
-        env.ledger().with_mut(|li| li.timestamp = 1_000);
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 1_000, ..env.ledger().get() });
         let contract_id = env.register(crate::PredictifyHybrid, ());
 
         let admin = Address::generate(&env);
@@ -280,7 +281,7 @@ fn governance_vote_rejects_before_start_time() {
     let fixture = GovernanceFixture::new(100, 1);
     let proposal_id = fixture.create_noop_proposal("gov_time_1");
 
-    fixture.env.ledger().with_mut(|li| li.timestamp = li.timestamp - 1);
+    fixture.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: fixture.env.ledger().get().timestamp - 1, ..fixture.env.ledger().get() });
 
     let before_start = fixture.vote(fixture.voter_one.clone(), proposal_id, true);
     assert_eq!(before_start, Err(GovernanceError::VotingNotStarted));

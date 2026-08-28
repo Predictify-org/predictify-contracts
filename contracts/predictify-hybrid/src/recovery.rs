@@ -1258,6 +1258,8 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 86400,
                 winnings_swept: false,
+                dispute_stake_floor: None,
+                max_participants: None,
                 timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
             env.storage().persistent().set(&market_id, &market);

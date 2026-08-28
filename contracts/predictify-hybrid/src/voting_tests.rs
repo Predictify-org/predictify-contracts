@@ -9,6 +9,7 @@ use crate::types::{MarketState, OracleConfig, OracleProvider};
 use crate::voting::{VotingAnalytics, VotingUtils, VotingValidator};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{vec, Address, Env, String, Symbol};
 
 // ===== SETUP =====
@@ -105,7 +106,7 @@ fn test_vote_rejected_after_end_time() {
     let client = PredictifyHybridClient::new(&s.env, &s.contract_id);
     let user = s.user();
     let mid = s.create_market(1);
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     assert!(
         client
             .try_vote(&user, &mid, &String::from_str(&s.env, "Yes"), &1_000_000i128)
@@ -134,7 +135,7 @@ fn test_vote_rejected_on_resolved_market() {
     let client = PredictifyHybridClient::new(&s.env, &s.contract_id);
     let user = s.user();
     let mid = s.create_market(1);
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
     assert!(
         client
@@ -172,9 +173,9 @@ fn test_payout_proportional_to_stake() {
     client.vote(&user1, &mid, &String::from_str(&s.env, "Yes"), &3_000_000i128);
     client.vote(&user2, &mid, &String::from_str(&s.env, "Yes"), &1_000_000i128);
 
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
-    s.env.ledger().with_mut(|li| li.timestamp += 25 * 3600);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 25 * 3600, ..env.ledger().get() });
 
     // resolve_market_manual auto-distributes, so just read claimed amounts
     let p1 = s.claimed_payout(&mid, &user1);
@@ -196,9 +197,9 @@ fn test_losing_voter_gets_zero_payout() {
     client.vote(&winner, &mid, &String::from_str(&s.env, "Yes"), &1_000_000i128);
     client.vote(&loser, &mid, &String::from_str(&s.env, "No"), &1_000_000i128);
 
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
-    s.env.ledger().with_mut(|li| li.timestamp += 25 * 3600);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 25 * 3600, ..env.ledger().get() });
 
     // resolve_market_manual auto-distributes, loser gets 0
     assert_eq!(s.claimed_payout(&mid, &loser), 0);
@@ -214,7 +215,7 @@ fn test_claim_blocked_during_dispute_window() {
     let mid = s.create_market(1);
 
     client.vote(&user, &mid, &String::from_str(&s.env, "Yes"), &1_000_000i128);
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
 
     // resolve_market_manual auto-distributes, but let's test manual claim is blocked
@@ -233,9 +234,9 @@ fn test_claim_allowed_after_dispute_window() {
     let mid = s.create_market(1);
 
     client.vote(&user, &mid, &String::from_str(&s.env, "Yes"), &1_000_000i128);
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
-    s.env.ledger().with_mut(|li| li.timestamp += 25 * 3600);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 25 * 3600, ..env.ledger().get() });
 
     // resolve_market_manual auto-distributes after dispute window
     assert!(s.claimed_payout(&mid, &user) > 0);
@@ -249,9 +250,9 @@ fn test_double_claim_rejected() {
     let mid = s.create_market(1);
 
     client.vote(&user, &mid, &String::from_str(&s.env, "Yes"), &1_000_000i128);
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     client.resolve_market_manual(&s.admin, &mid, &String::from_str(&s.env, "Yes"));
-    s.env.ledger().with_mut(|li| li.timestamp += 25 * 3600);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 25 * 3600, ..env.ledger().get() });
 
     // resolve_market_manual auto-distributes, so second claim must fail
     assert!(client.try_claim_winnings(&user, &mid).is_err());
@@ -275,7 +276,7 @@ fn test_dispute_rejected_on_cancelled_market() {
     let user = s.user();
     let mid = s.create_market(1);
     client.cancel_event(&s.admin, &mid, &None);
-    s.env.ledger().with_mut(|li| li.timestamp += 2 * 86400);
+    s.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 86400, ..env.ledger().get() });
     assert!(client.try_dispute_market(&user, &mid, &10_000_000i128, &None).is_err());
 }
 
@@ -362,7 +363,7 @@ fn test_validate_market_for_voting_respects_bet_deadline() {
     let env = Env::default();
     env.mock_all_auths();
     // Set ledger time to something non-zero so we can go "back" for deadline
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
     let contract_id = env.register(PredictifyHybrid, ());
     env.as_contract(&contract_id, || {
         let now = env.ledger().timestamp(); // 10_000

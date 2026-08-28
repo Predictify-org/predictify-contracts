@@ -1111,6 +1111,8 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                dispute_stake_floor: None,
+                max_participants: None,
                 timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
@@ -1162,6 +1164,8 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                dispute_stake_floor: None,
+                max_participants: None,
                 timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 
@@ -1443,6 +1447,8 @@ mod tests {
                 bet_deadline: 0,
                 dispute_window_seconds: 3600,
                 winnings_swept: false,
+                dispute_stake_floor: None,
+                max_participants: None,
                 timelock_config: crate::timelock::MarketTimelockConfig::default(),
             };
 

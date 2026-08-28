@@ -1,0 +1,450 @@
+    Checking predictify-hybrid v0.0.0 (/Users/solveetcoagula/Desktop/bounty_operations/workspaces/predictify-contracts/contracts/predictify-hybrid)
+contracts/predictify-hybrid/src/admin.rs:2:5: warning: unused import: `alloc::format`
+contracts/predictify-hybrid/src/bets.rs:22:56: warning: unused import: `BytesN`
+contracts/predictify-hybrid/src/gas.rs:240:17: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/oracles.rs:166:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/oracle_health.rs:1:52: warning: unused import: `String`
+contracts/predictify-hybrid/src/storage.rs:5:66: warning: unused import: `OracleConfig`
+contracts/predictify-hybrid/src/storage.rs:6:42: warning: unused imports: `BytesN` and `Map`
+contracts/predictify-hybrid/src/voting.rs:6:15: warning: unused import: `MarketAnalytics`
+contracts/predictify-hybrid/src/edge_cases.rs:3:33: warning: unused import: `vec`
+contracts/predictify-hybrid/src/queries.rs:81:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/queries.rs:86:25: warning: unused imports: `DisputeManager`, `MarketAnalytics`, `MarketStateManager`, `MarketValidator`, and `voting::VotingStats`
+contracts/predictify-hybrid/src/queries.rs:96:19: warning: unused import: `contracttype`
+contracts/predictify-hybrid/src/recovery.rs:2:51: warning: unused import: `vec`
+contracts/predictify-hybrid/src/recovery.rs:6:20: warning: unused import: `ClaimInfo`
+contracts/predictify-hybrid/src/statistics.rs:16:5: warning: unused import: `CategoryStatisticsV1`
+contracts/predictify-hybrid/src/statistics.rs:19:47: warning: unused import: `Map`
+contracts/predictify-hybrid/src/tokens.rs:9:13: warning: unused imports: `format` and `string::ToString`
+contracts/predictify-hybrid/src/monitor.rs:4:33: warning: unused import: `symbol_short`
+contracts/predictify-hybrid/src/lib.rs:113:13: warning: private item shadows public glob re-export
+contracts/predictify-hybrid/src/lib.rs:113:21: warning: private item shadows public glob re-export
+contracts/predictify-hybrid/src/lib.rs:198:27: warning: unused import: `AdminFunctions`
+contracts/predictify-hybrid/src/lib.rs:222:5: warning: unused import: `alloc::format`
+contracts/predictify-hybrid/src/lib.rs:224:15: warning: unused imports: `contracterror` and `contracttype`
+contracts/predictify-hybrid/src/events.rs:2364:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2385:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2397:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2423:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2446:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2466:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2512:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2562:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2598:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2634:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2688:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2725:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2756:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2803:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2840:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2865:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2892:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2921:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2946:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2971:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:2990:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3013:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3048:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3071:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3097:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3120:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3142:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3160:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3184:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3210:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3232:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3249:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3263:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3277:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3290:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3303:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3315:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3326:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3344:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3367:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3395:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3411:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3421:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3431:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3446:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3460:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3476:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3499:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3520:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3543:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3564:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3587:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3602:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3621:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3644:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3665:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3683:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3696:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3710:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3755:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3791:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3821:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3834:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3854:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3868:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3892:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3949:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:3994:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4039:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4084:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4129:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4187:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4210:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4231:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4245:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4260:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4283:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4304:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4322:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4345:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4366:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4378:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4399:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4409:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4422:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:4446:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5097:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5119:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5140:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5161:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5191:10: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5348:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5370:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5394:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5416:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5430:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5444:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5475:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5503:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5528:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5552:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5570:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5582:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5604:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/events.rs:5618:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:94:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:164:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:233:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gov_registry.rs:282:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gas.rs:184:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/gas.rs:251:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/markets.rs:2983:14: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/markets.rs:3545:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/markets.rs:3663:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/markets.rs:3670:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:537:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:576:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:605:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/monitoring.rs:633:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:706:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:745:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:910:21: warning: use of deprecated associated function `soroban_sdk::Symbol::short`: use [symbol_short!()]
+contracts/predictify-hybrid/src/oracles.rs:2353:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2378:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2410:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2510:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2573:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2641:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2646:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2721:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/oracles.rs:2759:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/deprecated.rs:170:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/deprecated.rs:220:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/upgrade_manager.rs:1074:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/extensions.rs:706:26: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/recovery.rs:890:22: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/tokens.rs:548:18: warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+contracts/predictify-hybrid/src/resolution.rs:5:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/market_id_generator.rs:39:5: warning: unused import: `alloc::string::ToString`
+contracts/predictify-hybrid/src/admin.rs:1016:13: warning: unused variable: `action`: help: if this is intentional, prefix it with an underscore: `_action`
+contracts/predictify-hybrid/src/bets.rs:846:13: warning: unused variable: `winning_outcomes`: help: if this is intentional, prefix it with an underscore: `_winning_outcomes`
+contracts/predictify-hybrid/src/err.rs:1734:13: warning: unreachable pattern: no value can reach this
+contracts/predictify-hybrid/src/events.rs:2213:23: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/gas.rs:119:40: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/monitoring.rs:229:28: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/oracles.rs:1525:13: warning: unused variable: `unknown`: help: if this is intentional, prefix it with an underscore: `_unknown`
+contracts/predictify-hybrid/src/oracles.rs:1974:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/oracles.rs:4729:13: warning: unused variable: `whitelist`: help: if this is intentional, prefix it with an underscore: `_whitelist`
+contracts/predictify-hybrid/src/oracles.rs:4995:9: warning: unused variable: `message`: help: if this is intentional, prefix it with an underscore: `_message`
+contracts/predictify-hybrid/src/oracles.rs:5011:34: warning: unused variable: `caller`: help: if this is intentional, prefix it with an underscore: `_caller`
+contracts/predictify-hybrid/src/oracles.rs:5013:13: warning: unused variable: `cutoff_time`: help: if this is intentional, prefix it with an underscore: `_cutoff_time`
+contracts/predictify-hybrid/src/oracle_health.rs:266:29: warning: value assigned to `new_state` is never read
+contracts/predictify-hybrid/src/reporting.rs:86:26: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/storage.rs:725:28: warning: unused variable: `e`: help: if this is intentional, prefix it with an underscore: `_e`
+contracts/predictify-hybrid/src/storage.rs:750:28: warning: unused variable: `e`: help: if this is intentional, prefix it with an underscore: `_e`
+contracts/predictify-hybrid/src/storage.rs:758:17: warning: unused variable: `e`: help: if this is intentional, prefix it with an underscore: `_e`
+contracts/predictify-hybrid/src/storage.rs:979:9: warning: value assigned to `hash` is never read
+contracts/predictify-hybrid/src/storage.rs:1137:41: warning: unused variable: `creator`: help: if this is intentional, prefix it with an underscore: `_creator`
+contracts/predictify-hybrid/src/types.rs:426:13: warning: unused variable: `unknown`: help: if this is intentional, prefix it with an underscore: `_unknown`
+contracts/predictify-hybrid/src/types.rs:428:21: warning: unused variable: `suffix`: help: if this is intentional, prefix it with an underscore: `_suffix`
+contracts/predictify-hybrid/src/types.rs:430:21: warning: unused variable: `result`: help: if this is intentional, prefix it with an underscore: `_result`
+contracts/predictify-hybrid/src/types.rs:2129:16: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/types.rs:2141:19: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/disputes.rs:1361:13: warning: variable does not need to be mutable
+contracts/predictify-hybrid/src/disputes.rs:3095:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/disputes.rs:3096:9: warning: unused variable: `dispute_id`: help: if this is intentional, prefix it with an underscore: `_dispute_id`
+contracts/predictify-hybrid/src/disputes.rs:3097:9: warning: unused variable: `user`: help: if this is intentional, prefix it with an underscore: `_user`
+contracts/predictify-hybrid/src/disputes.rs:3098:9: warning: unused variable: `vote`: help: if this is intentional, prefix it with an underscore: `_vote`
+contracts/predictify-hybrid/src/disputes.rs:3099:9: warning: unused variable: `stake`: help: if this is intentional, prefix it with an underscore: `_stake`
+contracts/predictify-hybrid/src/disputes.rs:3107:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/disputes.rs:3108:9: warning: unused variable: `dispute_id`: help: if this is intentional, prefix it with an underscore: `_dispute_id`
+contracts/predictify-hybrid/src/disputes.rs:3109:9: warning: unused variable: `distribution`: help: if this is intentional, prefix it with an underscore: `_distribution`
+contracts/predictify-hybrid/src/disputes.rs:3197:48: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/disputes.rs:3197:59: warning: unused variable: `user`: help: if this is intentional, prefix it with an underscore: `_user`
+contracts/predictify-hybrid/src/graceful_degradation.rs:175:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/graceful_degradation.rs:177:9: warning: unused variable: `address`: help: if this is intentional, prefix it with an underscore: `_address`
+contracts/predictify-hybrid/src/graceful_degradation.rs:178:9: warning: unused variable: `feed_id`: help: if this is intentional, prefix it with an underscore: `_feed_id`
+contracts/predictify-hybrid/src/queries.rs:179:47: warning: unused variable: `action`: help: if this is intentional, prefix it with an underscore: `_action`
+contracts/predictify-hybrid/src/queries.rs:283:13: warning: unused variable: `created_at`: help: if this is intentional, prefix it with an underscore: `_created_at`
+contracts/predictify-hybrid/src/queries.rs:873:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/recovery.rs:135:9: warning: unused variable: `admin`: help: if this is intentional, prefix it with an underscore: `_admin`
+contracts/predictify-hybrid/src/recovery.rs:351:21: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/statistics.rs:103:9: warning: unused variable: `market_stats`: help: if this is intentional, prefix it with an underscore: `_market_stats`
+contracts/predictify-hybrid/src/tokens.rs:162:28: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/tokens.rs:403:13: warning: variable does not need to be mutable
+contracts/predictify-hybrid/src/lib.rs:789:13: warning: unused variable: `gas_marker`: help: if this is intentional, prefix it with an underscore: `_gas_marker`
+contracts/predictify-hybrid/src/lib.rs:1778:21: warning: unused variable: `gross_share`: help: if this is intentional, prefix it with an underscore: `_gross_share`
+contracts/predictify-hybrid/src/lib.rs:2274:45: warning: unused variable: `admin`: help: if this is intentional, prefix it with an underscore: `_admin`
+contracts/predictify-hybrid/src/lib.rs:2986:9: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3047:9: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/lib.rs:3049:9: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3050:9: warning: unused variable: `max_retries`: help: if this is intentional, prefix it with an underscore: `_max_retries`
+contracts/predictify-hybrid/src/lib.rs:3105:32: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/lib.rs:3105:42: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3129:31: warning: unused variable: `env`: help: if this is intentional, prefix it with an underscore: `_env`
+contracts/predictify-hybrid/src/lib.rs:3129:41: warning: unused variable: `market_id`: help: if this is intentional, prefix it with an underscore: `_market_id`
+contracts/predictify-hybrid/src/lib.rs:3238:13: warning: variable does not need to be mutable
+contracts/predictify-hybrid/src/lib.rs:253:7: warning: constant `ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON` is never used
+contracts/predictify-hybrid/src/lib.rs:255:7: warning: constant `ORACLE_FAILURE_PRIMARY_ONLY_REASON` is never used
+contracts/predictify-hybrid/src/admin.rs:342:12: warning: associated functions `initialize_with_config` and `validate_initialization_params` are never used
+contracts/predictify-hybrid/src/admin.rs:613:12: warning: associated function `get_admin` is never used
+contracts/predictify-hybrid/src/admin.rs:623:7: warning: constant `CONTRACT_PAUSED_KEY` is never used
+contracts/predictify-hybrid/src/admin.rs:626:12: warning: struct `ContractPauseManager` is never constructed
+contracts/predictify-hybrid/src/admin.rs:630:12: warning: associated functions `is_contract_paused`, `pause`, `unpause`, `require_not_paused`, and `transfer_admin` are never used
+contracts/predictify-hybrid/src/admin.rs:1326:12: warning: associated function `deactivate_role` is never used
+contracts/predictify-hybrid/src/admin.rs:1632:12: warning: associated functions `get_admin_assignment`, `deactivate_admin`, and `reactivate_admin` are never used
+contracts/predictify-hybrid/src/admin.rs:1685:11: warning: constant `THRESHOLD_ROTATION_DELAY` is never used
+contracts/predictify-hybrid/src/admin.rs:1723:12: warning: associated function `set_cooldown` is never used
+contracts/predictify-hybrid/src/admin.rs:1754:12: warning: struct `MultisigManager` is never constructed
+contracts/predictify-hybrid/src/admin.rs:1758:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/admin.rs:2113:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/admin.rs:3044:12: warning: associated function `validate_action_parameters` is never used
+contracts/predictify-hybrid/src/admin.rs:3342:12: warning: associated functions `get_admin_actions` and `get_admin_actions_for_admin` are never used
+contracts/predictify-hybrid/src/admin.rs:3486:12: warning: struct `AdminUtils` is never constructed
+contracts/predictify-hybrid/src/admin.rs:3490:12: warning: associated functions `is_admin`, `is_super_admin`, `get_role_name`, and `get_permission_name` are never used
+contracts/predictify-hybrid/src/admin.rs:3564:12: warning: struct `AdminHierarchy` is never constructed
+contracts/predictify-hybrid/src/admin.rs:3567:12: warning: associated functions `get_role_level`, `can_manage_role`, `get_role_permissions`, and `role_encompasses` are never used
+contracts/predictify-hybrid/src/admin.rs:3658:12: warning: associated functions `get_admin_details` and `get_admin_activity_summary` are never used
+contracts/predictify-hybrid/src/admin.rs:3738:12: warning: associated functions `ensure_migration` and `get_migration_info` are never used
+contracts/predictify-hybrid/src/admin.rs:3777:12: warning: struct `AdminTesting` is never constructed
+contracts/predictify-hybrid/src/admin.rs:3781:12: warning: associated functions `create_test_admin_action`, `create_test_role_assignment`, `validate_admin_action_structure`, and `simulate_admin_action` are never used
+contracts/predictify-hybrid/src/balances.rs:187:12: warning: associated function `get_balance` is never used
+contracts/predictify-hybrid/src/batch_operations.rs:129:12: warning: struct `BatchProcessor` is never constructed
+contracts/predictify-hybrid/src/batch_operations.rs:134:11: warning: multiple associated items are never used
+contracts/predictify-hybrid/src/batch_operations.rs:761:12: warning: struct `BatchUtils` is never constructed
+contracts/predictify-hybrid/src/batch_operations.rs:765:12: warning: associated functions `is_batch_processing_enabled`, `get_optimal_batch_size`, `calculate_gas_efficiency`, and `estimate_gas_cost` are never used
+contracts/predictify-hybrid/src/batch_operations.rs:825:12: warning: struct `BatchTesting` is never constructed
+contracts/predictify-hybrid/src/batch_operations.rs:829:12: warning: associated functions `create_test_vote_data`, `create_test_claim_data`, `create_test_market_data`, `create_test_oracle_feed_data`, and `simulate_batch_operation` are never used
+contracts/predictify-hybrid/src/bets.rs:1048:12: warning: associated function `remove_bet` is never used
+contracts/predictify-hybrid/src/bets.rs:1287:12: warning: associated functions `validate_bet_amount` and `set_max_bet_cap` are never used
+contracts/predictify-hybrid/src/bets.rs:1549:12: warning: associated functions `get_contract_balance` and `has_sufficient_balance` are never used
+contracts/predictify-hybrid/src/bets.rs:1650:12: warning: associated function `get_market_summary` is never used
+contracts/predictify-hybrid/src/config.rs:127:11: warning: constant `MAX_DESCRIPTION_LENGTH` is never used
+contracts/predictify-hybrid/src/config.rs:135:11: warning: constant `MIN_DESCRIPTION_LENGTH` is never used
+contracts/predictify-hybrid/src/config.rs:337:11: warning: constant `DEFAULT_MIN_POOL_SIZE` is never used
+contracts/predictify-hybrid/src/config.rs:358:11: warning: constant `DEFAULT_RESOLUTION_TIMEOUT_SECONDS` is never used
+contracts/predictify-hybrid/src/config.rs:399:11: warning: constant `ADMIN_STORAGE_KEY` is never used
+contracts/predictify-hybrid/src/config.rs:402:11: warning: constant `TOKEN_ID_STORAGE_KEY` is never used
+contracts/predictify-hybrid/src/config.rs:405:11: warning: constant `FEE_CONFIG_STORAGE_KEY` is never used
+contracts/predictify-hybrid/src/config.rs:408:11: warning: constant `RESOLUTION_ANALYTICS_STORAGE_KEY` is never used
+contracts/predictify-hybrid/src/config.rs:411:11: warning: constant `ORACLE_STATS_STORAGE_KEY` is never used
+contracts/predictify-hybrid/src/config.rs:1509:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/config.rs:2711:12: warning: struct `ConfigValidator` is never constructed
+contracts/predictify-hybrid/src/config.rs:2715:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/config.rs:2855:12: warning: struct `ConfigUtils` is never constructed
+contracts/predictify-hybrid/src/config.rs:2859:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/config.rs:2979:12: warning: struct `ConfigTesting` is never constructed
+contracts/predictify-hybrid/src/config.rs:2983:12: warning: associated functions `create_test_config`, `create_mainnet_test_config`, `validate_test_config_structure`, and `create_minimal_test_config` are never used
+contracts/predictify-hybrid/src/event_archive.rs:370:12: warning: associated function `is_archived` is never used
+contracts/predictify-hybrid/src/events.rs:2569:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/events.rs:4461:12: warning: struct `EventLogger` is never constructed
+contracts/predictify-hybrid/src/events.rs:4465:12: warning: associated functions `get_events`, `get_market_events`, `get_recent_events`, `get_error_events`, `get_performance_metrics`, and `clear_old_events` are never used
+contracts/predictify-hybrid/src/events.rs:4626:12: warning: struct `EventValidator` is never constructed
+contracts/predictify-hybrid/src/events.rs:4630:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/events.rs:4732:12: warning: struct `EventHelpers` is never constructed
+contracts/predictify-hybrid/src/events.rs:4736:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/events.rs:4801:12: warning: struct `EventTestingUtils` is never constructed
+contracts/predictify-hybrid/src/events.rs:4805:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/events.rs:4979:11: warning: constant `MAX_EVENTS_PER_QUERY` is never used
+contracts/predictify-hybrid/src/events.rs:4980:11: warning: constant `EVENT_RETENTION_DAYS` is never used
+contracts/predictify-hybrid/src/events.rs:4981:11: warning: constant `RECENT_EVENT_THRESHOLD` is never used
+contracts/predictify-hybrid/src/events.rs:4986:12: warning: struct `EventDocumentation` is never constructed
+contracts/predictify-hybrid/src/events.rs:4990:12: warning: associated functions `get_overview`, `get_event_type_docs`, and `get_usage_examples` are never used
+contracts/predictify-hybrid/src/events.rs:5090:8: warning: function `emit_oracle_callback` is never used
+contracts/predictify-hybrid/src/events.rs:5118:8: warning: function `emit_security_event` is never used
+contracts/predictify-hybrid/src/events.rs:5139:8: warning: function `emit_oracle_degradation` is never used
+contracts/predictify-hybrid/src/events.rs:5160:8: warning: function `emit_manual_resolution_required` is never used
+contracts/predictify-hybrid/src/events.rs:5330:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/fees.rs:43:11: warning: constant `MIN_FEE_PERCENTAGE` is never used
+contracts/predictify-hybrid/src/fees.rs:49:11: warning: constant `ACTIVITY_LEVEL_LOW` is never used
+contracts/predictify-hybrid/src/fees.rs:50:11: warning: constant `ACTIVITY_LEVEL_MEDIUM` is never used
+contracts/predictify-hybrid/src/fees.rs:51:11: warning: constant `ACTIVITY_LEVEL_HIGH` is never used
+contracts/predictify-hybrid/src/fees.rs:54:11: warning: constant `MARKET_SIZE_SMALL` is never used
+contracts/predictify-hybrid/src/fees.rs:55:11: warning: constant `MARKET_SIZE_MEDIUM` is never used
+contracts/predictify-hybrid/src/fees.rs:56:11: warning: constant `MARKET_SIZE_LARGE` is never used
+contracts/predictify-hybrid/src/fees.rs:813:12: warning: associated functions `get_fee_analytics`, `apply_fee_update`, `get_fee_config`, `validate_market_fees`, `update_fee_structure`, and `get_fee_history` are never used
+contracts/predictify-hybrid/src/fees.rs:1110:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/fees.rs:1491:12: warning: associated function `validate_market_fees` is never used
+contracts/predictify-hybrid/src/fees.rs:1544:12: warning: associated functions `get_market_fee_stats`, `can_collect_fees`, and `get_fee_eligibility` are never used
+contracts/predictify-hybrid/src/fees.rs:1672:12: warning: associated function `record_fee_structure_update` is never used
+contracts/predictify-hybrid/src/fees.rs:1722:7: warning: constant `FEE_VAULT_KEY` is never used
+contracts/predictify-hybrid/src/fees.rs:1723:7: warning: constant `WITHDRAWAL_LAST_TS_KEY` is never used
+contracts/predictify-hybrid/src/fees.rs:1724:7: warning: constant `WITHDRAWAL_SCHEDULE_KEY` is never used
+contracts/predictify-hybrid/src/fees.rs:1727:11: warning: constant `DEFAULT_FEE_WITHDRAWAL_TIMELOCK_SECONDS` is never used
+contracts/predictify-hybrid/src/fees.rs:1729:11: warning: constant `DEFAULT_FEE_WITHDRAWAL_MAX_BPS` is never used
+contracts/predictify-hybrid/src/fees.rs:1732:12: warning: struct `FeeWithdrawalManager` is never constructed
+contracts/predictify-hybrid/src/fees.rs:1736:12: warning: associated functions `get_schedule`, `set_schedule`, `get_last_withdrawal_ts`, and `withdraw_fees` are never used
+contracts/predictify-hybrid/src/fees.rs:1954:7: warning: constant `PENDING_FEE_CONFIG_KEY` is never used
+contracts/predictify-hybrid/src/fees.rs:1956:7: warning: constant `PENDING_FEE_CONFIG_ETA_KEY` is never used
+contracts/predictify-hybrid/src/fees.rs:1994:12: warning: associated functions `reset_to_defaults`, `queue_update`, `apply_update`, `cancel_queued_update`, and `get_queued_fee_config` are never used
+contracts/predictify-hybrid/src/governance.rs:70:7: warning: constant `MAX_INCOMING_DELEGATIONS` is never used
+contracts/predictify-hybrid/src/governance.rs:117:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/reentrancy_guard.rs:169:12: warning: associated functions `check_reentrancy_state`, `validate_external_call_success`, and `restore_state_on_failure` are never used
+contracts/predictify-hybrid/src/oracle_health.rs:484:12: warning: struct `OracleHealthManager` is never constructed
+contracts/predictify-hybrid/src/oracle_health.rs:487:7: warning: constant `HEALTH_CONFIG_KEY` is never used
+contracts/predictify-hybrid/src/oracle_health.rs:488:7: warning: constant `HEALTH_STATES_KEY` is never used
+contracts/predictify-hybrid/src/oracle_health.rs:489:7: warning: constant `HEALTH_HISTORY_KEY` is never used
+contracts/predictify-hybrid/src/oracle_health.rs:495:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/reporting.rs:223:12: warning: associated functions `get_active_events` and `get_event_snapshot` are never used
+contracts/predictify-hybrid/src/resolution.rs:238:12: warning: struct `OracleResolution` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:249:12: warning: struct `OracleResolutionManager` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:253:8: warning: associated functions `try_fetch_from_config`, `fetch_oracle_result`, `get_oracle_resolution`, `validate_oracle_resolution`, and `calculate_oracle_confidence` are never used
+contracts/predictify-hybrid/src/resolution.rs:779:12: warning: associated function `invalidate` is never used
+contracts/predictify-hybrid/src/resolution.rs:881:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/resolution.rs:1540:12: warning: associated functions `resolve_market`, `finalize_market`, `get_market_resolution`, and `validate_market_resolution` are never used
+contracts/predictify-hybrid/src/resolution.rs:1937:12: warning: struct `OracleResolutionValidator` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:1941:12: warning: associated functions `validate_market_for_oracle_resolution` and `validate_oracle_resolution` are never used
+contracts/predictify-hybrid/src/resolution.rs:1981:12: warning: struct `MarketResolutionValidator` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:1985:12: warning: associated functions `validate_market_for_resolution`, `validate_admin_permissions`, `validate_outcome`, and `validate_market_resolution` are never used
+contracts/predictify-hybrid/src/resolution.rs:2084:12: warning: struct `OracleResolutionAnalytics` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:2088:12: warning: associated functions `calculate_confidence_score` and `get_oracle_stats` are never used
+contracts/predictify-hybrid/src/resolution.rs:2180:12: warning: struct `ResolutionUtils` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:2184:12: warning: associated functions `get_resolution_state`, `can_resolve_market`, `get_resolution_eligibility`, `calculate_resolution_time`, and `validate_resolution_parameters` are never used
+contracts/predictify-hybrid/src/resolution.rs:2251:12: warning: struct `ResolutionTesting` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:2255:12: warning: associated functions `create_test_oracle_resolution`, `create_test_market_resolution`, `validate_resolution_structure`, and `simulate_resolution_process` are never used
+contracts/predictify-hybrid/src/resolution.rs:2987:12: warning: struct `OracleCallbackResolver` is never constructed
+contracts/predictify-hybrid/src/resolution.rs:2990:12: warning: associated functions `process_authenticated_callback`, `update_market_resolution`, and `determine_outcome_from_oracle_data` are never used
+contracts/predictify-hybrid/src/storage.rs:467:12: warning: associated function `check_ttl_pressure` is never used
+contracts/predictify-hybrid/src/storage.rs:914:12: warning: associated function `sub_balance` is never used
+contracts/predictify-hybrid/src/storage.rs:1115:12: warning: associated functions `has_event` and `update_event` are never used
+contracts/predictify-hybrid/src/storage.rs:1133:12: warning: struct `CreatorLimitsManager` is never constructed
+contracts/predictify-hybrid/src/storage.rs:1137:8: warning: associated functions `get_active_events_key`, `get_active_events`, `increment_active_events`, and `decrement_active_events` are never used
+contracts/predictify-hybrid/src/storage.rs:1207:12: warning: associated function `needs_optimization` is never used
+contracts/predictify-hybrid/src/utils.rs:191:12: warning: struct `TimeUtils` is never constructed
+contracts/predictify-hybrid/src/utils.rs:195:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/utils.rs:513:12: warning: struct `StringUtils` is never constructed
+contracts/predictify-hybrid/src/utils.rs:517:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/utils.rs:891:12: warning: struct `NumericUtils` is never constructed
+contracts/predictify-hybrid/src/utils.rs:895:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/utils.rs:1337:12: warning: struct `ValidationUtils` is never constructed
+contracts/predictify-hybrid/src/utils.rs:1341:12: warning: associated functions `validate_positive_number`, `validate_number_range`, `validate_future_timestamp`, `validate_address`, `validate_email`, and `validate_url` are never used
+contracts/predictify-hybrid/src/utils.rs:1667:12: warning: struct `ConversionUtils` is never constructed
+contracts/predictify-hybrid/src/utils.rs:1671:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/utils.rs:2069:12: warning: struct `CommonUtils` is never constructed
+contracts/predictify-hybrid/src/utils.rs:2073:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/utils.rs:2548:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/validation.rs:1003:12: warning: struct `InputValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:1007:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/validation.rs:2158:12: warning: struct `EventValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:2162:12: warning: associated function `validate_event_creation` is never used
+contracts/predictify-hybrid/src/validation.rs:2204:12: warning: struct `MarketValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:2208:12: warning: associated functions `validate_market_creation`, `validate_outcomes`, `validate_market_for_voting`, `validate_market_for_resolution`, and `validate_market_for_fee_collection` are never used
+contracts/predictify-hybrid/src/validation.rs:2392:12: warning: struct `OracleValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:2396:11: warning: multiple associated items are never used
+contracts/predictify-hybrid/src/validation.rs:2623:12: warning: struct `FeeValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:2627:12: warning: associated functions `validate_fee_amount`, `validate_fee_percentage`, and `validate_fee_config` are never used
+contracts/predictify-hybrid/src/validation.rs:2781:12: warning: struct `VoteValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:2785:12: warning: associated functions `validate_vote`, `validate_outcome`, and `validate_stake_amount` are never used
+contracts/predictify-hybrid/src/validation.rs:2863:8: warning: function `validate_bet_amount_against_limits` is never used
+contracts/predictify-hybrid/src/validation.rs:2959:12: warning: struct `DisputeValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:2963:12: warning: associated functions `validate_dispute_creation` and `validate_dispute_stake` are never used
+contracts/predictify-hybrid/src/validation.rs:3072:12: warning: struct `ConfigValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:3076:12: warning: associated functions `validate_contract_config` and `validate_environment_config` are never used
+contracts/predictify-hybrid/src/validation.rs:3220:12: warning: struct `ComprehensiveValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:3224:12: warning: associated functions `validate_complete_market_creation`, `validate_inputs`, and `validate_market_state` are never used
+contracts/predictify-hybrid/src/validation.rs:3418:12: warning: struct `ValidationTestingUtils` is never constructed
+contracts/predictify-hybrid/src/validation.rs:3422:12: warning: associated functions `create_test_validation_result`, `create_test_validation_error`, `validate_test_data_structure`, `create_test_market`, and `create_test_oracle_config` are never used
+contracts/predictify-hybrid/src/validation.rs:3551:12: warning: struct `ValidationErrorHandler` is never constructed
+contracts/predictify-hybrid/src/validation.rs:3555:12: warning: associated functions `handle_validation_error`, `handle_validation_result`, and `log_validation_info` are never used
+contracts/predictify-hybrid/src/validation.rs:3634:12: warning: struct `ValidationDocumentation` is never constructed
+contracts/predictify-hybrid/src/validation.rs:3638:12: warning: associated functions `get_validation_overview`, `get_validation_rules`, and `get_validation_error_codes` are never used
+contracts/predictify-hybrid/src/validation.rs:3820:12: warning: struct `MarketParameterValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:3859:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/validation.rs:4401:12: warning: struct `MarketParams` is never constructed
+contracts/predictify-hybrid/src/validation.rs:4441:12: warning: associated functions `new` and `new_with_oracle` are never used
+contracts/predictify-hybrid/src/validation.rs:4597:12: warning: struct `OracleConfigValidator` is never constructed
+contracts/predictify-hybrid/src/validation.rs:4627:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/validation.rs:5136:12: warning: associated functions `validate_event_description`, `validate_event_end_time`, and `validate_event_creation` are never used
+contracts/predictify-hybrid/src/validation.rs:5599:12: warning: associated function `get_normalization_stats` is never used
+contracts/predictify-hybrid/src/extensions.rs:21:7: warning: constant `MIN_EXTENSION_DAYS` is never used
+contracts/predictify-hybrid/src/extensions.rs:307:12: warning: associated functions `get_market_extension_history`, `get_extension_stats`, and `can_extend_market` are never used
+contracts/predictify-hybrid/src/extensions.rs:775:12: warning: associated function `get_extension_events` is never used
+contracts/predictify-hybrid/src/extensions.rs:803:12: warning: struct `ExtensionTestHelpers` is never constructed
+contracts/predictify-hybrid/src/extensions.rs:807:12: warning: associated functions `create_test_extension` and `simulate_market_extension` are never used
+contracts/predictify-hybrid/src/market_id_generator.rs:130:12: warning: associated functions `is_market_id_valid`, `validate_market_id_format`, `parse_market_id_components`, and `get_admin_markets` are never used
+contracts/predictify-hybrid/src/metadata_limits.rs:94:11: warning: constant `MAX_SOURCE_LENGTH` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:100:11: warning: constant `MAX_ERROR_MESSAGE_LENGTH` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:106:11: warning: constant `MAX_SIGNATURE_LENGTH` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:120:11: warning: constant `MAX_EXTENSION_HISTORY_COUNT` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:126:11: warning: constant `MAX_ORACLE_RESULTS_COUNT` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:132:11: warning: constant `MAX_WINNING_OUTCOMES_COUNT` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:222:8: warning: function `validate_category_length` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:253:8: warning: function `validate_tag_length` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:279:8: warning: function `validate_tags_length` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:321:8: warning: function `validate_source_length` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:330:8: warning: function `validate_error_message_length` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:339:8: warning: function `validate_signature_length` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:358:8: warning: function `validate_extension_history_count` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:375:8: warning: function `validate_oracle_results_count` is never used
+contracts/predictify-hybrid/src/metadata_limits.rs:392:8: warning: function `validate_winning_outcomes_count` is never used
+contracts/predictify-hybrid/src/recovery.rs:27:11: warning: constant `MIN_RECOVERY_TIMELOCK_SECONDS` is never used
+contracts/predictify-hybrid/src/recovery.rs:30:11: warning: constant `MAX_RECOVERY_TIMELOCK_SECONDS` is never used
+contracts/predictify-hybrid/src/recovery.rs:385:12: warning: associated function `history_len` is never used
+contracts/predictify-hybrid/src/recovery.rs:606:12: warning: associated function `validate_recovery_safety` is never used
+contracts/predictify-hybrid/src/recovery.rs:903:4: warning: function `symbol_to_string` is never used
+contracts/predictify-hybrid/src/statistics.rs:23:7: warning: constant `MARKET_STATS_PREFIX` is never used
+contracts/predictify-hybrid/src/statistics.rs:30:12: warning: struct `MarketStatsKey` is never constructed
+contracts/predictify-hybrid/src/statistics.rs:34:8: warning: associated function `new` is never used
+contracts/predictify-hybrid/src/statistics.rs:102:12: warning: associated function `calculate_market_volatility` is never used
+contracts/predictify-hybrid/src/tokens.rs:14:11: warning: constant `CANONICAL_DECIMALS` is never used
+contracts/predictify-hybrid/src/tokens.rs:24:8: warning: function `normalize_amount` is never used
+contracts/predictify-hybrid/src/tokens.rs:49:8: warning: function `denormalize_amount` is never used
+contracts/predictify-hybrid/src/tokens.rs:191:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/tokens.rs:457:8: warning: function `transfer_token` is never used
+contracts/predictify-hybrid/src/tokens.rs:472:8: warning: function `approve_token` is never used
+contracts/predictify-hybrid/src/tokens.rs:494:8: warning: function `transfer_from_token` is never used
+contracts/predictify-hybrid/src/tokens.rs:513:8: warning: function `get_token_balance` is never used
+contracts/predictify-hybrid/src/tokens.rs:522:8: warning: function `check_token_balance` is never used
+contracts/predictify-hybrid/src/tokens.rs:535:8: warning: function `get_token_allowance` is never used
+contracts/predictify-hybrid/src/tokens.rs:546:8: warning: function `emit_asset_event` is never used
+contracts/predictify-hybrid/src/tokens.rs:557:8: warning: function `validate_token_operation` is never used
+contracts/predictify-hybrid/src/tokens.rs:623:8: warning: function `verify_token_decimals_batch` is never used
+contracts/predictify-hybrid/src/rate_limiter.rs:153:8: warning: methods `check_limit`, `rate_limit_oracle_calls`, `rate_limit_bets`, `set_per_ledger_bet_cap`, `update_rate_limits`, and `get_rate_limit_status` are never used
+contracts/predictify-hybrid/src/rate_limiter.rs:510:12: warning: struct `RateLimiterContract` is never constructed
+contracts/predictify-hybrid/src/rate_limiter.rs:515:12: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/dispute_multisig.rs:16:12: warning: struct `DisputeMultiSig` is never constructed
+contracts/predictify-hybrid/src/dispute_multisig.rs:19:8: warning: associated functions `key`, `configure`, `approve`, and `get_state` are never used
+contracts/predictify-hybrid/src/event_topic_catalog.rs:20:8: warning: function `get_event_topic_catalog` is never used
+contracts/predictify-hybrid/src/storage_tier_audit.rs:27:8: warning: function `get_storage_tier_audit` is never used
+contracts/predictify-hybrid/src/lists.rs:12:12: warning: struct `AccessLists` is never constructed
+contracts/predictify-hybrid/src/lists.rs:15:11: warning: multiple associated items are never used
+contracts/predictify-hybrid/src/audit_trail.rs:108:8: warning: multiple associated functions are never used
+contracts/predictify-hybrid/src/capabilities.rs:121:12: warning: function `capability_name` is never used
+contracts/predictify-hybrid/src/analytics_snapshot.rs:78:12: warning: associated function `schema_version` is never used
+warning: `predictify-hybrid` (lib) generated 447 warnings (run `cargo fix --lib -p predictify-hybrid` to apply 76 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.41s

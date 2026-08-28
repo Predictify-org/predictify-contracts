@@ -8,6 +8,7 @@ use super::*;
 use crate::markets::{MarketPauseManager, MarketStateManager};
 use crate::oracles::OracleValidationConfigManager;
 use crate::types::MarketPauseInfo;
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{Env, String, Address, Symbol, Vec, Map, IntoVal, vec};
 use soroban_sdk::testutils::Address as _;
 
@@ -166,6 +167,9 @@ fn setup_auto_pause_env(env: &Env, contract_id: &Address) -> Symbol {
             bet_deadline: 0,
             dispute_window_seconds: 86400,
             winnings_swept: false,
+            dispute_stake_floor: None,
+            max_participants: None,
+            timelock_config: crate::timelock::MarketTimelockConfig::default(),
         };
         env.storage().persistent().set(&market_id, &market);
     });
@@ -226,7 +230,7 @@ fn test_auto_pause_staleness_triggers_pause() {
     let market_id = setup_auto_pause_env(&env, &contract_id);
 
     env.as_contract(&contract_id, || {
-        env.ledger().with_mut(|li| li.timestamp = 100);
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 100, ..env.ledger().get() });
 
         let config = GlobalOracleValidationConfig {
             max_staleness_secs: 10,
@@ -261,7 +265,7 @@ fn test_auto_pause_none_does_not_pause() {
     let market_id = setup_auto_pause_env(&env, &contract_id);
 
     env.as_contract(&contract_id, || {
-        env.ledger().with_mut(|li| li.timestamp = 100);
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 100, ..env.ledger().get() });
 
         let config = GlobalOracleValidationConfig {
             max_staleness_secs: 10,
@@ -313,7 +317,7 @@ fn test_auto_pause_config_per_event_override() {
     let market_id = setup_auto_pause_env(&env, &contract_id);
 
     env.as_contract(&contract_id, || {
-        env.ledger().with_mut(|li| li.timestamp = 100);
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 100, ..env.ledger().get() });
 
         let global = GlobalOracleValidationConfig {
             max_staleness_secs: 60,
