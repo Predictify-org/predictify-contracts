@@ -15,16 +15,13 @@
 
 #![cfg(test)]
 
+use crate::bets::BetManager;
+use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
+use crate::{Error, PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    token, Address, Env, String as SorobanString, Symbol, BytesN, Vec,
-};
-
-use predictify_hybrid::{
-    bets::BetManager,
-    err::Error,
-    storage::{MarketStateManager, TokenStorage},
-    types::{Market, MarketState, OracleConfig, OracleProvider},
+    token::StellarAssetClient,
+    Address, Env, String as SorobanString, Symbol, BytesN, Vec,
 };
 
 // ---------------------------------------------------------------------------
@@ -46,8 +43,8 @@ fn setup() -> (Env, Address, Address, Address) {
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
-    let contract_id = env.register(predictify_hybrid::PredictifyHybrid, ());
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
     client.initialize(&admin, &Some(200i128), &None);
 
     let token_admin = Address::generate(&env);
@@ -55,7 +52,9 @@ fn setup() -> (Env, Address, Address, Address) {
     let token_id = token_contract.address();
 
     env.as_contract(&contract_id, || {
-        TokenStorage::set_token_id(&env, &token_id);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "TokenID"), &token_id);
     });
 
     (env, admin, contract_id, token_id)
@@ -93,7 +92,7 @@ fn make_active_market(
         SorobanString::from_str(env, "gt"),
     );
 
-    let market = Market::new(
+    let mut market = Market::new(
         env,
         admin.clone(),
         SorobanString::from_str(env, "Test market"),
@@ -106,7 +105,7 @@ fn make_active_market(
     );
 
     env.as_contract(contract_id, || {
-        MarketStateManager::update_market(env, market_id, &market);
+        crate::markets::MarketStateManager::update_market(env, market_id, &market);
     });
 }
 
@@ -134,7 +133,7 @@ fn test_place_bets_has_reentrancy_guard() {
     );
 
     env.mock_all_auths();
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
 
     // First call should succeed.
     let bets = soroban_sdk::vec![
@@ -176,7 +175,7 @@ fn test_place_bets_rejects_duplicate_markets() {
     );
 
     env.mock_all_auths();
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
 
     let bets = soroban_sdk::vec![
         env,
@@ -201,7 +200,7 @@ fn test_place_bets_rejects_empty_batch() {
     fund_and_approve(&env, &contract_id, &token_id, &user, 1_000_000_000_000i128);
 
     env.mock_all_auths();
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
 
     let bets = soroban_sdk::Vec::new(&env);
     let idem = BytesN::from_array(&env, &[3u8; 32]);
@@ -236,7 +235,7 @@ fn test_place_bets_rejects_oversized_batch() {
     }
 
     env.mock_all_auths();
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
 
     let idem = BytesN::from_array(&env, &[4u8; 32]);
     let result = client.place_bets(&user, &bets, &200i128, &idem);
@@ -268,7 +267,7 @@ fn test_place_bets_succeeds_single_market() {
     );
 
     env.mock_all_auths();
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
 
     let bets = soroban_sdk::vec![
         env,
@@ -307,7 +306,7 @@ fn test_place_bets_succeeds_multiple_markets() {
     );
 
     env.mock_all_auths();
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
 
     let bets = soroban_sdk::vec![
         env,
@@ -353,7 +352,7 @@ fn test_place_bets_rejects_already_bet_market() {
     );
 
     env.mock_all_auths();
-    let client = predictify_hybrid::PredictifyHybridClient::new(&env, &contract_id);
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
 
     // Place a single bet on market_a first.
     let single_bet = soroban_sdk::vec![
