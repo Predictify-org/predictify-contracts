@@ -27,6 +27,8 @@ mod config;
 mod err;
 mod force_resolve;
 mod event_archive;
+mod restore_archive;
+mod lifecycle_validation;
 mod events;
 pub mod gov_registry;
 mod fees;
