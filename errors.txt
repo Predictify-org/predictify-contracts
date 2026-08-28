@@ -1,0 +1,2217 @@
+    Checking predictify-hybrid v0.0.0 (/home/gift/predictify-contracts/contracts/predictify-hybrid)
+warning: unused import: `alloc::format`
+ --> contracts/predictify-hybrid/src/admin.rs:2:5
+  |
+2 | use alloc::format;
+  |     ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `BytesN`
+  --> contracts/predictify-hybrid/src/bets.rs:22:56
+   |
+22 | use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec};
+   |                                                        ^^^^^^
+
+warning: unused import: `alloc::string::ToString`
+ --> contracts/predictify-hybrid/src/oracles.rs:4:5
+  |
+4 | use alloc::string::ToString;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::bets::BetStorage`
+ --> contracts/predictify-hybrid/src/resolution.rs:3:5
+  |
+3 | use crate::bets::BetStorage;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `OracleFactory`
+ --> contracts/predictify-hybrid/src/resolution.rs:9:22
+  |
+9 | use crate::oracles::{OracleFactory, OracleUtils};
+  |                      ^^^^^^^^^^^^^
+
+warning: unused import: `OracleConfig`
+ --> contracts/predictify-hybrid/src/storage.rs:5:66
+  |
+5 | use crate::types::{Balance, ReflectorAsset, Market, MarketState, OracleConfig};
+  |                                                                  ^^^^^^^^^^^^
+
+warning: unused import: `Map`
+ --> contracts/predictify-hybrid/src/storage.rs:6:56
+  |
+6 | use soroban_sdk::{contracttype, Address, Env, IntoVal, Map, Symbol, Val, Vec};
+  |                                                        ^^^
+
+warning: unused import: `MarketAnalytics`
+ --> contracts/predictify-hybrid/src/voting.rs:6:15
+  |
+6 |     markets::{MarketAnalytics, MarketStateManager, MarketUtils, MarketValidator},
+  |               ^^^^^^^^^^^^^^^
+
+warning: private item shadows public glob re-export
+   --> contracts/predictify-hybrid/src/lib.rs:77:5
+    |
+ 77 | use types::BetStatus;
+    |     ^^^^^^^^^^^^^^^^
+    |
+note: the name `BetStatus` in the type namespace is supposed to be publicly re-exported here
+   --> contracts/predictify-hybrid/src/lib.rs:174:9
+    |
+174 | pub use types::*;
+    |         ^^^^^^^^
+note: but the private item here shadows it
+   --> contracts/predictify-hybrid/src/lib.rs:77:5
+    |
+ 77 | use types::BetStatus;
+    |     ^^^^^^^^^^^^^^^^
+    = note: `#[warn(hidden_glob_reexports)]` on by default
+
+warning: private item shadows public glob re-export
+   --> contracts/predictify-hybrid/src/lib.rs:85:13
+    |
+ 85 | use types::{Market, ReflectorAsset};
+    |             ^^^^^^
+    |
+note: the name `Market` in the type namespace is supposed to be publicly re-exported here
+   --> contracts/predictify-hybrid/src/lib.rs:174:9
+    |
+174 | pub use types::*;
+    |         ^^^^^^^^
+note: but the private item here shadows it
+   --> contracts/predictify-hybrid/src/lib.rs:85:13
+    |
+ 85 | use types::{Market, ReflectorAsset};
+    |             ^^^^^^
+
+warning: private item shadows public glob re-export
+   --> contracts/predictify-hybrid/src/lib.rs:85:21
+    |
+ 85 | use types::{Market, ReflectorAsset};
+    |                     ^^^^^^^^^^^^^^
+    |
+note: the name `ReflectorAsset` in the type namespace is supposed to be publicly re-exported here
+   --> contracts/predictify-hybrid/src/lib.rs:174:9
+    |
+174 | pub use types::*;
+    |         ^^^^^^^^
+note: but the private item here shadows it
+   --> contracts/predictify-hybrid/src/lib.rs:85:21
+    |
+ 85 | use types::{Market, ReflectorAsset};
+    |                     ^^^^^^^^^^^^^^
+
+warning: unused imports: `AdminFunctions`, `AdminInitializer`, and `AdminSystemIntegration`
+   --> contracts/predictify-hybrid/src/lib.rs:162:27
+    |
+162 |     AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
+    |                           ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+163 |     AdminRole, AdminSystemIntegration,
+    |                ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ConfigManager`, `DEFAULT_PLATFORM_FEE_PERCENTAGE`, `MAX_PLATFORM_FEE_PERCENTAGE`, and `MIN_PLATFORM_FEE_PERCENTAGE`
+   --> contracts/predictify-hybrid/src/lib.rs:178:5
+    |
+178 |     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
+    |     ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+179 |     MIN_PLATFORM_FEE_PERCENTAGE,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `vec`
+ --> contracts/predictify-hybrid/src/edge_cases.rs:3:33
+  |
+3 | use soroban_sdk::{contracttype, vec, Env, Map, String, Symbol, Vec};
+  |                                 ^^^
+
+warning: unused import: `alloc::string::ToString`
+  --> contracts/predictify-hybrid/src/queries.rs:81:5
+   |
+81 | use alloc::string::ToString;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DisputeManager`, `MarketAnalytics`, `MarketStateManager`, `MarketValidator`, and `voting::VotingStats`
+  --> contracts/predictify-hybrid/src/queries.rs:86:25
+   |
+86 |     disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
+   |                         ^^^^^^^^^^^^^^
+...
+89 |     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
+   |               ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+...
+94 |     voting::VotingStats,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `contracttype`
+  --> contracts/predictify-hybrid/src/queries.rs:96:19
+   |
+96 | use soroban_sdk::{contracttype, vec, Address, Env, Map, String, Symbol, Vec};
+   |                   ^^^^^^^^^^^^
+
+warning: unused import: `ClaimInfo`
+ --> contracts/predictify-hybrid/src/recovery.rs:6:20
+  |
+6 | use crate::types::{ClaimInfo, MarketState};
+  |                    ^^^^^^^^^
+
+warning: unused import: `CategoryStatisticsV1`
+  --> contracts/predictify-hybrid/src/statistics.rs:16:5
+   |
+16 |     CategoryStatisticsV1, DashboardStatisticsV1, MarketStatisticsV1, PlatformStatistics,
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Map`
+  --> contracts/predictify-hybrid/src/statistics.rs:19:47
+   |
+19 | use soroban_sdk::{symbol_short, Address, Env, Map, Symbol};
+   |                                               ^^^
+
+warning: unused import: `alloc::format`
+  --> contracts/predictify-hybrid/src/market_id_generator.rs:37:5
+   |
+37 | use alloc::format;
+   |     ^^^^^^^^^^^^^
+
+warning: unused imports: `Bytes`, `Map`, and `Vec`
+  --> contracts/predictify-hybrid/src/market_id_generator.rs:41:60
+   |
+41 | use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, Env, Map, Symbol, Vec};
+   |                                                            ^^^^^       ^^^          ^^^
+
+warning: unused imports: `format` and `string::ToString`
+ --> contracts/predictify-hybrid/src/tokens.rs:9:13
+  |
+9 | use alloc::{format, string::ToString};
+  |             ^^^^^^  ^^^^^^^^^^^^^^^^
+
+error[E0119]: conflicting implementations of trait `Clone` for type `MedianResolutionResult`
+   --> contracts/predictify-hybrid/src/resolution.rs:226:10
+    |
+224 | #[derive(Clone, Debug)]
+    |          ----- first implementation here
+225 | #[contracttype]
+226 | #[derive(Clone, Debug, Eq, PartialEq)]
+    |          ^^^^^ conflicting implementation for `MedianResolutionResult`
+
+error[E0119]: conflicting implementations of trait `Debug` for type `MedianResolutionResult`
+   --> contracts/predictify-hybrid/src/resolution.rs:226:17
+    |
+224 | #[derive(Clone, Debug)]
+    |                 ----- first implementation here
+225 | #[contracttype]
+226 | #[derive(Clone, Debug, Eq, PartialEq)]
+    |                 ^^^^^ conflicting implementation for `MedianResolutionResult`
+
+error[E0277]: the trait bound `MarketResolutionAnalytics: TryFromVal<Env, soroban_sdk::Val>` is not satisfied
+    --> contracts/predictify-hybrid/src/lib.rs:212:1
+     |
+ 212 | #[contractimpl]
+     | ^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `TryFromVal<Env, soroban_sdk::Val>` is not implemented for `MarketResolutionAnalytics`
+    --> contracts/predictify-hybrid/src/resolution.rs:1668:1
+     |
+1668 | pub struct MarketResolutionAnalytics;
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: the following other types implement trait `TryFromVal<E, V>`:
+               `()` implements `TryFromVal<E, [soroban_sdk::Val; 0]>`
+               `()` implements `TryFromVal<E, soroban_sdk::Val>`
+               `()` implements `TryFromVal<Env, ()>`
+               `(T0, T1)` implements `TryFromVal<E, [soroban_sdk::Val; N]>`
+               `(T0, T1)` implements `TryFromVal<E, soroban_sdk::Val>`
+               `(T0, T1, T2)` implements `TryFromVal<E, [soroban_sdk::Val; N]>`
+               `(T0, T1, T2)` implements `TryFromVal<E, soroban_sdk::Val>`
+               `(T0, T1, T2, T3)` implements `TryFromVal<E, [soroban_sdk::Val; N]>`
+             and 1485 others
+     = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-5040803381722901880.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+     = note: this error originates in the attribute macro `soroban_sdk::contractclient` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no variant or associated item named `ForceResolveReplayed` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/err.rs:648:20
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `ForceResolveReplayed` not found for this enum
+...
+648 |             Error::ForceResolveReplayed => {
+    |                    ^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+
+error[E0599]: no variant or associated item named `ForceResolveReasonEmpty` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/err.rs:651:20
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `ForceResolveReasonEmpty` not found for this enum
+...
+651 |             Error::ForceResolveReasonEmpty => {
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+
+error[E0599]: no variant or associated item named `ForceResolveReplayed` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/err.rs:777:20
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `ForceResolveReplayed` not found for this enum
+...
+777 |             Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => {
+    |                    ^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+
+error[E0599]: no variant or associated item named `ForceResolveReasonEmpty` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/err.rs:777:50
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `ForceResolveReasonEmpty` not found for this enum
+...
+777 |             Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => {
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+
+error[E0599]: no variant or associated item named `ForceResolveReplayed` found for enum `err::Error` in the current scope
+    --> contracts/predictify-hybrid/src/err.rs:1353:20
+     |
+  24 | pub enum Error {
+     | -------------- variant or associated item `ForceResolveReplayed` not found for this enum
+...
+1353 |             Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => (
+     |                    ^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+
+error[E0599]: no variant or associated item named `ForceResolveReasonEmpty` found for enum `err::Error` in the current scope
+    --> contracts/predictify-hybrid/src/err.rs:1353:50
+     |
+  24 | pub enum Error {
+     | -------------- variant or associated item `ForceResolveReasonEmpty` not found for this enum
+...
+1353 |             Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => (
+     |                                                  ^^^^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+
+error[E0599]: no variant or associated item named `InsufficientStorageRent` found for enum `err::Error` in the current scope
+    --> contracts/predictify-hybrid/src/err.rs:1482:20
+     |
+  24 | pub enum Error {
+     | -------------- variant or associated item `InsufficientStorageRent` not found for this enum
+...
+1482 |             Error::InsufficientStorageRent => "Insufficient storage rent for persistent key allocation",
+     |                    ^^^^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+     |
+help: there is a variant with a similar name
+     |
+1482 |             Error::InsufficientStorageRentBudget => "Insufficient storage rent for persistent key allocation",
+     |                                           ++++++
+
+error[E0599]: no function or associated item named `get_market_id_registry` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/event_archive.rs:453:48
+    |
+453 |         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+    |
+   ::: contracts/predictify-hybrid/src/market_id_generator.rs:70:1
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `get_market_id_registry` not found for this struct
+
+error[E0599]: no function or associated item named `get_market_id_registry` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/event_archive.rs:491:48
+    |
+491 |         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+    |
+   ::: contracts/predictify-hybrid/src/market_id_generator.rs:70:1
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `get_market_id_registry` not found for this struct
+
+error[E0599]: no function or associated item named `get_market_id_registry` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/event_archive.rs:529:48
+    |
+529 |         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+    |
+   ::: contracts/predictify-hybrid/src/market_id_generator.rs:70:1
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `get_market_id_registry` not found for this struct
+
+error[E0599]: no function or associated item named `get_market_id_registry` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/event_archive.rs:572:48
+    |
+572 |         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+    |
+   ::: contracts/predictify-hybrid/src/market_id_generator.rs:70:1
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `get_market_id_registry` not found for this struct
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2158:14
+     |
+2158 |             .publish((symbol_short!("mkt_crt"), market_id.clone()), event);
+     |              ^^^^^^^
+     |
+     = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2177:14
+     |
+2177 |             .publish((symbol_short!("fbk_used"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2189:14
+     |
+2189 |             .publish((symbol_short!("res_tmo"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2213:14
+     |
+2213 |             .publish((symbol_short!("evt_crt"), event_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2234:14
+     |
+2234 |             .publish((symbol_short!("vote"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2252:22
+     |
+2252 |         env.events().publish((symbol_short!("stats_upd"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2296:14
+     |
+2296 |             .publish((symbol_short!("bet_plc"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2344:14
+     |
+2344 |             .publish((symbol_short!("bet_upd"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2379:14
+     |
+2379 |             .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2413:14
+     |
+2413 |             .publish((symbol_short!("orc_init"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2465:14
+     |
+2465 |             .publish((symbol_short!("orc_ver"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2500:14
+     |
+2500 |             .publish((symbol_short!("orc_fail"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2529:14
+     |
+2529 |             .publish((symbol_short!("orc_val"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2574:14
+     |
+2574 |             .publish((symbol_short!("orc_cons"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2609:14
+     |
+2609 |             .publish((symbol_short!("orc_hlth"), oracle_address.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2633:22
+     |
+2633 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2658:14
+     |
+2658 |             .publish((symbol_short!("pool_lo"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2686:14
+     |
+2686 |             .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2709:14
+     |
+2709 |             .publish((symbol_short!("dispt_res"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2726:14
+     |
+2726 |             .publish((symbol_short!("dh_evct"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2747:14
+     |
+2747 |             .publish((symbol_short!("fee_col"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2780:14
+     |
+2780 |             .publish((symbol_short!("fwd_att"), admin.clone()), event.clone());
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2802:14
+     |
+2802 |             .publish((symbol_short!("fwd_ok"), admin.clone()), event.clone());
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2826:14
+     |
+2826 |             .publish((symbol_short!("ext_req"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2847:14
+     |
+2847 |             .publish((symbol_short!("cfg_upd"), updated_by.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2867:14
+     |
+2867 |             .publish((symbol_short!("bet_lim"), scope.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2889:22
+     |
+2889 |         env.events().publish((symbol_short!("err_log"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2913:22
+     |
+2913 |         env.events().publish((symbol_short!("err_rec"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2933:22
+     |
+2933 |         env.events().publish((symbol_short!("perf_met"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2948:14
+     |
+2948 |             .publish((symbol_short!("adm_act"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2960:14
+     |
+2960 |             .publish((symbol_short!("adm_init"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2972:14
+     |
+2972 |             .publish((symbol_short!("adm_xfer"), new_admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2983:14
+     |
+2983 |             .publish((symbol_short!("ctr_pause"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:2994:14
+     |
+2994 |             .publish((symbol_short!("ctr_unp"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3005:14
+     |
+3005 |             .publish((Symbol::new(env, "contract_initialized"),), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3015:14
+     |
+3015 |             .publish((Symbol::new(env, "platform_fee_set"),), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3032:14
+     |
+3032 |             .publish((Symbol::new(env, "admin_broadcast"),), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3053:14
+     |
+3053 |             .publish((symbol_short!("cfg_init"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3079:14
+     |
+3079 |             .publish((symbol_short!("adm_role"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3093:14
+     |
+3093 |             .publish((symbol_short!("adm_deact"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3106:14
+     |
+3106 |             .publish((symbol_short!("mkt_close"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3118:14
+     |
+3118 |             .publish((symbol_short!("ref_oracl"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3132:14
+     |
+3132 |             .publish((symbol_short!("mkt_final"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3153:14
+     |
+3153 |             .publish((symbol_short!("tout_set"), dispute_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3174:14
+     |
+3174 |             .publish((symbol_short!("tout_exp"), dispute_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3195:14
+     |
+3195 |             .publish((symbol_short!("tout_ext"), dispute_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3214:14
+     |
+3214 |             .publish((symbol_short!("d_v_rej"), dispute_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3235:14
+     |
+3235 |             .publish((symbol_short!("auto_res"), dispute_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3248:14
+     |
+3248 |             .publish((symbol_short!("stor_cln"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3265:14
+     |
+3265 |             .publish((symbol_short!("stor_opt"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3286:14
+     |
+3286 |             .publish((symbol_short!("stor_mig"), migration_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3305:14
+     |
+3305 |             .publish((symbol_short!("mkt_arch"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3321:22
+     |
+3321 |         env.events().publish((symbol_short!("ora_deg"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3332:22
+     |
+3332 |         env.events().publish((symbol_short!("ora_rec"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3344:14
+     |
+3344 |             .publish((symbol_short!("man_res"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3387:14
+     |
+3387 |             .publish((symbol_short!("st_chng"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3421:14
+     |
+3421 |             .publish((symbol_short!("win_clm"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3449:14
+     |
+3449 |             .publish((symbol_short!("win_btc"), user.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3460:14
+     |
+3460 |             .publish((symbol_short!("clm_prd"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3478:14
+     |
+3478 |             .publish((symbol_short!("m_clm_pd"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3490:14
+     |
+3490 |             .publish((symbol_short!("treas_up"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3512:14
+     |
+3512 |             .publish((symbol_short!("unc_swip"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3567:14
+     |
+3567 |             .publish((symbol_short!("mkt_ext"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3610:14
+     |
+3610 |             .publish((symbol_short!("mkt_dsc"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3653:14
+     |
+3653 |             .publish((symbol_short!("mkt_out"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3696:14
+     |
+3696 |             .publish((symbol_short!("mkt_cat"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3739:14
+     |
+3739 |             .publish((symbol_short!("mkt_tag"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3795:22
+     |
+3795 |         env.events().publish((symbol_short!("err_evt"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3816:14
+     |
+3816 |             .publish((symbol_short!("gov_prop"), proposal_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3836:14
+     |
+3836 |             .publish((symbol_short!("gov_vote"), proposal_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3848:14
+     |
+3848 |             .publish((symbol_short!("gov_cmit"), proposal_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3862:14
+     |
+3862 |             .publish((symbol_short!("gov_exec"), proposal_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3884:14
+     |
+3884 |             .publish((symbol_short!("gov_rej"), proposal_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3903:14
+     |
+3903 |             .publish((symbol_short!("up_grade"), upgrade_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3919:22
+     |
+3919 |         env.events().publish((symbol_short!("rollback"),), event);
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3940:14
+     |
+3940 |             .publish((symbol_short!("chain_mm"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3959:14
+     |
+3959 |             .publish((symbol_short!("up_prop"), proposal_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3971:22
+     |
+3971 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:3992:14
+     |
+3992 |             .publish((event_key.clone(),), event_data.clone());
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4002:22
+     |
+4002 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4015:22
+     |
+4015 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4653:18
+     |
+4653 |     env.events().publish(
+     |                  ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4675:18
+     |
+4675 |     env.events().publish(
+     |                  ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4696:18
+     |
+4696 |     env.events().publish(
+     |                  ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4717:18
+     |
+4717 |     env.events().publish(
+     |                  ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4743:10
+     |
+4743 |         .publish((symbol_short!("depr_call"), entrypoint.clone()), event);
+     |          ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4865:22
+     |
+4865 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4885:22
+     |
+4885 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4907:22
+     |
+4907 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4927:22
+     |
+4927 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4941:22
+     |
+4941 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4955:22
+     |
+4955 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:4986:22
+     |
+4986 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:5012:14
+     |
+5012 |             .publish((symbol_short!("adm_ovrd"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:5035:14
+     |
+5035 |             .publish((symbol_short!("frc_rs"), market_id.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:5057:14
+     |
+5057 |             .publish((symbol_short!("fee_qd"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:5073:14
+     |
+5073 |             .publish((symbol_short!("fee_apd"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:5083:14
+     |
+5083 |             .publish((symbol_short!("fee_ccl"), admin.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:5103:14
+     |
+5103 |             .publish((symbol_short!("cum_cap"), user.clone()), event);
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/events.rs:5115:14
+     |
+5115 |             .publish((symbol_short!("cum_set"), user.clone()), event);
+     |              ^^^^^^^
+
+error[E0277]: the trait bound `soroban_sdk::Vec<u64>: Default` is not satisfied
+  --> contracts/predictify-hybrid/src/gas.rs:28:5
+   |
+22 | #[derive(Clone, Debug, Eq, PartialEq, Default)]
+   |                                       ------- in this derive macro expansion
+...
+28 |     pub cpu_history: Vec<u64>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `soroban_sdk::Vec<u64>`
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/gas.rs:157:14
+    |
+157 |             .publish((symbol_short!("gas_used"), operation.clone()), cost.clone());
+    |              ^^^^^^^
+
+error[E0277]: the trait bound `soroban_sdk::String: From<soroban_sdk::Symbol>` is not satisfied
+   --> contracts/predictify-hybrid/src/gas.rs:215:64
+    |
+215 |                 metric_name: Symbol::new(env, "gas_low_water").into(),
+    |                                                                ^^^^ the trait `From<soroban_sdk::Symbol>` is not implemented for `soroban_sdk::String`
+    |
+help: the following other types implement trait `From<T>`
+   --> /home/gift/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-25.3.1/src/bytes.rs:393:1
+    |
+393 | impl From<&Bytes> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<&soroban_sdk::Bytes>`
+...
+401 | impl From<Bytes> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<soroban_sdk::Bytes>`
+    |
+   ::: /home/gift/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-25.3.1/src/string.rs:143:1
+    |
+143 | impl From<&String> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<&soroban_sdk::String>`
+    = note: required for `soroban_sdk::Symbol` to implement `Into<soroban_sdk::String>`
+
+error[E0277]: the trait bound `soroban_sdk::String: From<soroban_sdk::Symbol>` is not satisfied
+   --> contracts/predictify-hybrid/src/gas.rs:217:47
+    |
+217 |                 unit: Symbol::new(env, "cpu").into(),
+    |                                               ^^^^ the trait `From<soroban_sdk::Symbol>` is not implemented for `soroban_sdk::String`
+    |
+help: the following other types implement trait `From<T>`
+   --> /home/gift/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-25.3.1/src/bytes.rs:393:1
+    |
+393 | impl From<&Bytes> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<&soroban_sdk::Bytes>`
+...
+401 | impl From<Bytes> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<soroban_sdk::Bytes>`
+    |
+   ::: /home/gift/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-25.3.1/src/string.rs:143:1
+    |
+143 | impl From<&String> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<&soroban_sdk::String>`
+    = note: required for `soroban_sdk::Symbol` to implement `Into<soroban_sdk::String>`
+
+error[E0277]: the trait bound `soroban_sdk::String: From<soroban_sdk::Symbol>` is not satisfied
+   --> contracts/predictify-hybrid/src/gas.rs:218:36
+    |
+218 |                 context: operation.into(),
+    |                                    ^^^^ the trait `From<soroban_sdk::Symbol>` is not implemented for `soroban_sdk::String`
+    |
+help: the following other types implement trait `From<T>`
+   --> /home/gift/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-25.3.1/src/bytes.rs:393:1
+    |
+393 | impl From<&Bytes> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<&soroban_sdk::Bytes>`
+...
+401 | impl From<Bytes> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<soroban_sdk::Bytes>`
+    |
+   ::: /home/gift/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-25.3.1/src/string.rs:143:1
+    |
+143 | impl From<&String> for String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `soroban_sdk::String` implements `From<&soroban_sdk::String>`
+    = note: required for `soroban_sdk::Symbol` to implement `Into<soroban_sdk::String>`
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/gas.rs:222:26
+    |
+222 |             env.events().publish(
+    |                          ^^^^^^^
+
+error[E0599]: no method named `budget` found for reference `&Env` in the current scope
+   --> contracts/predictify-hybrid/src/gas.rs:324:38
+    |
+324 |         let start_instructions = env.budget().cpu_instruction_cost();
+    |                                      ^^^^^^ method not found in `&Env`
+
+error[E0599]: no method named `budget` found for struct `Env` in the current scope
+   --> contracts/predictify-hybrid/src/gas.rs:345:28
+    |
+345 |     let current = self.env.budget().cpu_instruction_cost();
+    |                            ^^^^^^ method not found in `Env`
+
+error[E0599]: no method named `budget` found for struct `Env` in the current scope
+   --> contracts/predictify-hybrid/src/gas.rs:360:32
+    |
+360 |         let current = self.env.budget().cpu_instruction_cost();
+    |                                ^^^^^^ method not found in `Env`
+
+error[E0061]: this function takes 7 arguments but 6 arguments were supplied
+    --> contracts/predictify-hybrid/src/markets.rs:2492:9
+     |
+2492 |           MarketCreationParams::new(
+     |  _________^^^^^^^^^^^^^^^^^^^^^^^^^-
+2493 | |             Address::from_str(
+2494 | |                 _env,
+2495 | |                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+...    |
+2514 | |             1_000_000, // Creation fee: 1 XLM
+2515 | |         )
+     | |_________- argument #7 of type `core::option::Option<i128>` is missing
+     |
+note: associated function defined here
+    --> contracts/predictify-hybrid/src/types.rs:3174:12
+     |
+3174 |     pub fn new(
+     |            ^^^
+...
+3181 |         dispute_stake_floor: Option<i128>,
+     |         ---------------------------------
+help: provide the argument
+     |
+2492 ~         MarketCreationParams::new(
+2493 +             Address::from_str(
+2494 +                 _env,
+2495 +                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+2496 +             ),
+2497 +             String::from_str(_env, "Will BTC go above $25,000 by December 31?"),
+2498 +             vec![
+2499 +                 _env,
+2500 +                 String::from_str(_env, "yes"),
+2501 +                 String::from_str(_env, "no"),
+2502 +             ],
+2503 +             30,
+2504 +             OracleConfig::new(
+2505 +                 OracleProvider::pyth(),
+2506 +                 Address::from_str(
+2507 +                     _env,
+2508 +                     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+2509 +                 ),
+2510 +                 String::from_str(_env, "BTC/USD"),
+2511 +                 2_500_000,
+2512 +                 String::from_str(_env, "gt"),
+2513 +             ),
+2514 +             1_000_000,
+2515 +             /* core::option::Option<i128> */,
+2516 +         )
+     |
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/markets.rs:2964:14
+     |
+2964 |             .publish(("market_state_change", market_id), (old_state, new_state));
+     |              ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/markets.rs:3526:26
+     |
+3526 |                         .publish(("market_auto_resumed", market_id), current_time);
+     |                          ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/markets.rs:3600:22
+     |
+3600 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/markets.rs:3607:22
+     |
+3607 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/monitoring.rs:414:22
+    |
+414 |         env.events().publish(
+    |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/monitoring.rs:453:22
+    |
+453 |         env.events().publish(
+    |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/monitoring.rs:482:22
+    |
+482 |         env.events().publish(
+    |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/monitoring.rs:510:22
+    |
+510 |         env.events().publish(
+    |                      ^^^^^^^
+
+error[E0063]: missing field `dispute_stake_floor` in initializer of `types::Market`
+   --> contracts/predictify-hybrid/src/monitoring.rs:578:12
+    |
+578 |         Ok(Market {
+    |            ^^^^^^ missing `dispute_stake_floor`
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/oracles.rs:474:22
+    |
+474 |         env.events().publish(
+    |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/oracles.rs:513:22
+    |
+513 |         env.events().publish(
+    |                      ^^^^^^^
+
+warning: use of deprecated associated function `soroban_sdk::Symbol::short`: use [symbol_short!()]
+   --> contracts/predictify-hybrid/src/oracles.rs:650:21
+    |
+650 |             Symbol::short("twap_cache"),
+    |                     ^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:1983:22
+     |
+1983 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2008:22
+     |
+2008 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2040:22
+     |
+2040 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2139:22
+     |
+2139 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2201:22
+     |
+2201 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2269:26
+     |
+2269 |             env.events().publish(
+     |                          ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2274:26
+     |
+2274 |             env.events().publish(
+     |                          ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2348:22
+     |
+2348 |         env.events().publish(
+     |                      ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/oracles.rs:2385:22
+     |
+2385 |         env.events().publish(
+     |                      ^^^^^^^
+
+error[E0433]: cannot find type `ResolutionAnalytics` in this scope
+    --> contracts/predictify-hybrid/src/resolution.rs:1708:12
+     |
+1708 |         Ok(ResolutionAnalytics::default())
+     |            ^^^^^^^^^^^^^^^^^^^ use of undeclared type `ResolutionAnalytics`
+     |
+help: a struct with a similar name exists
+     |
+1708 |         Ok(MarketResolutionAnalytics::default())
+     |            ++++++
+
+error[E0433]: cannot find type `OracleResolutionManager` in this scope
+    --> contracts/predictify-hybrid/src/resolution.rs:1849:34
+     |
+1849 |         let _oracle_resolution = OracleResolutionManager::fetch_oracle_result(env, market_id)?;
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^ use of undeclared type `OracleResolutionManager`
+     |
+help: a struct with a similar name exists
+     |
+1849 -         let _oracle_resolution = OracleResolutionManager::fetch_oracle_result(env, market_id)?;
+1849 +         let _oracle_resolution = MarketResolutionManager::fetch_oracle_result(env, market_id)?;
+     |
+
+error[E0560]: struct `MarketResolutionAnalytics` has no field named `total_resolutions`
+    --> contracts/predictify-hybrid/src/resolution.rs:1884:13
+     |
+1884 |             total_resolutions: 0,
+     |             ^^^^^^^^^^^^^^^^^ `MarketResolutionAnalytics` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0560]: struct `MarketResolutionAnalytics` has no field named `oracle_resolutions`
+    --> contracts/predictify-hybrid/src/resolution.rs:1885:13
+     |
+1885 |             oracle_resolutions: 0,
+     |             ^^^^^^^^^^^^^^^^^^ `MarketResolutionAnalytics` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0560]: struct `MarketResolutionAnalytics` has no field named `community_resolutions`
+    --> contracts/predictify-hybrid/src/resolution.rs:1886:13
+     |
+1886 |             community_resolutions: 0,
+     |             ^^^^^^^^^^^^^^^^^^^^^ `MarketResolutionAnalytics` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0560]: struct `MarketResolutionAnalytics` has no field named `hybrid_resolutions`
+    --> contracts/predictify-hybrid/src/resolution.rs:1887:13
+     |
+1887 |             hybrid_resolutions: 0,
+     |             ^^^^^^^^^^^^^^^^^^ `MarketResolutionAnalytics` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0560]: struct `MarketResolutionAnalytics` has no field named `average_confidence`
+    --> contracts/predictify-hybrid/src/resolution.rs:1888:13
+     |
+1888 |             average_confidence: 0,
+     |             ^^^^^^^^^^^^^^^^^^ `MarketResolutionAnalytics` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0560]: struct `MarketResolutionAnalytics` has no field named `resolution_times`
+    --> contracts/predictify-hybrid/src/resolution.rs:1889:13
+     |
+1889 |             resolution_times: Vec::new(&soroban_sdk::Env::default()),
+     |             ^^^^^^^^^^^^^^^^ `MarketResolutionAnalytics` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0560]: struct `MarketResolutionAnalytics` has no field named `outcome_distribution`
+    --> contracts/predictify-hybrid/src/resolution.rs:1890:13
+     |
+1890 |             outcome_distribution: Map::new(&soroban_sdk::Env::default()),
+     |             ^^^^^^^^^^^^^^^^^^^^ `MarketResolutionAnalytics` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0599]: no variant or associated item named `InsufficientStorageRent` found for enum `err::Error` in the current scope
+  --> contracts/predictify-hybrid/src/storage.rs:46:27
+   |
+46 |         return Err(Error::InsufficientStorageRent);
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+   |
+  ::: contracts/predictify-hybrid/src/err.rs:24:1
+   |
+24 | pub enum Error {
+   | -------------- variant or associated item `InsufficientStorageRent` not found for this enum
+   |
+help: there is a variant with a similar name
+   |
+46 |         return Err(Error::InsufficientStorageRentBudget);
+   |                                                  ++++++
+
+error[E0308]: `if` and `else` have incompatible types
+   --> contracts/predictify-hybrid/src/upgrade_manager.rs:647:13
+    |
+644 |           let verify_count = if depth == 0 || depth > chain_len {
+    |  ____________________________-
+645 | |             chain_len
+    | |             --------- expected because of this
+646 | |         } else {
+647 | |             depth as u32
+    | |             ^^^^^^^^^^^^ expected `u64`, found `u32`
+648 | |         };
+    | |_________- `if` and `else` have incompatible types
+    |
+help: you can convert a `u32` to a `u64`
+    |
+647 |             (depth as u32).into()
+    |             +            ++++++++
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+    --> contracts/predictify-hybrid/src/upgrade_manager.rs:1074:22
+     |
+1074 |         env.events().publish(
+     |                      ^^^^^^^
+
+error[E0599]: no function or associated item named `require_primary_admin_or_panic` found for struct `PredictifyHybrid` in the current scope
+   --> contracts/predictify-hybrid/src/lib.rs:365:15
+    |
+208 | pub struct PredictifyHybrid;
+    | --------------------------- function or associated item `require_primary_admin_or_panic` not found for this struct
+...
+365 |         Self::require_primary_admin_or_panic(&env, &admin);
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin_or_panic` found for struct `PredictifyHybrid` in the current scope
+   --> contracts/predictify-hybrid/src/lib.rs:536:15
+    |
+208 | pub struct PredictifyHybrid;
+    | --------------------------- function or associated item `require_primary_admin_or_panic` not found for this struct
+...
+536 |         Self::require_primary_admin_or_panic(&env, &admin);
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin_or_panic` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2014:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin_or_panic` not found for this struct
+...
+2014 |         Self::require_primary_admin_or_panic(&env, &admin);
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin_or_panic` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2159:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin_or_panic` not found for this struct
+...
+2159 |         Self::require_primary_admin_or_panic(&env, &admin);
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2279:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+2279 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no variant or associated item named `ForceResolveReasonEmpty` found for enum `err::Error` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2282:31
+     |
+2282 |             return Err(Error::ForceResolveReasonEmpty);
+     |                               ^^^^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+     |
+    ::: contracts/predictify-hybrid/src/err.rs:24:1
+     |
+  24 | pub enum Error {
+     | -------------- variant or associated item `ForceResolveReasonEmpty` not found for this enum
+
+error[E0599]: no variant or associated item named `ForceResolveReplayed` found for enum `err::Error` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2308:31
+     |
+2308 |             return Err(Error::ForceResolveReplayed);
+     |                               ^^^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+     |
+    ::: contracts/predictify-hybrid/src/err.rs:24:1
+     |
+  24 | pub enum Error {
+     | -------------- variant or associated item `ForceResolveReplayed` not found for this enum
+
+error[E0425]: cannot find function `resolution_timeout_reached` in this scope
+    --> contracts/predictify-hybrid/src/lib.rs:2478:12
+     |
+2478 |         if resolution_timeout_reached(&env, &market) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `automatic_oracle_result_unavailable` in this scope
+    --> contracts/predictify-hybrid/src/lib.rs:2483:15
+     |
+2483 |         match automatic_oracle_result_unavailable(&env, &market.oracle_config) {
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `automatic_oracle_result_unavailable` in this scope
+    --> contracts/predictify-hybrid/src/lib.rs:2490:23
+     |
+2490 |                 match automatic_oracle_result_unavailable(&env, &market.fallback_oracle_config) {
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:2837:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+2837 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_admin_permission` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3226:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_admin_permission` not found for this struct
+...
+3226 |         Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+     |
+help: there is an associated function `validate_admin_permission` with a similar name
+     |
+3226 -         Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+3226 +         Self::validate_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+     |
+
+error[E0599]: no function or associated item named `require_admin_permission` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3273:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_admin_permission` not found for this struct
+...
+3273 |         Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+     |
+help: there is an associated function `validate_admin_permission` with a similar name
+     |
+3273 -         Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+3273 +         Self::validate_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+     |
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3335:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3335 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3346:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3346 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3357:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3357 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3377:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3377 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0614]: type `soroban_sdk::Address` cannot be dereferenced
+    --> contracts/predictify-hybrid/src/lib.rs:3487:26
+     |
+3487 |                     .get((*user).clone())
+     |                          ^^^^^^^ can't be dereferenced
+
+error[E0614]: type `soroban_sdk::Address` cannot be dereferenced
+    --> contracts/predictify-hybrid/src/lib.rs:3504:34
+     |
+3504 | ...                   .get((*user).clone())
+     |                            ^^^^^^^ can't be dereferenced
+
+error[E0614]: type `soroban_sdk::Address` cannot be dereferenced
+    --> contracts/predictify-hybrid/src/lib.rs:3542:26
+     |
+3542 |                     .get((*user).clone())
+     |                          ^^^^^^^ can't be dereferenced
+
+error[E0614]: type `soroban_sdk::Address` cannot be dereferenced
+    --> contracts/predictify-hybrid/src/lib.rs:3553:52
+     |
+3553 |                 let user_stake = market.stakes.get((*user).clone()).unwrap_or(0);
+     |                                                    ^^^^^^^ can't be dereferenced
+
+error[E0614]: type `soroban_sdk::Address` cannot be dereferenced
+    --> contracts/predictify-hybrid/src/lib.rs:3568:34
+     |
+3568 | ...                   .set((*user).clone(), ClaimInfo::new(&env, payout));
+     |                            ^^^^^^^ can't be dereferenced
+
+error[E0614]: type `soroban_sdk::Address` cannot be dereferenced
+    --> contracts/predictify-hybrid/src/lib.rs:3607:30
+     |
+3607 |                         .get((*user).clone())
+     |                              ^^^^^^^ can't be dereferenced
+
+error[E0614]: type `soroban_sdk::Address` cannot be dereferenced
+    --> contracts/predictify-hybrid/src/lib.rs:3627:38
+     |
+3627 | ...                   .set((*user).clone(), ClaimInfo::new(&env, payout));
+     |                            ^^^^^^^ can't be dereferenced
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3822:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3822 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3871:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3871 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3905:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3905 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3945:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3945 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:3986:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+3986 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:4077:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+4077 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:4287:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+4287 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:4432:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+4432 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:4564:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+4564 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:4686:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+4686 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:4938:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+4938 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0425]: cannot find function `resolution_timeout_reached` in this scope
+    --> contracts/predictify-hybrid/src/lib.rs:5052:30
+     |
+5052 |         let timeout_passed = resolution_timeout_reached(&env, &market);
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:5094:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+5094 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:5120:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+5120 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin_or_panic` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:5637:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin_or_panic` not found for this struct
+...
+5637 |         Self::require_primary_admin_or_panic(&env, &admin);
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0425]: cannot find function `resolution_timeout_reached` in this scope
+    --> contracts/predictify-hybrid/src/lib.rs:5990:12
+     |
+5990 |         if resolution_timeout_reached(&env, &market) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0599]: no function or associated item named `require_admin_permission` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6077:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_admin_permission` not found for this struct
+...
+6077 |         Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+     |
+help: there is an associated function `validate_admin_permission` with a similar name
+     |
+6077 -         Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+6077 +         Self::validate_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+     |
+
+error[E0599]: no function or associated item named `require_admin_permission` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6099:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_admin_permission` not found for this struct
+...
+6099 |         Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+     |
+help: there is an associated function `validate_admin_permission` with a similar name
+     |
+6099 -         Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+6099 +         Self::validate_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+     |
+
+error[E0599]: no function or associated item named `require_admin_permission` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6122:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_admin_permission` not found for this struct
+...
+6122 |         Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+     |
+help: there is an associated function `validate_admin_permission` with a similar name
+     |
+6122 -         Self::require_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+6122 +         Self::validate_admin_permission(&env, &current_admin, AdminPermission::Emergency)?;
+     |
+
+error[E0599]: no function or associated item named `require_initialized_admin_root` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6143:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_initialized_admin_root` not found for this struct
+...
+6143 |         Self::require_initialized_admin_root(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6186:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+6186 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6280:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+6280 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6338:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+6338 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no method named `get_current_capabilities` found for struct `VersionManager` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:6382:14
+     |
+6381 | /         versioning::VersionManager::new(&env)
+6382 | |             .get_current_capabilities(&env)
+     | |             -^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `VersionManager`
+     | |_____________|
+     |
+     |
+    ::: contracts/predictify-hybrid/src/versioning.rs:590:1
+     |
+ 590 |   pub struct VersionManager;
+     |   ------------------------- method `get_current_capabilities` not found for this struct
+
+error[E0599]: no function or associated item named `require_primary_admin` found for struct `PredictifyHybrid` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:7291:15
+     |
+ 208 | pub struct PredictifyHybrid;
+     | --------------------------- function or associated item `require_primary_admin` not found for this struct
+...
+7291 |         Self::require_primary_admin(&env, &admin)?;
+     |               ^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `PredictifyHybrid`
+
+error[E0599]: no variant or associated item named `Overflow` found for enum `err::Error` in the current scope
+    --> contracts/predictify-hybrid/src/lib.rs:7515:62
+     |
+7515 |             .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
+     |                                                              ^^^^^^^^ variant or associated item not found in `err::Error`
+     |
+    ::: contracts/predictify-hybrid/src/err.rs:24:1
+     |
+  24 | pub enum Error {
+     | -------------- variant or associated item `Overflow` not found for this enum
+
+error[E0277]: the trait bound `MarketResolutionAnalytics: TryFromVal<Env, soroban_sdk::Val>` is not satisfied
+    --> contracts/predictify-hybrid/src/lib.rs:212:1
+     |
+ 212 | #[contractimpl]
+     | ^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `TryFromVal<Env, soroban_sdk::Val>` is not implemented for `MarketResolutionAnalytics`
+    --> contracts/predictify-hybrid/src/resolution.rs:1668:1
+     |
+1668 | pub struct MarketResolutionAnalytics;
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: the following other types implement trait `TryFromVal<E, V>`:
+               `()` implements `TryFromVal<E, [soroban_sdk::Val; 0]>`
+               `()` implements `TryFromVal<E, soroban_sdk::Val>`
+               `()` implements `TryFromVal<Env, ()>`
+               `(T0, T1)` implements `TryFromVal<E, [soroban_sdk::Val; N]>`
+               `(T0, T1)` implements `TryFromVal<E, soroban_sdk::Val>`
+               `(T0, T1, T2)` implements `TryFromVal<E, [soroban_sdk::Val; N]>`
+               `(T0, T1, T2)` implements `TryFromVal<E, soroban_sdk::Val>`
+               `(T0, T1, T2, T3)` implements `TryFromVal<E, [soroban_sdk::Val; N]>`
+             and 1485 others
+note: required by a bound in `Env::invoke_contract`
+    --> /home/gift/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-25.3.1/src/env.rs:394:12
+     |
+ 387 |     pub fn invoke_contract<T>(
+     |            --------------- required by a bound in this associated function
+...
+ 394 |         T: TryFromVal<Env, Val>,
+     |            ^^^^^^^^^^^^^^^^^^^^ required by this bound in `Env::invoke_contract`
+     = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-5040803381722901880.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+     = note: this error originates in the attribute macro `soroban_sdk::contractclient` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `soroban_sdk::Val: TryFromVal<Env, MarketResolutionAnalytics>` is not satisfied
+   --> contracts/predictify-hybrid/src/lib.rs:212:1
+    |
+212 | #[contractimpl]
+    | ^^^^^^^^^^^^^^^ the trait `TryFromVal<Env, MarketResolutionAnalytics>` is not implemented for `soroban_sdk::Val`
+    |
+    = help: the following other types implement trait `TryFromVal<E, V>`:
+              `soroban_sdk::Val` implements `TryFromVal<E, &()>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6, T7)>`
+            and 913 others
+    = note: required for `soroban_sdk::Val` to implement `TryFromVal<Env, core::result::Result<MarketResolutionAnalytics, err::Error>>`
+    = note: required for `soroban_sdk::Val` to implement `FromVal<Env, core::result::Result<MarketResolutionAnalytics, err::Error>>`
+    = note: required for `core::result::Result<MarketResolutionAnalytics, err::Error>` to implement `IntoVal<Env, soroban_sdk::Val>`
+    = note: required for `core::result::Result<MarketResolutionAnalytics, err::Error>` to implement `soroban_sdk::IntoValForContractFn`
+    = note: the full name for the type has been written to '/home/gift/cargo-build/debug/deps/predictify_hybrid-a6a1b2d35e3d6c7a.long-type-5040803381722901880.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the attribute macro `contractimpl` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no variant or associated item named `AntiGriefFloor` found for enum `storage::DataKey` in the current scope
+   --> contracts/predictify-hybrid/src/disputes.rs:777:28
+    |
+777 |         let key = DataKey::AntiGriefFloor;
+    |                            ^^^^^^^^^^^^^^ variant or associated item not found in `storage::DataKey`
+    |
+   ::: contracts/predictify-hybrid/src/storage.rs:71:1
+    |
+ 71 | pub enum DataKey {
+    | ---------------- variant or associated item `AntiGriefFloor` not found for this enum
+
+error[E0599]: no variant or associated item named `AntiGriefFloor` found for enum `storage::DataKey` in the current scope
+   --> contracts/predictify-hybrid/src/disputes.rs:785:28
+    |
+785 |         let key = DataKey::AntiGriefFloor;
+    |                            ^^^^^^^^^^^^^^ variant or associated item not found in `storage::DataKey`
+    |
+   ::: contracts/predictify-hybrid/src/storage.rs:71:1
+    |
+ 71 | pub enum DataKey {
+    | ---------------- variant or associated item `AntiGriefFloor` not found for this enum
+
+error[E0599]: no variant or associated item named `InvalidStakeAmount` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/disputes.rs:914:31
+    |
+914 |             return Err(Error::InvalidStakeAmount);
+    |                               ^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+    |
+   ::: contracts/predictify-hybrid/src/err.rs:24:1
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `InvalidStakeAmount` not found for this enum
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/extensions.rs:706:26
+    |
+706 |             env.events().publish(
+    |                          ^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/recovery.rs:710:22
+    |
+710 |         env.events().publish(
+    |                      ^^^^^^^
+
+error[E0599]: no variant or associated item named `UserBlacklisted` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/lists.rs:105:31
+    |
+105 |             return Err(Error::UserBlacklisted);
+    |                               ^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+    |
+   ::: contracts/predictify-hybrid/src/err.rs:24:1
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `UserBlacklisted` not found for this enum
+
+error[E0599]: no variant or associated item named `UserNotWhitelisted` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/lists.rs:116:24
+    |
+116 |             Err(Error::UserNotWhitelisted)
+    |                        ^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+    |
+   ::: contracts/predictify-hybrid/src/err.rs:24:1
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `UserNotWhitelisted` not found for this enum
+
+error[E0599]: no variant or associated item named `CreatorBlacklisted` found for enum `err::Error` in the current scope
+   --> contracts/predictify-hybrid/src/lists.rs:124:24
+    |
+124 |             Err(Error::CreatorBlacklisted)
+    |                        ^^^^^^^^^^^^^^^^^^ variant or associated item not found in `err::Error`
+    |
+   ::: contracts/predictify-hybrid/src/err.rs:24:1
+    |
+ 24 | pub enum Error {
+    | -------------- variant or associated item `CreatorBlacklisted` not found for this enum
+
+error[E0599]: no function or associated item named `get_admin_counter` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:211:31
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `get_admin_counter` not found for this struct
+...
+211 |     let admin_counter = Self::get_admin_counter(env, admin);
+    |                               ^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+
+error[E0599]: no function or associated item named `get_and_bump_global_nonce` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:225:27
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `get_and_bump_global_nonce` not found for this struct
+...
+225 |         let nonce = Self::get_and_bump_global_nonce(env);
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+
+error[E0599]: no function or associated item named `build_market_id` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:226:31
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `build_market_id` not found for this struct
+...
+226 |         let market_id = Self::build_market_id(env, nonce, current_admin_counter, admin);
+    |                               ^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+
+error[E0599]: no function or associated item named `set_admin_counter` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:229:19
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `set_admin_counter` not found for this struct
+...
+229 |             Self::set_admin_counter(env, admin, current_admin_counter + 1);
+    |                   ^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+
+error[E0599]: no function or associated item named `register_market_id` found for struct `MarketIdGenerator` in the current scope
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:230:19
+    |
+ 70 | pub struct MarketIdGenerator;
+    | ---------------------------- function or associated item `register_market_id` not found for this struct
+...
+230 |             Self::register_market_id(env, &market_id, admin, timestamp);
+    |                   ^^^^^^^^^^^^^^^^^^ function or associated item not found in `MarketIdGenerator`
+    |
+help: there is an associated function `generate_market_id` with a similar name
+   --> contracts/predictify-hybrid/src/market_id_generator.rs:209:1
+    |
+209 | pub fn generate_market_id(env: &Env, admin: &Address) -> Symbol {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::events::Events::publish`: use the #[contractevent] macro on a contract event type
+   --> contracts/predictify-hybrid/src/tokens.rs:548:18
+    |
+548 |     env.events().publish(
+    |                  ^^^^^^^
+
+warning: unused import: `alloc::string::ToString`
+ --> contracts/predictify-hybrid/src/resolution.rs:5:5
+  |
+5 | use alloc::string::ToString;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::string::ToString`
+  --> contracts/predictify-hybrid/src/market_id_generator.rs:39:5
+   |
+39 | use alloc::string::ToString;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `soroban_sdk::xdr::ToXdr`
+  --> contracts/predictify-hybrid/src/market_id_generator.rs:40:5
+   |
+40 | use soroban_sdk::xdr::ToXdr;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0004]: non-exhaustive patterns: `&err::Error::IdempotentBatchAlreadyApplied`, `&err::Error::OperationWouldExceedBudget`, `&err::Error::AdminActionTimelocked` and 1 more not covered
+    --> contracts/predictify-hybrid/src/err.rs:1580:15
+     |
+1580 |         match self {
+     |               ^^^^ patterns `&err::Error::IdempotentBatchAlreadyApplied`, `&err::Error::OperationWouldExceedBudget`, `&err::Error::AdminActionTimelocked` and 1 more not covered
+     |
+note: `err::Error` defined here
+    --> contracts/predictify-hybrid/src/err.rs:24:10
+     |
+  24 | pub enum Error {
+     |          ^^^^^
+  25 |     IdempotentBatchAlreadyApplied = 660,
+     |     ----------------------------- not covered
+...
+ 143 |     OperationWouldExceedBudget = 418,
+     |     -------------------------- not covered
+...
+ 150 |     AdminActionTimelocked = 443,
+     |     --------------------- not covered
+...
+ 188 |     ForceResolveAlreadyUsed = 435,
+     |     ----------------------- not covered
+     = note: the matched value is of type `&err::Error`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern as shown, or multiple match arms
+     |
+1675 ~             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+1676 ~             _ => todo!(),
+     |
+
+warning: unused variable: `env`
+    --> contracts/predictify-hybrid/src/events.rs:2043:23
+     |
+2043 |     pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
+     |                       ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `env`
+  --> contracts/predictify-hybrid/src/gas.rs:92:40
+   |
+92 |     fn calculate_moving_average(&self, env: &Env) -> u64 {
+   |                                        ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `unknown`
+    --> contracts/predictify-hybrid/src/oracles.rs:1227:13
+     |
+1227 |             unknown => {
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_unknown`
+
+warning: unused variable: `whitelist`
+    --> contracts/predictify-hybrid/src/oracles.rs:4219:13
+     |
+4219 |         let whitelist = OracleWhitelist::from_env(&self.env);
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_whitelist`
+
+warning: unused variable: `message`
+    --> contracts/predictify-hybrid/src/oracles.rs:4485:9
+     |
+4485 |         message: &Bytes,
+     |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_message`
+
+warning: unused variable: `caller`
+    --> contracts/predictify-hybrid/src/oracles.rs:4501:34
+     |
+4501 |     fn cleanup_old_nonces(&self, caller: &Address) {
+     |                                  ^^^^^^ help: if this is intentional, prefix it with an underscore: `_caller`
+
+warning: unused variable: `cutoff_time`
+    --> contracts/predictify-hybrid/src/oracles.rs:4503:13
+     |
+4503 |         let cutoff_time = current_time - NONCE_CLEANUP_INTERVAL;
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cutoff_time`
+
+warning: unused variable: `creator`
+    --> contracts/predictify-hybrid/src/storage.rs:1007:41
+     |
+1007 |     fn get_active_events_key(env: &Env, creator: &Address) -> Symbol {
+     |                                         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_creator`
+
+warning: unused variable: `env`
+    --> contracts/predictify-hybrid/src/types.rs:2142:16
+     |
+2142 |     pub fn new(env: &Env, market_id: Symbol, feed_id: String) -> Self {
+     |                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+    --> contracts/predictify-hybrid/src/types.rs:2154:19
+     |
+2154 |     pub fn strict(env: &Env, market_id: Symbol, feed_id: String) -> Self {
+     |                   ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+    --> contracts/predictify-hybrid/src/lib.rs:2630:9
+     |
+2630 |         market_id: Symbol,
+     |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+    --> contracts/predictify-hybrid/src/lib.rs:2686:9
+     |
+2686 |         env: Env,
+     |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+    --> contracts/predictify-hybrid/src/lib.rs:2688:9
+     |
+2688 |         market_id: Symbol,
+     |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `max_retries`
+    --> contracts/predictify-hybrid/src/lib.rs:2689:9
+     |
+2689 |         max_retries: u32,
+     |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_max_retries`
+
+warning: unused variable: `env`
+    --> contracts/predictify-hybrid/src/lib.rs:2744:32
+     |
+2744 |     pub fn get_verified_result(env: Env, market_id: Symbol) -> Option<OracleResult> {
+     |                                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+    --> contracts/predictify-hybrid/src/lib.rs:2744:42
+     |
+2744 |     pub fn get_verified_result(env: Env, market_id: Symbol) -> Option<OracleResult> {
+     |                                          ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+    --> contracts/predictify-hybrid/src/lib.rs:2768:31
+     |
+2768 |     pub fn is_result_verified(env: Env, market_id: Symbol) -> bool {
+     |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_id`
+    --> contracts/predictify-hybrid/src/lib.rs:2768:41
+     |
+2768 |     pub fn is_result_verified(env: Env, market_id: Symbol) -> bool {
+     |                                         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_id`
+
+warning: unused variable: `env`
+    --> contracts/predictify-hybrid/src/disputes.rs:3022:48
+     |
+3022 |     pub fn get_user_total_active_dispute_stake(env: &Env, user: &Address) -> i128 {
+     |                                                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `user`
+    --> contracts/predictify-hybrid/src/disputes.rs:3022:59
+     |
+3022 |     pub fn get_user_total_active_dispute_stake(env: &Env, user: &Address) -> i128 {
+     |                                                           ^^^^ help: if this is intentional, prefix it with an underscore: `_user`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/graceful_degradation.rs:106:9
+    |
+106 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `address`
+   --> contracts/predictify-hybrid/src/graceful_degradation.rs:108:9
+    |
+108 |         address: &Address,
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_address`
+
+warning: unused variable: `feed_id`
+   --> contracts/predictify-hybrid/src/graceful_degradation.rs:109:9
+    |
+109 |         feed_id: &String,
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_feed_id`
+
+warning: unused variable: `action`
+   --> contracts/predictify-hybrid/src/queries.rs:179:47
+    |
+179 |     pub fn query_requires_multisig(env: &Env, action: String) -> Result<bool, Error> {
+    |                                               ^^^^^^ help: if this is intentional, prefix it with an underscore: `_action`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/queries.rs:873:9
+    |
+873 |         env: &Env,
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/recovery.rs:180:21
+    |
+180 |     fn trim_history(env: &Env, history: &mut Vec<RecoveryHistoryEntry>) {
+    |                     ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `market_stats`
+   --> contracts/predictify-hybrid/src/statistics.rs:103:9
+    |
+103 |         market_stats: &MarketStatisticsV1,
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_market_stats`
+
+warning: unused variable: `env`
+   --> contracts/predictify-hybrid/src/tokens.rs:162:28
+    |
+162 |     pub fn validate(&self, env: &Env) -> bool {
+    |                            ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: variable does not need to be mutable
+   --> contracts/predictify-hybrid/src/tokens.rs:403:13
+    |
+403 |         let mut global_assets: Vec<Asset> = env
+    |             ----^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0004, E0061, E0063, E0119, E0277, E0308, E0425, E0433, E0560...
+For more information about an error, try `rustc --explain E0004`.
+warning: `predictify-hybrid` (lib) generated 181 warnings
+error: could not compile `predictify-hybrid` (lib) due to 98 previous errors; 181 warnings emitted

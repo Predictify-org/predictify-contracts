@@ -3,7 +3,7 @@
 
 use soroban_sdk::{contracttype, Env, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Explicit opt-in token that a caller must pass to `apply_migration` (or
 /// `UpgradeManager::apply_migration`) when a `VersionMigration` reports
@@ -644,6 +644,12 @@ impl VersionManager {
         self.execute_migration(env, &migration)?;
 
         Ok(migration)
+    }
+
+    /// Get the capabilities bitmask for the current version.
+    pub fn get_current_capabilities(&self, env: &Env) -> Result<u64, Error> {
+        let version = self.get_current_version(env)?;
+        Ok(crate::capabilities::compute_capabilities_for_version(version))
     }
 
     /// Validate version compatibility

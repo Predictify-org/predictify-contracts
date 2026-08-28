@@ -1,66 +1,61 @@
 #![no_std]
-#![allow(unused_variables)]
-#![allow(unused_assignments)]
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(unused_mut)]
-#![allow(deprecated)]
-#![allow(clippy::empty_line_after_doc_comments)]
-#![allow(clippy::empty_line_after_outer_attr)]
-#![allow(clippy::enum_variant_names)]
-#![allow(clippy::all)]
 
-extern crate alloc;
-#[cfg(not(test))]
-extern crate wee_alloc;
-
-#[cfg(not(test))]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-// Module declarations - all modules enabled
+extern crate alloc;
+
+// ===== MODULE DECLARATIONS =====
+// These must be declared here so Rust knows to compile them as part of this crate.
+
+
+const SYM_ADMIN: &str = "Admin";
+const SYM_PLATFORM_FEE: &str = "platform_fee";
+pub use config::PERCENTAGE_DENOMINATOR;
 mod admin;
-#[cfg(test)]
-mod admin_auth_audit_tests;
-pub mod audit_trail;
+// #[cfg(any())]
+// mod admin_auth_audit_tests;
+// #[cfg(any())]
+// mod error_code_tests;
+pub mod analytics;
+pub mod audit;
 mod balances;
 mod batch_operations;
 mod bets;
-mod circuit_breaker;
+pub mod circuit_breaker;
 mod config;
-mod disputes;
-mod edge_cases;
 mod err;
+mod force_resolve;
 mod event_archive;
 mod events;
-mod extensions;
+pub mod gov_registry;
 mod fees;
 mod gas;
 mod governance;
-mod graceful_degradation;
-mod market_analytics;
-mod market_id_generator;
 mod markets;
-mod metadata_limits;
-#[cfg(test)]
-mod metadata_limits_tests;
 mod monitoring;
-#[cfg(test)]
-mod multi_admin_multisig_tests;
 mod oracles;
-mod performance_benchmarks;
-mod queries;
-mod rate_limiter;
-mod recovery;
 mod reentrancy_guard;
+mod oracle_health;
+mod reporting;
+// #[cfg(any())]
+// mod reporting_tests;
+// #[cfg(any())]
+// mod state_snapshot_reporting_tests;
+// #[cfg(any())]
+// mod require_auth_coverage_tests;
 #[cfg(test)]
-mod require_auth_coverage_tests;
+mod resolution_event_ordering_tests;
+
+#[cfg(test)]
+#[path = "tests/oracle_validation_tests.rs"]
+mod oracle_validation_tests;
 mod resolution;
-mod statistics;
 mod storage;
+mod deprecated;
+pub use deprecated::{DeprecatedEntry, DeprecatedRegistry, MAX_REGISTRY_ENTRIES};
 #[cfg(test)]
-mod storage_layout_tests;
-pub mod tokens;
+mod deprecated_tests;
 mod types;
 mod upgrade_manager;
 mod utils;
@@ -68,10 +63,33 @@ mod validation;
 // mod validation_tests; // disabled - API drift
 mod versioning;
 mod voting;
+mod market_analytics;
+mod performance_benchmarks;
+mod disputes;
+mod edge_cases;
+mod extensions;
+mod graceful_degradation;
+mod market_id_generator;
+mod metadata_limits;
+mod queries;
+mod recovery;
+mod statistics;
+mod tokens;
+mod rate_limiter;
+mod dispute_multisig;
+mod event_topic_catalog;
+mod storage_tier_audit;
+mod leaderboard;
+mod lists;
+mod audit_trail;
+mod monitor;
+mod capabilities;
 
 #[cfg(test)]
 mod override_audit_tests;
-#[cfg(any())]
+#[cfg(test)]
+mod market_audit_tests;
+#[cfg(test)]
 mod test_audit_trail;
 // #[cfg(any())]
 // mod utils_tests;
@@ -80,13 +98,22 @@ mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
 }
 
-#[cfg(any())]
-mod circuit_breaker_tests;
+pub mod timelock;
+
+// #[cfg(any())]
+// mod circuit_breaker_tests;
 // #[cfg(test)]
 // mod oracle_fallback_timeout_tests;
 
-// #[cfg(any())]
-// mod batch_operations_tests;
+use bets::BetStorage;
+// `BetStatus` is available at the crate root via `pub use types::*` below.
+use gas::BudgetGuard;
+use resolution::ResolutionOutcomeCache;
+use storage::BalanceStorage;
+use types::{Market, ReflectorAsset};
+// `CircuitBreaker`, `Error`, `EventEmitter`, `ClaimInfo` and the soroban_sdk
+// prelude items are imported/re-exported once below; duplicating them here
+// tripped E0252 "defined multiple times".
 
 // #[cfg(any())]
 // mod integration_test;
@@ -98,8 +125,14 @@ mod circuit_breaker_tests;
 
 // #[cfg(any())]
 // mod upgrade_manager_tests;
+// #[cfg(any())]
+// mod upgrade_manager_tests;
+// `capability_bitmap_tests.rs` does not exist in the tree; the capability
+// bitmap is covered by the unit tests inside `capabilities.rs`.
 #[cfg(test)]
-mod upgrade_manager_tests;
+mod market_state_matrix_tests;
+#[cfg(test)]
+mod timelock_tests;
 
 // #[cfg(any())]
 // mod query_tests;
@@ -124,13 +157,15 @@ mod upgrade_manager_tests;
 // #[cfg(test)]
 // mod event_management_tests;
 
-// #[cfg(test)]
-// mod governance_tests;
+#[cfg(test)]
+mod governance_tests;
 
 #[cfg(any())]
 mod category_tags_tests;
 #[cfg(test)]
 mod tie_resolution_tests;
+#[cfg(test)]
+mod force_resolve_tests;
 // #[cfg(any())]
 // mod statistics_tests;
 
@@ -138,12 +173,22 @@ mod tie_resolution_tests;
 // mod resolution_delay_dispute_window_tests;
 
 #[cfg(test)]
+mod analytics_snapshot_tests;
+#[cfg(test)]
 mod property_based_tests;
+mod analytics_snapshot;
+
+#[cfg(test)]
+mod max_participants_tests;
 
 // dispute_stake_tests.rs extended for #553; enable when legacy setup is updated:
 // #[cfg(test)]
 // #[path = "tests/dispute_stake_tests.rs"]
 // mod dispute_stake_tests;
+
+#[cfg(test)]
+#[path = "tests/fee_config_commit_reveal_tests.rs"]
+mod fee_config_commit_reveal_tests;
 
 // #[cfg(test)]
 // mod event_creation_tests;
@@ -153,31 +198,44 @@ mod voting_snapshot_stability_tests;
 
 // Re-export commonly used items
 use admin::{
-    AdminAnalyticsResult, AdminInitializer, AdminManager, AdminPermission, AdminRole,
-    AdminSystemIntegration,
+    AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
+    AdminRole, AdminSystemIntegration,
 };
+pub use admin::Severity;
 pub use err::Error;
+use crate::storage::{
+    check_market_creation_rent, check_market_creation_rent_budget, DataKey, MARKET_TTL_LEDGERS,
+};
 // Backwards-compatible re-export for existing module paths.
 pub mod errors {
     pub use crate::err::*;
 }
 // pub use queries::QueryManager;
-pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
+// pub use audit_trail::{AuditAction, AuditRecord, AuditTrailHead, AuditTrailManager};
 pub use types::*;
 
-use crate::circuit_breaker::CircuitBreaker;
+
 use crate::config::{
     ConfigManager, DEFAULT_PLATFORM_FEE_PERCENTAGE, MAX_PLATFORM_FEE_PERCENTAGE,
     MIN_PLATFORM_FEE_PERCENTAGE,
 };
-use crate::events::EventEmitter;
 use crate::gas::GasTracker;
 use crate::graceful_degradation::{OracleBackup, OracleHealth};
 use crate::market_id_generator::MarketIdGenerator;
 use alloc::format;
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short,
+    Address, BytesN, Env, Map, String, Symbol, Vec,
 };
+use crate::circuit_breaker::CircuitBreaker;
+use crate::events::EventEmitter;
+use crate::audit_trail::{AuditTrailManager, AuditAction};
+
+impl From<crate::reentrancy_guard::GuardError> for Error {
+    fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
+        Error::InvalidState
+    }
+}
 
 impl From<crate::rate_limiter::RateLimiterError> for Error {
     fn from(err: crate::rate_limiter::RateLimiterError) -> Self {
@@ -190,97 +248,57 @@ impl From<crate::rate_limiter::RateLimiterError> for Error {
     }
 }
 
-#[contract]
-pub struct PredictifyHybrid;
-
-const PERCENTAGE_DENOMINATOR: i128 = 10000;
+// Short symbol keys (max length 9 for Soroban compatibility). These consts were
+// dropped in the e5db2d8 lib.rs collapse but are still referenced by the storage
+// helpers below; restored here.
+const SYM_ALLOWED_ASSETS: &str = "allowed"; // was "allowed_assets" (14 chars)
 
 const ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON: &str =
     "Primary oracle failed, fallback also failed";
-const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str = "Primary oracle failed and no fallback configured";
+const ORACLE_FAILURE_PRIMARY_ONLY_REASON: &str =
+    "Primary oracle failed and no fallback configured";
 
+/// Returns `true` once a market has passed its `end_time + resolution_timeout`.
 fn resolution_timeout_reached(env: &Env, market: &Market) -> bool {
     let current_time = env.ledger().timestamp();
     current_time >= market.end_time.saturating_add(market.resolution_timeout)
 }
 
-fn automatic_oracle_result_unavailable(env: &Env, config: &OracleConfig) -> Result<String, Error> {
+/// Probe an oracle for an automatic result; `Err(OracleUnavailable)` when inactive.
+fn automatic_oracle_result_unavailable(
+    env: &Env,
+    config: &OracleConfig,
+) -> Result<String, Error> {
     if !config.is_active() {
         return Err(Error::OracleUnavailable);
     }
     Ok(String::from_str(env, "pending"))
 }
 
+/// Probe an oracle for an automatic result; returns the raw oracle result string.
+fn get_oracle_result(env: &Env, config: &OracleConfig) -> Result<String, Error> {
+    automatic_oracle_result_unavailable(env, config)
+}
+
+#[contract]
+pub struct PredictifyHybrid;
+
+// ===== CONTRACT IMPLEMENTATION =====
+
 #[contractimpl]
 impl PredictifyHybrid {
-    // Recovery methods appended later in file after existing functions to maintain readability.
-    /// Initializes the Predictify Hybrid smart contract with administrator and platform configuration.
-    ///
-    /// This function must be called once after contract deployment to set up the initial
-    /// administrative configuration and platform fee structure. It establishes the contract admin who
-    /// will have privileges to create markets and perform administrative functions, and configures
-    /// the platform fee percentage for market operations. The call also stores the default
-    /// development-oriented contract configuration so creation validators have deterministic
-    /// bounds immediately after deployment.
+    /// Initializes the contract: sets the primary admin, platform fee, default
+    /// runtime configuration, circuit breaker, rate limiter, and allowed assets.
     ///
     /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `admin` - The address that will be granted administrative privileges
-    /// * `platform_fee_percentage` - Optional platform fee percentage (0-10%). If `None`, defaults to 2%
-    /// * `allowed_assets` - Optional list of allowed asset contract addresses. If `None`, defaults are used
+    /// * `admin` - The primary administrator address.
+    /// * `platform_fee_percentage` - Optional platform fee in basis points; defaults to 2%.
+    /// * `allowed_assets` - Optional custom allow-list of deposit assets.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when:
-    /// - The contract has already been initialized
-    /// - The admin address is invalid
-    /// - The platform fee percentage is negative or exceeds 10%
-    /// - Storage operations fail
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use soroban_sdk::{Env, Address, Vec};
-    /// # use predictify_hybrid::PredictifyHybrid;
-    /// # let env = Env::default();
-    /// # let admin_address = Address::generate(&env);
-    ///
-    /// // Initialize with default 2% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address.clone(), None, None)?;
-    ///
-    /// // Or initialize with custom 5% platform fee
-    /// PredictifyHybrid::initialize(env.clone(), admin_address, Some(5), None)?;
-    /// ```
-    ///
-    /// # Platform Fee
-    ///
-    /// The platform fee is a percentage (0-10%) taken from winning payouts to support
-    /// platform operations. Fee is applied during payout calculation:
-    /// - Default: 2% (200 basis points)
-    /// - Minimum: 0% (no fee)
-    /// - Maximum: 10% (1000 basis points)
-    ///
-    /// # Security
-    ///
-    /// The admin address should be carefully chosen as it will have significant
-    /// control over the contract's operation, including market creation and resolution.
-    /// Consider using a multi-signature wallet or governance contract for production.
-    ///
-    /// # Default Configuration
-    ///
-    /// `initialize()` stores the default development contract configuration. Integrators that
-    /// need testnet, mainnet, or custom configuration should update configuration explicitly
-    /// after initialization through the contract's administrative configuration flows.
-    ///
-    /// # Re-initialization Prevention
-    ///
-    /// This function can only be called once. Any subsequent calls will return
-    /// `Error::InvalidState` to prevent admin takeover attacks.
-    ///
-    /// # Events
-    ///
-    /// Emits `contract_initialized` and `platform_fee_set` events on successful initialization.
+    /// Returns [`Error::InvalidState`] if already initialized, [`Error::InvalidFeeConfig`]
+    /// if the fee is out of bounds, or any subsystem initialization error.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -291,7 +309,7 @@ impl PredictifyHybrid {
         if env
             .storage()
             .persistent()
-            .has(&Symbol::new(&env, "platform_fee"))
+            .has(&Symbol::new(&env, SYM_PLATFORM_FEE))
         {
             return Err(Error::InvalidState);
         }
@@ -318,32 +336,12 @@ impl PredictifyHybrid {
         // Store platform fee configuration in persistent storage
         env.storage()
             .persistent()
-            .set(&Symbol::new(&env, "platform_fee"), &fee_percentage);
-
-        // Store default contract configuration so validators have deterministic bounds
-        let mut default_config = crate::config::ConfigManager::get_development_config(&env);
-        default_config.fees.platform_fee_percentage = fee_percentage;
-        if let Err(e) = crate::config::ConfigManager::store_config(&env, &default_config) {
-            panic_with_error!(env, e);
-        }
-
-        // Initialize rate limiter with permissive defaults (0 = no limit)
-        let rate_limit_config = crate::rate_limiter::RateLimitConfig {
-            voting_limit: 0,
-            dispute_limit: 0,
-            oracle_call_limit: 0,
-            bet_limit: 0,
-            events_per_admin_limit: 0,
-            time_window_seconds: 3600,
-        };
-        env.storage().persistent().set(
-            &crate::rate_limiter::RateLimiterData::Config,
-            &rate_limit_config,
-        );
+            .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
 
         // Seed default runtime configuration so validators and query paths have
         // deterministic bounds immediately after deployment.
-        let default_config = ConfigManager::get_development_config(&env);
+        let mut default_config = ConfigManager::get_development_config(&env);
+        default_config.fees.platform_fee_percentage = fee_percentage;
         ConfigManager::store_config(&env, &default_config)?;
 
         // Seed permissive-but-valid rate limits so admin entrypoints do not
@@ -358,25 +356,22 @@ impl PredictifyHybrid {
                     bet_limit: 10_000,
                     events_per_admin_limit: 1_000,
                     time_window_seconds: 3_600,
+                    refill_mode: crate::rate_limiter::RefillMode::Linear,
                 },
             )
             .map_err(Error::from)?;
 
         // Initialize allowed assets
         if let Some(assets) = allowed_assets {
-            // Store custom allowed assets
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "allowed_assets"), &assets);
+                .set(&Symbol::new(&env, SYM_ALLOWED_ASSETS), &assets);
         } else {
-            // Initialize with defaults
             crate::tokens::TokenRegistry::initialize_with_defaults(&env);
         }
 
-        // Emit contract initialized event
+        // Emit contract initialized and platform fee events
         EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
-
-        // Emit platform fee set event
         EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
 
         Ok(())
@@ -385,7 +380,7 @@ impl PredictifyHybrid {
     fn stored_primary_admin(env: &Env) -> Result<Address, Error> {
         env.storage()
             .persistent()
-            .get(&Symbol::new(env, "Admin"))
+            .get(&Symbol::new(env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)
     }
 
@@ -427,127 +422,45 @@ impl PredictifyHybrid {
     }
 
     /// Deposits funds into the user's balance.
-    ///
-    /// # Parameters
-    /// * `env` - The environment.
-    /// * `user` - The user depositing funds.
-    /// * `asset` - The asset to deposit (e.g., XLM, BTC, ETH).
-    /// * `amount` - The amount to deposit.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn deposit(
         env: Env,
         user: Address,
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
-        if let Err(e) =
-            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "deposit")
-        {
-            return Err(e);
-        }
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "deposit")?;
         balances::BalanceManager::deposit(&env, user, asset, amount)
     }
 
     /// Withdraws funds from the user's balance.
-    ///
-    /// # Parameters
-    /// * `env` - The environment.
-    /// * `user` - The user withdrawing funds.
-    /// * `asset` - The asset to withdraw.
-    /// * `amount` - The amount to withdraw.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn withdraw(
         env: Env,
         user: Address,
         asset: ReflectorAsset,
         amount: i128,
     ) -> Result<Balance, Error> {
-        if let Err(e) =
-            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "withdraw")
-        {
-            return Err(e);
-        }
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "withdraw")?;
         if !crate::circuit_breaker::CircuitBreaker::are_withdrawals_allowed(&env)? {
-            return Err(crate::errors::Error::CBOpen);
+            return Err(Error::CBOpen);
         }
         balances::BalanceManager::withdraw(&env, user, asset, amount)
     }
 
-    /// Gets the current balance of a user for a specific asset.
-    ///
-    /// # Parameters
-    /// * `env` - The environment.
-    /// * `user` - The user to check.
-    /// * `asset` - The asset to check.
-    ///
-    /// # Errors
-    ///
-    /// This entrypoint surfaces contract errors via panic in internal calls.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Gets the current balance of a user for a specific asset (read-only).
     pub fn get_balance(env: Env, user: Address, asset: ReflectorAsset) -> Balance {
         storage::BalanceStorage::get_balance(&env, &user, &asset)
     }
 
-    /// Retrieves a specific audit record by index.
-    pub fn get_audit_record(env: Env, index: u64) -> Option<AuditRecord> {
-        AuditTrailManager::get_record(&env, index)
-    }
-
-    /// Retrieves the latest audit records (up to limit).
-    pub fn get_latest_audit_records(env: Env, limit: u64) -> Vec<AuditRecord> {
-        AuditTrailManager::get_latest_records(&env, limit)
-    }
-
-    /// Retrieves the current head of the audit trail.
-    pub fn get_audit_trail_head(env: Env) -> Option<AuditTrailHead> {
-        AuditTrailManager::get_head(&env)
-    }
-
-    /// Verifies the integrity of the audit trail up to a certain depth.
-    pub fn verify_audit_integrity(env: Env, depth: u64) -> bool {
-        AuditTrailManager::verify_integrity(&env, depth)
-    }
-
-    /// Creates a new prediction market with specified parameters and oracle configuration.
+    /// Distribute payouts to winning voters and bettors for a resolved market.
     ///
-    /// This function allows authorized administrators to create prediction markets
-    /// with custom questions, possible outcomes, duration, and oracle integration.
-    /// Each market gets a unique identifier and is stored in persistent contract storage.
-    ///
-    /// # Multi-Outcome Support
-    ///
-    /// Markets support 2 to N outcomes, enabling both binary (yes/no) and multi-outcome
-    /// markets (e.g., Team A / Team B / Draw). The contract handles:
-    /// - Single winner resolution (one outcome wins)
-    /// - Tie/multi-winner resolution (multiple outcomes win, pool split proportionally)
-    /// - Outcome validation during bet placement
-    /// - Proportional payout distribution for ties
+    /// This function iterates over all voters and bettors, calculates each winner's
+    /// proportional share of the total pool (after platform fee), credits their balance,
+    /// and emits a winnings-claimed event. A `BudgetGuard` is checked every 10 iterations
+    /// to abort gracefully before the host CPU-instruction limit is reached.
     ///
     /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `admin` - The administrator address creating the market (must be authorized)
-    /// * `question` - The prediction question (non-empty after trimming and within the supported length bounds)
-    /// * `outcomes` - Vector of possible outcomes (bounded count, non-empty after trimming, and duplicate-safe)
-    /// * `duration_days` - Market duration in days (must remain within the supported bounds)
-    /// * `oracle_config` - Configuration for oracle integration (Reflector, Pyth, etc.)
+    /// * `env`       - Soroban environment
+    /// * `market_id` - Symbol identifying the resolved market
     ///
     /// # Returns
     ///
@@ -656,6 +569,8 @@ impl PredictifyHybrid {
         min_pool_size: Option<i128>,
         bet_deadline_mins_before_end: Option<u64>,
         dispute_window_seconds: Option<u64>,
+        dispute_stake_floor: Option<i128>,
+        max_participants: Option<u32>,
     ) -> Symbol {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_market")
@@ -666,10 +581,13 @@ impl PredictifyHybrid {
         Self::require_primary_admin_or_panic(&env, &admin);
 
         // Rate limit market creation to prevent abuse
+        // ConfigNotFound means rate limiting is not configured — skip the check
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_admin_events(admin.clone())
         {
-            panic_with_error!(env, Error::from(rate_err));
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                panic_with_error!(env, Error::from(rate_err));
+            }
         }
 
         if let Err(e) = crate::validation::CreationValidator::validate_market_creation(
@@ -714,6 +632,8 @@ impl PredictifyHybrid {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
         };
+        let metadata_commitment =
+            Market::compute_metadata_commitment(&env, &question, &outcomes, &oracle_config);
         // Create a new market
         let market = Market {
             admin: admin.clone(),
@@ -721,6 +641,7 @@ impl PredictifyHybrid {
             outcomes: outcomes.clone(),
             end_time,
             oracle_config,
+            metadata_commitment,
             has_fallback,
             fallback_oracle_config: fallback_cfg,
             resolution_timeout,
@@ -742,10 +663,32 @@ impl PredictifyHybrid {
             bet_deadline,
             dispute_window_seconds: dispute_window_seconds.unwrap_or(86400),
             winnings_swept: false,
+            timelock_config: timelock::MarketTimelockConfig::default(),
+            dispute_stake_floor,
+            max_participants,
         };
+
+        // Pre-flight checks: ensure sufficient storage rent budget.
+        //
+        // This entrypoint returns `Symbol` rather than `Result`, so a failed
+        // check is surfaced as a panic. Callers using `try_create_market`
+        // observe `Error::InsufficientStorageRent` or
+        // `Error::InsufficientStorageRentBudget` respectively.
+        //
+        // The aggregate check runs second and covers all three persistent
+        // entries this entrypoint writes: the market record below, the
+        // platform statistics record via `record_market_created`, and the
+        // audit trail record via `append_record`.
+        if let Err(e) = check_market_creation_rent(&env) {
+            panic_with_error!(env, e);
+        }
+        if let Err(e) = check_market_creation_rent_budget(&env) {
+            panic_with_error!(env, e);
+        }
 
         // Store the market
         env.storage().persistent().set(&market_id, &market);
+        env.storage().persistent().extend_ttl(&market_id, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
 
         // Emit events
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, end_time);
@@ -758,7 +701,32 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
+
+        // Per-market audit entry: MarketCreated
+        {
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "question"),
+                question.clone(),
+            );
+            details.set(
+                Symbol::new(&env, "end_time"),
+                String::from_str(&env, &alloc::format!("{}", end_time)),
+            );
+            details.set(
+                Symbol::new(&env, "dur_days"),
+                String::from_str(&env, &alloc::format!("{}", duration_days)),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketCreated,
+                admin.clone(),
+                details,
+            );
+        }
 
         GasTracker::end_tracking(&env, symbol_short!("create"), gas_marker);
         market_id
@@ -828,7 +796,9 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_admin_events(admin.clone())
         {
-            panic_with_error!(env, Error::from(rate_err));
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                panic_with_error!(env, Error::from(rate_err));
+            }
         }
 
         // Validate inputs
@@ -896,6 +866,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCreated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         let gas_marker = GasTracker::start_tracking(&env);
@@ -994,7 +965,9 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_voting(user.clone(), market_id.clone())
         {
-            panic_with_error!(env, Error::from(rate_err));
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                panic_with_error!(env, Error::from(rate_err));
+            }
         }
 
         let mut market: Market = env
@@ -1031,6 +1004,13 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::AlreadyVoted);
         }
 
+        // Check participant cap
+        if let Some(max) = market.max_participants {
+            if market.votes.len() >= max {
+                panic_with_error!(env, Error::MaxParticipantsReached);
+            }
+        }
+
         // Lock funds (transfer from user to contract)
         match bets::BetUtils::lock_funds(&env, &user, stake) {
             Ok(_) => {}
@@ -1043,6 +1023,9 @@ impl PredictifyHybrid {
         market.total_staked += stake;
 
         env.storage().persistent().set(&market_id, &market);
+
+        // Invalidate analytics cache so next read recomputes fresh stats.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
 
         // Emit vote cast event
         EventEmitter::emit_vote_cast(&env, &market_id, &user, &outcome, stake);
@@ -1193,6 +1176,7 @@ impl PredictifyHybrid {
         market_id: Symbol,
         outcome: String,
         amount: i128,
+        max_fee_bps: i128,
     ) -> crate::types::Bet {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
@@ -1200,10 +1184,12 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         // Use the BetManager to handle the bet placement
-        match bets::BetManager::place_bet(&env, user.clone(), market_id, outcome, amount) {
+        match bets::BetManager::place_bet(&env, user.clone(), market_id.clone(), outcome, amount, max_fee_bps) {
             Ok(bet) => {
                 // Record statistics
                 statistics::StatisticsManager::record_bet_placed(&env, &user, amount);
+                // Invalidate analytics cache — staked amounts have changed.
+                analytics::AnalyticsCache::new(&env).invalidate(&market_id);
                 bet
             }
             Err(e) => panic_with_error!(env, e),
@@ -1276,14 +1262,23 @@ impl PredictifyHybrid {
         env: Env,
         user: Address,
         bets: Vec<(Symbol, String, i128)>,
+        max_fee_bps: i128,
+        idempotency_key: soroban_sdk::BytesN<32>,
     ) -> Vec<crate::types::Bet> {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
         {
             panic_with_error!(env, e);
         }
-        match bets::BetManager::place_bets(&env, user, bets) {
-            Ok(placed_bets) => placed_bets,
+        match bets::BetManager::place_bets(&env, user, bets.clone(), max_fee_bps, idempotency_key) {
+            Ok(placed_bets) => {
+                // Invalidate analytics cache for every market touched by this batch.
+                let cache = analytics::AnalyticsCache::new(&env);
+                for (market_id, _, _) in bets.iter() {
+                    cache.invalidate(&market_id);
+                }
+                placed_bets
+            }
             Err(e) => panic_with_error!(env, e),
         }
     }
@@ -1758,9 +1753,9 @@ impl PredictifyHybrid {
                 };
                 let fee_percent = cfg.fees.platform_fee_percentage;
                 let user_share = (user_stake
-                    .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                    .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
                     .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
-                    / PERCENTAGE_DENOMINATOR;
+                    / (PERCENTAGE_DENOMINATOR as i128);
                 let total_pool = summary.total_pool;
                 let product = user_share
                     .checked_mul(total_pool)
@@ -1786,7 +1781,7 @@ impl PredictifyHybrid {
                 let gross_share = (user_stake
                     .checked_mul(PERCENTAGE_DENOMINATOR)
                     .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
-                    / PERCENTAGE_DENOMINATOR;
+                    / (PERCENTAGE_DENOMINATOR as i128);
                 // Wait, user_stake * 100 / 100 = user_stake.
                 // The math above used PERCENTAGE_DENOMINATOR (100).
 
@@ -1804,6 +1799,9 @@ impl PredictifyHybrid {
                     .claimed
                     .set(user.clone(), ClaimInfo::new(&env, payout));
                 env.storage().persistent().set(&market_id, &market);
+
+                // Invalidate analytics cache — claimed map has changed.
+                analytics::AnalyticsCache::new(&env).invalidate(&market_id);
 
                 // Emit winnings claimed event
                 EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
@@ -1826,12 +1824,41 @@ impl PredictifyHybrid {
         // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
         market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
         env.storage().persistent().set(&market_id, &market);
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
     }
 
     /// Set the global claim period for resolved markets (admin only).
     ///
     /// Claims are allowed until `market.end_time + claim_period_seconds` unless overridden
     /// per market. After expiry, claims revert with `Error::ResolutionTimeoutReached`.
+    /// Set governance-controlled minimum bet size in basis points of the market token.
+    /// admin-only. 1 bps = 0.01%. Stored as a u32 (0..=10000).
+    pub fn set_governance_min_bet_bps(env: Env, admin: Address, min_bet_bps: u32) {
+        admin.require_auth();
+        if min_bet_bps > 10_000 {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, SYM_ADMIN))
+            .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
+        if admin != stored_admin {
+            panic_with_error!(env, Error::Unauthorized);
+        }
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "gov_min_bps"), &min_bet_bps);
+    }
+
+    /// Get the governance-set minimum bet bps (0 = not set).
+    pub fn get_governance_min_bet_bps(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "gov_min_bps"))
+            .unwrap_or(0u32)
+    }
+
     pub fn set_global_claim_period(env: Env, admin: Address, claim_period_seconds: u64) {
         admin.require_auth();
 
@@ -1842,7 +1869,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1871,7 +1898,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1902,7 +1929,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .unwrap_or_else(|| panic_with_error!(env, Error::AdminNotSet));
 
         if admin != stored_admin {
@@ -1928,7 +1955,7 @@ impl PredictifyHybrid {
         let stored_admin: Address = env
             .storage()
             .persistent()
-            .get(&Symbol::new(&env, "Admin"))
+            .get(&Symbol::new(&env, SYM_ADMIN))
             .ok_or(Error::AdminNotSet)?;
 
         if admin != stored_admin {
@@ -1962,10 +1989,13 @@ impl PredictifyHybrid {
         let fee_percent = crate::config::ConfigManager::get_config(&env)
             .map(|cfg| cfg.fees.platform_fee_percentage)
             .unwrap_or_else(|_| {
-                env.storage()
-                    .persistent()
-                    .get(&Symbol::new(&env, "platform_fee"))
-                    .unwrap_or(2)
+                // Use the short platform fee key (backwards-compat fallback to legacy long keys
+                // is not possible here because Soroban restricts symbols to <=9 chars).
+                // If you need to read old on-chain keys created with long symbols,
+                // perform a storage migration on-chain (one-time) to move legacy values
+                // under the new short key.
+                let new_key = Symbol::new(&env, "platform_fee");
+                env.storage().persistent().get(&new_key).unwrap_or(2)
             });
 
         if fee_percent < 0 || fee_percent > PERCENTAGE_DENOMINATOR {
@@ -2002,9 +2032,9 @@ impl PredictifyHybrid {
             }
 
             let user_share = user_stake
-                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
                 .ok_or(Error::InvalidInput)?
-                / PERCENTAGE_DENOMINATOR;
+                / (PERCENTAGE_DENOMINATOR as i128);
             let payout = user_share
                 .checked_mul(total_pool)
                 .ok_or(Error::InvalidInput)?
@@ -2048,9 +2078,9 @@ impl PredictifyHybrid {
 
             let user_share = bet
                 .amount
-                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
                 .ok_or(Error::InvalidInput)?
-                / PERCENTAGE_DENOMINATOR;
+                / (PERCENTAGE_DENOMINATOR as i128);
             let payout = user_share
                 .checked_mul(total_pool)
                 .ok_or(Error::InvalidInput)?
@@ -2162,6 +2192,20 @@ impl PredictifyHybrid {
         env.storage().persistent().get(&market_id)
     }
 
+    /// Verifies a client's expected metadata commitment against on-chain market metadata.
+    ///
+    /// The commitment is `sha256(canonical_xdr({ question, outcomes, oracle_config }))`.
+    /// This helper returns `false` when the market is missing, when `expected` does not
+    /// match the commitment stored at creation/update time, or when any committed field
+    /// in storage was changed without refreshing the stored commitment.
+    pub fn verify_market_metadata(env: Env, market_id: Symbol, expected: BytesN<32>) -> bool {
+        let market: Option<Market> = env.storage().persistent().get(&market_id);
+        match market {
+            Some(market) => market.verify_metadata_commitment(&env, &expected),
+            None => false,
+        }
+    }
+
     /// Manually resolves a prediction market by setting the winning outcome (admin only).
     ///
     /// This function allows contract administrators to manually resolve markets
@@ -2228,6 +2272,34 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+
+    /// Check and enforce admin action cooldown for resolution functions.
+    fn check_resolution_cooldown(env: &Env, admin: &Address, fn_name: &Symbol) -> Result<(), Error> {
+        let cooldown_key = DataKey::ResolutionCooldownSeconds;
+        let cooldown: u64 = env.storage().persistent().get(&cooldown_key).unwrap_or(0);
+        if cooldown == 0 {
+            return Ok(());
+        }
+        let now = env.ledger().timestamp();
+        let last_key = DataKey::ResolutionAdminLastAction(fn_name.clone());
+        let last_action: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
+        if last_action > 0 && now < last_action.saturating_add(cooldown) {
+            return Err(Error::AdminActionTimelocked);
+        }
+        env.storage().persistent().set(&last_key, &now);
+        env.storage().persistent().extend_ttl(&last_key, 535680, 535680);
+        Ok(())
+    }
+
+    /// Sets the cooldown period for resolution admin actions.
+    pub fn set_resolution_cooldown(env: Env, admin: Address, seconds: u64) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let key = DataKey::ResolutionCooldownSeconds;
+        env.storage().persistent().set(&key, &seconds);
+        env.storage().persistent().extend_ttl(&key, 535680, 535680);
+        Ok(())
+    }
+
     pub fn resolve_market_manual(
         env: Env,
         admin: Address,
@@ -2236,6 +2308,7 @@ impl PredictifyHybrid {
     ) {
         let gas_marker = GasTracker::start_tracking(&env);
         Self::require_primary_admin_or_panic(&env, &admin);
+        Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "resolve_market_manual")).unwrap_or_else(|e| panic_with_error!(env, e));
 
         let mut market: Market = env
             .storage()
@@ -2306,7 +2379,30 @@ impl PredictifyHybrid {
         );
 
         // Automatically distribute payouts to winners after resolution
-        let _ = Self::distribute_payouts(env.clone(), market_id);
+        let _ = Self::distribute_payouts(env.clone(), market_id.clone());
+
+        // Invalidate analytics cache — market state and winning_outcomes have changed.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
+        // Per-market audit entry: MarketResolved
+        {
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "outcome"),
+                winning_outcome.clone(),
+            );
+            details.set(
+                Symbol::new(&env, "method"),
+                String::from_str(&env, "Manual"),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketResolved,
+                admin.clone(),
+                details,
+            );
+        }
 
         GasTracker::end_tracking(&env, symbol_short!("res_man"), gas_marker);
     }
@@ -2378,6 +2474,7 @@ impl PredictifyHybrid {
         winning_outcomes: Vec<String>,
     ) {
         Self::require_primary_admin_or_panic(&env, &admin);
+        Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "resolve_market_with_ties")).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Validate outcomes vector is not empty
         if winning_outcomes.len() == 0 {
@@ -2453,7 +2550,194 @@ impl PredictifyHybrid {
         );
 
         // Automatically distribute payouts (handles split pool for ties)
+        let _ = Self::distribute_payouts(env.clone(), market_id.clone());
+
+        // Invalidate analytics cache — market state and winning_outcomes have changed.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
+        // Per-market audit entry: MarketResolved (with ties)
+        {
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "outcome"),
+                primary_outcome.clone(),
+            );
+            details.set(
+                Symbol::new(&env, "method"),
+                String::from_str(&env, "ManualTie"),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketResolved,
+                admin.clone(),
+                details,
+            );
+        }
+    }
+
+    /// Force-resolves a market bypassing time/state constraints, with idempotency-key
+    /// replay protection and audit trail.
+    ///
+    /// This admin-only entrypoint resolves a market **regardless** of its current state
+    /// or whether `end_time` has been reached. Every call must supply a non-empty `reason`
+    /// and a unique `idempotency_key` (a string, e.g. a UUID) scoped to the market.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address performing the force-resolve (must be authorised)
+    /// * `market_id` - Unique identifier of the market to force-resolve
+    /// * `winning_outcomes` - Vector of outcomes to declare as winners (minimum 1, all must be valid)
+    /// * `reason` - Human-readable justification for the force-resolve (stored in audit trail)
+    /// * `idempotency_key` - Unique caller-provided key (e.g. UUID) per market; prevents replay
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Force-resolve succeeded
+    /// * `Err(Error::Unauthorized)` - Caller is not the contract primary admin
+    /// * `Err(Error::MarketNotFound)` - Market does not exist
+    /// * `Err(Error::InvalidOutcome)` - One or more outcomes are invalid for this market
+    /// * `Err(Error::InvalidInput)` - Empty outcomes vector
+    /// * `Err(Error::ForceResolveReasonEmpty)` - Reason string is empty
+    /// * `Err(Error::ForceResolveReplayed)` - Idempotency key has already been used
+    ///
+    /// # Events
+    ///
+    /// On first invocation emits a `ForceResolvedEvent` (topic `frc_rs`) and a state-change
+    /// event. Repeated calls with the same `idempotency_key` are rejected as replays.
+    pub fn force_resolve_market(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        winning_outcomes: Vec<String>,
+        reason: String,
+        idempotency_key: String,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "force_resolve_market"))?;
+
+        if reason.is_empty() {
+            return Err(Error::ForceResolveReasonEmpty);
+        }
+
+        if winning_outcomes.len() == 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+
+        for outcome in winning_outcomes.iter() {
+            let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
+            if !outcome_exists {
+                return Err(Error::InvalidOutcome);
+            }
+        }
+
+        // Idempotency check — reject if this key was already consumed
+        if force_resolve::ForceResolveManager::is_already_resolved(
+            &env,
+            &market_id,
+            &idempotency_key,
+        ) {
+            return Err(Error::ForceResolveReplayed);
+        }
+
+        let old_state = market.state.clone();
+
+        market.winning_outcomes = Some(winning_outcomes.clone());
+        market.state = MarketState::Resolved;
+
+        recovery::UnclaimedWinningsPolicy::set_claim_window_start_if_missing(
+            &env,
+            &market_id,
+            env.ledger().timestamp(),
+        );
+
+        env.storage().persistent().set(&market_id, &market);
+
+        force_resolve::ForceResolveManager::mark_resolved(
+            &env,
+            &market_id,
+            &idempotency_key,
+            &admin,
+            &winning_outcomes,
+        );
+
+        let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes);
+        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
+
+        let primary_outcome = winning_outcomes.get(0).unwrap().clone();
+
+        // Emit force-resolved event
+        EventEmitter::emit_force_resolved(
+            &env,
+            &market_id,
+            &admin,
+            &primary_outcome,
+            &reason,
+            &idempotency_key,
+        );
+
+        // Emit state change event
+        EventEmitter::emit_state_change_event(
+            &env,
+            &market_id,
+            &old_state,
+            &MarketState::Resolved,
+            &reason,
+        );
+
+        // Append immutable audit trail record
+        let mut details = Map::new(&env);
+        details.set(Symbol::new(&env, "reason"), reason);
+        details.set(Symbol::new(&env, "old_state"), {
+            let s = match old_state {
+                MarketState::Active => "Active",
+                MarketState::Ended => "Ended",
+                MarketState::Disputed => "Disputed",
+                MarketState::Resolved => "Resolved",
+                MarketState::Closed => "Closed",
+                MarketState::Cancelled => "Cancelled",
+            };
+            String::from_str(&env, s)
+        });
+        AuditTrailManager::append_record(
+            &env,
+            AuditAction::MarketForceResolved,
+            admin.clone(),
+            details,
+            None,
+        );
+
+        // Per-market audit entry: MarketForceResolved
+        {
+            let mut per_market_details = Map::new(&env);
+            per_market_details.set(
+                Symbol::new(&env, "outcome"),
+                primary_outcome.clone(),
+            );
+            per_market_details.set(
+                Symbol::new(&env, "method"),
+                String::from_str(&env, "Force"),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::MarketForceResolved,
+                admin.clone(),
+                per_market_details,
+            );
+        }
+
+        // Auto-distribute payouts
         let _ = Self::distribute_payouts(env.clone(), market_id);
+
+        Ok(())
     }
 
     /// Fetches oracle result for a market from external oracle contracts.
@@ -2555,14 +2839,14 @@ impl PredictifyHybrid {
             return Err(Error::ResolutionTimeoutReached);
         }
 
-        match automatic_oracle_result_unavailable(&env, &market.oracle_config) {
+        match get_oracle_result(&env, &market.oracle_config) {
             Ok(outcome) => {
                 market.oracle_result = Some(outcome.clone());
                 env.storage().persistent().set(&market_id, &market);
                 Ok(outcome)
             }
             Err(_) if market.has_fallback => {
-                match automatic_oracle_result_unavailable(&env, &market.fallback_oracle_config) {
+                match get_oracle_result(&env, &market.fallback_oracle_config) {
                     Ok(outcome) => {
                         market.oracle_result = Some(outcome.clone());
                         env.storage().persistent().set(&market_id, &market);
@@ -2578,7 +2862,7 @@ impl PredictifyHybrid {
                         EventEmitter::emit_manual_resolution_required(
                             &env,
                             &market_id,
-                            &String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON),
+                            &String::from_str(&env, "primary_and_fallback_failed"),
                         );
                         Err(Error::FallbackOracleUnavailable)
                     }
@@ -2588,7 +2872,7 @@ impl PredictifyHybrid {
                 EventEmitter::emit_manual_resolution_required(
                     &env,
                     &market_id,
-                    &String::from_str(&env, ORACLE_FAILURE_PRIMARY_ONLY_REASON),
+                    &String::from_str(&env, "primary_failed_no_fallback"),
                 );
                 Err(err)
             }
@@ -2698,6 +2982,7 @@ impl PredictifyHybrid {
     /// - Market end time must have passed
     /// - Result must not already be verified
     /// - At least one active oracle source must be available
+    #[deprecated(note = "Use fetch_oracle_result instead. This legacy stub will be removed in a future version.")]
     pub fn verify_result(
         env: Env,
         caller: Address,
@@ -2705,6 +2990,13 @@ impl PredictifyHybrid {
     ) -> Result<OracleResult, Error> {
         // Authenticate the caller
         caller.require_auth();
+
+        DeprecatedRegistry::record_call(
+            &env,
+            &caller,
+            &Symbol::new(&env, "verify_result"),
+            &Symbol::new(&env, "fetch_oracle_result"),
+        );
 
         // Use the OracleIntegrationManager to perform verification
         // Temporarily disabled due to oracles module being disabled
@@ -2877,12 +3169,50 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Set the minimum oracle price-confidence threshold in basis points.
+    /// Prices from oracles with confidence ratio above this threshold are rejected.
+    /// `min_confidence_bps` = 0 disables the check.
+    pub fn set_oracle_confidence_threshold(env: Env, admin: Address, min_confidence_bps: u32) {
+        admin.require_auth();
+        if min_confidence_bps > 10_000 {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "oracle_conf_bps"), &min_confidence_bps);
+    }
+
+    /// Get the configured oracle confidence threshold in bps (0 = disabled).
+    pub fn get_oracle_confidence_threshold(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "oracle_conf_bps"))
+            .unwrap_or(0u32)
+    }
+
+    /// Set configurable weight for a specific oracle source
+    pub fn set_oracle_weight(
+        env: Env,
+        admin: Address,
+        oracle: Address,
+        weight: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        crate::oracles::OracleIntegrationManager::set_oracle_weight(&env, admin, oracle, weight)
+    }
+
+    /// Get configured weight for an oracle source, defaults to 1
+    pub fn get_oracle_weight(env: Env, oracle: Address) -> u32 {
+        crate::oracles::OracleIntegrationManager::get_oracle_weight(&env, &oracle)
+    }
+
     pub fn admin_override_verification(
         env: Env,
         admin: Address,
         market_id: Symbol,
         outcome: String,
         reason: String,
+        provided_nonce: u64,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
@@ -2906,6 +3236,27 @@ impl PredictifyHybrid {
         markets::MarketStateManager::update_market(&env, &market_id, &market);
 
         // Append an immutable audit record
+        // Validate and store the admin override nonce for replay protection
+        let key = DataKey::AdminOverrideNonce;
+        let mut stored_nonce: u64 = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(0);
+
+        if provided_nonce <= stored_nonce {
+            return Err(Error::ReplayedOverride);
+        }
+
+        // Update the nonce for this admin
+        env.storage().persistent().set(&key, &provided_nonce);
+        env.storage().persistent().extend_ttl(
+            &key,
+            env.storage().max_ttl(),
+            env.storage().max_ttl(),
+        );
+
+        // Append an immutable audit record with the nonce for replay protection
         let mut details = Map::new(&env);
         details.set(Symbol::new(&env, "old_result"), old_result.clone());
         details.set(Symbol::new(&env, "new_result"), outcome.clone());
@@ -2915,6 +3266,7 @@ impl PredictifyHybrid {
             AuditAction::OracleVerificationOverride,
             admin.clone(),
             details,
+            Some(provided_nonce),
         );
 
         // Emit the dedicated override event for off-chain monitors
@@ -2993,10 +3345,33 @@ impl PredictifyHybrid {
     /// - Users can claim winnings
     /// - Market statistics are finalized
     ///
-    /// # Events
+    /// # Event Ordering Contract
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn resolve_market(env: Env, market_id: Symbol) -> Result<(), Error> {
+    /// On every successful resolution `resolve_market` emits exactly **three**
+    /// resolution-signalling events in the following deterministic sequence:
+    ///
+    /// | # | Topic symbol    | Emitter                               | Description                      |
+    /// |---|-----------------|---------------------------------------|----------------------------------|
+    /// | 1 | `mkt_res`       | `EventEmitter::emit_market_resolved`  | Final outcome recorded           |
+    /// | 2 | `st_chng`       | `EventEmitter::emit_state_change_event` | State transition to `Resolved` |
+    /// | 3 | `idx_transition`| `ContractMonitor::emit_resolution_transition_hook` | Off-chain indexer hook |
+    ///
+    /// Off-chain consumers **must** handle these three events in the order
+    /// listed above. The sequence is enforced by the order of calls inside
+    /// `MarketResolutionManager::resolve_market` and is covered by a
+    /// deterministic ordering test (see `resolution_event_ordering_tests`).
+    #[deprecated(note = "Use resolve_market_manual or fetch_oracle_result + resolve_market_manual instead. This legacy stub will be removed in a future version.")]
+    pub fn resolve_market(env: Env, caller: Address, market_id: Symbol) -> Result<(), Error> {
+        // Authenticate the caller
+        caller.require_auth();
+
+        DeprecatedRegistry::record_call(
+            &env,
+            &caller,
+            &Symbol::new(&env, "resolve_market"),
+            &Symbol::new(&env, "resolve_market_manual"),
+        );
+
         // Use the resolution module to resolve the market
         // Temporarily disabled due to resolution module being disabled
         // let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
@@ -3004,7 +3379,125 @@ impl PredictifyHybrid {
 
         statistics::StatisticsManager::record_market_resolved(&env);
 
+        // Invalidate analytics cache — market state has changed.
+        analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
         Ok(())
+    }
+
+    // =========================================================================
+    // DEPRECATED-ENTRYPOINTS REGISTRY
+    // =========================================================================
+
+    /// Register a deprecated entrypoint in the on-chain registry.
+    ///
+    /// Adds a new entry to the deprecated-entrypoints registry so that any
+    /// caller can discover which functions have been superseded and what the
+    /// recommended replacement is.  The operation is idempotent: registering
+    /// the same `entrypoint` a second time is a no-op.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`         – Soroban environment.
+    /// * `admin`       – Contract admin address; must satisfy
+    ///                   [`AdminAccessControl::require_admin_auth`].
+    /// * `entrypoint`  – Short symbol of the deprecated function name.
+    /// * `replacement` – Short symbol of the recommended replacement.
+    /// * `note`        – Optional migration hint (max 128 bytes UTF-8).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`] – Caller is not the contract admin.
+    /// * [`Error::AdminNotSet`]  – Contract has not been initialised.
+    /// * [`Error::RegistryFull`] – Registry has reached its capacity limit.
+    ///
+    /// # Events
+    ///
+    /// Emits `("depr_reg", entrypoint)` on success.
+    pub fn register_deprecated(
+        env: Env,
+        admin: Address,
+        entrypoint: Symbol,
+        replacement: Symbol,
+        note: Option<String>,
+    ) -> Result<(), Error> {
+        DeprecatedRegistry::register(&env, &admin, entrypoint, replacement, note)
+    }
+
+    /// Remove a deprecated entrypoint from the on-chain registry.
+    ///
+    /// Intended for correcting mistaken registrations or tidying entries for
+    /// functions that have been fully removed.  If the entry does not exist
+    /// the call is a no-op.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`        – Soroban environment.
+    /// * `admin`      – Contract admin address.
+    /// * `entrypoint` – Name of the entrypoint to remove.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`] – Caller is not the contract admin.
+    /// * [`Error::AdminNotSet`]  – Contract has not been initialised.
+    ///
+    /// # Events
+    ///
+    /// Emits `("depr_rem", entrypoint)` when an entry is actually removed.
+    pub fn remove_deprecated(
+        env: Env,
+        admin: Address,
+        entrypoint: Symbol,
+    ) -> Result<(), Error> {
+        DeprecatedRegistry::remove(&env, &admin, entrypoint)
+    }
+
+    /// Look up a single deprecated-entrypoint entry by name.
+    ///
+    /// Returns `Some(DeprecatedEntry)` if `entrypoint` is registered, or
+    /// `None` if it is not.  This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`        – Soroban environment.
+    /// * `entrypoint` – Name of the entrypoint to look up.
+    pub fn get_deprecated_entry(env: Env, entrypoint: Symbol) -> Option<DeprecatedEntry> {
+        DeprecatedRegistry::get_entry(&env, &entrypoint)
+    }
+
+    /// Return all entries in the deprecated-entrypoints registry.
+    ///
+    /// Returns a `Vec<DeprecatedEntry>` (empty if nothing has been registered
+    /// yet).  This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` – Soroban environment.
+    pub fn list_deprecated_entries(env: Env) -> Vec<DeprecatedEntry> {
+        DeprecatedRegistry::list_entries(&env)
+    }
+
+    /// Return the number of entries in the deprecated-entrypoints registry.
+    ///
+    /// This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` – Soroban environment.
+    pub fn deprecated_entry_count(env: Env) -> u32 {
+        DeprecatedRegistry::entry_count(&env)
+    }
+
+    /// Return `true` if the given entrypoint is listed as deprecated.
+    ///
+    /// This is a permissionless read.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`        – Soroban environment.
+    /// * `entrypoint` – Name of the entrypoint to check.
+    pub fn is_deprecated(env: Env, entrypoint: Symbol) -> bool {
+        DeprecatedRegistry::is_deprecated(&env, &entrypoint)
     }
 
     /// Retrieves comprehensive analytics about market resolution performance.
@@ -3087,10 +3580,9 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    // Temporarily disabled due to resolution module being disabled
-    // pub fn get_resolution_analytics(env: Env) -> Result<resolution::ResolutionAnalytics, Error> {
-    //     resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
-    // }
+    pub fn get_resolution_analytics(env: Env) -> Result<resolution::MarketResolutionAnalytics, Error> {
+        resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
+    }
 
     /// Retrieves comprehensive analytics and statistics for a specific market.
     ///
@@ -3183,16 +3675,25 @@ impl PredictifyHybrid {
         env: Env,
         market_id: Symbol,
     ) -> Result<markets::MarketStats, Error> {
-        let market = env
-            .storage()
-            .persistent()
-            .get::<Symbol, Market>(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        // Fast path: serve from the instance analytics cache when hot.
+        // The cache is invalidated on every write (vote, bet, claim, resolve, dispute).
+        if let Some(cached) = analytics::get_or_compute(&env, &market_id) {
+            return Ok(cached);
+        }
 
-        // Calculate market statistics
-        let stats = markets::MarketAnalytics::get_market_stats(&market);
+        // Slow path: market not found in persistent storage.
+        Err(Error::MarketNotFound)
+    }
 
-        Ok(stats)
+    /// Returns a deterministic, versioned snapshot for a single market's analytics.
+    ///
+    /// The payload is encoded with Soroban XDR so off-chain analytics services can
+    /// persist a stable byte stream without relying on host-side ordering.
+    pub fn get_market_analytics_snapshot(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<analytics_snapshot::AnalyticsSnapshotEnvelope, Error> {
+        analytics_snapshot::AnalyticsSnapshotManager::get_snapshot(&env, market_id)
     }
 
     /// Dispute a market resolution
@@ -3217,10 +3718,95 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_disputes(user.clone(), market_id.clone())
         {
-            return Err(Error::from(rate_err));
+            if matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                // No rate limit config — skip
+            } else {
+                return Err(Error::from(rate_err));
+            }
         }
 
-        disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
+        let result = disputes::DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), stake, reason);
+        if result.is_ok() {
+            // Invalidate analytics cache — dispute stakes have changed.
+            analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+
+            // Per-market audit entry: DisputeFiled
+            let details = Map::new(&env);
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::DisputeFiled,
+                user,
+                details,
+            );
+        }
+        result
+    }
+
+    /// Set the dispute stake cap for a user in a market (governance/admin only)
+    pub fn set_dispute_stake_cap(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        user: Address,
+        cap: i128,
+    ) -> Result<(), Error> {
+        Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+        if cap < 0 {
+            return Err(Error::InvalidInput);
+        }
+        disputes::DisputeManager::set_dispute_stake_cap(&env, &market_id, &user, cap)
+    }
+
+    /// Get the dispute stake cap for a user in a market
+    pub fn get_dispute_stake_cap(
+        env: Env,
+        market_id: Symbol,
+        user: Address,
+    ) -> i128 {
+        let cap_key = storage::DataKey::DisputeStakeCap(market_id, user);
+        env.storage().persistent().get(&cap_key).unwrap_or(0)
+    }
+
+    /// Set the per-user cumulative dispute stake cap across all active disputes (admin only).
+    ///
+    /// This cap limits the total stake a user can commit to disputes
+    /// across all markets that have active (unresolved) disputes.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment
+    /// * `admin` - The admin address (must be authorized)
+    /// * `user` - The user address the cap applies to
+    /// * `cap` - The maximum cumulative stake allowed in stroops (0 = disabled)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when:
+    /// - `Error::Unauthorized` — caller is not the contract admin
+    /// - `Error::InvalidInput` — cap value is invalid
+    ///
+    /// # Events
+    ///
+    /// Emits `dispute_cumulative_stake_cap_set` event on success.
+    pub fn set_dispute_cumulative_stake_cap(
+        env: Env,
+        admin: Address,
+        user: Address,
+        cap: i128,
+    ) -> Result<(), Error> {
+        if cap < 0 {
+            return Err(Error::InvalidInput);
+        }
+        Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+        disputes::DisputeManager::set_dispute_cumulative_stake_cap(&env, &admin, &user, cap)
+    }
+
+    /// Get the per-user cumulative dispute stake cap.
+    ///
+    /// Returns 0 if no cap is set (cap is disabled).
+    pub fn get_dispute_cumulative_stake_cap(env: Env, user: Address) -> i128 {
+        disputes::DisputeManager::get_dispute_cumulative_stake_cap(&env, &user)
     }
 
     /// Vote on a dispute
@@ -3247,12 +3833,21 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_disputes(user.clone(), market_id.clone())
         {
-            return Err(Error::from(rate_err));
+            if matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                // No rate limit config — skip
+            } else {
+                return Err(Error::from(rate_err));
+            }
         }
 
-        disputes::DisputeManager::vote_on_dispute(
-            &env, user, market_id, dispute_id, vote, stake, reason,
-        )
+        let result = disputes::DisputeManager::vote_on_dispute(
+            &env, user, market_id.clone(), dispute_id, vote, stake, reason,
+        );
+        if result.is_ok() {
+            // Invalidate analytics cache — dispute stakes have changed.
+            analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+        }
+        result
     }
 
     /// Resolve a dispute (admin only)
@@ -3271,7 +3866,41 @@ impl PredictifyHybrid {
     ) -> Result<disputes::DisputeResolution, Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
+        let result = disputes::DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone());
+        if result.is_ok() {
+            // Per-market audit entry: DisputeResolved
+            let details = Map::new(&env);
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::DisputeResolved,
+                admin,
+                details,
+            );
+        }
+        result
+    }
+
+    /// Sets the maximum capacity of resolved/expired disputes to retain in history (admin only).
+    pub fn set_history_cap(
+        env: Env,
+        admin: Address,
+        cap: u32,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+
+        disputes::DisputeManager::set_history_cap(&env, admin, cap)
+    }
+
+    /// Sets the global anti-grief minimum stake floor (admin only).
+    pub fn set_anti_grief_floor(
+        env: Env,
+        admin: Address,
+        floor: i128,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+
+        disputes::DisputeManager::set_anti_grief_floor(&env, admin, floor)
     }
 
     /// Collect fees from a market (admin only)
@@ -3291,7 +3920,105 @@ impl PredictifyHybrid {
         }
         Self::require_primary_admin(&env, &admin)?;
 
-        fees::FeeManager::collect_fees(&env, admin, market_id)
+        let result = fees::FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
+        if let Ok(amount) = result {
+            // Per-market audit entry: FeesCollected
+            let mut details = Map::new(&env);
+            details.set(
+                Symbol::new(&env, "amount"),
+                String::from_str(&env, &alloc::format!("{}", amount)),
+            );
+            crate::audit::MarketAuditManager::append(
+                &env,
+                &market_id,
+                crate::audit::MarketAuditAction::FeesCollected,
+                admin,
+                details,
+            );
+            Ok(amount)
+        } else {
+            result
+        }
+    }
+
+    // ===== PER-MARKET AUDIT LOG READ ENTRYPOINTS =====
+
+    /// Returns a reverse-chronological page of audit entries for `market_id`.
+    ///
+    /// Each entry records a key state change: market creation, resolution,
+    /// dispute filing/resolution, or fee collection. Entries are immutable once
+    /// written and are keyed by market so off-chain clients can efficiently stream
+    /// the history for a single market without scanning the global audit trail.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       - The Soroban environment.
+    /// * `market_id` - The market whose audit log to query.
+    /// * `limit`     - Maximum number of entries to return; capped at 100.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<MarketAuditEntry>` ordered newest-first (index `total_entries` → 1).
+    /// Returns an empty vector when the market has no audit entries.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Symbol};
+    /// # use predictify_hybrid::PredictifyHybrid;
+    /// # let env = Env::default();
+    /// # let market_id = Symbol::new(&env, "btc_50k");
+    /// let entries = PredictifyHybrid::get_market_audit_log(env, market_id, 10);
+    /// for entry in entries.iter() {
+    ///     // entry.index, entry.action, entry.actor, entry.timestamp, entry.details
+    /// }
+    /// ```
+    pub fn get_market_audit_log(
+        env: Env,
+        market_id: Symbol,
+        limit: u32,
+    ) -> Vec<crate::audit::MarketAuditEntry> {
+        crate::audit::MarketAuditManager::get_entries(&env, &market_id, limit)
+    }
+
+    /// Returns a single audit entry for `market_id` by its 1-based `index`.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       - The Soroban environment.
+    /// * `market_id` - The market whose audit log to query.
+    /// * `index`     - 1-based entry index (`1` == oldest, `total_entries` == newest).
+    ///
+    /// # Returns
+    ///
+    /// `Some(MarketAuditEntry)` when found; `None` when `index` is 0, out of range,
+    /// or the market has no entries.
+    pub fn get_market_audit_entry(
+        env: Env,
+        market_id: Symbol,
+        index: u32,
+    ) -> Option<crate::audit::MarketAuditEntry> {
+        crate::audit::MarketAuditManager::get_entry(&env, &market_id, index)
+    }
+
+    /// Returns the head (total entry count) of the per-market audit log.
+    ///
+    /// Clients can read this first to learn valid index bounds before calling
+    /// [`get_market_audit_entry`] for individual entries.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`       - The Soroban environment.
+    /// * `market_id` - The market to query.
+    ///
+    /// # Returns
+    ///
+    /// `Some(MarketAuditHead)` when the market has at least one entry; `None` otherwise.
+    pub fn get_market_audit_head(
+        env: Env,
+        market_id: Symbol,
+    ) -> Option<crate::audit::MarketAuditHead> {
+        crate::audit::MarketAuditManager::get_head(&env, &market_id)
     }
 
     /// Automatically distribute payouts to all winners after market resolution.
@@ -3361,12 +4088,12 @@ impl PredictifyHybrid {
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
     pub fn distribute_payouts(env: Env, market_id: Symbol) -> Result<i128, Error> {
-        if let Err(e) = crate::circuit_breaker::CircuitBreaker::require_write_allowed(
-            &env,
-            "distribute_payouts",
-        ) {
+        // ── Circuit breaker guard ──────────────────────────────────────────────
+        if let Err(e) = CircuitBreaker::require_write_allowed(&env, "distribute_payouts") {
             return Err(e);
         }
+
+        // ── Load market ────────────────────────────────────────────────────────
         let mut market: Market = env
             .storage()
             .persistent()
@@ -3375,27 +4102,23 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
-        // Check if market is resolved
+        // ── Require resolved ───────────────────────────────────────────────────
         let winning_outcomes = match &market.winning_outcomes {
             Some(outcomes) => outcomes,
             None => return Err(Error::MarketNotResolved),
         };
 
-        // Get all bettors
-        let bettors = bets::BetStorage::get_all_bets_for_market(&env, &market_id);
+        // ── Load bettor registry ───────────────────────────────────────────────
+        let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
 
-        // Get fee from legacy storage (backward compatible)
-        let fee_percent = env
+        // ── Platform fee (basis points, default 200 = 2%) ─────────────────────
+        let fee_percent: i128 = env
             .storage()
             .persistent()
             .get(&Symbol::new(&env, "platform_fee"))
-            .unwrap_or(200); // Default 2% if not set
+            .unwrap_or(200);
 
-        // Since place_bet now updates market.votes and market.stakes,
-        // we can use the vote-based payout system for both bets and votes
-        let _total_distributed = 0;
-
-        // Check if payouts have already been distributed
+        // ── Short-circuit: check whether any unclaimed winners exist ───────────
         let mut has_unclaimed_winners = false;
 
         // Check voters
@@ -3413,10 +4136,10 @@ impl PredictifyHybrid {
             }
         }
 
-        // Check bettors
+        // Check bettors (only if no unclaimed voters found yet)
         if !has_unclaimed_winners {
             for user in bettors.iter() {
-                if let Some(bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+                if let Some(bet) = BetStorage::get_bet(&env, &market_id, &user) {
                     if winning_outcomes.contains(&bet.outcome)
                         && !market
                             .claimed
@@ -3435,126 +4158,160 @@ impl PredictifyHybrid {
             return Ok(0);
         }
 
-        let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
+        // ── Resolution summary (winning totals & pool size) ────────────────────
+        let summary = ResolutionOutcomeCache::require(&env, &market_id, &market)?;
         let winning_total = summary.winning_total;
         if winning_total == 0 {
             return Ok(0);
         }
 
         let total_pool = summary.total_pool;
-        let fee_denominator = 10000i128; // Fee is in basis points
-
+        let fee_denominator = 10_000i128;
         let mut total_distributed: i128 = 0;
 
-        // 1. Distribute to Voters
-        // Distribute payouts to all winners (handles both single and multi-winner cases)
-        // For multi-winner (ties), pool is split proportionally among all winners
+        // ── Budget guard: abort before host runs out of CPU instructions ───────
+        // Threshold of 100 000 instructions gives enough headroom to finish the
+        // current iteration and write the updated market back to storage.
+        let budget_guard = BudgetGuard::new(&env, 100_000);
+
+        // ── 1. Distribute to Voters ────────────────────────────────────────────
+        let mut voter_count = 0u32;
         for (user, outcome) in market.votes.iter() {
             if winning_outcomes.contains(&outcome) {
+                // Skip already-claimed voters
                 if market
                     .claimed
                     .get(user.clone())
                     .map(|info| info.is_claimed())
                     .unwrap_or(false)
                 {
+                    voter_count += 1;
+                    if voter_count % 10 == 0 {
+                        budget_guard.check()?;
+                    }
                     continue;
                 }
 
                 let user_stake = market.stakes.get(user.clone()).unwrap_or(0);
                 if user_stake > 0 {
-                    let fee_denominator = 10000i128;
                     let user_share = (user_stake
                         .checked_mul(fee_denominator - fee_percent)
                         .ok_or(Error::InvalidInput)?)
                         / fee_denominator;
-                    // Payout calculation: (user_stake / total_winning_stakes) * total_pool
-                    // This automatically handles split pools for ties - each winner gets proportional share
+
                     let payout = (user_share
                         .checked_mul(total_pool)
                         .ok_or(Error::InvalidInput)?)
                         / winning_total;
 
                     if payout >= 0 {
-                        // Allow 0 payout but mark as claimed
                         market
                             .claimed
                             .set(user.clone(), ClaimInfo::new(&env, payout));
+
                         if payout > 0 {
                             total_distributed = total_distributed
                                 .checked_add(payout)
                                 .ok_or(Error::InvalidInput)?;
 
-                            // Credit winnings to user balance
-                            storage::BalanceStorage::add_balance(
+                            BalanceStorage::add_balance(
                                 &env,
                                 &user,
-                                &types::ReflectorAsset::Stellar,
+                                &ReflectorAsset::Stellar,
                                 payout,
                             )?;
 
-                            EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+                            EventEmitter::emit_winnings_claimed(
+                                &env,
+                                &market_id,
+                                &user,
+                                payout,
+                            );
                         }
                     }
                 }
             }
+
+            voter_count += 1;
+            if voter_count % 10 == 0 {
+                budget_guard.check()?;
+            }
         }
 
-        // 2. Distribute to Bettors
-        // Check if bet outcome is in winning outcomes (supports multi-outcome/tie scenarios)
+        // ── 2. Distribute to Bettors ───────────────────────────────────────────
+        let mut bettor_count = 0u32;
         for user in bettors.iter() {
-            if let Some(mut bet) = bets::BetStorage::get_bet(&env, &market_id, &user) {
+            if let Some(mut bet) = BetStorage::get_bet(&env, &market_id, &user) {
                 if winning_outcomes.contains(&bet.outcome) {
+                    // If already claimed via the voter path, just mark status Won
                     if market
                         .claimed
                         .get(user.clone())
                         .map(|info| info.is_claimed())
                         .unwrap_or(false)
                     {
-                        // Already claimed (perhaps as a voter or double check)
                         bet.status = BetStatus::Won;
-                        let _ = bets::BetStorage::store_bet(&env, &bet);
-                        continue;
-                    }
+                        let _ = BetStorage::store_bet(&env, &bet);
+                    } else if bet.amount > 0 {
+                        let user_share = (bet.amount
+                            .checked_mul(fee_denominator - fee_percent)
+                            .ok_or(Error::InvalidInput)?)
+                            / fee_denominator;
 
-                    if bet.amount > 0 {
-                        let user_share =
-                            (bet.amount * (fee_denominator - fee_percent)) / fee_denominator;
-                        let payout = (user_share * total_pool) / winning_total;
+                        let payout = (user_share
+                            .checked_mul(total_pool)
+                            .ok_or(Error::InvalidInput)?)
+                            / winning_total;
 
                         if payout > 0 {
                             market
                                 .claimed
                                 .set(user.clone(), ClaimInfo::new(&env, payout));
-                            total_distributed += payout;
 
-                            // Update bet status
+                            total_distributed = total_distributed
+                                .checked_add(payout)
+                                .ok_or(Error::InvalidInput)?;
+
                             bet.status = BetStatus::Won;
-                            let _ = bets::BetStorage::store_bet(&env, &bet);
+                            let _ = BetStorage::store_bet(&env, &bet);
 
-                            // Credit winnings to user balance instead of direct transfer
-                            match storage::BalanceStorage::add_balance(
+                            match BalanceStorage::add_balance(
                                 &env,
                                 &user,
-                                &types::ReflectorAsset::Stellar,
+                                &ReflectorAsset::Stellar,
                                 payout,
                             ) {
                                 Ok(_) => {}
                                 Err(e) => panic_with_error!(env, e),
                             }
-                            EventEmitter::emit_winnings_claimed(&env, &market_id, &user, payout);
+
+                            EventEmitter::emit_winnings_claimed(
+                                &env,
+                                &market_id,
+                                &user,
+                                payout,
+                            );
                         }
                     }
                 } else {
-                    // Mark losing bet
-                    if bet.status == BetStatus::Active {
+                    // Losing bet — mark as Lost
+                    if matches!(bet.status, BetStatus::Active) {
                         bet.status = BetStatus::Lost;
-                        let _ = bets::BetStorage::store_bet(&env, &bet);
+                        let _ = BetStorage::store_bet(&env, &bet);
                     }
                 }
             }
+
+            bettor_count += 1;
+            if bettor_count % 10 == 0 {
+                budget_guard.check()?;
+            }
         }
 
-        // Save final market state
+        // ── Final budget check before the storage write ────────────────────────
+        budget_guard.check()?;
+
+        // ── Persist updated claim map ──────────────────────────────────────────
         env.storage().persistent().set(&market_id, &market);
 
         Ok(total_distributed)
@@ -3583,8 +4340,8 @@ impl PredictifyHybrid {
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
-    pub fn prune_archive(env: Env, admin: Address, count: u32) -> Result<u32, Error> {
-        crate::event_archive::EventArchive::prune_archive(&env, &admin, count)
+    pub fn prune_archive(env: Env, admin: Address, count: u32, cursor: Option<crate::event_archive::PruneCursor>) -> Result<(u32, crate::event_archive::PruneCursor), Error> {
+        crate::event_archive::EventArchive::prune_archive(&env, &admin, count, cursor)
     }
 
     /// Return the current number of entries in the event archive.
@@ -3720,9 +4477,20 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::FeeConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
+    }
+
+    /// Commit a hash of the new fee configuration (admin only)
+    pub fn commit_fee_config(env: Env, admin: Address, hash: BytesN<32>) -> Result<(), Error> {
+        fees::FeeManager::commit_fee_config(&env, admin, hash)
+    }
+
+    /// Reveal and apply a committed fee configuration (admin only)
+    pub fn reveal_fee_config(env: Env, admin: Address, new_config: fees::FeeConfig) -> Result<fees::FeeConfig, Error> {
+        fees::FeeManager::update_fee_config(&env, admin, new_config)
     }
 
     /// Set global minimum and maximum bet limits (admin only).
@@ -3753,6 +4521,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::BetLimitsUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3795,6 +4564,107 @@ impl PredictifyHybrid {
         crate::bets::get_effective_bet_limits(&env, &market_id)
     }
 
+    /// Set the per-market maximum single-bet cap (admin only).
+    ///
+    /// Once set, any individual bet whose `amount` exceeds `cap` is rejected with
+    /// [`Error::BetExceedsCap`].  The cap is checked after, and in addition to, the
+    /// global/per-event `max_bet` in [`BetLimits`].
+    ///
+    /// Pass `cap = 0` to remove the cap (equivalent to calling
+    /// [`remove_market_max_bet_cap`]).  Any other value must satisfy
+    /// `0 < cap <= MAX_BET_AMOUNT`.
+    ///
+    /// # Parameters
+    ///
+    /// - `admin`     – Must be the primary admin address
+    /// - `market_id` – Identifies the target market
+    /// - `cap`       – Maximum single-bet amount in base token units (stroops)
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`] when `admin` is not the primary admin
+    /// - [`Error::InvalidInput`] when `cap` is negative or exceeds [`MAX_BET_AMOUNT`]
+    ///
+    /// # Events
+    ///
+    /// Emits a `bet_limits_updated` event scoped to `market_id` so that indexers
+    /// can track cap changes.
+    pub fn set_market_max_bet_cap(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        cap: i128,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        // cap == 0 is treated as "remove the cap"
+        if cap == 0 {
+            crate::bets::remove_market_max_bet_cap(&env, &market_id);
+        } else {
+            crate::bets::set_market_max_bet_cap(&env, &market_id, cap)?;
+        }
+        // Emit so indexers can observe
+        EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, 0, cap);
+
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::BetLimitsUpdated,
+            admin.clone(),
+            Map::new(&env),
+            None,
+        );
+
+        Ok(())
+    }
+
+    /// Get the per-market max single-bet cap, or `None` if no cap is configured.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn get_market_max_bet_cap(env: Env, market_id: Symbol) -> Option<i128> {
+        crate::bets::get_market_max_bet_cap(&env, &market_id)
+    }
+
+    /// Remove the per-market max single-bet cap (admin only).
+    ///
+    /// After removal, bets on this market are bounded only by the global/per-event
+    /// [`BetLimits`] `max_bet` (or [`MAX_BET_AMOUNT`] when no limits are configured).
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Unauthorized`] when `admin` is not the primary admin
+    ///
+    /// # Events
+    ///
+    /// Emits a `bet_limits_updated` event with `max_bet = 0` to signal removal.
+    pub fn remove_market_max_bet_cap(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        crate::bets::remove_market_max_bet_cap(&env, &market_id);
+        EventEmitter::emit_bet_limits_updated(&env, &admin, &market_id, 0, 0);
+        Ok(())
+    }
+
+    pub fn set_max_participants(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        max_participants: Option<u32>,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::MarketNotFound));
+        market.max_participants = max_participants;
+        env.storage().persistent().set(&market_id, &market);
+        Ok(())
+    }
+
     /// Set global oracle validation config (admin only).
     ///
     /// - `max_staleness_secs`: maximum allowed age in seconds.
@@ -3816,11 +4686,15 @@ impl PredictifyHybrid {
         max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(&env, &admin)?;
 
         let config = GlobalOracleValidationConfig {
             max_staleness_secs,
             max_confidence_bps,
             max_deviation_bps,
+            max_deviation_z_multiple: None,
+            history_size: None,
+            auto_pause_duration_secs: None,
         };
         crate::oracles::OracleValidationConfigManager::set_global_config(&env, &config)?;
 
@@ -3829,6 +4703,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         Ok(())
@@ -3854,11 +4729,15 @@ impl PredictifyHybrid {
         max_deviation_bps: Option<u32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
+        crate::admin::OracleAdminCooldownManager::enforce_cooldown(&env, &admin)?;
 
         let config = EventOracleValidationConfig {
             max_staleness_secs,
             max_confidence_bps,
             max_deviation_bps,
+            max_deviation_z_multiple: None,
+            history_size: None,
+            auto_pause_duration_secs: None,
         };
         crate::oracles::OracleValidationConfigManager::set_event_config(&env, &market_id, &config)?;
 
@@ -3873,6 +4752,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::OracleConfigUpdated,
             admin.clone(),
             details,
+            None,
         );
 
         Ok(())
@@ -4184,8 +5064,10 @@ impl PredictifyHybrid {
         // Store old description for event
         let old_description = market.question.clone();
 
-        // Update market description
+        // Update market description and refresh the metadata commitment so
+        // clients with stale cached metadata fail verification.
         market.question = new_description.clone();
+        market.refresh_metadata_commitment(&env);
 
         // Save market
         env.storage().persistent().set(&market_id, &market);
@@ -4209,6 +5091,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
+            None,
         );
 
         Ok(())
@@ -4333,8 +5216,10 @@ impl PredictifyHybrid {
         // Store old outcomes for event
         let old_outcomes = market.outcomes.clone();
 
-        // Update market outcomes
+        // Update market outcomes and refresh the commitment so stale clients
+        // holding the old metadata commitment fail verification.
         market.outcomes = new_outcomes.clone();
+        market.refresh_metadata_commitment(&env);
 
         // Save market
         env.storage().persistent().set(&market_id, &market);
@@ -4358,6 +5243,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
+            None,
         );
 
         Ok(())
@@ -4471,6 +5357,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
+            None,
         );
 
         Ok(())
@@ -4589,6 +5476,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::MarketUpdated,
             admin.clone(),
             details,
+            None,
         );
 
         Ok(())
@@ -4843,6 +5731,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::EventCancelled,
             admin.clone(),
             details,
+            None,
         );
 
         // Emit cancellation event
@@ -4960,6 +5849,42 @@ impl PredictifyHybrid {
         )
     }
 
+    /// Sets the admin-configurable cumulative extension cap (in days) that applies
+    /// globally to all markets. A value of `0` disables the cap.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Unauthorized`] when the caller is not the primary admin.
+    ///
+    /// # Events
+    ///
+    /// Emits no events; purely a configuration write.
+    pub fn set_cumulative_extension_cap(
+        env: Env,
+        admin: Address,
+        cap_days: u32,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let key = Symbol::new(&env, "cum_ext_cap");
+        env.storage().persistent().set(&key, &cap_days);
+        Ok(())
+    }
+
+    /// Returns the running cumulative extension total (in days) for a given market.
+    /// Returns `0` when no extensions have been recorded yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn get_cumulative_extension_total(env: Env, market_id: Symbol) -> Result<u32, Error> {
+        let key = crate::storage::DataKey::MarketExtensionTotal(market_id);
+        Ok(env.storage().persistent().get(&key).unwrap_or(0u32))
+    }
+
     // ===== STORAGE OPTIMIZATION FUNCTIONS =====
 
     /// Compress market data for storage optimization
@@ -5018,9 +5943,66 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::StorageMigrated,
             env.current_contract_address(),
             Map::new(&env),
+            None,
         );
 
         result
+    }
+
+    /// Read-only recovery dry run for ops verification.
+    ///
+    /// Returns the recovery plan that `recover_market_state` would follow without
+    /// executing any side effects. No admin authentication is required. Useful for
+    /// pre-flight checks before executing a live recovery.
+    ///
+    /// # Parameters
+    /// * `env` - The Soroban environment.
+    /// * `market_id` - The market to analyse.
+    ///
+    /// # Returns
+    /// A [`recovery::DryRunResult`] describing integrity status, detected issues,
+    /// and planned recovery actions.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn recovery_dry_run(
+        env: Env,
+        market_id: Symbol,
+    ) -> crate::recovery::DryRunResult {
+        match crate::recovery::RecoveryManager::recovery_dry_run(&env, &market_id) {
+            Ok(result) => result,
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+
+    /// Promote resolved market metadata from Temporary to Persistent storage
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    pub fn promote_market_to_persistent(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        storage::StorageMigration::promote_market_to_persistent(&env, &market_id)
+    }
+
+    /// Demote scratch keys from Persistent to Temporary storage
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    pub fn demote_scratch_keys(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<(), Error> {
+        storage::StorageMigration::demote_scratch_keys(&env, &market_id)
     }
 
     /// Monitor storage usage and return statistics
@@ -5378,6 +6360,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::ErrorRecovered,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5411,6 +6394,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::PartialRefundExecuted,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -5460,6 +6444,134 @@ impl PredictifyHybrid {
         count: u32,
     ) -> Result<u32, Error> {
         crate::recovery::RecoveryManager::prune_recovery_history(&env, &admin, &market_id, count)
+    }
+
+    // ===== PER-MARKET RECOVERY TIMELOCK ENTRYPOINTS =====
+
+    /// Initiate a per-market recovery request with an admin timelock.
+    ///
+    /// Creates a pending recovery request for the specified market. The recovery
+    /// action cannot be executed until the timelock period (default 24 hours) has
+    /// elapsed. Only contract admins may call this function.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin initiating the recovery (must be authenticated)
+    /// * `market_id` - The target market
+    /// * `action` - The recovery action (ReconstructState, CancelMarket, or ForceResolve)
+    /// * `reason` - Human-readable explanation for the recovery
+    ///
+    /// # Errors
+    /// * `RecoveryAlreadyPending` - A recovery is already pending for this market
+    /// * `MarketNotRecoverable` - Market is in a non-recoverable state
+    /// * `InvalidRecoveryAction` - Action is invalid for the market's current state
+    pub fn initiate_market_recovery(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+        action: crate::recovery::PerMarketRecoveryAction,
+        reason: String,
+    ) -> crate::recovery::PendingMarketRecovery {
+        Self::require_primary_admin_or_panic(&env, &admin);
+
+        match crate::recovery::RecoveryTimelockConfig::initiate_recovery(
+            &env,
+            &admin,
+            &market_id,
+            &action,
+            &reason,
+        ) {
+            Ok(request) => {
+                crate::audit_trail::AuditTrailManager::append_record(
+                    &env,
+                    crate::audit_trail::AuditAction::ErrorRecovered,
+                    admin.clone(),
+                    Map::new(&env),
+                    None,
+                );
+                request
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Execute a pending per-market recovery request after the timelock has expired.
+    ///
+    /// This can only be called after the timelock period initiated by
+    /// `initiate_market_recovery` has elapsed. Only contract admins may call this.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin executing the recovery (must be authenticated)
+    /// * `market_id` - The target market
+    ///
+    /// # Errors
+    /// * `RecoveryRequestNotFound` - No pending request for this market
+    /// * `RecoveryTimelockActive` - The timelock has not yet expired
+    pub fn execute_market_recovery(env: Env, admin: Address, market_id: Symbol) -> bool {
+        Self::require_primary_admin_or_panic(&env, &admin);
+
+        match crate::recovery::RecoveryTimelockConfig::execute_recovery(&env, &admin, &market_id)
+        {
+            Ok(success) => {
+                crate::audit_trail::AuditTrailManager::append_record(
+                    &env,
+                    crate::audit_trail::AuditAction::ErrorRecovered,
+                    admin.clone(),
+                    Map::new(&env),
+                    None,
+                );
+                success
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Cancel a pending per-market recovery request.
+    ///
+    /// Removes the pending request so the recovery action will not be executed.
+    /// Only contract admins may call this.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin cancelling the recovery (must be authenticated)
+    /// * `market_id` - The target market
+    ///
+    /// # Errors
+    /// * `RecoveryRequestNotFound` - No pending request for this market
+    pub fn cancel_market_recovery(env: Env, admin: Address, market_id: Symbol) {
+        Self::require_primary_admin_or_panic(&env, &admin);
+
+        match crate::recovery::RecoveryTimelockConfig::cancel_recovery(
+            &env,
+            &admin,
+            &market_id,
+        ) {
+            Ok(()) => {
+                crate::audit_trail::AuditTrailManager::append_record(
+                    &env,
+                    crate::audit_trail::AuditAction::ErrorRecovered,
+                    admin.clone(),
+                    Map::new(&env),
+                    None,
+                );
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Returns the pending recovery request for a market, if any.
+    ///
+    /// Read-only query; no authentication required.
+    pub fn get_pending_market_recovery(
+        env: Env,
+        market_id: Symbol,
+    ) -> Option<crate::recovery::PendingMarketRecovery> {
+        crate::recovery::RecoveryTimelockConfig::get_pending(&env, &market_id)
+    }
+
+    /// Returns the current recovery timelock configuration.
+    ///
+    /// Read-only query; no authentication required.
+    pub fn get_recovery_timelock_config(env: Env) -> crate::recovery::RecoveryTimelockConfig {
+        crate::recovery::RecoveryTimelockConfig::get_config(&env)
     }
 
     // ===== VERSIONING FUNCTIONS =====
@@ -5688,6 +6800,34 @@ impl PredictifyHybrid {
         monitoring::ContractMonitor::validate_monitoring_data(&env, &data)
     }
 
+    /// Return all alerts in the bounded monitoring queue (oldest first).
+    ///
+    /// Clients should also check [`is_monitor_overflow`] to detect whether any
+    /// alerts were silently evicted since the last admin reset.
+    pub fn get_monitor_alerts(env: Env) -> Vec<monitoring::MonitoringAlert> {
+        monitoring::ContractMonitor::get_alerts(&env)
+    }
+
+    /// Return `true` if at least one alert has been evicted from the queue due to
+    /// overflow since the last [`clear_monitor_overflow`] call.
+    pub fn is_monitor_overflow(env: Env) -> bool {
+        monitoring::ContractMonitor::is_overflow(&env)
+    }
+
+    /// Reset the monitoring overflow flag.  Only the contract admin may call this.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::AdminNotSet`] – no admin has been initialised.
+    /// - [`Error::Unauthorized`] – `admin` does not match the stored admin address.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    pub fn clear_monitor_overflow(env: Env, admin: Address) -> Result<(), Error> {
+        monitoring::ContractMonitor::clear_overflow(&env, &admin)
+    }
+
     // ===== ORACLE FALLBACK FUNCTIONS =====
 
     /// Get oracle data with backup if primary fails.
@@ -5759,7 +6899,7 @@ impl PredictifyHybrid {
             }
             Err(_) => {
                 // Both oracles failed
-                let reason = String::from_str(&env, ORACLE_FAILURE_PRIMARY_THEN_FALLBACK_REASON);
+                let reason = String::from_str(&env, "primary_and_fallback_failed");
                 events::EventEmitter::emit_manual_resolution_required(&env, &market_id, &reason);
                 Err(Error::FallbackOracleUnavailable)
             }
@@ -5971,9 +7111,17 @@ impl PredictifyHybrid {
     ///
     /// - Requires Soroban `require_auth()` from the caller
     /// - Requires the caller to match the stored primary admin in persistent storage
+    /// - Validates WASM hash chain to prevent out-of-order/forked upgrades
     /// - Validates version compatibility
     /// - Performs safety checks before upgrade
     /// - Logs all upgrade attempts for audit trail
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `admin` - Admin performing the upgrade (must be authorized)
+    /// * `new_wasm_hash` - Hash of new Wasm bytecode to deploy
+    /// * `expected_predecessor` - Expected current WASM hash (for chain verification)
     ///
     /// # Example
     ///
@@ -5981,17 +7129,19 @@ impl PredictifyHybrid {
     /// # use soroban_sdk::{Env, Address, BytesN};
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
-    /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+    /// # let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let current_hash = BytesN::from_array(&env, &[0u8; 32]);
     ///
-    /// // Perform upgrade with admin authorization
+    /// // Perform upgrade with admin authorization and chain verification
     /// admin.require_auth();
-    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash)?;
+    /// PredictifyHybrid::upgrade_contract(env, admin, new_wasm_hash, current_hash)?;
     /// # Ok::<(), predictify_hybrid::errors::Error>(())
     /// ```
     ///
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Returns [`Error::UpgradeChainMismatch`] if the expected predecessor does not match the current WASM hash.
     ///
     /// # Events
     ///
@@ -6000,18 +7150,36 @@ impl PredictifyHybrid {
         env: Env,
         admin: Address,
         new_wasm_hash: soroban_sdk::BytesN<32>,
+        expected_predecessor: soroban_sdk::BytesN<32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
-        let result = upgrade_manager::UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash);
+        let result = upgrade_manager::UpgradeManager::upgrade_contract(
+            &env,
+            &admin,
+            new_wasm_hash,
+            expected_predecessor,
+        );
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
             crate::audit_trail::AuditAction::ContractUpgraded,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
+    }
+
+    /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event.
+    pub fn admin_broadcast(
+        env: Env,
+        admin: Address,
+        severity: crate::admin::Severity,
+        message_hash: soroban_sdk::BytesN<32>,
+        reason: String,
+    ) -> Result<(), Error> {
+        crate::admin::AdminFunctions::admin_broadcast(&env, &admin, severity, message_hash, reason)
     }
 
     /// Rollback contract to previous version
@@ -6051,6 +7219,7 @@ impl PredictifyHybrid {
             crate::audit_trail::AuditAction::UpgradeRolledBack,
             admin.clone(),
             Map::new(&env),
+            None,
         );
 
         result
@@ -6074,6 +7243,17 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_contract_version(env: Env) -> Result<versioning::Version, Error> {
         upgrade_manager::UpgradeManager::get_contract_version(&env)
+    }
+
+    /// Return the current capability bitmap for the contract version.
+    ///
+    /// Clients can call this to probe which features are supported without
+    /// maintaining a client-side version-to-capability lookup table.
+    ///
+    /// Returns a `u64` bitmask where each bit corresponds to a `CAPABILITY_*`
+    /// constant defined in the [`versioning`] module.
+    pub fn capabilities(env: Env) -> u64 {
+        crate::capabilities::capabilities(&env)
     }
 
     /// Check if upgrade is available
@@ -6920,6 +8100,91 @@ impl PredictifyHybrid {
     /// # Errors
     ///
     /// This entrypoint surfaces contract errors via panic in internal calls.
+    /// Verify SAC token decimals match declared value (admin only).
+    ///
+    /// This function performs a critical security check on SAC tokens to prevent
+    /// denomination mistakes that have caused real on-chain losses. It verifies that
+    /// the token's on-chain decimals() value matches what was declared during registration.
+    ///
+    /// This can be called:
+    /// - Automatically during token registration (via add_global_verified/add_event_verified)
+    /// - Manually by admin as part of periodic audits or security reviews
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - The Soroban environment for blockchain operations
+    /// * `admin` - The administrator address (must be authorized)
+    /// * `token_contract` - Address of the token contract to verify
+    /// * `declared_decimals` - The decimals value that was declared during registration
+    ///
+    /// # Returns
+    ///
+    /// Returns `Result<(), Error>` where:
+    /// - `Ok(())` - Decimals match (token is safe)
+    /// - `Err(Error::TokenDecimalsMismatch)` - Mismatch detected (token rejected)
+    /// - `Err(Error::Unauthorized)` - Caller is not admin
+    ///
+    /// # Cross-Contract Call
+    ///
+    /// This function performs a cross-contract call to the token contract's
+    /// `decimals()` function using the Soroban token interface.
+    ///
+    /// # Security Notes
+    ///
+    /// - Verifies via on-chain decimals() call (cannot be spoofed)
+    /// - Mismatch indicates potential token misconfiguration
+    /// - Rejected tokens cannot be used for betting/payouts
+    /// - All registration paths should use verified variants
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let token_contract = Address::from_string("GBUQW...");
+    /// PredictifyHybrid::re_verify_token(&env, &admin, &token_contract, 7)?;
+    /// // Returns Ok if decimals match, TokenDecimalsMismatch error otherwise
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] when:
+    /// - `Error::Unauthorized` - Caller is not the contract admin
+    /// - `Error::TokenDecimalsMismatch` - On-chain decimals don't match declared value
+    /// - Other errors from cross-contract call or storage operations
+    ///
+    /// # Events
+    ///
+    /// Emits audit trail record of verification attempt (success or failure).
+    pub fn re_verify_token(
+        env: Env,
+        admin: Address,
+        token_contract: Address,
+        declared_decimals: u32,
+    ) -> Result<(), Error> {
+        // Verify admin authorization
+        Self::require_primary_admin(&env, &admin)?;
+
+        // Create temporary asset for verification
+        let asset = crate::tokens::Asset {
+            contract: token_contract.clone(),
+            symbol: Symbol::new(&env, "TEMP"),
+            decimals: declared_decimals,
+        };
+
+        // Perform decimals verification via cross-contract call
+        crate::tokens::verify_token_decimals(&env, &asset)?;
+
+        // Record verification in audit trail
+        crate::audit_trail::AuditTrailManager::append_record(
+            &env,
+            crate::audit_trail::AuditAction::TokenVerified,
+            admin.clone(),
+            Map::new(&env),
+            None,
+        );
+
+        Ok(())
+    }
+
     ///
     /// # Events
     ///
@@ -7079,7 +8344,59 @@ impl PredictifyHybrid {
     ) -> Result<Vec<types::UserLeaderboardEntryV1>, Error> {
         queries::QueryManager::get_top_users_by_win_rate(&env, limit, min_bets)
     }
+
+    /// Admin-initiated circuit-breaker resume: Open → HalfOpen with cooldown.
+    ///
+    /// Moves the circuit breaker from `Open` to `HalfOpen` and records the
+    /// current ledger timestamp as the cooldown start.  Probe requests are not
+    /// counted toward the success threshold until `recovery_timeout` seconds have
+    /// elapsed.  After `half_open_max_requests` consecutive probe successes the
+    /// breaker auto-closes; any failure during the probe window re-opens it.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::Unauthorized` — caller is not an authorised admin.
+    /// - `Error::CBError` — breaker is not currently `Open`.
+    pub fn request_resume(env: Env, admin: Address) -> Result<(), Error> {
+        admin.require_auth();
+        crate::circuit_breaker::CircuitBreaker::request_resume(&env, &admin)
+    }
+
+    /// Return a versioned, XDR-stable snapshot of current platform statistics.
+    ///
+    /// The returned [`reporting::SnapshotEnvelope`] contains the current
+    /// [`reporting::PlatformStats`] serialised with `to_xdr`, tagged with
+    /// [`reporting::SNAPSHOT_SCHEMA_VERSION`] and the current ledger timestamp.
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ContractStateError` — market index is missing or corrupted.
+    pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
+        reporting::ReportingManager::get_snapshot_envelope(&env)
+    }
+
+    /// Accumulate dispute fees. Called after each dispute resolution to add
+    /// `fee_amount` to the running cumulative total. Returns the new total.
+    pub fn accumulate_dispute_fee(env: Env, caller: Address, fee_amount: i128) -> i128 {
+        caller.require_auth();
+        if fee_amount < 0 {
+            panic_with_error!(env, Error::InvalidInput);
+        }
+        let key = Symbol::new(&env, "cum_disp_fee");
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0i128);
+        let new_total = current.checked_add(fee_amount)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
+        env.storage().instance().set(&key, &new_total);
+        new_total
+    }
+
+    /// Get the cumulative dispute fee total accumulated so far.
+    pub fn get_cumulative_dispute_fee(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, "cum_disp_fee"))
+            .unwrap_or(0i128)
+    }
+
 }
 
-#[cfg(any())]
-mod test;

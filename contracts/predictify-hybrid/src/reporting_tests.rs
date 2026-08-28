@@ -36,6 +36,9 @@ fn test_get_active_events_pagination() {
         oracle_config.clone(),
         None,
         3600,
+        None,
+        None,
+        None,
     );
     let m2 = PredictifyHybrid::create_market(
         env.clone(),
@@ -46,6 +49,9 @@ fn test_get_active_events_pagination() {
         oracle_config.clone(),
         None,
         3600,
+        None,
+        None,
+        None,
     );
     let m3 = PredictifyHybrid::create_market(
         env.clone(),
@@ -56,6 +62,9 @@ fn test_get_active_events_pagination() {
         oracle_config.clone(),
         None,
         3600,
+        None,
+        None,
+        None,
     );
 
     // Test pagination
@@ -99,6 +108,9 @@ fn test_get_platform_stats() {
         oracle_config,
         None,
         3600,
+        None,
+        None,
+        None,
     );
 
     let stats = ReportingManager::get_platform_stats(&env).unwrap();
@@ -135,6 +147,9 @@ fn test_get_event_snapshot() {
         oracle_config,
         None,
         3600,
+        None,
+        None,
+        None,
     );
 
     let snapshot = ReportingManager::get_event_snapshot(&env, market_id.clone()).unwrap();

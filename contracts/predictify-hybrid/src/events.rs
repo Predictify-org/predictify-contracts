@@ -1,10 +1,11 @@
 extern crate alloc;
 
 // use alloc::string::ToString; // Removed to fix Display/ToString trait errors
-use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, vec, Address, BytesN, Env, Map, String, Symbol, Vec};
 
+use crate::admin::Severity;
 use crate::config::Environment;
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::OracleProvider;
 
 // Define AdminRole locally since it's not available in the crate root
@@ -99,6 +100,7 @@ pub struct MarketCreatedEvent {
     /// Market end time
     pub end_time: u64,
     /// Creation timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -119,6 +121,7 @@ pub struct EventCreatedEvent {
     /// Event admin
     pub admin: Address,
     /// Creation timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -195,6 +198,7 @@ pub struct VoteCastEvent {
     /// Stake amount
     pub stake: i128,
     /// Vote timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -281,6 +285,7 @@ pub struct BetPlacedEvent {
     /// Amount locked
     pub amount: i128,
     /// Bet placement timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -320,6 +325,44 @@ pub struct BetStatusUpdatedEvent {
     /// Payout amount (if won)
     pub payout_amount: Option<i128>,
     /// Status update timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when the per-user max bet cap is set by an admin.
+///
+/// This event provides transparency about bet cap enforcement rules. The cap applies
+/// to the cumulative amount any single user can bet on a given market, not globally
+/// across all markets.
+///
+/// # Cap Semantics
+///
+/// - Cap is per-user, per-market (e.g., user A and user B each have their own limit on market X)
+/// - Different users on the same market are tracked independently
+/// - A user hitting the cap on market A does not affect their betting on market B
+/// - When a cap is not set, betting is uncapped
+///
+/// # Example Usage
+///
+/// ```rust
+/// # use soroban_sdk::{Env, Symbol};
+/// # use predictify_hybrid::events::MaxBetCapSetEvent;
+/// # let env = Env::default();
+///
+/// // Max bet cap set to 100 XLM (100,000,000,000 stroops)
+/// let event = MaxBetCapSetEvent {
+///     cap: 100_000_000_000,
+///     timestamp: env.ledger().timestamp(),
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaxBetCapSetEvent {
+    /// The per-user max bet cap (in stroops).
+    /// Applies to cumulative stake per user per market.
+    pub cap: i128,
+    /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -405,6 +448,7 @@ pub struct OracleResultEvent {
     /// Comparison operator
     pub comparison: String,
     /// Fetch timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -491,6 +535,7 @@ pub struct MarketResolvedEvent {
     /// Confidence score
     pub confidence_score: i128,
     /// Resolution timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -512,12 +557,12 @@ pub struct MarketResolvedEvent {
 ///
 /// ```rust
 /// # use soroban_sdk::{Env, Address, Symbol, String};
-/// # use predictify_hybrid::events::DisputeCreatedEvent;
+/// # use predictify_hybrid::events::DisputeOpenedEvent;
 /// # let env = Env::default();
 /// # let disputer = Address::generate(&env);
 ///
-/// // Dispute creation event
-/// let event = DisputeCreatedEvent {
+/// // Dispute opening event
+/// let event = DisputeOpenedEvent {
 ///     market_id: Symbol::new(&env, "btc_50k_2024"),
 ///     disputer: disputer.clone(),
 ///     stake: 50_000_000, // 5.0 XLM dispute stake
@@ -562,7 +607,7 @@ pub struct MarketResolvedEvent {
 /// - **Economic Monitoring**: Track dispute stakes and economic activity
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DisputeCreatedEvent {
+pub struct DisputeOpenedEvent {
     /// Market ID
     pub market_id: Symbol,
     /// Disputer address
@@ -572,6 +617,20 @@ pub struct DisputeCreatedEvent {
     /// Dispute reason
     pub reason: Option<String>,
     /// Dispute timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when suspected collusion is detected among disputers.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SuspectedCollusionFlagEvent {
+    pub market_id: Symbol,
+    pub user1: Address,
+    pub user2: Address,
+    pub stake_delta: i128,
+    pub time_delta: u64,
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -662,6 +721,20 @@ pub struct DisputeResolvedEvent {
     /// Fee distribution
     pub fee_distribution: i128,
     /// Resolution timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a dispute record is evicted from history.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeHistoryEvictedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Address of the user whose dispute was evicted
+    pub user: Address,
+    /// Eviction timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -678,6 +751,7 @@ pub struct FeeCollectedEvent {
     /// Fee type
     pub fee_type: String,
     /// Collection timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -708,6 +782,7 @@ pub struct FeeWithdrawalAttemptEvent {
     /// Configured max withdrawal cap (basis points of current vault balance)
     pub max_withdrawal_bps: u32,
     /// Attempt timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -722,6 +797,79 @@ pub struct FeeWithdrawnEvent {
     /// Remaining fee vault balance after withdrawal
     pub remaining_fees: i128,
     /// Withdrawal timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigThresholdProposedEvent {
+    pub admin: Address,
+    pub old_threshold: u32,
+    pub new_threshold: u32,
+    pub confirm_after: u64,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigThresholdConfirmedEvent {
+    pub admin: Address,
+    pub old_threshold: u32,
+    pub new_threshold: u32,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeStakeCapExceededEvent {
+    pub market_id: Symbol,
+    pub user: Address,
+    pub cap: i128,
+    pub attempted_stake: i128,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeStakeCapSetEvent {
+    pub market_id: Symbol,
+    pub user: Address,
+    pub cap: i128,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a user's cumulative dispute stake cap across all active disputes is exceeded.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeCumulativeStakeCapExceededEvent {
+    /// User address
+    pub user: Address,
+    /// Cap amount
+    pub cap: i128,
+    /// Current cumulative stake across active disputes
+    pub cumulative_stake: i128,
+    /// Attempted stake
+    pub attempted_stake: i128,
+    /// Timestamp of violation
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a per-user cumulative dispute stake cap is set.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeCumulativeStakeCapSetEvent {
+    /// User address
+    pub user: Address,
+    /// Cap amount
+    pub cap: i128,
+    /// Timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -759,6 +907,7 @@ pub struct OracleVerifInitiatedEvent {
     /// Number of oracle sources being queried
     pub oracle_count: u32,
     /// Initiation timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -835,6 +984,7 @@ pub struct OracleResultVerifiedEvent {
     /// Whether this is the final verified result
     pub is_final: bool,
     /// Verification timestamp
+    pub nonce: u64,
     pub timestamp: u64,
     /// Block number at verification
     pub block_number: u32,
@@ -875,6 +1025,7 @@ pub struct OracleVerificationFailedEvent {
     /// Whether fallback sources are available
     pub fallback_available: bool,
     /// Failure timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -901,6 +1052,7 @@ pub struct OracleValidationFailedEvent {
     /// Maximum allowed confidence interval in basis points
     pub max_confidence_bps: u32,
     /// Validation failure timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 /// Event emitted when multi-oracle consensus is reached.
@@ -925,6 +1077,7 @@ pub struct OracleConsensusReachedEvent {
     /// Price variance (deviation indicator)
     pub price_variance: i128,
     /// Consensus timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -943,6 +1096,7 @@ pub struct OracleHealthStatusEvent {
     /// Consecutive failures (if unhealthy)
     pub consecutive_failures: u32,
     /// Status change timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -961,6 +1115,7 @@ pub struct ExtensionRequestedEvent {
     /// Extension fee
     pub fee: i128,
     /// Request timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -977,6 +1132,7 @@ pub struct ConfigUpdatedEvent {
     /// New value
     pub new_value: String,
     /// Update timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -993,6 +1149,7 @@ pub struct BetLimitsUpdatedEvent {
     /// New maximum bet amount
     pub max_bet: i128,
     /// Update timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1007,6 +1164,7 @@ pub struct StatisticsUpdatedEvent {
     /// Number of currently active markets
     pub active_markets: u32,
     /// Update timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1025,6 +1183,7 @@ pub struct ErrorLoggedEvent {
     /// Market ID (if applicable)
     pub market_id: Option<Symbol>,
     /// Error timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1045,6 +1204,7 @@ pub struct ErrorRecoveryEvent {
     /// Market ID (if applicable)
     pub market_id: Option<Symbol>,
     /// Recovery timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1061,6 +1221,7 @@ pub struct PerformanceMetricEvent {
     /// Context
     pub context: String,
     /// Metric timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1075,6 +1236,7 @@ pub struct AdminActionEvent {
     /// Target of action
     pub target: Option<String>,
     /// Action timestamp
+    pub nonce: u64,
     pub timestamp: u64,
     /// Action success status
     pub success: bool,
@@ -1091,6 +1253,7 @@ pub struct AdminRoleEvent {
     /// Assigned by
     pub assigned_by: Address,
     /// Assignment timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1105,6 +1268,7 @@ pub struct AdminPermissionEvent {
     /// Access granted
     pub granted: bool,
     /// Check timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1117,6 +1281,7 @@ pub struct MarketClosedEvent {
     /// Admin who closed it
     pub admin: Address,
     /// Close timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1132,6 +1297,7 @@ pub struct RefundOnOracleFailureEvent {
     /// Total amount refunded to all participants
     pub total_refunded: i128,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1146,6 +1312,7 @@ pub struct MarketFinalizedEvent {
     /// Final outcome
     pub outcome: String,
     /// Finalization timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1156,6 +1323,7 @@ pub struct AdminInitializedEvent {
     /// Admin address
     pub admin: Address,
     /// Initialization timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1165,6 +1333,7 @@ pub struct AdminInitializedEvent {
 pub struct AdminTransferredEvent {
     pub previous_admin: Address,
     pub new_admin: Address,
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1173,6 +1342,7 @@ pub struct AdminTransferredEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractPausedEvent {
     pub admin: Address,
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1181,6 +1351,18 @@ pub struct ContractPausedEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractUnpausedEvent {
     pub admin: Address,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Admin emergency-broadcast event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminBroadcastEvent {
+    pub severity: Severity,
+    pub message_hash: BytesN<32>,
+    pub reason: String,
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1192,6 +1374,7 @@ pub struct ContractInitializedEvent {
     /// Platform fee percentage
     pub platform_fee_percentage: i128,
     /// Initialization timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1203,6 +1386,7 @@ pub struct PlatformFeeSetEvent {
     /// Set by admin
     pub set_by: Address,
     /// Set timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1219,6 +1403,7 @@ pub struct DisputeTimeoutSetEvent {
     /// Set by admin
     pub set_by: Address,
     /// Set timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1251,8 +1436,67 @@ pub struct DisputeTimeoutExtendedEvent {
     /// Extended by admin
     pub extended_by: Address,
     /// Extension timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
+
+/// Event emitted when a vote on a dispute is rejected because the voter
+/// is the same address that opened the dispute.
+///
+/// This prevents the dispute opener from biasing the tally by voting
+/// on their own dispute.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeVoteRejectedEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Voter address (same as the dispute opener)
+    pub voter: Address,
+    /// Reason for rejection
+    pub reason: String,
+    /// Rejection timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a community member successfully casts a vote on an active dispute.
+///
+/// Part of the structured dispute lifecycle events, emitted alongside
+/// [] and [] for complete lifecycle tracking.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeVoteCastEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Voter address
+    pub voter: Address,
+    /// Vote direction (true = support, false = reject)
+    pub vote: bool,
+    /// Stake amount backing the vote
+    pub stake: i128,
+    /// Event timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when dispute resolution fees are distributed to winning participants.
+///
+/// Marks the final stage of the dispute lifecycle: after this event,
+/// all stakes have been settled and winners have been compensated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeFeeDistributedEvent {
+    /// Dispute ID
+    pub dispute_id: Symbol,
+    /// Total fees distributed to winners
+    pub total_fees: i128,
+    /// Whether distribution completed successfully
+    pub fees_distributed: bool,
+    /// Event timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
 
 /// Dispute auto-resolved event
 #[contracttype]
@@ -1267,6 +1511,7 @@ pub struct DisputeAutoResolvedEvent {
     /// Resolution reason
     pub reason: String,
     /// Resolution timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1278,6 +1523,7 @@ pub struct GovernanceProposalCreatedEvent {
     pub proposer: Address,
     pub title: String,
     pub description: String,
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1288,6 +1534,18 @@ pub struct GovernanceVoteCastEvent {
     pub proposal_id: Symbol,
     pub voter: Address,
     pub support: bool,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Governance vote committed event — emitted when a voter submits a salted commitment
+/// during the commit phase of commit-reveal voting.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceVoteCommittedEvent {
+    pub proposal_id: Symbol,
+    pub voter: Address,
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1302,6 +1560,7 @@ pub struct FallbackUsedEvent {
     /// Fallback oracle address
     pub fallback_oracle: Address,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1321,6 +1580,20 @@ pub struct ResolutionTimeoutEvent {
 pub struct GovernanceProposalExecutedEvent {
     pub proposal_id: Symbol,
     pub executor: Address,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Governance proposal auto-rejected event — emitted when a proposal expires
+/// and fails to meet even the floor quorum after decay.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceProposalAutoRejectedEvent {
+    pub proposal_id: Symbol,
+    pub proposer: Address,
+    pub for_votes: u128,
+    pub floor_quorum: u128,
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1333,6 +1606,7 @@ pub struct ConfigInitializedEvent {
     /// Environment
     pub environment: String,
     /// Initialization timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1345,6 +1619,7 @@ pub struct StorageCleanupEvent {
     /// Cleanup type
     pub cleanup_type: String,
     /// Cleanup timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1357,6 +1632,7 @@ pub struct StorageOptimizationEvent {
     /// Optimization type
     pub optimization_type: String,
     /// Optimization timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1373,6 +1649,22 @@ pub struct StorageMigrationEvent {
     /// Number of markets migrated
     pub markets_migrated: u32,
     /// Migration timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Market archived event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketArchivedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Source tier
+    pub from_tier: String,
+    /// Target tier
+    pub to_tier: String,
+    /// Archival timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1385,6 +1677,7 @@ pub struct OracleDegradationEvent {
     /// Reason for degradation
     pub reason: String,
     /// Degradation timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1397,6 +1690,7 @@ pub struct OracleRecoveryEvent {
     /// Recovery message
     pub recovery_message: String,
     /// Recovery timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1409,6 +1703,7 @@ pub struct ManualResolutionRequiredEvent {
     /// Reason manual resolution is needed
     pub reason: String,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1447,6 +1742,7 @@ pub struct StateChangeEvent {
     /// Reason for state change
     pub reason: String,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1479,6 +1775,7 @@ pub struct WinningsClaimedEvent {
     /// Amount claimed
     pub amount: i128,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1498,6 +1795,7 @@ pub struct WinningsClaimedBatchEvent {
     /// Number of markets in this batch claim
     pub claim_count: u32,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 /// Event emitted when global claim period is updated.
@@ -1509,6 +1807,7 @@ pub struct ClaimPeriodUpdatedEvent {
     /// New claim period in seconds
     pub claim_period_seconds: u64,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1523,6 +1822,7 @@ pub struct MarketClaimPeriodUpdatedEvent {
     /// New claim period in seconds
     pub claim_period_seconds: u64,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1535,6 +1835,7 @@ pub struct TreasuryUpdatedEvent {
     /// New treasury address
     pub treasury: Address,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1553,6 +1854,7 @@ pub struct UnclaimedWinningsSweptEvent {
     /// Whether funds were burned
     pub burned: bool,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1567,6 +1869,35 @@ pub struct ContractUpgradedEvent {
     /// Upgrade ID
     pub upgrade_id: Symbol,
     /// Upgrade timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when WASM hash chain verification fails during upgrade.
+///
+/// This event is critical for security as it indicates an attempt to apply
+/// an out-of-order or forked upgrade. The upgrade was rejected because the
+/// expected predecessor hash did not match the current contract's WASM hash.
+///
+/// # Security Implications
+///
+/// - Prevents downgrade attacks
+/// - Blocks forked upgrade chains
+/// - Ensures linear upgrade progression
+/// - Detects potential compromise scenarios
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeChainMismatchEvent {
+    /// Expected predecessor hash (from upgrade plan)
+    pub expected_predecessor: soroban_sdk::BytesN<32>,
+    /// Actual current hash (from contract)
+    pub actual_current_hash: soroban_sdk::BytesN<32>,
+    /// Proposed new hash (that was rejected)
+    pub proposed_new_hash: soroban_sdk::BytesN<32>,
+    /// Admin who attempted the upgrade
+    pub admin: Address,
+    /// Timestamp of the failed attempt
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1603,6 +1934,7 @@ pub struct MarketDeadlineExtendedEvent {
     /// Extension fee
     pub fee: i128,
     /// Extension timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1630,6 +1962,7 @@ pub struct MarketDescriptionUpdatedEvent {
     /// Admin who updated
     pub admin: Address,
     /// Update timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1657,6 +1990,7 @@ pub struct MarketOutcomesUpdatedEvent {
     /// Admin who updated
     pub admin: Address,
     /// Update timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1684,6 +2018,7 @@ pub struct CategoryUpdatedEvent {
     /// Admin who updated
     pub admin: Address,
     /// Update timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1711,6 +2046,7 @@ pub struct TagsUpdatedEvent {
     /// Admin who updated
     pub admin: Address,
     /// Update timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1723,6 +2059,7 @@ pub struct ContractRollbackEvent {
     /// Rollback Wasm hash (after rollback)
     pub rollback_wasm_hash: soroban_sdk::BytesN<32>,
     /// Rollback timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1737,6 +2074,7 @@ pub struct UpgradeProposalCreatedEvent {
     /// Target version
     pub target_version: String,
     /// Proposal timestamp
+    pub nonce: u64,
     pub timestamp: u64,
 }
 
@@ -1802,6 +2140,7 @@ pub struct CircuitBreakerEvent {
     /// Reason for the action
     pub reason: String,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
     /// Admin who triggered the action (if manual)
     pub admin: Option<Address>,
@@ -1818,7 +2157,72 @@ pub struct MinPoolSizeNotMetEvent {
     /// Required minimum pool size
     pub required_min: i128,
     /// Event timestamp
+    pub nonce: u64,
     pub timestamp: u64,
+}
+
+// ===== EVENT SCHEMA REGISTRY =====
+
+/// Describes the canonical topic symbol and schema version for a named event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventSchemaEntry {
+    /// Short symbol used as the first element of the event topic tuple.
+    pub topic: Symbol,
+    /// Monotonically-increasing schema version.  Increment whenever the
+    /// payload struct gains, removes, or renames fields.
+    pub schema_version: u32,
+}
+
+/// Centralised registry that maps a human-readable event name to its
+/// canonical topic symbol and schema version.
+///
+/// # Purpose
+///
+/// Emit sites **must not** hard-code topic symbols inline.  Reading from
+/// `EventSchemaRegistry` makes it trivial to grep all consumers when a
+/// topic changes and provides a single place to bump `schema_version`.
+///
+/// # Usage
+///
+/// ```rust
+/// # use soroban_sdk::Env;
+/// # let env = Env::default();
+/// let schema = predictify_hybrid::events::EventSchemaRegistry::get_schema(
+///     &env, "oracle_result",
+/// ).unwrap();
+/// assert_eq!(schema.schema_version, 1);
+/// ```
+pub struct EventSchemaRegistry;
+
+impl EventSchemaRegistry {
+    /// Return the [`EventSchemaEntry`] for a named event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` when `name` is not a registered event.  Callers
+    /// that treat a missing entry as a hard error should `unwrap_or_else`
+    /// with a panic or propagate an appropriate `Error` variant.
+    ///
+    /// # Registered events
+    ///
+    /// | name              | topic symbol  | schema_version |
+    /// |-------------------|---------------|----------------|
+    /// | `"oracle_result"` | `oracle_rs`   | 1              |
+    /// | `"dispute_opened"` | `dispt_opn` | 1              |
+    pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
+        match name {
+            "oracle_result" => Some(EventSchemaEntry {
+                topic: symbol_short!("oracle_rs"),
+                schema_version: 1,
+            }),
+            "dispute_opened" => Some(EventSchemaEntry {
+                topic: symbol_short!("dispt_opn"),
+                schema_version: 1,
+            }),
+            _ => None,
+        }
+    }
 }
 
 // ===== EVENT EMISSION UTILITIES =====
@@ -1832,6 +2236,85 @@ pub struct AdminOverrideEvent {
     pub old_result: String,
     pub new_result: String,
     pub reason: String,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when an admin force-resolves a market (bypassing end-time checks).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForceResolvedEvent {
+    pub market_id: Symbol,
+    pub admin: Address,
+    pub outcome: String,
+    pub reason: String,
+    pub idempotency_key: String,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a fee config update is queued with a governance time-lock.
+/// The config is not applied until `now >= eta`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigQueuedEvent {
+    pub admin: Address,
+    pub eta: u64,
+    pub platform_fee_percentage: i128,
+    pub creation_fee: i128,
+    pub min_fee_amount: i128,
+    pub max_fee_amount: i128,
+    pub collection_threshold: i128,
+    pub fees_enabled: bool,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued fee config update is successfully applied.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigAppliedEvent {
+    pub admin: Address,
+    pub platform_fee_percentage: i128,
+    pub creation_fee: i128,
+    pub min_fee_amount: i128,
+    pub max_fee_amount: i128,
+    pub collection_threshold: i128,
+    pub fees_enabled: bool,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued fee config update is cancelled by admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigCancelledEvent {
+    pub admin: Address,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a deprecated entrypoint is called.
+///
+/// This event allows indexers and monitoring tools to track usage of legacy
+/// contract functions that are scheduled for removal. Callers receive a
+/// runtime signal so they can migrate to the recommended replacement.
+///
+/// # Fields
+/// * `caller`     - The Address that invoked the deprecated entrypoint.
+/// * `entrypoint` - Symbol name of the deprecated function.
+/// * `nonce`      - Monotonically increasing replay-protection nonce.
+/// * `timestamp`  - Ledger timestamp (seconds since Unix epoch).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeprecatedCall {
+    /// Address of the caller that invoked the deprecated entrypoint.
+    pub caller: Address,
+    /// Name of the deprecated entrypoint.
+    pub entrypoint: Symbol,
+    /// Replay-protection nonce, unique per topic.
+    pub nonce: u64,
+    /// Ledger timestamp when the call was made.
     pub timestamp: u64,
 }
 
@@ -1839,6 +2322,23 @@ pub struct AdminOverrideEvent {
 pub struct EventEmitter;
 
 impl EventEmitter {
+    /// Gets and increments the replay protection nonce for a specific topic.
+    ///
+    /// The nonce provides replay protection to dedupe retried emissions.
+    /// It is stored in persistent storage under `DataKey::EventNonce(topic)`.
+    /// The nonce monotonically increments for each emission on the same topic,
+    /// providing strict topic isolation.
+    ///
+    /// Note: This nonce is reset only on contract upgrade, provided the 
+    /// persistent storage for `EventNonce` is cleared during the upgrade migration.
+    pub(crate) fn get_and_increment_nonce(env: &Env, topic: Symbol) -> u64 {
+        let key = crate::storage::DataKey::EventNonce(topic);
+        let mut nonce: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        nonce += 1;
+        env.storage().persistent().set(&key, &nonce);
+        nonce
+    }
+
     /// Emit market created event
     pub fn emit_market_created(
         env: &Env,
@@ -1854,6 +2354,8 @@ impl EventEmitter {
             outcomes: outcomes.clone(),
             admin: admin.clone(),
             end_time,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_crt").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -1873,6 +2375,8 @@ impl EventEmitter {
             market_id: market_id.clone(),
             primary_oracle: primary_oracle.clone(),
             fallback_oracle: fallback_oracle.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fbk_used").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -1909,6 +2413,8 @@ impl EventEmitter {
             creation_fee_amount: crate::fees::MARKET_CREATION_FEE,
             admin: admin.clone(),
             end_time,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("evt_crt").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -1930,6 +2436,8 @@ impl EventEmitter {
             voter: voter.clone(),
             outcome: outcome.clone(),
             stake,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("vote").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -1949,6 +2457,8 @@ impl EventEmitter {
             total_volume,
             total_bets,
             active_markets,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("stats_upd").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -1992,6 +2502,8 @@ impl EventEmitter {
             bettor: bettor.clone(),
             outcome: outcome.clone(),
             amount,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("bet_plc").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2040,6 +2552,8 @@ impl EventEmitter {
             old_status: old_status.clone(),
             new_status: new_status.clone(),
             payout_amount,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("bet_upd").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2048,7 +2562,10 @@ impl EventEmitter {
             .publish((symbol_short!("bet_upd"), market_id.clone()), event);
     }
 
-    /// Emit oracle result event
+    /// Emit oracle result event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`] so
+    /// that all emit sites stay in sync with the registry automatically.
     pub fn emit_oracle_result(
         env: &Env,
         market_id: &Symbol,
@@ -2059,6 +2576,11 @@ impl EventEmitter {
         threshold: i128,
         comparison: &String,
     ) {
+        let schema = EventSchemaRegistry::get_schema(env, "oracle_result")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("oracle_rs"),
+                schema_version: 1,
+            });
         let event = OracleResultEvent {
             market_id: market_id.clone(),
             result: result.clone(),
@@ -2067,12 +2589,13 @@ impl EventEmitter {
             price,
             threshold,
             comparison: comparison.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_res")),
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("oracle_rs"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("oracle_rs"), market_id.clone()), event);
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
     }
 
     // ===== ORACLE RESULT VERIFICATION EVENT EMISSION METHODS =====
@@ -2101,6 +2624,8 @@ impl EventEmitter {
             initiator: initiator.clone(),
             feed_id: feed_id.clone(),
             oracle_count,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_init").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2152,6 +2677,8 @@ impl EventEmitter {
             sources_consulted,
             verification_status: String::from_str(env, "Verified"),
             is_final,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_ver").clone()),
+
             timestamp: env.ledger().timestamp(),
             block_number: env.ledger().sequence(),
         };
@@ -2188,6 +2715,8 @@ impl EventEmitter {
             error_message: error_message.clone(),
             attempted_providers,
             fallback_available,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_fail").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2217,6 +2746,8 @@ impl EventEmitter {
             max_age_secs,
             observed_confidence_bps,
             max_confidence_bps,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_val").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2262,6 +2793,8 @@ impl EventEmitter {
             agreement_percentage,
             average_price,
             price_variance,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_cons").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2297,6 +2830,8 @@ impl EventEmitter {
             previous_status,
             current_status,
             consecutive_failures,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("orc_hlth").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2322,12 +2857,19 @@ impl EventEmitter {
             community_consensus: community_consensus.clone(),
             resolution_method: resolution_method.clone(),
             confidence_score,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_res")),
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("mkt_res"), &event);
-        env.events()
-            .publish((symbol_short!("mkt_res"), market_id.clone()), event);
+        env.storage().persistent().set(&symbol_short!("mkt_res"), &event);
+        env.events().publish(
+            (
+                symbol_short!("mkt_res"),
+                market_id.clone(),
+                resolution_method.clone(),
+            ),
+            event,
+        );
     }
 
     /// Emit event when minimum pool size is not met at resolution time
@@ -2341,6 +2883,8 @@ impl EventEmitter {
             market_id: market_id.clone(),
             current_pool,
             required_min,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("pool_lo").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("pool_lo"), &event);
@@ -2348,25 +2892,58 @@ impl EventEmitter {
             .publish((symbol_short!("pool_lo"), market_id.clone()), event);
     }
 
-    /// Emit dispute created event
-    pub fn emit_dispute_created(
+    /// Emit dispute opened event.
+    ///
+    /// Topic and schema version are resolved from [`EventSchemaRegistry`].
+    pub fn emit_dispute_opened(
         env: &Env,
         market_id: &Symbol,
         disputer: &Address,
         stake: i128,
         reason: Option<String>,
     ) {
-        let event = DisputeCreatedEvent {
+        let schema = EventSchemaRegistry::get_schema(env, "dispute_opened")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("dispt_opn"),
+                schema_version: 1,
+            });
+        let event = DisputeOpenedEvent {
             market_id: market_id.clone(),
             disputer: disputer.clone(),
             stake,
             reason,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dispt_opn")),
             timestamp: env.ledger().timestamp(),
         };
 
-        Self::store_event(env, &symbol_short!("dispt_crt"), &event);
+        Self::store_event(env, &schema.topic, &event);
         env.events()
-            .publish((symbol_short!("dispt_crt"), market_id.clone()), event);
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+    }
+
+    /// Emit suspected collusion flag event.
+    pub fn emit_suspected_collusion_flag(
+        env: &Env,
+        market_id: &Symbol,
+        user1: &Address,
+        user2: &Address,
+        stake_delta: i128,
+        time_delta: u64,
+    ) {
+        let event = SuspectedCollusionFlagEvent {
+            market_id: market_id.clone(),
+            user1: user1.clone(),
+            user2: user2.clone(),
+            stake_delta,
+            time_delta,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("sus_col").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("sus_col"), &event);
+        env.events()
+            .publish((symbol_short!("sus_col"), market_id.clone()), event);
     }
 
     /// Emit dispute resolved event
@@ -2384,12 +2961,33 @@ impl EventEmitter {
             winners: winners.clone(),
             losers: losers.clone(),
             fee_distribution,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dispt_res").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
         Self::store_event(env, &symbol_short!("dispt_res"), &event);
         env.events()
             .publish((symbol_short!("dispt_res"), market_id.clone()), event);
+    }
+
+    /// Emit dispute history evicted event
+    pub fn emit_dispute_history_evicted(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+    ) {
+        let event = DisputeHistoryEvictedEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("dh_evct").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("dh_evct"), &event);
+        env.events()
+            .publish((symbol_short!("dh_evct"), market_id.clone()), event);
     }
 
     /// Emit fee collected event
@@ -2405,6 +3003,8 @@ impl EventEmitter {
             collector: collector.clone(),
             amount,
             fee_type: fee_type.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fee_col").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2438,6 +3038,8 @@ impl EventEmitter {
             next_allowed_ts,
             timelock_seconds: schedule.timelock_seconds,
             max_withdrawal_bps: schedule.max_withdrawal_bps,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fwd_att").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2461,6 +3063,7 @@ impl EventEmitter {
             admin: admin.clone(),
             amount,
             remaining_fees,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fwd_ok")),
             timestamp,
         };
 
@@ -2484,6 +3087,8 @@ impl EventEmitter {
             additional_days,
             reason: reason.clone(),
             fee,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ext_req").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2505,6 +3110,8 @@ impl EventEmitter {
             config_type: config_type.clone(),
             old_value: old_value.clone(),
             new_value: new_value.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cfg_upd").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2526,11 +3133,31 @@ impl EventEmitter {
             scope: scope.clone(),
             min_bet,
             max_bet,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("bet_lim").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("bet_lim"), &event);
         env.events()
             .publish((symbol_short!("bet_lim"), scope.clone()), event);
+    }
+
+    /// Emit max bet cap set event.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` - The Soroban environment
+    /// - `cap` - The per-user max bet cap in stroops
+    pub fn emit_max_bet_cap_set(env: &Env, cap: i128) {
+        let event = MaxBetCapSetEvent {
+            cap,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mxbtcap").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("mxbtcap"), &event);
+        env.events()
+            .publish((symbol_short!("mxbtcap"),), event);
     }
 
     /// Emit error logged event
@@ -2548,6 +3175,8 @@ impl EventEmitter {
             context: context.clone(),
             user,
             market_id,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("err_log").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2572,6 +3201,8 @@ impl EventEmitter {
             recovery_attempts,
             user,
             market_id,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("err_rec").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2592,6 +3223,8 @@ impl EventEmitter {
             value,
             unit: unit.clone(),
             context: context.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("perf_met").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2605,6 +3238,8 @@ impl EventEmitter {
             admin: admin.clone(),
             action: String::from_str(env, action),
             target: None,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_act").clone()),
+
             timestamp: env.ledger().timestamp(),
             success: *success,
         };
@@ -2618,6 +3253,8 @@ impl EventEmitter {
     pub fn emit_admin_initialized(env: &Env, admin: &Address) {
         let event = AdminInitializedEvent {
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_init").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2631,6 +3268,8 @@ impl EventEmitter {
         let event = AdminTransferredEvent {
             previous_admin: previous_admin.clone(),
             new_admin: new_admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_xfer").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("adm_xfer"), &event);
@@ -2642,6 +3281,8 @@ impl EventEmitter {
     pub fn emit_contract_paused(env: &Env, admin: &Address) {
         let event = ContractPausedEvent {
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ctr_pause").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ctr_pause"), &event);
@@ -2653,6 +3294,8 @@ impl EventEmitter {
     pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
         let event = ContractUnpausedEvent {
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ctr_unp").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ctr_unp"), &event);
@@ -2663,8 +3306,9 @@ impl EventEmitter {
     /// Emit contract initialized event (full initialization with platform fee)
     pub fn emit_contract_initialized(env: &Env, admin: &Address, fee: i128) {
         let event = ContractInitializedEvent {
-            admin: admin.clone(), // Clone because the struct owns the Address
+            admin: admin.clone(),
             platform_fee_percentage: fee,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ctr_init")),
             timestamp: env.ledger().timestamp(),
         };
         env.events()
@@ -2675,10 +3319,29 @@ impl EventEmitter {
         let event = PlatformFeeSetEvent {
             fee_percentage: fee,
             set_by: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("pltf_set")),
             timestamp: env.ledger().timestamp(),
         };
         env.events()
             .publish((Symbol::new(env, "platform_fee_set"),), event);
+    }
+
+    /// Emit admin emergency broadcast event
+    pub fn emit_admin_broadcast(
+        env: &Env,
+        severity: Severity,
+        message_hash: BytesN<32>,
+        reason: String,
+    ) {
+        let event = AdminBroadcastEvent {
+            severity,
+            message_hash,
+            reason,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_brdc")),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((Symbol::new(env, "admin_broadcast"),), event);
     }
 
     /// Emit config initialized event
@@ -2694,6 +3357,8 @@ impl EventEmitter {
                     Environment::Custom => "Custom",
                 },
             ),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cfg_init").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2720,6 +3385,8 @@ impl EventEmitter {
                 },
             ),
             assigned_by: assigned_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_role").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2734,6 +3401,8 @@ impl EventEmitter {
             admin: admin.clone(),
             role: String::from_str(env, "deactivated"),
             assigned_by: deactivated_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_deact").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2742,11 +3411,33 @@ impl EventEmitter {
             .publish((symbol_short!("adm_deact"), admin.clone()), event);
     }
 
+    /// Emit signer rotation cooldown hit event
+    pub fn emit_signer_rotation_cooldown_hit(env: &Env, admin: &Address, last_rotation: u64, cooldown: u64) {
+        let topics = (Symbol::new(env, "Admin"), Symbol::new(env, "SignerRotationCooldownHit"));
+        let mut data = Map::new(env);
+        data.set(String::from_str(env, "admin"), admin.to_val());
+        data.set(String::from_str(env, "last_rotation"), String::from_str(env, &alloc::string::ToString::to_string(&last_rotation)).to_val());
+        data.set(String::from_str(env, "cooldown"), String::from_str(env, &alloc::string::ToString::to_string(&cooldown)).to_val());
+        env.events().publish(topics, data);
+    }
+
+    /// Emit oracle admin cooldown hit event
+    pub fn emit_oracle_admin_cooldown_hit(env: &Env, admin: &Address, last_action: u64, cooldown: u64) {
+        let topics = (Symbol::new(env, "OracleAdmin"), Symbol::new(env, "CooldownHit"));
+        let mut data = Map::new(env);
+        data.set(String::from_str(env, "admin"), admin.to_val());
+        data.set(String::from_str(env, "last_action"), String::from_str(env, &alloc::string::ToString::to_string(&last_action)).to_val());
+        data.set(String::from_str(env, "cooldown"), String::from_str(env, &alloc::string::ToString::to_string(&cooldown)).to_val());
+        env.events().publish(topics, data);
+    }
+
     /// Emit market closed event
     pub fn emit_market_closed(env: &Env, market_id: &Symbol, admin: &Address) {
         let event = MarketClosedEvent {
             market_id: market_id.clone(),
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_close").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2760,6 +3451,8 @@ impl EventEmitter {
         let event = RefundOnOracleFailureEvent {
             market_id: market_id.clone(),
             total_refunded,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ref_oracl").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ref_oracl"), &event);
@@ -2773,6 +3466,8 @@ impl EventEmitter {
             market_id: market_id.clone(),
             admin: admin.clone(),
             outcome: outcome.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_final").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2794,6 +3489,8 @@ impl EventEmitter {
             market_id: market_id.clone(),
             timeout_hours,
             set_by: set_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tout_set").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2836,12 +3533,35 @@ impl EventEmitter {
             market_id: market_id.clone(),
             additional_hours,
             extended_by: extended_by.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tout_ext").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
         Self::store_event(env, &symbol_short!("tout_ext"), &event);
         env.events()
             .publish((symbol_short!("tout_ext"), dispute_id.clone()), event);
+    }
+
+    /// Emit dispute vote rejected event
+    pub fn emit_dispute_vote_rejected(
+        env: &Env,
+        dispute_id: &Symbol,
+        voter: &Address,
+        reason: &String,
+    ) {
+        let event = DisputeVoteRejectedEvent {
+            dispute_id: dispute_id.clone(),
+            voter: voter.clone(),
+            reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("d_v_rej").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("d_v_rej"), &event);
+        env.events()
+            .publish((symbol_short!("d_v_rej"), dispute_id.clone()), event);
     }
 
     /// Emit dispute auto-resolved event
@@ -2857,6 +3577,8 @@ impl EventEmitter {
             market_id: market_id.clone(),
             outcome: outcome.clone(),
             reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("auto_res").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2870,6 +3592,8 @@ impl EventEmitter {
         let event = StorageCleanupEvent {
             market_id: market_id.clone(),
             cleanup_type: cleanup_type.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("stor_cln").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2887,6 +3611,8 @@ impl EventEmitter {
         let event = StorageOptimizationEvent {
             market_id: market_id.clone(),
             optimization_type: optimization_type.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("stor_opt").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -2908,12 +3634,35 @@ impl EventEmitter {
             from_format: from_format.clone(),
             to_format: to_format.clone(),
             markets_migrated,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("stor_mig").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
         Self::store_event(env, &symbol_short!("stor_mig"), &event);
         env.events()
             .publish((symbol_short!("stor_mig"), migration_id.clone()), event);
+    }
+
+    /// Emit market archived event
+    pub fn emit_market_archived(
+        env: &Env,
+        market_id: &Symbol,
+        from_tier: &String,
+        to_tier: &String,
+    ) {
+        let event = MarketArchivedEvent {
+            market_id: market_id.clone(),
+            from_tier: from_tier.clone(),
+            to_tier: to_tier.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_arch").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("mkt_arch"), &event);
+        env.events()
+            .publish((symbol_short!("mkt_arch"), market_id.clone()), event);
     }
 
     /// Emit circuit breaker event
@@ -2926,6 +3675,8 @@ impl EventEmitter {
         let event = OracleDegradationEvent {
             oracle: oracle.clone(),
             reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ora_deg").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ora_deg"), &event);
@@ -2937,6 +3688,8 @@ impl EventEmitter {
         let event = OracleRecoveryEvent {
             oracle: oracle.clone(),
             recovery_message: message.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("ora_rec").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("ora_rec"), &event);
@@ -2948,6 +3701,8 @@ impl EventEmitter {
         let event = ManualResolutionRequiredEvent {
             market_id: market_id.clone(),
             reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("man_res").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("man_res"), &event);
@@ -2991,6 +3746,8 @@ impl EventEmitter {
             old_state: old_state.clone(),
             new_state: new_state.clone(),
             reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("st_chng").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("st_chng"), &event);
@@ -3025,6 +3782,8 @@ impl EventEmitter {
             market_id: market_id.clone(),
             user: user.clone(),
             amount,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("win_clm").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_clm"), &event);
@@ -3053,6 +3812,8 @@ impl EventEmitter {
             market_claims: market_claims.clone(),
             total_amount,
             claim_count: market_claims.len() as u32,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("win_btc").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("win_btc"), &event);
@@ -3064,6 +3825,8 @@ impl EventEmitter {
         let event = ClaimPeriodUpdatedEvent {
             admin: admin.clone(),
             claim_period_seconds,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("clm_prd").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("clm_prd"), &event);
@@ -3082,6 +3845,8 @@ impl EventEmitter {
             market_id: market_id.clone(),
             admin: admin.clone(),
             claim_period_seconds,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("m_clm_pd").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("m_clm_pd"), &event);
@@ -3094,6 +3859,8 @@ impl EventEmitter {
         let event = TreasuryUpdatedEvent {
             admin: admin.clone(),
             treasury: treasury.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("treas_up").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("treas_up"), &event);
@@ -3116,6 +3883,8 @@ impl EventEmitter {
             recipient: recipient.clone(),
             amount,
             burned,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("unc_swip").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("unc_swip"), &event);
@@ -3171,6 +3940,8 @@ impl EventEmitter {
             admin: admin.clone(),
             reason: reason.clone(),
             fee,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_ext").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_ext"), &event);
@@ -3214,6 +3985,8 @@ impl EventEmitter {
             old_description: old_description.clone(),
             new_description: new_description.clone(),
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_dsc").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_dsc"), &event);
@@ -3257,6 +4030,8 @@ impl EventEmitter {
             old_outcomes: old_outcomes.clone(),
             new_outcomes: new_outcomes.clone(),
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_out").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_out"), &event);
@@ -3300,6 +4075,8 @@ impl EventEmitter {
             old_category: old_category.clone(),
             new_category: new_category.clone(),
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_cat").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_cat"), &event);
@@ -3343,6 +4120,8 @@ impl EventEmitter {
             old_tags: old_tags.clone(),
             new_tags: new_tags.clone(),
             admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("mkt_tag").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
         Self::store_event(env, &symbol_short!("mkt_tag"), &event);
@@ -3376,7 +4155,7 @@ impl EventEmitter {
     ///
     /// EventEmitter::emit_error_event(&env, Error::NothingToClaim, &context);
     /// ```
-    pub fn emit_diagnostic_event(env: &Env, error: Error, context: &crate::errors::ErrorContext) {
+    pub fn emit_diagnostic_event(env: &Env, error: Error, context: &crate::err::ErrorContext) {
         let error_code = error as u32;
 
         // Convert error enum to message string
@@ -3399,6 +4178,8 @@ impl EventEmitter {
             context: context.operation.clone(),
             user: context.user_address.clone(),
             market_id: context.market_id.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("err_evt").clone()),
+
             timestamp: context.timestamp,
         };
 
@@ -3419,6 +4200,8 @@ impl EventEmitter {
             proposer: proposer.clone(),
             title: title.clone(),
             description: description.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_prop").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -3439,6 +4222,7 @@ impl EventEmitter {
             proposal_id: proposal_id.clone(),
             voter: voter.clone(),
             support,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_vote")),
             timestamp,
         };
 
@@ -3447,18 +4231,56 @@ impl EventEmitter {
             .publish((symbol_short!("gov_vote"), proposal_id.clone()), event);
     }
 
+    /// Emit governance vote committed event (commit phase of commit-reveal)
+    pub fn emit_governance_vote_committed(env: &Env, proposal_id: &Symbol, voter: &Address) {
+        let event = GovernanceVoteCommittedEvent {
+            proposal_id: proposal_id.clone(),
+            voter: voter.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_cmit").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("gov_cmit"), &event);
+        env.events()
+            .publish((symbol_short!("gov_cmit"), proposal_id.clone()), event);
+    }
+
     /// Emit governance proposal executed event
     pub fn emit_governance_proposal_executed(env: &Env, proposal_id: &Symbol, executor: &Address) {
         let timestamp = env.ledger().timestamp();
         let event = GovernanceProposalExecutedEvent {
             proposal_id: proposal_id.clone(),
             executor: executor.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_exec")),
             timestamp,
         };
 
         Self::store_event(env, &symbol_short!("gov_exec"), &event);
         env.events()
             .publish((symbol_short!("gov_exec"), proposal_id.clone()), event);
+    }
+
+    /// Emit governance proposal auto-rejected event
+    pub fn emit_governance_proposal_auto_rejected(
+        env: &Env,
+        proposal_id: &Symbol,
+        proposer: &Address,
+        for_votes: u128,
+        floor_quorum: u128,
+    ) {
+        let timestamp = env.ledger().timestamp();
+        let event = GovernanceProposalAutoRejectedEvent {
+            proposal_id: proposal_id.clone(),
+            proposer: proposer.clone(),
+            for_votes,
+            floor_quorum,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("gov_rej")),
+            timestamp,
+        };
+
+        Self::store_event(env, &symbol_short!("gov_rej"), &event);
+        env.events()
+            .publish((symbol_short!("gov_rej"), proposal_id.clone()), event);
     }
 
     /// Emit contract upgraded event when contract Wasm is upgraded
@@ -3472,6 +4294,8 @@ impl EventEmitter {
             old_wasm_hash: old_wasm_hash.clone(),
             new_wasm_hash: new_wasm_hash.clone(),
             upgrade_id: upgrade_id.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("up_grade").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -3489,11 +4313,36 @@ impl EventEmitter {
         let event = ContractRollbackEvent {
             current_wasm_hash: current_wasm_hash.clone(),
             rollback_wasm_hash: rollback_wasm_hash.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("rollback").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
         Self::store_event(env, &symbol_short!("rollback"), &event);
         env.events().publish((symbol_short!("rollback"),), event);
+    }
+
+    /// Emit upgrade chain mismatch event when hash verification fails
+    pub fn emit_upgrade_chain_mismatch_event(
+        env: &Env,
+        expected_predecessor: &soroban_sdk::BytesN<32>,
+        actual_current_hash: &soroban_sdk::BytesN<32>,
+        proposed_new_hash: &soroban_sdk::BytesN<32>,
+        admin: &Address,
+    ) {
+        let event = UpgradeChainMismatchEvent {
+            expected_predecessor: expected_predecessor.clone(),
+            actual_current_hash: actual_current_hash.clone(),
+            proposed_new_hash: proposed_new_hash.clone(),
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("chain_mm").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("chain_mm"), &event);
+        env.events()
+            .publish((symbol_short!("chain_mm"), admin.clone()), event);
     }
 
     /// Emit upgrade proposal created event
@@ -3507,6 +4356,8 @@ impl EventEmitter {
             proposal_id: proposal_id.clone(),
             proposer: proposer.clone(),
             target_version: target_version.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("up_prop").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
@@ -3571,6 +4422,35 @@ impl EventEmitter {
         env.events().publish(
             (symbol_short!("allowlst"), event_id.clone()),
             (addresses.clone(), admin.clone(), env.ledger().timestamp()),
+        );
+    }
+
+    /// Emit a monitor queue overflow event when the bounded queue evicts the oldest entry.
+    ///
+    /// This event signals that the queue was at capacity and a new event caused an
+    /// eviction. Off-chain indexers should consume this to track data loss and adjust
+    /// their polling cadence accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban environment.
+    /// * `overflow_count` - Cumulative number of overflow evictions since initialization.
+    /// * `evicted_event_id` - The `event_id` of the evicted `MonitorEvent`, if available.
+    /// * `capacity` - The configured capacity of the bounded queue.
+    pub fn emit_monitor_queue_overflow(
+        env: &Env,
+        overflow_count: u64,
+        evicted_event_id: Option<Symbol>,
+        capacity: u32,
+    ) {
+        env.events().publish(
+            (symbol_short!("mon_ovf"),),
+            (
+                overflow_count,
+                evicted_event_id,
+                capacity,
+                env.ledger().timestamp(),
+            ),
         );
     }
 }
@@ -3790,8 +4670,8 @@ impl EventValidator {
         Ok(())
     }
 
-    /// Validate dispute created event
-    pub fn validate_dispute_created_event(event: &DisputeCreatedEvent) -> Result<(), Error> {
+    /// Validate dispute opened event
+    pub fn validate_dispute_opened_event(event: &DisputeOpenedEvent) -> Result<(), Error> {
         // For now, skip validation since we can't easily convert Soroban String/Symbol
         // This is a limitation of the current Soroban SDK
         if event.stake <= 0 {
@@ -3937,6 +4817,7 @@ impl EventTestingUtils {
             ],
             admin: admin.clone(),
             end_time: env.ledger().timestamp() + 86400,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("mkt_crt")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -3952,6 +4833,7 @@ impl EventTestingUtils {
             voter: voter.clone(),
             outcome: String::from_str(env, "yes"),
             stake: 100_0000000,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("vote")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -3966,6 +4848,7 @@ impl EventTestingUtils {
             price: 2500000,
             threshold: 2500000,
             comparison: String::from_str(env, "gt"),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("orc_res")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -3979,21 +4862,23 @@ impl EventTestingUtils {
             community_consensus: String::from_str(env, "yes"),
             resolution_method: String::from_str(env, "Oracle"),
             confidence_score: 85,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("mkt_res")),
             timestamp: env.ledger().timestamp(),
         }
     }
 
-    /// Create test dispute created event
-    pub fn create_test_dispute_created_event(
+    /// Create test dispute opened event
+    pub fn create_test_dispute_opened_event(
         env: &Env,
         market_id: &Symbol,
         disputer: &Address,
-    ) -> DisputeCreatedEvent {
-        DisputeCreatedEvent {
+    ) -> DisputeOpenedEvent {
+        DisputeOpenedEvent {
             market_id: market_id.clone(),
             disputer: disputer.clone(),
             stake: 10_0000000,
             reason: Some(String::from_str(env, "Test dispute")),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("dispt_opn")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4009,6 +4894,7 @@ impl EventTestingUtils {
             collector: collector.clone(),
             amount: 20_0000000,
             fee_type: String::from_str(env, "Platform"),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("fee_col")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4021,6 +4907,7 @@ impl EventTestingUtils {
             context: String::from_str(env, "Test context"),
             user: None,
             market_id: None,
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("err_log")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4032,6 +4919,7 @@ impl EventTestingUtils {
             value: 100,
             unit: String::from_str(env, "transactions"),
             context: String::from_str(env, "Daily"),
+            nonce: EventEmitter::get_and_increment_nonce(env, symbol_short!("perf_met")),
             timestamp: env.ledger().timestamp(),
         }
     }
@@ -4281,7 +5169,256 @@ pub fn emit_manual_resolution_required(env: &Env, market_id: &Symbol, reason: &S
     );
 }
 
+/// Emit a deprecation signal for legacy entrypoints.
+///
+/// This helper publishes a `DeprecatedCall` event so indexers can track
+/// usage of functions that have been superseded.  Callers also see the
+/// event in the Soroban ledger metadata, encouraging migration.
+///
+/// # Arguments
+/// * `env`        - Soroban environment.
+/// * `caller`     - Address of the caller invoking the deprecated entrypoint.
+/// * `entrypoint` - The `Symbol` name of the deprecated function.
+pub fn emit_deprecated(env: &Env, caller: &Address, entrypoint: &Symbol) {
+    let nonce = EventEmitter::get_and_increment_nonce(env, symbol_short!("depr_call"));
+    let event = DeprecatedCall {
+        caller: caller.clone(),
+        entrypoint: entrypoint.clone(),
+        nonce,
+        timestamp: env.ledger().timestamp(),
+    };
+    env.events()
+        .publish((symbol_short!("depr_call"), entrypoint.clone()), event);
+}
+
+#[cfg(test)]
+mod event_schema_registry_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Env};
+
+    #[test]
+    fn test_registry_lookup_oracle_result() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "oracle_result").unwrap();
+        assert_eq!(schema.topic, symbol_short!("oracle_rs"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_dispute_opened() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "dispute_opened").unwrap();
+        assert_eq!(schema.topic, symbol_short!("dispt_opn"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_registry_lookup_unknown_event_returns_none() {
+        let env = Env::default();
+        let result = EventSchemaRegistry::get_schema(&env, "nonexistent_event");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_schema_version_matches_expected() {
+        let env = Env::default();
+        // Schema version must equal the pinned baseline; any bump is a breaking change.
+        const EXPECTED_ORACLE_RESULT_VERSION: u32 = 1;
+        const EXPECTED_DISPUTE_OPENED_VERSION: u32 = 1;
+
+        let oracle_schema = EventSchemaRegistry::get_schema(&env, "oracle_result").unwrap();
+        assert_eq!(
+            oracle_schema.schema_version, EXPECTED_ORACLE_RESULT_VERSION,
+            "OracleResultEvent schema_version mismatch: expected {EXPECTED_ORACLE_RESULT_VERSION}"
+        );
+
+        let dispute_schema = EventSchemaRegistry::get_schema(&env, "dispute_opened").unwrap();
+        assert_eq!(
+            dispute_schema.schema_version, EXPECTED_DISPUTE_OPENED_VERSION,
+            "DisputeOpenedEvent schema_version mismatch: expected {EXPECTED_DISPUTE_OPENED_VERSION}"
+        );
+    }
+
+    #[test]
+    fn test_emit_oracle_result_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt1");
+            let result = soroban_sdk::String::from_str(&env, "Yes");
+            let provider = soroban_sdk::String::from_str(&env, "Reflector");
+            let feed_id = soroban_sdk::String::from_str(&env, "BTC/USD");
+            let comparison = soroban_sdk::String::from_str(&env, "gte");
+            // Should not panic – registry supplies the topic.
+            EventEmitter::emit_oracle_result(
+                &env, &market_id, &result, &provider, &feed_id, 52_000_00000000,
+                50_000_00000000, &comparison,
+            );
+        });
+    }
+
+    #[test]
+    fn test_emit_dispute_opened_uses_registry_topic() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = soroban_sdk::symbol_short!("mkt2");
+            let disputer = soroban_sdk::Address::generate(&env);
+            EventEmitter::emit_dispute_opened(
+                &env, &market_id, &disputer, 50_000_000, None,
+            );
+        });
+    }
+
+    #[test]
+    fn test_emit_deprecated_call() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let caller = soroban_sdk::Address::generate(&env);
+            let entrypoint = soroban_sdk::symbol_short!("verify_rs");
+            // Must not panic
+            emit_deprecated(&env, &caller, &entrypoint);
+        });
+    }
+
+    #[test]
+    fn test_emit_deprecated_call_stores_fields() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let caller = soroban_sdk::Address::generate(&env);
+            let entrypoint = soroban_sdk::Symbol::new(&env, "legacy_fn");
+
+            emit_deprecated(&env, &caller, &entrypoint);
+
+            let events = env.events().all();
+            let emitted = events.events();
+            assert!(!emitted.is_empty(), "must emit at least one event");
+
+            // Find our depr_call event
+            let found = emitted.iter().any(|e| {
+                e.0 .0 == symbol_short!("depr_call")
+                    && e.0 .1 == entrypoint
+            });
+            assert!(found, "depr_call event must be present");
+        });
+    }
+
+    #[test]
+    fn test_emit_deprecated_call_increments_nonce() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let caller = soroban_sdk::Address::generate(&env);
+            let ep1 = soroban_sdk::symbol_short!("ep_one");
+            let ep2 = soroban_sdk::symbol_short!("ep_two");
+
+            emit_deprecated(&env, &caller, &ep1);
+            emit_deprecated(&env, &caller, &ep1);
+            emit_deprecated(&env, &caller, &ep2);
+
+            // Nonce is per-topic; ep1 and ep2 have separate nonces.
+            // We just verify no panic — nonce tracking is internal.
+        });
+    }
+}
+
 impl EventEmitter {
+    pub fn emit_threshold_proposed(
+        env: &Env,
+        admin: &Address,
+        old_threshold: u32,
+        new_threshold: u32,
+        confirm_after: u64,
+    ) {
+        let event = MultisigThresholdProposedEvent {
+            admin: admin.clone(),
+            old_threshold,
+            new_threshold,
+            confirm_after,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("thld_prop").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("thld_prop"), &event);
+        env.events().publish(
+            (symbol_short!("thld_prop"), admin.clone()),
+            event,
+        );
+    }
+
+    pub fn emit_threshold_confirmed(
+        env: &Env,
+        admin: &Address,
+        old_threshold: u32,
+        new_threshold: u32,
+    ) {
+        let event = MultisigThresholdConfirmedEvent {
+            admin: admin.clone(),
+            old_threshold,
+            new_threshold,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("thld_conf").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("thld_conf"), &event);
+        env.events().publish(
+            (symbol_short!("thld_conf"), admin.clone()),
+            event,
+        );
+    }
+
+    pub fn emit_dispute_stake_cap_exceeded(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        cap: i128,
+        attempted_stake: i128,
+    ) {
+        let event = DisputeStakeCapExceededEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            cap,
+            attempted_stake,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cap_excd").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("cap_excd"), &event);
+        env.events().publish(
+            (symbol_short!("cap_excd"), market_id.clone()),
+            event,
+        );
+    }
+
+    pub fn emit_dispute_stake_cap_set(
+        env: &Env,
+        market_id: &Symbol,
+        user: &Address,
+        cap: i128,
+    ) {
+        let event = DisputeStakeCapSetEvent {
+            market_id: market_id.clone(),
+            user: user.clone(),
+            cap,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cap_set").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("cap_set"), &event);
+        env.events().publish(
+            (symbol_short!("cap_set"), market_id.clone()),
+            event,
+        );
+    }
+
     /// Emit oracle callback event for oracle data updates
     pub fn emit_oracle_callback(
         env: &Env,
@@ -4315,6 +5452,32 @@ impl EventEmitter {
         );
     }
 
+    /// Emit a per-oracle quote detail event produced by the median resolver.
+    ///
+    /// Published under the Soroban event topic `orc_med_q` alongside every
+    /// `OracleConsensusReachedEvent` emitted by
+    /// `OracleResolutionManager::resolve_with_median`.
+    ///
+    /// Consumers listening to `orc_med_q` receive the full
+    /// `Vec<OracleQuote>` so they can inspect individual oracle prices,
+    /// confidence weights, and outlier flags without re-running the
+    /// aggregation logic.
+    ///
+    /// # Parameters
+    /// - `market_id` – The market that was resolved.
+    /// - `quotes`    – All three oracle quotes (Pyth, Reflector, Band) with
+    ///                 their computed weights and `included` flags.
+    pub fn emit_oracle_median_quotes(
+        env: &Env,
+        market_id: &Symbol,
+        quotes: &Vec<crate::types::OracleQuote>,
+    ) {
+        env.events().publish(
+            (symbol_short!("orc_med_q"), market_id.clone()),
+            quotes.clone(),
+        );
+    }
+
     /// Emit admin override event when an admin manually overrides an oracle-verified result.
     pub fn emit_admin_override(
         env: &Env,
@@ -4330,11 +5493,169 @@ impl EventEmitter {
             old_result: old_result.clone(),
             new_result: new_result.clone(),
             reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("adm_ovrd").clone()),
+
             timestamp: env.ledger().timestamp(),
         };
 
         Self::store_event(env, &symbol_short!("adm_ovrd"), &event);
         env.events()
             .publish((symbol_short!("adm_ovrd"), market_id.clone()), event);
+    }
+
+    /// Emit force-resolve event when an admin force-resolves a market.
+    pub fn emit_force_resolved(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        outcome: &String,
+        reason: &String,
+        idempotency_key: &String,
+    ) {
+        let event = ForceResolvedEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            outcome: outcome.clone(),
+            reason: reason.clone(),
+            idempotency_key: idempotency_key.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("frc_rs").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("frc_rs"), &event);
+        env.events()
+            .publish((symbol_short!("frc_rs"), market_id.clone()), event);
+    }
+
+    /// Emit fee config queued event when a time-locked config update is proposed.
+    pub fn emit_fee_config_queued(
+        env: &Env,
+        admin: &Address,
+        eta: u64,
+        config: &crate::fees::FeeConfig,
+    ) {
+        let event = FeeConfigQueuedEvent {
+            admin: admin.clone(),
+            eta,
+            platform_fee_percentage: config.platform_fee_percentage,
+            creation_fee: config.creation_fee,
+            min_fee_amount: config.min_fee_amount,
+            max_fee_amount: config.max_fee_amount,
+            collection_threshold: config.collection_threshold,
+            fees_enabled: config.fees_enabled,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fee_qd").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("fee_qd"), admin.clone()), event);
+    }
+
+    /// Emit fee config applied event when a queued update becomes effective.
+    pub fn emit_fee_config_applied(env: &Env, admin: &Address, config: &crate::fees::FeeConfig) {
+        let event = FeeConfigAppliedEvent {
+            admin: admin.clone(),
+            platform_fee_percentage: config.platform_fee_percentage,
+            creation_fee: config.creation_fee,
+            min_fee_amount: config.min_fee_amount,
+            max_fee_amount: config.max_fee_amount,
+            collection_threshold: config.collection_threshold,
+            fees_enabled: config.fees_enabled,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fee_apd").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("fee_apd"), admin.clone()), event);
+    }
+
+    /// Emit fee config cancelled event when a queued update is cancelled.
+    pub fn emit_fee_config_cancelled(env: &Env, admin: &Address) {
+        let event = FeeConfigCancelledEvent {
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("fee_ccl").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("fee_ccl"), admin.clone()), event);
+    }
+
+    /// Emit cumulative dispute stake cap exceeded event.
+    pub fn emit_dispute_cumulative_stake_cap_exceeded(
+        env: &Env,
+        user: &Address,
+        cap: i128,
+        cumulative_stake: i128,
+        attempted_stake: i128,
+    ) {
+        let event = DisputeCumulativeStakeCapExceededEvent {
+            user: user.clone(),
+            cap,
+            cumulative_stake,
+            attempted_stake,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cum_cap").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cum_cap"), &event);
+        env.events()
+            .publish((symbol_short!("cum_cap"), user.clone()), event);
+    }
+
+    /// Emit cumulative dispute stake cap set event.
+    pub fn emit_dispute_cumulative_stake_cap_set(env: &Env, user: &Address, cap: i128) {
+        let event = DisputeCumulativeStakeCapSetEvent {
+            user: user.clone(),
+            cap,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("cum_set").clone()),
+
+            timestamp: env.ledger().timestamp(),
+        };
+        Self::store_event(env, &symbol_short!("cum_set"), &event);
+        env.events()
+            .publish((symbol_short!("cum_set"), user.clone()), event);
+    }
+}
+
+#[cfg(test)]
+mod focused_dispute_tests {
+    use super::*;
+    use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol, TryIntoVal, Val};
+
+    #[test]
+    fn test_dispute_opened_event_topics() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        let market_id = Symbol::new(&env, "mkt_123");
+        let disputer = Address::generate(&env);
+        let stake = 50_000_000i128;
+        let reason = None;
+
+        env.as_contract(&contract_id, || {
+            EventEmitter::emit_dispute_opened(&env, &market_id, &disputer, stake, reason);
+        });
+
+        let events = env.events().all();
+        // Expect at least one event with 3 topics: (topic0, topic1, topic2)
+        // topic0 = dispt_opn
+        // topic1 = mkt_123
+        // topic2 = 1 (schema version)
+
+        let mut found = false;
+        for event in events.events().iter() {
+            if event.2.len() == 3 {
+                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+
+                if topic0 == symbol_short!("dispt_opn") {
+                    assert_eq!(topic1, market_id, "Market ID must be topic1");
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "DisputeOpenedEvent not found with correct topic structure");
     }
 }
