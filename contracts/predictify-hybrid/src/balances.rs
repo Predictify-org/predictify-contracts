@@ -109,18 +109,18 @@ impl BalanceManager {
     /// Withdraw funds from the user's balance.
     ///
     /// This function transfers tokens from the contract back to the user's wallet.
-    /// It follows a strict "Check-Transfer-then-Debit" pattern so a failed transfer never leaves
-    /// a phantom debit in storage:
+    /// It follows a strict "Check-Debit-then-Transfer" pattern. Soroban rolls back the whole
+    /// transaction if the transfer fails, so a failed transfer cannot leave a phantom debit:
     /// 1. Checks: Validate authorization, circuit breaker, and sufficient balance.
     /// 2. Compute: Derive the post-withdraw balance without mutating storage.
-    /// 3. Interactions: Execute token transfer (from contract to user).
-    /// 4. Effects: Persist the debited balance only after the transfer succeeds.
+    /// 3. Effects: Persist the debited balance before interacting with the token contract.
+    /// 4. Interactions: Execute token transfer (from contract to user).
     ///
     /// # Invariants
     /// - `amount` must be strictly positive.
     /// - Withdrawal is only permitted if the user has sufficient available balance.
     /// - Circuit breaker must allow withdrawals.
-    /// - Balance storage is only mutated after the outbound transfer succeeds.
+    /// - Balance storage is updated before the outbound transfer; a failed transfer rolls back the update.
     ///
     /// # Parameters
     /// * `env` - The Soroban environment.
@@ -163,12 +163,12 @@ impl BalanceManager {
         // Compute the resulting balance before interacting with the token contract.
         let balance = BalanceStorage::checked_sub_balance(env, &user, &asset, amount)?;
 
-        // Transfer funds from contract to user (Interactions)
-        // If this panics, Soroban rolls back the call and the balance write below is skipped.
-        token_client.transfer(&env.current_contract_address(), &user, &amount);
-
-        // Persist the debit only after the token transfer succeeds.
+        // Persist the debit before the external transfer to conserve the payout remainder.
         BalanceStorage::set_balance(env, &balance)?;
+
+        // Transfer funds from contract to user (Interactions)
+        // If this panics, Soroban rolls back the call and the balance write above is skipped.
+        token_client.transfer(&env.current_contract_address(), &user, &amount);
 
         // Emit event
         EventEmitter::emit_balance_changed(
@@ -286,6 +286,24 @@ mod tests {
         assert_eq!(client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount, 0);
         assert_eq!(token_client.balance(&setup.user), 1_000_0000000);
         assert_eq!(token_client.balance(&setup.contract_id), 0);
+    }
+
+    #[test]
+    fn test_withdraw_allocates_remainder_and_conserves_balances() {
+        let setup = BalanceTestSetup::new();
+        let client = setup.client();
+        let token_client = setup.token_client();
+
+        client.deposit(&setup.user, &ReflectorAsset::Stellar, &500_0000000);
+        let balance = client.withdraw(&setup.user, &ReflectorAsset::Stellar, &200_0000000);
+
+        assert_eq!(balance.amount, 300_0000000);
+        assert_eq!(
+            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            300_0000000
+        );
+        assert_eq!(token_client.balance(&setup.user), 700_0000000);
+        assert_eq!(token_client.balance(&setup.contract_id), 300_0000000);
     }
 
     #[test]
