@@ -1668,6 +1668,36 @@ pub struct MarketArchivedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a market's storage tier is changed.
+///
+/// This is the authoritative audit record for storage-tier transitions
+/// (e.g. active -> archived, archived -> cold). Emit this event after the
+/// underlying storage mutation has been committed so indexers and monitoring
+/// tools can reconstruct the full storage lifecycle deterministically.
+///
+/// # Invariants
+/// - Callers must emit this event only after the storage mutation has been
+///   committed, so indexers never observe a tier change that did not happen.
+/// - No-op transitions must not emit this event; from_tier must differ from
+///   to_tier.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChangedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Source storage tier
+    pub from_tier: String,
+    /// Target storage tier
+    pub to_tier: String,
+    /// Address that authorized the tier change
+    pub changed_by: Address,
+    /// Reason for the tier change
+    pub reason: String,
+    /// Tier change timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
 /// Oracle degradation event - emitted when oracle service fails or becomes unavailable
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -2210,6 +2240,7 @@ impl EventSchemaRegistry {
     /// |-------------------|---------------|----------------|
     /// | `"oracle_result"` | `oracle_rs`   | 1              |
     /// | `"dispute_opened"` | `dispt_opn` | 1              |
+    /// | `"storage_tier_changed"` | `st_tier` | 1          |
     pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
         match name {
             "oracle_result" => Some(EventSchemaEntry {
@@ -2218,6 +2249,10 @@ impl EventSchemaRegistry {
             }),
             "dispute_opened" => Some(EventSchemaEntry {
                 topic: symbol_short!("dispt_opn"),
+                schema_version: 1,
+            }),
+            "storage_tier_changed" => Some(EventSchemaEntry {
+                topic: symbol_short!("st_tier"),
                 schema_version: 1,
             }),
             _ => None,
@@ -5617,6 +5652,40 @@ impl EventEmitter {
         env.events()
             .publish((symbol_short!("cum_set"), user.clone()), event);
     }
+
+    /// Emit storage tier changed event.
+    ///
+    /// This event is the authoritative audit record for storage-tier
+    /// transitions. It is published after the underlying storage mutation has
+    /// been committed and uses the registry schema so consumers can rely on a
+    /// stable topic and schema version.
+    pub fn emit_storage_tier_changed(
+        env: &Env,
+        market_id: &Symbol,
+        from_tier: &String,
+        to_tier: &String,
+        changed_by: &Address,
+        reason: &String,
+    ) {
+        let schema = EventSchemaRegistry::get_schema(env, "storage_tier_changed")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("st_tier"),
+                schema_version: 1,
+            });
+        let event = StorageTierChangedEvent {
+            market_id: market_id.clone(),
+            from_tier: from_tier.clone(),
+            to_tier: to_tier.clone(),
+            changed_by: changed_by.clone(),
+            reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &schema.topic, &event);
+        env.events()
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+    }
 }
 
 #[cfg(test)]
@@ -5657,5 +5726,58 @@ mod focused_dispute_tests {
             }
         }
         assert!(found, "DisputeOpenedEvent not found with correct topic structure");
+    }
+}
+
+#[cfg(test)]
+mod storage_tier_change_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::Address as _, Address, Env, IntoVal, Symbol, TryIntoVal,
+    };
+
+    #[test]
+    fn test_registry_lookup_storage_tier_changed() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "storage_tier_changed").unwrap();
+        assert_eq!(schema.topic, symbol_short!("st_tier"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_emit_storage_tier_changed_publishes_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = symbol_short!("mkt_tier");
+            let from_tier = soroban_sdk::String::from_str(&env, "active");
+            let to_tier = soroban_sdk::String::from_str(&env, "archived");
+            let changed_by = Address::generate(&env);
+            let reason = soroban_sdk::String::from_str(&env, "retention policy");
+
+            EventEmitter::emit_storage_tier_changed(
+                &env,
+                &market_id,
+                &from_tier,
+                &to_tier,
+                &changed_by,
+                &reason,
+            );
+
+            let events = env.events().all();
+            let mut found = false;
+            for event in events.events().iter() {
+                if event.2.len() == 3 {
+                    let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
+                    let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+                    if topic0 == symbol_short!("st_tier") {
+                        assert_eq!(topic1, market_id);
+                        found = true;
+                    }
+                }
+            }
+            assert!(found, "StorageTierChangedEvent not emitted");
+        });
     }
 }
