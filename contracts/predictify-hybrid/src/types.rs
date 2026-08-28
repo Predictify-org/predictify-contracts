@@ -6,6 +6,138 @@ use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
 
+// ===== STORAGE TIER AUDIT TRAIL =====
+
+/// Explicit storage tier used for persistent market/event data.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StorageTier {
+    /// Lives with the contract instance.
+    Instance,
+    /// Long-lived data with an explicit TTL.
+    Persistent,
+    /// Short-lived data with a deterministic expiry.
+    Temporary,
+}
+
+/// One auditable storage-tier transition.
+///
+/// Invariant: callers must persist this record in the same ledger as the tier
+/// transition it describes. The commitment detects partial writes or in-place
+/// mutation after the fact.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChange {
+    /// Storage key whose tier changed.
+    pub key: String,
+    /// Tier before the change.
+    pub from_tier: StorageTier,
+    /// Tier after the change.
+    pub to_tier: StorageTier,
+    /// Address that authorized the change.
+    pub operator: Address,
+    /// Ledger timestamp when the change was recorded.
+    pub timestamp: u64,
+    /// Ledger sequence when the change was recorded.
+    pub ledger_seq: u32,
+    /// Retention/TTL in seconds for the new tier.
+    pub ttl_seconds: u64,
+    /// SHA-256 commitment over the canonical XDR payload.
+    pub commitment: BytesN<32>,
+}
+
+/// Canonical payload for `StorageTierChange::commitment`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChangeCommitmentPayload {
+    pub key: String,
+    pub from_tier: StorageTier,
+    pub to_tier: StorageTier,
+    pub operator: Address,
+    pub timestamp: u64,
+    pub ledger_seq: u32,
+    pub ttl_seconds: u64,
+}
+
+impl StorageTierChange {
+    /// Creates a storage-tier-change audit record with an integrity commitment.
+    pub fn new(
+        env: &Env,
+        key: String,
+        from_tier: StorageTier,
+        to_tier: StorageTier,
+        operator: Address,
+        ttl_seconds: u64,
+    ) -> Self {
+        let timestamp = env.ledger().timestamp();
+        let ledger_seq = env.ledger().sequence();
+        let payload = StorageTierChangeCommitmentPayload {
+            key: key.clone(),
+            from_tier,
+            to_tier,
+            operator: operator.clone(),
+            timestamp,
+            ledger_seq,
+            ttl_seconds,
+        };
+        let commitment = env.crypto().sha256(&payload.to_xdr(env)).into();
+        Self {
+            key,
+            from_tier,
+            to_tier,
+            operator,
+            timestamp,
+            ledger_seq,
+            ttl_seconds,
+            commitment,
+        }
+    }
+
+    /// Verifies that the commitment matches the current fields.
+    pub fn verify(&self, env: &Env) -> bool {
+        let payload = StorageTierChangeCommitmentPayload {
+            key: self.key.clone(),
+            from_tier: self.from_tier,
+            to_tier: self.to_tier,
+            operator: self.operator.clone(),
+            timestamp: self.timestamp,
+            ledger_seq: self.ledger_seq,
+            ttl_seconds: self.ttl_seconds,
+        };
+        let expected = env.crypto().sha256(&payload.to_xdr(env)).into();
+        expected.eq(&self.commitment)
+    }
+}
+
+#[cfg(test)]
+mod storage_tier_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn storage_tier_change_records_and_verifies_commitment() {
+        let env = Env::default();
+        let operator = Address::generate(&env);
+        let key = String::from_str(&env, "market:1");
+        let change = StorageTierChange::new(
+            &env,
+            key.clone(),
+            StorageTier::Instance,
+            StorageTier::Persistent,
+            operator,
+            31 * 24 * 60 * 60,
+        );
+        assert_eq!(change.from_tier, StorageTier::Instance);
+        assert_eq!(change.to_tier, StorageTier::Persistent);
+        assert_eq!(change.ttl_seconds, 31 * 24 * 60 * 60);
+        assert!(change.verify(&env));
+
+        let mut forged = change.clone();
+        forged.ttl_seconds += 1;
+        assert!(!forged.verify(&env));
+    }
+}
+
 // ===== MARKET STATE =====
 
 /// Enumeration of possible market states throughout the prediction market lifecycle.
