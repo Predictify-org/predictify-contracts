@@ -2294,6 +2294,37 @@ pub struct FeeConfigCancelledEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when a treasury update is queued with a governance time-lock.
+/// The treasury is not changed until `now >= eta`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryUpdateQueuedEvent {
+    pub admin: Address,
+    pub new_treasury: Address,
+    pub eta: u64,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued treasury update is successfully applied.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryUpdateAppliedEvent {
+    pub admin: Address,
+    pub treasury: Address,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued treasury update is cancelled by admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryUpdateCancelledEvent {
+    pub admin: Address,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
 /// Event emitted when a deprecated entrypoint is called.
 ///
 /// This event allows indexers and monitoring tools to track usage of legacy
@@ -5580,6 +5611,47 @@ impl EventEmitter {
         };
         env.events()
             .publish((symbol_short!("fee_ccl"), admin.clone()), event);
+    }
+
+    /// Emit treasury update queued event when a time-locked treasury change is proposed.
+    pub fn emit_treasury_update_queued(
+        env: &Env,
+        admin: &Address,
+        new_treasury: &Address,
+        eta: u64,
+    ) {
+        let event = TreasuryUpdateQueuedEvent {
+            admin: admin.clone(),
+            new_treasury: new_treasury.clone(),
+            eta,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tsu_qd").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("tsu_qd"), admin.clone()), event);
+    }
+
+    /// Emit treasury update applied event when a queued treasury change takes effect.
+    pub fn emit_treasury_update_applied(env: &Env, admin: &Address, treasury: &Address) {
+        let event = TreasuryUpdateAppliedEvent {
+            admin: admin.clone(),
+            treasury: treasury.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tsu_apd").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("tsu_apd"), admin.clone()), event);
+    }
+
+    /// Emit treasury update cancelled event when a queued treasury change is cancelled.
+    pub fn emit_treasury_update_cancelled(env: &Env, admin: &Address) {
+        let event = TreasuryUpdateCancelledEvent {
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tsu_ccl").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("tsu_ccl"), admin.clone()), event);
     }
 
     /// Emit cumulative dispute stake cap exceeded event.
