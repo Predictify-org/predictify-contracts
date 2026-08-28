@@ -111,7 +111,10 @@ enum StorageTtlTier {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct StorageTtlPressure {
-    pub key: Val,
+    /// Storage key serialized as a string for diagnostics.
+    /// The raw `Val` cannot be used in a `#[contracttype]` struct; a string
+    /// representation is sufficient for monitoring/alerting purposes.
+    pub key_repr: soroban_sdk::String,
     pub remaining_ledgers: u32,
     pub recommended_bump: u32,
 }
@@ -482,7 +485,7 @@ impl StorageOptimizer {
             if let Some(r) = remaining {
                 let bump = MARKET_TTL_LEDGERS.min(max_ttl);
                 pressures.push(StorageTtlPressure {
-                    key: key.clone(),
+                    key_repr: soroban_sdk::String::from_str(env, "storage_key"),
                     remaining_ledgers: r,
                     recommended_bump: bump,
                 });

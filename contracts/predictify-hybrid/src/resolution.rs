@@ -978,38 +978,51 @@ impl OracleResolutionManager {
         let threshold = market.oracle_config.threshold;
         let comparison = market.oracle_config.comparison.clone();
 
-        // ── 3. Fetch from all three oracles sequentially ────────────────────
+        // ── 3. Fetch from all three oracles sequentially (fail-closed) ────────
+        //
+        // Invariant: if any oracle that responds with price data returns data
+        // that is stale (age > max_staleness_secs), we abort the entire
+        // resolution with OracleStale rather than silently excluding the
+        // stale quote. This prevents resolution from proceeding on fewer
+        // sources than intended when staleness is the cause of exclusion.
+        //
+        // Oracles that are offline/unavailable (non-stale failures) are still
+        // excluded gracefully so that the min_sources check can determine
+        // whether enough fresh sources exist.
         let mut raw_quotes: Vec<OracleQuote> = Vec::new(env);
 
-        // Pyth (currently OracleUnavailable on Stellar; quote will be excluded).
+        // Pyth (currently OracleUnavailable on Stellar; will be excluded gracefully).
         {
             let oracle = crate::oracles::PythOracle::new(med_cfg.pyth_address.clone());
-            raw_quotes.push_back(Self::fetch_quote(
+            raw_quotes.push_back(Self::fetch_quote_fail_closed(
                 env,
+                market_id,
                 &oracle,
                 OracleProvider::pyth(),
                 &feed_id,
-            ));
+            )?);
         }
         // Reflector – primary Stellar oracle.
         {
             let oracle = crate::oracles::ReflectorOracle::new(med_cfg.reflector_address.clone());
-            raw_quotes.push_back(Self::fetch_quote(
+            raw_quotes.push_back(Self::fetch_quote_fail_closed(
                 env,
+                market_id,
                 &oracle,
                 OracleProvider::reflector(),
                 &feed_id,
-            ));
+            )?);
         }
         // Band Protocol.
         {
             let oracle = crate::oracles::BandProtocolOracle::new(med_cfg.band_address.clone());
-            raw_quotes.push_back(Self::fetch_quote(
+            raw_quotes.push_back(Self::fetch_quote_fail_closed(
                 env,
+                market_id,
                 &oracle,
                 OracleProvider::band_protocol(),
                 &feed_id,
-            ));
+            )?);
         }
 
         // ── 4. Unweighted baseline median for outlier detection ─────────────
@@ -1130,6 +1143,108 @@ impl OracleResolutionManager {
                 weight_bps: 0,
                 included: false,
             },
+        }
+    }
+
+    /// Fetch a single oracle quote with explicit fail-closed staleness enforcement.
+    ///
+    /// Unlike [`Self::fetch_quote`] which absorbs all errors silently,
+    /// this variant propagates [`Error::OracleStale`] as a hard failure so
+    /// that stale data causes the entire resolution to abort rather than
+    /// being silently excluded and potentially allowing resolution to proceed
+    /// on an insufficient number of fresh sources.
+    ///
+    /// # Fail-closed invariant
+    ///
+    /// When a provider returns data whose `publish_time` is older than
+    /// `max_staleness_secs`, `Error::OracleStale` is returned directly.
+    /// The caller **must not** proceed with resolution in this case.
+    ///
+    /// Other errors (oracle offline, feed not found, etc.) still produce a
+    /// quote with `included = false` so that the minimum-sources check
+    /// (`OracleNoConsensus`) can decide whether resolution can proceed with
+    /// the remaining sources.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment used for timestamp access.
+    /// * `oracle` - Oracle instance to query.
+    /// * `provider` - Provider label for the returned quote.
+    /// * `feed_id` - Feed identifier to query.
+    /// * `max_staleness_secs` - Maximum allowed age of price data in seconds.
+    ///   When `None`, the configured global/per-market staleness threshold is
+    ///   used via [`OracleValidationConfigManager::get_effective_config`].
+    fn fetch_quote_fail_closed<O: crate::oracles::OracleInterface>(
+        env: &Env,
+        market_id: &Symbol,
+        oracle: &O,
+        provider: OracleProvider,
+        feed_id: &String,
+    ) -> Result<OracleQuote, Error> {
+        match oracle.get_price_data(env, feed_id) {
+            Ok(data) => {
+                // Fail-closed: stale data must abort resolution entirely.
+                // Do NOT silently exclude — propagate the error upward so
+                // the caller can surface a diagnosable error to the market.
+                let now = env.ledger().timestamp();
+                let observed_age = now.saturating_sub(data.publish_time);
+                let cfg = crate::oracles::OracleValidationConfigManager::get_effective_config(
+                    env, market_id,
+                );
+                if observed_age > cfg.max_staleness_secs {
+                    // Emit a validation-failed event so operators can detect
+                    // which oracle was stale without reading contract state.
+                    crate::events::EventEmitter::emit_oracle_validation_failed(
+                        env,
+                        market_id,
+                        &provider.name(),
+                        feed_id,
+                        &soroban_sdk::String::from_str(env, "stale_data"),
+                        observed_age,
+                        cfg.max_staleness_secs,
+                        None,
+                        cfg.max_confidence_bps,
+                    );
+                    if let Some(dur) = cfg.auto_pause_duration_secs {
+                        let _ =
+                            crate::markets::MarketPauseManager::auto_pause_market(env, market_id, dur);
+                    }
+                    return Err(Error::OracleStale);
+                }
+
+                if data.price <= 0 {
+                    return Ok(OracleQuote {
+                        provider,
+                        price: 0,
+                        confidence_bps: 0,
+                        weight_bps: 0,
+                        included: false,
+                    });
+                }
+
+                let (confidence_bps, weight_bps) =
+                    Self::confidence_to_weight(data.price, data.confidence);
+                Ok(OracleQuote {
+                    provider,
+                    price: data.price,
+                    confidence_bps,
+                    weight_bps,
+                    included: true,
+                })
+            }
+            // Oracle unavailable / network error: non-stale absence, treat as
+            // excluded so other sources can still contribute.
+            Err(Error::OracleStale) => {
+                // Explicit re-propagation: if get_price_data itself returned
+                // OracleStale (e.g. inner validation), honour fail-closed.
+                Err(Error::OracleStale)
+            }
+            Err(_) => Ok(OracleQuote {
+                provider,
+                price: 0,
+                confidence_bps: 0,
+                weight_bps: 0,
+                included: false,
+            }),
         }
     }
 
