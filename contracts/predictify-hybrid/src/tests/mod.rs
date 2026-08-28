@@ -30,3 +30,23 @@ pub mod reflector_twap_cache_tests;
 pub mod dispute_anti_grief_tests;
 pub mod dispute_open_fuzz;
 pub mod oracle_differential_fuzz;
+pub mod resolve_market_fuzz;
+
+#[cfg(test)]
+pub mod dispute_proptest;
+
+#[cfg(test)]
+pub mod disputes_gas_snap;
+
+/// Focused tests for `Error::MarketClosed` (code 102).
+///
+/// Covers every code path that should return or panic with `MarketClosed`,
+/// boundary conditions around `end_time`, and verifies the error metadata
+/// (code, description, string code).
+pub mod market_closed_tests;
+
+/// Rollback-safety tests for batch bet placement.
+///
+/// Covers duplicate-market rejection, empty/oversized batch guards,
+/// idempotency replay, and multi-market success paths.
+pub mod batch_bet_rollback_tests;

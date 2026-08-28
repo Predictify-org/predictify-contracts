@@ -58,6 +58,16 @@ pub enum Error {
     BetsAlreadyPlaced = 111,
     /// The user's balance is insufficient for the requested operation.
     InsufficientBalance = 112,
+    /// Bet amount exceeds the effective maximum allowed for the market.
+    BetAboveMaximum = 114,
+    /// Bet amount is below the per-market minimum threshold.
+    BetBelowMarketMin = 115,
+    /// Per-market bet limits are inverted (min > max).
+    BetLimitsInverted = 116,
+    /// Per-market bet limit exceeds the absolute maximum.
+    BetLimitAboveMaximum = 117,
+    /// Per-market max single-bet cap is out of range (zero, negative, or above absolute max).
+    BetCapOutOfRange = 118,
 
     // ===== ORACLE ERRORS =====
     /// The oracle service is unavailable. External data source may be temporarily
@@ -288,6 +298,10 @@ pub enum Error {
     PerLedgerBetCapExceeded = 687,
     /// Registry is full.
     RegistryFull = 688,
+    /// Batch contains no entries; at least one bet is required.
+    BatchEmpty = 545,
+    /// Batch exceeds the maximum allowed number of entries.
+    BatchSizeExceeded = 546,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====

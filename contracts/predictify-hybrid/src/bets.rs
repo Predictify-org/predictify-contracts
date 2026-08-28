@@ -36,9 +36,21 @@ pub const MIN_BET_AMOUNT: i128 = 1_000_000;
 /// Maximum bet amount (10,000 XLM = 100,000,000,000 stroops). Absolute ceiling for any configured limit.
 pub const MAX_BET_AMOUNT: i128 = 100_000_000_000;
 
+/// Maximum number of bets accepted by a single [`BetManager::place_bets`] call.
+///
+/// Bounds the per-transaction CPU and storage footprint of a batch. Batches larger
+/// than this are rejected with [`Error::BatchSizeExceeded`]; empty batches are
+/// rejected with [`Error::BatchEmpty`].
+pub const MAX_BATCH_SIZE: u32 = 50;
+
 /// Reentrancy scope for [`BetManager::place_bet`].
 fn guard_scope_place_bet() -> Symbol {
     symbol_short!("place_bet")
+}
+
+/// Reentrancy scope for [`BetManager::place_bets`].
+fn guard_scope_place_bets() -> Symbol {
+    symbol_short!("place_bets")
 }
 
 /// Reentrancy scope for SAC transfers in [`BetUtils::lock_funds`].
@@ -483,7 +495,8 @@ impl BetManager {
     ///
     /// # Errors
     ///
-    /// - `Error::InvalidInput` - Empty batch or exceeds maximum size
+    /// - `Error::BatchEmpty` - Batch contains no entries
+    /// - `Error::BatchSizeExceeded` - Batch exceeds [`MAX_BATCH_SIZE`] entries
     /// - `Error::IdempotentBatchAlreadyApplied` - This idempotency key has already been consumed
     /// - `Error::MarketNotFound` - Any market does not exist
     /// - `Error::MarketClosed` - Any market has ended or is not active
@@ -493,6 +506,19 @@ impl BetManager {
     /// - `Error::InsufficientBalance` - User doesn't have enough total funds
     /// - `Error::FeeExceedsMax` - Effective fee exceeds caller-supplied `max_fee_bps`
     pub fn place_bets(
+        env: &Env,
+        user: Address,
+        bets: soroban_sdk::Vec<(Symbol, String, i128)>,
+        max_fee_bps: i128,
+        idempotency_key: soroban_sdk::BytesN<32>,
+    ) -> Result<soroban_sdk::Vec<Bet>, Error> {
+        let scope = guard_scope_place_bets();
+        ReentrancyGuard::with_guard(env, &scope, || {
+            Self::place_bets_inner(env, user, bets, max_fee_bps, idempotency_key)
+        })
+    }
+
+    fn place_bets_inner(
         env: &Env,
         user: Address,
         bets: soroban_sdk::Vec<(Symbol, String, i128)>,
@@ -520,12 +546,11 @@ impl BetManager {
 
         // Validate batch size
         if bets.is_empty() {
-            return Err(Error::InvalidInput);
+            return Err(Error::BatchEmpty);
         }
 
-        const MAX_BATCH_SIZE: u32 = 50;
         if bets.len() > MAX_BATCH_SIZE {
-            return Err(Error::InvalidInput);
+            return Err(Error::BatchSizeExceeded);
         }
 
         // Phase 1: Validate all bets and collect data
@@ -534,9 +559,18 @@ impl BetManager {
 
         let mut markets = soroban_sdk::Vec::new(env);
         let mut total_amount: i128 = 0;
+        let mut seen_markets = soroban_sdk::Map::new(env);
 
         for bet_data in bets.iter() {
             let (market_id, outcome, amount) = bet_data;
+
+            // Rollback-safe guard: reject batches that contain the same market
+            // more than once. Duplicate entries would cause data loss because
+            // the second bet overwrites the first in storage (same BetKey).
+            if seen_markets.contains_key(market_id.clone()) {
+                return Err(Error::InvalidInput);
+            }
+            seen_markets.set(market_id.clone(), true);
 
             // Enforce global per-ledger bet cap for each bet in the batch
             let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
@@ -615,7 +649,7 @@ impl BetManager {
         }
 
         // Phase 4: Consume the idempotency key so replays are rejected.
-        // Stored as temporary (cheaper rent) with PLACE_BETS_IDEM_TTL_LEDGERS TTL.
+        // Stored as persistent with PLACE_BETS_IDEM_TTL_LEDGERS TTL.
         let ttl = crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS;
         env.storage().persistent().set(&idem_key, &true);
         env.storage().persistent().extend_ttl(&idem_key, ttl, ttl);
