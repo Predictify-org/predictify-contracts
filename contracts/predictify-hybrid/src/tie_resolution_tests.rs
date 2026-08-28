@@ -37,6 +37,7 @@ use crate::types::{Market, MarketState, OracleConfig, OracleProvider};
 use crate::voting::PayoutData;
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{vec, Address, Env, String, Symbol};
 
 // ---------------------------------------------------------------------------
@@ -119,13 +120,15 @@ impl TieSetup {
             &None,
             // dispute_window_seconds = 0 so claims are unblocked immediately
             &Some(0u64),
+            &None,
+            &None,
         )
     }
 
     /// Advance the ledger past the market end-time (and any dispute window).
     fn advance_past_end(&self) {
         // 1 day + 1 second is enough to pass a 1-day market.
-        self.env.ledger().with_mut(|li| li.timestamp += 86_401);
+        self.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: self.env.ledger().get().timestamp + 86_401, ..self.env.ledger().get() });
     }
 
     /// Lock stake on an outcome via `place_bet` (same path `test.rs` uses for

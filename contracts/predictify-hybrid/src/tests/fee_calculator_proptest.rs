@@ -65,6 +65,8 @@ use soroban_sdk::{Env, String, Vec};
             bet_deadline: 0,
             dispute_window_seconds: 86400,
             winnings_swept: false,
+                dispute_stake_floor: None,
+                max_participants: None,
             timelock_config: crate::timelock::MarketTimelockConfig::default(),
         };
 

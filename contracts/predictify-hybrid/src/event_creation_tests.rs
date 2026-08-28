@@ -21,9 +21,7 @@ impl TestSetup {
         env.mock_all_auths();
 
         // Set a non-zero timestamp to avoid overflow in tests
-        env.ledger().with_mut(|li| {
-            li.timestamp = 10000;
-        });
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10000, ..env.ledger().get() });
 
         let admin = Address::generate(&env);
         let contract_id = env.register(PredictifyHybrid, ());

@@ -639,3 +639,26 @@ fn test_context_empty_operation_fails() {
     ctx.operation = String::from_str(&env, "");
     assert!(ErrorHandler::validate_error_context(&ctx).is_err());
 }
+
+#[test]
+fn test_golden_vector_public_error_mapping() {
+    let env = Env::default();
+    
+    // Existing codes remain stable
+    assert_eq!(Error::decode(100), Error::Unauthorized);
+    assert_eq!(Error::decode(404), Error::AlreadyDisputed);
+    assert_eq!(Error::decode(503), Error::CBOpen);
+    assert_eq!(Error::decode(688), Error::RegistryFull);
+    
+    // Unknown values decode safely
+    assert_eq!(Error::decode(999), Error::UnknownError);
+    assert_eq!(Error::decode(9999), Error::UnknownError);
+    assert_eq!(Error::decode(0), Error::UnknownError);
+    
+    // Golden vectors cover public entrypoints (assuming decode correctly maps generated values back)
+    for err in all_errors() {
+        let code = err as u32;
+        let decoded = Error::decode(code);
+        assert_eq!(decoded, err, "Error {} did not decode correctly from {}", code, code);
+    }
+}

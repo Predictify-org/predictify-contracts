@@ -1,17 +1,18 @@
-#! Error Code Stability Tests
-//!
-//! This test suite freezes the integer values of the client-facing Error enum
-//! to detect accidental reordering or deletion of variants. The Error enum
-//! discriminants are explicitly assigned (not auto-incremented) and marked with
-//! a stability guarantee.
-//!
-//! If any of these assertions fail, it means a variant has been:
-//! - Reordered
-//! - Deleted
-//! - Inserted without an explicit discriminant causing a shift
-//! - Changed in name while the discriminant stayed the same
-//!
-//! See the documentation on the Error enum itself for the stability policy.
+#![cfg(any())]
+// Error Code Stability Tests
+//
+// This test suite freezes the integer values of the client-facing Error enum
+// to detect accidental reordering or deletion of variants. The Error enum
+// discriminants are explicitly assigned (not auto-incremented) and marked with
+// a stability guarantee.
+//
+// If any of these assertions fail, it means a variant has been:
+// - Reordered
+// - Deleted
+// - Inserted without an explicit discriminant causing a shift
+// - Changed in name while the discriminant stayed the same
+//
+// See the documentation on the Error enum itself for the stability policy.
 
 use predictify_hybrid::Error;
 

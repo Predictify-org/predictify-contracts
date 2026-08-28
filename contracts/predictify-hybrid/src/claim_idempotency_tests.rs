@@ -135,6 +135,8 @@ impl ClaimIdempotencyTestSetup {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         );
 
         // Vote (user votes "yes" with 100 XLM, user2 votes "no" with 50 XLM)

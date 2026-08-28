@@ -63,6 +63,8 @@ impl Ctx {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 }
@@ -127,9 +129,7 @@ fn test_force_resolve_ended_market() {
     let ctx = Ctx::new();
     let market_id = ctx.create_market();
 
-    ctx.env.ledger().with_mut(|li| {
-        li.timestamp = 1_000_000;
-    });
+    ctx.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 1_000_000, ..ctx.env.ledger().get() });
 
     let result = ctx.client().try_force_resolve_market(
         &ctx.admin,
@@ -221,6 +221,7 @@ fn test_force_resolve_idempotency_key_replay() {
             &reason(&ctx.env, "First"),
             &key(&ctx.env, "idem-key"),
         )
+        .unwrap()
         .unwrap();
 
     let result = ctx.client().try_force_resolve_market(
@@ -249,6 +250,7 @@ fn test_force_resolve_different_keys_same_market() {
             &reason(&ctx.env, "First"),
             &key(&ctx.env, "key-a"),
         )
+        .unwrap()
         .unwrap();
 
     ctx.client()
@@ -259,6 +261,7 @@ fn test_force_resolve_different_keys_same_market() {
             &reason(&ctx.env, "Second"),
             &key(&ctx.env, "key-b"),
         )
+        .unwrap()
         .unwrap();
 
     let market = ctx.client().get_market(&market_id).unwrap();
@@ -281,6 +284,7 @@ fn test_force_resolve_same_key_different_market() {
             &reason(&ctx.env, "Market A"),
             &shared_key,
         )
+        .unwrap()
         .unwrap();
 
     ctx.client()
@@ -291,6 +295,7 @@ fn test_force_resolve_same_key_different_market() {
             &reason(&ctx.env, "Market B"),
             &shared_key,
         )
+        .unwrap()
         .unwrap();
 
     assert_eq!(

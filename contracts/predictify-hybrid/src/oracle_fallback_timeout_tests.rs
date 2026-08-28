@@ -100,9 +100,7 @@ impl TestSetup {
     }
 
     fn advance_to(&self, timestamp: u64) {
-        self.env.ledger().with_mut(|li| {
-            li.timestamp = timestamp;
-        });
+        self.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: timestamp, ..self.env.ledger().get() });
     }
 }
 

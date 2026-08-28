@@ -250,9 +250,7 @@ fn test_cancel_bet_exactly_at_deadline_fails() {
 
     // Advance time to exactly deadline
     let current_time = setup.env.ledger().timestamp();
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = current_time + 86400;
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: current_time + 86400, ..env.ledger().get() });
 
     // Attempt to cancel - should fail
     client.cancel_bet(&setup.user, &setup.market_id);
@@ -270,9 +268,7 @@ fn test_cancel_bet_one_second_before_deadline_succeeds() {
 
     // Advance time to 1 second before deadline
     let current_time = setup.env.ledger().timestamp();
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = current_time + 86399;
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: current_time + 86399, ..env.ledger().get() });
 
     // Cancel should succeed
     client.cancel_bet(&setup.user, &setup.market_id);

@@ -57,6 +57,8 @@ fn create_test_market(
         &None,
         &None,
         &None,
+            &None,
+            &None,
     )
 }
 
@@ -373,6 +375,8 @@ impl TokenTestSetup {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         );
 
         Self {
@@ -430,9 +434,7 @@ fn test_category_tags_do_not_affect_resolution_and_payouts() {
     assert_eq!(yes_mul_before, 300);
 
     // Advance time and resolve market to "yes"
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + (31 * 24 * 60 * 60), ..env.ledger().get() });
     let _ = client.try_resolve_market_manual(
         &setup.admin,
         &setup.market_id,

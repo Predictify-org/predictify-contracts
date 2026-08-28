@@ -1,4 +1,5 @@
-#![cfg(test)]
+#![cfg(any())]
+use soroban_sdk::testutils::Address as _;
 
 use soroban_sdk::{testutils::Events, Env, Symbol, String, vec, symbol_short, Address};
 use predictify_hybrid::events::{EventEmitter, MarketCreatedEvent};

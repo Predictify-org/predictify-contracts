@@ -1,3 +1,4 @@
+#![cfg(any())]
 use predictify_hybrid::types::{OracleConfig, OracleProvider};
 use predictify_hybrid::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::Address as _;

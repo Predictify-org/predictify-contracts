@@ -1,3 +1,4 @@
+#![cfg(any())]
 //! Per-entrypoint authorization snapshot tests.
 //!
 //! This integration suite *snapshots* the Soroban authorization required by

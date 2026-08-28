@@ -108,13 +108,7 @@ enum StorageTtlTier {
     Archive,
 }
 
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct StorageTtlPressure {
-    pub key: Val,
-    pub remaining_ledgers: u32,
-    pub recommended_bump: u32,
-}
+
 
 // ===== STORAGE OPTIMIZATION TYPES =====
 
@@ -463,40 +457,7 @@ impl StorageOptimizer {
         Self::extend_persistent_ttl(env, key, desired_ttl_ledgers);
     }
 
-    /// Pre-flight query to check TTL pressure of keys
-    pub fn check_ttl_pressure(env: &Env, keys: Vec<Val>) -> Vec<StorageTtlPressure> {
-        let max_ttl = env.storage().max_ttl();
-        let mut pressures = alloc::vec::Vec::new();
-        
-        for key in keys.iter() {
-            let mut remaining = None;
-            
-            if env.storage().persistent().has(&key) {
-                remaining = Some(0u32);
-            } else if env.storage().temporary().has(&key) {
-                remaining = Some(0u32);
-            } else if env.storage().instance().has(&key) {
-                remaining = Some(0u32);
-            }
-            
-            if let Some(r) = remaining {
-                let bump = MARKET_TTL_LEDGERS.min(max_ttl);
-                pressures.push(StorageTtlPressure {
-                    key: key.clone(),
-                    remaining_ledgers: r,
-                    recommended_bump: bump,
-                });
-            }
-        }
-        
-        pressures.sort_by_key(|p| p.remaining_ledgers);
-        
-        let mut result = Vec::new(env);
-        for p in pressures {
-            result.push_back(p);
-        }
-        result
-    }
+    
 
     /// Compress market data for storage optimization
     pub fn compress_market_data(env: &Env, market: &Market) -> Result<CompressedMarket, Error> {

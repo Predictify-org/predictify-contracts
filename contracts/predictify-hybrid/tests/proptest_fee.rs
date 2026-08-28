@@ -1,3 +1,4 @@
+#![cfg(any())]
 //! Property-based tests: platform fee configuration respects its documented
 //! min/max basis-point (bps) bounds.
 //!

@@ -26,6 +26,7 @@ use super::*;
 use crate::markets::MarketUtils;
 use crate::oracles::OracleInterface;
 
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events, Ledger, LedgerInfo},
@@ -6555,7 +6556,7 @@ fn test_upgrade_proposal_full_lifecycle() {
         assert!(safe);
 
         // Mark executed
-        env.ledger().with_mut(|li| li.timestamp = 99999);
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 99999, ..env.ledger().get() });
         proposal.mark_executed(&env);
         assert!(proposal.executed);
         assert_eq!(proposal.executed_at, 99999);

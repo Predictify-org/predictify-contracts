@@ -4,6 +4,7 @@ use crate::events::{BetStatusUpdatedEvent, MarketResolvedEvent};
 use crate::types::{OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Events, Ledger};
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{
     symbol_short, vec, Address, Env, String, Symbol, TryFromVal, TryIntoVal, Val, Vec,
 };
@@ -193,9 +194,7 @@ fn test_market_resolution_publishes_status_events() {
         &250,
     );
 
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + (31 * 24 * 60 * 60), ..env.ledger().get() });
 
     let result = client.try_resolve_market_manual(
         &setup.admin,
@@ -309,9 +308,7 @@ fn test_extend_deadline_resolved_market() {
     let market_id = setup.create_market("Test question?", outcomes, 30);
 
     // Move time forward past end time
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + (31 * 24 * 60 * 60), ..env.ledger().get() });
 
     // Resolve the market
     let _ = client.try_resolve_market_manual(
@@ -372,9 +369,7 @@ fn test_extend_deadline_after_end_time_rejected() {
     let market_id = setup.create_market("Test question?", outcomes, 30);
 
     // Advance time past the market end without resolving it.
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + (31 * 24 * 60 * 60), ..env.ledger().get() });
 
     let result = client.try_extend_deadline(
         &setup.admin,
@@ -434,9 +429,7 @@ fn test_extend_market_closed_state_rejected() {
     let market_id = setup.create_market("Test question?", outcomes, 30);
 
     // Advance time and resolve, then close.
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + (31 * 24 * 60 * 60), ..env.ledger().get() });
     let _ = client.try_resolve_market_manual(
         &setup.admin,
         &market_id,
@@ -799,9 +792,7 @@ fn test_update_event_outcomes_resolved_market() {
     let market_id = setup.create_market("Test question?", initial_outcomes, 30);
 
     // Move time forward past end time
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + (31 * 24 * 60 * 60), ..env.ledger().get() });
 
     // Resolve the market
     let _ = client.try_resolve_market_manual(
@@ -874,9 +865,7 @@ fn test_event_market_resolved_published() {
 
     let market_id = setup.create_market("Test question?", outcomes.clone(), 30);
 
-    setup.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + (31 * 24 * 60 * 60);
-    });
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + (31 * 24 * 60 * 60), ..env.ledger().get() });
 
     let result = client.try_resolve_market_manual(
         &setup.admin,
@@ -1010,7 +999,7 @@ fn test_archive_event_success() {
     let market_id = setup.create_market("Will it resolve?", outcomes, 1);
 
     // Advance past end time and resolve
-    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 24 * 60 * 60, ..env.ledger().get() });
     client.resolve_market_manual(
         &setup.admin,
         &market_id,
@@ -1034,7 +1023,7 @@ fn test_archive_event_already_archived_returns_error() {
     ];
     let market_id = setup.create_market("Double archive?", outcomes, 1);
 
-    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 24 * 60 * 60, ..env.ledger().get() });
     client.resolve_market_manual(
         &setup.admin,
         &market_id,
@@ -1087,7 +1076,7 @@ fn test_archive_unauthorized_returns_error() {
     ];
     let market_id = setup.create_market("Auth check?", outcomes, 1);
 
-    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 24 * 60 * 60, ..env.ledger().get() });
     client.resolve_market_manual(
         &setup.admin,
         &market_id,
@@ -1111,7 +1100,7 @@ fn test_prune_archive_removes_oldest_entries() {
             String::from_str(&setup.env, "No"),
         ];
         let market_id = setup.create_market(question, outcomes, 1);
-        setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+        setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 24 * 60 * 60, ..env.ledger().get() });
         client.resolve_market_manual(
             &setup.admin,
             &market_id,
@@ -1138,7 +1127,7 @@ fn test_prune_archive_count_zero_removes_nothing() {
         String::from_str(&setup.env, "No"),
     ];
     let market_id = setup.create_market("Prune zero?", outcomes, 1);
-    setup.env.ledger().with_mut(|li| li.timestamp += 2 * 24 * 60 * 60);
+    setup.env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: env.ledger().get().timestamp + 2 * 24 * 60 * 60, ..env.ledger().get() });
     client.resolve_market_manual(
         &setup.admin,
         &market_id,

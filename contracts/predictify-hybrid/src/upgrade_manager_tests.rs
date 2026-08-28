@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     Address, BytesN, Env, String,
@@ -103,7 +104,7 @@ fn test_upgrade_proposal_approval() {
 #[test]
 fn test_upgrade_proposal_execution() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 12345);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 12345, ..env.ledger().get() });
 
     let mut proposal = create_sample_proposal(&env, 1, 1, 0, 1);
 
@@ -557,7 +558,7 @@ fn test_full_upgrade_proposal_lifecycle() {
         assert!(safe);
 
         // 10. Mark as executed
-        env.ledger().with_mut(|li| li.timestamp = 54321);
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 54321, ..env.ledger().get() });
         proposal.mark_executed(&env);
         assert!(proposal.executed);
         assert_eq!(proposal.executed_at, 54321);
@@ -569,13 +570,13 @@ fn test_multiple_upgrade_proposals() {
     let env = Env::default();
 
     // Set different timestamps to ensure unique proposal IDs
-    env.ledger().with_mut(|li| li.timestamp = 1000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 1000, ..env.ledger().get() });
     let proposal1 = create_sample_proposal(&env, 1, 1, 0, 1);
 
-    env.ledger().with_mut(|li| li.timestamp = 2000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 2000, ..env.ledger().get() });
     let proposal2 = create_sample_proposal(&env, 1, 2, 0, 2);
 
-    env.ledger().with_mut(|li| li.timestamp = 3000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 3000, ..env.ledger().get() });
     let proposal3 = create_sample_proposal(&env, 2, 0, 0, 3);
 
     assert_eq!(proposal1.target_version.version_number(), 1_001_000);

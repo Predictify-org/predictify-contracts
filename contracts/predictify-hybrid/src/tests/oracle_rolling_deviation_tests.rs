@@ -270,6 +270,7 @@ fn test_rolling_median_outlier_not_persisted() {
             max_deviation_bps: None,
             max_deviation_z_multiple: Some(500),
             history_size: Some(10),
+                auto_pause_duration_secs: None
         };
         OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -381,6 +382,7 @@ fn test_rolling_median_clear_history() {
             max_deviation_bps: None,
             max_deviation_z_multiple: Some(500),
             history_size: Some(10),
+                auto_pause_duration_secs: None
         };
         OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -416,6 +418,7 @@ fn test_legacy_deviation_still_works_when_rolling_disabled() {
             max_deviation_bps: Some(500), // Legacy: 5% allowed
             max_deviation_z_multiple: None,
             history_size: None,
+                auto_pause_duration_secs: None
         };
         OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 

@@ -153,6 +153,8 @@ fn make_market(env: &Env, cid: &Address, admin: &Address) -> Symbol {
         &None,
         &None,
         &None,
+            &None,
+            &None,
     )
 }
 
@@ -525,6 +527,8 @@ fn test_create_market_forged_admin_rejected() {
         &None,
         &None,
         &None,
+            &None,
+            &None,
     );
     assert_unauthorized_panic!(result);
 }

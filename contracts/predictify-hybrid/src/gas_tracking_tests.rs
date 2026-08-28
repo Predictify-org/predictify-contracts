@@ -163,6 +163,8 @@ impl GasTestContext {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 }
@@ -223,6 +225,8 @@ fn test_gas_create_market_minimal() {
         &None,
         &None,
         &None,
+            &None,
+            &None,
     );
 
     // Verify: Market created with minimal data
@@ -268,6 +272,8 @@ fn test_gas_create_market_maximal() {
         &None,
         &None,
         &None,
+            &None,
+            &None,
     );
 
     let market = ctx.env.as_contract(&ctx.contract_id, || {
@@ -449,6 +455,8 @@ fn test_gas_operations_within_expected_ranges() {
         &None,
         &None,
         &None,
+            &None,
+            &None,
     );
 
     // 2. Vote (expected: low cost)

@@ -1548,9 +1548,7 @@ fn test_validate_address_format_comprehensive() {
 #[test]
 fn test_oracle_response_validation_fresh_and_confident() {
     let env = Env::default();
-    env.ledger().with_mut(|li| {
-        li.timestamp = 10_000;
-    });
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let market_id = Symbol::new(&env, "oracle_market");
     let oracle_result = crate::types::OracleResult {
@@ -1576,9 +1574,7 @@ fn test_oracle_response_validation_fresh_and_confident() {
 #[test]
 fn test_oracle_response_rejected_when_stale() {
     let env = Env::default();
-    env.ledger().with_mut(|li| {
-        li.timestamp = 10_000;
-    });
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let market_id = Symbol::new(&env, "oracle_market");
     let stale_timestamp = 0; // far in the past relative to current ledger time
@@ -1607,9 +1603,7 @@ fn test_oracle_response_rejected_when_stale() {
 #[test]
 fn test_oracle_response_rejected_when_confidence_too_low() {
     let env = Env::default();
-    env.ledger().with_mut(|li| {
-        li.timestamp = 10_000;
-    });
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let market_id = Symbol::new(&env, "oracle_market");
     let oracle_result = crate::types::OracleResult {
@@ -1636,9 +1630,7 @@ fn test_oracle_response_rejected_when_confidence_too_low() {
 #[test]
 fn test_oracle_validation_integration_with_resolution_flow() {
     let env = Env::default();
-    env.ledger().with_mut(|li| {
-        li.timestamp = 10_000;
-    });
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let admin = Address::generate(&env);
     let question = String::from_str(&env, "Will BTC be above 50k?");
@@ -2161,7 +2153,7 @@ fn test_validation_performance_with_large_inputs() {
 fn test_validate_future_timestamp_branches() {
     let env = Env::default();
     // Ledger starts at 0 by default; advance it so "past" is meaningful.
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let now = env.ledger().timestamp();
 
@@ -2575,7 +2567,7 @@ fn test_validate_market_metadata() {
 #[test]
 fn test_event_validator_valid_creation() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let admin = Address::generate(&env);
     let description = String::from_str(&env, "Will BTC exceed $100k before year end?");
@@ -2599,7 +2591,7 @@ fn test_event_validator_valid_creation() {
 #[test]
 fn test_event_validator_description_too_short() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let admin = Address::generate(&env);
     let short_desc = String::from_str(&env, "Short"); // < MIN_QUESTION_LENGTH (10)
@@ -2623,7 +2615,7 @@ fn test_event_validator_description_too_short() {
 #[test]
 fn test_event_validator_too_few_outcomes() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let admin = Address::generate(&env);
     let description = String::from_str(&env, "Will BTC exceed $100k before year end?");
@@ -2643,7 +2635,7 @@ fn test_event_validator_too_few_outcomes() {
 #[test]
 fn test_event_validator_too_many_outcomes() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let admin = Address::generate(&env);
     let description = String::from_str(&env, "Will BTC exceed $100k before year end?");
@@ -2673,7 +2665,7 @@ fn test_event_validator_too_many_outcomes() {
 #[test]
 fn test_event_validator_end_time_in_past() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let admin = Address::generate(&env);
     let description = String::from_str(&env, "Will BTC exceed $100k before year end?");
@@ -2735,7 +2727,7 @@ fn test_market_validator_validate_outcomes() {
 #[test]
 fn test_market_validator_for_voting_active_market() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let market = ValidationTestingUtils::create_test_market(&env);
     let market_id = Symbol::new(&env, "test_market");
@@ -2750,7 +2742,7 @@ fn test_market_validator_for_voting_expired_market() {
     // Create the market at the default timestamp (0), giving it end_time = 86_400.
     // Then advance the ledger past the deadline so the market has ended.
     let market = ValidationTestingUtils::create_test_market(&env);
-    env.ledger().with_mut(|li| li.timestamp = 200_000); // > end_time (86_400)
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 200_000, ..env.ledger().get() }); // > end_time (86_400)
     let market_id = Symbol::new(&env, "test_market");
 
     // Market has ended — voting is not allowed.
@@ -2760,7 +2752,7 @@ fn test_market_validator_for_voting_expired_market() {
 #[test]
 fn test_market_validator_for_voting_empty_question() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let oracle_config = OracleConfig {
         provider: OracleProvider::reflector(),
@@ -2795,7 +2787,7 @@ fn test_market_validator_for_voting_empty_question() {
 #[test]
 fn test_market_validator_for_resolution_not_ended() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     // Market with a future deadline — not yet ended, cannot resolve.
     let market = ValidationTestingUtils::create_test_market(&env);
@@ -2807,7 +2799,7 @@ fn test_market_validator_for_resolution_not_ended() {
 #[test]
 fn test_market_validator_for_resolution_already_resolved() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 200_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 200_000, ..env.ledger().get() });
 
     let oracle_config = OracleConfig::new(
         OracleProvider::reflector(),
@@ -2844,7 +2836,7 @@ fn test_market_validator_for_resolution_already_resolved() {
 #[test]
 fn test_market_validator_for_fee_collection_not_resolved() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 200_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 200_000, ..env.ledger().get() });
 
     let oracle_config = OracleConfig::new(
         OracleProvider::reflector(),
@@ -2879,7 +2871,7 @@ fn test_market_validator_for_fee_collection_not_resolved() {
 #[test]
 fn test_market_validator_for_fee_collection_already_collected() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 200_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 200_000, ..env.ledger().get() });
 
     let oracle_config = OracleConfig::new(
         OracleProvider::reflector(),
@@ -2917,7 +2909,7 @@ fn test_market_validator_for_fee_collection_already_collected() {
 #[test]
 fn test_market_validator_for_fee_collection_insufficient_stake() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 200_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 200_000, ..env.ledger().get() });
 
     let oracle_config = OracleConfig::new(
         OracleProvider::reflector(),
@@ -3006,7 +2998,7 @@ fn test_vote_validator_validate_stake_amount() {
 #[test]
 fn test_vote_validator_validate_vote_valid() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3022,7 +3014,7 @@ fn test_vote_validator_validate_vote_valid() {
 #[test]
 fn test_vote_validator_validate_vote_invalid_outcome() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3039,7 +3031,7 @@ fn test_vote_validator_validate_vote_invalid_outcome() {
 #[test]
 fn test_vote_validator_validate_vote_stake_too_low() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3056,7 +3048,7 @@ fn test_vote_validator_validate_vote_stake_too_low() {
 #[test]
 fn test_vote_validator_validate_vote_duplicate() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3151,7 +3143,7 @@ fn test_dispute_validator_validate_stake_bounds() {
 #[test]
 fn test_dispute_validator_creation_valid() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3191,7 +3183,7 @@ fn test_dispute_validator_creation_valid() {
 #[test]
 fn test_dispute_validator_creation_stake_too_low() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3230,7 +3222,7 @@ fn test_dispute_validator_creation_stake_too_low() {
 #[test]
 fn test_dispute_validator_creation_market_not_resolved() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3249,7 +3241,7 @@ fn test_dispute_validator_creation_market_not_resolved() {
 #[test]
 fn test_dispute_validator_creation_already_disputed() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let user = Address::generate(&env);
     let market_id = Symbol::new(&env, "btc_market");
@@ -3457,7 +3449,7 @@ fn test_oracle_validator_result_empty() {
 #[test]
 fn test_oracle_response_rejected_when_price_zero() {
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let market_id = Symbol::new(&env, "oracle_market");
     let oracle_result = crate::types::OracleResult {
@@ -3696,7 +3688,7 @@ fn test_comprehensive_validator_market_state_active_market() {
     use crate::validation::ComprehensiveValidator;
 
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let market = ValidationTestingUtils::create_test_market(&env);
     let market_id = Symbol::new(&env, "test_market");
@@ -3712,7 +3704,7 @@ fn test_comprehensive_validator_market_state_empty_question() {
     use crate::validation::ComprehensiveValidator;
 
     let env = Env::default();
-    env.ledger().with_mut(|li| li.timestamp = 10_000);
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 10_000, ..env.ledger().get() });
 
     let oracle_config = OracleConfig::new(
         OracleProvider::reflector(),

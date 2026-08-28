@@ -3964,15 +3964,14 @@ mod oracle_integration_tests {
         let market_id = Symbol::new(&env, "stale_market");
 
         env.as_contract(&contract_id, || {
-            env.ledger().with_mut(|li| {
-                li.timestamp = 100;
-            });
+            env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 100, ..env.ledger().get() });
             let config = GlobalOracleValidationConfig {
                 max_staleness_secs: 10,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4017,6 +4016,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4061,6 +4061,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4090,15 +4091,14 @@ mod oracle_integration_tests {
         let market_id = Symbol::new(&env, "override_market");
 
         env.as_contract(&contract_id, || {
-            env.ledger().with_mut(|li| {
-                li.timestamp = 100;
-            });
+            env.ledger().set(soroban_sdk::testutils::LedgerInfo { timestamp: 100, ..env.ledger().get() });
             let global = GlobalOracleValidationConfig {
                 max_staleness_secs: 60,
                 max_confidence_bps: 500,
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -4108,6 +4108,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 
@@ -4140,7 +4141,7 @@ mod oracle_integration_tests {
         let default_fee_pct: u32 = 200; // 2%
 
         env.mock_all_auths();
-        client.initialize(&admin, &default_fee_pct, &None);
+        client.initialize(&admin, &Some(200i128), &None);
 
         let unauthorized = client.try_set_oracle_val_cfg_global(&non_admin, &60, &500, &None);
         assert!(unauthorized.is_err());
@@ -4163,6 +4164,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4202,6 +4204,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4245,6 +4248,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4287,6 +4291,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4340,6 +4345,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None, // disabled
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4383,6 +4389,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -4393,6 +4400,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(200),
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 

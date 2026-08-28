@@ -92,6 +92,8 @@ impl Setup {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         );
 
         Setup { env, contract_id, admin, user, user2, token_id, market_id }
