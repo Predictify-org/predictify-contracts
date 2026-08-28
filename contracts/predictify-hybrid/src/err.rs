@@ -91,6 +91,12 @@ pub enum Error {
     OracleCallbackReplayDetected = 213,
     /// Oracle callback timeout. Response time exceeded maximum allowed duration.
     OracleCallbackTimeout = 214,
+    /// Oracle deviation exceeded maximum acceptable bounds between primary and fallback prices.
+    OracleDeviationExceeded = 215,
+    /// Deviation bounds configuration is invalid. Check max_deviation_bps (must be 0-10000).
+    InvalidDeviationBounds = 216,
+    /// Oracle price is invalid. Prices must be positive for comparison and validation.
+    InvalidOraclePrice = 217,
 
     // ===== VALIDATION ERRORS =====
     /// Market question is empty or invalid. Question must be non-empty and descriptive.
@@ -693,6 +699,15 @@ impl ErrorHandler {
             Error::ForceResolveReasonEmpty => {
                 "Force-resolve reason is empty. Provide a non-empty reason string."
             }
+            Error::OracleDeviationExceeded => {
+                "Oracle deviation exceeded. The price difference between primary and fallback oracles is too large."
+            }
+            Error::InvalidDeviationBounds => {
+                "Invalid deviation bounds. Max deviation must be between 0 and 10000 basis points."
+            }
+            Error::InvalidOraclePrice => {
+                "Invalid oracle price. Prices must be positive for comparison and resolution."
+            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -809,6 +824,9 @@ impl ErrorHandler {
             Error::OracleUnavailable => RecoveryStrategy::RetryWithDelay,
             Error::InvalidInput => RecoveryStrategy::Retry,
             Error::OracleConfidenceTooWide => RecoveryStrategy::NoRecovery,
+            Error::OracleDeviationExceeded => RecoveryStrategy::NoRecovery,
+            Error::InvalidDeviationBounds => RecoveryStrategy::NoRecovery,
+            Error::InvalidOraclePrice => RecoveryStrategy::NoRecovery,
             Error::MarketNotFound => RecoveryStrategy::AlternativeMethod,
             Error::ConfigNotFound => RecoveryStrategy::AlternativeMethod,
             Error::AlreadyVoted
