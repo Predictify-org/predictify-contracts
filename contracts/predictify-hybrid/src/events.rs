@@ -2405,12 +2405,13 @@ impl EventEmitter {
         outcomes: &Vec<String>,
         admin: &Address,
         end_time: u64,
+        creation_fee_amount: i128,
     ) {
         let event = EventCreatedEvent {
             event_id: event_id.clone(),
             description: description.clone(),
             outcomes: outcomes.clone(),
-            creation_fee_amount: crate::fees::MARKET_CREATION_FEE,
+            creation_fee_amount,
             admin: admin.clone(),
             end_time,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("evt_crt").clone()),

@@ -807,6 +807,10 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidQuestion);
         }
 
+        if end_time <= env.ledger().timestamp() {
+            panic_with_error!(env, Error::InvalidDuration);
+        }
+
         // Validate oracle configuration
         if let Err(e) = oracle_config.validate(&env) {
             panic_with_error!(env, e);
@@ -823,6 +827,12 @@ impl PredictifyHybrid {
         let (has_fallback, fallback_cfg) = match &fallback_oracle_config {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
+        };
+
+        // Charge creation fee after validation
+        let creation_fee_amount = match crate::fees::FeeManager::process_creation_fee(&env, &admin) {
+            Ok(fee) => fee,
+            Err(e) => panic_with_error!(env, e),
         };
 
         // Create a new event
@@ -853,6 +863,7 @@ impl PredictifyHybrid {
             &outcomes,
             &admin,
             end_time,
+            creation_fee_amount,
         );
 
         // Record statistics
