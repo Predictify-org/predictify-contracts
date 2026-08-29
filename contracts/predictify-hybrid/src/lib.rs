@@ -1747,7 +1747,21 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
+    ///
+    /// # Replay Protection
+    ///
+    /// This function uses a monotonically-increasing per-user, per-market nonce to prevent
+    /// transaction replays. The caller must provide the `claim_nonce` parameter, which should
+    /// match the current stored nonce for the (user, market_id) pair. After a successful claim,
+    /// the nonce is incremented by 1, making any replay of the original transaction invalid.
+    ///
+    /// # Parameters
+    ///
+    /// - `user` - The user claiming their winnings
+    /// - `market_id` - The market to claim from
+    /// - `claim_nonce` - The unique nonce for this claim operation. Must match the current
+    ///   stored nonce to pass validation. On first claim, this should be 0.
+    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol, claim_nonce: u64) {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "claim_winnings")
         {
@@ -1755,6 +1769,13 @@ impl PredictifyHybrid {
         }
         user.require_auth();
         let gas_marker = GasTracker::start_tracking(&env);
+
+        // ===== REPLAY PROTECTION: VALIDATE NONCE =====
+        // Ensure the provided nonce matches the expected nonce to prevent replays.
+        // Each successful claim increments the stored nonce by 1.
+        if let Err(e) = storage::ClaimNonceManager::validate_nonce(&env, &user, &market_id, claim_nonce) {
+            panic_with_error!(env, e);
+        }
 
         let mut market: Market = env
             .storage()
@@ -1764,7 +1785,7 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
-        // Check if user has claimed already
+        // Check if user has claimed already (redundant safety check; nonce validation should prevent)
         if market
             .claimed
             .get(user.clone())
@@ -1850,10 +1871,14 @@ impl PredictifyHybrid {
                 statistics::StatisticsManager::record_winnings_claimed(&env, &user, payout);
                 statistics::StatisticsManager::record_fees_collected(&env, fee_amount);
 
-                // Mark as claimed
+                // ===== INCREMENT NONCE ON SUCCESSFUL CLAIM =====
+                // Increment and store the nonce to prevent replays of this specific claim.
+                let new_nonce = storage::ClaimNonceManager::increment_nonce(&env, &user, &market_id);
+
+                // Mark as claimed with the new nonce
                 market
                     .claimed
-                    .set(user.clone(), ClaimInfo::new(&env, payout));
+                    .set(user.clone(), ClaimInfo::new(&env, payout, new_nonce));
                 env.storage().persistent().set(&market_id, &market);
 
                 // Invalidate analytics cache — claimed map has changed.
@@ -1878,8 +1903,10 @@ impl PredictifyHybrid {
             }
         }
 
-        // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
-        market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
+        // ===== INCREMENT NONCE EVEN FOR ZERO PAYOUTS =====
+        // If no winnings (user didn't win or zero payout), still increment nonce to prevent re-attempts.
+        let new_nonce = storage::ClaimNonceManager::increment_nonce(&env, &user, &market_id);
+        market.claimed.set(user.clone(), ClaimInfo::new(&env, 0, new_nonce));
         env.storage().persistent().set(&market_id, &market);
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
         GasTracker::end_tracking(&env, symbol_short!("claim"), gas_marker);
@@ -2313,6 +2340,19 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
         env.storage().persistent().get(&market_id)
+    }
+
+    /// Get the current claim nonce for a user on a specific market.
+    ///
+    /// This function retrieves the claim nonce used for replay protection. Clients should
+    /// call this to determine what nonce to provide when calling `claim_winnings`.
+    ///
+    /// # Returns
+    ///
+    /// The current nonce (0 on first claim, incrementing by 1 on each subsequent claim).
+    /// Clients should provide this exact value as the `claim_nonce` parameter to `claim_winnings`.
+    pub fn get_claim_nonce(env: Env, user: Address, market_id: Symbol) -> u64 {
+        storage::ClaimNonceManager::get_nonce(&env, &user, &market_id)
     }
 
     /// Verifies a client's expected metadata commitment against on-chain market metadata.

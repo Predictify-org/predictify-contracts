@@ -58,6 +58,9 @@ pub enum Error {
     BetsAlreadyPlaced = 111,
     /// The user's balance is insufficient for the requested operation.
     InsufficientBalance = 112,
+    /// The provided claim nonce does not match the expected nonce for replay protection.
+    /// Each claim must include the correct nonce to prevent transaction replays.
+    InvalidNonce = 113,
 
     // ===== ORACLE ERRORS =====
     /// The oracle service is unavailable. External data source may be temporarily
