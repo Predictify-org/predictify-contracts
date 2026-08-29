@@ -14,6 +14,179 @@ use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
 
 #[cfg(test)]
+mod contract_initialization_validation_tests {
+    use super::*;
+    use crate::validation::ConfigValidator;
+
+    fn validate_init_params(
+        env: &Env,
+        admin: &Address,
+        token: &Address,
+        platform_fee: i128,
+        creation_fee: i128,
+        min_fee_amount: i128,
+        max_fee_amount: i128,
+        fee_collection_threshold: i128,
+        oracle_config: &OracleConfig,
+        already_initialized: bool,
+    ) -> ValidationResult {
+        if already_initialized {
+            // Invariant: initialization is all-or-nothing; duplicate calls are
+            // rejected before any validation work can be observed.
+            return ValidationResult::invalid();
+        }
+
+        // Aggregate every parameter check into a single result so the contract can
+        // abort before mutating any state if any parameter is invalid.
+        let mut result = ValidationResult::valid();
+
+        if ConfigValidator::validate_contract_config(env, admin, token).is_err() {
+            result.add_error();
+        }
+
+        let fee_result = FeeValidator::validate_fee_config(
+            env,
+            &platform_fee,
+            &creation_fee,
+            &min_fee_amount,
+            &max_fee_amount,
+            &fee_collection_threshold,
+        );
+        if !fee_result.is_valid {
+            result.add_error();
+        }
+
+        if oracle_config.validate(env).is_err() {
+            result.add_error();
+        }
+
+        result
+    }
+
+    #[test]
+    fn test_initialization_params_valid() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let oracle = OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::generate(&env),
+            String::from_str(&env, "BTC/USD"),
+            50_000_00i128,
+            String::from_str(&env, "gt"),
+        );
+
+        let result = validate_init_params(
+            &env,
+            &admin,
+            &token,
+            5i128,
+            1_000_000i128,
+            1_000_000i128,
+            500_000_000i128,
+            100_000_000i128,
+            &oracle,
+            false,
+        );
+        assert!(result.is_valid);
+        assert_eq!(result.error_count, 0);
+    }
+
+    #[test]
+    fn test_initialization_params_reject_invalid_fee() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let oracle = OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::generate(&env),
+            String::from_str(&env, "BTC/USD"),
+            50_000_00i128,
+            String::from_str(&env, "gt"),
+        );
+
+        let result = validate_init_params(
+            &env,
+            &admin,
+            &token,
+            150i128,
+            1_000_000i128,
+            1_000_000i128,
+            500_000_000i128,
+            100_000_000i128,
+            &oracle,
+            false,
+        );
+        assert!(!result.is_valid);
+        assert!(result.error_count >= 1);
+    }
+
+    #[test]
+    fn test_initialization_params_reject_invalid_oracle_and_duplicate() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let invalid_oracle = OracleConfig::none_sentinel(&env);
+
+        let result = validate_init_params(
+            &env,
+            &admin,
+            &token,
+            5i128,
+            1_000_000i128,
+            1_000_000i128,
+            500_000_000i128,
+            100_000_000i128,
+            &invalid_oracle,
+            false,
+        );
+        assert!(!result.is_valid);
+
+        let retry = validate_init_params(
+            &env,
+            &admin,
+            &token,
+            5i128,
+            1_000_000i128,
+            1_000_000i128,
+            500_000_000i128,
+            100_000_000i128,
+            &invalid_oracle,
+            true,
+        );
+        assert!(!retry.is_valid);
+    }
+
+    #[test]
+    fn test_initialization_params_boundary_oracle_threshold() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let boundary_oracle = OracleConfig::new(
+            OracleProvider::reflector(),
+            Address::generate(&env),
+            String::from_str(&env, "BTC/USD"),
+            1i128,
+            String::from_str(&env, "eq"),
+        );
+
+        let result = validate_init_params(
+            &env,
+            &admin,
+            &token,
+            5i128,
+            1_000_000i128,
+            1_000_000i128,
+            500_000_000i128,
+            100_000_000i128,
+            &boundary_oracle,
+            false,
+        );
+        assert!(result.is_valid);
+    }
+}
+
+#[cfg(test)]
 mod market_parameter_validator_tests {
     use super::*;
     use crate::validation::{MarketParameterValidator, MarketParams};
