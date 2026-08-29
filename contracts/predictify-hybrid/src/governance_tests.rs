@@ -398,6 +398,26 @@ fn governance_set_voting_period_is_applied_to_new_proposals() {
     assert_eq!(proposal.end_time - proposal.start_time, 250);
 }
 
+#[test]
+fn governance_requires_explicit_config_capability_for_admin_changes() {
+    let fixture = GovernanceFixture::new(100, 1);
+    let delegated_admin = Address::generate(&fixture.env);
+
+    fixture.env.as_contract(&fixture.contract_id, || {
+        crate::admin::AdminSystemIntegration::ensure_migration(&fixture.env).unwrap();
+        crate::admin::AdminManager::add_admin(
+            &fixture.env,
+            &fixture.admin,
+            &delegated_admin,
+            crate::admin::AdminRole::ConfigAdmin,
+        )
+        .unwrap();
+    });
+
+    assert!(fixture.set_quorum(delegated_admin.clone(), 7).is_ok());
+    assert_eq!(fixture.set_quorum(Address::generate(&fixture.env), 9), Err(GovernanceError::NotAdmin));
+}
+
 /// ---- Quorum Decay Tests ----
 
 #[test]
