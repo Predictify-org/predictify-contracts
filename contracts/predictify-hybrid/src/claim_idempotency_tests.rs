@@ -187,6 +187,11 @@ impl ClaimIdempotencyTestSetup {
             market.claimed.get(user.clone())
         })
     }
+
+    /// Get current claim nonce for user on market
+    fn get_claim_nonce(&self, user: &Address) -> u64 {
+        crate::storage::ClaimNonceManager::get_nonce(&self.env, user, &self.market_id)
+    }
 }
 
 // ===== IDEMPOTENCY TESTS =====
@@ -196,18 +201,24 @@ fn test_claim_idempotency_prevents_double_claim() {
     let setup = ClaimIdempotencyTestSetup::new();
     let client = setup.client();
 
+    // Get current nonce for first claim
+    let nonce = setup.get_claim_nonce(&setup.user);
+    assert_eq!(nonce, 0, "First claim should use nonce 0");
+
     // First claim should succeed
     let payout1 = client.claim_winnings(&setup.user, &setup.market_id);
     assert!(payout1 > 0);
 
-    // Verify claim info is stored
+    // Verify claim info is stored with nonce incremented
     let claim_info = setup.get_claim_info(&setup.user).unwrap();
     assert!(claim_info.is_claimed());
     assert_eq!(claim_info.get_payout(), payout1);
     assert!(claim_info.get_timestamp() > 0);
+    assert_eq!(claim_info.get_nonce(), 1, "Nonce should be incremented to 1");
 
     // Second claim should fail with AlreadyClaimed error
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let nonce2 = setup.get_claim_nonce(&setup.user);
         client.claim_winnings(&setup.user, &setup.market_id);
     }));
     assert!(result.is_err());
