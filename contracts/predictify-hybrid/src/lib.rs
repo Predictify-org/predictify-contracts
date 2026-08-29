@@ -152,6 +152,9 @@ mod timelock_tests;
 // #[cfg(any())]
 // mod claim_idempotency_tests;
 
+#[cfg(test)]
+mod gas_regression_tests;
+
 // All test modules disabled due to API drift - re-enable after fixing
 // #[cfg(test)]
 // mod balance_tests;
@@ -345,6 +348,11 @@ impl PredictifyHybrid {
         let mut default_config = ConfigManager::get_development_config(&env);
         default_config.fees.platform_fee_percentage = fee_percentage;
         ConfigManager::store_config(&env, &default_config)?;
+
+        // Seed default gas regression limits for critical-path operations.
+        // These ensure create_market and claim_winnings are always bounded
+        // even before an admin explicitly calls set_limit.
+        GasTracker::set_default_limits(&env);
 
         // Seed permissive-but-valid rate limits so admin entrypoints do not
         // fail before a custom policy is configured.
@@ -1746,6 +1754,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
         user.require_auth();
+        let gas_marker = GasTracker::start_tracking(&env);
 
         let mut market: Market = env
             .storage()
@@ -1864,6 +1873,7 @@ impl PredictifyHybrid {
                     Err(e) => panic_with_error!(env, e),
                 }
 
+                GasTracker::end_tracking(&env, symbol_short!("claim"), gas_marker);
                 return;
             }
         }
@@ -1872,6 +1882,7 @@ impl PredictifyHybrid {
         market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
         env.storage().persistent().set(&market_id, &market);
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+        GasTracker::end_tracking(&env, symbol_short!("claim"), gas_marker);
     }
 
     /// Set the global claim period for resolved markets (admin only).
