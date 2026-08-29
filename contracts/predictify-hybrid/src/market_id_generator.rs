@@ -209,6 +209,28 @@ impl MarketIdGenerator {
         result
     }
 
+    /// Look up the registry entry (admin, creation timestamp) for a market ID.
+    ///
+    /// Returns `None` if the market ID has no registry entry (e.g. a market
+    /// created before the registry existed, or a synthetic/legacy ID).
+    pub fn get_registry_entry(env: &Env, market_id: &Symbol) -> Option<MarketIdRegistryEntry> {
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
+        let registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env));
+
+        for i in 0..registry.len() {
+            if let Some(entry) = registry.get(i) {
+                if entry.market_id == *market_id {
+                    return Some(entry);
+                }
+            }
+        }
+        None
+    }
+
     /// Return all market IDs created by `admin`.
     pub fn get_admin_markets(env: &Env, admin: &Address) -> Vec<Symbol> {
         let key = Symbol::new(env, Self::REGISTRY_KEY);

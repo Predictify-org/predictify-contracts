@@ -341,6 +341,8 @@ impl ContractMonitor {
             MarketState::Resolved => String::from_str(env, "Resolved"),
             MarketState::Closed => String::from_str(env, "Closed"),
             MarketState::Cancelled => String::from_str(env, "Cancelled"),
+            MarketState::Archived => String::from_str(env, "Archived"),
+            MarketState::Restored => String::from_str(env, "Restored"),
         }
     }
 

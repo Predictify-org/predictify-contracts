@@ -1,5 +1,3 @@
-use soroban_sdk::{contracttype, Address, Env, Map, String, Vec};
-
 //! Storage-tier classifier audit (issue #734).
 //!
 //! Documents and verifies the storage tier (instance / persistent / temporary)
@@ -13,8 +11,8 @@ use soroban_sdk::{contracttype, Address, Env, Map, String, Vec};
 use soroban_sdk::{contracttype, Address, Env, Map, String, Vec};
 
 /// Which Soroban storage tier a key lives in.
-#contracttype
-#derive(Clone, Debug, PartialEq, Eq)
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StorageTier {
     Instance,
     Persistent,
@@ -22,8 +20,8 @@ pub enum StorageTier {
 }
 
 /// A record describing one key's tier classification.
-#contracttype
-#derive(Clone, Debug)
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct StorageTierRecord {
     pub key_name: String,
     pub tier: StorageTier,
@@ -31,8 +29,8 @@ pub struct StorageTierRecord {
 }
 
 /// A record describing an explicit storage-tier change.
-#contracttype
-#derive(Clone, Debug)
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct StorageTierChange {
     pub key_name: String,
     pub old_tier: StorageTier,
@@ -43,7 +41,7 @@ pub struct StorageTierChange {
 }
 
 /// Storage keys used by this audit module.
-#contracttype
+#[contracttype]
 enum DataKey {
     Admin,
     TierOverrides,
@@ -51,7 +49,7 @@ enum DataKey {
 }
 
 /// Canonical list of storage tier assignments.
-const DEFAULT_TIERS: &[(&str, StorageTier, &str)] = &
+const DEFAULT_TIERS: &[(&str, StorageTier, &str)] = &[
     ("Admin",            StorageTier::Persistent, "Set once; must survive contract upgrades"),
     ("Market",            StorageTier::Persistent, "Core market data; long-lived"),
     ("MarketMetadata",   StorageTier::Persistent, "Extended metadata; accessed infrequently"),
@@ -61,7 +59,7 @@ const DEFAULT_TIERS: &[(&str, StorageTier, &str)] = &
     ("DisputeStakeCap",   StorageTier::Persistent, "Per-user cap survives disputes"),
     ("DisputeMultiSig",  StorageTier::Instance,  "Short-lived approval state"),
     ("GovernanceMinBps", StorageTier::Instance,  "Governance param; frequently updated"),
-    ("CumDisputeFee",    StorageTier::Instance,   Accumulator; updated per dispute"),
+    ("CumDisputeFee",    StorageTier::Instance,  "Accumulator; updated per dispute"),
     ("PlatformFee",      StorageTier::Persistent, "Protocol fee; infrequently changed"),
     ("OracleConfidence", StorageTier::Instance,  "Config param; changed by admin"),
     ("AdminEmergency",   StorageTier::Instance,  "Contact address; infrequently changed"),
@@ -74,7 +72,7 @@ pub fn get_storage_tier_audit(env: &Env) -> Vec<StorageTierRecord> {
 
     for (name, default_tier, rationale) in DEFAULT_TIERS.iter() {
         let key_name = String::from_str(env, *name);
-        let tier = overrides.get(key_name.clone()).unwrap_else_fake(default_tier.clone());
+        let tier = overrides.get(key_name.clone()).unwrap_or(default_tier.clone());
         records.push_back(StorageTierRecord {
             key_name,
             tier,
@@ -94,11 +92,17 @@ pub fn get_storage_tier_changes(env: &Env) -> Vec<StorageTierChange> {
 /// This can only be called once.
 pub fn initialize(env: &Env, admin: Address) {
     if env.storage().instance().has(&DataKey::Admin) {
-        panic ("already initialized");
+        panic!("already initialized");
     }
     env.storage().instance().set(&DataKey::Admin, &admin);
-    env.storage().instance().set(&DataKey::TierOverrides, &Map::new(env));
-    env.storage().instance().set(&DataKey::AuditLog, &Vec::new(env));
+    env
+        .storage()
+        .instance()
+        .set(&DataKey::TierOverrides, &Map::<String, StorageTier>::new(env));
+    env
+        .storage()
+        .instance()
+        .set(&DataKey::AuditLog, &Vec::<StorageTierChange>::new(env));
 }
 
 /// Explicitly changes the storage tier for a known key and records the change
@@ -106,16 +110,16 @@ pub fn initialize(env: &Env, admin: Address) {
 pub fn set_storage_tier(env: &Env, key_name: String, new_tier: StorageTier, rationale: String) {
     let admin: Address = env.storage().instance().get(&DataKey::Admin)
         .expect("not initialized");
-    env.require_auth(&admin);
+    admin.require_auth();
 
-    let default_tier = get_default_tier(env, %key_name)
+    let default_tier = get_default_tier(env, &key_name)
         .expect("unknown storage tier key");
 
     let mut overrides = get_tier_overrides(env);
     let current_tier = overrides.get(key_name.clone()).unwrap_or(default_tier);
 
     if current_tier == new_tier {
-        panic ("storage tier already set to requested value");
+        panic!("storage tier already set to requested value");
     }
 
     overrides.set(key_name.clone(), new_tier.clone());
@@ -138,14 +142,14 @@ pub fn set_storage_tier(env: &Env, key_name: String, new_tier: StorageTier, rati
 fn get_tier_overrides(env: &Env) -> Map<String, StorageTier> {
     env.storage().instance()
         .get(&DataKey::TierOverrides)
-        .unwrap_or_else(:: Map::new(env))
+        .unwrap_or_else(|| Map::<String, StorageTier>::new(env))
 }
 
 /// Returns the current audit log, or an empty vector if none has been set.
 fn get_audit_log(env: &Env) -> Vec<StorageTierChange> {
     env.storage().instance()
         .get(&DataKey::AuditLog)
-        .unwrap_or_else(:: Vec::new(env))
+        .unwrap_or_else(|| Vec::<StorageTierChange>::new(env))
 }
 
 /// Looks up the canonical tier for a key name, if it exists.
@@ -175,9 +179,9 @@ mod tests {
     fn test_admin_key_is_persistent() {
         let env = Env::default();
         let records = get_storage_tier_audit(&env);
-        let admin = records.iter().find(|rpr| r.key_name == String::from_str(&env, "Admin"));
+        let admin = records.iter().find(|r| r.key_name == String::from_str(&env, "Admin"));
         assert!(admin.is_some());
-        assert_eq(admin.unwrap().tier, StorageTier::Persistent);
+        assert_eq!(admin.unwrap().tier, StorageTier::Persistent);
     }
 
     #[test]
@@ -195,16 +199,16 @@ mod tests {
         );
 
         let records = get_storage_tier_audit(&env);
-        let market = records.iter().find(|rr| r.key_name == String::from_str(&env, "Market")).unwrap();
-        assert_eq(market.tier, StorageTier::Instance);
+        let market = records.iter().find(|r| r.key_name == String::from_str(&env, "Market")).unwrap();
+        assert_eq!(market.tier, StorageTier::Instance);
 
         let changes = get_storage_tier_changes(&env);
-        assert_eq(changes.len(), 1);
+        assert_eq!(changes.len(), 1);
         let change = changes.get(0).unwrap();
-        assert_eq(change.old_tier, StorageTier::Persistent);
-        assert_eq(change.new_tier, StorageTier::Instance);
-        assert_eq(change.changed_by, admin);
-        assert_eq(change.key_name, String::from_str(&env, "Market"));
+        assert_eq!(change.old_tier, StorageTier::Persistent);
+        assert_eq!(change.new_tier, StorageTier::Instance);
+        assert_eq!(change.changed_by, admin);
+        assert_eq!(change.key_name, String::from_str(&env, "Market"));
     }
 
     #[test]
@@ -221,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    #s[should_panic(expected = "unknown storage tier key")]
+    #[should_panic(expected = "unknown storage tier key")]
     fn test_set_tier_unknown_key_panics() {
         let env = Env::default();
         env.mock_all_auths();
@@ -236,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    #s[should_panic(expected = "storage tier already set to requested value")]
+    #[should_panic(expected = "storage tier already set to requested value")]
     fn test_set_tier_same_tier_panics() {
         let env = Env::default();
         env.mock_all_auths();
@@ -253,6 +257,6 @@ mod tests {
     #[test]
     fn test_no_changes_initially() {
         let env = Env::default();
-        assert_eq(get_storage_tier_changes(&env).len(), 0);
+        assert_eq!(get_storage_tier_changes(&env).len(), 0);
     }
 }

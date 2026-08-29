@@ -1197,7 +1197,7 @@ impl MarketStateManager {
         env: &Env,
     ) {
         MarketStateLogic::check_function_access_for_state("claim", market.state).unwrap();
-        let claim_info = crate::types::ClaimInfo::new(env, payout_amount);
+        let claim_info = crate::types::ClaimInfo::new(env, payout_amount, 0u64);
         market.claimed.set(user, claim_info);
     }
 
@@ -2897,6 +2897,10 @@ impl MarketStateLogic {
             Resolved => matches!(to, Closed),
             Closed => false,
             Cancelled => false,
+            // Archived/Restored are legacy markers under the metadata-only
+            // archive model; they expose no transitions through the state machine.
+            Archived => false,
+            Restored => false,
         };
         if allowed {
             Ok(())
@@ -3099,6 +3103,9 @@ impl MarketStateLogic {
                 }
             }
             Closed | Cancelled => {}
+            // Archived/Restored are legacy markers under the metadata-only
+            // archive model; no additional consistency checks apply.
+            Archived | Restored => {}
         }
         Ok(())
     }

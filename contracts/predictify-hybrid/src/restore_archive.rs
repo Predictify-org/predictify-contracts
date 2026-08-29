@@ -126,15 +126,16 @@ impl RestoreArchive {
         }
 
         // ===== STATE VALIDATION =====
-        // Fetch market and verify it exists
-        let mut market: Market = env
-            .storage()
+        // Fetch market and verify it exists. Its stored state is left untouched:
+        // restore is likewise a non-destructive, metadata-only operation that
+        // simply removes the archive marker (see `EventArchive::unarchive`).
+        env.storage()
             .persistent()
-            .get(market_id)
+            .get::<Symbol, Market>(market_id)
             .ok_or(Error::MarketNotFound)?;
 
-        // Enforce precondition: market must be in Archived state
-        if market.state != MarketState::Archived {
+        // Enforce precondition: market must be currently archived (metadata-driven).
+        if !crate::event_archive::EventArchive::is_archived(env, market_id) {
             return Err(Error::CannotRestoreFromState);
         }
 
@@ -151,12 +152,10 @@ impl RestoreArchive {
             return Err(Error::MarketAlreadyRestored);
         }
 
-        // ===== STATE TRANSITION =====
-        // Update market state from Archived to Restored
-        market.state = MarketState::Restored;
-
-        // Record updated market in storage
-        env.storage().persistent().set(market_id, &market);
+        // ===== UN-ARCHIVE (NON-DESTRUCTIVE) =====
+        // Remove the archive metadata marker and sorted-index entry. The market
+        // record keeps its terminal Resolved/Cancelled state.
+        crate::event_archive::EventArchive::unarchive(env, market_id)?;
 
         // ===== RESTORE METADATA RECORDING =====
         let now = env.ledger().timestamp();
@@ -173,7 +172,7 @@ impl RestoreArchive {
             market_id: market_id.clone(),
             restored_at: now,
             restored_by: admin.clone(),
-            reason,
+            reason: reason.clone(),
             version: 1, // Current version; increment for future schema changes
         };
 

@@ -844,6 +844,8 @@ impl RecoveryManager {
             MarketState::Resolved => String::from_str(env, "Resolved"),
             MarketState::Closed => String::from_str(env, "Closed"),
             MarketState::Cancelled => String::from_str(env, "Cancelled"),
+            MarketState::Archived => String::from_str(env, "Archived"),
+            MarketState::Restored => String::from_str(env, "Restored"),
         };
 
         // Integrity check: use the existing validator.
@@ -1022,7 +1024,7 @@ impl RecoveryManager {
                     // For now just mark claimed and reduce total; real implementation would transfer tokens
                     market
                         .claimed
-                        .set(user.clone(), crate::types::ClaimInfo::new(env, stake));
+                        .set(user.clone(), crate::types::ClaimInfo::new(env, stake, 0u64));
                     market.total_staked = market.total_staked - stake;
                     total_refunded += stake;
                 }

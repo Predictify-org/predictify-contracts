@@ -1166,7 +1166,7 @@ impl DisputeManager {
         
         // SECURITY: Enhanced validation - check market has active disputes
         // and is not already resolved (prevents race conditions)
-        DisputeValidator::validate_market_for_resolution(env, &market)?;
+        DisputeValidator::validate_market_for_resolution(env, &market_id, &market)?;
 
         // Calculate dispute impact
         let dispute_impact = DisputeAnalytics::calculate_dispute_impact(&market);
@@ -2173,7 +2173,7 @@ impl DisputeManager {
         // SECURITY: Validate market state before mutating dispute status
         // Prevents race condition where market gets resolved between timeout check and update
         let market = MarketStateManager::get_market(env, &timeout.market_id)?;
-        DisputeValidator::validate_market_for_resolution(env, &market)?;
+        DisputeValidator::validate_market_for_resolution(env, &timeout.market_id, &market)?;
 
         // Update timeout status
         timeout.status = DisputeTimeoutStatus::AutoResolved;
@@ -2519,7 +2519,11 @@ impl DisputeValidator {
     /// - Market must have active disputes
     /// - Market must not already be resolved
     /// - At least one dispute must be in Active status
-    pub fn validate_market_for_resolution(env: &Env, market: &Market) -> Result<(), Error> {
+    pub fn validate_market_for_resolution(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<(), Error> {
         // Check if market is already resolved
         if market.winning_outcomes.is_some() {
             return Err(Error::MarketResolved);
@@ -2532,7 +2536,7 @@ impl DisputeValidator {
 
         // SECURITY: Verify at least one dispute is Active to prevent race conditions
         // where all disputes become finalized between check and resolution
-        let has_active_dispute = Self::verify_has_active_dispute(env, market)?;
+        let has_active_dispute = Self::verify_has_active_dispute(env, market_id, market)?;
         if !has_active_dispute {
             return Err(Error::InvalidState);
         }
@@ -2545,9 +2549,12 @@ impl DisputeValidator {
     /// - Check passes: market has disputes
     /// - Between check and resolution: all disputes finalized
     /// - Resolution executes: market state corrupted
-    pub fn verify_has_active_dispute(env: &Env, market: &Market) -> Result<bool, Error> {
+    pub fn verify_has_active_dispute(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<bool, Error> {
         // Get dispute history for this market
-        let market_id = market.market_id.clone();
         let history = env.storage().persistent()
             .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(market_id.clone()))
             .unwrap_or_else(|| Vec::new(env));

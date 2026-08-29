@@ -247,9 +247,9 @@ impl MarketAuditManager {
         if index > head.total_entries {
             return None;
         }
-        Self::get_entry_unchecked(env, market_id, index).unwrap_or_else(|| {
+        Some(Self::get_entry_unchecked(env, market_id, index).unwrap_or_else(|| {
             panic!("audit log corruption: missing entry {index}");
-        })
+        }))
     }
 
     fn get_entry_unchecked(env: &Env, market_id: &Symbol, index: u32) -> Option<MarketAuditEntry> {

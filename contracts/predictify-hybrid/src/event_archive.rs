@@ -4,6 +4,27 @@
 //! paginated historical query functions for analytics and UI. Exposes only
 //! public metadata and outcome; no sensitive data (votes, stakes, addresses).
 //!
+//! # Non-Destructive Archive (discoverability invariant)
+//!
+//! Archiving is a **metadata-only** operation: `archive_event` records a
+//! `market_id -> archived_at` entry in the `evt_archived` map and the sorted
+//! archive index, and it **never mutates the stored `Market`.state`**. The
+//! market therefore keeps its terminal `Resolved`/`Cancelled` state, which has
+//! two important consequences:
+//!
+//! - **Preserved discoverability**: archived events remain discoverable in
+//!   `query_events_by_resolution_status` (e.g. `Resolved`) because their state
+//!   is unchanged, while still being reported as archived via `archived_at` in
+//!   `EventHistoryEntry` and via the dedicated `query_archived_events` view.
+//! - **No silent data loss**: the underlying resolution outcome is never
+//!   overwritten by the archive transition, so a pruned or restored archive
+//!   entry cannot corrupt the market's real, terminal state.
+//!
+//! `is_archived` is therefore metadata-driven (archive record presence), with a
+//! backward-compatibility fallback that also treats legacy deployments whose
+//! `Market.state` is the old `Archived` marker as archived. Restore mirrors this:
+//! `RestoreArchive::restore_event` removes only the archive metadata marker.
+//!
 //! # Archive Bounds
 //!
 //! The archive is capped at [`MAX_ARCHIVE_SIZE`] entries to prevent unbounded
@@ -135,6 +156,31 @@ impl PruneCursor {
     }
 }
 
+/// Remove a (timestamp, market_id) pair from the sorted archive index.
+///
+/// No-op if the pair is not present. Deterministic: the remaining entries keep
+/// their ascending (timestamp, market_id) order.
+fn remove_from_sorted_index(env: &Env, timestamp: u64, market_id: &Symbol) {
+    let index_key = Symbol::new(env, ARCHIVED_INDEX_KEY);
+    let index: Vec<(u64, Symbol)> = env
+        .storage()
+        .persistent()
+        .get(&index_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let mut new_index = Vec::new(env);
+    for i in 0..index.len() {
+        if let Some(entry) = index.get(i) {
+            if entry.0 == timestamp && entry.1 == *market_id {
+                // Skip the matching entry.
+                continue;
+            }
+            new_index.push_back(entry);
+        }
+    }
+    env.storage().persistent().set(&index_key, &new_index);
+}
+
 // ---------------------------------------------------------------------------
 // Sorted index helpers
 // ---------------------------------------------------------------------------
@@ -206,8 +252,12 @@ impl EventArchive {
         }
 
         // ===== STATE VALIDATION =====
-        // Fetch market and verify it exists
-        let mut market: Market = env
+        // Fetch market and verify it exists. The stored record is read-only here:
+        // archiving must NOT mutate the market (non-destructive discoverability
+        // invariant, see module docs). The market keeps its terminal
+        // `Resolved`/`Cancelled` state so it stays discoverable by status, and the
+        // archive marker below records the archived_at timestamp independently.
+        let market: Market = env
             .storage()
             .persistent()
             .get(market_id)
@@ -218,7 +268,7 @@ impl EventArchive {
             return Err(Error::CannotArchiveFromState);
         }
 
-        // Reject if market is already in Archived or Restored state
+        // Reject if market is already in legacy Archived state (pre-metadata archive)
         if market.state == MarketState::Archived {
             return Err(Error::MarketAlreadyArchived);
         }
@@ -241,18 +291,15 @@ impl EventArchive {
             return Err(Error::ArchiveFull);
         }
 
-        // ===== STATE TRANSITION =====
-        // Update market state to Archived
-        market.state = MarketState::Archived;
-        env.storage().persistent().set(market_id, &market);
-
         // ===== ARCHIVE METADATA RECORDING =====
+        // The market record is deliberately left untouched. Archiving is purely a
+        // metadata marker (market_id -> archived_at) plus the sorted index entry.
         let now = env.ledger().timestamp();
         let mut new_archived = archived;
         new_archived.set(market_id.clone(), now);
         env.storage().persistent().set(&key, &new_archived);
 
-        // Maintain the sorted index for deterministic pruning
+        // Maintain the sorted index for deterministic pruning and discovery
         insert_into_sorted_index(env, now, market_id);
 
         // ===== OBSERVABILITY =====
@@ -411,39 +458,33 @@ impl EventArchive {
         Ok((removed, new_cursor))
     }
 
-    /// Check if an event is archived.
-    /// Check if a market is archived (in Archived state).
+    /// Check if an event/market is archived.
     ///
-    /// Returns true only if the market exists and is in the `Archived` state.
-    /// Performs consistency validation by checking both market state and archive metadata.
+    /// Archiving is a non-destructive metadata marker (see `archive_event`), so a
+    /// market is considered archived iff it has an archive record in the
+    /// `evt_archived` map. `Market.state` is intentionally NOT consulted except
+    /// for backward compatibility with legacy deployments that stored the archive
+    /// designation in the `Archived` state before metadata-only archiving.
     ///
     /// # Arguments
     /// * `env` - Soroban environment
     /// * `market_id` - Market to check
     ///
     /// # Returns
-    /// * `true` - Market is in `Archived` state with valid archive metadata
-    /// * `false` - Market does not exist or is not in `Archived` state
+    /// * `true` - Market has an archive record (or is a legacy `Archived` market)
+    /// * `false` - Market is not archived
     pub fn is_archived(env: &Env, market_id: &Symbol) -> bool {
-        // Check market state first
-        let market_opt: Option<Market> = env.storage().persistent().get(market_id);
-        if let Some(market) = market_opt {
-            if market.state != MarketState::Archived {
-                return false;
-            }
-        } else {
-            return false;
+        // Primary: metadata-driven archive marker.
+        if Self::get_archived_at(env, market_id).is_some() {
+            return true;
         }
-
-        // Verify archive metadata exists (consistency check)
-        let key = Symbol::new(env, ARCHIVED_TS_KEY);
-        let archived: soroban_sdk::Map<Symbol, u64> = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(soroban_sdk::Map::new(env));
-
-        archived.get(market_id.clone()).is_some()
+        // Back-compat: legacy deployments that mutated `market.state` to Archived
+        // prior to metadata-only archiving must still be reported as archived.
+        let market_opt: Option<Market> = env.storage().persistent().get(market_id);
+        match market_opt {
+            Some(market) => market.state == MarketState::Archived,
+            None => false,
+        }
     }
 
     /// Get archived_at timestamp for a market (None if not archived).
@@ -468,6 +509,30 @@ impl EventArchive {
         archived.len()
     }
 
+    /// Remove the archive metadata marker (timestamp map + sorted index) for a
+    /// market. Used by the restore flow to bring an archived market back into
+    /// the active set without mutating its stored `Market.state`.
+    ///
+    /// Returns `Error::CannotRestoreFromState` if the market has no archive
+    /// record (i.e. it is not currently archived).
+    pub(crate) fn unarchive(env: &Env, market_id: &Symbol) -> Result<(), Error> {
+        let key = Symbol::new(env, ARCHIVED_TS_KEY);
+        let mut archived: soroban_sdk::Map<Symbol, u64> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| soroban_sdk::Map::new(env));
+
+        let archived_at = archived
+            .get(market_id.clone())
+            .ok_or(Error::CannotRestoreFromState)?;
+        archived.remove(market_id.clone());
+        env.storage().persistent().set(&key, &archived);
+
+        remove_from_sorted_index(env, archived_at, market_id);
+        Ok(())
+    }
+
     /// Validate archive state consistency and detect corruption.
     ///
     /// Performs deterministic checks to ensure:
@@ -483,19 +548,6 @@ impl EventArchive {
     /// * `Ok(())` - Market state is consistent
     /// * `Err(Error::InvalidState)` - State mismatch or corruption detected
     pub fn validate_archive_consistency(env: &Env, market_id: &Symbol) -> Result<(), Error> {
-        // Fetch market
-        let market_opt: Option<Market> = env.storage().persistent().get(market_id);
-        
-        // Check if market is archived
-        if let Some(market) = market_opt {
-            if market.state != MarketState::Archived {
-                return Ok(()); // Not archived, no validation needed
-            }
-        } else {
-            return Ok(()); // Market doesn't exist, no validation needed
-        }
-
-        // Market is archived; verify archive metadata exists
         let key = Symbol::new(env, ARCHIVED_TS_KEY);
         let archived: soroban_sdk::Map<Symbol, u64> = env
             .storage()
@@ -503,14 +555,18 @@ impl EventArchive {
             .get(&key)
             .unwrap_or(soroban_sdk::Map::new(env));
 
-        // Check for state mismatch: market is archived but no archive record exists
-        if archived.get(market_id.clone()).is_none() {
+        // Archive capacity must never exceed the bound.
+        if archived.len() > MAX_ARCHIVE_SIZE {
             return Err(Error::InvalidState);
         }
 
-        // Check archive capacity is not exceeded
-        if archived.len() > MAX_ARCHIVE_SIZE {
-            return Err(Error::InvalidState);
+        // Corruption check for legacy deployments: a market whose stored state is
+        // the legacy `Archived` marker must still carry an archive record, so that
+        // old archived markets stay queryable and cannot silently drop out.
+        if let Some(market) = env.storage().persistent().get::<Symbol, Market>(market_id) {
+            if market.state == MarketState::Archived && archived.get(market_id.clone()).is_none() {
+                return Err(Error::InvalidState);
+            }
         }
 
         Ok(())
@@ -630,6 +686,87 @@ impl EventArchive {
         }
 
         (result, cursor + scanned)
+    }
+
+    /// Query archived events directly (paginated, bounded).
+    ///
+    /// Archived events are discoverable here even though their `Market.state` is
+    /// preserved (non-destructive archive). Entries are ordered by `archived_at`.
+    /// * `reverse = false` - oldest archived first (ascending `archived_at`)
+    /// * `reverse = true`  - newest archived first (descending `archived_at`)
+    ///
+    /// `cursor` is the zero-based offset into the ordered archive; `limit` is
+    /// capped at [`MAX_QUERY_LIMIT`]. Returns `(entries, next_cursor)`; the caller
+    /// keeps advancing until `next_cursor == cursor` (no more entries).
+    pub fn query_archived_events(
+        env: &Env,
+        reverse: bool,
+        cursor: u32,
+        limit: u32,
+    ) -> (Vec<EventHistoryEntry>, u32) {
+        let limit = core::cmp::min(limit, MAX_QUERY_LIMIT);
+        let index_key = Symbol::new(env, ARCHIVED_INDEX_KEY);
+        let index: Vec<(u64, Symbol)> = env
+            .storage()
+            .persistent()
+            .get(&index_key)
+            .unwrap_or_else(|| Vec::new(env));
+        let total = index.len() as u32;
+
+        let mut result = Vec::new(env);
+        let mut examined = 0u32;
+
+        if !reverse {
+            // Ascending (oldest archived first): page [cursor, cursor + limit).
+            let mut idx = core::cmp::min(cursor, total);
+            while examined < limit && idx < total {
+                if let Some((_, market_id)) = index.get(idx) {
+                    examined += 1;
+                    if let Some(entry) = Self::history_entry_for_archived(env, &market_id) {
+                        result.push_back(entry);
+                    }
+                }
+                idx += 1;
+            }
+        } else {
+            // Descending (newest archived first): `cursor` counts back from the
+            // newest entry; cursor 0 starts at the newest (last index).
+            let mut idx = total.saturating_sub(core::cmp::min(cursor, total));
+            while examined < limit && idx > 0 {
+                let position = idx - 1;
+                if let Some((_, market_id)) = index.get(position) {
+                    examined += 1;
+                    if let Some(entry) = Self::history_entry_for_archived(env, &market_id) {
+                        result.push_back(entry);
+                    }
+                }
+                idx = position;
+            }
+        }
+
+        // Advance the cursor by the number of archive entries examined so the
+        // caller can page. When a page examined nothing we are at the end (or the
+        // archive is empty); pin the cursor to signal completion.
+        let next_cursor = if examined == 0 {
+            cursor
+        } else {
+            core::cmp::min(cursor.saturating_add(examined), total)
+        };
+
+        (result, next_cursor)
+    }
+
+    /// Build an `EventHistoryEntry` for an archived market, or `None` if the
+    /// market no longer exists (defensive: should never happen while the archive
+    /// index and market records are consistent).
+    fn history_entry_for_archived(env: &Env, market_id: &Symbol) -> Option<EventHistoryEntry> {
+        let market: Market = env.storage().persistent().get(market_id)?;
+        // `created_at` comes from the market ID registry when available; fall back
+        // to `end_time` for legacy/synthetic IDs without a registry entry.
+        let created_at = MarketIdGenerator::get_registry_entry(env, market_id)
+            .map(|entry| entry.timestamp)
+            .unwrap_or(market.end_time);
+        Some(Self::market_to_history_entry(env, market_id, &market, created_at))
     }
 
     /// Query events by category (paginated, bounded).

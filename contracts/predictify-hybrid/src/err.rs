@@ -220,7 +220,7 @@ pub enum Error {
     /// Market cannot be archived from current state. Archive only allowed from Resolved or Cancelled.
     CannotArchiveFromState = 442,
     /// Market cannot be restored from current state. Restore only allowed from Archived.
-    CannotRestoreFromState = 444,
+    CannotRestoreFromState = 447,
     /// Market is already archived. Cannot perform modification operations on archived markets.
     MarketAlreadyArchived = 445,
     /// Market is already restored. Cannot restore a market that is not archived.
@@ -1945,6 +1945,9 @@ impl Error {
             Error::ArchiveFull                    => 1917,
             Error::ReasonTableFull                => 1918,
             Error::RegistryFull                   => 1919,
+            // Catch-all for variants not yet assigned an off-chain code. Callers
+            // that hit this value should treat it as an unmapped error.
+            _ => 0,
         }
     }
 

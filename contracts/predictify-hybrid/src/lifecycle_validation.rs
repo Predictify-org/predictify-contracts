@@ -102,18 +102,28 @@ impl LifecycleValidator {
             }
         };
 
-        // Validate based on market state
-        match market.state {
-            MarketState::Archived => {
-                Self::validate_archived_market(env, market_id, &market)
-            }
-            MarketState::Restored => {
-                Self::validate_restored_market(env, market_id, &market)
-            }
-            _ => {
-                // For other states, just verify they're not incorrectly marked
-                Self::validate_non_archived_market(env, market_id, &market)
-            }
+        // Archive and restore are non-destructive METADATA markers (see
+        // `EventArchive::archive_event`): they no longer transition
+        // `Market.state`. Dispatch on the metadata flags, not the state.
+        let is_archived = EventArchive::is_archived(env, market_id);
+        let is_restored = RestoreArchive::is_restored(env, market_id);
+
+        if is_archived && is_restored {
+            return Ok(LifecycleValidationResult::failure(
+                env,
+                Error::InvalidState,
+                "State corruption: market is both archived and restored",
+            ));
+        }
+        if is_archived {
+            Self::validate_archived_market(env, market_id)
+        } else if is_restored {
+            Self::validate_restored_market(env, market_id)
+        } else {
+            Ok(LifecycleValidationResult::success(
+                env,
+                "Market state is consistent",
+            ))
         }
     }
 
@@ -127,18 +137,8 @@ impl LifecycleValidator {
     fn validate_archived_market(
         env: &Env,
         market_id: &Symbol,
-        market: &Market,
     ) -> Result<LifecycleValidationResult, Error> {
-        // Check state is exactly Archived
-        if market.state != MarketState::Archived {
-            return Ok(LifecycleValidationResult::failure(
-                env,
-                Error::InvalidState,
-                "Market state mismatch: expected Archived",
-            ));
-        }
-
-        // Verify archive metadata exists
+        // Verify archive metadata exists (dispatch already confirmed this).
         if !EventArchive::is_archived(env, market_id) {
             return Ok(LifecycleValidationResult::failure(
                 env,
@@ -182,17 +182,7 @@ impl LifecycleValidator {
     fn validate_restored_market(
         env: &Env,
         market_id: &Symbol,
-        market: &Market,
     ) -> Result<LifecycleValidationResult, Error> {
-        // Check state is exactly Restored
-        if market.state != MarketState::Restored {
-            return Ok(LifecycleValidationResult::failure(
-                env,
-                Error::InvalidState,
-                "Market state mismatch: expected Restored",
-            ));
-        }
-
         // Verify restore metadata exists
         if !RestoreArchive::is_restored(env, market_id) {
             return Ok(LifecycleValidationResult::failure(
@@ -223,58 +213,6 @@ impl LifecycleValidator {
         Ok(LifecycleValidationResult::success(
             env,
             "Restored market state is consistent",
-        ))
-    }
-
-    /// Validate a non-archived/restored market.
-    ///
-    /// Ensures:
-    /// - Market is not incorrectly marked as archived/restored
-    /// - No orphaned archive/restore metadata exists
-    fn validate_non_archived_market(
-        env: &Env,
-        market_id: &Symbol,
-        market: &Market,
-    ) -> Result<LifecycleValidationResult, Error> {
-        // Check state is not Archived (should never reach here if state is Archived)
-        if market.state == MarketState::Archived {
-            return Ok(LifecycleValidationResult::failure(
-                env,
-                Error::InvalidState,
-                "Market state inconsistency: state indicates Archived",
-            ));
-        }
-
-        // Check state is not Restored (should never reach here if state is Restored)
-        if market.state == MarketState::Restored {
-            return Ok(LifecycleValidationResult::failure(
-                env,
-                Error::InvalidState,
-                "Market state inconsistency: state indicates Restored",
-            ));
-        }
-
-        // Check no orphaned archive metadata exists
-        if EventArchive::is_archived(env, market_id) {
-            return Ok(LifecycleValidationResult::failure(
-                env,
-                Error::InvalidState,
-                "Orphaned archive metadata: market state is not Archived but archive record exists",
-            ));
-        }
-
-        // Check no orphaned restore metadata exists
-        if RestoreArchive::is_restored(env, market_id) {
-            return Ok(LifecycleValidationResult::failure(
-                env,
-                Error::InvalidState,
-                "Orphaned restore metadata: market state is not Restored but restore record exists",
-            ));
-        }
-
-        Ok(LifecycleValidationResult::success(
-            env,
-            "Non-archived market state is consistent",
         ))
     }
 
