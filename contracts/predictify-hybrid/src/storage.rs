@@ -108,6 +108,19 @@ enum StorageTtlTier {
     Archive,
 }
 
+impl StorageConfig {
+    /// Returns the configured TTL (in ledgers) for the requested storage tier.
+    /// This makes storage-tier selection explicit and auditable at every call site.
+    fn ttl_for_tier(&self, tier: StorageTtlTier) -> u32 {
+        match tier {
+            StorageTtlTier::Balance => self.balance_ttl_ledgers,
+            StorageTtlTier::Market => self.market_ttl_ledgers,
+            StorageTtlTier::Event => self.event_ttl_ledgers,
+            StorageTtlTier::Archive => self.archive_ttl_ledgers,
+        }
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct StorageTtlPressure {
@@ -308,7 +321,7 @@ impl StorageMigration {
                 env,
                 &persistent_key,
                 &metadata,
-                config.market_ttl_ledgers,
+                config.ttl_for_tier(StorageTtlTier::Market),
             );
 
             env.storage().temporary().remove(&temp_key);
@@ -330,7 +343,7 @@ impl StorageMigration {
                 StorageOptimizer::extend_persistent_ttl(
                     env,
                     &persistent_key,
-                    config.market_ttl_ledgers,
+                    config.ttl_for_tier(StorageTtlTier::Market),
                 );
                 Ok(())
             } else {

@@ -410,6 +410,15 @@ pub const RESOLUTION_ANALYTICS_STORAGE_KEY: &str = "ResolutionAnalytics";
 /// Storage key for oracle statistics
 pub const ORACLE_STATS_STORAGE_KEY: &str = "OracleStats";
 
+/// Storage key for the complete contract configuration
+pub const CONFIG_STORAGE_KEY: &str = "ContractConfig";
+
+/// Storage key for the configuration update audit history
+pub const CONFIG_HISTORY_STORAGE_KEY: &str = "ConfigHistory";
+
+/// Maximum number of configuration update history records retained
+pub const CONFIG_HISTORY_MAX_LEN: u32 = 100;
+
 // ===== CONFIGURATION STRUCTS =====
 
 /// Deployment environment specification for the Predictify Hybrid contract.
@@ -2280,7 +2289,8 @@ impl ConfigManager {
     /// - Environment-specific deployments
     /// - Configuration resets and migrations
     pub fn store_config(env: &Env, config: &ContractConfig) -> Result<(), Error> {
-        let key = Symbol::new(env, "ContractConfig");
+        ConfigValidator::validate_contract_config(config)?;
+        let key = Symbol::new(env, CONFIG_STORAGE_KEY);
         env.storage().persistent().set(&key, config);
         Ok(())
     }
@@ -2338,7 +2348,7 @@ impl ConfigManager {
     /// - Oracle integration and resolution
     /// - Admin operations and updates
     pub fn get_config(env: &Env) -> Result<ContractConfig, Error> {
-        let key = Symbol::new(env, "ContractConfig");
+        let key = Symbol::new(env, CONFIG_STORAGE_KEY);
         // Check if key exists before trying to get it to avoid segfaults
         match env
             .storage()
@@ -2478,7 +2488,7 @@ impl ConfigManager {
 
     /// Internal helper: push a history record, keep last 100 entries
     fn push_history(env: &Env, record: &ConfigUpdateRecord) {
-        let key = Symbol::new(env, "ConfigHistory");
+        let key = Symbol::new(env, CONFIG_HISTORY_STORAGE_KEY);
         let mut history: soroban_sdk::Vec<ConfigUpdateRecord> = env
             .storage()
             .persistent()
@@ -2486,7 +2496,7 @@ impl ConfigManager {
             .unwrap_or_else(|| soroban_sdk::Vec::new(env));
 
         history.push_back(record.clone());
-        if history.len() > 100 {
+        if history.len() > CONFIG_HISTORY_MAX_LEN {
             history.remove(0);
         }
         env.storage().persistent().set(&key, &history);
@@ -2501,7 +2511,7 @@ impl ConfigManager {
     pub fn get_configuration_history(
         env: &Env,
     ) -> Result<soroban_sdk::Vec<ConfigUpdateRecord>, Error> {
-        let key = Symbol::new(env, "ConfigHistory");
+        let key = Symbol::new(env, CONFIG_HISTORY_STORAGE_KEY);
         Ok(env
             .storage()
             .persistent()
@@ -2778,19 +2788,37 @@ impl ConfigValidator {
 
     /// Validate market configuration
     pub fn validate_market_config(config: &MarketConfig) -> Result<(), Error> {
-        if config.max_duration_days < config.min_duration_days {
+        if config.max_duration_days < MIN_MARKET_DURATION_DAYS
+            || config.max_duration_days > MAX_MARKET_DURATION_DAYS
+        {
             return Err(Error::InvalidInput);
         }
-
-        if config.max_outcomes < config.min_outcomes {
+        if config.min_duration_days < MIN_MARKET_DURATION_DAYS
+            || config.min_duration_days > config.max_duration_days
+        {
             return Err(Error::InvalidInput);
         }
-
-        if config.max_question_length == 0 {
+        if config.max_outcomes < MIN_MARKET_OUTCOMES
+            || config.max_outcomes > MAX_MARKET_OUTCOMES
+        {
             return Err(Error::InvalidInput);
         }
-
-        if config.max_outcome_length == 0 {
+        if config.min_outcomes < MIN_MARKET_OUTCOMES
+            || config.min_outcomes > config.max_outcomes
+        {
+            return Err(Error::InvalidInput);
+        }
+        if config.max_question_length < MIN_QUESTION_LENGTH
+            || config.max_question_length > MAX_QUESTION_LENGTH
+        {
+            return Err(Error::InvalidInput);
+        }
+        if config.max_outcome_length < MIN_OUTCOME_LENGTH
+            || config.max_outcome_length > MAX_OUTCOME_LENGTH
+        {
+            return Err(Error::InvalidInput);
+        }
+        if config.max_active_events_per_creator == 0 {
             return Err(Error::InvalidInput);
         }
 
@@ -3216,5 +3244,53 @@ mod tests {
         assert_eq!(MAX_ORACLE_PRICE_AGE, 3600);
         assert_eq!(ORACLE_RETRY_ATTEMPTS, 3);
         assert_eq!(ORACLE_TIMEOUT_SECONDS, 30);
+    }
+
+    #[test]
+    fn test_store_config_rejects_invalid_configuration() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let mut invalid = ConfigManager::get_development_config(&env);
+        invalid.fees.platform_fee_percentage = MAX_PLATFORM_FEE_PERCENTAGE + 1;
+
+        env.as_contract(&contract_id, || {
+            assert!(ConfigManager::store_config(&env, &invalid).is_err());
+            assert!(matches!(
+                ConfigManager::get_config(&env),
+                Err(Error::ConfigNotFound)
+            ));
+        });
+    }
+
+    #[test]
+    fn test_config_history_retains_last_hundred_records() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let cfg = ConfigManager::get_development_config(&env);
+            ConfigManager::store_config(&env, &cfg).unwrap();
+
+            for i in 0..CONFIG_HISTORY_MAX_LEN + 5 {
+                let old = String::from_str(&env, &alloc::format!("old-{}", i));
+                let new = String::from_str(&env, &alloc::format!("new-{}", i));
+                ConfigManager::push_history(
+                    &env,
+                    &ConfigUpdateRecord {
+                        updated_by: admin.clone(),
+                        change_type: String::from_str(&env, "test"),
+                        old_value: old,
+                        new_value: new,
+                        timestamp: i as u64,
+                    },
+                );
+            }
+
+            let history = ConfigManager::get_configuration_history(&env).unwrap();
+            assert_eq!(history.len(), CONFIG_HISTORY_MAX_LEN);
+            let first_old = history.get(0).unwrap().old_value.clone();
+            assert_eq!(first_old, String::from_str(&env, "old-5"));
+        });
     }
 }
