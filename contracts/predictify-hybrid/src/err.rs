@@ -201,6 +201,14 @@ pub enum Error {
     // ===== VALIDATION ERRORS (435-437) =====
     /// Market ID already exists in the registry. Cannot create duplicate market IDs.
     DuplicateMarketId = 441,
+    /// Market cannot be archived from current state. Archive only allowed from Resolved or Cancelled.
+    CannotArchiveFromState = 442,
+    /// Market cannot be restored from current state. Restore only allowed from Archived.
+    CannotRestoreFromState = 444,
+    /// Market is already archived. Cannot perform modification operations on archived markets.
+    MarketAlreadyArchived = 445,
+    /// Market is already restored. Cannot restore a market that is not archived.
+    MarketAlreadyRestored = 446,
     // `ReplayedOverride` is defined once below (= 526); the duplicate that lived
     // here (= 442) was removed to fix E0428.
 
@@ -699,6 +707,18 @@ impl ErrorHandler {
             Error::ForceResolveReasonEmpty => {
                 "Force-resolve reason is empty. Provide a non-empty reason string."
             }
+            Error::CannotArchiveFromState => {
+                "Market cannot be archived from its current state. Archive is only allowed from Resolved or Cancelled states."
+            }
+            Error::CannotRestoreFromState => {
+                "Market cannot be restored from its current state. Restore is only allowed from Archived state."
+            }
+            Error::MarketAlreadyArchived => {
+                "Market is already archived. Archived markets are immutable and cannot be modified."
+            }
+            Error::MarketAlreadyRestored => {
+                "Market is already restored. Cannot restore a market that is not archived."
+            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -830,6 +850,10 @@ impl ErrorHandler {
             }
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
+            Error::CannotArchiveFromState
+            | Error::CannotRestoreFromState
+            | Error::MarketAlreadyArchived
+            | Error::MarketAlreadyRestored => RecoveryStrategy::Abort,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
             Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
             Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,

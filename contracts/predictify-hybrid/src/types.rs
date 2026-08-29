@@ -141,6 +141,14 @@ pub enum MarketState {
     Closed,
     /// Market has been cancelled
     Cancelled,
+    /// Market has been archived (immutable, read-only state)
+    /// Archive only allowed from Resolved or Cancelled states.
+    /// Once archived, market cannot be modified, only queried or permanently deleted via pruning.
+    Archived,
+    /// Market has been restored from archive (optional state for future restore functionality)
+    /// Restore only allowed from Archived state.
+    /// Restored markets may be transitioned back to Active or other eligible states.
+    Restored,
 }
 
 // ===== ORACLE TYPES =====

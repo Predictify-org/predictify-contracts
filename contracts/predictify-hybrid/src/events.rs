@@ -1668,6 +1668,48 @@ pub struct MarketArchivedEvent {
     pub timestamp: u64,
 }
 
+/// Archive transition event — lifecycle-bound archive operation
+///
+/// Emitted when a market transitions from Resolved or Cancelled state to Archived state.
+/// Includes admin authorization and transition details for audit trail.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArchiveTransitionEvent {
+    /// Market ID being archived
+    pub market_id: Symbol,
+    /// Admin performing the archive
+    pub admin: Address,
+    /// Previous market state
+    pub from_state: String,
+    /// Archive timestamp
+    pub archived_at: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+    /// Event emission timestamp
+    pub timestamp: u64,
+}
+
+/// Restore transition event — lifecycle-bound restore operation
+///
+/// Emitted when a market transitions from Archived state to Restored state.
+/// Includes admin authorization, reason, and transition details for audit trail.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreTransitionEvent {
+    /// Market ID being restored
+    pub market_id: Symbol,
+    /// Admin performing the restore
+    pub admin: Address,
+    /// Reason for restore operation (optional notes)
+    pub reason: String,
+    /// Restore timestamp
+    pub restored_at: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+    /// Event emission timestamp
+    pub timestamp: u64,
+}
+
 /// Oracle degradation event - emitted when oracle service fails or becomes unavailable
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -5689,6 +5731,54 @@ impl EventEmitter {
         Self::store_event(env, &symbol_short!("cum_set"), &event);
         env.events()
             .publish((symbol_short!("cum_set"), user.clone()), event);
+    }
+
+    /// Emit archive transition event when a market is archived.
+    ///
+    /// Emitted when a market transitions from Resolved or Cancelled state to Archived state.
+    /// Includes admin authorization for audit trail.
+    pub fn emit_archive_transition(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        from_state: &String,
+    ) {
+        let event = ArchiveTransitionEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            from_state: from_state.clone(),
+            archived_at: env.ledger().timestamp(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("arch_trn").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("arch_trn"), &event);
+        env.events()
+            .publish((symbol_short!("arch_trn"), market_id.clone()), event);
+    }
+
+    /// Emit restore transition event when a market is restored from archive.
+    ///
+    /// Emitted when a market transitions from Archived state to Restored state.
+    /// Includes admin authorization and reason for audit trail.
+    pub fn emit_restore_transition(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        reason: &String,
+    ) {
+        let event = RestoreTransitionEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            reason: reason.clone(),
+            restored_at: env.ledger().timestamp(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("rest_trn").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("rest_trn"), &event);
+        env.events()
+            .publish((symbol_short!("rest_trn"), market_id.clone()), event);
     }
 }
 
