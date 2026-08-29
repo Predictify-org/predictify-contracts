@@ -41,7 +41,7 @@ use soroban_sdk::{
     token::StellarAssetClient,
     vec, Address, Env, String as SorobanString, Symbol, Vec as SorobanVec,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::string::String as StdString;
 use std::vec::Vec as StdVec;
 
@@ -69,23 +69,23 @@ struct MarketModel {
     outcomes: StdVec<StdString>,
     creator: Address,
     end_time: u64,
-    total_stakes: HashMap<StdString, i128>,
-    votes: HashMap<Address, StdString>,
-    bets: HashMap<Address, (StdString, i128)>,
+    total_stakes: BTreeMap<StdString, i128>,
+    votes: BTreeMap<Address, StdString>,
+    bets: BTreeMap<Address, (StdString, i128)>,
     resolved_outcome: Option<StdString>,
-    claimed: HashSet<Address>,
+    claimed: BTreeSet<Address>,
 }
 
 /// Represents the entire test state
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct TestState {
     env: Env,
     contract_id: Address,
     token_id: Address,
     admin: Address,
     users: StdVec<Address>,
-    markets: HashMap<Symbol, MarketModel>,
-    balances: HashMap<Address, i128>,
+    markets: BTreeMap<Symbol, MarketModel>,
+    balances: BTreeMap<Address, i128>,
 }
 
 impl TestState {
@@ -109,7 +109,7 @@ impl TestState {
         // Initialize contract
         let contract_id = env.register(PredictifyHybrid, ());
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&1, &None, &None);
+        client.initialize(&admin, &None, &None);
 
         // Set token for staking
         env.as_contract(&contract_id, || {
@@ -123,7 +123,7 @@ impl TestState {
         env.mock_all_auths();
         stellar_client.mint(&admin, &INITIAL_BALANCE);
 
-        let mut balances = HashMap::new();
+        let mut balances = BTreeMap::new();
         balances.insert(admin.clone(), INITIAL_BALANCE);
 
         for user in users.iter() {
@@ -137,7 +137,7 @@ impl TestState {
             token_id,
             admin,
             users,
-            markets: HashMap::new(),
+            markets: BTreeMap::new(),
             balances,
         }
     }
@@ -313,16 +313,18 @@ impl Operation {
                     &creator,
                     &SorobanString::from_str(&state.env, "Test Market"),
                     &outcomes,
-                    duration_days,
+                    &duration_days,
                     &oracle_config,
                     &None,
                     &0,
                     &None,
                     &None,
                     &None,
+                    &None,
+                    &None,
                 );
 
-                if let Ok(created_id) = result {
+                if let Ok(Ok(created_id)) = result {
                     let end_time = state.current_time() + (*duration_days as u64 * 24 * 60 * 60);
 
                     state.markets.insert(
@@ -333,11 +335,11 @@ impl Operation {
                             outcomes: outcome_names,
                             creator: creator.clone(),
                             end_time,
-                            total_stakes: HashMap::new(),
-                            votes: HashMap::new(),
-                            bets: HashMap::new(),
+                            total_stakes: BTreeMap::new(),
+                            votes: BTreeMap::new(),
+                            bets: BTreeMap::new(),
                             resolved_outcome: None,
-                            claimed: HashSet::new(),
+                            claimed: BTreeSet::new(),
                         },
                     );
                 }
@@ -364,15 +366,15 @@ impl Operation {
                 }
 
                 let user = state.user(*user_idx).clone();
-                let outcome_name = &market.outcomes[*outcome_idx % market.outcomes.len()];
+                let outcome_name = market.outcomes[*outcome_idx % market.outcomes.len()].clone();
                 let client = state.client();
 
                 state.env.mock_all_auths();
                 let result = client.try_vote(
                     &user,
                     market_id,
-                    &SorobanString::from_str(&state.env, outcome_name),
-                    stake,
+                    &SorobanString::from_str(&state.env, &outcome_name),
+                    &stake,
                 );
 
                 if result.is_ok() {
@@ -407,15 +409,15 @@ impl Operation {
                 }
 
                 let user = state.user(*user_idx).clone();
-                let outcome_name = &market.outcomes[*outcome_idx % market.outcomes.len()];
+                let outcome_name = market.outcomes[*outcome_idx % market.outcomes.len()].clone();
                 let client = state.client();
 
                 state.env.mock_all_auths();
                 let result = client.try_place_bet(
                     &user,
                     market_id,
-                    &SorobanString::from_str(&state.env, outcome_name),
-                    amount,
+                    &SorobanString::from_str(&state.env, &outcome_name),
+                    &amount,
                     &1000, // max_fee_bps: 10% max fee
                 );
 
@@ -465,12 +467,12 @@ impl Operation {
                 }
 
                 let winning_outcome =
-                    &market.outcomes[*winning_outcome_idx % market.outcomes.len()];
+                    market.outcomes[*winning_outcome_idx % market.outcomes.len()].clone();
 
                 // Simulate resolution by directly updating state
                 if let Some(market_mut) = state.markets.get_mut(market_id) {
                     market_mut.state = MarketState::Resolved;
-                    market_mut.resolved_outcome = Some(winning_outcome.clone());
+                    market_mut.resolved_outcome = Some(winning_outcome);
                 }
 
                 Ok(())
@@ -569,6 +571,8 @@ fn validate_state_transition(market: &MarketModel) -> Result<(), String> {
         }
         MarketState::Closed => Ok(()),
         MarketState::Cancelled => Ok(()),
+        MarketState::Archived => Ok(()),
+        MarketState::Restored => Ok(()),
     }
 }
 
@@ -646,6 +650,8 @@ proptest! {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         );
 
         // Advance time
@@ -717,6 +723,8 @@ proptest! {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         );
 
         // Place first vote
@@ -777,6 +785,8 @@ fn test_basic_market_creation() {
         &None,
         &None,
         &None,
+        &None,
+        &None,
     );
 
     // Verify market exists
@@ -823,6 +833,8 @@ fn test_vote_on_active_market() {
         &None,
         &None,
         &None,
+        &None,
+        &None,
     );
 
     // Place a vote
@@ -864,6 +876,8 @@ fn test_no_vote_after_market_ends() {
         },
         &None,
         &0,
+        &None,
+        &None,
         &None,
         &None,
         &None,

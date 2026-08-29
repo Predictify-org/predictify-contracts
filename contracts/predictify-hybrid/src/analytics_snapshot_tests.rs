@@ -2,6 +2,7 @@ use crate::analytics_snapshot::{AnalyticsSnapshotEnvelope, AnalyticsSnapshotMana
 use crate::err::Error;
 use crate::types::{Market, MarketState, OracleConfig};
 use crate::PredictifyHybrid;
+use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{symbol_short, Address, Env, String, Symbol, Vec};
 
 fn make_market(env: &Env, market_id: Symbol) -> Market {

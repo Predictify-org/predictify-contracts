@@ -13,27 +13,43 @@
 //! - **State Persistence**: Nonce stored in persistent storage and ClaimInfo
 //! - **Zero Payout Claims**: Nonce increments even when payout is 0
 
+use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 use predictify_hybrid::storage::{ClaimNonceManager, DataKey};
+use predictify_hybrid::PredictifyHybrid;
+
+/// Creates an environment with a registered contract instance so persistent
+/// storage access works inside `as_contract`. Returns `(env, contract_id)`.
+fn contract_env() -> (Env, Address) {
+    let env = Env::default();
+    let contract_id = env.register(PredictifyHybrid, ());
+    (env, contract_id)
+}
+
+fn sym(env: &Env, name: &str) -> Symbol {
+    Symbol::new(env, name)
+}
 
 // ===== NONCE MANAGER UNIT TESTS =====
 
 #[test]
 fn test_get_nonce_returns_zero_initially() {
-    let env = Env::default();
-    let user = Address::generate(&env);
-    let market_id = Symbol::from_str(&env, "m1");
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
+        let user = Address::generate(&env);
+        let market_id = sym(&env, "m1");
 
-    let nonce = ClaimNonceManager::get_nonce(&env, &user, &market_id);
-    assert_eq!(nonce, 0, "Initial nonce should be 0 for never-claimed user");
+        let nonce = ClaimNonceManager::get_nonce(&env, &user, &market_id);
+        assert_eq!(nonce, 0, "Initial nonce should be 0 for never-claimed user");
+    });
 }
 
 #[test]
 fn test_increment_nonce_returns_next_value() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // First increment
         let nonce1 = ClaimNonceManager::increment_nonce(&env, &user, &market_id);
@@ -55,10 +71,10 @@ fn test_increment_nonce_returns_next_value() {
 
 #[test]
 fn test_validate_nonce_succeeds_when_matching() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // Get initial nonce (0)
         let current = ClaimNonceManager::get_nonce(&env, &user, &market_id);
@@ -77,10 +93,10 @@ fn test_validate_nonce_succeeds_when_matching() {
 
 #[test]
 fn test_validate_nonce_fails_for_old_nonce() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // Increment to 1
         ClaimNonceManager::increment_nonce(&env, &user, &market_id);
@@ -99,11 +115,11 @@ fn test_validate_nonce_fails_for_old_nonce() {
 
 #[test]
 fn test_nonce_independence_per_user() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user1 = Address::generate(&env);
         let user2 = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // User1 increments nonce to 1
         let nonce1 = ClaimNonceManager::increment_nonce(&env, &user1, &market_id);
@@ -125,11 +141,11 @@ fn test_nonce_independence_per_user() {
 
 #[test]
 fn test_nonce_independence_per_market() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market1 = Symbol::from_str(&env, "m1");
-        let market2 = Symbol::from_str(&env, "m2");
+        let market1 = sym(&env, "m1");
+        let market2 = sym(&env, "m2");
 
         // Increment on market1
         let nonce_m1 = ClaimNonceManager::increment_nonce(&env, &user, &market1);
@@ -151,10 +167,10 @@ fn test_nonce_independence_per_market() {
 
 #[test]
 fn test_nonce_persists_across_calls() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // Increment multiple times
         for i in 1..=5 {
@@ -178,8 +194,8 @@ fn test_storage_key_uniqueness() {
 
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);
-    let market1 = Symbol::from_str(&env, "m1");
-    let market2 = Symbol::from_str(&env, "m2");
+    let market1 = sym(&env, "m1");
+    let market2 = sym(&env, "m2");
 
     // Generate keys - they should all be different
     let key1 = DataKey::ClaimNonce(user1.clone(), market1.clone());
@@ -200,10 +216,10 @@ fn test_storage_key_uniqueness() {
 
 #[test]
 fn test_claim_lifecycle_with_nonce() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // Initial state: nonce is 0
         let nonce_before = ClaimNonceManager::get_nonce(&env, &user, &market_id);
@@ -236,10 +252,10 @@ fn test_claim_lifecycle_with_nonce() {
 
 #[test]
 fn test_replay_attack_simulation() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // Original claim: nonce 0 -> 1
         assert!(ClaimNonceManager::validate_nonce(&env, &user, &market_id, 0).is_ok());
@@ -259,10 +275,10 @@ fn test_replay_attack_simulation() {
 
 #[test]
 fn test_nonce_monotonic_sequence() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // Verify strict monotonic increase
         let mut prev = 0u64;
@@ -276,10 +292,10 @@ fn test_nonce_monotonic_sequence() {
 
 #[test]
 fn test_zero_nonce_is_valid_on_first_claim() {
-    let env = Env::default();
-    env.as_contract(&Address::generate(&env), || {
+    let (env, contract_id) = contract_env();
+    env.as_contract(&contract_id, || {
         let user = Address::generate(&env);
-        let market_id = Symbol::from_str(&env, "m1");
+        let market_id = sym(&env, "m1");
 
         // Zero nonce should validate initially
         let result = ClaimNonceManager::validate_nonce(&env, &user, &market_id, 0);

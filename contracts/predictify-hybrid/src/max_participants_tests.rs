@@ -48,7 +48,7 @@ impl Setup {
         });
 
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin, &None);
+        client.initialize(&admin, &None, &None);
 
         Self { env, contract_id, admin, token_id }
     }
@@ -99,7 +99,10 @@ impl Setup {
         user: &Address,
         outcome: &str,
         stake: i128,
-    ) -> Result<Result<(), soroban_sdk::ConversionError>, Result<Error, soroban_sdk::InvokeError>> {
+    ) -> Result<
+        Result<(), soroban_sdk::ConversionError>,
+        Result<soroban_sdk::Error, soroban_sdk::InvokeError>,
+    > {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         client.try_vote(user, market_id, &String::from_str(&self.env, outcome), &stake)
     }
@@ -149,7 +152,12 @@ fn test_cap_exceeded_returns_error() {
 
     // Third voter should be rejected
     let result = s.vote(&market_id, &user3, "Yes", 1_000_000);
-    assert_eq!(result, Err(Ok(Error::MaxParticipantsReached)));
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            Error::MaxParticipantsReached as u32
+        )))
+    );
 }
 
 /// Exactly hitting the cap boundary is allowed.
@@ -182,7 +190,12 @@ fn test_beyond_cap_after_exact_hit_rejected() {
 
     // Exactly at cap; 3rd voter rejected
     let result = s.vote(&market_id, &user3, "Yes", 1_000_000);
-    assert_eq!(result, Err(Ok(Error::MaxParticipantsReached)));
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            Error::MaxParticipantsReached as u32
+        )))
+    );
 }
 
 /// Admin can increase the cap after creation, allowing new participants.
@@ -201,7 +214,9 @@ fn test_admin_can_increase_max_participants() {
     // Second vote should be rejected
     assert_eq!(
         s.vote(&market_id, &user2, "No", 1_000_000),
-        Err(Ok(Error::MaxParticipantsReached))
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            Error::MaxParticipantsReached as u32
+        )))
     );
 
     // Admin increases cap to 2
@@ -259,5 +274,10 @@ fn test_zero_cap_rejects_all() {
 
     let user = s.funded_user();
     let result = s.vote(&market_id, &user, "Yes", 1_000_000);
-    assert_eq!(result, Err(Ok(Error::MaxParticipantsReached)));
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            Error::MaxParticipantsReached as u32
+        )))
+    );
 }

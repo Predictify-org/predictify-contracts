@@ -119,6 +119,8 @@ impl TieSetup {
             &None,
             // dispute_window_seconds = 0 so claims are unblocked immediately
             &Some(0u64),
+            &None,
+            &None,
         )
     }
 
