@@ -121,6 +121,38 @@ fn test_create_event_invalid_outcomes_too_few() {
 
 /// Test that create_event validates empty description (parity with create_market)
 #[test]
+#[should_panic(expected = "Error(Contract, #301)")]
+fn test_create_event_invalid_duplicate_outcomes() {
+    let setup = TestSetup::new();
+    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
+
+    let description = String::from_str(&setup.env, "Duplicate outcome event?");
+    let outcomes = vec![
+        &setup.env,
+        String::from_str(&setup.env, "Yes"),
+        String::from_str(&setup.env, "yes"),
+    ];
+    let end_time = setup.env.ledger().timestamp() + 3600;
+    let oracle_config = OracleConfig {
+        provider: OracleProvider::reflector(),
+        oracle_address: Address::generate(&setup.env),
+        feed_id: String::from_str(&setup.env, "BTC/USD"),
+        threshold: 50000,
+        comparison: String::from_str(&setup.env, "gt"),
+    };
+
+    client.create_event(
+        &setup.admin,
+        &description,
+        &outcomes,
+        &end_time,
+        &oracle_config,
+        &None,
+        &0,
+    );
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #300)")]
 fn test_create_event_invalid_empty_description() {
     let setup = TestSetup::new();

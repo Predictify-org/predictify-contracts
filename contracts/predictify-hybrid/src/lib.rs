@@ -11,6 +11,7 @@ extern crate alloc;
 
 const SYM_ADMIN: &str = "Admin";
 const SYM_PLATFORM_FEE: &str = "platform_fee";
+const SYM_REMAINDER_RECIPIENT: &str = "remainder";
 pub use config::PERCENTAGE_DENOMINATOR;
 mod admin;
 // #[cfg(any())]
@@ -27,6 +28,8 @@ mod config;
 mod err;
 mod force_resolve;
 mod event_archive;
+mod restore_archive;
+mod lifecycle_validation;
 mod events;
 pub mod gov_registry;
 mod fees;
@@ -150,6 +153,9 @@ mod timelock_tests;
 // #[cfg(any())]
 // mod claim_idempotency_tests;
 
+#[cfg(test)]
+mod gas_regression_tests;
+
 // All test modules disabled due to API drift - re-enable after fixing
 // #[cfg(test)]
 // mod balance_tests;
@@ -192,6 +198,9 @@ mod fee_config_commit_reveal_tests;
 
 // #[cfg(test)]
 // mod event_creation_tests;
+
+#[cfg(test)]
+mod voting_snapshot_stability_tests;
 
 // Re-export commonly used items
 use admin::{
@@ -352,11 +361,22 @@ impl PredictifyHybrid {
             .persistent()
             .set(&Symbol::new(&env, SYM_PLATFORM_FEE), &fee_percentage);
 
+        // Store the default remainder recipient (admin) so payout remainders
+        // can be allocated to a specific address instead of being lost.
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, SYM_REMAINDER_RECIPIENT), &admin);
+
         // Seed default runtime configuration so validators and query paths have
         // deterministic bounds immediately after deployment.
         let mut default_config = ConfigManager::get_development_config(&env);
         default_config.fees.platform_fee_percentage = fee_percentage;
         ConfigManager::store_config(&env, &default_config)?;
+
+        // Seed default gas regression limits for critical-path operations.
+        // These ensure create_market and claim_winnings are always bounded
+        // even before an admin explicitly calls set_limit.
+        GasTracker::set_default_limits(&env);
 
         // Seed permissive-but-valid rate limits so admin entrypoints do not
         // fail before a custom policy is configured.
@@ -796,6 +816,7 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
         visibility: EventVisibility,
+        idempotency_key: Option<BytesN<32>>,
     ) -> Symbol {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event")
@@ -814,13 +835,18 @@ impl PredictifyHybrid {
             }
         }
 
-        // Validate inputs
-        if outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
+        // Validate shared event-creation invariants before mutating state.
+        if let Err(e) = crate::validation::CreationValidator::validate_event_creation(
+            &env,
+            &description,
+            &outcomes,
+            &end_time,
+        ) {
+            panic_with_error!(env, e);
         }
 
-        if description.len() == 0 {
-            panic_with_error!(env, Error::InvalidQuestion);
+        if end_time <= env.ledger().timestamp() {
+            panic_with_error!(env, Error::InvalidDuration);
         }
 
         // Validate oracle configuration
@@ -833,12 +859,30 @@ impl PredictifyHybrid {
             }
         }
 
+        // ═══ IDEMPOTENCY CHECK (before any state mutations) ═══
+        // If a caller provides an idempotency key, check if this request has already been processed.
+        // This prevents duplicate event-creation fee charges on retry scenarios.
+        if let Some(ref key) = idempotency_key {
+            let idem_key = DataKey::CreateEventIdem(admin.clone(), key.clone());
+            if let Some(cached_event_id) = env.storage().persistent().get::<_, Symbol>(&idem_key) {
+                // Duplicate request: return the cached event ID with an idempotency error.
+                // The caller receives a clear signal that this request was already processed.
+                panic_with_error!(env, Error::IdempotentBatchAlreadyApplied);
+            }
+        }
+
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
         let (has_fallback, fallback_cfg) = match &fallback_oracle_config {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(&env)),
+        };
+
+        // Charge creation fee after validation
+        let creation_fee_amount = match crate::fees::FeeManager::process_creation_fee(&env, &admin) {
+            Ok(fee) => fee,
+            Err(e) => panic_with_error!(env, e),
         };
 
         // Create a new event
@@ -858,8 +902,30 @@ impl PredictifyHybrid {
             allowlist: Vec::new(&env),
         };
 
+        // ═══ FEE COLLECTION ═══
+        // Charge event creation fee (same as market creation).
+        // This happens AFTER idempotency check, so duplicates don't incur fees.
+        if let Err(fee_err) = crate::fees::FeeManager::process_creation_fee(&env, &admin) {
+            panic_with_error!(env, fee_err);
+        }
+
         // Store the event
         crate::storage::EventManager::store_event(&env, &event);
+
+        // ═══ STORE IDEMPOTENCY KEY ═══
+        // Record that this request (admin, key) has been processed.
+        // TTL: PLACE_BETS_IDEM_TTL_LEDGERS (~7 days), after which the key expires.
+        if let Some(key) = idempotency_key {
+            let idem_key = DataKey::CreateEventIdem(admin.clone(), key);
+            env.storage()
+                .persistent()
+                .set(&idem_key, &event_id);
+            env.storage().persistent().extend_ttl(
+                &idem_key,
+                crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS,
+                crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS,
+            );
+        }
 
         // Emit event created event
         EventEmitter::emit_event_created(
@@ -869,6 +935,7 @@ impl PredictifyHybrid {
             &outcomes,
             &admin,
             end_time,
+            creation_fee_amount,
         );
 
         // Record statistics
@@ -881,8 +948,6 @@ impl PredictifyHybrid {
             Map::new(&env),
             None,
         );
-
-        let gas_marker = GasTracker::start_tracking(&env);
 
         GasTracker::end_tracking(&env, symbol_short!("evt_crt"), gas_marker);
         event_id
@@ -1705,13 +1770,35 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol) {
+    ///
+    /// # Replay Protection
+    ///
+    /// This function uses a monotonically-increasing per-user, per-market nonce to prevent
+    /// transaction replays. The caller must provide the `claim_nonce` parameter, which should
+    /// match the current stored nonce for the (user, market_id) pair. After a successful claim,
+    /// the nonce is incremented by 1, making any replay of the original transaction invalid.
+    ///
+    /// # Parameters
+    ///
+    /// - `user` - The user claiming their winnings
+    /// - `market_id` - The market to claim from
+    /// - `claim_nonce` - The unique nonce for this claim operation. Must match the current
+    ///   stored nonce to pass validation. On first claim, this should be 0.
+    pub fn claim_winnings(env: Env, user: Address, market_id: Symbol, claim_nonce: u64) {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "claim_winnings")
         {
             panic_with_error!(env, e);
         }
         user.require_auth();
+        let gas_marker = GasTracker::start_tracking(&env);
+
+        // ===== REPLAY PROTECTION: VALIDATE NONCE =====
+        // Ensure the provided nonce matches the expected nonce to prevent replays.
+        // Each successful claim increments the stored nonce by 1.
+        if let Err(e) = storage::ClaimNonceManager::validate_nonce(&env, &user, &market_id, claim_nonce) {
+            panic_with_error!(env, e);
+        }
 
         let mut market: Market = env
             .storage()
@@ -1721,7 +1808,7 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
-        // Check if user has claimed already
+        // Check if user has claimed already (redundant safety check; nonce validation should prevent)
         if market
             .claimed
             .get(user.clone())
@@ -1807,10 +1894,14 @@ impl PredictifyHybrid {
                 statistics::StatisticsManager::record_winnings_claimed(&env, &user, payout);
                 statistics::StatisticsManager::record_fees_collected(&env, fee_amount);
 
-                // Mark as claimed
+                // ===== INCREMENT NONCE ON SUCCESSFUL CLAIM =====
+                // Increment and store the nonce to prevent replays of this specific claim.
+                let new_nonce = storage::ClaimNonceManager::increment_nonce(&env, &user, &market_id);
+
+                // Mark as claimed with the new nonce
                 market
                     .claimed
-                    .set(user.clone(), ClaimInfo::new(&env, payout));
+                    .set(user.clone(), ClaimInfo::new(&env, payout, new_nonce));
                 store_market_with_retention(&env, &market_id, &market);
 
                 // Invalidate analytics cache — claimed map has changed.
@@ -1830,14 +1921,18 @@ impl PredictifyHybrid {
                     Err(e) => panic_with_error!(env, e),
                 }
 
+                GasTracker::end_tracking(&env, symbol_short!("claim"), gas_marker);
                 return;
             }
         }
 
-        // If no winnings (user didn't win or zero payout), still mark as claimed to prevent re-attempts
-        market.claimed.set(user.clone(), ClaimInfo::new(&env, 0));
+        // ===== INCREMENT NONCE EVEN FOR ZERO PAYOUTS =====
+        // If no winnings (user didn't win or zero payout), still increment nonce to prevent re-attempts.
+        let new_nonce = storage::ClaimNonceManager::increment_nonce(&env, &user, &market_id);
+        market.claimed.set(user.clone(), ClaimInfo::new(&env, 0, new_nonce));
         store_market_with_retention(&env, &market_id, &market);
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
+        GasTracker::end_tracking(&env, symbol_short!("claim"), gas_marker);
     }
 
     /// Set the global claim period for resolved markets (admin only).
@@ -1936,6 +2031,14 @@ impl PredictifyHybrid {
     }
 
     /// Set treasury recipient for unclaimed winnings sweeps (admin only).
+    ///
+    /// **Deprecated**: This function now queues a timelocked treasury update
+    /// instead of applying it immediately. Use `queue_treasury_update`,
+    /// `apply_treasury_update`, and `cancel_treasury_update` for the full
+    /// queue→apply→cancel lifecycle.
+    ///
+    /// The treasury address will only change after the configured timelock
+    /// period has elapsed (default: 24 hours).
     pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
         admin.require_auth();
 
@@ -1949,8 +2052,65 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        recovery::UnclaimedWinningsPolicy::set_treasury(&env, &treasury);
-        EventEmitter::emit_treasury_updated(&env, &admin, &treasury);
+        // Route through the timelocked path to prevent instant rotation
+        match recovery::TreasuryTimelockManager::queue_update(&env, &admin, &treasury) {
+            Ok(()) => {}
+            Err(Error::PendingTreasuryUpdateExists) => {
+                // Cancel the old one and queue the new one
+                let _ = recovery::TreasuryTimelockManager::cancel_update(&env, &admin);
+                recovery::TreasuryTimelockManager::queue_update(&env, &admin, &treasury)
+                    .unwrap_or_else(|e| panic_with_error!(env, e));
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Queue a treasury update for future activation (admin only).
+    ///
+    /// The treasury address will only change after the configured timelock
+    /// period (default: 24 hours) has elapsed. This prevents surprise
+    /// fee-recipient rotation.
+    pub fn queue_treasury_update(
+        env: Env,
+        admin: Address,
+        new_treasury: Address,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockManager::queue_update(&env, &admin, &new_treasury)
+    }
+
+    /// Apply the queued treasury update after the timelock has expired.
+    ///
+    /// Can be called by the admin once the timelock period has elapsed.
+    pub fn apply_treasury_update(env: Env, admin: Address) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockManager::apply_update(&env, &admin)
+    }
+
+    /// Cancel a pending treasury update before the timelock expires (admin only).
+    pub fn cancel_treasury_update(env: Env, admin: Address) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockManager::cancel_update(&env, &admin)
+    }
+
+    /// Get the pending treasury update, if any (read-only query).
+    pub fn get_pending_treasury_update(env: Env) -> Option<recovery::PendingTreasuryUpdate> {
+        recovery::TreasuryTimelockManager::get_pending_update(&env)
+    }
+
+    /// Get the treasury timelock configuration (read-only query).
+    pub fn get_treasury_timelock_config(env: Env) -> recovery::TreasuryTimelockConfig {
+        recovery::TreasuryTimelockConfig::get_config(&env)
+    }
+
+    /// Set the treasury timelock delay (admin only).
+    pub fn set_treasury_timelock_config(
+        env: Env,
+        admin: Address,
+        timelock_seconds: u64,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockConfig::set_config(&env, &admin, timelock_seconds)
     }
 
     /// Sweep unclaimed winning payouts after claim period expiry (admin only).
@@ -2203,6 +2363,19 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
         env.storage().persistent().get(&market_id)
+    }
+
+    /// Get the current claim nonce for a user on a specific market.
+    ///
+    /// This function retrieves the claim nonce used for replay protection. Clients should
+    /// call this to determine what nonce to provide when calling `claim_winnings`.
+    ///
+    /// # Returns
+    ///
+    /// The current nonce (0 on first claim, incrementing by 1 on each subsequent claim).
+    /// Clients should provide this exact value as the `claim_nonce` parameter to `claim_winnings`.
+    pub fn get_claim_nonce(env: Env, user: Address, market_id: Symbol) -> u64 {
+        storage::ClaimNonceManager::get_nonce(&env, &user, &market_id)
     }
 
     /// Verifies a client's expected metadata commitment against on-chain market metadata.
@@ -4836,40 +5009,10 @@ impl PredictifyHybrid {
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        // Get collected fees from storage (using the same key as FeeTracker)
-        let fees_key = Symbol::new(&env, "tot_fees");
-        let collected_fees: i128 = env.storage().persistent().get(&fees_key).unwrap_or(0);
-
-        if collected_fees == 0 {
-            return Err(Error::NoFeesToCollect);
-        }
-
-        // Determine withdrawal amount
-        let withdrawal_amount = if amount == 0 || amount > collected_fees {
-            collected_fees
-        } else {
-            amount
-        };
-
-        // Update collected fees (checked to prevent underflow)
-        let remaining_fees = collected_fees
-            .checked_sub(withdrawal_amount)
-            .ok_or(Error::InvalidInput)?;
-        env.storage().persistent().set(&fees_key, &remaining_fees);
-
-        // Emit fee withdrawal event
-        EventEmitter::emit_fee_collected(
-            &env,
-            &Symbol::new(&env, "withdrawal"),
-            &admin,
-            withdrawal_amount,
-            &String::from_str(&env, "fee_withdrawal"),
-        );
-
-        // In a real implementation, transfer tokens to admin here
-        // For now, we'll just track the withdrawal
-
-        Ok(withdrawal_amount)
+        // Route through the timelocked fee withdrawal manager to enforce
+        // the withdrawal schedule (timelock + cap). This prevents the admin
+        // from bypassing the schedule by calling this entrypoint directly.
+        fees::FeeWithdrawalManager::withdraw_fees(&env, &admin, amount)
     }
 
     /// Extends the deadline of an active market by a specified number of days (admin only).
@@ -5046,9 +5189,12 @@ impl PredictifyHybrid {
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        // Validate new description
-        if new_description.is_empty() {
-            panic_with_error!(env, Error::InvalidQuestion);
+        // Validate new description using the same rules as creation-time inputs.
+        if let Err(e) = crate::validation::CreationValidator::validate_event_description(
+            &env,
+            &new_description,
+        ) {
+            return Err(e);
         }
 
         // Get market
@@ -5191,16 +5337,12 @@ impl PredictifyHybrid {
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        // Validate new outcomes
-        if new_outcomes.len() < 2 {
-            panic_with_error!(env, Error::InvalidOutcomes);
-        }
-
-        // Check all outcomes are non-empty
-        for outcome in new_outcomes.iter() {
-            if outcome.is_empty() {
-                panic_with_error!(env, Error::InvalidOutcome);
-            }
+        // Validate new outcomes using the same rules as creation-time inputs.
+        if let Err(e) = crate::validation::CreationValidator::validate_creation_outcomes(
+            &env,
+            &new_outcomes,
+        ) {
+            return Err(e);
         }
 
         // Get market
@@ -8412,4 +8554,3 @@ impl PredictifyHybrid {
     }
 
 }
-

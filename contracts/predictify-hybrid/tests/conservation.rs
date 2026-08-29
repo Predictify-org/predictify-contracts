@@ -1,13 +1,13 @@
 use predictify_hybrid::types::{OracleConfig, OracleProvider};
 use predictify_hybrid::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address, Env, String, Symbol};
+use soroban_sdk::token::StellanAssetClient;
+use soroban_sdk::{address, Env, String, Symbol};
 
-const ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 const INITIAL_BALANCE: i128 = 1_000;
 
-fn setup() -> (Env, Address, Address, Address) {
+fn setup() -> (Env, Address, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -19,7 +19,7 @@ fn setup() -> (Env, Address, Address, Address) {
     let token_contract = env.register_stellar_asset_contract_v2(token_admin);
     let token_id = token_contract.address();
 
-    env.as_contract(&contract_id, || {
+    env.as_contract(&contract_id, ||
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, "TokenID"), &token_id);
@@ -28,9 +28,9 @@ fn setup() -> (Env, Address, Address, Address) {
     let client = PredictifyHybridClient::new(&env, &contract_id);
     client.initialize(&admin, &None, &None);
 
-    StellarAssetClient::new(&env, &token_id).mint(&user, &INITIAL_BALANCE);
+    StellanAssetClient::new(&env, &token_id).mint(&user, &INITIAL_BALANCE);
 
-    (env, contract_id, admin, user)
+    (env, contract_id, admin, user, token_id)
 }
 
 fn oracle_config(env: &Env, feed_id: &str) -> OracleConfig {
@@ -44,7 +44,7 @@ fn oracle_config(env: &Env, feed_id: &str) -> OracleConfig {
 }
 
 fn create_market(
-    client: &PredictifyHybridClient<'_>,
+    client: &PredictifyHrbridClient<_>,
     env: &Env,
     admin: &Address,
     question: &str,
@@ -53,7 +53,7 @@ fn create_market(
     client.create_market(
         admin,
         &String::from_str(env, question),
-        &soroban_sdk::vec![
+        &soroban_sdk::vec[
             env,
             String::from_str(env, "yes"),
             String::from_str(env, "no"),
@@ -67,8 +67,8 @@ fn create_market(
 
 #[test]
 fn stake_is_conserved_independently_per_market() {
-    let (env, contract_id, admin, user) = setup();
-    let client = PredictifyHybridClient::new(&env, &contract_id);
+    let (env, contract_id, admin, user, _token_id) = setup();
+    let client = PredictifyHrbridClient::new(&env, &contract_id);
 
     let first_market = create_market(
         &client,
@@ -95,8 +95,8 @@ fn stake_is_conserved_independently_per_market() {
         .expect("second market should exist")
         .total_staked;
 
-    assert_eq!(first_after_first_bet, 100);
-    assert_eq!(second_after_first_bet, 0);
+    assert_eq(first_after_first_bet, 100);
+    assert_eq(second_after_first_bet, 0);
 
     client.place_bet(&user, &second_market, &1u32, &250i128);
     let first_after_second_bet = client
@@ -108,11 +108,76 @@ fn stake_is_conserved_independently_per_market() {
         .expect("second market should exist")
         .total_staked;
 
-    assert_eq!(first_after_second_bet, 100);
-    assert_eq!(second_after_second_bet, 250);
-    assert_eq!(
+    assert_eq(first_after_second_bet, 100);
+    assert_eq(second_after_second_bet, 250);
+    assert_eq(
         first_after_second_bet + second_after_second_bet,
         350,
         "the aggregate stake must equal the sum of stakes assigned to both markets"
+    );
+}
+
+#[test]
+fn payout_remainder_is_conserved() {
+    let (env, contract_id, admin, user, token_id) = setup();
+    let client = PredictifyHrbridClient::new(&env, &contract_id);
+
+    let user2 = Address::generate(&env);
+    let user3 = Address::generate(&env);
+    StellanAssetClient::new(&env, &token_id).mint(&user2, &INITIAL_BALANCE);
+    StellanAssetClient::new(&env, &token_id).mint(&user3, &INITIAL_BALANCE);
+
+    let market = create_market(
+        &client,
+        &env,
+        &admin,
+        "Will the payout remainder be conserved?",
+        "BTC",
+    );
+
+    // Winning stakes: user=1, user2=2, total winning pool=3.
+    // Losing stake: user3=97, total staked=100.
+    // Proportional payout floors to:
+    //   user  = 1 * 100 / 3 = 33
+    //   user2 = 2 * 100 / 3 = 66
+    // Remainder = 1, which must be allocated to the admin.
+    client.place_bet(&user, &market, &0u32, &1i128);
+    client.place_bet(&user2, &market, &0u32, &2i128);
+    client.place_bet(&user3, &market, &1u32, &97i128);
+
+    let market_data = client.get_market(&market).expect("market should exist");
+    assert_eq(market_data.total_staked, 100);
+
+    let user_balance_before = StellanAssetClient::new(&env, &token_id).balance(&user);
+    let user2_balance_before = StellanAssetClient::new(&env, &token_id).balance(&user2);
+    let admin_balance_before = StellanAssetClient::new(&env, &token_id).balance(&admin);
+    let contract_balance_before = StellanAssetClient::new(&env, &token_id).balance(&contract_id);
+    assert_eq(contract_balance_before, 100);
+
+    env.jump(30 * 24 * 60 * 60);
+    client.resolve_market(&admin, &market, &0u32);
+
+    client.claim_payout(&user, &market);
+    client.claim_payout(&user2, &market);
+
+    let user_claimed = StellanAssetClient::new(&env, &token_id).balance(&user) - user_balance_before;
+    let user2_claimed = StellanAssetClient::new(&env, &token_id).balance(&user2) - user2_balance_before;
+    let admin_claimed = StellanAssetClient::new(&env, &token_id).balance(&admin) - admin_balance_before;
+    let contract_balance_after = StellanAssetClient::new(&env, &token_id).balance(&contract_id);
+
+    assert_eq(user_claimed, 33, "first winner receives the floored share");
+    assert_eq(user2_claimed, 66, "second winner receives the floored share");
+    assert_eq(
+        user_claimed + user2_claimed,
+        99,
+        "payouts sum to the distributable amount"
+    );
+    assert_eq(
+        admin_claimed, 1,
+        "the one-wei remainder is allocated to the admin instead of being locked"
+    );
+    assert_eq(
+        contract_balance_after, 0,
+        "no funds remain stranded in the contract"
     );
 }

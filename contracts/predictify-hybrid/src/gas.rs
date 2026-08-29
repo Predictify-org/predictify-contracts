@@ -23,6 +23,53 @@ use crate::events::PerformanceMetricEvent;
 
 use crate::err::Error;
 
+// ===== DEFAULT GAS REGRESSION LIMITS =====
+//
+// These constants define the hard upper bounds for gas consumption on the
+// two highest-traffic critical paths: market creation and winnings claim.
+//
+// Rationale:
+// - Derived from mock-delta measurements in performance_benchmarks.rs
+//   with generous headroom to avoid false positives on normal variation.
+// - If an operation's gas usage exceeds the regression limit, the
+//   transaction panics with GasBudgetExceeded, preventing regressions
+//   from shipping unnoticed.
+// - Admins may override these defaults via set_limit() at runtime.
+// - These limits are intentionally conservative; tighten once real
+//   `stellar contract invoke --cost` p99 values are available.
+//
+// Trade-offs:
+// - Too tight → false positives on normal input variation (esp. long
+//   question strings, many outcomes, many voters)
+// - Too loose → regressions slip through silently
+// - Current values use 2x the mock-delta p95 as a safety margin.
+
+/// Default maximum gas (CPU instructions) allowed for `create_market`.
+/// Covers admin auth, input validation, oracle config validation,
+/// ID generation, market struct construction, and persistent storage writes.
+pub const DEFAULT_CREATE_MARKET_GAS_LIMIT: u64 = 5_000_000;
+
+/// Default maximum gas (CPU instructions) allowed for `claim_winnings`.
+/// Covers auth, market read, resolution cache lookup, payout
+/// arithmetic, balance credit, and claimed-flag write.
+pub const DEFAULT_CLAIM_WINNINGS_GAS_LIMIT: u64 = 2_000_000;
+
+/// Retrieves the default regression limit for an operation.
+///
+/// Returns `None` for operations that don't have a hardcoded default.
+/// These defaults act as fallbacks when no admin-configured limit exists
+/// via `set_limit()`.
+fn get_default_limit(operation: &Symbol) -> Option<u64> {
+    // Use to_string comparison because Soroban Symbol doesn't implement
+    // direct equality with &str in a const-compatible way.
+    let op_str = alloc::format!("{}", operation);
+    match op_str.as_str() {
+        "create" => Some(DEFAULT_CREATE_MARKET_GAS_LIMIT),
+        "claim" => Some(DEFAULT_CLAIM_WINNINGS_GAS_LIMIT),
+        _ => None,
+    }
+}
+
 /// Stores the gas limit configured by an admin for a specific operation.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -154,6 +201,40 @@ impl GasTracker {
             .set(&GasConfigKey::MemLimit(operation), &max_mem);
     }
 
+    /// Seeds default regression limits for `create_market` and `claim_winnings`
+    /// into instance storage.
+    ///
+    /// This should be called once during contract initialization so that
+    /// `end_tracking` and `record_with_alert` have baseline limits even
+    /// before an admin explicitly calls `set_limit`.
+    ///
+    /// If an admin later calls `set_limit` for the same operation, the
+    /// admin value takes precedence (checked first in `end_tracking`).
+    pub fn set_default_limits(env: &Env) {
+        env.storage().instance().set(
+            &GasConfigKey::GasLimit(symbol_short!("create")),
+            &DEFAULT_CREATE_MARKET_GAS_LIMIT,
+        );
+        env.storage().instance().set(
+            &GasConfigKey::GasLimit(symbol_short!("claim")),
+            &DEFAULT_CLAIM_WINNINGS_GAS_LIMIT,
+        );
+    }
+
+    /// Returns `true` if a gas limit (admin-configured or default) exists
+    /// for the given operation.
+    pub fn has_limit(env: &Env, operation: Symbol) -> bool {
+        let (admin_cpu, _) = Self::get_limits(env, operation.clone());
+        admin_cpu.is_some() || get_default_limit(&operation).is_some()
+    }
+
+    /// Retrieves the effective gas limit for an operation, resolving
+    /// admin-configured override → default regression limit → None.
+    pub fn get_effective_cpu_limit(env: &Env, operation: Symbol) -> Option<u64> {
+        let (admin_cpu, _) = Self::get_limits(env, operation.clone());
+        admin_cpu.or_else(|| get_default_limit(&operation))
+    }
+
     /// Retrieves the current gas budget limit for an operation.
     pub fn get_limits(env: &Env, operation: Symbol) -> (Option<u64>, Option<u64>) {
         let cpu = env
@@ -176,6 +257,16 @@ impl GasTracker {
 
     /// Hook to call immediately after an operation.
     /// It records usage, publishes an observability event, and checks admin caps.
+    ///
+    /// # Regression Limit Enforcement
+    ///
+    /// Gas limits are resolved in this priority order:
+    /// 1. **Admin-configured limit** (via `set_limit`) — checked first.
+    /// 2. **Default regression limit** (compile-time constant) — used as fallback.
+    /// 3. **No limit** — operation proceeds unchecked.
+    ///
+    /// This means `create_market` and `claim_winnings` are always bounded
+    /// by their default limits unless an admin explicitly overrides them.
     pub fn end_tracking(env: &Env, operation: Symbol, _start_marker: u64) {
         let cost = Self::get_actual_cost(env, operation.clone());
 
@@ -183,15 +274,21 @@ impl GasTracker {
         env.events()
             .publish((symbol_short!("gas_used"), operation.clone()), cost.clone());
 
-        // Optional: admin-set gas budget cap per call (abort if exceeded)
-        let (cpu_limit, mem_limit) = Self::get_limits(env, operation);
+        // Resolve effective limits: admin override > default regression limit.
+        let (admin_cpu, admin_mem) = Self::get_limits(env, operation.clone());
+        let default_limit = get_default_limit(&operation);
 
-        if let Some(limit) = cpu_limit {
+        // Effective CPU limit: admin-configured takes precedence.
+        let effective_cpu = admin_cpu.or(default_limit);
+        // Effective memory limit: admin-configured only (no default for mem).
+        let effective_mem = admin_mem;
+
+        if let Some(limit) = effective_cpu {
             if cost.cpu > limit {
                 panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
             }
         }
-        if let Some(limit) = mem_limit {
+        if let Some(limit) = effective_mem {
             if cost.mem > limit {
                 panic_with_error!(env, crate::err::Error::GasBudgetExceeded);
             }
@@ -226,8 +323,9 @@ impl GasTracker {
             return;
         }
         
+        // Use admin-configured limit, falling back to default regression limit.
         let (cpu_limit, _) = Self::get_limits(env, operation.clone());
-        let budget = match cpu_limit {
+        let budget = match cpu_limit.or_else(|| get_default_limit(&operation)) {
             Some(limit) if limit > 0 => limit,
             _ => return, // No budget or zero budget, skip alert
         };
