@@ -193,6 +193,9 @@ mod fee_config_commit_reveal_tests;
 // #[cfg(test)]
 // mod event_creation_tests;
 
+#[cfg(test)]
+mod voting_snapshot_stability_tests;
+
 // Re-export commonly used items
 use admin::{
     AdminAnalyticsResult, AdminFunctions, AdminInitializer, AdminManager, AdminPermission,
