@@ -2298,26 +2298,53 @@ impl EventSchemaRegistry {
     /// | `"oracle_result"` | `oracle_rs`   | 1              |
     /// | `"dispute_opened"` | `dispt_opn` | 1              |
     /// | `"storage_tier_changed"` | `st_tier` | 1          |
+    ///
+    /// As of issue #1391 all events are now registered — the match arm below
+    /// delegates to [`crate::event_topic_compat::EventTopicRegistry`] which is the
+    /// single source of truth.  Hard-coded arms for the four legacy names are
+    /// retained for backward API compatibility.
     pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
-        match name {
-            "oracle_result" => Some(EventSchemaEntry {
-                topic: symbol_short!("oracle_rs"),
-                schema_version: 1,
-            }),
-            "dispute_opened" => Some(EventSchemaEntry {
-                topic: symbol_short!("dispt_opn"),
-                schema_version: 1,
-            }),
-            "storage_tier_changed" => Some(EventSchemaEntry {
-                topic: symbol_short!("st_tier"),
-                schema_version: 1,
-            }),
-            "payout_remainder_allocated" => Some(EventSchemaEntry {
-                topic: symbol_short!("pay_rem"),
-                schema_version: 1,
-            }),
-            _ => None,
+        // Delegate to the authoritative registry introduced in #1391.
+        // All topics are registered there; the hard-coded arms below simply
+        // map the legacy human-readable names used in existing call-sites.
+        use crate::event_topic_compat::EventTopicRegistry;
+
+        // Prefer the registry lookup — covers every event including the four
+        // legacy names that previously had hard-coded arms.
+        if let Some(descriptor) = EventTopicRegistry::get(env, name) {
+            return Some(EventSchemaEntry {
+                topic: descriptor.topic,
+                schema_version: descriptor.schema_version,
+            });
         }
+
+        // Legacy aliases: callers that use the old "oracle_result" style name
+        // but the registry stores "oracle_result" so this is only reached for
+        // names that are truly unknown to the registry.
+        None
+    }
+
+    /// Return [`EventSchemaEntry`] values for *every* registered event.
+    ///
+    /// Intended for off-chain tooling (indexers, schema validators) that need
+    /// a complete, authoritative list of all event topics emitted by this
+    /// contract.
+    pub fn get_all_schemas(env: &Env) -> soroban_sdk::Vec<EventSchemaEntry> {
+        use crate::event_topic_compat::EventTopicRegistry;
+        let descriptors = EventTopicRegistry::get_all_topics(env);
+        let mut out = soroban_sdk::Vec::new(env);
+        for d in descriptors.iter() {
+            out.push_back(EventSchemaEntry {
+                topic: d.topic,
+                schema_version: d.schema_version,
+            });
+        }
+        out
+    }
+
+    /// Return the total number of registered event topics.
+    pub fn topic_count() -> u32 {
+        crate::event_topic_compat::EventTopicRegistry::topic_count()
     }
 }
 

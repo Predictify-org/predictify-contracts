@@ -1098,6 +1098,93 @@ impl UpgradeManager {
             .unwrap_or_else(|| Vec::new(env)))
     }
 
+    // ── Event topic compatibility helpers (issue #1391) ───────────────────────
+
+    /// Snapshot all current per-topic event nonces into persistent storage
+    /// **before** any migration step that could clear or reset them.
+    ///
+    /// Call this at the very start of an upgrade transaction, before any
+    /// storage restructuring occurs.  The companion `restore_event_nonces`
+    /// should be called immediately after the upgrade to copy the snapshots
+    /// back, preserving the monotonically-increasing guarantee for replay
+    /// protection.
+    ///
+    /// # Returns
+    ///
+    /// The number of non-zero nonces that were snapshotted.
+    pub fn preserve_event_nonces(env: &Env) -> u32 {
+        use crate::event_topic_compat::EventNonceGuard;
+        EventNonceGuard::preserve_nonces(env);
+        EventNonceGuard::read_snapshot(env).len()
+    }
+
+    /// Restore snapshotted nonces after an upgrade completes.
+    ///
+    /// Must be paired with a prior call to `preserve_event_nonces`.
+    /// Nonces are only written back when the snapshot value is strictly
+    /// greater than the current stored value, preventing a race where a
+    /// post-upgrade emission has already advanced the nonce.
+    ///
+    /// Clears the snapshot from storage after a successful restore.
+    ///
+    /// # Returns
+    ///
+    /// The number of nonces actually restored (could be less than snapshotted
+    /// if some were already at or above the snapshot value).
+    pub fn restore_event_nonces(env: &Env) -> u32 {
+        use crate::event_topic_compat::EventNonceGuard;
+        let count = EventNonceGuard::restore_nonces(env);
+        EventNonceGuard::clear_snapshot(env);
+        count
+    }
+
+    /// Register topic aliases for all renamed symbols declared in
+    /// [`crate::event_topic_compat::TOPIC_ALIASES`].
+    ///
+    /// Each alias is written to persistent storage under
+    /// `DataKey::EventTopicAlias(old_topic)` so that on-chain consumers
+    /// can discover renames without a redeployment.
+    ///
+    /// Should be called once per upgrade, after `restore_event_nonces`.
+    ///
+    /// # Parameters
+    ///
+    /// * `since_version` – version number (as `major*1_000_000 + minor*1_000 + patch`)
+    ///   at which the rename occurred.  Used for audit / diagnostic purposes.
+    pub fn register_topic_aliases(env: &Env, since_version: u64) {
+        use crate::event_topic_compat::EventCompatBridge;
+        EventCompatBridge::register_all_aliases(env, since_version);
+    }
+
+    /// Combined upgrade event-compatibility hook.
+    ///
+    /// Convenience wrapper that:
+    /// 1. Snapshots all current nonces (`preserve_event_nonces`).
+    /// 2. Registers all topic aliases (`register_topic_aliases`).
+    ///
+    /// Call this **before** the WASM replacement / storage migration in
+    /// `upgrade_contract`.  The companion `finalize_event_compat` must be
+    /// called **after** the upgrade to restore nonces.
+    ///
+    /// # Invariants
+    ///
+    /// * Safe to call multiple times; later calls overwrite previous snapshots
+    ///   and alias records.
+    /// * Never panics; both internal helpers handle empty state gracefully.
+    pub fn prepare_event_compat(env: &Env, since_version: u64) {
+        Self::preserve_event_nonces(env);
+        Self::register_topic_aliases(env, since_version);
+    }
+
+    /// Finalise event compatibility after an upgrade.
+    ///
+    /// Must be paired with a prior call to `prepare_event_compat`.
+    /// Restores nonces and clears the snapshot.
+    pub fn finalize_event_compat(env: &Env) {
+        Self::restore_event_nonces(env);
+    }
+
+
     // ── PRIVATE: migration record persistence ────────────────────────────────
 
     /// Append a migration record to the persisted migration history list.
