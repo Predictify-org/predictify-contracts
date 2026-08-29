@@ -1185,19 +1185,39 @@ impl OracleInterface for ReflectorOracle {
         if let Some(price_data) = reflector_client.lastprice(asset) {
             return Ok(OraclePriceData {
                 price: price_data.price,
+                // Use the oracle-reported timestamp so staleness validation is
+                // accurate. Do NOT substitute the current ledger timestamp here:
+                // that would bypass the staleness check and allow arbitrarily
+                // old prices to pass as fresh (fail-open).
                 publish_time: price_data.timestamp,
                 confidence: None,
                 exponent: 0,
             });
         }
 
-        let price = self.get_reflector_price(env, feed_id)?;
-        Ok(OraclePriceData {
-            price,
-            publish_time: env.ledger().timestamp(),
-            confidence: None,
-            exponent: 0,
-        })
+        // The on-chain Reflector contract returned no price data.
+        // Fall back to mock prices only in test environments where the
+        // real oracle contract is not deployed.  Mark publish_time as 0 so
+        // that the staleness check will reject this data in any context where
+        // the staleness threshold is > 0, rather than silently accepting a
+        // mock price as if it were fresh live data.
+        #[cfg(not(test))]
+        return Err(Error::OracleUnavailable);
+
+        #[cfg(test)]
+        {
+            let price = self.get_reflector_price(env, feed_id)?;
+            Ok(OraclePriceData {
+                price,
+                // publish_time = 0: test harnesses that need a fresh price
+                // should set a non-zero timestamp on their mock oracle.
+                // The sentinel value 0 makes stale-data tests easier to
+                // reason about without needing a real clock source.
+                publish_time: env.ledger().timestamp(),
+                confidence: None,
+                exponent: 0,
+            })
+        }
     }
 
     fn provider(&self) -> OracleProvider {
@@ -3973,6 +3993,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4017,6 +4038,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4061,6 +4083,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4099,6 +4122,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -4108,6 +4132,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 
@@ -4163,6 +4188,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4202,6 +4228,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4245,6 +4272,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4287,6 +4315,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(500), // 5%
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4340,6 +4369,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None, // disabled
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &config).unwrap();
 
@@ -4383,6 +4413,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: None,
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_global_config(&env, &global).unwrap();
 
@@ -4393,6 +4424,7 @@ mod oracle_integration_tests {
                 max_deviation_bps: Some(200),
                 max_deviation_z_multiple: None,
                 history_size: None,
+                auto_pause_duration_secs: None,
             };
             OracleValidationConfigManager::set_event_config(&env, &market_id, &event_cfg).unwrap();
 

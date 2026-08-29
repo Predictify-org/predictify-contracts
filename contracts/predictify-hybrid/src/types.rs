@@ -152,6 +152,14 @@ pub enum MarketState {
     Closed,
     /// Market has been cancelled
     Cancelled,
+    /// Market has been archived (immutable, read-only state)
+    /// Archive only allowed from Resolved or Cancelled states.
+    /// Once archived, market cannot be modified, only queried or permanently deleted via pruning.
+    Archived,
+    /// Market has been restored from archive (optional state for future restore functionality)
+    /// Restore only allowed from Archived state.
+    /// Restored markets may be transitioned back to Active or other eligible states.
+    Restored,
 }
 
 // ===== ORACLE TYPES =====
@@ -1185,24 +1193,29 @@ pub struct ClaimInfo {
     pub timestamp: u64,
     /// The exact amount of tokens claimed (for verification and audits)
     pub payout_amount: i128,
+    /// Unique claim nonce for replay protection. Incremented on each successful claim.
+    /// Prevents transaction replays by making each claim operation unique.
+    pub claim_nonce: u64,
 }
 
 impl ClaimInfo {
-    /// Create a new ClaimInfo instance with the given payout amount.
+    /// Create a new ClaimInfo instance with the given payout amount and nonce.
     ///
     /// # Parameters
     ///
     /// - `env` - The Soroban environment (used for timestamp)
     /// - `payout_amount` - The amount being claimed
+    /// - `claim_nonce` - The unique nonce for this claim (incremented on success)
     ///
     /// # Returns
     ///
-    /// Returns a new ClaimInfo with current timestamp and specified payout.
-    pub fn new(env: &Env, payout_amount: i128) -> Self {
+    /// Returns a new ClaimInfo with current timestamp, specified payout, and nonce.
+    pub fn new(env: &Env, payout_amount: i128, claim_nonce: u64) -> Self {
         Self {
             claimed: true,
             timestamp: env.ledger().timestamp(),
             payout_amount,
+            claim_nonce,
         }
     }
 
@@ -1216,6 +1229,7 @@ impl ClaimInfo {
             claimed: false,
             timestamp: 0,
             payout_amount: 0,
+            claim_nonce: 0,
         }
     }
 
@@ -1244,6 +1258,15 @@ impl ClaimInfo {
     /// Returns the exact token amount claimed (in stroops/smallest unit).
     pub fn get_payout(&self) -> i128 {
         self.payout_amount
+    }
+
+    /// Get the claim nonce for replay protection.
+    ///
+    /// # Returns
+    ///
+    /// Returns the unique nonce associated with this claim.
+    pub fn get_nonce(&self) -> u64 {
+        self.claim_nonce
     }
 }
 
