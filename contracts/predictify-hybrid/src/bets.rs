@@ -50,7 +50,7 @@ fn guard_scope_place_bet() -> Symbol {
 
 /// Reentrancy scope for [`BetManager::place_bets`].
 fn guard_scope_place_bets() -> Symbol {
-    symbol_short!("place_bets")
+    symbol_short!("batch_bet")
 }
 
 /// Reentrancy scope for SAC transfers in [`BetUtils::lock_funds`].
