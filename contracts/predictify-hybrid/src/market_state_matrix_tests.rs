@@ -71,6 +71,8 @@ mod market_state_matrix {
             Resolved => matches!(to, Closed),
             Closed => false,
             Cancelled => false,
+            Archived => false,
+            Restored => false,
         }
     }
 

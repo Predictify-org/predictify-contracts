@@ -1,19 +1,21 @@
-//! Comprehensive lifecycle state transition tests for archive and restore functionality.
+//! Comprehensive lifecycle state transition tests for the metadata-only archive
+//! and restore functionality.
 //!
 //! Tests cover:
 //! - Archive transitions (success and rejection cases)
-//! - Restore transitions (success and rejection cases)
-//! - State validation and corruption detection
-//! - Concurrent access safety
-//! - Boundary cases and edge conditions
-//! - Error handling and recovery
+//! - Archive discoverability (archived view + preserved terminal status)
+//! - Deterministic pruning
+//! - Boundary cases and error handling
 
 use predictify_hybrid::{
+    Error, EventHistoryEntry, MarketState, OracleConfig, OracleProvider, PredictifyHybrid,
     PredictifyHybridClient,
-    types::MarketState,
-    err::Error,
 };
-use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, LedgerInfo},
+    vec, Address, Env, String as SorobanString, Symbol,
+};
+use std::vec::Vec as StdVec;
 
 // ===== TEST SETUP =====
 
@@ -22,7 +24,6 @@ struct TestSetup {
     contract_id: Address,
     admin: Address,
     user1: Address,
-    user2: Address,
 }
 
 impl TestSetup {
@@ -30,81 +31,93 @@ impl TestSetup {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, predictify_hybrid::PredictifyHybrid);
+        let contract_id = env.register(PredictifyHybrid, ());
         let admin = Address::generate(&env);
         let user1 = Address::generate(&env);
-        let user2 = Address::generate(&env);
 
         // Initialize contract
         let client = PredictifyHybridClient::new(&env, &contract_id);
-        client.initialize(&admin);
+        client.initialize(&admin, &None, &None);
 
         TestSetup {
             env,
             contract_id,
             admin,
             user1,
-            user2,
         }
     }
 
+    fn client(&self) -> PredictifyHybridClient {
+        PredictifyHybridClient::new(&self.env, &self.contract_id)
+    }
+
+    fn advance_days(&self, days: u64) {
+        let ledger = self.env.ledger();
+        let timestamp = ledger.timestamp() + days * 24 * 60 * 60;
+        self.env.ledger().set(LedgerInfo {
+            timestamp,
+            protocol_version: ledger.protocol_version(),
+            sequence_number: ledger.sequence(),
+            network_id: ledger.network_id().into(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 1_000_000,
+        });
+    }
+
+    fn oracle_config(&self) -> OracleConfig {
+        OracleConfig {
+            provider: OracleProvider::reflector(),
+            oracle_address: Address::generate(&self.env),
+            feed_id: SorobanString::from_str(&self.env, "BTC"),
+            threshold: 50_000_00,
+            comparison: SorobanString::from_str(&self.env, "gt"),
+        }
+    }
+
+    fn outcomes(&self) -> soroban_sdk::Vec<SorobanString> {
+        vec![
+            &self.env,
+            SorobanString::from_str(&self.env, "Yes"),
+            SorobanString::from_str(&self.env, "No"),
+        ]
+    }
+
+    fn create_market(&self, question: &str) -> Symbol {
+        self.client().create_market(
+            &self.admin,
+            &SorobanString::from_str(&self.env, question),
+            &self.outcomes(),
+            &1, // 1-day duration
+            &self.oracle_config(),
+            &None, // fallback oracle
+            &0,    // resolution timeout
+            &None, // min pool size
+            &None, // bet deadline
+            &None, // dispute window
+            &None, // dispute stake floor
+            &None, // max participants
+        )
+    }
+
     fn create_resolved_market(&self, question: &str) -> Symbol {
-        let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
-        
-        let market_id = Symbol::new(&self.env, question);
-        let question_str = String::from_str(&self.env, question);
-        let mut outcomes = Vec::new(&self.env);
-        outcomes.push_back(String::from_str(&self.env, "Yes"));
-        outcomes.push_back(String::from_str(&self.env, "No"));
-
-        // Create market
-        let end_time = self.env.ledger().timestamp() + 1000;
-        client.create_market(
-            &self.admin,
-            &market_id,
-            &question_str,
-            &outcomes,
-            end_time,
-            &String::from_str(&self.env, ""),
-        );
-
-        // Fast-forward past market end
-        self.env.ledger().set_timestamp(end_time + 1);
-
-        // Manually resolve the market (simulate oracle resolution)
-        client.resolve_market_manual(
-            &self.admin,
-            &market_id,
-            &String::from_str(&self.env, "Yes"),
-        );
-
+        let market_id = self.create_market(question);
+        self.advance_days(2); // past the 1-day end
+        self.client()
+            .resolve_market_manual(&self.admin, &market_id, &SorobanString::from_str(&self.env, "Yes"));
         market_id
     }
 
     fn create_cancelled_market(&self, question: &str) -> Symbol {
-        let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
-        
-        let market_id = Symbol::new(&self.env, question);
-        let question_str = String::from_str(&self.env, question);
-        let mut outcomes = Vec::new(&self.env);
-        outcomes.push_back(String::from_str(&self.env, "Yes"));
-        outcomes.push_back(String::from_str(&self.env, "No"));
-
-        let end_time = self.env.ledger().timestamp() + 1000;
-        client.create_market(
-            &self.admin,
-            &market_id,
-            &question_str,
-            &outcomes,
-            end_time,
-            &String::from_str(&self.env, ""),
-        );
-
-        // Cancel the market
-        client.cancel_market(&self.admin, &market_id, &String::from_str(&self.env, "Test cancellation"));
-
+        let market_id = self.create_market(question);
+        self.client().cancel_event(&self.admin, &market_id, &None);
         market_id
     }
+}
+
+fn collect_ids(entries: &soroban_sdk::Vec<EventHistoryEntry>) -> StdVec<Symbol> {
+    entries.iter().map(|e| e.market_id).collect()
 }
 
 // ===== ARCHIVE SUCCESS TESTS =====
@@ -112,10 +125,10 @@ impl TestSetup {
 #[test]
 fn test_archive_from_resolved_state() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     let market_id = setup.create_resolved_market("test_archive_resolved");
-    
+
     // Archive should succeed from Resolved state
     let result = client.try_archive_event(&setup.admin, &market_id);
     assert!(result.is_ok(), "Archive from Resolved should succeed");
@@ -124,10 +137,10 @@ fn test_archive_from_resolved_state() {
 #[test]
 fn test_archive_from_cancelled_state() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     let market_id = setup.create_cancelled_market("test_archive_cancelled");
-    
+
     // Archive should succeed from Cancelled state
     let result = client.try_archive_event(&setup.admin, &market_id);
     assert!(result.is_ok(), "Archive from Cancelled should succeed");
@@ -136,16 +149,19 @@ fn test_archive_from_cancelled_state() {
 #[test]
 fn test_archive_emits_event() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     let market_id = setup.create_resolved_market("test_archive_event");
-    
+
     // Archive market
     client.archive_event(&setup.admin, &market_id);
-    
+
     // Check events were emitted
     let events = setup.env.events().all();
-    assert!(!events.is_empty(), "Archive should emit events");
+    assert!(
+        !events.events().is_empty(),
+        "Archive should emit events"
+    );
 }
 
 // ===== ARCHIVE REJECTION TESTS =====
@@ -153,29 +169,19 @@ fn test_archive_emits_event() {
 #[test]
 fn test_archive_fails_from_active_state() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = Symbol::new(&setup.env, "test_archive_active");
-    let question = String::from_str(&setup.env, "test_archive_active");
-    let mut outcomes = Vec::new(&setup.env);
-    outcomes.push_back(String::from_str(&setup.env, "Yes"));
-    outcomes.push_back(String::from_str(&setup.env, "No"));
-    
-    let end_time = setup.env.ledger().timestamp() + 10000;
-    client.create_market(
-        &setup.admin,
-        &market_id,
-        &question,
-        &outcomes,
-        end_time,
-        &String::from_str(&setup.env, ""),
-    );
-    
+    let client = setup.client();
+
+    let market_id = setup.create_market("test_archive_active");
+
     // Archive should fail from Active state
     let result = client.try_archive_event(&setup.admin, &market_id);
     match result {
         Err(Ok(err)) => {
-            assert_eq!(err, Error::CannotArchiveFromState as u32, "Should return CannotArchiveFromState error");
+            assert_eq!(
+                err,
+                Error::CannotArchiveFromState,
+                "Should return CannotArchiveFromState error"
+            );
         }
         _ => panic!("Expected CannotArchiveFromState error"),
     }
@@ -184,18 +190,22 @@ fn test_archive_fails_from_active_state() {
 #[test]
 fn test_archive_duplicate_rejected() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     let market_id = setup.create_resolved_market("test_archive_duplicate");
-    
+
     // First archive succeeds
     client.archive_event(&setup.admin, &market_id);
-    
+
     // Second archive should fail with MarketAlreadyArchived
     let result = client.try_archive_event(&setup.admin, &market_id);
     match result {
         Err(Ok(err)) => {
-            assert_eq!(err, Error::MarketAlreadyArchived as u32, "Should return MarketAlreadyArchived error");
+            assert_eq!(
+                err,
+                Error::MarketAlreadyArchived,
+                "Should return MarketAlreadyArchived error"
+            );
         }
         _ => panic!("Expected MarketAlreadyArchived error"),
     }
@@ -204,15 +214,15 @@ fn test_archive_duplicate_rejected() {
 #[test]
 fn test_archive_requires_admin_authorization() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     let market_id = setup.create_resolved_market("test_archive_auth");
-    
+
     // Archive as non-admin should fail
     let result = client.try_archive_event(&setup.user1, &market_id);
     match result {
         Err(Ok(err)) => {
-            assert_eq!(err, Error::Unauthorized as u32, "Should return Unauthorized error");
+            assert_eq!(err, Error::Unauthorized, "Should return Unauthorized error");
         }
         _ => panic!("Expected Unauthorized error"),
     }
@@ -221,297 +231,122 @@ fn test_archive_requires_admin_authorization() {
 #[test]
 fn test_archive_nonexistent_market() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     let nonexistent_id = Symbol::new(&setup.env, "nonexistent");
-    
+
     // Archive on nonexistent market should fail
     let result = client.try_archive_event(&setup.admin, &nonexistent_id);
     match result {
         Err(Ok(err)) => {
-            assert_eq!(err, Error::MarketNotFound as u32, "Should return MarketNotFound error");
-        }
-        _ => panic!("Expected MarketNotFound error"),
-    }
-}
-
-// ===== RESTORE SUCCESS TESTS =====
-
-#[test]
-fn test_restore_from_archived_state() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_restore_archived");
-    
-    // Archive first
-    client.archive_event(&setup.admin, &market_id);
-    
-    // Restore should succeed from Archived state
-    let reason = String::from_str(&setup.env, "Test restore");
-    let result = client.try_restore_event(&setup.admin, &market_id, &reason);
-    assert!(result.is_ok(), "Restore from Archived should succeed");
-}
-
-#[test]
-fn test_restore_emits_event() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_restore_event");
-    client.archive_event(&setup.admin, &market_id);
-    
-    // Restore market
-    let reason = String::from_str(&setup.env, "Test restore with events");
-    client.restore_event(&setup.admin, &market_id, &reason);
-    
-    // Check events were emitted
-    let events = setup.env.events().all();
-    assert!(!events.is_empty(), "Restore should emit events");
-}
-
-// ===== RESTORE REJECTION TESTS =====
-
-#[test]
-fn test_restore_fails_from_resolved_state() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_restore_resolved");
-    
-    // Restore without archiving should fail
-    let reason = String::from_str(&setup.env, "Invalid restore");
-    let result = client.try_restore_event(&setup.admin, &market_id, &reason);
-    match result {
-        Err(Ok(err)) => {
-            assert_eq!(err, Error::CannotRestoreFromState as u32, "Should return CannotRestoreFromState error");
-        }
-        _ => panic!("Expected CannotRestoreFromState error"),
-    }
-}
-
-#[test]
-fn test_restore_duplicate_rejected() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_restore_duplicate");
-    
-    // Archive then restore
-    client.archive_event(&setup.admin, &market_id);
-    let reason = String::from_str(&setup.env, "First restore");
-    client.restore_event(&setup.admin, &market_id, &reason);
-    
-    // Second restore should fail
-    let reason2 = String::from_str(&setup.env, "Duplicate restore");
-    let result = client.try_restore_event(&setup.admin, &market_id, &reason2);
-    match result {
-        Err(Ok(err)) => {
-            assert_eq!(err, Error::MarketAlreadyRestored as u32, "Should return MarketAlreadyRestored error");
-        }
-        _ => panic!("Expected MarketAlreadyRestored error"),
-    }
-}
-
-#[test]
-fn test_restore_requires_admin_authorization() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_restore_auth");
-    client.archive_event(&setup.admin, &market_id);
-    
-    // Restore as non-admin should fail
-    let reason = String::from_str(&setup.env, "Unauthorized restore");
-    let result = client.try_restore_event(&setup.user1, &market_id, &reason);
-    match result {
-        Err(Ok(err)) => {
-            assert_eq!(err, Error::Unauthorized as u32, "Should return Unauthorized error");
-        }
-        _ => panic!("Expected Unauthorized error"),
-    }
-}
-
-#[test]
-fn test_restore_nonexistent_market() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let nonexistent_id = Symbol::new(&setup.env, "nonexistent");
-    let reason = String::from_str(&setup.env, "Invalid restore");
-    
-    // Restore on nonexistent market should fail
-    let result = client.try_restore_event(&setup.admin, &nonexistent_id, &reason);
-    match result {
-        Err(Ok(err)) => {
-            assert_eq!(err, Error::MarketNotFound as u32, "Should return MarketNotFound error");
-        }
-        _ => panic!("Expected MarketNotFound error"),
-    }
-}
-
-// ===== BOUNDARY AND EDGE CASE TESTS =====
-
-#[test]
-fn test_archive_capacity_respected() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    // Try to archive many markets to test capacity
-    // Note: This would require creating MAX_ARCHIVE_SIZE markets first
-    // For now, just verify that archive_size() can be queried
-    let size = client.get_archive_size();
-    assert!(size >= 0, "Archive size should be non-negative");
-}
-
-#[test]
-fn test_archive_then_restore_lifecycle() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_full_lifecycle");
-    
-    // Archive
-    client.archive_event(&setup.admin, &market_id);
-    
-    // Verify is_archived returns true
-    assert!(client.is_archived(&market_id), "Market should be archived");
-    
-    // Restore
-    let reason = String::from_str(&setup.env, "Full lifecycle test");
-    client.restore_event(&setup.admin, &market_id, &reason);
-    
-    // Verify is_restored returns true
-    assert!(client.is_restored(&market_id), "Market should be restored");
-}
-
-#[test]
-fn test_concurrent_archive_attempts_idempotent() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_concurrent_archive");
-    
-    // First archive succeeds
-    let result1 = client.try_archive_event(&setup.admin, &market_id);
-    assert!(result1.is_ok(), "First archive should succeed");
-    
-    // Second archive attempt (from same admin) should be rejected deterministically
-    let result2 = client.try_archive_event(&setup.admin, &market_id);
-    match result2 {
-        Err(Ok(err)) => {
-            // Either MarketAlreadyArchived or other archive-related error is acceptable
-            assert!(
-                err == Error::MarketAlreadyArchived as u32,
-                "Second archive should fail with MarketAlreadyArchived"
+            assert_eq!(
+                err,
+                Error::MarketNotFound,
+                "Should return MarketNotFound error"
             );
         }
-        _ => panic!("Expected error on duplicate archive"),
+        _ => panic!("Expected MarketNotFound error"),
     }
 }
 
+// ===== DISCOVERABILITY TESTS =====
+
 #[test]
-fn test_market_state_consistency_after_archive() {
+fn test_archive_preserves_terminal_state_and_discoverability() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     let market_id = setup.create_resolved_market("test_state_consistency");
-    
-    // Archive the market
+
+    // Sanity: resolved and discoverable by status before archiving.
+    let (before, _) = client.query_events_by_status(&MarketState::Resolved, &0, &30);
+    assert!(collect_ids(&before).contains(&market_id));
+
+    // Archive the market (non-destructive).
     client.archive_event(&setup.admin, &market_id);
-    
-    // Verify state is consistent
-    assert!(client.is_archived(&market_id), "is_archived() should return true");
-    assert!(!client.is_restored(&market_id), "is_restored() should return false");
+
+    // The archived event keeps its terminal Resolved state.
+    let (after, _) = client.query_events_by_status(&MarketState::Resolved, &0, &30);
+    assert!(
+        collect_ids(&after).contains(&market_id),
+        "archived (resolved) event must remain discoverable by status"
+    );
+
+    // Exposed via the direct archived view.
+    let (archived, _) = client.query_archived_events(&false, &0, &30);
+    assert!(collect_ids(&archived).contains(&market_id));
 }
 
 #[test]
-fn test_market_state_consistency_after_restore() {
+fn test_archived_view_reports_archived_at() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_state_after_restore");
-    
-    // Archive then restore
+    let client = setup.client();
+
+    let market_id = setup.create_resolved_market("test_archived_at");
     client.archive_event(&setup.admin, &market_id);
-    let reason = String::from_str(&setup.env, "Test state consistency");
-    client.restore_event(&setup.admin, &market_id, &reason);
-    
-    // Verify state is consistent
-    assert!(!client.is_archived(&market_id), "is_archived() should return false after restore");
-    assert!(client.is_restored(&market_id), "is_restored() should return true");
+
+    let (archived, _) = client.query_archived_events(&false, &0, &30);
+    let entry = archived
+        .iter()
+        .find(|e| e.market_id == market_id)
+        .expect("archived market should be listed");
+    assert!(
+        entry.archived_at.unwrap_or(0) > 0,
+        "archived entry must carry a non-zero archived_at marker"
+    );
 }
 
-// ===== REGRESSION TESTS =====
+// ===== PRUNING / CAPACITY TESTS =====
 
 #[test]
-fn test_archive_respects_existing_authorization() {
+fn test_archive_capacity_queryable() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_auth_regression");
-    
-    // Verify that admin can archive
-    let result = client.try_archive_event(&setup.admin, &market_id);
-    assert!(result.is_ok(), "Admin should be able to archive");
-}
+    let client = setup.client();
 
-#[test]
-fn test_restore_respects_existing_authorization() {
-    let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    let market_id = setup.create_resolved_market("test_restore_auth_regression");
-    client.archive_event(&setup.admin, &market_id);
-    
-    // Verify that admin can restore
-    let reason = String::from_str(&setup.env, "Auth regression test");
-    let result = client.try_restore_event(&setup.admin, &market_id, &reason);
-    assert!(result.is_ok(), "Admin should be able to restore");
+    let size = client.archive_size();
+    assert_eq!(size, 0, "fresh deployment should start with an empty archive");
 }
-
-// ===== INTEGRATION TESTS =====
 
 #[test]
 fn test_multiple_archives_in_sequence() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
+    let client = setup.client();
+
     // Create and archive multiple markets
     let m1 = setup.create_resolved_market("test_multi_1");
     let m2 = setup.create_resolved_market("test_multi_2");
     let m3 = setup.create_resolved_market("test_multi_3");
-    
+
     // Archive all
     client.archive_event(&setup.admin, &m1);
     client.archive_event(&setup.admin, &m2);
     client.archive_event(&setup.admin, &m3);
-    
+
     // Verify all are archived
-    assert!(client.is_archived(&m1), "Market 1 should be archived");
-    assert!(client.is_archived(&m2), "Market 2 should be archived");
-    assert!(client.is_archived(&m3), "Market 3 should be archived");
+    let (archived, _) = client.query_archived_events(&false, &0, &30);
+    let ids = collect_ids(&archived);
+    assert!(ids.contains(&m1), "Market 1 should be archived");
+    assert!(ids.contains(&m2), "Market 2 should be archived");
+    assert!(ids.contains(&m3), "Market 3 should be archived");
+    assert_eq!(client.archive_size(), 3);
 }
 
 #[test]
-fn test_mixed_archive_restore_operations() {
+fn test_prune_archive_reduces_size() {
     let setup = TestSetup::new();
-    let client = PredictifyHybridClient::new(&setup.env, &setup.contract_id);
-    
-    // Create markets
-    let m1 = setup.create_resolved_market("test_mixed_1");
-    let m2 = setup.create_resolved_market("test_mixed_2");
-    
-    // Archive both
-    client.archive_event(&setup.admin, &m1);
-    client.archive_event(&setup.admin, &m2);
-    
-    // Restore first, leave second archived
-    let reason = String::from_str(&setup.env, "Partial restore");
-    client.restore_event(&setup.admin, &m1, &reason);
-    
-    // Verify states
-    assert!(client.is_restored(&m1), "Market 1 should be restored");
-    assert!(!client.is_restored(&m1), "Market 1 should NOT be archived");
-    assert!(client.is_archived(&m2), "Market 2 should still be archived");
+    let client = setup.client();
+
+    for i in 0..3 {
+        let mid = setup.create_resolved_market(&format!("test_prune_{i}"));
+        client.archive_event(&setup.admin, &mid);
+    }
+    assert_eq!(client.archive_size(), 3);
+
+    // Prune deterministically from the oldest entry.
+    let pruned = match client.try_prune_archive(&setup.admin, &1, &None) {
+        Ok(Ok((count, _))) => count,
+        _ => panic!("prune should succeed"),
+    };
+    assert_eq!(pruned, 1, "exactly one entry should be pruned");
+    assert_eq!(client.archive_size(), 2);
 }

@@ -5322,7 +5322,7 @@ pub fn emit_deprecated(env: &Env, caller: &Address, entrypoint: &Symbol) {
 #[cfg(test)]
 mod event_schema_registry_tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{testutils::{Address as _, Events}, Env, Symbol, TryIntoVal};
 
     #[test]
     fn test_registry_lookup_oracle_result() {
@@ -5427,8 +5427,18 @@ mod event_schema_registry_tests {
 
             // Find our depr_call event
             let found = emitted.iter().any(|e| {
-                e.0 .0 == symbol_short!("depr_call")
-                    && e.0 .1 == entrypoint
+                if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &e.body {
+                    v0.topics
+                        .get(0)
+                        .map(|t| t.clone().try_into_val(&env).ok())
+                        == Some(Some(symbol_short!("depr_call")))
+                        && v0.topics
+                            .get(1)
+                            .map(|t| t.clone().try_into_val(&env).ok())
+                            == Some(Some(entrypoint.clone()))
+                } else {
+                    false
+                }
             });
             assert!(found, "depr_call event must be present");
         });
@@ -5925,13 +5935,27 @@ mod focused_dispute_tests {
 
         let mut found = false;
         for event in events.events().iter() {
-            if event.2.len() == 3 {
-                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
-                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+            if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &event.body {
+                if v0.topics.len() == 3 {
+                    let topic0: Symbol = v0
+                        .topics
+                        .get(0)
+                        .unwrap()
+                        .clone()
+                        .try_into_val(&env)
+                        .unwrap();
+                    let topic1: Symbol = v0
+                        .topics
+                        .get(1)
+                        .unwrap()
+                        .clone()
+                        .try_into_val(&env)
+                        .unwrap();
 
-                if topic0 == symbol_short!("dispt_opn") {
-                    assert_eq!(topic1, market_id, "Market ID must be topic1");
-                    found = true;
+                    if topic0 == symbol_short!("dispt_opn") {
+                        assert_eq!(topic1, market_id, "Market ID must be topic1");
+                        found = true;
+                    }
                 }
             }
         }
@@ -5943,7 +5967,7 @@ mod focused_dispute_tests {
 mod storage_tier_change_tests {
     use super::*;
     use soroban_sdk::{
-        testutils::Address as _, Address, Env, IntoVal, Symbol, TryIntoVal,
+        testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol, TryIntoVal,
     };
 
     #[test]
@@ -5978,12 +6002,26 @@ mod storage_tier_change_tests {
             let events = env.events().all();
             let mut found = false;
             for event in events.events().iter() {
-                if event.2.len() == 3 {
-                    let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
-                    let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
-                    if topic0 == symbol_short!("st_tier") {
-                        assert_eq!(topic1, market_id);
-                        found = true;
+                if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &event.body {
+                    if v0.topics.len() == 3 {
+                        let topic0: Symbol = v0
+                            .topics
+                            .get(0)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        let topic1: Symbol = v0
+                            .topics
+                            .get(1)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        if topic0 == symbol_short!("st_tier") {
+                            assert_eq!(topic1, market_id);
+                            found = true;
+                        }
                     }
                 }
             }
@@ -6013,11 +6051,25 @@ mod payout_remainder_allocation_tests {
             let events = env.events().all();
             let mut found = false;
             for event in events.events().iter() {
-                if event.2.len() == 3 {
-                    let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
-                    let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
-                    if topic0 == symbol_short!("pay_rem") && topic1 == market_id {
-                        found = true;
+                if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &event.body {
+                    if v0.topics.len() == 3 {
+                        let topic0: Symbol = v0
+                            .topics
+                            .get(0)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        let topic1: Symbol = v0
+                            .topics
+                            .get(1)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        if topic0 == symbol_short!("pay_rem") && topic1 == market_id {
+                            found = true;
+                        }
                     }
                 }
             }

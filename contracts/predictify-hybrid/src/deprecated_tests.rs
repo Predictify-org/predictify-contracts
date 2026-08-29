@@ -14,7 +14,7 @@ mod deprecated_registry_tests {
     use soroban_sdk::{
         symbol_short,
         testutils::{Address as _, Events},
-        Address, Env, Symbol, String,
+        Address, Env, Symbol, String, TryIntoVal,
     };
 
     // -----------------------------------------------------------------------
@@ -339,13 +339,31 @@ mod deprecated_registry_tests {
             &sym(&env, "fetch_or"),
         );
 
-        let events = env.events().all().events();
+        let contract_events = env.events().all();
+        let events = contract_events.events();
         assert!(!events.is_empty(), "must emit at least one event");
 
         // Verify the emitted event contains expected fields
         let found = events.iter().any(|e| {
-            e.0 .0 == symbol_short!("depr_call")
-                && e.0 .1 == sym(&env, "verify_r")
+            if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &e.body {
+                let topic0: Symbol = v0
+                    .topics
+                    .get(0)
+                    .unwrap()
+                    .clone()
+                    .try_into_val(&env)
+                    .unwrap();
+                let topic1: Symbol = v0
+                    .topics
+                    .get(1)
+                    .unwrap()
+                    .clone()
+                    .try_into_val(&env)
+                    .unwrap();
+                topic0 == symbol_short!("depr_call") && topic1 == sym(&env, "verify_r")
+            } else {
+                false
+            }
         });
         assert!(found, "depr_call event must be present with correct entrypoint");
     }
@@ -364,12 +382,20 @@ mod deprecated_registry_tests {
             &sym(&env, "new_fn"),
         );
 
-        let events = env.events().all().events();
+        let contract_events = env.events().all();
+        let events = contract_events.events();
         assert!(!events.is_empty(), "must emit at least one event");
 
         // The first topic in the tuple is the event type, entrypoint is second
         let found = events.iter().any(|e| {
-            e.0 .0 == symbol_short!("depr_call")
+            if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &e.body {
+                v0.topics
+                    .get(0)
+                    .map(|t| t.clone().try_into_val(&env).ok())
+                    == Some(Some(symbol_short!("depr_call")))
+            } else {
+                false
+            }
         });
         assert!(found, "depr_call topic must be present");
     }

@@ -104,7 +104,7 @@ impl StorageTierChange {
             ledger_seq: self.ledger_seq,
             ttl_seconds: self.ttl_seconds,
         };
-        let expected = env.crypto().sha256(&payload.to_xdr(env)).into();
+        let expected: BytesN<32> = env.crypto().sha256(&payload.to_xdr(env)).into();
         expected.eq(&self.commitment)
     }
 }
@@ -3678,6 +3678,9 @@ impl MarketStatus {
             MarketState::Resolved => MarketStatus::Resolved,
             MarketState::Closed => MarketStatus::Closed,
             MarketState::Cancelled => MarketStatus::Cancelled,
+            // Archived/Restored are legacy state markers under the metadata-only
+            // archive model; expose them as the terminal Closed status.
+            MarketState::Archived | MarketState::Restored => MarketStatus::Closed,
         }
     }
 }

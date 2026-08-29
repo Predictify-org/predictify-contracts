@@ -144,6 +144,8 @@ impl Fixture {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 
@@ -380,7 +382,7 @@ fn snapshot_claim_winnings_requires_user_auth() {
         .resolve_market_manual(&f.admin, &market_id, &f.yes());
     f.advance_past_dispute();
 
-    let result = f.client().try_claim_winnings(&user, &market_id);
+    let result = f.client().try_claim_winnings(&user, &market_id, &0u64);
     assert_auth_passed(&result, "claim_winnings");
 }
 
@@ -391,7 +393,7 @@ fn edge_claim_winnings_without_auth_panics() {
     let market_id = f.market();
     let user = f.user();
     f.env.set_auths(&[]);
-    f.client().claim_winnings(&user, &market_id);
+    f.client().claim_winnings(&user, &market_id, &0u64);
 }
 
 /// `dispute_market` is rejected by its market-state validator in this fixture,

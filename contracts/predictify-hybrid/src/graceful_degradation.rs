@@ -322,7 +322,7 @@ mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::testutils::Events;
-    use soroban_sdk::Env;
+    use soroban_sdk::{Env, Symbol, TryIntoVal};
 
     // ------------------------------------------------------------------
     //  Legacy / existing behaviour tests (adapted for hysteresis)
@@ -536,13 +536,20 @@ mod tests {
         // (no transition happened). The oracle_degradation event is still
         // emitted by is_working, so we don't check total event count.
         let events = env.events().all();
-        let health_events: soroban_sdk::Vec<_> = events
+        let health_events = events
             .events()
             .iter()
-            .filter(|e| e.0 == (soroban_sdk::symbol_short!("orc_hlth"),))
-            .collect();
-        assert!(
-            health_events.is_empty(),
+            .filter(|e| {
+                matches!(&e.body, soroban_sdk::xdr::ContractEventBody::V0(v0) if {
+                    v0.topics
+                        .get(0)
+                        .and_then(|t| t.clone().try_into_val(&env).ok())
+                        == Some(soroban_sdk::symbol_short!("orc_hlth"))
+                })
+            })
+            .count();
+        assert_eq!(
+            health_events, 0,
             "No OracleHealthStatusEvent should be emitted before transition"
         );
 
@@ -553,13 +560,20 @@ mod tests {
         });
 
         let events = env.events().all();
-        let health_events: soroban_sdk::Vec<_> = events
+        let health_events = events
             .events()
             .iter()
-            .filter(|e| e.0 == (soroban_sdk::symbol_short!("orc_hlth"),))
-            .collect();
+            .filter(|e| {
+                matches!(&e.body, soroban_sdk::xdr::ContractEventBody::V0(v0) if {
+                    v0.topics
+                        .get(0)
+                        .and_then(|t| t.clone().try_into_val(&env).ok())
+                        == Some(soroban_sdk::symbol_short!("orc_hlth"))
+                })
+            })
+            .count();
         assert!(
-            health_events.len() >= 1,
+            health_events >= 1,
             "OracleHealthStatusEvent should be emitted on transition to Degraded"
         );
     }

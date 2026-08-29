@@ -25,12 +25,12 @@ mod batch_operations;
 mod bets;
 pub mod circuit_breaker;
 mod config;
-mod err;
+pub mod err;
 mod force_resolve;
 mod event_archive;
 mod restore_archive;
 mod lifecycle_validation;
-mod events;
+pub mod events;
 pub mod gov_registry;
 mod fees;
 mod gas;
@@ -54,12 +54,12 @@ mod resolution_event_ordering_tests;
 #[path = "tests/oracle_validation_tests.rs"]
 mod oracle_validation_tests;
 mod resolution;
-mod storage;
+pub mod storage;
 mod deprecated;
 pub use deprecated::{DeprecatedEntry, DeprecatedRegistry, MAX_REGISTRY_ENTRIES};
 #[cfg(test)]
 mod deprecated_tests;
-mod types;
+pub mod types;
 mod upgrade_manager;
 mod utils;
 mod validation;
@@ -113,7 +113,6 @@ use bets::BetStorage;
 use gas::BudgetGuard;
 use resolution::ResolutionOutcomeCache;
 use storage::BalanceStorage;
-use types::{Market, ReflectorAsset};
 // `CircuitBreaker`, `Error`, `EventEmitter`, `ClaimInfo` and the soroban_sdk
 // prelude items are imported/re-exported once below; duplicating them here
 // tripped E0252 "defined multiple times".
@@ -2219,7 +2218,7 @@ impl PredictifyHybrid {
 
             market
                 .claimed
-                .set(user.clone(), ClaimInfo::new(&env, payout));
+                .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
             swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
         }
 
@@ -2265,7 +2264,7 @@ impl PredictifyHybrid {
 
             market
                 .claimed
-                .set(user.clone(), ClaimInfo::new(&env, payout));
+                .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
             swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
         }
 
@@ -2889,6 +2888,8 @@ impl PredictifyHybrid {
                 MarketState::Resolved => "Resolved",
                 MarketState::Closed => "Closed",
                 MarketState::Cancelled => "Cancelled",
+                MarketState::Archived => "Archived",
+                MarketState::Restored => "Restored",
             };
             String::from_str(&env, s)
         });
@@ -4393,7 +4394,7 @@ impl PredictifyHybrid {
                     if payout >= 0 {
                         market
                             .claimed
-                            .set(user.clone(), ClaimInfo::new(&env, payout));
+                            .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
 
                         if payout > 0 {
                             total_distributed = total_distributed
@@ -4452,7 +4453,7 @@ impl PredictifyHybrid {
                         if payout > 0 {
                             market
                                 .claimed
-                                .set(user.clone(), ClaimInfo::new(&env, payout));
+                                .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
 
                             total_distributed = total_distributed
                                 .checked_add(payout)
@@ -4593,6 +4594,32 @@ impl PredictifyHybrid {
         limit: u32,
     ) -> (Vec<EventHistoryEntry>, u32) {
         crate::event_archive::EventArchive::query_events_by_category(&env, &category, cursor, limit)
+    }
+
+    /// Query archived events directly. Returns public metadata only (no votes/stakes).
+    ///
+    /// Archived events keep their terminal `Resolved`/`Cancelled` state
+    /// (non-destructive archive), so they remain discoverable via
+    /// `query_events_by_status` too. This entrypoint is the explicit "show me the
+    /// archive" view, ordered by `archived_at`.
+    ///
+    /// * `reverse = false` - oldest archived first
+    /// * `reverse = true`  - newest archived first
+    ///
+    /// Paginated: `cursor` is a zero-based offset into the archive ordering,
+    /// `limit` is capped at 30. Returns `(entries, next_cursor)`; advance until
+    /// `next_cursor == cursor` to finish.
+    ///
+    /// # Events
+    ///
+    /// Read-only query paths emit no events.
+    pub fn query_archived_events(
+        env: Env,
+        reverse: bool,
+        cursor: u32,
+        limit: u32,
+    ) -> (Vec<EventHistoryEntry>, u32) {
+        crate::event_archive::EventArchive::query_archived_events(&env, reverse, cursor, limit)
     }
 
     /// Set the platform fee percentage (admin only).

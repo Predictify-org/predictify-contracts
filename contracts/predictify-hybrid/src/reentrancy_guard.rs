@@ -619,6 +619,8 @@ mod tests {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         );
 
         let bet = client.place_bet(
