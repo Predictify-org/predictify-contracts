@@ -128,6 +128,11 @@ pub struct StorageTtlPressure {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
+    /// Idempotency key for event creation (admin-scoped).
+    /// Prevents duplicate event-creation fee charges on retry.
+    /// Format: (admin_address, caller_supplied_key)
+    /// TTL: PLACE_BETS_IDEM_TTL_LEDGERS (~7 days)
+    CreateEventIdem(Address, soroban_sdk::BytesN<32>),
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),

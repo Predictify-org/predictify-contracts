@@ -785,6 +785,7 @@ impl PredictifyHybrid {
         fallback_oracle_config: Option<OracleConfig>,
         resolution_timeout: u64,
         visibility: EventVisibility,
+        idempotency_key: Option<BytesN<32>>,
     ) -> Symbol {
         if let Err(e) =
             crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "create_event")
@@ -826,6 +827,18 @@ impl PredictifyHybrid {
             }
         }
 
+        // ═══ IDEMPOTENCY CHECK (before any state mutations) ═══
+        // If a caller provides an idempotency key, check if this request has already been processed.
+        // This prevents duplicate event-creation fee charges on retry scenarios.
+        if let Some(ref key) = idempotency_key {
+            let idem_key = DataKey::CreateEventIdem(admin.clone(), key.clone());
+            if let Some(cached_event_id) = env.storage().persistent().get::<_, Symbol>(&idem_key) {
+                // Duplicate request: return the cached event ID with an idempotency error.
+                // The caller receives a clear signal that this request was already processed.
+                panic_with_error!(env, Error::IdempotentBatchAlreadyApplied);
+            }
+        }
+
         // Generate a unique collision-resistant event ID (reusing market ID generator)
         let event_id = MarketIdGenerator::generate_market_id(&env, &admin);
 
@@ -857,8 +870,30 @@ impl PredictifyHybrid {
             allowlist: Vec::new(&env),
         };
 
+        // ═══ FEE COLLECTION ═══
+        // Charge event creation fee (same as market creation).
+        // This happens AFTER idempotency check, so duplicates don't incur fees.
+        if let Err(fee_err) = crate::fees::FeeManager::process_creation_fee(&env, &admin) {
+            panic_with_error!(env, fee_err);
+        }
+
         // Store the event
         crate::storage::EventManager::store_event(&env, &event);
+
+        // ═══ STORE IDEMPOTENCY KEY ═══
+        // Record that this request (admin, key) has been processed.
+        // TTL: PLACE_BETS_IDEM_TTL_LEDGERS (~7 days), after which the key expires.
+        if let Some(key) = idempotency_key {
+            let idem_key = DataKey::CreateEventIdem(admin.clone(), key);
+            env.storage()
+                .persistent()
+                .set(&idem_key, &event_id);
+            env.storage().persistent().extend_ttl(
+                &idem_key,
+                crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS,
+                crate::storage::PLACE_BETS_IDEM_TTL_LEDGERS,
+            );
+        }
 
         // Emit event created event
         EventEmitter::emit_event_created(
@@ -881,8 +916,6 @@ impl PredictifyHybrid {
             Map::new(&env),
             None,
         );
-
-        let gas_marker = GasTracker::start_tracking(&env);
 
         GasTracker::end_tracking(&env, symbol_short!("evt_crt"), gas_marker);
         event_id
