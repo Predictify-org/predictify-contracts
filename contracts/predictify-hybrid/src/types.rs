@@ -6,6 +6,17 @@ use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
 
+// ===== PAYOUT REMAINDER =====
+
+/// Tracks the undistributed remainder from payout calculations.
+/// This ensures that integer division does not cause silent loss of funds.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRemainder {
+    pub amount: i128,
+    pub claimed: bool,
+}
+
 // ===== MARKET STATE =====
 
 /// Enumeration of possible market states throughout the prediction market lifecycle.
