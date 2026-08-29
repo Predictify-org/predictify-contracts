@@ -574,6 +574,189 @@ impl UnclaimedWinningsPolicy {
     }
 }
 
+// ===== TREASURY TIMELOCK =====
+
+/// Default timelock delay before a queued treasury change can be applied (24 hours).
+pub const DEFAULT_TREASURY_TIMELOCK_SECONDS: u64 = 24 * 60 * 60;
+
+/// Minimum allowed treasury timelock (1 hour). Prevents setting dangerously short windows.
+pub const MIN_TREASURY_TIMELOCK_SECONDS: u64 = 60 * 60;
+
+/// Maximum allowed treasury timelock (30 days). Prevents excessively long lockouts.
+pub const MAX_TREASURY_TIMELOCK_SECONDS: u64 = 30 * 24 * 60 * 60;
+
+/// Pending treasury update protected by a governance time-lock.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingTreasuryUpdate {
+    /// The proposed new treasury address.
+    pub new_treasury: Address,
+    /// Unix timestamp after which the update may be applied.
+    pub execute_after: u64,
+    /// Admin who queued this update.
+    pub proposed_by: Address,
+}
+
+/// Configuration for the treasury timelock delay.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryTimelockConfig {
+    /// Delay in seconds between queuing and applying a treasury update.
+    pub timelock_seconds: u64,
+}
+
+impl TreasuryTimelockConfig {
+    fn storage_key(env: &Env) -> Symbol {
+        Symbol::new(env, "tsu_cfg")
+    }
+
+    /// Returns the stored configuration, or the default if unset.
+    pub fn get_config(env: &Env) -> TreasuryTimelockConfig {
+        env.storage()
+            .persistent()
+            .get(&Self::storage_key(env))
+            .unwrap_or(TreasuryTimelockConfig {
+                timelock_seconds: DEFAULT_TREASURY_TIMELOCK_SECONDS,
+            })
+    }
+
+    /// Admin-only: update the timelock delay. Must stay within bounds.
+    pub fn set_config(
+        env: &Env,
+        admin: &Address,
+        timelock_seconds: u64,
+    ) -> Result<(), Error> {
+        crate::fees::FeeValidator::validate_admin_permissions(env, admin)?;
+
+        if timelock_seconds < MIN_TREASURY_TIMELOCK_SECONDS
+            || timelock_seconds > MAX_TREASURY_TIMELOCK_SECONDS
+        {
+            return Err(Error::InvalidInput);
+        }
+
+        let mut config = Self::get_config(env);
+        config.timelock_seconds = timelock_seconds;
+        env.storage().persistent().set(&Self::storage_key(env), &config);
+        Ok(())
+    }
+}
+
+/// Timelocked treasury rotation manager.
+///
+/// Treasury changes follow a proposal → queue → apply cycle:
+/// 1. `queue_update(env, admin, new_treasury)` — stage the change
+/// 2. `apply_update(env, admin)` — apply only when `env.ledger().timestamp() >= execute_after`
+/// 3. `cancel_update(env, admin)` — cancel the pending update before it takes effect
+///
+/// This prevents surprise fee-recipient rotation and gives downstream
+/// observers time to react.
+pub struct TreasuryTimelockManager;
+
+impl TreasuryTimelockManager {
+    fn pending_key(env: &Env) -> Symbol {
+        Symbol::new(env, "tsu_pend")
+    }
+
+    /// Queue a treasury update for future activation.
+    ///
+    /// The new treasury address is stored in a pending slot. It does NOT
+    /// take effect until `apply_update` is called and the timelock has expired.
+    /// Only the contract admin may queue updates.
+    pub fn queue_update(
+        env: &Env,
+        admin: &Address,
+        new_treasury: &Address,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        crate::fees::FeeValidator::validate_admin_permissions(env, admin)?;
+
+        // Reject if a pending update already exists
+        if env.storage().persistent().has(&Self::pending_key(env)) {
+            return Err(Error::PendingTreasuryUpdateExists);
+        }
+
+        let config = TreasuryTimelockConfig::get_config(env);
+        let now = env.ledger().timestamp();
+        let execute_after = now.saturating_add(config.timelock_seconds);
+
+        let pending = PendingTreasuryUpdate {
+            new_treasury: new_treasury.clone(),
+            execute_after,
+            proposed_by: admin.clone(),
+        };
+        env.storage().persistent().set(&Self::pending_key(env), &pending);
+
+        crate::events::EventEmitter::emit_treasury_update_queued(
+            env,
+            admin,
+            new_treasury,
+            execute_after,
+        );
+
+        Ok(())
+    }
+
+    /// Apply the queued treasury update if the timelock has expired.
+    ///
+    /// Can be called by anyone (admin required) once the timelock expires.
+    /// The pending update is cleared after successful application.
+    pub fn apply_update(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        let pending: PendingTreasuryUpdate = env
+            .storage()
+            .persistent()
+            .get(&Self::pending_key(env))
+            .ok_or(Error::NoPendingTreasuryUpdate)?;
+
+        let now = env.ledger().timestamp();
+        if now < pending.execute_after {
+            return Err(Error::TreasuryUpdateTimelocked);
+        }
+
+        // Apply: set the new treasury
+        UnclaimedWinningsPolicy::set_treasury(env, &pending.new_treasury);
+
+        // Clear pending storage
+        env.storage().persistent().remove(&Self::pending_key(env));
+
+        crate::events::EventEmitter::emit_treasury_update_applied(
+            env,
+            admin,
+            &pending.new_treasury,
+        );
+
+        Ok(())
+    }
+
+    /// Cancel a queued treasury update before its timelock expires.
+    ///
+    /// Only the contract admin may cancel. Has no effect if no update is pending.
+    pub fn cancel_update(env: &Env, admin: &Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        crate::fees::FeeValidator::validate_admin_permissions(env, admin)?;
+
+        if !env.storage().persistent().has(&Self::pending_key(env)) {
+            return Err(Error::NoPendingTreasuryUpdate);
+        }
+
+        env.storage().persistent().remove(&Self::pending_key(env));
+
+        crate::events::EventEmitter::emit_treasury_update_cancelled(env, admin);
+
+        Ok(())
+    }
+
+    /// Read the currently queued treasury update (if any).
+    ///
+    /// Returns `None` when no update is pending.
+    pub fn get_pending_update(env: &Env) -> Option<PendingTreasuryUpdate> {
+        env.storage().persistent().get(&Self::pending_key(env))
+    }
+}
+
 // ===== VALIDATION =====
 pub struct RecoveryValidator;
 impl RecoveryValidator {
@@ -1567,6 +1750,257 @@ mod tests {
         assert!(result.integrity_ok);
         assert!(!result.can_recover);
         assert_eq!(result.state_description, String::from_str(&test.env, "Active"));
+    }
+}
+
+// ===== TREASURY TIMELOCK TESTS =====
+
+#[cfg(test)]
+mod treasury_timelock_tests {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, EnvTestConfig, Ledger as _};
+    use soroban_sdk::{Address, Env};
+
+    fn test_env() -> Env {
+        let mut env = Env::default();
+        env.set_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
+        env
+    }
+
+    /// Set up the contract admin in storage so FeeValidator::validate_admin_permissions passes.
+    fn setup_admin(env: &Env) -> Address {
+        let admin = Address::generate(env);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, "Admin"), &admin);
+        admin
+    }
+
+    #[test]
+    fn test_queue_treasury_update_stores_pending() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let new_treasury = Address::generate(&env);
+
+        let result = TreasuryTimelockManager::queue_update(&env, &admin, &new_treasury);
+        assert!(result.is_ok());
+
+        let pending = TreasuryTimelockManager::get_pending_update(&env);
+        assert!(pending.is_some());
+        let p = pending.unwrap();
+        assert_eq!(p.new_treasury, new_treasury);
+        assert_eq!(p.proposed_by, admin);
+        // execute_after should be in the future
+        assert!(p.execute_after > env.ledger().timestamp());
+    }
+
+    #[test]
+    fn test_queue_rejects_non_admin() {
+        let env = test_env();
+        let _admin = setup_admin(&env);
+        let attacker = Address::generate(&env);
+        let new_treasury = Address::generate(&env);
+
+        let result = TreasuryTimelockManager::queue_update(&env, &attacker, &new_treasury);
+        assert_eq!(result, Err(Error::Unauthorized));
+    }
+
+    #[test]
+    fn test_queue_rejects_if_already_pending() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let t1 = Address::generate(&env);
+        let t2 = Address::generate(&env);
+
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &t1).is_ok());
+        let result = TreasuryTimelockManager::queue_update(&env, &admin, &t2);
+        assert_eq!(result, Err(Error::PendingTreasuryUpdateExists));
+    }
+
+    #[test]
+    fn test_apply_rejects_before_timelock() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let new_treasury = Address::generate(&env);
+
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &new_treasury).is_ok());
+
+        // Try to apply immediately — should fail
+        let result = TreasuryTimelockManager::apply_update(&env, &admin);
+        assert_eq!(result, Err(Error::TreasuryUpdateTimelocked));
+    }
+
+    #[test]
+    fn test_apply_succeeds_after_timelock() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let new_treasury = Address::generate(&env);
+
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &new_treasury).is_ok());
+
+        let config = TreasuryTimelockConfig::get_config(&env);
+        env.ledger().set_timestamp(env.ledger().timestamp() + config.timelock_seconds);
+
+        let result = TreasuryTimelockManager::apply_update(&env, &admin);
+        assert!(result.is_ok());
+
+        // Verify treasury was updated
+        let treasury = UnclaimedWinningsPolicy::get_treasury(&env);
+        assert_eq!(treasury, Some(new_treasury));
+
+        // Verify pending is cleared
+        assert!(TreasuryTimelockManager::get_pending_update(&env).is_none());
+    }
+
+    #[test]
+    fn test_cancel_clears_pending() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let new_treasury = Address::generate(&env);
+
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &new_treasury).is_ok());
+        assert!(TreasuryTimelockManager::get_pending_update(&env).is_some());
+
+        let result = TreasuryTimelockManager::cancel_update(&env, &admin);
+        assert!(result.is_ok());
+
+        assert!(TreasuryTimelockManager::get_pending_update(&env).is_none());
+    }
+
+    #[test]
+    fn test_cancel_fails_when_no_pending() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+
+        let result = TreasuryTimelockManager::cancel_update(&env, &admin);
+        assert_eq!(result, Err(Error::NoPendingTreasuryUpdate));
+    }
+
+    #[test]
+    fn test_cancel_rejects_non_admin() {
+        let env = test_env();
+        let _admin = setup_admin(&env);
+        let attacker = Address::generate(&env);
+        let new_treasury = Address::generate(&env);
+
+        assert!(TreasuryTimelockManager::queue_update(&env, &_admin, &new_treasury).is_ok());
+        let result = TreasuryTimelockManager::cancel_update(&env, &attacker);
+        assert_eq!(result, Err(Error::Unauthorized));
+    }
+
+    #[test]
+    fn test_apply_fails_when_no_pending() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+
+        let result = TreasuryTimelockManager::apply_update(&env, &admin);
+        assert_eq!(result, Err(Error::NoPendingTreasuryUpdate));
+    }
+
+    #[test]
+    fn test_cancel_then_requeue() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let t1 = Address::generate(&env);
+        let t2 = Address::generate(&env);
+
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &t1).is_ok());
+        assert!(TreasuryTimelockManager::cancel_update(&env, &admin).is_ok());
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &t2).is_ok());
+
+        let pending = TreasuryTimelockManager::get_pending_update(&env).unwrap();
+        assert_eq!(pending.new_treasury, t2);
+    }
+
+    #[test]
+    fn test_default_timelock_config() {
+        let env = test_env();
+        let config = TreasuryTimelockConfig::get_config(&env);
+        assert_eq!(config.timelock_seconds, DEFAULT_TREASURY_TIMELOCK_SECONDS);
+    }
+
+    #[test]
+    fn test_set_config_admin_only() {
+        let env = test_env();
+        let _admin = setup_admin(&env);
+        let non_admin = Address::generate(&env);
+
+        let result = TreasuryTimelockConfig::set_config(&env, &non_admin, 7200);
+        assert_eq!(result, Err(Error::Unauthorized));
+    }
+
+    #[test]
+    fn test_set_config_rejects_out_of_bounds() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+
+        // Too short
+        let result = TreasuryTimelockConfig::set_config(&env, &admin, 100);
+        assert_eq!(result, Err(Error::InvalidInput));
+
+        // Too long
+        let result = TreasuryTimelockConfig::set_config(
+            &env,
+            &admin,
+            MAX_TREASURY_TIMELOCK_SECONDS + 1,
+        );
+        assert_eq!(result, Err(Error::InvalidInput));
+    }
+
+    #[test]
+    fn test_set_config_valid() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+
+        let result = TreasuryTimelockConfig::set_config(&env, &admin, 7200);
+        assert!(result.is_ok());
+
+        let config = TreasuryTimelockConfig::get_config(&env);
+        assert_eq!(config.timelock_seconds, 7200);
+    }
+
+    #[test]
+    fn test_apply_does_not_affect_treasury_if_timelock_not_met() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let new_treasury = Address::generate(&env);
+
+        // Set a treasury first
+        UnclaimedWinningsPolicy::set_treasury(&env, &admin);
+        let original = UnclaimedWinningsPolicy::get_treasury(&env);
+
+        // Queue an update
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &new_treasury).is_ok());
+
+        // Try to apply before timelock
+        let _ = TreasuryTimelockManager::apply_update(&env, &admin);
+
+        // Treasury should remain unchanged
+        assert_eq!(UnclaimedWinningsPolicy::get_treasury(&env), original);
+    }
+
+    #[test]
+    fn test_get_pending_returns_none_when_empty() {
+        let env = test_env();
+        assert!(TreasuryTimelockManager::get_pending_update(&env).is_none());
+    }
+
+    #[test]
+    fn test_queue_updates_eta_based_on_config() {
+        let env = test_env();
+        let admin = setup_admin(&env);
+        let treasury = Address::generate(&env);
+
+        // Set custom timelock
+        TreasuryTimelockConfig::set_config(&env, &admin, 3600).unwrap();
+
+        let now = env.ledger().timestamp();
+        assert!(TreasuryTimelockManager::queue_update(&env, &admin, &treasury).is_ok());
+
+        let pending = TreasuryTimelockManager::get_pending_update(&env).unwrap();
+        assert_eq!(pending.execute_after, now + 3600);
     }
 }
 

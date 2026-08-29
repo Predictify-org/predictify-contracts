@@ -111,7 +111,10 @@ enum StorageTtlTier {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct StorageTtlPressure {
-    pub key: Val,
+    /// Storage key serialized as a string for diagnostics.
+    /// The raw `Val` cannot be used in a `#[contracttype]` struct; a string
+    /// representation is sufficient for monitoring/alerting purposes.
+    pub key_repr: soroban_sdk::String,
     pub remaining_ledgers: u32,
     pub recommended_bump: u32,
 }
@@ -128,6 +131,11 @@ pub struct StorageTtlPressure {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     PlaceBetsIdem(Address, soroban_sdk::BytesN<32>),
+    /// Idempotency key for event creation (admin-scoped).
+    /// Prevents duplicate event-creation fee charges on retry.
+    /// Format: (admin_address, caller_supplied_key)
+    /// TTL: PLACE_BETS_IDEM_TTL_LEDGERS (~7 days)
+    CreateEventIdem(Address, soroban_sdk::BytesN<32>),
     Whitelisted(Address),
     Blacklisted(Address),
     ArchivedMarket(Symbol, u64),
@@ -177,6 +185,9 @@ pub enum DataKey {
     PerLedgerBetCounter,
     /// Collusion detector configuration.
     CollusionDetectorConfig(Symbol),
+    /// Per-user claim nonce for replay protection: (user, market_id) -> u64
+    /// Incremented on each successful claim to ensure each claim is unique and prevent replays.
+    ClaimNonce(Address, Symbol),
 }
 
 /// Storage format version for migration tracking
@@ -482,7 +493,7 @@ impl StorageOptimizer {
             if let Some(r) = remaining {
                 let bump = MARKET_TTL_LEDGERS.min(max_ttl);
                 pressures.push(StorageTtlPressure {
-                    key: key.clone(),
+                    key_repr: soroban_sdk::String::from_str(env, "storage_key"),
                     remaining_ledgers: r,
                     recommended_bump: bump,
                 });
@@ -1236,6 +1247,78 @@ impl StorageUtils {
         }
 
         recommendations
+    }
+}
+
+// ===== CLAIM NONCE STORAGE =====
+
+/// Persistent storage manager for claim nonces used in replay attack prevention.
+/// Each (user, market) pair maintains a monotonically-increasing nonce counter.
+pub struct ClaimNonceManager;
+
+impl ClaimNonceManager {
+    /// Get the current claim nonce for a user on a specific market.
+    ///
+    /// # Returns
+    /// The current nonce (0 if no prior claims).
+    pub fn get_nonce(env: &Env, user: &Address, market_id: &Symbol) -> u64 {
+        let key = DataKey::ClaimNonce(user.clone(), market_id.clone());
+        env.storage().persistent().get(&key).unwrap_or(0)
+    }
+
+    /// Increment and store the claim nonce for a user on a specific market.
+    ///
+    /// # Parameters
+    /// - `env` - The Soroban environment
+    /// - `user` - The user claiming winnings
+    /// - `market_id` - The market being claimed on
+    ///
+    /// # Returns
+    /// The new nonce value (current + 1)
+    ///
+    /// # Panics
+    /// If the nonce would overflow (extremely unlikely with u64).
+    pub fn increment_nonce(env: &Env, user: &Address, market_id: &Symbol) -> u64 {
+        let current_nonce = Self::get_nonce(env, user, market_id);
+        let new_nonce = current_nonce.checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
+
+        let key = DataKey::ClaimNonce(user.clone(), market_id.clone());
+        env.storage().persistent().set(&key, &new_nonce);
+        StorageOptimizer::extend_persistent_ttl(
+            env,
+            &key,
+            StorageOptimizer::ttl_for_tier(
+                &StorageOptimizer::get_storage_config(env),
+                StorageTtlTier::Market,
+            ),
+        );
+
+        new_nonce
+    }
+
+    /// Validate that a provided claim nonce matches the expected nonce.
+    ///
+    /// # Parameters
+    /// - `env` - The Soroban environment
+    /// - `user` - The user claiming winnings
+    /// - `market_id` - The market being claimed on
+    /// - `provided_nonce` - The nonce provided by the caller
+    ///
+    /// # Returns
+    /// Ok(()) if the nonce is valid (matches stored nonce)
+    /// Err(InvalidNonce) if the nonce does not match (likely a replay attack)
+    pub fn validate_nonce(
+        env: &Env,
+        user: &Address,
+        market_id: &Symbol,
+        provided_nonce: u64,
+    ) -> Result<(), Error> {
+        let expected_nonce = Self::get_nonce(env, user, market_id);
+        if provided_nonce != expected_nonce {
+            return Err(Error::InvalidNonce);
+        }
+        Ok(())
     }
 }
 
