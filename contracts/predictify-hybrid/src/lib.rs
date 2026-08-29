@@ -1931,6 +1931,14 @@ impl PredictifyHybrid {
     }
 
     /// Set treasury recipient for unclaimed winnings sweeps (admin only).
+    ///
+    /// **Deprecated**: This function now queues a timelocked treasury update
+    /// instead of applying it immediately. Use `queue_treasury_update`,
+    /// `apply_treasury_update`, and `cancel_treasury_update` for the full
+    /// queue→apply→cancel lifecycle.
+    ///
+    /// The treasury address will only change after the configured timelock
+    /// period has elapsed (default: 24 hours).
     pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
         admin.require_auth();
 
@@ -1944,8 +1952,65 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        recovery::UnclaimedWinningsPolicy::set_treasury(&env, &treasury);
-        EventEmitter::emit_treasury_updated(&env, &admin, &treasury);
+        // Route through the timelocked path to prevent instant rotation
+        match recovery::TreasuryTimelockManager::queue_update(&env, &admin, &treasury) {
+            Ok(()) => {}
+            Err(Error::PendingTreasuryUpdateExists) => {
+                // Cancel the old one and queue the new one
+                let _ = recovery::TreasuryTimelockManager::cancel_update(&env, &admin);
+                recovery::TreasuryTimelockManager::queue_update(&env, &admin, &treasury)
+                    .unwrap_or_else(|e| panic_with_error!(env, e));
+            }
+            Err(e) => panic_with_error!(env, e),
+        }
+    }
+
+    /// Queue a treasury update for future activation (admin only).
+    ///
+    /// The treasury address will only change after the configured timelock
+    /// period (default: 24 hours) has elapsed. This prevents surprise
+    /// fee-recipient rotation.
+    pub fn queue_treasury_update(
+        env: Env,
+        admin: Address,
+        new_treasury: Address,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockManager::queue_update(&env, &admin, &new_treasury)
+    }
+
+    /// Apply the queued treasury update after the timelock has expired.
+    ///
+    /// Can be called by the admin once the timelock period has elapsed.
+    pub fn apply_treasury_update(env: Env, admin: Address) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockManager::apply_update(&env, &admin)
+    }
+
+    /// Cancel a pending treasury update before the timelock expires (admin only).
+    pub fn cancel_treasury_update(env: Env, admin: Address) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockManager::cancel_update(&env, &admin)
+    }
+
+    /// Get the pending treasury update, if any (read-only query).
+    pub fn get_pending_treasury_update(env: Env) -> Option<recovery::PendingTreasuryUpdate> {
+        recovery::TreasuryTimelockManager::get_pending_update(&env)
+    }
+
+    /// Get the treasury timelock configuration (read-only query).
+    pub fn get_treasury_timelock_config(env: Env) -> recovery::TreasuryTimelockConfig {
+        recovery::TreasuryTimelockConfig::get_config(&env)
+    }
+
+    /// Set the treasury timelock delay (admin only).
+    pub fn set_treasury_timelock_config(
+        env: Env,
+        admin: Address,
+        timelock_seconds: u64,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        recovery::TreasuryTimelockConfig::set_config(&env, &admin, timelock_seconds)
     }
 
     /// Sweep unclaimed winning payouts after claim period expiry (admin only).
@@ -4831,40 +4896,10 @@ impl PredictifyHybrid {
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
         Self::require_primary_admin(&env, &admin)?;
 
-        // Get collected fees from storage (using the same key as FeeTracker)
-        let fees_key = Symbol::new(&env, "tot_fees");
-        let collected_fees: i128 = env.storage().persistent().get(&fees_key).unwrap_or(0);
-
-        if collected_fees == 0 {
-            return Err(Error::NoFeesToCollect);
-        }
-
-        // Determine withdrawal amount
-        let withdrawal_amount = if amount == 0 || amount > collected_fees {
-            collected_fees
-        } else {
-            amount
-        };
-
-        // Update collected fees (checked to prevent underflow)
-        let remaining_fees = collected_fees
-            .checked_sub(withdrawal_amount)
-            .ok_or(Error::InvalidInput)?;
-        env.storage().persistent().set(&fees_key, &remaining_fees);
-
-        // Emit fee withdrawal event
-        EventEmitter::emit_fee_collected(
-            &env,
-            &Symbol::new(&env, "withdrawal"),
-            &admin,
-            withdrawal_amount,
-            &String::from_str(&env, "fee_withdrawal"),
-        );
-
-        // In a real implementation, transfer tokens to admin here
-        // For now, we'll just track the withdrawal
-
-        Ok(withdrawal_amount)
+        // Route through the timelocked fee withdrawal manager to enforce
+        // the withdrawal schedule (timelock + cap). This prevents the admin
+        // from bypassing the schedule by calling this entrypoint directly.
+        fees::FeeWithdrawalManager::withdraw_fees(&env, &admin, amount)
     }
 
     /// Extends the deadline of an active market by a specified number of days (admin only).

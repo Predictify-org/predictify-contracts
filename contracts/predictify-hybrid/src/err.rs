@@ -288,6 +288,12 @@ pub enum Error {
     PerLedgerBetCapExceeded = 687,
     /// Registry is full.
     RegistryFull = 688,
+    /// Treasury update timelock has not yet expired.
+    TreasuryUpdateTimelocked = 689,
+    /// No pending treasury update found.
+    NoPendingTreasuryUpdate = 690,
+    /// A pending treasury update already exists.
+    PendingTreasuryUpdateExists = 691,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -1613,6 +1619,9 @@ impl Error {
             Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
             Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
             Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            Error::TreasuryUpdateTimelocked => "Treasury update timelock has not yet expired",
+            Error::NoPendingTreasuryUpdate => "No pending treasury update found",
+            Error::PendingTreasuryUpdateExists => "A pending treasury update already exists",
             _ => "An unspecified error occurred.",
         }
     }
@@ -1724,6 +1733,9 @@ impl Error {
             Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
             Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
             Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+            Error::TreasuryUpdateTimelocked => "TREASURY_UPDATE_TIMELOCKED",
+            Error::NoPendingTreasuryUpdate => "NO_PENDING_TREASURY_UPDATE",
+            Error::PendingTreasuryUpdateExists => "PENDING_TREASURY_UPDATE_EXISTS",
             _ => "UNSPECIFIED_ERROR",
         }
     }
@@ -1842,6 +1854,9 @@ mod tests {
             Error::UpgradeChainMismatch,
             Error::ReplayedOverride,
             Error::OracleQuoteOutlier,
+            Error::TreasuryUpdateTimelocked,
+            Error::NoPendingTreasuryUpdate,
+            Error::PendingTreasuryUpdateExists,
         ]
     }
 
