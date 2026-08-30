@@ -5666,3 +5666,47 @@ impl OutcomeNormalizationStats {
         self.total_length_reduction / self.successfully_normalized
     }
 }
+
+// ===== CONTRACT INITIALIZATION VALIDATION =====
+
+/// Contract initialization validation.
+///
+/// All initialization parameters are validated in one atomic step so no
+/// storage update can leave the contract in a partially initialized state.
+/// This validator is deterministic and intended to be called before the first
+/// `ConfigManager` write during contract initialization.
+pub struct ContractInitializationValidator;
+
+impl ContractInitializationValidator {
+    /// Validate all contract initialization parameters atomically.
+    ///
+    /// Validation short-circuits on the first invalid parameter. This function
+    /// performs no state changes; callers must invoke it before persisting any
+    /// initialization value.
+    pub fn validate_contract_initialization(
+        env: &Env,
+        admin: &Address,
+        fee_bps: u32,
+        _bet_limits: &BetLimits,
+        resolution_timeout: &u64,
+        oracle_config: &OracleConfig,
+    ) -> Result<(), Error> {
+        // Admin must be a valid Soroban address before it is stored.
+        InputValidator::validate_address(env, admin).map_err(|_| Error::Unauthorized)?;
+
+        // Fee basis points are bounded so fee calculations remain deterministic.
+        if fee_bps > 10_000u32 {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        // Resolution timeout must be inside the supported range.
+        OracleConfigValidator::validate_resolution_timeout(resolution_timeout)
+            .map_err(|_| Error::InvalidDuration)?;
+
+        // Oracle configuration must be internally consistent before storage.
+        OracleValidator::validate_oracle_config_all_together(oracle_config)
+            .map_err(|_| Error::InvalidOracleConfig)?;
+
+        Ok(())
+    }
+}

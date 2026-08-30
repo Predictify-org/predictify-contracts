@@ -109,6 +109,23 @@ enum StorageTtlTier {
 }
 
 impl StorageConfig {
+    /// Validates configuration invariants before the config is persisted.
+    ///
+    /// Zero TTL tiers are rejected because `extend_ttl` with a zero threshold
+    /// would allow stored records to expire immediately, silently losing
+    /// balances, markets, events, or archive data. All checks run before the
+    /// first storage write so an invalid config can never be partially stored.
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.balance_ttl_ledgers == 0
+            || self.market_ttl_ledgers == 0
+            || self.event_ttl_ledgers == 0
+            || self.archive_ttl_ledgers == 0
+        {
+            return Err(Error::InvalidInput);
+        }
+        Ok(())
+    }
+
     /// Returns the configured TTL (in ledgers) for the requested storage tier.
     /// This makes storage-tier selection explicit and auditable at every call site.
     fn ttl_for_tier(&self, tier: StorageTtlTier) -> u32 {
@@ -202,10 +219,8 @@ pub enum DataKey {
     /// Incremented on each successful claim to ensure each claim is unique and prevent replays.
     ClaimNonce(Address, Symbol),
     /// Persistent alias mapping a superseded event topic symbol to its
-    /// replacement.  Written by the upgrade hook so that on-chain consumers
-    /// can discover topic renames without re-deploying.
-    ///
-    /// Key: the *old* topic `Symbol`; Value: [`crate::event_topic_compat::TopicAlias`].
+    /// replacement. Written by the upgrade hook so on-chain consumers can
+    /// discover topic renames without re-deploying.
     EventTopicAlias(Symbol),
 }
 
@@ -826,6 +841,8 @@ impl StorageOptimizer {
 
     /// Update storage configuration
     pub fn update_storage_config(env: &Env, config: &StorageConfig) -> Result<(), Error> {
+        // Validate atomically before any persistent state is written.
+        config.validate()?;
         let key = Symbol::new(env, STORAGE_CONFIG_KEY);
         Self::set_persistent_with_ttl(env, &key, config, config.archive_ttl_ledgers);
         Ok(())
@@ -1477,6 +1494,48 @@ mod tests {
             assert_eq!(config.market_ttl_ledgers, MARKET_TTL_LEDGERS);
             assert_eq!(config.event_ttl_ledgers, EVENT_TTL_LEDGERS);
             assert_eq!(config.archive_ttl_ledgers, ARCHIVE_TTL_LEDGERS);
+        });
+    }
+
+    #[test]
+    fn test_storage_config_validate_rejects_zero_ttl_tiers() {
+        let (env, contract_id) = create_contract_env();
+        env.as_contract(&contract_id, || {
+            let default_config = StorageOptimizer::get_storage_config(&env);
+            assert_eq!(default_config.validate(), Ok(()));
+
+            let mut balance = default_config.clone();
+            balance.balance_ttl_ledgers = 0;
+            assert_eq!(balance.validate(), Err(Error::InvalidInput));
+
+            let mut market = default_config.clone();
+            market.market_ttl_ledgers = 0;
+            assert_eq!(market.validate(), Err(Error::InvalidInput));
+
+            let mut event = default_config.clone();
+            event.event_ttl_ledgers = 0;
+            assert_eq!(event.validate(), Err(Error::InvalidInput));
+
+            let mut archive = default_config.clone();
+            archive.archive_ttl_ledgers = 0;
+            assert_eq!(archive.validate(), Err(Error::InvalidInput));
+        });
+    }
+
+    #[test]
+    fn test_update_storage_config_rejects_invalid_atomically() {
+        let (env, contract_id) = create_contract_env();
+        env.as_contract(&contract_id, || {
+            let mut config = StorageOptimizer::get_storage_config(&env);
+            config.archive_ttl_ledgers = 0;
+
+            assert_eq!(
+                StorageOptimizer::update_storage_config(&env, &config),
+                Err(Error::InvalidInput)
+            );
+
+            let stored = StorageOptimizer::get_storage_config(&env);
+            assert_eq!(stored.archive_ttl_ledgers, ARCHIVE_TTL_LEDGERS);
         });
     }
 

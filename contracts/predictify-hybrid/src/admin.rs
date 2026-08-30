@@ -237,11 +237,11 @@ impl AdminInitializer {
     /// control over the contract. Consider using a multi-signature wallet
     /// or governance contract for production deployments.
     pub fn initialize(env: &Env, admin: &Address) -> Result<(), Error> {
-        // Check for re-initialization attempt (critical security check)
-        AdminValidator::validate_contract_not_initialized(env)?;
+        // Require the proposed admin to authorize becoming the contract admin.
+        admin.require_auth();
 
-        // Validate admin address
-        AdminValidator::validate_admin_address(env, admin)?;
+        // Validate all initialization parameters atomically before any state changes.
+        AdminInitializer::validate_initialization_params(env, admin)?;
 
         // Store admin in persistent storage
         env.storage()
@@ -344,8 +344,8 @@ impl AdminInitializer {
         admin: &Address,
         environment: &Environment,
     ) -> Result<(), Error> {
-        // Initialize basic admin setup
-        AdminInitializer::initialize(env, admin)?;
+        // Validate all initialization parameters atomically before any state changes.
+        AdminInitializer::validate_initialization_params(env, admin)?;
 
         let config = match environment {
             Environment::Development => ConfigManager::get_development_config(env),
@@ -353,6 +353,10 @@ impl AdminInitializer {
             Environment::Mainnet => ConfigManager::get_mainnet_config(env),
             Environment::Custom => ConfigManager::get_development_config(env),
         };
+        ConfigManager::validate_config(env, &config)?;
+
+        // Initialize basic admin setup
+        AdminInitializer::initialize(env, admin)?;
         ConfigManager::store_config(env, &config)?;
 
         // Emit configuration initialization event

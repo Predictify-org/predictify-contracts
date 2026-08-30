@@ -284,6 +284,25 @@ pub const FEE_COLLECTION_THRESHOLD: i128 = 100_000_000;
 /// It's a global upper bound enforced at the contract level.
 pub const MAX_PLATFORM_FEE_PERCENTAGE: i128 = 1000; // 10.00%
 
+/// Validates contract initialization parameters atomically.
+///
+/// This function must be called before any contract state is modified during
+/// initialization. It enforces that all initialization parameters are within
+/// their configured safe ranges. Because it asserts before returning, an
+/// invalid parameter set causes the transaction to fail without committing
+/// any partial state, ensuring atomic initialization.
+pub fn validate_initialization_params(platform_fee_percentage: i128, creation_fee: i128) {
+    assert!(
+        platform_fee_percentage >= MIN_PLATFORM_FEE_PERCENTAGE
+            && platform_fee_percentage <= MAX_PLATFORM_FEE_PERCENTAGE,
+        "invalid platform fee percentage"
+    );
+    assert!(
+        creation_fee >= MIN_FEE_AMOUNT && creation_fee <= MAX_FEE_AMOUNT,
+        "invalid creation fee"
+    );
+}
+
 /// Minimum platform fee percentage (0%)
 ///
 /// Rationale: 0% allows promotional periods with zero platform fees

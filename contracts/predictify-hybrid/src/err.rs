@@ -138,6 +138,9 @@ pub enum Error {
     DisputeCondNotMet = 408,
     /// Fee distribution for dispute resolution failed. Check balances and permissions.
     DisputeFeeFailed = 409,
+    /// Initialization parameters must be validated atomically. If any parameter
+    /// is invalid, the entire initialization is rejected and no state is changed.
+    InvalidInitializationParams = 700,
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
     /// The dispute opener cannot vote on their own dispute.

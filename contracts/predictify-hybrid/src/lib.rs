@@ -376,7 +376,15 @@ impl PredictifyHybrid {
         // deterministic bounds immediately after deployment.
         let mut default_config = ConfigManager::get_development_config(&env);
         default_config.fees.platform_fee_percentage = fee_percentage;
-        ConfigManager::store_config(&env, &default_config)?;
+        match ConfigManager::store_config(&env, &default_config) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, e),
+        }
+
+        // Seed default gas regression limits for critical-path operations.
+        // These ensure create_market and claim_winnings are always bounded
+        // even before an admin explicitly calls set_limit.
+        GasTracker::set_default_limits(&env);
 
         // Seed default gas regression limits for critical-path operations.
         // These ensure create_market and claim_winnings are always bounded
@@ -385,20 +393,21 @@ impl PredictifyHybrid {
 
         // Seed permissive-but-valid rate limits so admin entrypoints do not
         // fail before a custom policy is configured.
-        crate::rate_limiter::RateLimiter::new(env.clone())
-            .init_rate_limiter(
-                admin.clone(),
-                crate::rate_limiter::RateLimitConfig {
-                    voting_limit: 10_000,
-                    dispute_limit: 1_000,
-                    oracle_call_limit: 1_000,
-                    bet_limit: 10_000,
-                    events_per_admin_limit: 1_000,
-                    time_window_seconds: 3_600,
-                    refill_mode: crate::rate_limiter::RefillMode::Linear,
-                },
-            )
-            .map_err(Error::from)?;
+        match crate::rate_limiter::RateLimiter::new(env.clone()).init_rate_limiter(
+            admin.clone(),
+            crate::rate_limiter::RateLimitConfig {
+                voting_limit: 10_000,
+                dispute_limit: 1_000,
+                oracle_call_limit: 1_000,
+                bet_limit: 10_000,
+                events_per_admin_limit: 1_000,
+                time_window_seconds: 3_600,
+                refill_mode: crate::rate_limiter::RefillMode::Linear,
+            },
+        ) {
+            Ok(_) => (),
+            Err(e) => panic_with_error!(env, Error::from(e)),
+        }
 
         // Initialize allowed assets
         if let Some(assets) = allowed_assets {
