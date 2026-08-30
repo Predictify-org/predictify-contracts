@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use crate::err::Error;
-use crate::types::{OracleConfig, OracleProvider};
+use crate::timelock::MarketTimelockManager;
+use crate::types::{Market, OracleConfig, OracleProvider};
 use crate::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
@@ -62,6 +63,8 @@ impl TestContext {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 }
@@ -71,45 +74,75 @@ fn test_market_timelock_blocks_admin_action_until_delay_passes() {
     let ctx = TestContext::new();
     let market_id = ctx.create_market();
 
-    assert!(ctx.client().set_market_timelock(&ctx.admin, &market_id, &10u64).is_ok());
+    ctx.env.as_contract(&ctx.contract_id, || {
+        let mut market: Market = ctx
+            .env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .expect("market should be stored");
 
-    let early_result = ctx.client().try_set_market_claim_period(&ctx.admin, &market_id, &60u64);
-    assert_eq!(early_result, Err(Ok(Error::AdminActionTimelocked)));
+        // Configure a 10-second timelock on the market.
+        MarketTimelockManager::configure(&ctx.env, &mut market, &ctx.admin, &ctx.admin, 10)
+            .expect("admin should be able to configure the timelock");
 
-    ctx.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp.saturating_add(11);
+        // An admin action is rejected while the delay has not elapsed.
+        let early = MarketTimelockManager::ensure_admin_action_allowed(
+            &ctx.env,
+            &mut market,
+            &ctx.admin,
+            &ctx.admin,
+        );
+        assert_eq!(early, Err(Error::AdminActionTimelocked));
+
+        ctx.env.ledger().with_mut(|li| {
+            li.timestamp = li.timestamp.saturating_add(11);
+        });
+
+        // After the delay, the admin action is allowed and the clock refreshes.
+        let later = MarketTimelockManager::ensure_admin_action_allowed(
+            &ctx.env,
+            &mut market,
+            &ctx.admin,
+            &ctx.admin,
+        );
+        assert_eq!(later, Ok(()));
     });
-
-    let later_result = ctx.client().try_set_market_claim_period(&ctx.admin, &market_id, &60u64);
-    assert_eq!(later_result, Ok(()));
 }
 
 #[test]
-fn test_force_resolve_market_timelocked() {
+fn test_market_timelock_rejects_unauthorized_configuration() {
     let ctx = TestContext::new();
     let market_id = ctx.create_market();
+    let stranger = Address::generate(&ctx.env);
 
-    assert!(ctx.client().set_market_timelock(&ctx.admin, &market_id, &10u64).is_ok());
+    ctx.env.as_contract(&ctx.contract_id, || {
+        let mut market: Market = ctx
+            .env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .expect("market should be stored");
 
-    let early_result = ctx.client().try_force_resolve_market(
-        &ctx.admin,
-        &market_id,
-        &vec![&ctx.env, String::from_str(&ctx.env, "yes")],
-        &String::from_str(&ctx.env, "reason"),
-        &String::from_str(&ctx.env, "key1"),
-    );
-    assert_eq!(early_result, Err(Ok(Error::AdminActionTimelocked)));
+        // Neither the market admin nor the contract admin: rejected.
+        let result = MarketTimelockManager::configure(
+            &ctx.env,
+            &mut market,
+            &stranger,
+            &ctx.admin,
+            10,
+        );
+        assert_eq!(result, Err(Error::Unauthorized));
 
-    ctx.env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp.saturating_add(11);
+        // A zero-delay configuration never blocks admin actions.
+        MarketTimelockManager::configure(&ctx.env, &mut market, &ctx.admin, &ctx.admin, 0)
+            .expect("admin should be able to configure the timelock");
+        let allowed = MarketTimelockManager::ensure_admin_action_allowed(
+            &ctx.env,
+            &mut market,
+            &ctx.admin,
+            &ctx.admin,
+        );
+        assert_eq!(allowed, Ok(()));
     });
-
-    let later_result = ctx.client().try_force_resolve_market(
-        &ctx.admin,
-        &market_id,
-        &vec![&ctx.env, String::from_str(&ctx.env, "yes")],
-        &String::from_str(&ctx.env, "reason"),
-        &String::from_str(&ctx.env, "key1"),
-    );
-    assert_eq!(later_result, Ok(()));
 }

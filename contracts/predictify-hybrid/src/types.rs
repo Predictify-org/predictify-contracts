@@ -6,6 +6,149 @@ use alloc::string::String as StdString;
 use alloc::string::ToString;
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
 
+// ===== STORAGE TIER AUDIT TRAIL =====
+
+/// Explicit storage tier used for persistent market/event data.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StorageTier {
+    /// Lives with the contract instance.
+    Instance,
+    /// Long-lived data with an explicit TTL.
+    Persistent,
+    /// Short-lived data with a deterministic expiry.
+    Temporary,
+}
+
+/// One auditable storage-tier transition.
+///
+/// Invariant: callers must persist this record in the same ledger as the tier
+/// transition it describes. The commitment detects partial writes or in-place
+/// mutation after the fact.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChange {
+    /// Storage key whose tier changed.
+    pub key: String,
+    /// Tier before the change.
+    pub from_tier: StorageTier,
+    /// Tier after the change.
+    pub to_tier: StorageTier,
+    /// Address that authorized the change.
+    pub operator: Address,
+    /// Ledger timestamp when the change was recorded.
+    pub timestamp: u64,
+    /// Ledger sequence when the change was recorded.
+    pub ledger_seq: u32,
+    /// Retention/TTL in seconds for the new tier.
+    pub ttl_seconds: u64,
+    /// SHA-256 commitment over the canonical XDR payload.
+    pub commitment: BytesN<32>,
+}
+
+/// Canonical payload for `StorageTierChange::commitment`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChangeCommitmentPayload {
+    pub key: String,
+    pub from_tier: StorageTier,
+    pub to_tier: StorageTier,
+    pub operator: Address,
+    pub timestamp: u64,
+    pub ledger_seq: u32,
+    pub ttl_seconds: u64,
+}
+
+impl StorageTierChange {
+    /// Creates a storage-tier-change audit record with an integrity commitment.
+    pub fn new(
+        env: &Env,
+        key: String,
+        from_tier: StorageTier,
+        to_tier: StorageTier,
+        operator: Address,
+        ttl_seconds: u64,
+    ) -> Self {
+        let timestamp = env.ledger().timestamp();
+        let ledger_seq = env.ledger().sequence();
+        let payload = StorageTierChangeCommitmentPayload {
+            key: key.clone(),
+            from_tier,
+            to_tier,
+            operator: operator.clone(),
+            timestamp,
+            ledger_seq,
+            ttl_seconds,
+        };
+        let commitment = env.crypto().sha256(&payload.to_xdr(env)).into();
+        Self {
+            key,
+            from_tier,
+            to_tier,
+            operator,
+            timestamp,
+            ledger_seq,
+            ttl_seconds,
+            commitment,
+        }
+    }
+
+    /// Verifies that the commitment matches the current fields.
+    pub fn verify(&self, env: &Env) -> bool {
+        let payload = StorageTierChangeCommitmentPayload {
+            key: self.key.clone(),
+            from_tier: self.from_tier,
+            to_tier: self.to_tier,
+            operator: self.operator.clone(),
+            timestamp: self.timestamp,
+            ledger_seq: self.ledger_seq,
+            ttl_seconds: self.ttl_seconds,
+        };
+        let expected: BytesN<32> = env.crypto().sha256(&payload.to_xdr(env)).into();
+        expected.eq(&self.commitment)
+    }
+}
+
+#[cfg(test)]
+mod storage_tier_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn storage_tier_change_records_and_verifies_commitment() {
+        let env = Env::default();
+        let operator = Address::generate(&env);
+        let key = String::from_str(&env, "market:1");
+        let change = StorageTierChange::new(
+            &env,
+            key.clone(),
+            StorageTier::Instance,
+            StorageTier::Persistent,
+            operator,
+            31 * 24 * 60 * 60,
+        );
+        assert_eq!(change.from_tier, StorageTier::Instance);
+        assert_eq!(change.to_tier, StorageTier::Persistent);
+        assert_eq!(change.ttl_seconds, 31 * 24 * 60 * 60);
+        assert!(change.verify(&env));
+
+        let mut forged = change.clone();
+        forged.ttl_seconds += 1;
+        assert!(!forged.verify(&env));
+    }
+
+// ===== PAYOUT REMAINDER =====
+
+/// Tracks the undistributed remainder from payout calculations.
+/// This ensures that integer division does not cause silent loss of funds.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRemainder {
+    pub amount: i128,
+    pub claimed: bool,
+}
+}
+
 // ===== MARKET STATE =====
 
 /// Enumeration of possible market states throughout the prediction market lifecycle.
@@ -141,6 +284,14 @@ pub enum MarketState {
     Closed,
     /// Market has been cancelled
     Cancelled,
+    /// Market has been archived (immutable, read-only state)
+    /// Archive only allowed from Resolved or Cancelled states.
+    /// Once archived, market cannot be modified, only queried or permanently deleted via pruning.
+    Archived,
+    /// Market has been restored from archive (optional state for future restore functionality)
+    /// Restore only allowed from Archived state.
+    /// Restored markets may be transitioned back to Active or other eligible states.
+    Restored,
 }
 
 // ===== ORACLE TYPES =====
@@ -1174,24 +1325,29 @@ pub struct ClaimInfo {
     pub timestamp: u64,
     /// The exact amount of tokens claimed (for verification and audits)
     pub payout_amount: i128,
+    /// Unique claim nonce for replay protection. Incremented on each successful claim.
+    /// Prevents transaction replays by making each claim operation unique.
+    pub claim_nonce: u64,
 }
 
 impl ClaimInfo {
-    /// Create a new ClaimInfo instance with the given payout amount.
+    /// Create a new ClaimInfo instance with the given payout amount and nonce.
     ///
     /// # Parameters
     ///
     /// - `env` - The Soroban environment (used for timestamp)
     /// - `payout_amount` - The amount being claimed
+    /// - `claim_nonce` - The unique nonce for this claim (incremented on success)
     ///
     /// # Returns
     ///
-    /// Returns a new ClaimInfo with current timestamp and specified payout.
-    pub fn new(env: &Env, payout_amount: i128) -> Self {
+    /// Returns a new ClaimInfo with current timestamp, specified payout, and nonce.
+    pub fn new(env: &Env, payout_amount: i128, claim_nonce: u64) -> Self {
         Self {
             claimed: true,
             timestamp: env.ledger().timestamp(),
             payout_amount,
+            claim_nonce,
         }
     }
 
@@ -1205,6 +1361,7 @@ impl ClaimInfo {
             claimed: false,
             timestamp: 0,
             payout_amount: 0,
+            claim_nonce: 0,
         }
     }
 
@@ -1233,6 +1390,15 @@ impl ClaimInfo {
     /// Returns the exact token amount claimed (in stroops/smallest unit).
     pub fn get_payout(&self) -> i128 {
         self.payout_amount
+    }
+
+    /// Get the claim nonce for replay protection.
+    ///
+    /// # Returns
+    ///
+    /// Returns the unique nonce associated with this claim.
+    pub fn get_nonce(&self) -> u64 {
+        self.claim_nonce
     }
 }
 
@@ -3512,6 +3678,9 @@ impl MarketStatus {
             MarketState::Resolved => MarketStatus::Resolved,
             MarketState::Closed => MarketStatus::Closed,
             MarketState::Cancelled => MarketStatus::Cancelled,
+            // Archived/Restored are legacy state markers under the metadata-only
+            // archive model; expose them as the terminal Closed status.
+            MarketState::Archived | MarketState::Restored => MarketStatus::Closed,
         }
     }
 }

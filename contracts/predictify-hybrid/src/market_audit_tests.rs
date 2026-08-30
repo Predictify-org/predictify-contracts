@@ -106,6 +106,8 @@ impl AuditTestEnv {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
     }
 
@@ -395,7 +397,7 @@ fn force_resolve_appends_audit_entry() {
         &outcomes,
         &String::from_str(&t.env, "Emergency override"),
         &String::from_str(&t.env, "idem-key-001"),
-    ).unwrap();
+    );
 
     let head = t.client().get_market_audit_head(&market_id).unwrap();
     // MarketCreated + MarketForceResolved

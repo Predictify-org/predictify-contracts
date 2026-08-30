@@ -81,6 +81,7 @@ mod tokens;
 mod rate_limiter;
 mod dispute_multisig;
 mod event_topic_catalog;
+pub mod event_topic_compat;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
@@ -94,12 +95,17 @@ mod override_audit_tests;
 mod market_audit_tests;
 #[cfg(test)]
 mod test_audit_trail;
+#[cfg(test)]
+mod event_topic_compat_tests;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
 mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
 }
+
+#[cfg(test)]
+mod arithmetic_overflow_tests;
 
 pub mod timelock;
 
@@ -374,6 +380,11 @@ impl PredictifyHybrid {
             Ok(_) => (),
             Err(e) => panic_with_error!(env, e),
         }
+
+        // Seed default gas regression limits for critical-path operations.
+        // These ensure create_market and claim_winnings are always bounded
+        // even before an admin explicitly calls set_limit.
+        GasTracker::set_default_limits(&env);
 
         // Seed default gas regression limits for critical-path operations.
         // These ensure create_market and claim_winnings are always bounded

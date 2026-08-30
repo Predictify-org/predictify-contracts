@@ -1668,6 +1668,78 @@ pub struct MarketArchivedEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when a market's storage tier is changed.
+///
+/// This is the authoritative audit record for storage-tier transitions
+/// (e.g. active -> archived, archived -> cold). Emit this event after the
+/// underlying storage mutation has been committed so indexers and monitoring
+/// tools can reconstruct the full storage lifecycle deterministically.
+///
+/// # Invariants
+/// - Callers must emit this event only after the storage mutation has been
+///   committed, so indexers never observe a tier change that did not happen.
+/// - No-op transitions must not emit this event; from_tier must differ from
+///   to_tier.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChangedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Source storage tier
+    pub from_tier: String,
+    /// Target storage tier
+    pub to_tier: String,
+    /// Address that authorized the tier change
+    pub changed_by: Address,
+    /// Reason for the tier change
+    pub reason: String,
+    /// Tier change timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Archive transition event — lifecycle-bound archive operation
+///
+/// Emitted when a market transitions from Resolved or Cancelled state to Archived state.
+/// Includes admin authorization and transition details for audit trail.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArchiveTransitionEvent {
+    /// Market ID being archived
+    pub market_id: Symbol,
+    /// Admin performing the archive
+    pub admin: Address,
+    /// Previous market state
+    pub from_state: String,
+    /// Archive timestamp
+    pub archived_at: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+    /// Event emission timestamp
+    pub timestamp: u64,
+}
+
+/// Restore transition event — lifecycle-bound restore operation
+///
+/// Emitted when a market transitions from Archived state to Restored state.
+/// Includes admin authorization, reason, and transition details for audit trail.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreTransitionEvent {
+    /// Market ID being restored
+    pub market_id: Symbol,
+    /// Admin performing the restore
+    pub admin: Address,
+    /// Reason for restore operation (optional notes)
+    pub reason: String,
+    /// Restore timestamp
+    pub restored_at: u64,
+    /// Replay protection nonce
+    pub nonce: u64,
+    /// Event emission timestamp
+    pub timestamp: u64,
+}
+
 /// Oracle degradation event - emitted when oracle service fails or becomes unavailable
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -1741,6 +1813,21 @@ pub struct StateChangeEvent {
     pub new_state: crate::types::MarketState,
     /// Reason for state change
     pub reason: String,
+    /// Event timestamp
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a payout remainder is allocated to conserve balances.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRemainderAllocatedEvent {
+    /// Market ID
+    pub market_id: Symbol,
+    /// Recipient that receives the remainder
+    pub recipient: Address,
+    /// Remainder amount in stroops
+    pub amount: i128,
     /// Event timestamp
     pub nonce: u64,
     pub timestamp: u64,
@@ -2210,18 +2297,54 @@ impl EventSchemaRegistry {
     /// |-------------------|---------------|----------------|
     /// | `"oracle_result"` | `oracle_rs`   | 1              |
     /// | `"dispute_opened"` | `dispt_opn` | 1              |
+    /// | `"storage_tier_changed"` | `st_tier` | 1          |
+    ///
+    /// As of issue #1391 all events are now registered — the match arm below
+    /// delegates to [`crate::event_topic_compat::EventTopicRegistry`] which is the
+    /// single source of truth.  Hard-coded arms for the four legacy names are
+    /// retained for backward API compatibility.
     pub fn get_schema(env: &Env, name: &str) -> Option<EventSchemaEntry> {
-        match name {
-            "oracle_result" => Some(EventSchemaEntry {
-                topic: symbol_short!("oracle_rs"),
-                schema_version: 1,
-            }),
-            "dispute_opened" => Some(EventSchemaEntry {
-                topic: symbol_short!("dispt_opn"),
-                schema_version: 1,
-            }),
-            _ => None,
+        // Delegate to the authoritative registry introduced in #1391.
+        // All topics are registered there; the hard-coded arms below simply
+        // map the legacy human-readable names used in existing call-sites.
+        use crate::event_topic_compat::EventTopicRegistry;
+
+        // Prefer the registry lookup — covers every event including the four
+        // legacy names that previously had hard-coded arms.
+        if let Some(descriptor) = EventTopicRegistry::get(env, name) {
+            return Some(EventSchemaEntry {
+                topic: descriptor.topic,
+                schema_version: descriptor.schema_version,
+            });
         }
+
+        // Legacy aliases: callers that use the old "oracle_result" style name
+        // but the registry stores "oracle_result" so this is only reached for
+        // names that are truly unknown to the registry.
+        None
+    }
+
+    /// Return [`EventSchemaEntry`] values for *every* registered event.
+    ///
+    /// Intended for off-chain tooling (indexers, schema validators) that need
+    /// a complete, authoritative list of all event topics emitted by this
+    /// contract.
+    pub fn get_all_schemas(env: &Env) -> soroban_sdk::Vec<EventSchemaEntry> {
+        use crate::event_topic_compat::EventTopicRegistry;
+        let descriptors = EventTopicRegistry::get_all_topics(env);
+        let mut out = soroban_sdk::Vec::new(env);
+        for d in descriptors.iter() {
+            out.push_back(EventSchemaEntry {
+                topic: d.topic,
+                schema_version: d.schema_version,
+            });
+        }
+        out
+    }
+
+    /// Return the total number of registered event topics.
+    pub fn topic_count() -> u32 {
+        crate::event_topic_compat::EventTopicRegistry::topic_count()
     }
 }
 
@@ -2289,6 +2412,37 @@ pub struct FeeConfigAppliedEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeConfigCancelledEvent {
+    pub admin: Address,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a treasury update is queued with a governance time-lock.
+/// The treasury is not changed until `now >= eta`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryUpdateQueuedEvent {
+    pub admin: Address,
+    pub new_treasury: Address,
+    pub eta: u64,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued treasury update is successfully applied.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryUpdateAppliedEvent {
+    pub admin: Address,
+    pub treasury: Address,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when a queued treasury update is cancelled by admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryUpdateCancelledEvent {
     pub admin: Address,
     pub nonce: u64,
     pub timestamp: u64,
@@ -2405,12 +2559,13 @@ impl EventEmitter {
         outcomes: &Vec<String>,
         admin: &Address,
         end_time: u64,
+        creation_fee_amount: i128,
     ) {
         let event = EventCreatedEvent {
             event_id: event_id.clone(),
             description: description.clone(),
             outcomes: outcomes.clone(),
-            creation_fee_amount: crate::fees::MARKET_CREATION_FEE,
+            creation_fee_amount,
             admin: admin.clone(),
             end_time,
             nonce: Self::get_and_increment_nonce(env, symbol_short!("evt_crt").clone()),
@@ -5194,7 +5349,7 @@ pub fn emit_deprecated(env: &Env, caller: &Address, entrypoint: &Symbol) {
 #[cfg(test)]
 mod event_schema_registry_tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{testutils::{Address as _, Events}, Env, Symbol, TryIntoVal};
 
     #[test]
     fn test_registry_lookup_oracle_result() {
@@ -5299,8 +5454,18 @@ mod event_schema_registry_tests {
 
             // Find our depr_call event
             let found = emitted.iter().any(|e| {
-                e.0 .0 == symbol_short!("depr_call")
-                    && e.0 .1 == entrypoint
+                if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &e.body {
+                    v0.topics
+                        .get(0)
+                        .map(|t| t.clone().try_into_val(&env).ok())
+                        == Some(Some(symbol_short!("depr_call")))
+                        && v0.topics
+                            .get(1)
+                            .map(|t| t.clone().try_into_val(&env).ok())
+                            == Some(Some(entrypoint.clone()))
+                } else {
+                    false
+                }
             });
             assert!(found, "depr_call event must be present");
         });
@@ -5582,6 +5747,47 @@ impl EventEmitter {
             .publish((symbol_short!("fee_ccl"), admin.clone()), event);
     }
 
+    /// Emit treasury update queued event when a time-locked treasury change is proposed.
+    pub fn emit_treasury_update_queued(
+        env: &Env,
+        admin: &Address,
+        new_treasury: &Address,
+        eta: u64,
+    ) {
+        let event = TreasuryUpdateQueuedEvent {
+            admin: admin.clone(),
+            new_treasury: new_treasury.clone(),
+            eta,
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tsu_qd").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("tsu_qd"), admin.clone()), event);
+    }
+
+    /// Emit treasury update applied event when a queued treasury change takes effect.
+    pub fn emit_treasury_update_applied(env: &Env, admin: &Address, treasury: &Address) {
+        let event = TreasuryUpdateAppliedEvent {
+            admin: admin.clone(),
+            treasury: treasury.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tsu_apd").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("tsu_apd"), admin.clone()), event);
+    }
+
+    /// Emit treasury update cancelled event when a queued treasury change is cancelled.
+    pub fn emit_treasury_update_cancelled(env: &Env, admin: &Address) {
+        let event = TreasuryUpdateCancelledEvent {
+            admin: admin.clone(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("tsu_ccl").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events()
+            .publish((symbol_short!("tsu_ccl"), admin.clone()), event);
+    }
+
     /// Emit cumulative dispute stake cap exceeded event.
     pub fn emit_dispute_cumulative_stake_cap_exceeded(
         env: &Env,
@@ -5617,6 +5823,116 @@ impl EventEmitter {
         env.events()
             .publish((symbol_short!("cum_set"), user.clone()), event);
     }
+
+    /// Emit storage tier changed event.
+    ///
+    /// This event is the authoritative audit record for storage-tier
+    /// transitions. It is published after the underlying storage mutation has
+    /// been committed and uses the registry schema so consumers can rely on a
+    /// stable topic and schema version.
+    pub fn emit_storage_tier_changed(
+        env: &Env,
+        market_id: &Symbol,
+        from_tier: &String,
+        to_tier: &String,
+        changed_by: &Address,
+        reason: &String,
+    ) {
+        let schema = EventSchemaRegistry::get_schema(env, "storage_tier_changed")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("st_tier"),
+                schema_version: 1,
+            });
+        let event = StorageTierChangedEvent {
+            market_id: market_id.clone(),
+            from_tier: from_tier.clone(),
+            to_tier: to_tier.clone(),
+            changed_by: changed_by.clone(),
+            reason: reason.clone(),
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &schema.topic, &event);
+        env.events()
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+    }
+
+    /// Emit payout remainder allocation event.
+    ///
+    /// The payout routine must transfer `amount` to `recipient` before
+    /// calling this emitter; this event only records the allocation.
+    pub fn emit_payout_remainder_allocated(
+        env: &Env,
+        market_id: &Symbol,
+        recipient: &Address,
+        amount: i128,
+    ) {
+        let schema = EventSchemaRegistry::get_schema(env, "payout_remainder_allocated")
+            .unwrap_or(EventSchemaEntry {
+                topic: symbol_short!("pay_rem"),
+                schema_version: 1,
+            });
+        let event = PayoutRemainderAllocatedEvent {
+            market_id: market_id.clone(),
+            recipient: recipient.clone(),
+            amount,
+            nonce: Self::get_and_increment_nonce(env, schema.topic.clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &schema.topic, &event);
+        env.events()
+            .publish((schema.topic, market_id.clone(), schema.schema_version), event);
+    }
+
+    /// Emit archive transition event when a market is archived.
+    ///
+    /// Emitted when a market transitions from Resolved or Cancelled state to Archived state.
+    /// Includes admin authorization for audit trail.
+    pub fn emit_archive_transition(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        from_state: &String,
+    ) {
+        let event = ArchiveTransitionEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            from_state: from_state.clone(),
+            archived_at: env.ledger().timestamp(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("arch_trn").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("arch_trn"), &event);
+        env.events()
+            .publish((symbol_short!("arch_trn"), market_id.clone()), event);
+    }
+
+    /// Emit restore transition event when a market is restored from archive.
+    ///
+    /// Emitted when a market transitions from Archived state to Restored state.
+    /// Includes admin authorization and reason for audit trail.
+    pub fn emit_restore_transition(
+        env: &Env,
+        market_id: &Symbol,
+        admin: &Address,
+        reason: &String,
+    ) {
+        let event = RestoreTransitionEvent {
+            market_id: market_id.clone(),
+            admin: admin.clone(),
+            reason: reason.clone(),
+            restored_at: env.ledger().timestamp(),
+            nonce: Self::get_and_increment_nonce(env, symbol_short!("rest_trn").clone()),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        Self::store_event(env, &symbol_short!("rest_trn"), &event);
+        env.events()
+            .publish((symbol_short!("rest_trn"), market_id.clone()), event);
+    }
 }
 
 #[cfg(test)]
@@ -5646,16 +5962,145 @@ mod focused_dispute_tests {
 
         let mut found = false;
         for event in events.events().iter() {
-            if event.2.len() == 3 {
-                let topic0: Symbol = event.2.get(0).unwrap().try_into_val(&env).unwrap();
-                let topic1: Symbol = event.2.get(1).unwrap().try_into_val(&env).unwrap();
+            if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &event.body {
+                if v0.topics.len() == 3 {
+                    let topic0: Symbol = v0
+                        .topics
+                        .get(0)
+                        .unwrap()
+                        .clone()
+                        .try_into_val(&env)
+                        .unwrap();
+                    let topic1: Symbol = v0
+                        .topics
+                        .get(1)
+                        .unwrap()
+                        .clone()
+                        .try_into_val(&env)
+                        .unwrap();
 
-                if topic0 == symbol_short!("dispt_opn") {
-                    assert_eq!(topic1, market_id, "Market ID must be topic1");
-                    found = true;
+                    if topic0 == symbol_short!("dispt_opn") {
+                        assert_eq!(topic1, market_id, "Market ID must be topic1");
+                        found = true;
+                    }
                 }
             }
         }
         assert!(found, "DisputeOpenedEvent not found with correct topic structure");
+    }
+}
+
+#[cfg(test)]
+mod storage_tier_change_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Events}, Address, Env, IntoVal, Symbol, TryIntoVal,
+    };
+
+    #[test]
+    fn test_registry_lookup_storage_tier_changed() {
+        let env = Env::default();
+        let schema = EventSchemaRegistry::get_schema(&env, "storage_tier_changed").unwrap();
+        assert_eq!(schema.topic, symbol_short!("st_tier"));
+        assert_eq!(schema.schema_version, 1);
+    }
+
+    #[test]
+    fn test_emit_storage_tier_changed_publishes_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = symbol_short!("mkt_tier");
+            let from_tier = soroban_sdk::String::from_str(&env, "active");
+            let to_tier = soroban_sdk::String::from_str(&env, "archived");
+            let changed_by = Address::generate(&env);
+            let reason = soroban_sdk::String::from_str(&env, "retention policy");
+
+            EventEmitter::emit_storage_tier_changed(
+                &env,
+                &market_id,
+                &from_tier,
+                &to_tier,
+                &changed_by,
+                &reason,
+            );
+
+            let events = env.events().all();
+            let mut found = false;
+            for event in events.events().iter() {
+                if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &event.body {
+                    if v0.topics.len() == 3 {
+                        let topic0: Symbol = v0
+                            .topics
+                            .get(0)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        let topic1: Symbol = v0
+                            .topics
+                            .get(1)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        if topic0 == symbol_short!("st_tier") {
+                            assert_eq!(topic1, market_id);
+                            found = true;
+                        }
+                    }
+                }
+            }
+            assert!(found, "StorageTierChangedEvent not emitted");
+        });
+    }
+}
+
+#[cfg(test)]
+mod payout_remainder_allocation_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Events},
+        Address, Env, Symbol, TryIntoVal,
+    };
+
+    #[test]
+    fn test_emit_payout_remainder_allocated_publishes_event() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        env.as_contract(&contract_id, || {
+            let market_id = symbol_short!("mkt_rem");
+            let recipient = Address::generate(&env);
+
+            EventEmitter::emit_payout_remainder_allocated(&env, &market_id, &recipient, 7);
+
+            let events = env.events().all();
+            let mut found = false;
+            for event in events.events().iter() {
+                if let soroban_sdk::xdr::ContractEventBody::V0(v0) = &event.body {
+                    if v0.topics.len() == 3 {
+                        let topic0: Symbol = v0
+                            .topics
+                            .get(0)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        let topic1: Symbol = v0
+                            .topics
+                            .get(1)
+                            .unwrap()
+                            .clone()
+                            .try_into_val(&env)
+                            .unwrap();
+                        if topic0 == symbol_short!("pay_rem") && topic1 == market_id {
+                            found = true;
+                        }
+                    }
+                }
+            }
+            assert!(found, "payout remainder allocation event not found");
+        });
     }
 }

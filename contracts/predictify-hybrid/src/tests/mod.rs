@@ -30,3 +30,9 @@ pub mod reflector_twap_cache_tests;
 pub mod dispute_anti_grief_tests;
 pub mod dispute_open_fuzz;
 pub mod oracle_differential_fuzz;
+/// Rollback-safety tests for batch bet placement.
+///
+/// Covers duplicate-market rejection, empty/oversized batch guards,
+/// idempotency replay, and multi-market success paths.
+pub mod batch_bet_rollback_tests;
+pub mod dispute_auth_security_tests;

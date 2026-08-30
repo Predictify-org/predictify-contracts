@@ -743,6 +743,13 @@ impl FeeManager {
         // Validate fee amount
         FeeValidator::validate_fee_amount(fee_amount)?;
 
+        // Per-user payout integer division can leave a small unallocated remainder.
+        // Allocate that remainder to the fee vault so the contract's balance is
+        // conserved and fully accounted for.
+        let payout_remainder =
+            FeeCalculator::calculate_payout_remainder(env, &market_id, &market, fee_amount)?;
+        FeeTracker::record_payout_remainder(env, payout_remainder)?;
+
         // Record fee collection into the contract fee vault.
         //
         // NOTE: This intentionally does NOT transfer fees out of the contract.
@@ -760,7 +767,7 @@ impl FeeManager {
             env,
             &market_id,
             &admin,
-            fee_amount,
+            FeeCalculator::checked_fee_add(fee_amount, payout_remainder)?,
             &soroban_sdk::String::from_str(env, "platform_fee"),
         );
 
@@ -1157,6 +1164,91 @@ impl FeeCalculator {
         let payout = Self::checked_mul_div_floor(user_share, total_pool, winning_total)?;
 
         Ok(payout)
+    }
+
+    /// Calculate the unallocated payout remainder for a resolved market.
+    ///
+    /// Winning-user payouts are computed with integer division, so the sum of
+    /// expected payouts can be slightly less than the net user pool
+    /// (`total_staked - platform_fee`). This function returns that difference
+    /// so it can be allocated to the fee vault, conserving the contract's
+    /// token balance.
+    pub fn calculate_payout_remainder(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+        fee_amount: i128,
+    ) -> Result<i128, Error> {
+        if fee_amount < 0 || fee_amount > market.total_staked {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        let winning_outcomes = market
+            .winning_outcomes
+            .as_ref()
+            .ok_or(Error::MarketNotResolved)?;
+        let users = crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
+
+        // Determine the total amount staked on winning outcomes.
+        let mut winning_total = 0i128;
+        for user in users.iter() {
+            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
+                let is_winning = winning_outcomes
+                    .iter()
+                    .any(|outcome| &outcome == &bet.outcome);
+                if is_winning {
+                    winning_total = Self::checked_fee_add(winning_total, bet.amount)?;
+                }
+            }
+        }
+
+        // No winning bets means there is no user payout pool to conserve.
+        if winning_total <= 0 {
+            return Ok(0);
+        }
+
+        // Use the fee percentage active when the earliest bet was placed,
+        // matching `calculate_platform_fee_with_env`.
+        let mut earliest_timestamp = env.ledger().timestamp();
+        for user in users.iter() {
+            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
+                if bet.timestamp < earliest_timestamp {
+                    earliest_timestamp = bet.timestamp;
+                }
+            }
+        }
+        let fee_percentage = FeeManager::get_fee_percentage_for_timestamp(env, earliest_timestamp);
+
+        // Sum the deterministic payouts that the existing payout formula will produce.
+        let mut expected_payouts = 0i128;
+        for user in users.iter() {
+            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
+                let is_winning = winning_outcomes
+                    .iter()
+                    .any(|outcome| &outcome == &bet.outcome);
+                if !is_winning {
+                    continue;
+                }
+
+                let user_share = Self::checked_bps_floor(
+                    bet.amount,
+                    crate::PERCENTAGE_DENOMINATOR - fee_percentage,
+                )?;
+                let payout = Self::checked_mul_div_floor(
+                    user_share,
+                    market.total_staked,
+                    winning_total,
+                )?;
+                expected_payouts = Self::checked_fee_add(expected_payouts, payout)?;
+            }
+        }
+
+        let net_user_pool = Self::checked_fee_sub(market.total_staked, fee_amount)?;
+        if expected_payouts > net_user_pool {
+            return Err(Error::InvalidFeeConfig);
+        }
+
+        Ok(net_user_pool - expected_payouts)
     }
 
     /// Calculate fee breakdown for a market
@@ -1633,6 +1725,26 @@ impl FeeTracker {
 
         let updated_total = FeeCalculator::checked_fee_add(current_total, amount)?;
         env.storage().persistent().set(&creation_key, &updated_total);
+
+        Ok(())
+    }
+
+    /// Record a payout rounding remainder that was retained in the contract.
+    ///
+    /// The amount is added to the fee vault so the total tracked fees equal the
+    /// contract balance that is not reserved for user payouts.
+    pub fn record_payout_remainder(env: &Env, amount: i128) -> Result<(), Error> {
+        if amount < 0 {
+            return Err(Error::InvalidInput);
+        }
+        if amount == 0 {
+            return Ok(());
+        }
+
+        let total_key = symbol_short!("tot_fees");
+        let current_total: i128 = env.storage().persistent().get(&total_key).unwrap_or(0);
+        let updated_total = FeeCalculator::checked_fee_add(current_total, amount)?;
+        env.storage().persistent().set(&total_key, &updated_total);
 
         Ok(())
     }
@@ -2403,6 +2515,41 @@ mod checked_arithmetic_tests {
             let result = FeeTracker::record_fee_collection(&env, &market_id, 1, &admin);
 
             assert_eq!(result, Err(Error::FeeArithmeticOverflow));
+        });
+    }
+
+    #[test]
+    fn test_record_payout_remainder_adds_to_fee_vault() {
+        let env = test_env();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&FEE_VAULT_KEY, &100i128);
+            FeeTracker::record_payout_remainder(&env, 5).unwrap();
+            let total: i128 = env.storage().persistent().get(&FEE_VAULT_KEY).unwrap();
+            assert_eq!(total, 105);
+        });
+    }
+
+    #[test]
+    fn test_collect_fees_conserves_fee_vault_with_no_bets() {
+        let env = test_env();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+        let market_id = Symbol::new(&env, "fee_remainder_consistency");
+        let market = resolved_market(&env, 100_000_000);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
+            assert!(result.is_ok());
+
+            let vault: i128 = env.storage().persistent().get(&FEE_VAULT_KEY).unwrap_or(0);
+            assert!(vault > 0);
         });
     }
 }

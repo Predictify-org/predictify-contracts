@@ -1197,7 +1197,7 @@ impl MarketStateManager {
         env: &Env,
     ) {
         MarketStateLogic::check_function_access_for_state("claim", market.state).unwrap();
-        let claim_info = crate::types::ClaimInfo::new(env, payout_amount);
+        let claim_info = crate::types::ClaimInfo::new(env, payout_amount, 0u64);
         market.claimed.set(user, claim_info);
     }
 
@@ -1593,12 +1593,14 @@ impl MarketAnalytics {
     /// println!("Payout multiplier: {:.2}x", payout_ratio);
     /// ```
     pub fn calculate_winning_stats(market: &Market, winning_outcome: &String) -> WinningStats {
-        let mut winning_total = 0;
+        let mut winning_total: i128 = 0;
         let mut winning_voters = 0;
 
         for (user, outcome) in market.votes.iter() {
             if &outcome == winning_outcome {
-                winning_total += market.stakes.get(user.clone()).unwrap_or(0);
+                // OVERFLOW SAFETY: saturating_add prevents wrap on adversarial stake values.
+                winning_total = winning_total
+                    .saturating_add(market.stakes.get(user.clone()).unwrap_or(0));
                 winning_voters += 1;
             }
         }
@@ -1725,6 +1727,15 @@ impl MarketAnalytics {
     /// }
     /// ```
     pub fn calculate_community_consensus(market: &Market) -> CommunityConsensus {
+        // Determine the consensus outcome deterministically so that the computed
+        // snapshot is stable across repeated reads.
+        //
+        // INVARIANT: Soroban `Map` iteration order is not guaranteed to be stable
+        // across reads, so tie-breaking must NOT rely on `Map` iteration order.
+        // We aggregate vote counts first (summation is order-independent), then
+        // select the consensus outcome by walking the market's canonical,
+        // application-ordered `outcomes` list. In a tie, the first-listed outcome
+        // (in canonical order) is deterministically selected as consensus.
         let mut vote_counts: Map<String, u32> = Map::new(&market.votes.env());
 
         for (_, outcome) in market.votes.iter() {
@@ -1732,15 +1743,39 @@ impl MarketAnalytics {
             vote_counts.set(outcome.clone(), count + 1);
         }
 
-        let mut consensus_outcome = String::from_str(&market.votes.env(), "");
         let mut max_votes = 0;
         let mut total_votes = 0;
-
-        for (outcome, count) in vote_counts.iter() {
+        for (_, count) in vote_counts.iter() {
             total_votes += count;
             if count > max_votes {
                 max_votes = count;
-                consensus_outcome = outcome.clone();
+            }
+        }
+
+        // Select consensus outcome using canonical outcome ordering. Only relevant
+        // when there is at least one vote; with no votes we return the empty
+        // outcome (matching legacy behavior).
+        let mut consensus_outcome = String::from_str(&market.votes.env(), "");
+        if max_votes > 0 {
+            let mut found = false;
+            for outcome in market.outcomes.iter() {
+                let count = vote_counts.get(outcome.clone()).unwrap_or(0);
+                if count == max_votes {
+                    consensus_outcome = outcome.clone();
+                    found = true;
+                    break;
+                }
+            }
+            // Defensive fallback for a malformed market whose voted outcomes do not
+            // appear in `market.outcomes`: deterministically select the first voted
+            // outcome reached in counts map order (aggregation, counts are exact).
+            if !found {
+                for (outcome, count) in vote_counts.iter() {
+                    if count == max_votes {
+                        consensus_outcome = outcome.clone();
+                        break;
+                    }
+                }
             }
         }
 
@@ -2055,13 +2090,20 @@ impl MarketUtils {
             return Err(Error::NothingToClaim);
         }
 
-        let user_share = (user_stake
-            .checked_mul(100 - fee_percentage)
-            .ok_or(Error::InvalidInput)?)
+        // OVERFLOW SAFETY: user_stake * (100 - fee_percentage) may overflow for
+        // extreme stakes.  Map to Error::Overflow for precise diagnostics.
+        let fee_complement = 100i128
+            .checked_sub(fee_percentage)
+            .ok_or(Error::Overflow)?;
+        let user_share = user_stake
+            .checked_mul(fee_complement)
+            .ok_or(Error::Overflow)?
             / 100;
-        let payout = (user_share
+
+        // OVERFLOW SAFETY: user_share * total_pool may overflow for large pools.
+        let payout = user_share
             .checked_mul(total_pool)
-            .ok_or(Error::InvalidInput)?)
+            .ok_or(Error::Overflow)?
             / winning_total;
 
         Ok(payout)
@@ -2206,6 +2248,11 @@ impl MarketUtils {
             outcome_stakes.set(outcome.clone(), current_stake + stake);
         }
 
+        // INVARIANT: Soroban `Map` iteration order is not guaranteed to be stable
+        // across reads. Vote/stake aggregation above is order-independent (sums),
+        // but winner selection below must use the market's canonical outcome
+        // ordering so the resolved winner set is deterministic across repeated
+        // reads and consistent with `calculate_community_consensus` tie-breaks.
         // Find outcomes with maximum votes
         let mut max_votes = 0;
         for (_, count) in outcome_votes.iter() {
@@ -2214,9 +2261,11 @@ impl MarketUtils {
             }
         }
 
-        // Find all outcomes with max_votes (within tie threshold)
+        // Find all outcomes within the tie threshold of max_votes, walking the
+        // market's canonical `outcomes` list (not the Map) for deterministic order.
         let mut tied_outcomes = Vec::new(env);
-        for (outcome, count) in outcome_votes.iter() {
+        for outcome in market.outcomes.iter() {
+            let count = outcome_votes.get(outcome.clone()).unwrap_or(0);
             // Check if this outcome is within tie threshold of max
             if count >= max_votes.saturating_sub(tie_threshold) {
                 tied_outcomes.push_back(outcome.clone());
@@ -2235,7 +2284,8 @@ impl MarketUtils {
                 }
             }
 
-            // Filter to outcomes with max stake (or within threshold)
+            // Filter to outcomes with max stake (or within threshold); iterate the
+            // already canonically-ordered `tied_outcomes` to keep the order stable.
             let mut final_winners = Vec::new(env);
             for outcome in tied_outcomes.iter() {
                 let stake = outcome_stakes.get(outcome.clone()).unwrap_or(0);
@@ -2856,6 +2906,10 @@ impl MarketStateLogic {
             Resolved => matches!(to, Closed),
             Closed => false,
             Cancelled => false,
+            // Archived/Restored are legacy markers under the metadata-only
+            // archive model; they expose no transitions through the state machine.
+            Archived => false,
+            Restored => false,
         };
         if allowed {
             Ok(())
@@ -3058,6 +3112,9 @@ impl MarketStateLogic {
                 }
             }
             Closed | Cancelled => {}
+            // Archived/Restored are legacy markers under the metadata-only
+            // archive model; no additional consistency checks apply.
+            Archived | Restored => {}
         }
         Ok(())
     }

@@ -1,3 +1,4 @@
+use crate::admin::{AdminAccessControl, AdminPermission};
 use crate::events::EventEmitter;
 use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, BytesN, Env, String, Symbol, Vec};
 
@@ -816,14 +817,20 @@ impl GovernanceContract {
     /// Simple helper to check admin
     fn ensure_admin(env: &Env, caller: Address) -> Result<(), GovernanceError> {
         caller.require_auth();
-        let admin: Address = env
+
+        let primary_admin: Address = env
             .storage()
             .persistent()
             .get(&StorageKey::Admin)
             .ok_or(GovernanceError::NotInitialized)?;
-        if admin != caller {
-            return Err(GovernanceError::NotAdmin);
+
+        if primary_admin == caller {
+            return Ok(());
         }
-        Ok(())
+
+        match AdminAccessControl::validate_permission(env, &caller, &AdminPermission::UpdateConfig) {
+            Ok(()) => Ok(()),
+            Err(_) => Err(GovernanceError::NotAdmin),
+        }
     }
 }

@@ -24,9 +24,11 @@
 //! - No `require_auth` call is needed in this module because all writes are
 //!   performed by contract-internal code paths that have already verified
 //!   caller authentication.
-//! - Arithmetic for `new_index` uses `saturating_add` to stay overflow-safe; an
-//!   audit log that has reached `u32::MAX` entries stops silently (markets are
-//!   not expected to reach that cardinality).
+//! - Arithmetic for `new_index` uses `checked_add` and panics on overflow so an
+//!   audit record is never dropped silently (markets are not expected to reach
+//!   that cardinality).
+//! - Every successful append publishes an event, so storage-tier writes are
+//!   observable by off-chain consumers.
 //!
 //! ## Storage
 //!
@@ -139,8 +141,9 @@ impl MarketAuditManager {
     /// Append a new entry to the audit log for `market_id`.
     ///
     /// Returns the 1-based index of the newly written entry.
-    /// If the entry counter would overflow `u32::MAX` the call is a no-op and
-    /// returns `u32::MAX` — that cardinality is not reachable in practice.
+    /// If the entry counter would overflow `u32::MAX`, the call panics rather
+    /// than silently dropping an audit record; that cardinality is not
+    /// reachable in practice.
     ///
     /// # Parameters
     ///
@@ -164,11 +167,31 @@ impl MarketAuditManager {
             .get(&head_key)
             .unwrap_or(MarketAuditHead { total_entries: 0 });
 
-        // Overflow guard: stop silently at u32::MAX.
-        let new_index = match head.total_entries.checked_add(1) {
-            Some(i) => i,
-            None => return u32::MAX,
-        };
+        // If the head is missing but an entry exists, the log is corrupt; do not
+        // silently overwrite index 1.
+        if head.total_entries == 0
+            && env
+                .storage()
+                .persistent()
+                .has(&DataKey::MarketAuditLog(market_id.clone(), 1))
+        {
+            panic!("audit log corruption: head missing but entry exists");
+        }
+
+        // Never append past a gap: the latest entry must exist before extending.
+        if head.total_entries > 0 {
+            let latest_key = DataKey::MarketAuditLog(market_id.clone(), head.total_entries);
+            if !env.storage().persistent().has(&latest_key) {
+                panic!("audit log corruption: latest entry missing");
+            }
+        }
+
+        // Overflow is unreachable in practice; fail loudly instead of silently
+        // dropping an audit record.
+        let new_index = head
+            .total_entries
+            .checked_add(1)
+            .expect("audit log overflow");
 
         let entry = MarketAuditEntry {
             index: new_index,
@@ -190,6 +213,16 @@ impl MarketAuditManager {
             .persistent()
             .extend_ttl(&head_key, MARKET_TTL_LEDGERS, MARKET_TTL_LEDGERS);
 
+        // Publish an event so off-chain consumers can observe the storage-tier
+        // write without exposing sensitive data.
+        env.events().publish(
+            (
+                Symbol::new(env, "market_audit_entry_appended"),
+                market_id.clone(),
+            ),
+            entry,
+        );
+
         new_index
     }
 
@@ -205,10 +238,21 @@ impl MarketAuditManager {
     /// Fetches one entry by its 1-based `index` from the market's audit log.
     ///
     /// Returns `None` when `index` is 0 or exceeds `total_entries`.
+    /// Panics if an index within bounds is missing from storage.
     pub fn get_entry(env: &Env, market_id: &Symbol, index: u32) -> Option<MarketAuditEntry> {
         if index == 0 {
             return None;
         }
+        let head = Self::get_head(env, market_id)?;
+        if index > head.total_entries {
+            return None;
+        }
+        Some(Self::get_entry_unchecked(env, market_id, index).unwrap_or_else(|| {
+            panic!("audit log corruption: missing entry {index}");
+        }))
+    }
+
+    fn get_entry_unchecked(env: &Env, market_id: &Symbol, index: u32) -> Option<MarketAuditEntry> {
         let key = DataKey::MarketAuditLog(market_id.clone(), index);
         env.storage().persistent().get(&key)
     }
@@ -219,6 +263,7 @@ impl MarketAuditManager {
     ///
     /// - `limit` is capped at 100 to bound ledger computation cost.
     /// - Returns an empty `Vec` if the market has no audit entries.
+    /// - Panics if an expected entry is missing, so corruption is never silently skipped.
     ///
     /// # Parameters
     ///
@@ -244,9 +289,10 @@ impl MarketAuditManager {
         let mut count = 0u32;
 
         while idx >= 1 && count < effective_limit {
-            if let Some(entry) = Self::get_entry(env, market_id, idx) {
-                result.push_back(entry);
-            }
+            let entry = Self::get_entry_unchecked(env, market_id, idx).unwrap_or_else(|| {
+                panic!("audit log corruption: missing entry {idx}");
+            });
+            result.push_back(entry);
             idx = idx.saturating_sub(1);
             count = count.saturating_add(1);
         }

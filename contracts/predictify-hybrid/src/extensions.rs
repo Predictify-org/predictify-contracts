@@ -603,6 +603,11 @@ impl ExtensionValidator {
             MarketState::Disputed => {
                 return Err(Error::ExtensionDenied);
             }
+            // Archived/Restored are immutable terminals under the metadata-only
+            // archive model; extension is never permitted on them.
+            MarketState::Archived | MarketState::Restored => {
+                return Err(Error::ExtensionDenied);
+            }
         }
 
         let current_time = env.ledger().timestamp();

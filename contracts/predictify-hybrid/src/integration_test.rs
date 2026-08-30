@@ -180,11 +180,16 @@ impl IntegrationTestSuite {
         );
     }
 
-    /// Claim winnings for a user
+    /// Claim winnings for a user (with automatic nonce management)
     pub fn claim_winnings(&self, user: &Address, market_id: &Symbol) {
         let client = PredictifyHybridClient::new(&self.env, &self.contract_id);
         self.env.mock_all_auths();
-        client.claim_winnings(user, market_id);
+        
+        // Get the current claim nonce for this (user, market) pair
+        let nonce = client.get_claim_nonce(user, market_id);
+        
+        // Call claim_winnings with the correct nonce
+        client.claim_winnings_with_nonce(user, market_id, nonce);
     }
 
     /// Cancel a market (admin only)

@@ -218,6 +218,10 @@ pub enum DataKey {
     /// Per-user claim nonce for replay protection: (user, market_id) -> u64
     /// Incremented on each successful claim to ensure each claim is unique and prevent replays.
     ClaimNonce(Address, Symbol),
+    /// Persistent alias mapping a superseded event topic symbol to its
+    /// replacement. Written by the upgrade hook so on-chain consumers can
+    /// discover topic renames without re-deploying.
+    EventTopicAlias(Symbol),
 }
 
 /// Storage format version for migration tracking
