@@ -1187,11 +1187,19 @@ impl VotingUtils {
         // Calculate winning statistics for payout calculation
         // For multi-winner (ties), pool is split proportionally among all winners
         // Get total stake across all winning outcomes
-        let mut winning_total = 0;
+        //
+        // OVERFLOW SAFETY: winning_total is accumulated with checked_accumulate
+        // so a market with many large stakes cannot silently wrap the total.
+        let mut winning_total = 0i128;
         for outcome in winning_outcomes.iter() {
             for (voter, voted_outcome) in market.votes.iter() {
                 if voted_outcome == outcome {
-                    winning_total += market.stakes.get(voter.clone()).unwrap_or(0);
+                    let stake = market.stakes.get(voter.clone()).unwrap_or(0);
+                    winning_total = crate::utils::ArithmeticUtils::checked_accumulate(
+                        winning_total,
+                        stake,
+                    )
+                    .map_err(|_| Error::Overflow)?;
                 }
             }
         }

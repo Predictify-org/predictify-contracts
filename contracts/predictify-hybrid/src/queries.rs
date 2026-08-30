@@ -833,11 +833,18 @@ impl QueryManager {
     /// - User's stake proportion
     /// - Total winning stakes
     /// - Platform fee deduction
+    ///
+    /// # Overflow safety
+    ///
+    /// All intermediate products (`user_stake * total_staked`, `user_share * 2`)
+    /// are computed with [`crate::utils::ArithmeticUtils::checked_mul_div`] or
+    /// [`crate::utils::ArithmeticUtils::checked_mul`], returning
+    /// `Err(Error::Overflow)` instead of panicking or silently wrapping.
     pub(crate) fn calculate_payout(
         env: &Env,
         market: &Market,
         user_stake: i128,
-    ) -> Result<i128, Error> {
+    ) -> Result<i128, crate::errors::Error> {
         if user_stake <= 0 {
             return Ok(0);
         }
@@ -846,19 +853,37 @@ impl QueryManager {
         if let Some(winning_outcomes) = &market.winning_outcomes {
             let mut winning_total = 0i128;
             for outcome in winning_outcomes.iter() {
-                winning_total += Self::calculate_outcome_pool(env, market, &outcome)?;
+                let pool = Self::calculate_outcome_pool(env, market, &outcome)?;
+                // OVERFLOW SAFETY: accumulate pool with checked addition
+                winning_total = crate::utils::ArithmeticUtils::checked_accumulate(
+                    winning_total,
+                    pool,
+                )
+                .map_err(|_| crate::errors::Error::Overflow)?;
             }
 
             if winning_total <= 0 {
                 return Ok(0);
             }
 
-            // Calculate user's share: (user_stake / winning_total) * total_pool
-            let user_share = (user_stake * market.total_staked) / winning_total;
+            // OVERFLOW SAFETY: user_stake * total_staked / winning_total
+            let user_share = crate::utils::ArithmeticUtils::checked_mul_div(
+                user_stake,
+                market.total_staked,
+                winning_total,
+            )
+            .map_err(|_| crate::errors::Error::Overflow)?;
 
-            // Deduct platform fee (2%)
-            let fee_amount = (user_share * 2) / 100;
-            let payout = user_share - fee_amount;
+            // Deduct platform fee (2%): fee = user_share * 2 / 100
+            let fee_amount = crate::utils::ArithmeticUtils::checked_mul_div(
+                user_share,
+                2,
+                100,
+            )
+            .map_err(|_| crate::errors::Error::Overflow)?;
+            let payout = user_share
+                .checked_sub(fee_amount)
+                .ok_or(crate::errors::Error::Overflow)?;
 
             Ok(payout.max(0))
         } else {
@@ -869,18 +894,26 @@ impl QueryManager {
     /// Calculate total stake for a specific outcome.
     ///
     /// Sums all user stakes that voted for the given outcome.
+    ///
+    /// # Overflow safety
+    ///
+    /// The running sum uses [`crate::utils::ArithmeticUtils::checked_accumulate`]
+    /// so a market with many large stakes cannot silently wrap the total.  The
+    /// error is propagated to the caller as `Err(Error::Overflow)`.
     pub(crate) fn calculate_outcome_pool(
         env: &Env,
         market: &Market,
         outcome: &String,
-    ) -> Result<i128, Error> {
+    ) -> Result<i128, crate::errors::Error> {
         let mut pool = 0i128;
 
         // Iterate through all votes to find matching outcome
         for (user, voted_outcome) in market.votes.iter() {
             if voted_outcome == *outcome {
                 if let Some(stake) = market.stakes.get(user) {
-                    pool += stake;
+                    // OVERFLOW SAFETY: accumulate stake with checked addition
+                    pool = crate::utils::ArithmeticUtils::checked_accumulate(pool, stake)
+                        .map_err(|_| crate::errors::Error::Overflow)?;
                 }
             }
         }
@@ -892,10 +925,16 @@ impl QueryManager {
     ///
     /// Uses stake distribution to infer market's probability estimates
     /// for "yes" and "no" outcomes. Returns percentages (0-100).
+    ///
+    /// # Overflow safety
+    ///
+    /// `pool1 + pool2` and the `pool * 100` products are guarded with checked
+    /// arithmetic.  On overflow both probabilities default to 50 so the caller
+    /// always receives a valid result.
     pub(crate) fn calculate_implied_probabilities(
         env: &Env,
         market: &Market,
-    ) -> Result<(u32, u32), Error> {
+    ) -> Result<(u32, u32), crate::errors::Error> {
         if market.outcomes.len() < 2 {
             return Ok((50, 50)); // Default if insufficient outcomes
         }
@@ -907,13 +946,18 @@ impl QueryManager {
         let pool1 = Self::calculate_outcome_pool(env, market, &outcome1)?;
         let pool2 = Self::calculate_outcome_pool(env, market, &outcome2)?;
 
-        let total = pool1 + pool2;
+        // OVERFLOW SAFETY: pool1 + pool2 may overflow for extreme values
+        let total = crate::utils::ArithmeticUtils::checked_add(pool1, pool2)
+            .unwrap_or(0);
         if total <= 0 {
             return Ok((50, 50));
         }
 
-        let prob1 = ((pool2 * 100) / total) as u32; // Inverse: more stake on outcome1 = lower prob
-        let prob2 = ((pool1 * 100) / total) as u32;
+        // OVERFLOW SAFETY: pool * 100 uses checked_mul_div
+        let prob1 = crate::utils::ArithmeticUtils::checked_mul_div(pool2, 100, total)
+            .unwrap_or(50) as u32; // Inverse: more stake on outcome1 = lower prob
+        let prob2 = crate::utils::ArithmeticUtils::checked_mul_div(pool1, 100, total)
+            .unwrap_or(50) as u32;
 
         Ok((prob1, prob2))
     }
