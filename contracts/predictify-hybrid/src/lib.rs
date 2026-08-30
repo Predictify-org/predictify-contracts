@@ -81,6 +81,7 @@ mod tokens;
 mod rate_limiter;
 mod dispute_multisig;
 mod event_topic_catalog;
+pub mod event_topic_compat;
 mod storage_tier_audit;
 mod leaderboard;
 mod lists;
@@ -94,6 +95,8 @@ mod override_audit_tests;
 mod market_audit_tests;
 #[cfg(test)]
 mod test_audit_trail;
+#[cfg(test)]
+mod event_topic_compat_tests;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
