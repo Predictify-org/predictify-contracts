@@ -912,8 +912,14 @@ impl NumericUtils {
     }
 
     /// Calculate percentage
+    ///
+    /// Uses saturating multiplication so extreme inputs degrade gracefully instead
+    /// of panicking.  The result is clamped at `i128::MAX` rather than wrapping.
     pub fn calculate_percentage(percentage: &i128, value: &i128, denominator: &i128) -> i128 {
-        (*percentage * *value) / *denominator
+        if *denominator == 0 {
+            return 0;
+        }
+        percentage.saturating_mul(*value) / *denominator
     }
 
     /// Round to nearest multiple
@@ -961,17 +967,21 @@ impl NumericUtils {
     }
 
     /// Calculate weighted average
+    ///
+    /// Uses saturating arithmetic throughout so extreme inputs degrade gracefully
+    /// (result saturates at `i128::MAX`) rather than wrapping or panicking.
     pub fn weighted_average(values: &Vec<i128>, weights: &Vec<i128>) -> i128 {
         if values.len() != weights.len() || values.len() == 0 {
             return 0;
         }
-        let mut total_weight = 0;
-        let mut weighted_sum = 0;
+        let mut total_weight: i128 = 0;
+        let mut weighted_sum: i128 = 0;
         for i in 0..values.len() {
             let value = values.get_unchecked(i);
             let weight = weights.get_unchecked(i);
-            weighted_sum += value * weight;
-            total_weight += weight;
+            // saturating_mul prevents wrapping on large value*weight products
+            weighted_sum = weighted_sum.saturating_add(value.saturating_mul(weight));
+            total_weight = total_weight.saturating_add(weight);
         }
         if total_weight == 0 {
             0
@@ -981,8 +991,14 @@ impl NumericUtils {
     }
 
     /// Calculate simple interest
+    ///
+    /// Uses saturating arithmetic so large `principal * rate * periods` products
+    /// saturate at `i128::MAX` rather than wrapping.
     pub fn simple_interest(principal: &i128, rate: &i128, periods: &i128) -> i128 {
-        (*principal * *rate * *periods) / 100
+        principal
+            .saturating_mul(*rate)
+            .saturating_mul(*periods)
+            / 100
     }
 
     /// Convert number to string
@@ -997,6 +1013,101 @@ impl NumericUtils {
         // Can't convert soroban_sdk::String to std::string::String
         // Return 0 as placeholder
         0
+    }
+}
+
+// ===== ARITHMETIC UTILITIES =====
+
+/// Checked arithmetic primitives for score and probability calculations.
+///
+/// All methods return `Err(Error::Overflow)` when the operation would overflow
+/// `i128`, making overflow explicit and diagnosable rather than silent or
+/// panicking.  Use these helpers in any code path that feeds user-controlled
+/// values (stakes, totals, outcome amounts) into multiplication or addition.
+///
+/// # Invariants
+///
+/// - All inputs must be non-negative (`>= 0`).  Negative inputs are rejected
+///   with `Err(Error::Overflow)` because signed overflow semantics differ and
+///   the contract never legitimately passes negative financial amounts to these
+///   helpers.
+/// - Division by zero is rejected with `Err(Error::Overflow)`.
+///
+/// # Example
+///
+/// ```rust
+/// # use predictify_hybrid::utils::ArithmeticUtils;
+/// # use predictify_hybrid::err::Error;
+/// // Safe percentage: outcome_amount * 100 / total
+/// let pct = ArithmeticUtils::checked_mul_div(500_000, 100, 1_000_000)
+///     .expect("should not overflow");
+/// assert_eq!(pct, 50);
+///
+/// // Overflow is detected, not silently wrapped
+/// let overflow = ArithmeticUtils::checked_mul(i128::MAX, 2);
+/// assert!(overflow.is_err());
+/// ```
+pub struct ArithmeticUtils;
+
+impl ArithmeticUtils {
+    /// Checked addition.  Returns `Err(Error::Overflow)` on overflow.
+    ///
+    /// # Invariant
+    /// Both operands must be non-negative.
+    #[inline]
+    pub fn checked_add(lhs: i128, rhs: i128) -> Result<i128, crate::err::Error> {
+        if lhs < 0 || rhs < 0 {
+            return Err(crate::err::Error::Overflow);
+        }
+        lhs.checked_add(rhs).ok_or(crate::err::Error::Overflow)
+    }
+
+    /// Checked multiplication.  Returns `Err(Error::Overflow)` on overflow.
+    ///
+    /// # Invariant
+    /// Both operands must be non-negative.
+    #[inline]
+    pub fn checked_mul(lhs: i128, rhs: i128) -> Result<i128, crate::err::Error> {
+        if lhs < 0 || rhs < 0 {
+            return Err(crate::err::Error::Overflow);
+        }
+        lhs.checked_mul(rhs).ok_or(crate::err::Error::Overflow)
+    }
+
+    /// Checked multiply-then-divide: `(value * numerator) / denominator`.
+    ///
+    /// The intermediate product is checked; division-by-zero returns
+    /// `Err(Error::Overflow)`.
+    ///
+    /// # Invariant
+    /// All three operands must be non-negative; `denominator` must be > 0.
+    #[inline]
+    pub fn checked_mul_div(
+        value: i128,
+        numerator: i128,
+        denominator: i128,
+    ) -> Result<i128, crate::err::Error> {
+        if value < 0 || numerator < 0 || denominator <= 0 {
+            return Err(crate::err::Error::Overflow);
+        }
+        value
+            .checked_mul(numerator)
+            .ok_or(crate::err::Error::Overflow)?
+            .checked_div(denominator)
+            .ok_or(crate::err::Error::Overflow)
+    }
+
+    /// Accumulate a running total using checked addition.
+    ///
+    /// Replaces the common `accumulator += item` pattern in loops where inputs
+    /// originate from user-controlled contract storage.  Returns
+    /// `Err(Error::Overflow)` if the sum would overflow.
+    ///
+    /// # Invariant
+    /// Both `accumulator` and `item` must be non-negative.
+    #[inline]
+    pub fn checked_accumulate(accumulator: i128, item: i128) -> Result<i128, crate::err::Error> {
+        Self::checked_add(accumulator, item)
     }
 }
 

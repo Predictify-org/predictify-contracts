@@ -1593,12 +1593,14 @@ impl MarketAnalytics {
     /// println!("Payout multiplier: {:.2}x", payout_ratio);
     /// ```
     pub fn calculate_winning_stats(market: &Market, winning_outcome: &String) -> WinningStats {
-        let mut winning_total = 0;
+        let mut winning_total: i128 = 0;
         let mut winning_voters = 0;
 
         for (user, outcome) in market.votes.iter() {
             if &outcome == winning_outcome {
-                winning_total += market.stakes.get(user.clone()).unwrap_or(0);
+                // OVERFLOW SAFETY: saturating_add prevents wrap on adversarial stake values.
+                winning_total = winning_total
+                    .saturating_add(market.stakes.get(user.clone()).unwrap_or(0));
                 winning_voters += 1;
             }
         }
@@ -2088,13 +2090,20 @@ impl MarketUtils {
             return Err(Error::NothingToClaim);
         }
 
-        let user_share = (user_stake
-            .checked_mul(100 - fee_percentage)
-            .ok_or(Error::InvalidInput)?)
+        // OVERFLOW SAFETY: user_stake * (100 - fee_percentage) may overflow for
+        // extreme stakes.  Map to Error::Overflow for precise diagnostics.
+        let fee_complement = 100i128
+            .checked_sub(fee_percentage)
+            .ok_or(Error::Overflow)?;
+        let user_share = user_stake
+            .checked_mul(fee_complement)
+            .ok_or(Error::Overflow)?
             / 100;
-        let payout = (user_share
+
+        // OVERFLOW SAFETY: user_share * total_pool may overflow for large pools.
+        let payout = user_share
             .checked_mul(total_pool)
-            .ok_or(Error::InvalidInput)?)
+            .ok_or(Error::Overflow)?
             / winning_total;
 
         Ok(payout)

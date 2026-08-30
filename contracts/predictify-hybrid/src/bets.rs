@@ -1618,6 +1618,13 @@ impl BetAnalytics {
     ///
     /// Returns `0` when no bets have been placed yet.
     ///
+    /// # Overflow safety
+    ///
+    /// The intermediate product `outcome_amount * 100` is computed with
+    /// [`crate::utils::ArithmeticUtils::checked_mul_div`].  If either operand
+    /// would overflow `i128` the function returns `0` rather than panicking or
+    /// silently wrapping, preserving the existing return type.
+    ///
     /// # Parameters
     ///
     /// - `env`       – Soroban environment
@@ -1636,8 +1643,14 @@ impl BetAnalytics {
 
         let outcome_amount = stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
 
-        // Return as percentage (0-100)
-        (outcome_amount * 100) / stats.total_amount_locked
+        // OVERFLOW SAFETY: outcome_amount * 100 / total_amount_locked.
+        // checked_mul_div guards against overflow in the intermediate product.
+        crate::utils::ArithmeticUtils::checked_mul_div(
+            outcome_amount,
+            100,
+            stats.total_amount_locked,
+        )
+        .unwrap_or(0)
     }
 
     /// Compute the potential payout multiplier for an outcome.
@@ -1645,6 +1658,13 @@ impl BetAnalytics {
     /// Formula: `(total_amount_locked * 100) / amount_bet_on_outcome`
     ///
     /// Returns `0` when no bets have been placed on the outcome.
+    ///
+    /// # Overflow safety
+    ///
+    /// The intermediate product `total_amount_locked * 100` is computed with
+    /// [`crate::utils::ArithmeticUtils::checked_mul_div`].  If either operand
+    /// would overflow `i128` the function returns `0` rather than panicking or
+    /// silently wrapping.
     ///
     /// # Parameters
     ///
@@ -1664,8 +1684,14 @@ impl BetAnalytics {
             return 0;
         }
 
-        // Return multiplier scaled by 100 (e.g., 250 = 2.5x)
-        (stats.total_amount_locked * 100) / outcome_amount
+        // OVERFLOW SAFETY: total_amount_locked * 100 / outcome_amount.
+        // checked_mul_div guards against overflow in the intermediate product.
+        crate::utils::ArithmeticUtils::checked_mul_div(
+            stats.total_amount_locked,
+            100,
+            outcome_amount,
+        )
+        .unwrap_or(0)
     }
 
     /// Retrieve the full betting summary for a market.

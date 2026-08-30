@@ -101,6 +101,9 @@ mod bandprotocol {
     soroban_sdk::contractimport!(file = "./std_reference.wasm");
 }
 
+#[cfg(test)]
+mod arithmetic_overflow_tests;
+
 pub mod timelock;
 
 // #[cfg(any())]
