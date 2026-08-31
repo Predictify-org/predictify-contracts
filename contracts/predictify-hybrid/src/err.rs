@@ -325,6 +325,10 @@ pub enum Error {
     NoPendingTreasuryUpdate = 690,
     /// A pending treasury update already exists.
     PendingTreasuryUpdateExists = 691,
+    /// Claims are not allowed after the market has reached a terminal settlement state
+    /// (Closed, Cancelled, Archived, or Restored). Claims are only permitted while
+    /// the market is in the Resolved state.
+    ClaimsRejectedAfterSettlement = 692,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -742,6 +746,9 @@ impl ErrorHandler {
             Error::MarketAlreadyRestored => {
                 "Market is already restored. Cannot restore a market that is not archived."
             }
+            Error::ClaimsRejectedAfterSettlement => {
+                "Claims are not allowed after the market has reached a terminal settlement state. Claims are only permitted while the market is in the Resolved state."
+            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -877,6 +884,7 @@ impl ErrorHandler {
             | Error::CannotRestoreFromState
             | Error::MarketAlreadyArchived
             | Error::MarketAlreadyRestored => RecoveryStrategy::Abort,
+            Error::ClaimsRejectedAfterSettlement => RecoveryStrategy::Abort,
             Error::FeeExceedsMax => RecoveryStrategy::Retry,
             Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
             Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,

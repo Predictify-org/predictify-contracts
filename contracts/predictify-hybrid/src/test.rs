@@ -7820,4 +7820,352 @@ fn test_empty_lists_allow_access() {
 
     assert!(res.is_ok(), "Sin restricciones, el acceso debe ser libre");
 }
+// ===== CLAIMS AFTER TERMINAL SETTLEMENT STATE TESTS =====
+
+/// Test that claims are rejected when the market is in Closed state (terminal settlement).
+///
+/// Market lifecycle: Active → Ended → Resolved → Closed
+/// Once a market reaches Closed state (terminal settlement), claims should be rejected
+/// with `ClaimsRejectedAfterSettlement`.
+#[test]
+#[should_panic(expected = "Error(Contract, #692)")] // ClaimsRejectedAfterSettlement = 692
+fn test_claim_rejected_after_market_closed() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // 1. User votes for "yes"
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // 2. Another user votes for "no"
+    let loser = test.create_funded_user();
+    test.env.mock_all_auths();
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &100_0000000,
+    );
+
+    // 3. Advance time past market end
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // 4. Resolve market manually (transitions to Resolved)
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+
+    // Verify market is in Resolved state
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert_eq!(market.state, MarketState::Resolved);
+
+    // 5. Transition market to Closed state by directly setting it in storage
+    // (simulates the closed state after fee collection or admin closure)
+    test.env.as_contract(&test.contract_id, || {
+        let mut market: Market = test
+            .env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap();
+        market.state = MarketState::Closed;
+        test.env.storage().persistent().set(&market_id, &market);
+    });
+
+    // Verify market is now in Closed state
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+    assert_eq!(market.state, MarketState::Closed);
+
+    // 6. Attempt to claim - should panic with ClaimsRejectedAfterSettlement
+    client.claim_winnings(&test.user, &market_id);
+}
+
+/// Test that claims are rejected when the market is in Cancelled state.
+///
+/// Market lifecycle: Active → Cancelled
+/// Once a market is cancelled, claims should be rejected with
+/// `ClaimsRejectedAfterSettlement`.
+#[test]
+#[should_panic(expected = "Error(Contract, #692)")] // ClaimsRejectedAfterSettlement = 692
+fn test_claim_rejected_after_market_cancelled() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // 1. User votes for "yes"
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // 2. Advance time past market end
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // 3. Resolve market with winning outcome first (to set winning_outcomes)
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+
+    // 4. Transition market to Cancelled state (simulates admin cancellation after resolution)
+    test.env.as_contract(&test.contract_id, || {
+        let mut market: Market = test
+            .env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap();
+        market.state = MarketState::Cancelled;
+        test.env.storage().persistent().set(&market_id, &market);
+    });
+
+    // 5. Attempt to claim - should panic with ClaimsRejectedAfterSettlement
+    client.claim_winnings(&test.user, &market_id);
+}
+
+/// Test that claims are rejected in Active state (before resolution).
+///
+/// Claims should not be allowed while the market is still active and accepting votes.
+#[test]
+#[should_panic(expected = "Error(Contract, #692)")] // ClaimsRejectedAfterSettlement = 692
+fn test_claim_rejected_in_active_state() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // 1. User votes for "yes"
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // 2. Attempt to claim while market is still Active - should fail
+    client.claim_winnings(&test.user, &market_id);
+}
+
+/// Test that claims are rejected in Ended state (after voting ends but before resolution).
+///
+/// Claims should not be allowed while the market is ended but not yet resolved.
+#[test]
+#[should_panic(expected = "Error(Contract, #692)")] // ClaimsRejectedAfterSettlement = 692
+fn test_claim_rejected_in_ended_state() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // 1. User votes for "yes"
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // 2. Advance time past market end (market transitions to Ended)
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // 3. Attempt to claim while market is Ended but not resolved - should fail
+    client.claim_winnings(&test.user, &market_id);
+}
+
+/// Test that claims are rejected in Disputed state.
+///
+/// Claims should not be allowed while the market resolution is under dispute.
+#[test]
+#[should_panic(expected = "Error(Contract, #692)")] // ClaimsRejectedAfterSettlement = 692
+fn test_claim_rejected_in_disputed_state() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // 1. User votes for "yes"
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // 2. Another user votes for "no"
+    let loser = test.create_funded_user();
+    test.env.mock_all_auths();
+    client.vote(
+        &loser,
+        &market_id,
+        &String::from_str(&test.env, "no"),
+        &100_0000000,
+    );
+
+    // 3. Advance time past market end
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    // 4. Transition market to Disputed state
+    test.env.as_contract(&test.contract_id, || {
+        let mut market: Market = test
+            .env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap();
+        market.state = MarketState::Disputed;
+        // Add a dispute stake to make the state consistent
+        market
+            .dispute_stakes
+            .set(loser.clone(), 10_000_000);
+        test.env.storage().persistent().set(&market_id, &market);
+    });
+
+    // 5. Attempt to claim while market is Disputed - should fail
+    client.claim_winnings(&test.user, &market_id);
+}
+
+/// Test that claims are rejected in Archived state.
+///
+/// Archived markets are immutable and read-only; claims should be rejected.
+#[test]
+#[should_panic(expected = "Error(Contract, #692)")] // ClaimsRejectedAfterSettlement = 692
+fn test_claim_rejected_in_archived_state() {
+    let test = PredictifyTest::setup();
+    let market_id = test.create_test_market();
+    let client = PredictifyHybridClient::new(&test.env, &test.contract_id);
+
+    // 1. User votes for "yes"
+    test.env.mock_all_auths();
+    client.vote(
+        &test.user,
+        &market_id,
+        &String::from_str(&test.env, "yes"),
+        &100_0000000,
+    );
+
+    // 2. Advance time and resolve market
+    let market = test.env.as_contract(&test.contract_id, || {
+        test.env
+            .storage()
+            .persistent()
+            .get::<Symbol, Market>(&market_id)
+            .unwrap()
+    });
+
+    test.env.ledger().set(LedgerInfo {
+        timestamp: market.end_time + market.dispute_window_seconds + 1,
+        protocol_version: 22,
+        sequence_number: test.env.ledger().sequence(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    test.env.mock_all_auths();
+    client.resolve_market_manual(&test.admin, &market_id, &String::from_str(&test.env, "yes"));
+
+    // 3. Transition market to Archived state
+    test.env.as_contract(&test.contract_id, || {
+        let mut market: Market = test
+            .env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .unwrap();
+        market.state = MarketState::Archived;
+        test.env.storage().persistent().set(&market_id, &market);
+    });
+
+    // 4. Attempt to claim - should fail
+    client.claim_winnings(&test.user, &market_id);
+}
+
 mod oracle_cooldown_tests;
