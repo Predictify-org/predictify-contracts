@@ -875,13 +875,31 @@ impl OracleResolutionManager {
     /// market uses [`resolve_with_median`].  Re-calling overwrites the
     /// stored configuration.
     ///
+    /// # Distinct-source invariant
+    ///
+    /// The three source slots **must reference distinct on-chain contracts**.
+    /// Quorum (`min_sources`) is only meaningful when each included quote
+    /// comes from a separate oracle.  A configuration that points two slots at
+    /// the same contract would let one oracle be counted as several sources,
+    /// letting a single compromised/rogue oracle satisfy or sway quorum, so it
+    /// is rejected up front and never persisted.
+    ///
     /// # Arguments
     /// - `env`    – Soroban environment.
     /// - `config` – [`MedianOracleConfig`] to store globally.
-    pub fn set_median_config(env: &Env, config: &MedianOracleConfig) {
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidOracleConfig`] when any two of `pyth_address`,
+    /// `reflector_address`, and `band_address` are equal.
+    pub fn set_median_config(
+        env: &Env,
+        config: &MedianOracleConfig,
+    ) -> Result<(), Error> {
+        Self::validate_distinct_sources(config)?;
         env.storage()
             .persistent()
             .set(&symbol_short!("med_cfg"), config);
+        Ok(())
     }
 
     /// Load the three-oracle median configuration from contract storage.
@@ -919,8 +937,14 @@ impl OracleResolutionManager {
     ///    Oracles that do not report a confidence interval receive
     ///    5 000 bps (medium weight).
     ///
+    /// 3. **Distinct sources** – Deduplicate quotes by contract address.  Only
+    ///    the first occurrence of each distinct source is kept; later quotes
+    ///    originating from the same contract are flagged `included = false`.
+    ///    Quorum therefore counts genuine independent sources only.
+    ///
     /// 4. **Baseline median** – Compute the unweighted simple median of the
-    ///    successfully fetched prices (used *only* for outlier detection).
+    ///    successfully fetched *distinct* prices (used *only* for outlier
+    ///    detection).
     ///
     /// 5. **Outlier filter** – Discard any quote where
     ///    ```text
@@ -930,7 +954,8 @@ impl OracleResolutionManager {
     ///    The quote's `included` flag is set to `false`.
     ///
     /// 6. **Minimum sources** – Return [`Error::OracleNoConsensus`] if fewer
-    ///    than `MedianOracleConfig::min_sources` quotes remain.
+    ///    than `MedianOracleConfig::min_sources` *distinct, non-outlier*
+    ///    quotes remain.
     ///
     /// 7. **Weighted median** – Sort the surviving `(price, weight)` pairs
     ///    ascending and return the price at which the cumulative weight first
@@ -945,6 +970,15 @@ impl OracleResolutionManager {
     ///    event (topic `orc_med_q`) carrying the full
     ///    `Vec<OracleQuote>`.
     ///
+    /// # Security note
+    ///
+    /// `min_sources` quorum only holds if each counted quote comes from a
+    /// distinct contract.  [`Self::set_median_config`] rejects duplicated
+    /// configurations at set time; this resolver additionally dedupes at
+    /// resolution time (defence in depth) so a configuration persisted before
+    /// that invariant existed cannot have a single oracle masquerade as
+    /// several sources.
+    ///
     /// # Errors
     ///
     /// | Error | Cause |
@@ -953,7 +987,7 @@ impl OracleResolutionManager {
     /// | `ResolutionTimeoutReached` | `now ≥ end_time + resolution_timeout`. |
     /// | `MarketClosed` | Market has not yet ended. |
     /// | `MarketResolved` | Market already has an oracle result. |
-    /// | `OracleNoConsensus` | Fewer than `min_sources` non-outlier quotes. |
+    /// | `OracleNoConsensus` | Fewer than `min_sources` distinct, non-outlier quotes. |
 
     pub fn resolve_with_median(
         env: &Env,
@@ -1024,6 +1058,16 @@ impl OracleResolutionManager {
                 &feed_id,
             )?);
         }
+
+        // ── 3b. Require distinct oracle sources for quorum ───────────────────
+        //
+        // Quorum via `min_sources` is only meaningful when each included
+        // quote comes from a *distinct* contract.  `set_median_config` rejects
+        // duplicated configurations up front; this dedupe is defence in depth
+        // for configs persisted before that check existed.  Reusing the same
+        // binding so the baseline-median, outlier, and quorum steps below only
+        // ever observe one quote per distinct source.
+        let raw_quotes = Self::dedupe_duplicate_sources(env, &med_cfg, &raw_quotes);
 
         // ── 4. Unweighted baseline median for outlier detection ─────────────
         let baseline_prices = Self::collect_included_sorted(env, &raw_quotes);
@@ -1109,6 +1153,81 @@ impl OracleResolutionManager {
     }
 
     // ── Private helpers ─────────────────────────────────────────────────────
+
+    /// Validate that the three median-oracle slots reference distinct contracts.
+    ///
+    /// Quorum (`min_sources`) is only meaningful when each counted quote comes
+    /// from a separate on-chain oracle.  A duplicated contract address would
+    /// let one oracle satisfy or sway quorum as if it were several independent
+    /// sources, so duplicate addresses are rejected.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidOracleConfig`] when any two of `pyth_address`,
+    /// `reflector_address`, and `band_address` are equal.
+    pub fn validate_distinct_sources(
+        config: &MedianOracleConfig,
+    ) -> Result<(), Error> {
+        let refs = [
+            &config.pyth_address,
+            &config.reflector_address,
+            &config.band_address,
+        ];
+        for i in 0..refs.len() {
+            for j in (i + 1)..refs.len() {
+                if refs[i] == refs[j] {
+                    return Err(Error::InvalidOracleConfig);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Mark quotes originating from duplicate source contracts as excluded.
+    ///
+    /// [`Self::validate_distinct_sources`] (enforced by
+    /// [`Self::set_median_config`]) rejects duplicated configurations at set
+    /// time.  This is a belt-and-braces guard for configurations persisted
+    /// before that invariant existed: it walks the fixed fetch order
+    /// (Pyth → Reflector → Band) and keeps only the **first** occurrence of
+    /// each distinct contract address `included`; any later quote from the
+    /// same address is flagged `included = false` so it can neither satisfy
+    /// `min_sources` nor skew the baseline median or the weighted median.
+    fn dedupe_duplicate_sources(
+        env: &Env,
+        config: &MedianOracleConfig,
+        quotes: &Vec<OracleQuote>,
+    ) -> Vec<OracleQuote> {
+        // Slot order must match the fetch order in [`Self::resolve_with_median`].
+        let addresses = [
+            config.pyth_address.clone(),
+            config.reflector_address.clone(),
+            config.band_address.clone(),
+        ];
+        let mut out: Vec<OracleQuote> = Vec::new(env);
+        let mut slot: usize = 0;
+        for q in quotes.iter() {
+            let mut clone = q.clone();
+            if clone.included && slot < addresses.len() {
+                // A quote is a duplicate when an earlier slot uses the same
+                // contract address.
+                let mut prev: usize = 0;
+                let mut duplicate = false;
+                while prev < slot {
+                    if addresses[prev] == addresses[slot] {
+                        duplicate = true;
+                        break;
+                    }
+                    prev += 1;
+                }
+                if duplicate {
+                    clone.included = false;
+                }
+            }
+            out.push_back(clone);
+            slot += 1;
+        }
+        out
+    }
 
     /// Fetch a single oracle quote, absorbing network/decode errors into
     /// `included = false`.
@@ -2993,6 +3112,214 @@ mod median_resolution_tests {
             assert_eq!(loaded.max_deviation_bps, 300, "config should be overwritten");
             assert_eq!(loaded.band_address, updated_band);
         });
+    }
+
+    // ── Distinct oracle sources for quorum ─────────────────────────────────
+    // `resolve_with_median` quorum (`min_sources`) must count *distinct*
+    // contracts only.  `OracleResolutionManager::set_median_config` rejects
+    // duplicated source addresses at set time, and
+    // `dedupe_duplicate_sources` drops later duplicates at resolution time.
+
+    #[test]
+    fn test_validate_distinct_sources_accepts_distinct() {
+        let env = make_env();
+        let config = MedianOracleConfig {
+            pyth_address: Address::generate(&env),
+            reflector_address: Address::generate(&env),
+            band_address: Address::generate(&env),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        assert_eq!(
+            OracleResolutionManager::validate_distinct_sources(&config),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn test_validate_distinct_sources_rejects_duplicates() {
+        let env = make_env();
+        let a = Address::generate(&env);
+        let b = Address::generate(&env);
+
+        // pyth == reflector
+        let cfg1 = MedianOracleConfig {
+            pyth_address: a.clone(),
+            reflector_address: a.clone(),
+            band_address: b.clone(),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        assert_eq!(
+            OracleResolutionManager::validate_distinct_sources(&cfg1),
+            Err(Error::InvalidOracleConfig)
+        );
+
+        // reflector == band
+        let cfg2 = MedianOracleConfig {
+            pyth_address: a.clone(),
+            reflector_address: b.clone(),
+            band_address: b.clone(),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        assert_eq!(
+            OracleResolutionManager::validate_distinct_sources(&cfg2),
+            Err(Error::InvalidOracleConfig)
+        );
+
+        // band == pyth
+        let cfg3 = MedianOracleConfig {
+            pyth_address: a.clone(),
+            reflector_address: b.clone(),
+            band_address: a.clone(),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        assert_eq!(
+            OracleResolutionManager::validate_distinct_sources(&cfg3),
+            Err(Error::InvalidOracleConfig)
+        );
+
+        // all three equal
+        let cfg4 = MedianOracleConfig {
+            pyth_address: a.clone(),
+            reflector_address: a.clone(),
+            band_address: a.clone(),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        assert_eq!(
+            OracleResolutionManager::validate_distinct_sources(&cfg4),
+            Err(Error::InvalidOracleConfig)
+        );
+    }
+
+    #[test]
+    fn test_set_median_config_persists_distinct_config() {
+        let env = make_env();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let pyth_addr = Address::generate(&env);
+        let refl_addr = Address::generate(&env);
+        let band_addr = Address::generate(&env);
+        let config = MedianOracleConfig {
+            pyth_address: pyth_addr.clone(),
+            reflector_address: refl_addr.clone(),
+            band_address: band_addr.clone(),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        env.as_contract(&contract_id, || {
+            assert_eq!(OracleResolutionManager::set_median_config(&env, &config), Ok(()));
+
+            let loaded = OracleResolutionManager::get_median_config(&env)
+                .expect("distinct config must be persisted");
+            assert_eq!(loaded.pyth_address, pyth_addr);
+            assert_eq!(loaded.reflector_address, refl_addr);
+            assert_eq!(loaded.band_address, band_addr);
+            assert_eq!(loaded.min_sources, 2);
+        });
+    }
+
+    #[test]
+    fn test_set_median_config_rejects_duplicate_sources_and_does_not_persist() {
+        let env = make_env();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let a = Address::generate(&env);
+        let b = Address::generate(&env);
+        let config = MedianOracleConfig {
+            pyth_address: a.clone(),
+            reflector_address: a.clone(),
+            band_address: b.clone(),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+        env.as_contract(&contract_id, || {
+            assert_eq!(
+                OracleResolutionManager::set_median_config(&env, &config),
+                Err(Error::InvalidOracleConfig)
+            );
+            assert!(
+                OracleResolutionManager::get_median_config(&env).is_err(),
+                "rejected config must not be persisted"
+            );
+        });
+    }
+
+    #[test]
+    fn test_dedupe_duplicate_sources_keeps_first_distinct_occurrence() {
+        let env = make_env();
+
+        // reflector_address == band_address → Band slot must lose its vote.
+        let dup = Address::generate(&env);
+        let config = MedianOracleConfig {
+            pyth_address: Address::generate(&env),
+            reflector_address: dup.clone(),
+            band_address: dup,
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 1_000, 5_000, true));
+        quotes.push_back(quote(OracleProvider::reflector(), 1_010, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 1_020, 5_000, true));
+
+        let deduped = OracleResolutionManager::dedupe_duplicate_sources(&env, &config, &quotes);
+        assert_eq!(deduped.len(), 3, "quote vector must keep all three slots");
+        assert!(deduped.get(0).unwrap().included, "first distinct source stays");
+        assert!(deduped.get(1).unwrap().included, "first occurrence of a source stays");
+        assert!(
+            !deduped.get(2).unwrap().included,
+            "duplicate source (Band) must be dropped from quorum"
+        );
+    }
+
+    #[test]
+    fn test_dedupe_duplicate_sources_distinct_config_unchanged() {
+        let env = make_env();
+        let config = MedianOracleConfig {
+            pyth_address: Address::generate(&env),
+            reflector_address: Address::generate(&env),
+            band_address: Address::generate(&env),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 1_000, 5_000, true));
+        quotes.push_back(quote(OracleProvider::reflector(), 1_010, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 1_020, 5_000, true));
+
+        let deduped = OracleResolutionManager::dedupe_duplicate_sources(&env, &config, &quotes);
+        assert_eq!(deduped.len(), 3);
+        for q in deduped.iter() {
+            assert!(q.included, "all quotes from distinct sources stay included");
+        }
+    }
+
+    #[test]
+    fn test_dedupe_duplicate_sources_pyth_reflector_collision_keeps_pyth() {
+        let env = make_env();
+        let colliding = Address::generate(&env);
+        let config = MedianOracleConfig {
+            pyth_address: colliding.clone(),
+            reflector_address: colliding,
+            band_address: Address::generate(&env),
+            max_deviation_bps: 200,
+            min_sources: 2,
+        };
+
+        let mut quotes: Vec<OracleQuote> = Vec::new(&env);
+        quotes.push_back(quote(OracleProvider::pyth(), 1_000, 5_000, true));
+        quotes.push_back(quote(OracleProvider::reflector(), 1_010, 5_000, true));
+        quotes.push_back(quote(OracleProvider::band_protocol(), 1_020, 5_000, true));
+
+        let deduped = OracleResolutionManager::dedupe_duplicate_sources(&env, &config, &quotes);
+        // Pyth (slot 0) survives; Reflector (slot 1) is a duplicate; Band stays.
+        assert!(deduped.get(0).unwrap().included);
+        assert!(!deduped.get(1).unwrap().included, "reflector is duplicate of pyth");
+        assert!(deduped.get(2).unwrap().included);
     }
 
     // ── fetch_quote ────────────────────────────────────────────────────────
