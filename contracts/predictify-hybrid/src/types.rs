@@ -2242,6 +2242,15 @@ pub struct MedianOracleConfig {
     /// resolution.  `resolve_with_median` returns `OracleNoConsensus`
     /// when fewer quotes survive filtering.  Must be ≥ 1;
     /// recommended value: 2.
+    ///
+    /// # Distinct-source invariant
+    ///
+    /// Quorum via `min_sources` is only meaningful when each counted quote
+    /// comes from a **distinct** contract.  `pyth_address`, `reflector_address`,
+    /// and `band_address` must therefore be pairwise distinct
+    /// (`set_median_config` rejects duplicates with `InvalidOracleConfig`), and
+    /// `resolve_with_median` additionally deduplicates by contract address at
+    /// resolution time so a single oracle can never satisfy or skew quorum.
     pub min_sources: u32,
 }
 
