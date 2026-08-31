@@ -854,16 +854,23 @@ impl MarketStateManager {
         }
 
         // MISS: read from persistent storage
-        let market: Option<Market> = _env.storage().persistent().get(market_id);
+        // Fetch as raw Val and attempt conversion to avoid Wasm traps on type mismatches 
+        // (e.g. if a system key like "platform_fee" is passed as a market_id).
+        let val_opt: Option<soroban_sdk::Val> = _env.storage().persistent().get(market_id);
 
-        match market {
-            Some(m) => {
-                // Populate cache for subsequent reads
-                cache.set(market_id.clone(), &m);
-                Ok(m)
+        match val_opt {
+            Some(val) => {
+                use soroban_sdk::TryFromVal;
+                match Market::try_from_val(_env, &val) {
+                    Ok(m) => {
+                        // Populate cache for subsequent reads
+                        cache.set(market_id.clone(), &m);
+                        Ok(m)
+                    }
+                    Err(_) => Err(Error::MarketNotFound),
+                }
             }
             None => Err(Error::MarketNotFound),
-            // NOTE: no unwrap() - explicit match on Option
         }
     }
 

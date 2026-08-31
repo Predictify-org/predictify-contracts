@@ -64,6 +64,8 @@ mod upgrade_manager;
 mod utils;
 mod validation;
 // mod validation_tests; // disabled - API drift
+#[cfg(test)]
+mod market_id_validation_tests;
 mod versioning;
 mod voting;
 mod market_analytics;
@@ -1062,13 +1064,7 @@ impl PredictifyHybrid {
             }
         }
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Check if the market is still active
         if market.state != MarketState::Active {
@@ -1814,13 +1810,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, e);
         }
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Check if user has claimed already (redundant safety check; nonce validation should prevent)
         if market
@@ -2149,11 +2139,7 @@ impl PredictifyHybrid {
             return Err(Error::Unauthorized);
         }
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id)?;
 
         let winning_outcomes = market
             .winning_outcomes
@@ -2376,7 +2362,7 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn get_market(env: Env, market_id: Symbol) -> Option<Market> {
-        env.storage().persistent().get(&market_id)
+        markets::MarketStateManager::get_market(&env, &market_id).ok()
     }
 
     /// Get the current claim nonce for a user on a specific market.
@@ -2399,7 +2385,7 @@ impl PredictifyHybrid {
     /// match the commitment stored at creation/update time, or when any committed field
     /// in storage was changed without refreshing the stored commitment.
     pub fn verify_market_metadata(env: Env, market_id: Symbol, expected: BytesN<32>) -> bool {
-        let market: Option<Market> = env.storage().persistent().get(&market_id);
+        let market: Option<Market> = markets::MarketStateManager::get_market(&env, &market_id).ok();
         match market {
             Some(market) => market.verify_metadata_commitment(&env, &expected),
             None => false,
@@ -2510,13 +2496,7 @@ impl PredictifyHybrid {
         Self::require_primary_admin_or_panic(&env, &admin);
         Self::check_resolution_cooldown(&env, &admin, &Symbol::new(&env, "resolve_market_manual")).unwrap_or_else(|e| panic_with_error!(env, e));
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Check if market has ended
         if env.ledger().timestamp() < market.end_time {
@@ -2681,13 +2661,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::InvalidInput);
         }
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Check if market has ended
         if env.ledger().timestamp() < market.end_time {
@@ -2825,11 +2799,7 @@ impl PredictifyHybrid {
             return Err(Error::InvalidInput);
         }
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id)?;
 
         for outcome in winning_outcomes.iter() {
             let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
@@ -4296,13 +4266,7 @@ impl PredictifyHybrid {
         }
 
         // ── Load market ────────────────────────────────────────────────────────
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // ── Require resolved ───────────────────────────────────────────────────
         let winning_outcomes = match &market.winning_outcomes {
@@ -4883,10 +4847,7 @@ impl PredictifyHybrid {
         max_participants: Option<u32>,
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).ok()
             .unwrap_or_else(|| panic_with_error!(&env, Error::MarketNotFound));
         market.max_participants = max_participants;
         env.storage().persistent().set(&market_id, &market);
@@ -5240,10 +5201,7 @@ impl PredictifyHybrid {
         }
 
         // Get market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).ok()
             .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
@@ -5388,10 +5346,7 @@ impl PredictifyHybrid {
         }
 
         // Get market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).ok()
             .unwrap_or_else(|| panic_with_error!(env, Error::MarketNotFound));
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
@@ -5508,11 +5463,7 @@ impl PredictifyHybrid {
         Self::require_primary_admin(&env, &admin)?;
 
         // Get market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id)?;
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
@@ -5632,11 +5583,7 @@ impl PredictifyHybrid {
         crate::metadata_limits::validate_event_tags(&tags)?;
 
         // Get market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id)?;
 
         // Validate market state - cannot update resolved, closed, or cancelled markets
         if market.state != MarketState::Active {
@@ -5882,13 +5829,7 @@ impl PredictifyHybrid {
         Self::require_primary_admin(&env, &admin)?;
 
         // Get and validate market
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id).unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Validate cancellation conditions
         if market.state == MarketState::Resolved {
@@ -5970,11 +5911,7 @@ impl PredictifyHybrid {
     ) -> Result<i128, Error> {
         caller.require_auth();
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .ok_or(Error::MarketNotFound)?;
+        let mut market: Market = markets::MarketStateManager::get_market(&env, &market_id)?;
 
         if market.state == MarketState::Cancelled {
             return Ok(0);
