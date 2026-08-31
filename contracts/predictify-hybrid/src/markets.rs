@@ -1197,7 +1197,7 @@ impl MarketStateManager {
         env: &Env,
     ) {
         MarketStateLogic::check_function_access_for_state("claim", market.state).unwrap();
-        let claim_info = crate::types::ClaimInfo::new(env, payout_amount);
+        let claim_info = crate::types::ClaimInfo::new(env, payout_amount, 0);
         market.claimed.set(user, claim_info);
     }
 
@@ -2897,6 +2897,7 @@ impl MarketStateLogic {
             Resolved => matches!(to, Closed),
             Closed => false,
             Cancelled => false,
+            Archived | Restored => false,
         };
         if allowed {
             Ok(())
@@ -3098,7 +3099,7 @@ impl MarketStateLogic {
                     return Err(Error::InvalidState);
                 }
             }
-            Closed | Cancelled => {}
+            Closed | Cancelled | Archived | Restored => {}
         }
         Ok(())
     }

@@ -1195,7 +1195,7 @@ impl FeeCalculator {
             if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
                 let is_winning = winning_outcomes
                     .iter()
-                    .any(|outcome| outcome == &bet.outcome);
+                    .any(|outcome| outcome == bet.outcome);
                 if is_winning {
                     winning_total = Self::checked_fee_add(winning_total, bet.amount)?;
                 }
@@ -1225,7 +1225,7 @@ impl FeeCalculator {
             if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
                 let is_winning = winning_outcomes
                     .iter()
-                    .any(|outcome| outcome == &bet.outcome);
+                    .any(|outcome| outcome == bet.outcome);
                 if !is_winning {
                     continue;
                 }

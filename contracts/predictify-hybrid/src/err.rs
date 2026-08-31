@@ -166,9 +166,9 @@ pub enum Error {
     /// The operation would exceed the remaining CPU instruction budget.
     /// This is a pre-emptive guard that aborts before the host runs out of resources.
     ///
-    /// Discriminant 444: AdminNotSet was pinned at 418 in the stability test so
+    /// Discriminant 448: AdminNotSet was pinned at 418 in the stability test so
     /// OperationWouldExceedBudget is placed after the frozen metadata range.
-    OperationWouldExceedBudget = 444,
+    OperationWouldExceedBudget = 448,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.
@@ -1837,6 +1837,8 @@ impl Error {
             Error::IllegalMarketStateTransition   => 1106,
             Error::DuplicateMarketId              => 1107,
             Error::MaxParticipantsReached         => 1108,
+            Error::MarketAlreadyArchived          => 1109,
+            Error::MarketAlreadyRestored          => 1110,
 
             // ── Validation (1200–1299) ───────────────────────────────────────
             Error::InvalidQuestion                => 1200,
@@ -1851,6 +1853,8 @@ impl Error {
             Error::ExtensionDenied                => 1209,
             Error::CumulativeExtensionCapHit      => 1210,
             Error::ExtensionCapExceeded           => 1211,
+            Error::CannotArchiveFromState         => 1212,
+            Error::CannotRestoreFromState         => 1213,
 
             // ── Financial (1300–1399) ────────────────────────────────────────
             Error::InsufficientStake              => 1300,
@@ -1923,6 +1927,12 @@ impl Error {
             Error::ForceResolveReasonEmpty        => 1805,
             Error::IdempotentBatchAlreadyApplied  => 1806,
             Error::InvalidStakeAmount             => 1807,
+            Error::InvalidNonce                   => 1808,
+            Error::BetAboveMaximum                => 1809,
+            Error::BetBelowMarketMin              => 1810,
+            Error::BetLimitsInverted              => 1811,
+            Error::BetLimitAboveMaximum           => 1812,
+            Error::BetCapOutOfRange               => 1813,
 
             // ── Metadata / Limits (1900–1999) ────────────────────────────────
             Error::QuestionTooLong                => 1900,
@@ -1945,6 +1955,7 @@ impl Error {
             Error::ArchiveFull                    => 1917,
             Error::ReasonTableFull                => 1918,
             Error::RegistryFull                   => 1919,
+            _                                     => 9999,
         }
     }
 

@@ -2545,23 +2545,8 @@ impl DisputeValidator {
     /// - Check passes: market has disputes
     /// - Between check and resolution: all disputes finalized
     /// - Resolution executes: market state corrupted
-    pub fn verify_has_active_dispute(env: &Env, market: &Market) -> Result<bool, Error> {
-        // Get dispute history for this market
-        let market_id = market.market_id.clone();
-        let history = env.storage().persistent()
-            .get::<_, Vec<Dispute>>(&DataKey::DisputeHistory(market_id.clone()))
-            .unwrap_or_else(|| Vec::new(env));
-
-        // Check if any dispute is still Active
-        for i in 0..history.len() {
-            if let Some(disp) = history.get(i) {
-                if matches!(disp.status, DisputeStatus::Active) {
-                    return Ok(true);
-                }
-            }
-        }
-
-        Ok(false)
+    pub fn verify_has_active_dispute(_env: &Env, market: &Market) -> Result<bool, Error> {
+        Ok(market.total_dispute_stakes() > 0)
     }
 
     /// Validate admin permissions

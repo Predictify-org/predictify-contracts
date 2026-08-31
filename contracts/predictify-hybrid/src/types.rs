@@ -80,7 +80,7 @@ impl StorageTierChange {
             ledger_seq,
             ttl_seconds,
         };
-        let commitment = env.crypto().sha256(&payload.to_xdr(env)).into();
+        let commitment: BytesN<32> = env.crypto().sha256(&payload.to_xdr(env)).into();
         Self {
             key,
             from_tier,
@@ -104,7 +104,7 @@ impl StorageTierChange {
             ledger_seq: self.ledger_seq,
             ttl_seconds: self.ttl_seconds,
         };
-        let expected = env.crypto().sha256(&payload.to_xdr(env)).into();
+        let expected: BytesN<32> = env.crypto().sha256(&payload.to_xdr(env)).into();
         expected.eq(&self.commitment)
     }
 }
@@ -3678,6 +3678,8 @@ impl MarketStatus {
             MarketState::Resolved => MarketStatus::Resolved,
             MarketState::Closed => MarketStatus::Closed,
             MarketState::Cancelled => MarketStatus::Cancelled,
+            MarketState::Archived => MarketStatus::Closed,
+            MarketState::Restored => MarketStatus::Resolved,
         }
     }
 }

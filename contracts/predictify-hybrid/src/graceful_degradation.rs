@@ -322,7 +322,7 @@ mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::testutils::Events;
-    use soroban_sdk::Env;
+    use soroban_sdk::{Env, TryIntoVal};
 
     // ------------------------------------------------------------------
     //  Legacy / existing behaviour tests (adapted for hysteresis)
@@ -536,13 +536,22 @@ mod tests {
         // (no transition happened). The oracle_degradation event is still
         // emitted by is_working, so we don't check total event count.
         let events = env.events().all();
-        let health_events: soroban_sdk::Vec<_> = events
-            .events()
-            .iter()
-            .filter(|e| e.0 == (soroban_sdk::symbol_short!("orc_hlth"),))
-            .collect();
+        let mut has_health_event = false;
+        for event in events.events().iter() {
+            let body = match &event.body {
+                soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+            };
+            if let Some(topic0) = body.topics.get(0) {
+                let sym: Result<soroban_sdk::Symbol, _> = topic0.clone().try_into_val(&env);
+                if let Ok(sym) = sym {
+                    if sym == soroban_sdk::symbol_short!("orc_hlth") {
+                        has_health_event = true;
+                    }
+                }
+            }
+        }
         assert!(
-            health_events.is_empty(),
+            !has_health_event,
             "No OracleHealthStatusEvent should be emitted before transition"
         );
 
@@ -553,13 +562,22 @@ mod tests {
         });
 
         let events = env.events().all();
-        let health_events: soroban_sdk::Vec<_> = events
-            .events()
-            .iter()
-            .filter(|e| e.0 == (soroban_sdk::symbol_short!("orc_hlth"),))
-            .collect();
+        let mut has_health_event = false;
+        for event in events.events().iter() {
+            let body = match &event.body {
+                soroban_sdk::xdr::ContractEventBody::V0(v0) => v0,
+            };
+            if let Some(topic0) = body.topics.get(0) {
+                let sym: Result<soroban_sdk::Symbol, _> = topic0.clone().try_into_val(&env);
+                if let Ok(sym) = sym {
+                    if sym == soroban_sdk::symbol_short!("orc_hlth") {
+                        has_health_event = true;
+                    }
+                }
+            }
+        }
         assert!(
-            health_events.len() >= 1,
+            has_health_event,
             "OracleHealthStatusEvent should be emitted on transition to Degraded"
         );
     }

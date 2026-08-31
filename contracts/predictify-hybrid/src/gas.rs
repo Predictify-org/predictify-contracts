@@ -60,13 +60,12 @@ pub const DEFAULT_CLAIM_WINNINGS_GAS_LIMIT: u64 = 2_000_000;
 /// These defaults act as fallbacks when no admin-configured limit exists
 /// via `set_limit()`.
 fn get_default_limit(operation: &Symbol) -> Option<u64> {
-    // Use to_string comparison because Soroban Symbol doesn't implement
-    // direct equality with &str in a const-compatible way.
-    let op_str = alloc::format!("{}", operation);
-    match op_str.as_str() {
-        "create" => Some(DEFAULT_CREATE_MARKET_GAS_LIMIT),
-        "claim" => Some(DEFAULT_CLAIM_WINNINGS_GAS_LIMIT),
-        _ => None,
+    if operation == &symbol_short!("create") {
+        Some(DEFAULT_CREATE_MARKET_GAS_LIMIT)
+    } else if operation == &symbol_short!("claim") {
+        Some(DEFAULT_CLAIM_WINNINGS_GAS_LIMIT)
+    } else {
+        None
     }
 }
 

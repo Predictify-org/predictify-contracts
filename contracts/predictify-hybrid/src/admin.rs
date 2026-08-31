@@ -1617,14 +1617,33 @@ impl AdminManager {
     /// Count admins with a specific role
     fn count_admins_with_role(env: &Env, role: AdminRole) -> u32 {
         let mut count = 0;
+        let original_admin = Self::get_original_admin(env);
 
-        // Count original admin if it matches the role
-        if role == AdminRole::SuperAdmin && Self::get_original_admin(env).is_some() {
-            count += 1;
+        let list_key = Symbol::new(env, "AdminList");
+        if let Some(admin_list) = env.storage().persistent().get::<_, Vec<Address>>(&list_key) {
+            for admin_addr in admin_list.iter() {
+                let admin_key = Self::get_admin_key(env, &admin_addr);
+                if let Some(assignment) = env
+                    .storage()
+                    .persistent()
+                    .get::<_, AdminRoleAssignment>(&admin_key)
+                {
+                    if assignment.is_active && assignment.role == role {
+                        count += 1;
+                    }
+                }
+            }
+            if role == AdminRole::SuperAdmin {
+                if let Some(ref orig) = original_admin {
+                    if !admin_list.contains(orig) {
+                        count += 1;
+                    }
+                }
+            }
+        } else if role == AdminRole::SuperAdmin && original_admin.is_some() {
+            count = 1;
         }
 
-        // In a full implementation, we would iterate through all multi-admin entries
-        // For now, this is a simplified version that works with the existing storage pattern
         count
     }
 

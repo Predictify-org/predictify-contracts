@@ -827,7 +827,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             assert_eq!(health.oracle_address, oracle_addr);
             assert_eq!(health.state, OracleHealthState::Healthy);
@@ -856,7 +856,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Record a successful check with 100ms latency
             let state = health.record_check(&env, true, 100, Some(80)).unwrap();
@@ -888,7 +888,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Record a failed check
             let state = health.record_check(&env, false, 0, None).unwrap();
@@ -918,7 +918,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Record failures to drop health score below 70
             for _ in 0..3 {
@@ -950,7 +950,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Drop to Degraded
             for _ in 0..3 {
@@ -993,7 +993,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Drop to Degraded first
             for _ in 0..3 {
@@ -1031,7 +1031,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Drop to Offline
             for _ in 0..6 {
@@ -1075,7 +1075,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Update staleness to exceed threshold (300 seconds)
             let state = health.update_staleness(&env, 350).unwrap();
@@ -1105,7 +1105,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Record checks with high latency (above 5000ms threshold)
             for _ in 0..5 {
@@ -1137,7 +1137,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Record checks with low confidence (below 50%)
             for _ in 0..5 {
@@ -1168,7 +1168,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Record max_consecutive_failures (5) failures
             for _ in 0..5 {
@@ -1200,7 +1200,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             assert_eq!(health.state_transition_count, 0);
             
@@ -1250,7 +1250,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let _ = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let _ = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Should fail with unauthorized caller
             let result = OracleHealth::force_state_change(&env, &oracle_addr, &unauthorized, OracleHealthState::Offline);
@@ -1277,7 +1277,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             assert_eq!(health.state, OracleHealthState::Healthy);
             
             // Admin forces offline
@@ -1308,7 +1308,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Extreme latency
             health.record_check(&env, true, u64::MAX, Some(100)).unwrap();
@@ -1352,7 +1352,7 @@ mod oracle_health_integration_tests {
             config.offline_to_degraded_threshold = 60;
             config.validate().unwrap();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // With tighter thresholds, should degrade faster
             health.record_check(&env, false, 0, None).unwrap();
@@ -1427,7 +1427,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Get state via manager
             let state = OracleHealthManager::get_state(&env, &oracle_addr).unwrap();
@@ -1462,7 +1462,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Healthy is usable
             assert!(OracleHealthManager::is_usable(&env, &oracle_addr).unwrap());
@@ -1494,7 +1494,7 @@ mod oracle_health_integration_tests {
             let oracle_addr = Address::generate(&env);
             let config = OracleHealthConfig::default();
             
-            let mut health = OracleHealth::new_with_config(&env, &oracle_addr, &admin, &config).unwrap();
+            let mut health = OracleHealth::new_with_config(oracle_addr.clone(), config, &env).unwrap();
             
             // Initial score should be 100
             let score = OracleHealthManager::get_health_score(&env, &oracle_addr).unwrap();

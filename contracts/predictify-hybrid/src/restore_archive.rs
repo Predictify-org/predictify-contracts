@@ -173,7 +173,7 @@ impl RestoreArchive {
             market_id: market_id.clone(),
             restored_at: now,
             restored_by: admin.clone(),
-            reason,
+            reason: reason.clone(),
             version: 1, // Current version; increment for future schema changes
         };
 

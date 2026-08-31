@@ -593,7 +593,7 @@ impl ExtensionValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         match market.state {
-            MarketState::Resolved | MarketState::Closed | MarketState::Cancelled => {
+            MarketState::Resolved | MarketState::Closed | MarketState::Cancelled | MarketState::Archived | MarketState::Restored => {
                 return Err(Error::ExtensionDenied);
             }
             MarketState::Ended => {
