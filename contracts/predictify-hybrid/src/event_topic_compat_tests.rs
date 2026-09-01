@@ -27,6 +27,9 @@
 
 use soroban_sdk::{symbol_short, testutils::Events, Env, Symbol, Vec};
 
+extern crate alloc;
+use alloc::format;
+
 use crate::event_topic_compat::{
     EventCompatBridge, EventNonceGuard, EventTopicRegistry, TOPIC_ALIASES, TOPIC_REGISTRY,
 };
