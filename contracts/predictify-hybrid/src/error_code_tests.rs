@@ -1,38 +1,19 @@
-//! Tests for the error taxonomy refinement (#602).
-//!
-//! Acceptance criteria enforced here:
-//! - No duplicate `client_code()` values across all variants.
-//! - Every variant has a `recoverability()` label (enum is exhaustive).
-//! - `client_code()` falls within the disjoint range reserved for its category.
-//! - `client_code()` is exposed as a public method (off-chain mapping).
-//! - No `unwrap()` in the mapping table (method returns `u32`, not `Option`).
-
 #![cfg(test)]
 
+use crate::err::{Error, ErrorCategory, ErrorSeverity, PublicErrorMapping, Recoverability};
+use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::String;
 use alloc::vec;
-use alloc::vec::Vec as StdVec;
+use alloc::vec::Vec;
 
-use crate::err::{
-    Error, ErrorCategory, ErrorHandler, ErrorSeverity, Recoverability, RecoveryStrategy,
-};
-use soroban_sdk::{Env, Map, String};
-
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-fn make_ctx(env: &Env) -> crate::err::ErrorContext {
-    crate::err::ErrorContext {
-        operation: String::from_str(env, "test_op"),
-        user_address: None,
-        market_id: None,
-        context_data: Map::new(env),
-        timestamp: env.ledger().timestamp(),
-        call_chain: None,
-    }
-}
-
-/// Every concrete `Error` variant — used for exhaustive property checks.
-fn all_errors() -> StdVec<Error> {
+fn all_errors() -> Vec<Error> {
     vec![
+        Error::IdempotentBatchAlreadyApplied,
+        Error::ReasonTableFull,
+        Error::Overflow,
+        Error::MaxBetCapExceeded,
+        Error::InvalidCap,
         Error::Unauthorized,
         Error::MarketNotFound,
         Error::MarketClosed,
@@ -46,6 +27,12 @@ fn all_errors() -> StdVec<Error> {
         Error::AlreadyBet,
         Error::BetsAlreadyPlaced,
         Error::InsufficientBalance,
+        Error::InvalidNonce,
+        Error::BetAboveMaximum,
+        Error::BetBelowMarketMin,
+        Error::BetLimitsInverted,
+        Error::BetLimitAboveMaximum,
+        Error::BetCapOutOfRange,
         Error::OracleUnavailable,
         Error::InvalidOracleConfig,
         Error::OracleStale,
@@ -76,7 +63,9 @@ fn all_errors() -> StdVec<Error> {
         Error::DisputeAlreadyVoted,
         Error::DisputeCondNotMet,
         Error::DisputeFeeFailed,
+        Error::InvalidInitializationParams,
         Error::DisputeError,
+        Error::DisputerCannotVote,
         Error::SweepAlreadyDone,
         Error::FeeArithmeticOverflow,
         Error::FeeAlreadyCollected,
@@ -85,6 +74,9 @@ fn all_errors() -> StdVec<Error> {
         Error::ExtensionDenied,
         Error::GasBudgetExceeded,
         Error::AdminNotSet,
+        Error::AssetDecimalsMismatch,
+        Error::AdminActionTimelocked,
+        Error::OperationWouldExceedBudget,
         Error::QuestionTooLong,
         Error::OutcomeTooLong,
         Error::TooManyOutcomes,
@@ -100,542 +92,489 @@ fn all_errors() -> StdVec<Error> {
         Error::TooManyExtensions,
         Error::TooManyOracleResults,
         Error::TooManyWinningOutcomes,
+        Error::ForceResolveAlreadyUsed,
         Error::ArchiveFull,
         Error::CategoryTooShort,
         Error::TagTooShort,
+        Error::DuplicateMarketId,
+        Error::CannotArchiveFromState,
+        Error::CannotRestoreFromState,
+        Error::MarketAlreadyArchived,
+        Error::MarketAlreadyRestored,
         Error::CBNotInitialized,
         Error::CBAlreadyOpen,
         Error::CBNotOpen,
         Error::CBOpen,
         Error::CBError,
         Error::RateLimitExceeded,
+        Error::CumulativeExtensionCapHit,
+        Error::IllegalMarketStateTransition,
+        Error::FeeExceedsMax,
+        Error::ForceResolveReplayed,
+        Error::ForceResolveReasonEmpty,
+        Error::NoPendingFeeCommit,
+        Error::FeeRevealTooEarly,
+        Error::FeePreimageMismatch,
+        Error::DisputeStakeCapExceeded,
+        Error::InsufficientStorageRentBudget,
+        Error::ExtensionCapExceeded,
+        Error::UpgradeChainMismatch,
+        Error::OracleQuoteOutlier,
+        Error::MaxParticipantsReached,
+        Error::BetExceedsCap,
+        Error::ReplayedOverride,
+        Error::OracleAdminCooldownActive,
+        Error::SignerRotationCooldown,
+        Error::UserNotWhitelisted,
+        Error::UserBlacklisted,
+        Error::CreatorBlacklisted,
+        Error::AlreadyInitialized,
+        Error::InvalidTimeLockDelay,
+        Error::TimeLockNotExpired,
+        Error::NoPendingUpdate,
+        Error::PendingUpdateExists,
+        Error::InvalidStakeAmount,
+        Error::PerLedgerBetCapExceeded,
+        Error::RegistryFull,
+        Error::BatchEmpty,
+        Error::BatchSizeExceeded,
+        Error::TreasuryUpdateTimelocked,
+        Error::NoPendingTreasuryUpdate,
+        Error::PendingTreasuryUpdateExists,
     ]
 }
 
-/// O(n²) uniqueness check — sufficient for ~75 variants, avoids HashSet (no_std).
-fn all_unique_u32(values: &[u32]) -> bool {
-    for i in 0..values.len() {
-        for j in (i + 1)..values.len() {
-            if values[i] == values[j] {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-fn all_unique_str(values: &[&'static str]) -> bool {
-    for i in 0..values.len() {
-        for j in (i + 1)..values.len() {
-            if values[i] == values[j] {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// AC1 – No duplicate client_code() values
-// ═══════════════════════════════════════════════════════════════════════════
+// =========================================================================
+// 1. Acceptance Criteria: Existing codes remain stable & distinct
+// =========================================================================
 
 #[test]
-fn test_client_codes_are_unique() {
-    let codes: StdVec<u32> = all_errors().iter().map(|e| e.client_code()).collect();
-    assert!(
-        all_unique_u32(&codes),
-        "Duplicate client_code detected"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// AC2 – Every variant has a Recoverability label
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_every_variant_has_recoverability() {
+fn test_all_variants_have_unique_contract_codes() {
+    let mut seen = BTreeSet::new();
     for err in all_errors() {
-        let r = err.recoverability();
+        let code = err as u32;
         assert!(
-            matches!(
-                r,
-                Recoverability::Retryable
-                    | Recoverability::RequiresAdmin
-                    | Recoverability::Terminal
-            ),
-            "{:?} returned an unexpected Recoverability value",
+            seen.insert(code),
+            "Duplicate contract code {} found for error {:?}",
+            code,
             err
         );
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AC3 – client_code() lies in the disjoint range for its ErrorCategory
-// ═══════════════════════════════════════════════════════════════════════════
+#[test]
+fn test_all_variants_have_unique_client_codes() {
+    let mut seen = BTreeSet::new();
+    for err in all_errors() {
+        let client_code = err.client_code();
+        assert_ne!(client_code, 0, "client_code for {:?} must not be 0", err);
+        assert!(
+            seen.insert(client_code),
+            "Duplicate client_code {} found for error {:?}",
+            client_code,
+            err
+        );
+    }
+}
 
-/// Returns the expected (lo, hi) client-code range for an ErrorCategory.
-/// Errors in the catch-all `Unknown` category accept the full 1000-1999 span.
-fn expected_range(cat: &ErrorCategory) -> (u32, u32) {
-    match cat {
-        ErrorCategory::Oracle => (1000, 1099),
-        ErrorCategory::Market => (1100, 1199),
-        ErrorCategory::Validation => (1200, 1299),
-        ErrorCategory::Financial => (1300, 1399),
-        ErrorCategory::Dispute => (1400, 1499),
-        ErrorCategory::Authentication => (1500, 1599),
-        // System encompasses both pure system (1700-1799) and CB (1600-1699).
-        ErrorCategory::System => (1600, 1799),
-        ErrorCategory::UserOperation => (1800, 1899),
-        _ => (1000, 1999), // Unknown / Metadata – wide acceptance
+#[test]
+fn test_all_variants_have_unique_code_strings() {
+    let mut seen = BTreeSet::new();
+    for err in all_errors() {
+        let s = err.code();
+        assert!(!s.is_empty(), "code string for {:?} must not be empty", err);
+        assert_ne!(s, "UNSPECIFIED_ERROR", "code string for {:?} must be specific", err);
+        assert!(
+            seen.insert(s),
+            "Duplicate code string '{}' found for error {:?}",
+            s,
+            err
+        );
+    }
+}
+
+#[test]
+fn test_contract_codes_match_documented_discriminants() {
+    // Spot check core discriminants across all sections
+    assert_eq!(Error::Unauthorized as u32, 100);
+    assert_eq!(Error::MarketNotFound as u32, 101);
+    assert_eq!(Error::NothingToClaim as u32, 105);
+    assert_eq!(Error::AlreadyClaimed as u32, 106);
+    assert_eq!(Error::OracleUnavailable as u32, 200);
+    assert_eq!(Error::InvalidQuestion as u32, 300);
+    assert_eq!(Error::InvalidState as u32, 400);
+    assert_eq!(Error::CBNotInitialized as u32, 500);
+    assert_eq!(Error::IdempotentBatchAlreadyApplied as u32, 660);
+    assert_eq!(Error::InvalidInitializationParams as u32, 700);
+}
+
+// =========================================================================
+// 2. Acceptance Criteria: New codes are unique and documented
+// =========================================================================
+
+#[test]
+fn test_all_descriptions_are_non_empty_and_meaningful() {
+    for err in all_errors() {
+        let desc = err.description();
+        assert!(
+            !desc.is_empty(),
+            "Error {:?} has an empty description",
+            err
+        );
+        assert_ne!(
+            desc,
+            "An unspecified error occurred.",
+            "Error {:?} has default unspecified description",
+            err
+        );
     }
 }
 
 #[test]
 fn test_client_code_in_disjoint_range_for_category() {
     for err in all_errors() {
-        let (_, cat, _) = ErrorHandler::get_error_classification(&err);
-        let (lo, hi) = expected_range(&cat);
         let code = err.client_code();
-        assert!(
-            code >= lo && code <= hi,
-            "{:?}: client_code {} not in [{}, {}] (category {:?})",
-            err, code, lo, hi, cat
-        );
+        let cat = err.category();
+        match cat {
+            ErrorCategory::Oracle => {
+                assert!(
+                    (1000..=1099).contains(&code),
+                    "Oracle error {:?} client_code {} not in 1000..=1099",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::Market => {
+                assert!(
+                    (1100..=1199).contains(&code),
+                    "Market error {:?} client_code {} not in 1100..=1199",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::Validation => {
+                assert!(
+                    (1200..=1299).contains(&code) || (1900..=1999).contains(&code),
+                    "Validation/Metadata error {:?} client_code {} not in valid range",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::Financial => {
+                assert!(
+                    (1300..=1399).contains(&code),
+                    "Financial error {:?} client_code {} not in 1300..=1399",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::Dispute => {
+                assert!(
+                    (1400..=1499).contains(&code),
+                    "Dispute error {:?} client_code {} not in 1400..=1499",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::Authentication => {
+                assert!(
+                    (1500..=1599).contains(&code),
+                    "Auth error {:?} client_code {} not in 1500..=1599",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::System => {
+                assert!(
+                    (1600..=1799).contains(&code),
+                    "System/CB error {:?} client_code {} not in 1600..=1799",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::UserOperation => {
+                assert!(
+                    (1800..=1899).contains(&code),
+                    "UserOp error {:?} client_code {} not in 1800..=1899",
+                    err,
+                    code
+                );
+            }
+            ErrorCategory::Unknown => {
+                panic!("Error {:?} returned ErrorCategory::Unknown", err);
+            }
+        }
+    }
+}
+
+// =========================================================================
+// 3. Acceptance Criteria: Unknown values decode safely
+// =========================================================================
+
+#[test]
+fn test_decode_contract_code_known() {
+    let mapping = Error::decode_contract_code(100);
+    assert_eq!(mapping.contract_code, 100);
+    assert_eq!(mapping.client_code, 1500);
+    assert_eq!(mapping.code_str, "UNAUTHORIZED");
+    assert_eq!(mapping.category, ErrorCategory::Authentication);
+    assert!(mapping.is_known);
+}
+
+#[test]
+fn test_decode_contract_code_unknown() {
+    let unknown_codes = [0u32, 9999, 55555, u32::MAX];
+    for code in unknown_codes {
+        let mapping = Error::decode_contract_code(code);
+        assert_eq!(mapping.contract_code, code);
+        assert_eq!(mapping.client_code, 0);
+        assert_eq!(mapping.code_str, "UNKNOWN_ERROR");
+        assert_eq!(mapping.category, ErrorCategory::Unknown);
+        assert_eq!(mapping.severity, ErrorSeverity::Medium);
+        assert_eq!(mapping.recoverability, Recoverability::Terminal);
+        assert!(!mapping.is_known);
     }
 }
 
 #[test]
-fn test_category_ranges_are_disjoint() {
-    let ranges: &[(&str, u32, u32)] = &[
-        ("Oracle", 1000, 1099),
-        ("Market", 1100, 1199),
-        ("Validation", 1200, 1299),
-        ("Financial", 1300, 1399),
-        ("Dispute", 1400, 1499),
-        ("Auth", 1500, 1599),
-        ("CircuitBreaker", 1600, 1699),
-        ("System", 1700, 1799),
-        ("UserOperation", 1800, 1899),
-        ("Metadata", 1900, 1999),
+fn test_decode_client_code_known() {
+    let mapping = Error::decode_client_code(1000);
+    assert_eq!(mapping.contract_code, 200);
+    assert_eq!(mapping.client_code, 1000);
+    assert_eq!(mapping.code_str, "ORACLE_UNAVAILABLE");
+    assert_eq!(mapping.category, ErrorCategory::Oracle);
+    assert_eq!(mapping.recoverability, Recoverability::Retryable);
+    assert!(mapping.is_known);
+}
+
+#[test]
+fn test_decode_client_code_unknown() {
+    let unknown_client_codes = [0u32, 999, 9999, u32::MAX];
+    for code in unknown_client_codes {
+        let mapping = Error::decode_client_code(code);
+        assert_eq!(mapping.contract_code, 0);
+        assert_eq!(mapping.client_code, code);
+        assert_eq!(mapping.code_str, "UNKNOWN_ERROR");
+        assert_eq!(mapping.category, ErrorCategory::Unknown);
+        assert_eq!(mapping.severity, ErrorSeverity::Medium);
+        assert_eq!(mapping.recoverability, Recoverability::Terminal);
+        assert!(!mapping.is_known);
+    }
+}
+
+#[test]
+fn test_from_code_str_roundtrip() {
+    for err in all_errors() {
+        let str_code = err.code();
+        let resolved = Error::from_code_str(str_code);
+        assert_eq!(
+            resolved,
+            Some(err),
+            "Failed roundtrip for from_code_str('{}')",
+            str_code
+        );
+    }
+    assert_eq!(Error::from_code_str("NON_EXISTENT_ERROR"), None);
+}
+
+#[test]
+fn test_from_contract_code_roundtrip() {
+    for err in all_errors() {
+        let code = err as u32;
+        let resolved = Error::from_contract_code(code);
+        assert_eq!(
+            resolved,
+            Some(err),
+            "Failed roundtrip for from_contract_code({})",
+            code
+        );
+    }
+    assert_eq!(Error::from_contract_code(999999), None);
+}
+
+#[test]
+fn test_from_client_code_roundtrip() {
+    for err in all_errors() {
+        let code = err.client_code();
+        let resolved = Error::from_client_code(code);
+        assert_eq!(
+            resolved,
+            Some(err),
+            "Failed roundtrip for from_client_code({})",
+            code
+        );
+    }
+    assert_eq!(Error::from_client_code(999999), None);
+}
+
+// =========================================================================
+// 4. Acceptance Criteria: Golden vectors cover public entrypoints
+// =========================================================================
+
+struct GoldenVector {
+    error: Error,
+    contract_code: u32,
+    client_code: u32,
+    code_str: &'static str,
+    category: ErrorCategory,
+    severity: ErrorSeverity,
+    recoverability: Recoverability,
+}
+
+#[test]
+fn test_golden_vectors() {
+    let golden_vectors: &[GoldenVector] = &[
+        // Core Entrypoint: Authentication
+        GoldenVector {
+            error: Error::Unauthorized,
+            contract_code: 100,
+            client_code: 1500,
+            code_str: "UNAUTHORIZED",
+            category: ErrorCategory::Authentication,
+            severity: ErrorSeverity::High,
+            recoverability: Recoverability::Terminal,
+        },
+        // Core Entrypoint: Market Lifecycle
+        GoldenVector {
+            error: Error::MarketNotFound,
+            contract_code: 101,
+            client_code: 1100,
+            code_str: "MARKET_NOT_FOUND",
+            category: ErrorCategory::Market,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Terminal,
+        },
+        GoldenVector {
+            error: Error::MarketClosed,
+            contract_code: 102,
+            client_code: 1101,
+            code_str: "MARKET_CLOSED",
+            category: ErrorCategory::Market,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Terminal,
+        },
+        GoldenVector {
+            error: Error::MarketResolved,
+            contract_code: 103,
+            client_code: 1102,
+            code_str: "MARKET_ALREADY_RESOLVED",
+            category: ErrorCategory::Market,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Terminal,
+        },
+        // Core Entrypoint: Claims / Winnings
+        GoldenVector {
+            error: Error::NothingToClaim,
+            contract_code: 105,
+            client_code: 1302,
+            code_str: "NOTHING_TO_CLAIM",
+            category: ErrorCategory::Financial,
+            severity: ErrorSeverity::Low,
+            recoverability: Recoverability::Terminal,
+        },
+        GoldenVector {
+            error: Error::AlreadyClaimed,
+            contract_code: 106,
+            client_code: 1303,
+            code_str: "ALREADY_CLAIMED",
+            category: ErrorCategory::Financial,
+            severity: ErrorSeverity::Low,
+            recoverability: Recoverability::Terminal,
+        },
+        // Core Entrypoint: Betting / Staking
+        GoldenVector {
+            error: Error::InsufficientStake,
+            contract_code: 107,
+            client_code: 1300,
+            code_str: "INSUFFICIENT_STAKE",
+            category: ErrorCategory::Financial,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Retryable,
+        },
+        GoldenVector {
+            error: Error::AlreadyBet,
+            contract_code: 110,
+            client_code: 1801,
+            code_str: "ALREADY_BET",
+            category: ErrorCategory::UserOperation,
+            severity: ErrorSeverity::Low,
+            recoverability: Recoverability::Terminal,
+        },
+        // Core Entrypoint: Oracle Integration
+        GoldenVector {
+            error: Error::OracleUnavailable,
+            contract_code: 200,
+            client_code: 1000,
+            code_str: "ORACLE_UNAVAILABLE",
+            category: ErrorCategory::Oracle,
+            severity: ErrorSeverity::High,
+            recoverability: Recoverability::Retryable,
+        },
+        GoldenVector {
+            error: Error::OracleStale,
+            contract_code: 202,
+            client_code: 1002,
+            code_str: "ORACLE_STALE",
+            category: ErrorCategory::Oracle,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Retryable,
+        },
+        // Core Entrypoint: Validation
+        GoldenVector {
+            error: Error::InvalidQuestion,
+            contract_code: 300,
+            client_code: 1200,
+            code_str: "INVALID_QUESTION",
+            category: ErrorCategory::Validation,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Retryable,
+        },
+        // Core Entrypoint: Circuit Breaker
+        GoldenVector {
+            error: Error::CBOpen,
+            contract_code: 503,
+            client_code: 1603,
+            code_str: "CIRCUIT_BREAKER_OPEN",
+            category: ErrorCategory::System,
+            severity: ErrorSeverity::High,
+            recoverability: Recoverability::Retryable,
+        },
+        GoldenVector {
+            error: Error::RateLimitExceeded,
+            contract_code: 505,
+            client_code: 1605,
+            code_str: "RATE_LIMIT_EXCEEDED",
+            category: ErrorCategory::System,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Retryable,
+        },
+        // Core Entrypoint: Dispute
+        GoldenVector {
+            error: Error::AlreadyDisputed,
+            contract_code: 404,
+            client_code: 1400,
+            code_str: "ALREADY_DISPUTED",
+            category: ErrorCategory::Dispute,
+            severity: ErrorSeverity::Medium,
+            recoverability: Recoverability::Terminal,
+        },
     ];
-    for i in 0..ranges.len() {
-        for j in (i + 1)..ranges.len() {
-            let (n1, lo1, hi1) = ranges[i];
-            let (n2, lo2, hi2) = ranges[j];
-            assert!(
-                hi1 < lo2 || hi2 < lo1,
-                "Ranges for {} ({}-{}) and {} ({}-{}) overlap",
-                n1, lo1, hi1, n2, lo2, hi2
-            );
-        }
+
+    for gv in golden_vectors {
+        let mapping = gv.error.public_mapping();
+        assert_eq!(mapping.contract_code, gv.contract_code, "contract_code mismatch for {:?}", gv.error);
+        assert_eq!(mapping.client_code, gv.client_code, "client_code mismatch for {:?}", gv.error);
+        assert_eq!(mapping.code_str, gv.code_str, "code_str mismatch for {:?}", gv.error);
+        assert_eq!(mapping.category, gv.category, "category mismatch for {:?}", gv.error);
+        assert_eq!(mapping.severity, gv.severity, "severity mismatch for {:?}", gv.error);
+        assert_eq!(mapping.recoverability, gv.recoverability, "recoverability mismatch for {:?}", gv.error);
+        assert!(mapping.is_known);
+
+        // Also verify decode functions produce exact same golden mapping
+        let from_contract = Error::decode_contract_code(gv.contract_code);
+        assert_eq!(from_contract, mapping);
+
+        let from_client = Error::decode_client_code(gv.client_code);
+        assert_eq!(from_client, mapping);
     }
-}
-
-// ─── Spot-check canonical codes per category ────────────────────────────────
-
-#[test]
-fn test_oracle_client_codes_in_1000_range() {
-    for err in [
-        Error::OracleUnavailable,
-        Error::InvalidOracleConfig,
-        Error::OracleStale,
-        Error::FallbackOracleUnavailable,
-        Error::OracleConfidenceTooWide,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1000 && c <= 1099, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_market_client_codes_in_1100_range() {
-    for err in [
-        Error::MarketNotFound,
-        Error::MarketClosed,
-        Error::MarketResolved,
-        Error::MarketNotReady,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1100 && c <= 1199, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_validation_client_codes_in_1200_range() {
-    for err in [
-        Error::InvalidQuestion,
-        Error::InvalidInput,
-        Error::InvalidDuration,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1200 && c <= 1299, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_financial_client_codes_in_1300_range() {
-    for err in [
-        Error::FeeArithmeticOverflow,
-        Error::FeeAlreadyCollected,
-        Error::NoFeesToCollect,
-        Error::InvalidFeeConfig,
-        Error::SweepAlreadyDone,
-        Error::DisputeFeeFailed,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1300 && c <= 1399, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_dispute_client_codes_in_1400_range() {
-    for err in [
-        Error::AlreadyDisputed,
-        Error::DisputeVoteExpired,
-        Error::DisputeCondNotMet,
-        Error::DisputeError,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1400 && c <= 1499, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_auth_client_code_in_1500_range() {
-    let c = Error::Unauthorized.client_code();
-    assert!(c >= 1500 && c <= 1599, "Unauthorized -> {}", c);
-}
-
-#[test]
-fn test_circuit_breaker_client_codes_in_1600_range() {
-    for err in [
-        Error::CBNotInitialized,
-        Error::CBAlreadyOpen,
-        Error::CBNotOpen,
-        Error::CBOpen,
-        Error::CBError,
-        Error::RateLimitExceeded,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1600 && c <= 1699, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_system_client_codes_in_1700_range() {
-    for err in [
-        Error::InvalidState,
-        Error::ConfigNotFound,
-        Error::AdminNotSet,
-        Error::GasBudgetExceeded,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1700 && c <= 1799, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_user_operation_client_codes_in_1800_range() {
-    for err in [
-        Error::AlreadyVoted,
-        Error::AlreadyBet,
-        Error::BetsAlreadyPlaced,
-        Error::InvalidOutcome,
-        Error::InsufficientStake,
-        Error::InsufficientBalance,
-        Error::NothingToClaim,
-        Error::AlreadyClaimed,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1800 && c <= 1899, "{:?} -> {}", err, c);
-    }
-}
-
-#[test]
-fn test_metadata_client_codes_in_1900_range() {
-    for err in [
-        Error::QuestionTooLong,
-        Error::OutcomeTooLong,
-        Error::TooManyOutcomes,
-        Error::ArchiveFull,
-        Error::CategoryTooShort,
-        Error::TagTooShort,
-    ] {
-        let c = err.client_code();
-        assert!(c >= 1900 && c <= 1999, "{:?} -> {}", err, c);
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Recoverability spot-checks
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_retryable_errors() {
-    for err in [
-        Error::OracleUnavailable,
-        Error::OracleStale,
-        Error::FallbackOracleUnavailable,
-        Error::OracleCallbackTimeout,
-        Error::ResolutionTimeoutReached,
-        Error::RateLimitExceeded,
-        Error::InvalidInput,
-        Error::InsufficientStake,
-        Error::InsufficientBalance,
-    ] {
-        assert_eq!(
-            err.recoverability(),
-            Recoverability::Retryable,
-            "{:?} should be Retryable",
-            err
-        );
-    }
-}
-
-#[test]
-fn test_requires_admin_errors() {
-    for err in [
-        Error::AdminNotSet,
-        Error::DisputeFeeFailed,
-        Error::CBNotInitialized,
-        Error::InvalidOracleConfig,
-        Error::InvalidFeeConfig,
-        Error::ConfigNotFound,
-        Error::CBOpen,
-    ] {
-        assert_eq!(
-            err.recoverability(),
-            Recoverability::RequiresAdmin,
-            "{:?} should be RequiresAdmin",
-            err
-        );
-    }
-}
-
-#[test]
-fn test_terminal_errors() {
-    for err in [
-        Error::Unauthorized,
-        Error::MarketClosed,
-        Error::MarketResolved,
-        Error::AlreadyVoted,
-        Error::AlreadyBet,
-        Error::AlreadyClaimed,
-        Error::FeeAlreadyCollected,
-        Error::InvalidState,
-    ] {
-        assert_eq!(
-            err.recoverability(),
-            Recoverability::Terminal,
-            "{:?} should be Terminal",
-            err
-        );
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Off-chain client branching
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_client_can_branch_on_client_code_category() {
-    fn domain(code: u32) -> &'static str {
-        match code {
-            1000..=1099 => "oracle",
-            1100..=1199 => "market",
-            1200..=1299 => "validation",
-            1300..=1399 => "financial",
-            1400..=1499 => "dispute",
-            1500..=1599 => "auth",
-            1600..=1699 => "circuit_breaker",
-            1700..=1799 => "system",
-            1800..=1899 => "user_operation",
-            1900..=1999 => "metadata",
-            _ => "unknown",
-        }
-    }
-
-    assert_eq!(domain(Error::OracleUnavailable.client_code()), "oracle");
-    assert_eq!(domain(Error::MarketClosed.client_code()), "market");
-    assert_eq!(domain(Error::InvalidInput.client_code()), "validation");
-    assert_eq!(domain(Error::FeeAlreadyCollected.client_code()), "financial");
-    assert_eq!(domain(Error::DisputeError.client_code()), "dispute");
-    assert_eq!(domain(Error::Unauthorized.client_code()), "auth");
-    assert_eq!(domain(Error::CBOpen.client_code()), "circuit_breaker");
-    assert_eq!(domain(Error::AdminNotSet.client_code()), "system");
-    assert_eq!(domain(Error::AlreadyVoted.client_code()), "user_operation");
-    assert_eq!(domain(Error::QuestionTooLong.client_code()), "metadata");
-}
-
-#[test]
-fn test_client_retry_decision_from_recoverability() {
-    fn should_retry(err: Error) -> bool {
-        err.recoverability() == Recoverability::Retryable
-    }
-    assert!(should_retry(Error::OracleUnavailable));
-    assert!(should_retry(Error::RateLimitExceeded));
-    assert!(!should_retry(Error::Unauthorized));
-    assert!(!should_retry(Error::AdminNotSet));
-    assert!(!should_retry(Error::CBNotInitialized));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Existing taxonomy: .code() strings, .description(), numeric variant codes
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_error_code_strings_are_unique() {
-    let codes: StdVec<&'static str> = all_errors().iter().map(|e| e.code()).collect();
-    assert!(all_unique_str(&codes), "Duplicate .code() string detected");
-}
-
-#[test]
-fn test_all_code_strings_are_upper_snake_case() {
-    for err in all_errors() {
-        let code = err.code();
-        assert!(!code.is_empty(), "{:?}.code() is empty", err);
-        for c in code.chars() {
-            assert!(
-                c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_',
-                "{:?}.code() has invalid char '{}' in \"{}\"",
-                err, c, code
-            );
-        }
-        assert!(!code.starts_with('_'), "{:?}.code() starts with _", err);
-        assert!(!code.ends_with('_'), "{:?}.code() ends with _", err);
-    }
-}
-
-#[test]
-fn test_all_descriptions_are_non_empty() {
-    for err in all_errors() {
-        assert!(!err.description().is_empty(), "{:?}.description() is empty", err);
-    }
-}
-
-#[test]
-fn test_all_numeric_variant_codes_are_unique() {
-    let codes: StdVec<u32> = all_errors().iter().map(|e| *e as u32).collect();
-    assert!(all_unique_u32(&codes), "Duplicate variant numeric code detected");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ErrorHandler classification spot-checks
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_classification_critical_admin_not_set() {
-    let env = Env::default();
-    let d = ErrorHandler::categorize_error(&env, Error::AdminNotSet, make_ctx(&env));
-    assert_eq!(d.severity, ErrorSeverity::Critical);
-    assert_eq!(d.category, ErrorCategory::System);
-    assert_eq!(d.recovery_strategy, RecoveryStrategy::ManualIntervention);
-}
-
-#[test]
-fn test_classification_high_unauthorized() {
-    let env = Env::default();
-    let d = ErrorHandler::categorize_error(&env, Error::Unauthorized, make_ctx(&env));
-    assert_eq!(d.severity, ErrorSeverity::High);
-    assert_eq!(d.category, ErrorCategory::Authentication);
-    assert_eq!(d.recovery_strategy, RecoveryStrategy::Abort);
-}
-
-#[test]
-fn test_classification_high_oracle_unavailable() {
-    let env = Env::default();
-    let d = ErrorHandler::categorize_error(&env, Error::OracleUnavailable, make_ctx(&env));
-    assert_eq!(d.severity, ErrorSeverity::High);
-    assert_eq!(d.category, ErrorCategory::Oracle);
-    assert_eq!(d.recovery_strategy, RecoveryStrategy::RetryWithDelay);
-}
-
-#[test]
-fn test_classification_medium_market_not_found() {
-    let env = Env::default();
-    let d = ErrorHandler::categorize_error(&env, Error::MarketNotFound, make_ctx(&env));
-    assert_eq!(d.severity, ErrorSeverity::Medium);
-    assert_eq!(d.category, ErrorCategory::Market);
-    assert_eq!(d.recovery_strategy, RecoveryStrategy::AlternativeMethod);
-}
-
-#[test]
-fn test_classification_low_already_voted() {
-    let env = Env::default();
-    let d = ErrorHandler::categorize_error(&env, Error::AlreadyVoted, make_ctx(&env));
-    assert_eq!(d.severity, ErrorSeverity::Low);
-    assert_eq!(d.category, ErrorCategory::UserOperation);
-    assert_eq!(d.recovery_strategy, RecoveryStrategy::Skip);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Recovery strategy spot-checks
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_recovery_strategy_oracle_unavailable_is_retry_with_delay() {
-    assert_eq!(
-        ErrorHandler::get_error_recovery_strategy(&Error::OracleUnavailable),
-        RecoveryStrategy::RetryWithDelay
-    );
-}
-
-#[test]
-fn test_recovery_strategy_already_voted_is_skip() {
-    assert_eq!(
-        ErrorHandler::get_error_recovery_strategy(&Error::AlreadyVoted),
-        RecoveryStrategy::Skip
-    );
-}
-
-#[test]
-fn test_recovery_strategy_unauthorized_is_abort() {
-    assert_eq!(
-        ErrorHandler::get_error_recovery_strategy(&Error::Unauthorized),
-        RecoveryStrategy::Abort
-    );
-}
-
-#[test]
-fn test_recovery_strategy_admin_not_set_is_manual_intervention() {
-    assert_eq!(
-        ErrorHandler::get_error_recovery_strategy(&Error::AdminNotSet),
-        RecoveryStrategy::ManualIntervention
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Analytics and context validation
-// ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_error_analytics_initial_state() {
-    let env = Env::default();
-    let a = ErrorHandler::get_error_analytics(&env).unwrap();
-    assert_eq!(a.total_errors, 0);
-    assert_eq!(a.recovery_success_rate, 0);
-    assert!(a.errors_by_category.get(ErrorCategory::UserOperation).is_some());
-    assert!(a.errors_by_severity.get(ErrorSeverity::Low).is_some());
-}
-
-#[test]
-fn test_error_recovery_status_initial() {
-    let env = Env::default();
-    let s = ErrorHandler::get_error_recovery_status(&env).unwrap();
-    assert_eq!(s.total_attempts, 0);
-    assert!(s.last_recovery_timestamp.is_none());
-}
-
-#[test]
-fn test_context_valid() {
-    let env = Env::default();
-    assert!(ErrorHandler::validate_error_context(&make_ctx(&env)).is_ok());
-}
-
-#[test]
-fn test_context_empty_operation_fails() {
-    let env = Env::default();
-    let mut ctx = make_ctx(&env);
-    ctx.operation = String::from_str(&env, "");
-    assert!(ErrorHandler::validate_error_context(&ctx).is_err());
 }

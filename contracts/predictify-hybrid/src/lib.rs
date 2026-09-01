@@ -16,8 +16,8 @@ pub use config::PERCENTAGE_DENOMINATOR;
 mod admin;
 // #[cfg(any())]
 // mod admin_auth_audit_tests;
-// #[cfg(any())]
-// mod error_code_tests;
+#[cfg(test)]
+mod error_code_tests;
 pub mod analytics;
 pub mod audit;
 mod balances;
