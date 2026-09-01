@@ -237,9 +237,6 @@ impl AdminInitializer {
     /// control over the contract. Consider using a multi-signature wallet
     /// or governance contract for production deployments.
     pub fn initialize(env: &Env, admin: &Address) -> Result<(), Error> {
-        // Require the proposed admin to authorize becoming the contract admin.
-        admin.require_auth();
-
         // Validate all initialization parameters atomically before any state changes.
         AdminInitializer::validate_initialization_params(env, admin)?;
 
@@ -353,7 +350,7 @@ impl AdminInitializer {
             Environment::Mainnet => ConfigManager::get_mainnet_config(env),
             Environment::Custom => ConfigManager::get_development_config(env),
         };
-        ConfigManager::validate_config(env, &config)?;
+        crate::config::ConfigValidator::validate_contract_config(&config)?;
 
         // Initialize basic admin setup
         AdminInitializer::initialize(env, admin)?;

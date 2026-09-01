@@ -4079,7 +4079,7 @@ impl Bet {
 /// println!("Unique bettors: {}", stats.unique_bettors);
 /// ```
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BetStats {
     /// Total number of bets placed on this market
     pub total_bets: u32,
