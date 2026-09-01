@@ -2983,6 +2983,8 @@ impl MarketStateLogic {
         };
         if allowed {
             Ok(())
+        } else if function == "claim" {
+            Err(Error::ClaimsRejectedAfterSettlement)
         } else {
             Err(Error::MarketClosed)
         }

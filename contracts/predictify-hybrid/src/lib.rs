@@ -1822,6 +1822,14 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
+        // Reject claims after terminal settlement state.
+        // Claims are only permitted while the market is in the Resolved state.
+        // Terminal states (Closed, Cancelled, Archived, Restored) indicate the market
+        // has reached finality and no further claim operations are allowed.
+        if market.state != MarketState::Resolved {
+            panic_with_error!(env, Error::ClaimsRejectedAfterSettlement);
+        }
+
         // Check if user has claimed already (redundant safety check; nonce validation should prevent)
         if market
             .claimed

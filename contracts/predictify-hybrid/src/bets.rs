@@ -2442,10 +2442,8 @@ mod tests {
         stats.outcome_totals.set(outcome.clone(), 1);
         BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
 
-        assert_eq!(
-            BetManager::prepare_market_bet_stats(&env, &market_id, &outcome, 1),
-            Err(Error::Overflow)
-        );
+        let result = BetManager::prepare_market_bet_stats(&env, &market_id, &outcome, 1);
+        assert!(matches!(result, Err(Error::Overflow)), "expected Overflow error, got {:?}", result);
 
         let stored = BetStorage::get_market_bet_stats(&env, &market_id);
         assert_eq!(stored.total_amount_locked, i128::MAX);
