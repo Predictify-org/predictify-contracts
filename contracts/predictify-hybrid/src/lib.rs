@@ -177,6 +177,8 @@ mod category_tags_tests;
 mod tie_resolution_tests;
 #[cfg(test)]
 mod force_resolve_tests;
+#[cfg(test)]
+mod settlement_conservation;
 // #[cfg(any())]
 // mod statistics_tests;
 
@@ -2518,6 +2520,10 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
+        if market.state == MarketState::Resolved {
+            panic_with_error!(env, Error::MarketResolved);
+        }
+
         // Check if market has ended
         if env.ledger().timestamp() < market.end_time {
             panic_with_error!(env, Error::MarketClosed);
@@ -2688,6 +2694,10 @@ impl PredictifyHybrid {
             .unwrap_or_else(|| {
                 panic_with_error!(env, Error::MarketNotFound);
             });
+
+        if market.state == MarketState::Resolved {
+            panic_with_error!(env, Error::MarketResolved);
+        }
 
         // Check if market has ended
         if env.ledger().timestamp() < market.end_time {
@@ -4374,7 +4384,7 @@ impl PredictifyHybrid {
         // ── Budget guard: abort before host runs out of CPU instructions ───────
         // Threshold of 100 000 instructions gives enough headroom to finish the
         // current iteration and write the updated market back to storage.
-        let budget_guard = BudgetGuard::new(&env, 100_000);
+        let budget_guard = BudgetGuard::new(&env, 5_000_000);
 
         // ── 1. Distribute to Voters ────────────────────────────────────────────
         let mut voter_count = 0u32;

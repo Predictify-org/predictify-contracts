@@ -36,7 +36,7 @@ fn setup() -> (Env, Address, Address, Address, Address) {
 fn oracle_config(env: &Env, feed_id: &str) -> OracleConfig {
     OracleConfig::new(
         OracleProvider::reflector(),
-        Address::from_str(env, ORACLE_ADDRESS),
+        Address::generate(env),
         String::from_str(env, feed_id),
         100,
         String::from_str(env, "gt"),

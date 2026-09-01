@@ -5704,7 +5704,7 @@ impl ContractInitializationValidator {
             .map_err(|_| Error::InvalidDuration)?;
 
         // Oracle configuration must be internally consistent before storage.
-        OracleValidator::validate_oracle_config_all_together(oracle_config)
+        OracleConfigValidator::validate_oracle_config_all_together(oracle_config)
             .map_err(|_| Error::InvalidOracleConfig)?;
 
         Ok(())
