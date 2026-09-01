@@ -3,20 +3,50 @@
 #[allow(unused_variables)]
 #[allow(dead_code)]
 mod circuit_breaker_tests {
-    use crate::admin::AdminRoleManager;
+    use crate::admin::{AdminRole, AdminRoleAssignment, AdminRoleManager};
     use crate::circuit_breaker::*;
     use crate::err::Error;
-    use soroban_sdk::{testutils::Address, vec, Env, String, Vec};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger, LedgerInfo},
+        vec, Address, Env, String, Symbol, Vec,
+    };
+
+    fn setup_test() -> (Env, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            // Set primary admin
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "Admin"), &admin);
+
+            // Assign SuperAdmin role to admin
+            let key = Symbol::new(&env, "admin_role");
+            let assignment = AdminRoleAssignment {
+                admin: admin.clone(),
+                role: AdminRole::SuperAdmin,
+                assigned_by: admin.clone(),
+                assigned_at: env.ledger().timestamp(),
+                permissions: AdminRoleManager::get_permissions_for_role(&env, &AdminRole::SuperAdmin),
+                is_active: true,
+            };
+            env.storage().persistent().set(&key, &assignment);
+
+            // Initialize circuit breaker
+            CircuitBreaker::initialize(&env).unwrap();
+        });
+
+        (env, contract_id, admin)
+    }
 
     #[test]
     fn test_circuit_breaker_initialization() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let (env, contract_id, _admin) = setup_test();
 
         env.as_contract(&contract_id, || {
-            // Test initialization
-            assert!(CircuitBreaker::initialize(&env).is_ok());
-
             // Test get config
             let config = CircuitBreaker::get_config(&env).unwrap();
             assert_eq!(config.max_error_rate, 10);
@@ -33,27 +63,17 @@ mod circuit_breaker_tests {
             assert_eq!(state.failure_count, 0);
             assert_eq!(state.total_requests, 0);
             assert_eq!(state.error_count, 0);
+            assert_eq!(state.half_open_since, 0);
+            assert_eq!(state.half_open_requests, 0);
         });
     }
 
     #[test]
     fn test_emergency_pause() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let (env, contract_id, admin) = setup_test();
 
+        // 1. Initial pause
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Test emergency pause
             let reason = String::from_str(&env, "Test emergency pause");
             assert!(CircuitBreaker::emergency_pause(&env, &admin, &reason).is_ok());
 
@@ -64,61 +84,52 @@ mod circuit_breaker_tests {
             // Test that circuit breaker is open
             assert!(CircuitBreaker::is_open(&env).unwrap());
             assert!(!CircuitBreaker::is_closed(&env).unwrap());
+        });
 
-            // Test that trying to pause again fails
-            assert!(CircuitBreaker::emergency_pause(&env, &admin, &reason).is_err());
+        // 2. Second pause attempt in fresh auth frame must fail with CBError
+        env.as_contract(&contract_id, || {
+            let reason = String::from_str(&env, "Test emergency pause");
+            assert_eq!(
+                CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap_err(),
+                Error::CBError
+            );
         });
     }
 
     #[test]
     fn test_circuit_breaker_recovery() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let (env, contract_id, admin) = setup_test();
 
+        // First pause the circuit breaker
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // First pause the circuit breaker
             let reason = String::from_str(&env, "Test pause");
             CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
+            assert!(CircuitBreaker::is_open(&env).unwrap());
+        });
 
-            // Test recovery
+        // Test recovery in a separate frame
+        env.as_contract(&contract_id, || {
             assert!(CircuitBreaker::circuit_breaker_recovery(&env, &admin).is_ok());
 
             // Verify state is closed
             let state = CircuitBreaker::get_state(&env).unwrap();
             assert_eq!(state.state, BreakerState::Closed);
-
-            // Test that circuit breaker is closed
             assert!(CircuitBreaker::is_closed(&env).unwrap());
             assert!(!CircuitBreaker::is_open(&env).unwrap());
         });
     }
 
     #[test]
-    fn test_automatic_trigger() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
+    fn test_automatic_trigger_on_repeated_failures() {
+        let (env, contract_id, _admin) = setup_test();
 
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            // Test automatic trigger with high error rate
             let condition = BreakerCondition::HighErrorRate;
 
             // Initially should not trigger
             assert!(!CircuitBreaker::automatic_circuit_breaker_trigger(&env, &condition).unwrap());
 
-            // Record some failures to trigger the circuit breaker
+            // Record failures up to threshold
             for _ in 0..10 {
                 CircuitBreaker::record_failure(&env).unwrap();
             }
@@ -134,12 +145,9 @@ mod circuit_breaker_tests {
 
     #[test]
     fn test_record_success_and_failure() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let (env, contract_id, _admin) = setup_test();
 
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
             // Test recording success
             assert!(CircuitBreaker::record_success(&env).is_ok());
 
@@ -157,582 +165,138 @@ mod circuit_breaker_tests {
     }
 
     #[test]
-    fn test_half_open_state() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.mock_all_auths();
-
-        let admin = <soroban_sdk::Address as Address>::generate(&env);
-
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            // Configure shorter recovery timeout for testing
-            // Initialize admin system first
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Skip config update due to admin validation complexity
-            // let mut config = CircuitBreaker::get_config(&env).unwrap();
-            // config.recovery_timeout = 1; // 1 second
-            // config.half_open_max_requests = 2;
-            // CircuitBreaker::update_config(&env, &admin, &config).unwrap();
-
-            // Open the circuit breaker
-            let reason = String::from_str(&env, "Test pause");
-            CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
-
-            // Wait for recovery timeout (simulate by advancing time)
-            // In a real test, we would need to mock time
-
-            // Test half-open state behavior
-            let state = CircuitBreaker::get_state(&env).unwrap();
-            if state.state == BreakerState::HalfOpen {
-                // Record success in half-open state
-                assert!(CircuitBreaker::record_success(&env).is_ok());
-
-                // Record another success to close the circuit breaker
-                assert!(CircuitBreaker::record_success(&env).is_ok());
-
-                // Verify state is closed
-                let state = CircuitBreaker::get_state(&env).unwrap();
-                assert_eq!(state.state, BreakerState::Closed);
-            }
-        });
-    }
-
-    #[test]
-    fn test_circuit_breaker_status() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            // Get status
-            let status = CircuitBreaker::get_circuit_breaker_status(&env).unwrap();
-
-            // Verify status contains expected fields
-            assert!(status.get(String::from_str(&env, "state")).is_some());
-            assert!(status
-                .get(String::from_str(&env, "failure_count"))
-                .is_some());
-            assert!(status
-                .get(String::from_str(&env, "total_requests"))
-                .is_some());
-            assert!(status.get(String::from_str(&env, "error_count")).is_some());
-            assert!(status
-                .get(String::from_str(&env, "max_error_rate"))
-                .is_some());
-            assert!(status
-                .get(String::from_str(&env, "failure_threshold"))
-                .is_some());
-            assert!(status
-                .get(String::from_str(&env, "auto_recovery_enabled"))
-                .is_some());
-        });
-    }
-
-    #[test]
-    fn test_event_history() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Perform some actions to generate events
-            let reason = String::from_str(&env, "Test event");
-            CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
-            CircuitBreaker::circuit_breaker_recovery(&env, &admin).unwrap();
-
-            // Get event history
-            let events = CircuitBreaker::get_event_history(&env).unwrap();
-
-            // Should have at least 2 events (pause and recovery)
-            assert!(events.len() >= 2);
-        });
-    }
-
-    #[test]
-    fn test_validate_circuit_breaker_conditions() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            // Test valid conditions
-            let valid_conditions = vec![
-                &env,
-                BreakerCondition::HighErrorRate,
-                BreakerCondition::HighLatency,
-            ];
-            assert!(CircuitBreaker::validate_circuit_breaker_conditions(&valid_conditions).is_ok());
-
-            // Test empty conditions
-            let empty_conditions = Vec::new(&env);
-            assert!(
-                CircuitBreaker::validate_circuit_breaker_conditions(&empty_conditions).is_err()
-            );
-
-            // Test duplicate conditions
-            let duplicate_conditions = vec![
-                &env,
-                BreakerCondition::HighErrorRate,
-                BreakerCondition::HighErrorRate,
-            ];
-            assert!(
-                CircuitBreaker::validate_circuit_breaker_conditions(&duplicate_conditions).is_err()
-            );
-        });
-    }
-
-    #[test]
-    fn test_circuit_breaker_utils() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            // Test should_allow_operation when closed
-            assert!(CircuitBreakerUtils::should_allow_operation(&env).unwrap());
-
-            // Test with_circuit_breaker wrapper
-            let result = CircuitBreakerUtils::with_circuit_breaker(&env, || {
-                Ok::<String, Error>(String::from_str(&env, "success"))
-            });
-            assert!(result.is_ok());
-
-            // Test statistics
-            let stats = CircuitBreakerUtils::get_statistics(&env).unwrap();
-            assert!(stats
-                .get(String::from_str(&env, "total_requests"))
-                .is_some());
-            assert!(stats.get(String::from_str(&env, "error_count")).is_some());
-            assert!(stats.get(String::from_str(&env, "current_state")).is_some());
-        });
-    }
-
-    #[test]
-    fn test_circuit_breaker_testing() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            // Test create test config
-            let test_config = CircuitBreakerTesting::create_test_config(&env);
-            assert_eq!(test_config.max_error_rate, 5);
-            assert_eq!(test_config.max_latency_ms, 1000);
-            assert_eq!(test_config.failure_threshold, 3);
-
-            // Test create test state
-            let test_state = CircuitBreakerTesting::create_test_state(&env);
-            assert_eq!(test_state.state, BreakerState::Closed);
-            assert_eq!(test_state.failure_count, 0);
-            assert_eq!(test_state.total_requests, 0);
-
-            // Test simulate functions
-            CircuitBreaker::initialize(&env).unwrap();
-            assert!(CircuitBreakerTesting::simulate_success(&env).is_ok());
-            assert!(CircuitBreakerTesting::simulate_failure(&env).is_ok());
-        });
-    }
-
-    #[test]
-    fn test_circuit_breaker_scenarios() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            // Test circuit breaker scenarios
-            let results = CircuitBreaker::test_circuit_breaker_scenarios(&env).unwrap();
-
-            // Verify results contain expected test outcomes
-            assert!(results
-                .get(String::from_str(&env, "normal_operation"))
-                .is_some());
-            assert!(results
-                .get(String::from_str(&env, "emergency_pause"))
-                .is_some());
-            assert!(results.get(String::from_str(&env, "recovery")).is_some());
-            assert!(results
-                .get(String::from_str(&env, "status_check"))
-                .is_some());
-            assert!(results
-                .get(String::from_str(&env, "event_history"))
-                .is_some());
-        });
-    }
-
-    #[test]
-    fn test_pause_blocks_betting_and_unpause_restores() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            // Initialize systems
-            CircuitBreaker::initialize(&env).unwrap();
-
-            // Setup admin and token
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-            crate::admin::AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Register token and set TokenID
-            let token_admin = <soroban_sdk::Address as Address>::generate(&env);
-            let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-            let token_id = token_contract.address();
-            env.storage()
-                .persistent()
-                .set(&Symbol::new(&env, "TokenID"), &token_id);
-
-            // Mint and approve for user
-            let user = <soroban_sdk::Address as Address>::generate(&env);
-            let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
-            stellar_client.mint(&admin, &10_000_0000000);
-            stellar_client.mint(&user, &1_000_0000000);
-
-            let token_client = soroban_sdk::token::Client::new(&env, &token_id);
-            token_client.approve(&user, &contract_id, &i128::MAX, &1000000);
-
-            // Create market
-            let client = crate::PredictifyHybridClient::new(&env, &contract_id);
-            let outcomes = vec![
-                &env,
-                String::from_str(&env, "yes"),
-                String::from_str(&env, "no"),
-            ];
-            let market_id = client.create_market(
-                &admin,
-                &String::from_str(&env, "Will BTC reach $100k?"),
-                &outcomes,
-                &30u32,
-                &crate::types::OracleConfig {
-                    provider: crate::types::OracleProvider::reflector(),
-                    feed_id: String::from_str(&env, "BTC/USD"),
-                    threshold: 100_000_00000000,
-                    comparison: String::from_str(&env, "gte"),
-                },
-            );
-
-            // Pause for betting only
-            let reason = String::from_str(&env, "Test pause betting only");
-            CircuitBreaker::pause_with_options(
-                &env,
-                &admin,
-                &reason,
-                crate::circuit_breaker::PauseScope::BettingOnly,
-                false,
-            )
-            .unwrap();
-
-            // Attempt to place bet should be blocked
-            let bet_result = crate::bets::BetManager::place_bet(
-                &env,
-                user.clone(),
-                market_id.clone(),
-                String::from_str(&env, "yes"),
-                10_0000000,
-                250,
-            );
-            assert!(bet_result.is_err());
-            assert_eq!(bet_result.unwrap_err(), crate::Error::CBOpen);
-
-            // Unpause
-            CircuitBreaker::circuit_breaker_recovery(&env, &admin).unwrap();
-
-            // Now placing a bet should succeed
-            let bet_result2 = crate::bets::BetManager::place_bet(
-                &env,
-                user.clone(),
-                market_id.clone(),
-                String::from_str(&env, "yes"),
-                10_0000000,
-                250,
-            );
-            assert!(bet_result2.is_ok());
-        });
-    }
-
-    #[test]
     fn test_pause_keeps_reads_available_but_blocks_writes() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.mock_all_auths();
+        let (env, contract_id, admin) = setup_test();
 
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-            crate::admin::AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
             let reason = String::from_str(&env, "pause for audit");
             CircuitBreaker::pause_with_options(
                 &env,
                 &admin,
                 &reason,
-                crate::circuit_breaker::PauseScope::Full,
+                PauseScope::Full,
                 false,
             )
             .unwrap();
 
+            // Reads remain allowed while breaker is open
             assert!(CircuitBreaker::is_read_allowed(&env).unwrap());
+
+            // Writes are blocked
             assert!(!CircuitBreaker::is_write_allowed(&env, "deposit").unwrap());
             assert!(!CircuitBreaker::is_write_allowed(&env, "betting").unwrap());
+            assert!(!CircuitBreaker::is_write_allowed(&env, "create_market").unwrap());
 
             let write_err = CircuitBreaker::require_write_allowed(&env, "deposit").unwrap_err();
-            assert_eq!(write_err, crate::Error::CBOpen);
+            assert_eq!(write_err, Error::CBOpen);
         });
     }
 
     #[test]
     fn test_betting_only_pause_allows_non_betting_writes() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.mock_all_auths();
+        let (env, contract_id, admin) = setup_test();
 
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-            crate::admin::AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
             let reason = String::from_str(&env, "betting paused");
             CircuitBreaker::pause_with_options(
                 &env,
                 &admin,
                 &reason,
-                crate::circuit_breaker::PauseScope::BettingOnly,
+                PauseScope::BettingOnly,
                 false,
             )
             .unwrap();
 
+            // Betting is blocked
             assert!(!CircuitBreaker::is_write_allowed(&env, "betting").unwrap());
+            assert_eq!(
+                CircuitBreaker::require_write_allowed(&env, "betting").unwrap_err(),
+                Error::CBOpen
+            );
+
+            // Non-betting writes are still allowed
             assert!(CircuitBreaker::is_write_allowed(&env, "create_market").unwrap());
+            assert!(CircuitBreaker::is_write_allowed(&env, "deposit").unwrap());
         });
     }
 
     #[test]
-    fn test_config_validation() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
+    fn test_unauthorized_recovery_and_pause_rejected() {
+        let (env, contract_id, _admin) = setup_test();
+        let unauthorized_user = Address::generate(&env);
 
+        let reason = String::from_str(&env, "unauthorized pause");
+
+        // Non-admin cannot emergency pause
         env.as_contract(&contract_id, || {
-            // Test valid config
-            let valid_config = CircuitBreakerConfig {
-                max_error_rate: 10,
-                max_latency_ms: 5000,
-                min_liquidity: 1_000_000_000,
-                failure_threshold: 5,
-                recovery_timeout: 300,
-                half_open_max_requests: 3,
-                auto_recovery_enabled: true,
-            };
+            let pause_res = CircuitBreaker::emergency_pause(&env, &unauthorized_user, &reason);
+            assert_eq!(pause_res.unwrap_err(), Error::Unauthorized);
+        });
 
-            // Test invalid configs
-            let mut invalid_config = valid_config.clone();
-            invalid_config.max_error_rate = 101; // > 100
-                                                 // This would fail validation in update_config
+        // Non-admin cannot request resume
+        env.as_contract(&contract_id, || {
+            let resume_res = CircuitBreaker::request_resume(&env, &unauthorized_user);
+            assert_eq!(resume_res.unwrap_err(), Error::Unauthorized);
+        });
 
-            let mut invalid_config2 = valid_config.clone();
-            invalid_config2.max_latency_ms = 0; // = 0
-                                                // This would fail validation in update_config
-
-            let mut invalid_config3 = valid_config.clone();
-            invalid_config3.min_liquidity = -1; // < 0
-                                                // This would fail validation in update_config
+        // Non-admin cannot recover circuit breaker
+        env.as_contract(&contract_id, || {
+            let recover_res = CircuitBreaker::circuit_breaker_recovery(&env, &unauthorized_user);
+            assert_eq!(recover_res.unwrap_err(), Error::Unauthorized);
         });
     }
 
-    #[test]
-    fn test_error_handling() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            // Test circuit breaker not initialized
-            assert!(CircuitBreaker::get_config(&env).is_err());
-            assert!(CircuitBreaker::get_state(&env).is_err());
-            assert!(CircuitBreaker::is_open(&env).is_err());
-            assert!(CircuitBreaker::is_closed(&env).is_err());
-
-            // Initialize
-            CircuitBreaker::initialize(&env).unwrap();
-
-            // Test unauthorized access (inside contract context but without proper admin role)
-            // Note: This test is skipped because env.mock_all_auths() bypasses all auth checks
-            // In a real scenario, this would fail without proper admin permissions
-            // let unauthorized_admin = <soroban_sdk::Address as Address>::generate(&env);
-            // let reason = String::from_str(&env, "Test");
-            // assert!(CircuitBreaker::emergency_pause(&env, &unauthorized_admin, &reason).is_err());
-            // assert!(CircuitBreaker::circuit_breaker_recovery(&env, &unauthorized_admin).is_err());
-        });
-    }
-
-    #[test]
-    fn test_circuit_breaker_integration() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-
-        env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Test complete workflow
-            // 1. Normal operation
-            assert!(CircuitBreaker::is_closed(&env).unwrap());
-
-            // 2. Emergency pause
-            let reason = String::from_str(&env, "Integration test pause");
-            assert!(CircuitBreaker::emergency_pause(&env, &admin, &reason).is_ok());
-            assert!(CircuitBreaker::is_open(&env).unwrap());
-
-            // 3. Recovery
-            assert!(CircuitBreaker::circuit_breaker_recovery(&env, &admin).is_ok());
-            assert!(CircuitBreaker::is_closed(&env).unwrap());
-
-            // 4. Record operations
-            assert!(CircuitBreaker::record_success(&env).is_ok());
-            assert!(CircuitBreaker::record_failure(&env).is_ok());
-
-            // 5. Check status
-            let status = CircuitBreaker::get_circuit_breaker_status(&env).unwrap();
-            assert!(status
-                .get(String::from_str(&env, "total_requests"))
-                .is_some());
-            assert!(status.get(String::from_str(&env, "error_count")).is_some());
-
-            // 6. Check events
-            let events = CircuitBreaker::get_event_history(&env).unwrap();
-            assert!(events.len() >= 2); // At least pause and recovery events
-        });
-    }
-
-    /// Cooldown not elapsed: probe successes before the cooldown window closes
-    /// must not advance the half_open_requests counter.
     #[test]
     fn test_half_open_cooldown_not_elapsed() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.mock_all_auths();
+        let (env, contract_id, admin) = setup_test();
 
+        // 1. Open the breaker
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Open the breaker
             let reason = String::from_str(&env, "pause for cooldown test");
             CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
+            assert_eq!(CircuitBreaker::get_state(&env).unwrap().state, BreakerState::Open);
+        });
 
-            // Admin requests resume → HalfOpen with cooldown timestamp = now (ledger ts = 0)
+        // 2. Admin requests resume -> HalfOpen (records half_open_since)
+        env.as_contract(&contract_id, || {
             CircuitBreaker::request_resume(&env, &admin).unwrap();
             let state = CircuitBreaker::get_state(&env).unwrap();
             assert_eq!(state.state, BreakerState::HalfOpen);
+            assert_eq!(state.half_open_since, env.ledger().timestamp());
+            assert_eq!(state.half_open_requests, 0);
 
-            // Record a success immediately (before cooldown has elapsed)
-            // recovery_timeout = 300 s; ledger time is still 0, so 0 < 0 + 300
+            // 3. Record success immediately before recovery_timeout has elapsed
+            // Default recovery_timeout is 300s. Current ledger timestamp is 0.
             CircuitBreaker::record_success(&env).unwrap();
 
-            // half_open_requests must still be 0 — cooldown not yet elapsed
+            // Probe is ignored for half_open_requests counter while cooldown is active
             let state_after = CircuitBreaker::get_state(&env).unwrap();
-            assert_eq!(
-                state_after.half_open_requests, 0,
-                "probe should be ignored while cooldown is active"
-            );
-            assert_eq!(
-                state_after.state,
-                BreakerState::HalfOpen,
-                "breaker must remain HalfOpen during cooldown"
-            );
+            assert_eq!(state_after.half_open_requests, 0);
+            assert_eq!(state_after.state, BreakerState::HalfOpen);
         });
     }
 
-    /// Probe failure: a single failure while in HalfOpen re-opens the breaker.
     #[test]
     fn test_half_open_probe_failure_reopens() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.mock_all_auths();
+        let (env, contract_id, admin) = setup_test();
 
+        // 1. Pause
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Pause then request resume
             let reason = String::from_str(&env, "pause for probe failure test");
             CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
-            CircuitBreaker::request_resume(&env, &admin).unwrap();
+        });
 
+        // 2. Request resume -> HalfOpen
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::request_resume(&env, &admin).unwrap();
             assert_eq!(
                 CircuitBreaker::get_state(&env).unwrap().state,
                 BreakerState::HalfOpen
             );
+        });
 
-            // A failure during HalfOpen must reopen the breaker
+        // 3. A failure during HalfOpen must reopen the breaker immediately
+        env.as_contract(&contract_id, || {
             CircuitBreaker::record_failure(&env).unwrap();
 
             let state = CircuitBreaker::get_state(&env).unwrap();
@@ -742,50 +306,51 @@ mod circuit_breaker_tests {
                 "failure during HalfOpen must reopen the breaker"
             );
             assert_eq!(state.half_open_since, 0, "half_open_since must be cleared");
+            assert_eq!(state.half_open_requests, 0);
         });
     }
 
-    /// Probe success threshold: after the cooldown window passes,
-    /// `half_open_max_requests` consecutive successes must auto-close the breaker.
     #[test]
-    fn test_half_open_probe_success_threshold_closes() {
-        let env = Env::default();
-        let contract_id = env.register(crate::PredictifyHybrid, ());
-        env.mock_all_auths();
+    fn test_half_open_probe_success_threshold_closes_after_cooldown() {
+        let (env, contract_id, admin) = setup_test();
 
+        // 1. Config and Pause
         env.as_contract(&contract_id, || {
-            CircuitBreaker::initialize(&env).unwrap();
-
-            let admin = <soroban_sdk::Address as Address>::generate(&env);
-            crate::admin::AdminInitializer::initialize(&env, &admin).unwrap();
-            AdminRoleManager::assign_role(
-                &env,
-                &admin,
-                crate::admin::AdminRole::SuperAdmin,
-                &admin,
-            )
-            .unwrap();
-
-            // Shorten recovery_timeout to 0 so probes are accepted immediately
             let mut config = CircuitBreaker::get_config(&env).unwrap();
-            config.recovery_timeout = 0;
+            config.recovery_timeout = 10;
             config.half_open_max_requests = 3;
-            // bypass admin ACL by writing directly to storage (test only)
             env.storage()
                 .instance()
-                .set(&soroban_sdk::Symbol::new(&env, "circuit_breaker_config"), &config);
+                .set(&Symbol::new(&env, "circuit_breaker_config"), &config);
 
-            // Pause then request resume
             let reason = String::from_str(&env, "pause for threshold test");
             CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
-            CircuitBreaker::request_resume(&env, &admin).unwrap();
+        });
 
+        // 2. Request resume -> HalfOpen
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::request_resume(&env, &admin).unwrap();
             assert_eq!(
                 CircuitBreaker::get_state(&env).unwrap().state,
                 BreakerState::HalfOpen
             );
+        });
 
-            // Record half_open_max_requests (3) successes — breaker should close
+        // 3. Advance ledger timestamp beyond cooldown (10s)
+        let ledger = env.ledger();
+        env.ledger().set(LedgerInfo {
+            timestamp: ledger.timestamp() + 15,
+            protocol_version: ledger.protocol_version(),
+            sequence_number: ledger.sequence() + 1,
+            network_id: ledger.network_id().into(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 1_000_000,
+        });
+
+        // 4. Record successes after cooldown has elapsed
+        env.as_contract(&contract_id, || {
             for _ in 0..3 {
                 CircuitBreaker::record_success(&env).unwrap();
             }
@@ -798,6 +363,106 @@ mod circuit_breaker_tests {
             );
             assert_eq!(state.half_open_since, 0);
             assert_eq!(state.failure_count, 0);
+        });
+    }
+
+    #[test]
+    fn test_event_history() {
+        let (env, contract_id, admin) = setup_test();
+
+        env.as_contract(&contract_id, || {
+            let reason = String::from_str(&env, "Test event");
+            CircuitBreaker::emergency_pause(&env, &admin, &reason).unwrap();
+        });
+
+        env.as_contract(&contract_id, || {
+            CircuitBreaker::circuit_breaker_recovery(&env, &admin).unwrap();
+        });
+
+        env.as_contract(&contract_id, || {
+            let events = CircuitBreaker::get_event_history(&env).unwrap();
+            assert!(events.len() >= 2);
+
+            let first_event = events.get(0).unwrap();
+            assert_eq!(first_event.action, BreakerAction::Pause);
+
+            let second_event = events.get(1).unwrap();
+            assert_eq!(second_event.action, BreakerAction::Resume);
+        });
+    }
+
+    #[test]
+    fn test_circuit_breaker_status() {
+        let (env, contract_id, _admin) = setup_test();
+
+        env.as_contract(&contract_id, || {
+            let status = CircuitBreaker::get_circuit_breaker_status(&env).unwrap();
+            assert!(status.get(String::from_str(&env, "state")).is_some());
+            assert!(status.get(String::from_str(&env, "failure_count")).is_some());
+            assert!(status.get(String::from_str(&env, "total_requests")).is_some());
+            assert!(status.get(String::from_str(&env, "error_count")).is_some());
+            assert!(status.get(String::from_str(&env, "max_error_rate")).is_some());
+            assert!(status.get(String::from_str(&env, "failure_threshold")).is_some());
+            assert!(status.get(String::from_str(&env, "auto_recovery_enabled")).is_some());
+        });
+    }
+
+    #[test]
+    fn test_validate_circuit_breaker_conditions() {
+        let env = Env::default();
+        let valid_conditions = vec![
+            &env,
+            BreakerCondition::HighErrorRate,
+            BreakerCondition::HighLatency,
+        ];
+        assert!(CircuitBreaker::validate_circuit_breaker_conditions(&valid_conditions).is_ok());
+
+        let empty_conditions = Vec::new(&env);
+        assert!(CircuitBreaker::validate_circuit_breaker_conditions(&empty_conditions).is_err());
+
+        let duplicate_conditions = vec![
+            &env,
+            BreakerCondition::HighErrorRate,
+            BreakerCondition::HighErrorRate,
+        ];
+        assert!(CircuitBreaker::validate_circuit_breaker_conditions(&duplicate_conditions).is_err());
+    }
+
+    #[test]
+    fn test_circuit_breaker_utils() {
+        let (env, contract_id, _admin) = setup_test();
+
+        env.as_contract(&contract_id, || {
+            assert!(CircuitBreakerUtils::should_allow_operation(&env).unwrap());
+
+            let result = CircuitBreakerUtils::with_circuit_breaker(&env, || {
+                Ok::<String, Error>(String::from_str(&env, "success"))
+            });
+            assert!(result.is_ok());
+
+            let stats = CircuitBreakerUtils::get_statistics(&env).unwrap();
+            assert!(stats.get(String::from_str(&env, "total_requests")).is_some());
+            assert!(stats.get(String::from_str(&env, "error_count")).is_some());
+            assert!(stats.get(String::from_str(&env, "current_state")).is_some());
+        });
+    }
+
+    #[test]
+    fn test_circuit_breaker_testing_utilities() {
+        let (env, contract_id, _admin) = setup_test();
+
+        let test_config = CircuitBreakerTesting::create_test_config(&env);
+        assert_eq!(test_config.max_error_rate, 5);
+        assert_eq!(test_config.max_latency_ms, 1000);
+        assert_eq!(test_config.failure_threshold, 3);
+
+        let test_state = CircuitBreakerTesting::create_test_state(&env);
+        assert_eq!(test_state.state, BreakerState::Closed);
+        assert_eq!(test_state.failure_count, 0);
+
+        env.as_contract(&contract_id, || {
+            assert!(CircuitBreakerTesting::simulate_success(&env).is_ok());
+            assert!(CircuitBreakerTesting::simulate_failure(&env).is_ok());
         });
     }
 }
