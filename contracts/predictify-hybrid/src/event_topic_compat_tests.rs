@@ -25,6 +25,8 @@
 
 #![cfg(test)]
 
+extern crate alloc;
+use alloc::format;
 use soroban_sdk::{symbol_short, testutils::Events, Env, Symbol, Vec};
 
 use crate::event_topic_compat::{

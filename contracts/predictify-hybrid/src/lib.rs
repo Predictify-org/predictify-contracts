@@ -109,8 +109,8 @@ mod arithmetic_overflow_tests;
 
 pub mod timelock;
 
-// #[cfg(any())]
-// mod circuit_breaker_tests;
+#[cfg(test)]
+mod circuit_breaker_tests;
 // #[cfg(test)]
 // mod oracle_fallback_timeout_tests;
 
