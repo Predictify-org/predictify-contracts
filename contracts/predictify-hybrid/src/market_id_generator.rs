@@ -190,6 +190,17 @@ impl MarketIdGenerator {
         Err(Error::InvalidInput)
     }
 
+    /// Return the total number of entries in the market ID registry.
+    pub fn get_market_id_registry_len(env: &Env) -> u32 {
+        let key = Symbol::new(env, Self::REGISTRY_KEY);
+        let registry: Vec<MarketIdRegistryEntry> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(Vec::new(env));
+        registry.len()
+    }
+
     /// Return a paginated slice of the market ID registry.
     pub fn get_market_id_registry(env: &Env, start: u32, limit: u32) -> Vec<MarketIdRegistryEntry> {
         let key = Symbol::new(env, Self::REGISTRY_KEY);
@@ -199,8 +210,13 @@ impl MarketIdGenerator {
             .get(&key)
             .unwrap_or(Vec::new(env));
 
+        let total = registry.len();
+        if start >= total {
+            return Vec::new(env);
+        }
+
         let mut result = Vec::new(env);
-        let end = core::cmp::min(start + limit, registry.len());
+        let end = core::cmp::min(start.saturating_add(limit), total);
         for i in start..end {
             if let Some(entry) = registry.get(i) {
                 result.push_back(entry);

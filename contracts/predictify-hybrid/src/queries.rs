@@ -395,19 +395,30 @@ impl QueryManager {
         cursor: u32,
         limit: u32,
     ) -> Result<PagedMarketIds, Error> {
-        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let limit = if limit == 0 {
+            MAX_PAGE_SIZE
+        } else {
+            core::cmp::min(limit, MAX_PAGE_SIZE)
+        };
         let all = Self::get_all_markets(env)?;
         let total_count = all.len();
+        if cursor >= total_count {
+            return Ok(PagedMarketIds {
+                items: vec![env],
+                next_cursor: total_count,
+                total_count,
+            });
+        }
         let mut items: Vec<Symbol> = vec![env];
 
-        let end = core::cmp::min(cursor + limit, total_count);
+        let end = core::cmp::min(cursor.saturating_add(limit), total_count);
         for i in cursor..end {
             if let Some(id) = all.get(i) {
                 items.push_back(id);
             }
         }
 
-        let next_cursor = cursor + items.len();
+        let next_cursor = core::cmp::min(cursor.saturating_add(items.len()), total_count);
         Ok(PagedMarketIds {
             items,
             next_cursor,
@@ -580,12 +591,23 @@ impl QueryManager {
         cursor: u32,
         limit: u32,
     ) -> Result<PagedUserBets, Error> {
-        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let limit = if limit == 0 {
+            MAX_PAGE_SIZE
+        } else {
+            core::cmp::min(limit, MAX_PAGE_SIZE)
+        };
         let all_markets = Self::get_all_markets(env)?;
         let total_count = all_markets.len();
+        if cursor >= total_count {
+            return Ok(PagedUserBets {
+                items: vec![env],
+                next_cursor: total_count,
+                total_count,
+            });
+        }
         let mut items: Vec<UserBetQuery> = vec![env];
 
-        let end = core::cmp::min(cursor + limit, total_count);
+        let end = core::cmp::min(cursor.saturating_add(limit), total_count);
         for i in cursor..end {
             if let Some(market_id) = all_markets.get(i) {
                 if let Ok(bet) = Self::query_user_bet(env, user.clone(), market_id) {
@@ -594,7 +616,7 @@ impl QueryManager {
             }
         }
 
-        let next_cursor = core::cmp::min(cursor + limit, total_count);
+        let next_cursor = core::cmp::min(cursor.saturating_add(limit), total_count);
         Ok(PagedUserBets {
             items,
             next_cursor,
@@ -779,15 +801,33 @@ impl QueryManager {
         cursor: u32,
         limit: u32,
     ) -> Result<(ContractStateQuery, u32), Error> {
-        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let limit = if limit == 0 {
+            MAX_PAGE_SIZE
+        } else {
+            core::cmp::min(limit, MAX_PAGE_SIZE)
+        };
         let all_markets = Self::get_all_markets(env)?;
         let total_markets = all_markets.len();
+
+        if cursor >= total_markets {
+            let state = ContractStateQuery {
+                total_markets,
+                active_markets: 0,
+                resolved_markets: 0,
+                total_value_locked: 0,
+                total_fees_collected: 0i128,
+                unique_users: 0u32,
+                contract_version: String::from_str(env, "1.0.0"),
+                last_update: env.ledger().timestamp(),
+            };
+            return Ok((state, total_markets));
+        }
 
         let mut active_markets = 0u32;
         let mut resolved_markets = 0u32;
         let mut total_value_locked = 0i128;
 
-        let end = core::cmp::min(cursor + limit, total_markets);
+        let end = core::cmp::min(cursor.saturating_add(limit), total_markets);
         for i in cursor..end {
             if let Some(market_id) = all_markets.get(i) {
                 if let Ok(market) = Self::get_market_from_storage(env, &market_id) {
@@ -801,7 +841,7 @@ impl QueryManager {
             }
         }
 
-        let next_cursor = core::cmp::min(cursor + limit, total_markets);
+        let next_cursor = core::cmp::min(cursor.saturating_add(limit), total_markets);
         let state = ContractStateQuery {
             total_markets,
             active_markets,
@@ -1139,7 +1179,11 @@ impl QueryManager {
         env: &Env,
         limit: u32,
     ) -> Result<Vec<UserLeaderboardEntryV1>, Error> {
-        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let limit = if limit == 0 {
+            MAX_PAGE_SIZE
+        } else {
+            core::cmp::min(limit, MAX_PAGE_SIZE)
+        };
         Ok(crate::leaderboard::LeaderboardHeap::top_by_winnings(env, limit))
     }
 
@@ -1167,7 +1211,11 @@ impl QueryManager {
         limit: u32,
         _min_bets: u64,
     ) -> Result<Vec<UserLeaderboardEntryV1>, Error> {
-        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let limit = if limit == 0 {
+            MAX_PAGE_SIZE
+        } else {
+            core::cmp::min(limit, MAX_PAGE_SIZE)
+        };
         Ok(crate::leaderboard::LeaderboardHeap::top_by_win_rate(env, limit))
     }
 
@@ -1388,5 +1436,35 @@ mod tests {
         let pool = QueryManager::calculate_outcome_pool(&env, &market, &yes_outcome);
         assert!(pool.is_ok());
         assert_eq!(pool.unwrap(), 125);
+    }
+
+    #[test]
+    fn test_pagination_bounds_and_cursor_safety() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let user = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let paged_markets = QueryManager::get_all_markets_paged(&env, 10, 0).unwrap();
+            assert_eq!(paged_markets.items.len(), 0);
+            assert_eq!(paged_markets.next_cursor, 0);
+            assert_eq!(paged_markets.total_count, 0);
+
+            let paged_bets = QueryManager::query_user_bets_paged(&env, user, 10, 0).unwrap();
+            assert_eq!(paged_bets.items.len(), 0);
+            assert_eq!(paged_bets.next_cursor, 0);
+            assert_eq!(paged_bets.total_count, 0);
+
+            let (state, next_cursor) = QueryManager::query_contract_state_paged(&env, 10, 0).unwrap();
+            assert_eq!(state.total_markets, 0);
+            assert_eq!(state.active_markets, 0);
+            assert_eq!(next_cursor, 0);
+
+            let top_winners = QueryManager::get_top_users_by_winnings(&env, 0).unwrap();
+            assert_eq!(top_winners.len(), 0);
+
+            let top_win_rate = QueryManager::get_top_users_by_win_rate(&env, 0, 0).unwrap();
+            assert_eq!(top_win_rate.len(), 0);
+        });
     }
 }

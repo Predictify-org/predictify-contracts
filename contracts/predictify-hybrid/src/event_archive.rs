@@ -113,6 +113,12 @@ pub fn derive_archive_key(env: &Env, market_id: &Symbol, suffix: &str) -> (Symbo
 /// Maximum events returned per query (gas safety).
 pub const MAX_QUERY_LIMIT: u32 = 30;
 
+/// Default events returned per query when limit is 0.
+pub const DEFAULT_QUERY_LIMIT: u32 = 10;
+
+/// Maximum entries that can be pruned in a single transaction.
+pub const MAX_PRUNE_BATCH: u32 = 30;
+
 /// Hard cap on the number of archived entries stored on-chain.
 ///
 /// Prevents unbounded storage growth. When the archive reaches this limit,
@@ -123,6 +129,15 @@ pub const MAX_QUERY_LIMIT: u32 = 30;
 /// persistent storage — well within Soroban's practical limits while still
 /// bounding worst-case growth.
 pub const MAX_ARCHIVE_SIZE: u32 = 1_000;
+
+/// Sanitize query limit to ensure it never exceeds MAX_QUERY_LIMIT and defaults to DEFAULT_QUERY_LIMIT when 0.
+pub fn sanitize_limit(limit: u32) -> u32 {
+    if limit == 0 {
+        DEFAULT_QUERY_LIMIT
+    } else {
+        core::cmp::min(limit, MAX_QUERY_LIMIT)
+    }
+}
 
 /// Storage key for archived event timestamps (market_id -> archived_at).
 const ARCHIVED_TS_KEY: &str = "evt_archived";
@@ -352,7 +367,7 @@ impl EventArchive {
             return Err(Error::Unauthorized);
         }
 
-        let count = core::cmp::min(count, MAX_QUERY_LIMIT);
+        let count = core::cmp::min(count, MAX_PRUNE_BATCH);
         if count == 0 {
             return Ok((0, cursor.unwrap_or_else(|| PruneCursor::new(env))));
         }
@@ -622,7 +637,12 @@ impl EventArchive {
         cursor: u32,
         limit: u32,
     ) -> (Vec<EventHistoryEntry>, u32) {
-        let limit = core::cmp::min(limit, MAX_QUERY_LIMIT);
+        let total = MarketIdGenerator::get_market_id_registry_len(env);
+        if cursor >= total {
+            return (Vec::new(env), total);
+        }
+
+        let limit = sanitize_limit(limit);
         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
         let mut result = Vec::new(env);
         let mut scanned = 0u32;
@@ -648,7 +668,8 @@ impl EventArchive {
             }
         }
 
-        (result, cursor + scanned)
+        let next_cursor = core::cmp::min(cursor.saturating_add(scanned), total);
+        (result, next_cursor)
     }
 
     /// Query events by resolution status (paginated, bounded).
@@ -660,7 +681,12 @@ impl EventArchive {
         cursor: u32,
         limit: u32,
     ) -> (Vec<EventHistoryEntry>, u32) {
-        let limit = core::cmp::min(limit, MAX_QUERY_LIMIT);
+        let total = MarketIdGenerator::get_market_id_registry_len(env);
+        if cursor >= total {
+            return (Vec::new(env), total);
+        }
+
+        let limit = sanitize_limit(limit);
         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
         let mut result = Vec::new(env);
         let mut scanned = 0u32;
@@ -685,7 +711,8 @@ impl EventArchive {
             }
         }
 
-        (result, cursor + scanned)
+        let next_cursor = core::cmp::min(cursor.saturating_add(scanned), total);
+        (result, next_cursor)
     }
 
     /// Query archived events directly (paginated, bounded).
@@ -704,7 +731,6 @@ impl EventArchive {
         cursor: u32,
         limit: u32,
     ) -> (Vec<EventHistoryEntry>, u32) {
-        let limit = core::cmp::min(limit, MAX_QUERY_LIMIT);
         let index_key = Symbol::new(env, ARCHIVED_INDEX_KEY);
         let index: Vec<(u64, Symbol)> = env
             .storage()
@@ -713,12 +739,16 @@ impl EventArchive {
             .unwrap_or_else(|| Vec::new(env));
         let total = index.len() as u32;
 
+        if cursor >= total {
+            return (Vec::new(env), total);
+        }
+
+        let limit = sanitize_limit(limit);
         let mut result = Vec::new(env);
         let mut examined = 0u32;
 
         if !reverse {
-            // Ascending (oldest archived first): page [cursor, cursor + limit).
-            let mut idx = core::cmp::min(cursor, total);
+            let mut idx = cursor;
             while examined < limit && idx < total {
                 if let Some((_, market_id)) = index.get(idx) {
                     examined += 1;
@@ -729,9 +759,7 @@ impl EventArchive {
                 idx += 1;
             }
         } else {
-            // Descending (newest archived first): `cursor` counts back from the
-            // newest entry; cursor 0 starts at the newest (last index).
-            let mut idx = total.saturating_sub(core::cmp::min(cursor, total));
+            let mut idx = total.saturating_sub(cursor);
             while examined < limit && idx > 0 {
                 let position = idx - 1;
                 if let Some((_, market_id)) = index.get(position) {
@@ -744,9 +772,6 @@ impl EventArchive {
             }
         }
 
-        // Advance the cursor by the number of archive entries examined so the
-        // caller can page. When a page examined nothing we are at the end (or the
-        // archive is empty); pin the cursor to signal completion.
         let next_cursor = if examined == 0 {
             cursor
         } else {
@@ -761,8 +786,6 @@ impl EventArchive {
     /// index and market records are consistent).
     fn history_entry_for_archived(env: &Env, market_id: &Symbol) -> Option<EventHistoryEntry> {
         let market: Market = env.storage().persistent().get(market_id)?;
-        // `created_at` comes from the market ID registry when available; fall back
-        // to `end_time` for legacy/synthetic IDs without a registry entry.
         let created_at = MarketIdGenerator::get_registry_entry(env, market_id)
             .map(|entry| entry.timestamp)
             .unwrap_or(market.end_time);
@@ -779,7 +802,12 @@ impl EventArchive {
         cursor: u32,
         limit: u32,
     ) -> (Vec<EventHistoryEntry>, u32) {
-        let limit = core::cmp::min(limit, MAX_QUERY_LIMIT);
+        let total = MarketIdGenerator::get_market_id_registry_len(env);
+        if cursor >= total {
+            return (Vec::new(env), total);
+        }
+
+        let limit = sanitize_limit(limit);
         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
         let mut result = Vec::new(env);
         let mut scanned = 0u32;
@@ -792,7 +820,6 @@ impl EventArchive {
                     .persistent()
                     .get::<Symbol, Market>(&entry.market_id)
                 {
-                    // Match against dedicated category field if set, otherwise oracle feed_id
                     let market_category = market
                         .category
                         .clone()
@@ -809,7 +836,8 @@ impl EventArchive {
             }
         }
 
-        (result, cursor + scanned)
+        let next_cursor = core::cmp::min(cursor.saturating_add(scanned), total);
+        (result, next_cursor)
     }
 
     /// Query events by tags (paginated, bounded).
@@ -822,7 +850,12 @@ impl EventArchive {
         cursor: u32,
         limit: u32,
     ) -> (Vec<EventHistoryEntry>, u32) {
-        let limit = core::cmp::min(limit, MAX_QUERY_LIMIT);
+        let total = MarketIdGenerator::get_market_id_registry_len(env);
+        if cursor >= total {
+            return (Vec::new(env), total);
+        }
+
+        let limit = sanitize_limit(limit);
         let registry_page = MarketIdGenerator::get_market_id_registry(env, cursor, limit);
         let mut result = Vec::new(env);
         let mut scanned = 0u32;
@@ -839,7 +872,6 @@ impl EventArchive {
                     .persistent()
                     .get::<Symbol, Market>(&entry.market_id)
                 {
-                    // Check if any of the market's tags match any of the query tags
                     let mut matched = false;
                     for j in 0..market.tags.len() {
                         if let Some(market_tag) = market.tags.get(j) {
@@ -868,7 +900,8 @@ impl EventArchive {
             }
         }
 
-        (result, cursor + scanned)
+        let next_cursor = core::cmp::min(cursor.saturating_add(scanned), total);
+        (result, next_cursor)
     }
 }
 

@@ -67,7 +67,7 @@ impl Harness {
         }
     }
 
-    fn client(&self) -> PredictifyHybridClient {
+    fn client(&self) -> PredictifyHybridClient<'_> {
         PredictifyHybridClient::new(&self.env, &self.contract_id)
     }
 
@@ -223,14 +223,12 @@ fn pruning_is_deterministic_and_capacity_bounded() {
     let h = Harness::new();
     let client = h.client();
 
-    // Archive two markets.
-    let a = h.create_resolved_archived("Prune Alpha");
+    let _a = h.create_resolved_archived("Prune Alpha");
     h.advance_days(1);
     let b = h.create_resolved_archived("Prune Beta");
 
     assert_eq!(client.archive_size(), 2);
 
-    // Prune the oldest 1 entry: A (archived first) must go, B remains.
     let removed = match client.try_prune_archive(&h.admin, &1, &None) {
         Ok(Ok((n, _))) => n,
         _ => panic!("prune_archive failed"),
@@ -243,4 +241,50 @@ fn pruning_is_deterministic_and_capacity_bounded() {
     let mut expected = StdVec::new();
     expected.push(b.clone());
     assert_eq!(ids, expected);
+}
+
+#[test]
+fn archive_queries_are_bounded_and_safely_paginated() {
+    let h = Harness::new();
+    let client = h.client();
+
+    let _a = h.create_resolved_archived("Bounded Alpha");
+    h.advance_days(1);
+    let _b = h.create_resolved_archived("Bounded Beta");
+
+    assert_eq!(client.archive_size(), 2);
+
+    let (empty_archived, next_arch_cursor) = client.query_archived_events(&false, &100, &10);
+    assert_eq!(empty_archived.len(), 0);
+    assert_eq!(next_arch_cursor, 2);
+
+    let (default_page, _) = client.query_archived_events(&false, &0, &0);
+    assert_eq!(default_page.len(), 2);
+
+    let (capped_page, _) = client.query_archived_events(&false, &0, &100);
+    assert_eq!(capped_page.len(), 2);
+
+    let (empty_history, hist_cursor) = client.query_events_history(&0, &u64::MAX, &100, &10);
+    assert_eq!(empty_history.len(), 0);
+    assert_eq!(hist_cursor, 2);
+
+    let (default_history, _) = client.query_events_history(&0, &u64::MAX, &0, &0);
+    assert_eq!(default_history.len(), 2);
+
+    let (empty_status, status_cursor) = client.query_events_by_status(&predictify_hybrid::types::MarketState::Resolved, &100, &10);
+    assert_eq!(empty_status.len(), 0);
+    assert_eq!(status_cursor, 2);
+
+    let (default_status, _) = client.query_events_by_status(&predictify_hybrid::types::MarketState::Resolved, &0, &0);
+    assert_eq!(default_status.len(), 2);
+
+    let (empty_cat, cat_cursor) = client.query_events_by_category(&SorobanString::from_str(&h.env, "general"), &100, &10);
+    assert_eq!(empty_cat.len(), 0);
+    assert_eq!(cat_cursor, 2);
+
+    let mut query_tags = soroban_sdk::Vec::new(&h.env);
+    query_tags.push_back(SorobanString::from_str(&h.env, "crypto"));
+    let (empty_tags, tags_cursor) = client.query_events_by_tags(&query_tags, &100, &10);
+    assert_eq!(empty_tags.len(), 0);
+    assert_eq!(tags_cursor, 2);
 }

@@ -3,7 +3,7 @@ use alloc::format;
 use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
 // use alloc::string::ToString; // Unused import
 
-use crate::config::{ConfigManager, ConfigUtils, ContractConfig, Environment};
+use crate::config::{ConfigManager, ConfigUtils, ConfigValidator, ContractConfig, Environment};
 use crate::err::Error;
 use crate::events::EventEmitter;
 use crate::extensions::ExtensionManager;
@@ -353,7 +353,7 @@ impl AdminInitializer {
             Environment::Mainnet => ConfigManager::get_mainnet_config(env),
             Environment::Custom => ConfigManager::get_development_config(env),
         };
-        ConfigManager::validate_config(env, &config)?;
+        ConfigValidator::validate_contract_config(&config)?;
 
         // Initialize basic admin setup
         AdminInitializer::initialize(env, admin)?;

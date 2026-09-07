@@ -92,13 +92,7 @@ impl RateLimiter {
         RateLimiter { env }
     }
 
-    // Initialize rate limiter with default configuration
-    pub fn init_rate_limiter(
-        &self,
-        admin: Address,
-        config: RateLimitConfig,
-    ) -> Result<(), RateLimiterError> {
-        admin.require_auth();
+    pub fn set_config_internal(&self, config: RateLimitConfig) -> Result<(), RateLimiterError> {
         self.validate_rate_limit_configuration(&config)?;
         self.env
             .storage()
@@ -106,6 +100,16 @@ impl RateLimiter {
             .set(&RateLimiterData::Config, &config);
 
         Ok(())
+    }
+
+    // Initialize rate limiter with default configuration
+    pub fn init_rate_limiter(
+        &self,
+        admin: Address,
+        config: RateLimitConfig,
+    ) -> Result<(), RateLimiterError> {
+        admin.require_auth();
+        self.set_config_internal(config)
     }
 
     // Get current configuration

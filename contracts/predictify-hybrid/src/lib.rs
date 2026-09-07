@@ -393,8 +393,7 @@ impl PredictifyHybrid {
 
         // Seed permissive-but-valid rate limits so admin entrypoints do not
         // fail before a custom policy is configured.
-        match crate::rate_limiter::RateLimiter::new(env.clone()).init_rate_limiter(
-            admin.clone(),
+        match crate::rate_limiter::RateLimiter::new(env.clone()).set_config_internal(
             crate::rate_limiter::RateLimitConfig {
                 voting_limit: 10_000,
                 dispute_limit: 1_000,
