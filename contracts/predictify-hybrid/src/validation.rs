@@ -5096,10 +5096,10 @@ impl OracleConfigValidator {
 pub struct CreationValidator;
 
 impl CreationValidator {
-    fn soroban_string_to_host_string(value: &String) -> StdString {
+    fn soroban_string_to_host_string(value: &String) -> Result<StdString, Error> {
         let mut bytes = alloc::vec![0u8; value.len() as usize];
         value.copy_into_slice(&mut bytes);
-        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+        StdString::from_utf8(bytes).map_err(|_| Error::InvalidInput)
     }
 
     fn validate_non_empty_text(
@@ -5107,13 +5107,13 @@ impl CreationValidator {
         min_length: u32,
         max_length: u32,
     ) -> Result<(), Error> {
-        let trimmed = Self::soroban_string_to_host_string(value);
+        let trimmed = Self::soroban_string_to_host_string(value)?;
         let normalized = trimmed.trim();
         if normalized.is_empty() {
             return Err(Error::InvalidQuestion);
         }
 
-        let length = normalized.chars().count() as u32;
+        let length = normalized.len() as u32;
         if length < min_length || length > max_length {
             return Err(Error::InvalidQuestion);
         }
@@ -5156,13 +5156,14 @@ impl CreationValidator {
         }
 
         for outcome in outcomes.iter() {
-            let normalized = Self::soroban_string_to_host_string(&outcome);
+            let normalized = Self::soroban_string_to_host_string(&outcome)
+                .map_err(|_| Error::InvalidOutcomes)?;
             let trimmed = normalized.trim();
             if trimmed.is_empty() {
                 return Err(Error::InvalidOutcomes);
             }
 
-            let length = trimmed.chars().count() as u32;
+            let length = trimmed.len() as u32;
             if length < config::MIN_OUTCOME_LENGTH || length > max_outcome_length {
                 return Err(Error::InvalidOutcomes);
             }
@@ -5245,10 +5246,10 @@ impl CreationValidator {
 pub struct OutcomeDeduplicator;
 
 impl OutcomeDeduplicator {
-    fn soroban_string_to_host_string(value: &String) -> StdString {
+    fn soroban_string_to_host_string(value: &String) -> Result<StdString, ValidationError> {
         let mut bytes = alloc::vec![0u8; value.len() as usize];
         value.copy_into_slice(&mut bytes);
-        StdString::from_utf8(bytes).unwrap_or_else(|_| StdString::from("invalid_utf8"))
+        StdString::from_utf8(bytes).map_err(|_| ValidationError::OutcomeNormalizationFailed)
     }
 
     /// Normalizes an outcome string for comparison.
@@ -5291,8 +5292,7 @@ impl OutcomeDeduplicator {
     /// - Optimized for gas efficiency
     /// - Resistant to Unicode manipulation attacks
     pub fn normalize_outcome(outcome: &String) -> Result<String, ValidationError> {
-        // Convert to string slice for manipulation
-        let outcome_str = Self::soroban_string_to_host_string(outcome);
+        let outcome_str = Self::soroban_string_to_host_string(outcome)?;
 
         // Step 1: Trim leading and trailing whitespace
         let trimmed = outcome_str.trim();
@@ -5377,8 +5377,14 @@ impl OutcomeDeduplicator {
     /// - Early termination for very different strings
     /// - Gas-efficient for typical outcome lengths (< 50 chars)
     pub fn calculate_similarity(outcome1: &String, outcome2: &String) -> u32 {
-        let s1 = Self::soroban_string_to_host_string(outcome1);
-        let s2 = Self::soroban_string_to_host_string(outcome2);
+        let s1 = match Self::soroban_string_to_host_string(outcome1) {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        let s2 = match Self::soroban_string_to_host_string(outcome2) {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
 
         if s1.is_empty() && s2.is_empty() {
             return 100;
@@ -5550,8 +5556,14 @@ impl OutcomeDeduplicator {
     ///
     /// * `bool` - True if outcomes are semantic duplicates
     fn is_semantic_duplicate(outcome1: &String, outcome2: &String) -> bool {
-        let s1 = Self::soroban_string_to_host_string(outcome1);
-        let s2 = Self::soroban_string_to_host_string(outcome2);
+        let s1 = match Self::soroban_string_to_host_string(outcome1) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        let s2 = match Self::soroban_string_to_host_string(outcome2) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
 
         // Affirmative outcomes
         let affirmative = ["yes", "yeah", "yep", "true", "correct", "agree", "positive"];
@@ -5703,8 +5715,7 @@ impl ContractInitializationValidator {
         OracleConfigValidator::validate_resolution_timeout(resolution_timeout)
             .map_err(|_| Error::InvalidDuration)?;
 
-        // Oracle configuration must be internally consistent before storage.
-        OracleValidator::validate_oracle_config_all_together(oracle_config)
+        OracleConfigValidator::validate_oracle_config_all_together(oracle_config)
             .map_err(|_| Error::InvalidOracleConfig)?;
 
         Ok(())

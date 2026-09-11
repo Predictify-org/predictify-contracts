@@ -2505,6 +2505,11 @@ impl ConfigManager {
         Ok(config)
     }
 
+    /// Validates complete contract configuration parameters before persistence.
+    pub fn validate_config(_env: &Env, config: &ContractConfig) -> Result<(), Error> {
+        ConfigValidator::validate_contract_config(config)
+    }
+
     /// Internal helper: push a history record, keep last 100 entries
     fn push_history(env: &Env, record: &ConfigUpdateRecord) {
         let key = Symbol::new(env, CONFIG_HISTORY_STORAGE_KEY);

@@ -573,16 +573,16 @@ mod tests {
     #[test]
     fn test_question_length_at_limit_with_four_byte_glyphs() {
         let env = Env::default();
-        let host = FOUR_BYTE_GLYPH.repeat(MAX_QUESTION_LENGTH as usize);
+        let host = FOUR_BYTE_GLYPH.repeat((MAX_QUESTION_BYTES / 4) as usize);
         let question = String::from_str(&env, &host);
         assert!(validate_question_length(&question).is_ok());
-        assert_eq!(question.len() as u32, MAX_QUESTION_LENGTH * 4);
+        assert_eq!(question.len() as u32, MAX_QUESTION_BYTES);
     }
 
     #[test]
     fn test_question_length_just_over_limit_with_four_byte_glyphs() {
         let env = Env::default();
-        let host = FOUR_BYTE_GLYPH.repeat((MAX_QUESTION_LENGTH + 1) as usize);
+        let host = FOUR_BYTE_GLYPH.repeat(((MAX_QUESTION_BYTES / 4) + 1) as usize);
         let question = String::from_str(&env, &host);
         assert_eq!(
             validate_question_length(&question),
@@ -593,21 +593,31 @@ mod tests {
     #[test]
     fn test_outcome_length_at_limit_with_four_byte_glyphs() {
         let env = Env::default();
-        let host = FOUR_BYTE_GLYPH.repeat(MAX_OUTCOME_LENGTH as usize);
+        let host = FOUR_BYTE_GLYPH.repeat((MAX_OUTCOME_BYTES / 4) as usize);
         assert!(validate_outcome_length(&String::from_str(&env, &host)).is_ok());
+    }
+
+    #[test]
+    fn test_outcome_length_just_over_limit_with_four_byte_glyphs() {
+        let env = Env::default();
+        let host = FOUR_BYTE_GLYPH.repeat(((MAX_OUTCOME_BYTES / 4) + 1) as usize);
+        assert_eq!(
+            validate_outcome_length(&String::from_str(&env, &host)),
+            Err(Error::OutcomeTooLong)
+        );
     }
 
     #[test]
     fn test_category_metadata_at_limit_with_four_byte_glyphs() {
         let env = Env::default();
-        let host = FOUR_BYTE_GLYPH.repeat(MAX_CATEGORY_LENGTH as usize);
+        let host = FOUR_BYTE_GLYPH.repeat((MAX_CATEGORY_BYTES / 4) as usize);
         assert!(validate_category_metadata(&String::from_str(&env, &host)).is_ok());
     }
 
     #[test]
     fn test_tag_metadata_at_limit_with_four_byte_glyphs() {
         let env = Env::default();
-        let host = FOUR_BYTE_GLYPH.repeat(MAX_TAG_LENGTH as usize);
+        let host = FOUR_BYTE_GLYPH.repeat((MAX_TAG_BYTES / 4) as usize);
         assert!(validate_tag_metadata(&String::from_str(&env, &host)).is_ok());
     }
 
@@ -645,6 +655,84 @@ mod tests {
             validate_tag_metadata(&String::from_str(&env, "ab\u{001F}")),
             Err(Error::InvalidInput)
         );
+    }
+
+    #[test]
+    fn test_question_exact_byte_boundary() {
+        let env = Env::default();
+        let exact_500_bytes = String::from_str(&env, &"a".repeat(MAX_QUESTION_BYTES as usize));
+        assert!(validate_question_length(&exact_500_bytes).is_ok());
+
+        let over_500_bytes = String::from_str(&env, &"a".repeat((MAX_QUESTION_BYTES + 1) as usize));
+        assert_eq!(
+            validate_question_length(&over_500_bytes),
+            Err(Error::QuestionTooLong)
+        );
+    }
+
+    #[test]
+    fn test_multibyte_two_byte_utf8_boundaries() {
+        let env = Env::default();
+        let glyph_2b = "\u{00E9}";
+
+        let question_at_limit = String::from_str(&env, &glyph_2b.repeat((MAX_QUESTION_BYTES / 2) as usize));
+        assert_eq!(question_at_limit.len() as u32, MAX_QUESTION_BYTES);
+        assert!(validate_question_length(&question_at_limit).is_ok());
+
+        let question_over_limit = String::from_str(&env, &glyph_2b.repeat(((MAX_QUESTION_BYTES / 2) + 1) as usize));
+        assert_eq!(
+            validate_question_length(&question_over_limit),
+            Err(Error::QuestionTooLong)
+        );
+
+        let outcome_at_limit = String::from_str(&env, &glyph_2b.repeat((MAX_OUTCOME_BYTES / 2) as usize));
+        assert_eq!(outcome_at_limit.len() as u32, MAX_OUTCOME_BYTES);
+        assert!(validate_outcome_length(&outcome_at_limit).is_ok());
+
+        let outcome_over_limit = String::from_str(&env, &glyph_2b.repeat(((MAX_OUTCOME_BYTES / 2) + 1) as usize));
+        assert_eq!(
+            validate_outcome_length(&outcome_over_limit),
+            Err(Error::OutcomeTooLong)
+        );
+
+        let tag_at_limit = String::from_str(&env, &glyph_2b.repeat((MAX_TAG_BYTES / 2) as usize));
+        assert_eq!(tag_at_limit.len() as u32, MAX_TAG_BYTES);
+        assert!(validate_tag_metadata(&tag_at_limit).is_ok());
+
+        let tag_over_limit = String::from_str(&env, &glyph_2b.repeat(((MAX_TAG_BYTES / 2) + 1) as usize));
+        assert_eq!(
+            validate_tag_metadata(&tag_over_limit),
+            Err(Error::TagTooLong)
+        );
+    }
+
+    #[test]
+    fn test_category_and_tag_byte_boundaries() {
+        let env = Env::default();
+
+        let cat_min = String::from_str(&env, "ab");
+        assert!(validate_category_metadata(&cat_min).is_ok());
+
+        let cat_short = String::from_str(&env, "a");
+        assert_eq!(validate_category_metadata(&cat_short), Err(Error::CategoryTooShort));
+
+        let cat_max = String::from_str(&env, &"a".repeat(MAX_CATEGORY_BYTES as usize));
+        assert!(validate_category_metadata(&cat_max).is_ok());
+
+        let cat_long = String::from_str(&env, &"a".repeat((MAX_CATEGORY_BYTES + 1) as usize));
+        assert_eq!(validate_category_metadata(&cat_long), Err(Error::CategoryTooLong));
+
+        let tag_min = String::from_str(&env, "ab");
+        assert!(validate_tag_metadata(&tag_min).is_ok());
+
+        let tag_short = String::from_str(&env, "a");
+        assert_eq!(validate_tag_metadata(&tag_short), Err(Error::TagTooShort));
+
+        let tag_max = String::from_str(&env, &"a".repeat(MAX_TAG_BYTES as usize));
+        assert!(validate_tag_metadata(&tag_max).is_ok());
+
+        let tag_long = String::from_str(&env, &"a".repeat((MAX_TAG_BYTES + 1) as usize));
+        assert_eq!(validate_tag_metadata(&tag_long), Err(Error::TagTooLong));
     }
 }
 
@@ -692,8 +780,8 @@ mod proptest_fuzz {
         if host.chars().any(|c| c.is_control()) {
             return Err(Error::InvalidInput);
         }
-        let char_len = host.chars().count() as u32;
-        if char_len > MAX_QUESTION_LENGTH {
+        let byte_len = host.len() as u32;
+        if byte_len > MAX_QUESTION_LENGTH {
             Err(Error::QuestionTooLong)
         } else {
             Ok(())
@@ -704,8 +792,8 @@ mod proptest_fuzz {
         if host.chars().any(|c| c.is_control()) {
             return Err(Error::InvalidInput);
         }
-        let char_len = host.chars().count() as u32;
-        if char_len > MAX_OUTCOME_LENGTH {
+        let byte_len = host.len() as u32;
+        if byte_len > MAX_OUTCOME_LENGTH {
             Err(Error::OutcomeTooLong)
         } else {
             Ok(())
@@ -716,10 +804,10 @@ mod proptest_fuzz {
         if host.chars().any(|c| c.is_control()) {
             return Err(Error::InvalidInput);
         }
-        let char_len = host.chars().count() as u32;
-        if char_len < MIN_CATEGORY_LENGTH {
+        let byte_len = host.len() as u32;
+        if byte_len < MIN_CATEGORY_LENGTH {
             Err(Error::CategoryTooShort)
-        } else if char_len > MAX_CATEGORY_LENGTH {
+        } else if byte_len > MAX_CATEGORY_LENGTH {
             Err(Error::CategoryTooLong)
         } else {
             Ok(())
@@ -730,12 +818,12 @@ mod proptest_fuzz {
         if host.chars().any(|c| c.is_control()) {
             return Err(Error::InvalidInput);
         }
-        let char_len = host.chars().count() as u32;
-        if char_len == 0 {
+        let byte_len = host.len() as u32;
+        if byte_len == 0 {
             Err(Error::InvalidInput)
-        } else if char_len < MIN_TAG_LENGTH {
+        } else if byte_len < MIN_TAG_LENGTH {
             Err(Error::TagTooShort)
-        } else if char_len > MAX_TAG_LENGTH {
+        } else if byte_len > MAX_TAG_LENGTH {
             Err(Error::TagTooLong)
         } else {
             Ok(())

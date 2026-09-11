@@ -5507,6 +5507,8 @@ impl PredictifyHybrid {
     ) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
 
+        crate::metadata_limits::validate_option_category_metadata(&category)?;
+
         // Get market
         let mut market: Market = env
             .storage()
@@ -5529,8 +5531,6 @@ impl PredictifyHybrid {
         if market.total_staked > 0 {
             return Err(Error::AlreadyVoted);
         }
-
-        crate::metadata_limits::validate_option_category_metadata(&category)?;
 
         // Store old category for event
         let old_category = market.category.clone();

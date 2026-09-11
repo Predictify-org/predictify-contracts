@@ -1,47 +1,35 @@
-/// Metadata length limits for controlling storage costs and preventing denial-of-service attacks.
+/// Metadata size and encoding limits for controlling storage costs and preventing denial-of-service attacks.
 ///
-/// This module defines maximum length constraints for strings and vectors used throughout
-/// the Predictify Hybrid smart contract. These limits serve multiple purposes:
+/// This module defines maximum size constraints in bytes and vector limits used throughout
+/// the Predictify Hybrid smart contract.
 ///
-/// # Length semantics (Unicode scalar values, not UTF-8 bytes)
+/// # Length Semantics (UTF-8 Bytes)
 ///
-/// All string limits in this module are enforced on **Unicode scalar value count** (the same
-/// notion as Rust's [`str::chars`]), **not** on [`String::len`] byte length. For example,
-/// `"😀"` counts as **one** character toward the limit even though it occupies four UTF-8 bytes.
-/// This matches the documented "N characters" limits and aligns with
-/// [`crate::validation::CreationValidator`], which also counts `.chars()`.
+/// All string limits in this module are measured and enforced in UTF-8 byte length
+/// ([`String::len`]). This guarantees that storage allocations and serialized footprints
+/// on the ledger are deterministically bounded, preventing byte inflation attacks where
+/// multi-byte characters could consume excessive storage within a character-based limit.
 ///
-/// Invalid UTF-8 and strings containing Unicode control characters (`char::is_control`) are
-/// rejected with [`crate::Error::InvalidInput`].
+/// Malformed UTF-8 byte sequences and strings containing Unicode control characters
+/// (`char::is_control`) are deterministically rejected with [`crate::Error::InvalidInput`]
+/// before any mutation occurs.
 ///
 /// # Security Benefits
 ///
-/// - **DoS Prevention**: Prevents attackers from creating markets with excessively large metadata
-/// - **Storage Cost Control**: Caps storage requirements to predictable, manageable levels
-/// - **Gas Optimization**: Ensures operations complete within reasonable gas budgets
-/// - **Data Integrity**: Enforces reasonable bounds on user-provided data
+/// - DoS Prevention: Prevents attackers from creating markets with excessively large metadata
+/// - Storage Cost Control: Caps storage requirements to predictable, manageable levels
+/// - Gas Optimization: Ensures operations complete within reasonable gas budgets
+/// - Data Integrity: Enforces strict bounds on user-provided data
 ///
 /// # Design Principles
 ///
-/// 1. **Conservative Limits**: Set to accommodate legitimate use cases while preventing abuse
-/// 2. **Auditor-Friendly**: Clear, documented constants that are easy to review
-/// 3. **Upgrade Path**: Limits can be adjusted in future contract versions if needed
-/// 4. **User Experience**: Generous enough to not hinder normal usage patterns
-///
-/// # Usage Example
-///
-/// ```rust
-/// use predictify_hybrid::metadata_limits::{MAX_QUESTION_LENGTH, validate_question_length};
-///
-/// let question = String::from_str(&env, "Will BTC reach $100k?");
-/// validate_question_length(&question)?; // Returns Ok if within limits
-/// ```
+/// 1. Conservative Limits: Set to accommodate legitimate use cases while preventing abuse
+/// 2. Auditor-Friendly: Clear, documented constants that are easy to review
+/// 3. Upgrade Path: Limits can be adjusted in future contract versions if needed
+/// 4. User Experience: Generous enough to not hinder normal usage patterns
 use soroban_sdk::{String, Vec};
 
 // ===== CATEGORY / TAG LIMITS (canonical: `config`) =====
-//
-// These re-exports keep a single source of truth in `config` while preserving the
-// `metadata_limits` API for integrators and audit review.
 
 /// Maximum length of a market category name (from [`crate::config::MAX_CATEGORY_LENGTH`]).
 pub const MAX_CATEGORY_LENGTH: u32 = crate::config::MAX_CATEGORY_LENGTH;
@@ -54,102 +42,118 @@ pub const MIN_TAG_LENGTH: u32 = crate::config::MIN_TAG_LENGTH;
 /// Maximum number of tags per market (from [`crate::config::MAX_TAGS_PER_MARKET`]).
 pub const MAX_TAGS_COUNT: u32 = crate::config::MAX_TAGS_PER_MARKET;
 
-// ===== STRING LENGTH LIMITS =====
+// ===== BYTE LIMIT CONSTANTS =====
 
-/// Maximum length for market question text (500 characters)
-///
-/// Rationale: Questions should be concise and clear. 500 characters allows for
-/// detailed questions while preventing storage abuse. Most questions are 50-150 chars.
-pub const MAX_QUESTION_LENGTH: u32 = 500;
+/// Maximum size in bytes for market question text (500 bytes).
+pub const MAX_QUESTION_BYTES: u32 = 500;
+/// Minimum size in bytes for market question text (10 bytes).
+pub const MIN_QUESTION_BYTES: u32 = 10;
 
-/// Maximum length for outcome labels (100 characters)
-///
-/// Rationale: Outcome labels should be short and descriptive. 100 characters is
-/// generous for labels like "yes", "no", "under_50k", "Team A wins", etc.
-pub const MAX_OUTCOME_LENGTH: u32 = 100;
+/// Maximum size in bytes for outcome labels (100 bytes).
+pub const MAX_OUTCOME_BYTES: u32 = 100;
+/// Minimum size in bytes for outcome labels (2 bytes).
+pub const MIN_OUTCOME_BYTES: u32 = 2;
 
-/// Maximum length for oracle feed IDs (200 characters)
-///
-/// Rationale: Most feed IDs are short (e.g., "BTC/USD" = 7 chars). Pyth uses
-/// 64-char hex strings. 200 chars provides headroom for future oracle formats.
-pub const MAX_FEED_ID_LENGTH: u32 = 200;
+/// Maximum size in bytes for event description text (1000 bytes).
+pub const MAX_DESCRIPTION_BYTES: u32 = 1000;
+/// Minimum size in bytes for event description text (0 bytes).
+pub const MIN_DESCRIPTION_BYTES: u32 = 0;
 
-/// Maximum length for comparison operators (10 characters)
-///
-/// Rationale: Valid operators are "gt", "lt", "eq" (2-3 chars). 10 chars allows
-/// for future operators like "gte", "lte", "between" while preventing abuse.
-pub const MAX_COMPARISON_LENGTH: u32 = 10;
+/// Maximum size in bytes for a single tag (50 bytes).
+pub const MAX_TAG_BYTES: u32 = 50;
+/// Minimum size in bytes for a single tag (2 bytes).
+pub const MIN_TAG_BYTES: u32 = 2;
 
-/// Maximum length for extension reason text (300 characters)
-///
-/// Rationale: Extension reasons should explain the justification. 300 chars allows
-/// for detailed explanations like "Low participation detected, extending to allow
-/// more users to participate and ensure fair market resolution."
-pub const MAX_EXTENSION_REASON_LENGTH: u32 = 300;
+/// Maximum size in bytes for a market category name (100 bytes).
+pub const MAX_CATEGORY_BYTES: u32 = 100;
+/// Minimum size in bytes for a market category name (2 bytes).
+pub const MIN_CATEGORY_BYTES: u32 = 2;
 
-/// Maximum length for oracle source identifiers (100 characters)
-///
-/// Rationale: Source identifiers like "reflector-mainnet" or oracle URLs should
-/// be reasonably short. 100 chars accommodates most identifier formats.
-pub const MAX_SOURCE_LENGTH: u32 = 100;
+/// Maximum size in bytes for oracle feed IDs (200 bytes).
+pub const MAX_FEED_ID_BYTES: u32 = 200;
 
-/// Maximum length for error messages (200 characters)
-///
-/// Rationale: Error messages should be informative but concise. 200 chars allows
-/// for detailed error descriptions without excessive storage costs.
-pub const MAX_ERROR_MESSAGE_LENGTH: u32 = 200;
+/// Maximum size in bytes for comparison operators (10 bytes).
+pub const MAX_COMPARISON_BYTES: u32 = 10;
 
-/// Maximum length for signature strings (500 characters)
-///
-/// Rationale: Cryptographic signatures can be lengthy when encoded. 500 chars
-/// accommodates most signature formats including base64-encoded signatures.
-pub const MAX_SIGNATURE_LENGTH: u32 = 500;
+/// Maximum size in bytes for extension reason text (300 bytes).
+pub const MAX_EXTENSION_REASON_BYTES: u32 = 300;
+
+/// Maximum size in bytes for oracle source identifiers (100 bytes).
+pub const MAX_SOURCE_BYTES: u32 = 100;
+
+/// Maximum size in bytes for error messages (200 bytes).
+pub const MAX_ERROR_MESSAGE_BYTES: u32 = 200;
+
+/// Maximum size in bytes for signature strings (500 bytes).
+pub const MAX_SIGNATURE_BYTES: u32 = 500;
+
+// ===== BACKWARD COMPATIBLE LENGTH ALIASES =====
+
+/// Maximum length for market question text (alias to MAX_QUESTION_BYTES).
+pub const MAX_QUESTION_LENGTH: u32 = MAX_QUESTION_BYTES;
+/// Minimum length for market question text (alias to MIN_QUESTION_BYTES).
+pub const MIN_QUESTION_LENGTH: u32 = MIN_QUESTION_BYTES;
+
+/// Maximum length for outcome labels (alias to MAX_OUTCOME_BYTES).
+pub const MAX_OUTCOME_LENGTH: u32 = MAX_OUTCOME_BYTES;
+/// Minimum length for outcome labels (alias to MIN_OUTCOME_BYTES).
+pub const MIN_OUTCOME_LENGTH: u32 = MIN_OUTCOME_BYTES;
+
+/// Maximum length for oracle feed IDs (alias to MAX_FEED_ID_BYTES).
+pub const MAX_FEED_ID_LENGTH: u32 = MAX_FEED_ID_BYTES;
+
+/// Maximum length for comparison operators (alias to MAX_COMPARISON_BYTES).
+pub const MAX_COMPARISON_LENGTH: u32 = MAX_COMPARISON_BYTES;
+
+/// Maximum length for extension reason text (alias to MAX_EXTENSION_REASON_BYTES).
+pub const MAX_EXTENSION_REASON_LENGTH: u32 = MAX_EXTENSION_REASON_BYTES;
+
+/// Maximum length for oracle source identifiers (alias to MAX_SOURCE_BYTES).
+pub const MAX_SOURCE_LENGTH: u32 = MAX_SOURCE_BYTES;
+
+/// Maximum length for error messages (alias to MAX_ERROR_MESSAGE_BYTES).
+pub const MAX_ERROR_MESSAGE_LENGTH: u32 = MAX_ERROR_MESSAGE_BYTES;
+
+/// Maximum length for signature strings (alias to MAX_SIGNATURE_BYTES).
+pub const MAX_SIGNATURE_LENGTH: u32 = MAX_SIGNATURE_BYTES;
+
+/// Maximum length for event description text (alias to MAX_DESCRIPTION_BYTES).
+pub const MAX_DESCRIPTION_LENGTH: u32 = MAX_DESCRIPTION_BYTES;
+/// Minimum length for event description text (alias to MIN_DESCRIPTION_BYTES).
+pub const MIN_DESCRIPTION_LENGTH: u32 = MIN_DESCRIPTION_BYTES;
 
 // ===== VECTOR LENGTH LIMITS =====
 
-/// Maximum number of outcomes per market (20 outcomes)
-///
-/// Rationale: Most markets are binary (2 outcomes). Multiple choice markets rarely
-/// need more than 5-10 options. 20 provides flexibility while preventing abuse.
+/// Maximum number of outcomes per market (20 outcomes).
 pub const MAX_OUTCOMES_COUNT: u32 = 20;
 
-/// Maximum number of extension history entries (50 extensions)
-///
-/// Rationale: Markets should not be extended indefinitely. 50 extensions is
-/// extremely generous and prevents unbounded growth of extension history.
+/// Maximum number of extension history entries (50 extensions).
 pub const MAX_EXTENSION_HISTORY_COUNT: u32 = 50;
 
-/// Maximum number of individual oracle results in multi-oracle aggregation (10 oracles)
-///
-/// Rationale: Multi-oracle consensus typically uses 3-5 sources. 10 provides
-/// headroom for high-security markets while preventing storage bloat.
+/// Maximum number of individual oracle results in multi-oracle aggregation (10 oracles).
 pub const MAX_ORACLE_RESULTS_COUNT: u32 = 10;
 
-/// Maximum number of winning outcomes (10 outcomes)
-///
-/// Rationale: In tie scenarios, multiple outcomes can win. 10 is generous for
-/// most tie-breaking scenarios while preventing abuse.
+/// Maximum number of winning outcomes (10 outcomes).
 pub const MAX_WINNING_OUTCOMES_COUNT: u32 = 10;
 
 // ===== VALIDATION FUNCTIONS =====
 
 fn scan_metadata_text(value: &String) -> Result<(u32, bool), crate::Error> {
-    let byte_len = value.len() as usize;
+    let byte_len = value.len();
     if byte_len == 0 {
         return Ok((0, false));
     }
-    let mut bytes = alloc::vec![0u8; byte_len];
+    let mut bytes = alloc::vec![0u8; byte_len as usize];
     value.copy_into_slice(&mut bytes);
     let text = core::str::from_utf8(&bytes).map_err(|_| crate::Error::InvalidInput)?;
-    let mut char_count = 0u32;
     let mut has_control = false;
     for c in text.chars() {
-        char_count = char_count.saturating_add(1);
         if c.is_control() {
             has_control = true;
+            break;
         }
     }
-    Ok((char_count, has_control))
+    Ok((byte_len, has_control))
 }
 
 fn reject_control_characters(value: &String) -> Result<(), crate::Error> {
@@ -160,27 +164,25 @@ fn reject_control_characters(value: &String) -> Result<(), crate::Error> {
     Ok(())
 }
 
-/// Validates that a question string is within the maximum allowed length.
-///
-/// Limits are measured in Unicode scalar values, not UTF-8 bytes.
+/// Validates that a question string is within the maximum allowed byte length and contains valid UTF-8.
 pub fn validate_question_length(question: &String) -> Result<(), crate::Error> {
-    let (len, has_control) = scan_metadata_text(question)?;
+    let (byte_len, has_control) = scan_metadata_text(question)?;
     if has_control {
         return Err(crate::Error::InvalidInput);
     }
-    if len > MAX_QUESTION_LENGTH {
+    if byte_len > MAX_QUESTION_BYTES {
         return Err(crate::Error::QuestionTooLong);
     }
     Ok(())
 }
 
-/// Validates that an outcome string is within the maximum allowed length.
+/// Validates that an outcome string is within the maximum allowed byte length and contains valid UTF-8.
 pub fn validate_outcome_length(outcome: &String) -> Result<(), crate::Error> {
-    let (len, has_control) = scan_metadata_text(outcome)?;
+    let (byte_len, has_control) = scan_metadata_text(outcome)?;
     if has_control {
         return Err(crate::Error::InvalidInput);
     }
-    if len > MAX_OUTCOME_LENGTH {
+    if byte_len > MAX_OUTCOME_BYTES {
         return Err(crate::Error::OutcomeTooLong);
     }
     Ok(())
@@ -202,41 +204,47 @@ pub fn validate_outcomes_count(outcomes: &Vec<String>) -> Result<(), crate::Erro
 }
 
 pub fn validate_feed_id_length(feed_id: &String) -> Result<(), crate::Error> {
-    reject_control_characters(feed_id)?;
-    let (len, _) = scan_metadata_text(feed_id)?;
-    if len > MAX_FEED_ID_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(feed_id)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_FEED_ID_BYTES {
         return Err(crate::Error::FeedIdTooLong);
     }
     Ok(())
 }
 
 pub fn validate_comparison_length(comparison: &String) -> Result<(), crate::Error> {
-    reject_control_characters(comparison)?;
-    let (len, _) = scan_metadata_text(comparison)?;
-    if len > MAX_COMPARISON_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(comparison)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_COMPARISON_BYTES {
         return Err(crate::Error::ComparisonTooLong);
     }
     Ok(())
 }
 
 pub fn validate_category_length(category: &String) -> Result<(), crate::Error> {
-    reject_control_characters(category)?;
-    let (len, _) = scan_metadata_text(category)?;
-    if len > MAX_CATEGORY_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(category)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_CATEGORY_BYTES {
         return Err(crate::Error::CategoryTooLong);
     }
     Ok(())
 }
 
 pub fn validate_category_metadata(category: &String) -> Result<(), crate::Error> {
-    let (len, has_control) = scan_metadata_text(category)?;
+    let (byte_len, has_control) = scan_metadata_text(category)?;
     if has_control {
         return Err(crate::Error::InvalidInput);
     }
-    if len < MIN_CATEGORY_LENGTH {
+    if byte_len < MIN_CATEGORY_BYTES {
         return Err(crate::Error::CategoryTooShort);
     }
-    if len > MAX_CATEGORY_LENGTH {
+    if byte_len > MAX_CATEGORY_BYTES {
         return Err(crate::Error::CategoryTooLong);
     }
     Ok(())
@@ -251,26 +259,28 @@ pub fn validate_option_category_metadata(opt: &Option<String>) -> Result<(), cra
 }
 
 pub fn validate_tag_length(tag: &String) -> Result<(), crate::Error> {
-    reject_control_characters(tag)?;
-    let (len, _) = scan_metadata_text(tag)?;
-    if len > MAX_TAG_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(tag)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_TAG_BYTES {
         return Err(crate::Error::TagTooLong);
     }
     Ok(())
 }
 
 pub fn validate_tag_metadata(tag: &String) -> Result<(), crate::Error> {
-    let (len, has_control) = scan_metadata_text(tag)?;
+    let (byte_len, has_control) = scan_metadata_text(tag)?;
     if has_control {
         return Err(crate::Error::InvalidInput);
     }
-    if len == 0 {
+    if byte_len == 0 {
         return Err(crate::Error::InvalidInput);
     }
-    if len < MIN_TAG_LENGTH {
+    if byte_len < MIN_TAG_BYTES {
         return Err(crate::Error::TagTooShort);
     }
-    if len > MAX_TAG_LENGTH {
+    if byte_len > MAX_TAG_BYTES {
         return Err(crate::Error::TagTooLong);
     }
     Ok(())
@@ -310,37 +320,56 @@ pub fn validate_event_tags(tags: &Vec<String>) -> Result<(), crate::Error> {
 }
 
 pub fn validate_extension_reason_length(reason: &String) -> Result<(), crate::Error> {
-    reject_control_characters(reason)?;
-    let (len, _) = scan_metadata_text(reason)?;
-    if len > MAX_EXTENSION_REASON_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(reason)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_EXTENSION_REASON_BYTES {
         return Err(crate::Error::ExtensionReasonTooLong);
     }
     Ok(())
 }
 
 pub fn validate_source_length(source: &String) -> Result<(), crate::Error> {
-    reject_control_characters(source)?;
-    let (len, _) = scan_metadata_text(source)?;
-    if len > MAX_SOURCE_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(source)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_SOURCE_BYTES {
         return Err(crate::Error::SourceTooLong);
     }
     Ok(())
 }
 
 pub fn validate_error_message_length(error_message: &String) -> Result<(), crate::Error> {
-    reject_control_characters(error_message)?;
-    let (len, _) = scan_metadata_text(error_message)?;
-    if len > MAX_ERROR_MESSAGE_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(error_message)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_ERROR_MESSAGE_BYTES {
         return Err(crate::Error::ErrorMessageTooLong);
     }
     Ok(())
 }
 
 pub fn validate_signature_length(signature: &String) -> Result<(), crate::Error> {
-    reject_control_characters(signature)?;
-    let (len, _) = scan_metadata_text(signature)?;
-    if len > MAX_SIGNATURE_LENGTH {
+    let (byte_len, has_control) = scan_metadata_text(signature)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_SIGNATURE_BYTES {
         return Err(crate::Error::SignatureTooLong);
+    }
+    Ok(())
+}
+
+pub fn validate_description_length(description: &String) -> Result<(), crate::Error> {
+    let (byte_len, has_control) = scan_metadata_text(description)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if byte_len > MAX_DESCRIPTION_BYTES {
+        return Err(crate::Error::InvalidQuestion);
     }
     Ok(())
 }
